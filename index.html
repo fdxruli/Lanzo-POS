@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lanzo</title>
+    <link rel="icon" type="image/png" href="icono/icono-web.png">
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="/app.js" defer></script>
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo-container" id="home-link">
+                <img id="nav-company-logo" class="nav-logo" src="https://placehold.co/100x100/FFFFFF/4A5568?text=L"
+                    alt="Logo">
+                <h1 id="nav-company-name" class="nav-title">Lanzo</h1>
+            </div>
+            <div class="nav-buttons-desktop">
+                <button id="nav-pos" class="nav-btn btn-pos">Punto de Venta</button>
+                <button id="nav-product-management" class="nav-btn btn-products">Productos</button>
+                <button id="nav-dashboard" class="nav-btn btn-sales">Ventas</button>
+                <button id="nav-company" class="nav-btn btn-config">Configuración</button>
+                <button id="nav-donation" class="nav-btn btn-donate">Donar</button>
+            </div>
+            <div class="nav-mobile-toggle">
+                <button id="mobile-menu-button" class="mobile-menu-btn">
+                    <svg class="mobile-menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div id="mobile-menu" class="mobile-menu hidden">
+            <button id="mobile-nav-pos" class="mobile-nav-btn">Punto de Venta</button>
+            <button id="mobile-nav-product-management" class="mobile-nav-btn">Productos</button>
+            <button id="mobile-nav-dashboard" class="mobile-nav-btn">Ventas</button>
+            <button id="mobile-nav-company" class="mobile-nav-btn">Configuración</button>
+            <button id="mobile-nav-donation" class="mobile-nav-btn">Donar</button>
+        </div>
+    </nav>
+    <main class="main-container">
+        <section id="pos-section" class="section-content active">
+            <h2 class="section-title">Punto de Venta</h2>
+            <div class="pos-grid">
+                <div class="pos-menu-container">
+                    <h3 class="subtitle">Menú</h3>
+                    <div id="menu-items" class="menu-items-grid"></div>
+                </div>
+                <div class="pos-order-container">
+                    <h3 class="subtitle">Pedido</h3>
+                    <div id="empty-order-message" class="empty-message">No hay elementos en el pedido.</div>
+                    <div id="order-list" class="order-list"></div>
+                    <div class="order-total-container">
+                        <div class="total-display">
+                            <span class="total-label">Total:</span>
+                            <span id="pos-total" class="total-amount">$0.00</span>
+                        </div>
+                        <button id="process-order-btn" class="btn btn-process">Procesar</button>
+                        <button id="clear-order-btn" class="btn btn-clear">Limpiar</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <section id="product-management-section" class="section-content">
+            <h2 class="section-title">Gestión de Productos</h2>
+            <div class="product-management-grid">
+                <div class="product-form-container">
+                    <h3 class="subtitle" id="product-form-title">Añadir Nuevo Producto</h3>
+                    <form id="product-form">
+                        <input type="hidden" id="product-id">
+                        <div class="form-group">
+                            <label class="form-label" for="product-name">Nombre</label>
+                            <input class="form-input" id="product-name" type="text" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="product-description">Descripción</label>
+                            <textarea class="form-textarea" id="product-description"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="product-price">Precio ($)</label>
+                            <input class="form-input" id="product-price" type="number" step="0.01" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="product-cost">Costo ($)</label>
+                            <input class="form-input" id="product-cost" type="number" step="0.01" min="0" required>
+                            <button type="button" id="cost-help-button" class="btn btn-help">Calcular Costo</button>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="product-image-file">Imagen</label>
+                            <div class="image-upload-container">
+                                <img id="image-preview" class="image-preview"
+                                    src="https://placehold.co/100x100/CCCCCC/000000?text=Elegir" alt="Vista previa">
+                                <input class="file-input" id="product-image-file" type="file" accept="image/*">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-save">Guardar</button>
+                        <button type="button" id="cancel-edit-btn" class="btn btn-cancel hidden">Cancelar</button>
+                    </form>
+                </div>
+                <div class="product-list-container">
+                    <h3 class="subtitle">Productos</h3>
+                    <div id="empty-product-message" class="empty-message hidden">No hay productos.</div>
+                    <div id="product-list" class="product-list"></div>
+                </div>
+            </div>
+        </section>
+        <section id="dashboard-section" class="section-content">
+            <h2 class="section-title">Panel de Ventas</h2>
+            <div class="dashboard-grid">
+                <div class="dashboard-stats-container">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3 class="stat-title">Ingresos Totales</h3>
+                            <p id="dashboard-total-revenue" class="stat-value revenue">$0.00</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 class="stat-title">Pedidos Totales</h3>
+                            <p id="dashboard-total-orders" class="stat-value orders">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 class="stat-title">Productos Vendidos</h3>
+                            <p id="dashboard-total-items" class="stat-value items">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 class="stat-title">Utilidad Neta</h3>
+                            <p id="dashboard-net-profit" class="stat-value profit">$0.00</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="stat-title">Top Productos Más Vendidos</h3>
+                        <select id="top-products-select" class="form-input">
+                            <option value="3">Top 3</option>
+                            <option value="5" selected>Top 5</option>
+                        </select>
+                        <ul id="top-products-list" class="top-products-list"></ul>
+                    </div>
+                    <div class="sales-history-container">
+                        <h3 class="subtitle">Historial de Ventas</h3>
+                        <div id="empty-sales-message" class="empty-message">No hay ventas registradas.</div>
+                        <div id="sales-history-list" class="sales-history-list"></div>
+                    </div>
+                </div>
+                <div class="news-container">
+                    <div class="news-placeholder">
+                        <h3 class="news-title">Consejos para tu Negocio</h3>
+                        <ul id="business-tips" class="business-alerts"></ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <section id="company-section" class="section-content">
+            <h2 class="section-title">Configuración</h2>
+            <div class="company-form-container">
+                <h3 class="subtitle">Datos de la Empresa</h3>
+                <form id="company-form" class="company-form">
+                    <div class="form-group">
+                        <label class="form-label" for="company-name">Nombre</label>
+                        <input class="form-input" id="company-name" type="text" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="company-phone">Teléfono</label>
+                        <input class="form-input" id="company-phone" type="tel">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="company-address">Dirección</label>
+                        <textarea class="form-textarea" id="company-address"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="company-logo-file">Logo</label>
+                        <div class="image-upload-container">
+                            <img id="company-logo-preview" class="image-preview"
+                                src="https://placehold.co/100x100/FFFFFF/4A5568?text=L" alt="Vista previa">
+                            <input class="file-input" id="company-logo-file" type="file" accept="image/*">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-save">Guardar</button>
+                </form>
+                <h3 class="subtitle">Configuración de Tema</h3>
+                <form id="theme-form" class="company-form">
+                    <div class="form-group">
+                        <label class="form-label" for="primary-color">Color Primario</label>
+                        <input class="form-input" id="primary-color" type="color" value="#374151">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="secondary-color">Color Secundario</label>
+                        <input class="form-input" id="secondary-color" type="color" value="#3b82f6">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="background-color">Color de Fondo Principal</label>
+                        <input class="form-input" id="background-color" type="color" value="#f3f4f6">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="card-background-color">Color de Fondo de Tarjetas</label>
+                        <input class="form-input" id="card-background-color" type="color" value="#ffffff">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="text-color">Color de Texto Principal</label>
+                        <input class="form-input" id="text-color" type="color" value="#374151">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="card-text-color">Color de Texto de Tarjetas</label>
+                        <input class="form-input" id="card-text-color" type="color" value="#374151">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="font-size">Tamaño de Fuente</label>
+                        <select class="form-input" id="font-size">
+                            <option value="small">Pequeño</option>
+                            <option value="medium" selected>Mediano</option>
+                            <option value="large">Grande</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="layout-density">Densidad del Diseño</label>
+                        <select class="form-input" id="layout-density">
+                            <option value="compact">Compacto</option>
+                            <option value="spacious" selected>Espacioso</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-save">Guardar Tema</button>
+                    <button type="button" id="reset-theme-btn" class="btn btn-cancel">Restablecer Tema</button>
+                </form>
+            </div>
+        </section>
+        <section id="donation-section" class="section-content">
+            <div class="donation-container">
+                <span class="donation-heart">❤️</span>
+                <h2 class="donation-heading">¡Apoya Lanzo Negocio!</h2>
+                <p class="donation-text">Tu donación ayuda a mantener este proyecto gratuito y en constante mejora.</p>
+                <div class="donation-buttons-container">
+                    <a href="https://www.paypal.com/invoice/p/#AXZ4W24TKCUTHQGR" class="donation-button"
+                        target="_blank">
+                        Donar $50 <span class="donation-amount">MXN <br><br>paypal</span>
+                    </a>
+                    <a href="https://pago.clip.mx/9ed1f2e2-fef2-4e68-8f0a-252ca7707289">
+                        <img src="https://assets-global.website-files.com/62588b32d8d6105ab7aa9721/63bf568610f3fdf437235192_Preview.svg"
+                            alt="Logo Paga con Clip"></a>
+                </div>
+                <div class="donation-info">
+                    <p class="donation-info-text">Tu apoyo nos permite añadir nuevas funciones y mantener
+                        accesible para todos.</p>
+                </div>
+                <div class="contact-container">
+                    <h3 class="contact-heading">Contáctanos</h3>
+                    <p class="contact-text">¿Tienes sugerencias, dudas o necesitas una función específica? Escríbenos:
+                    </p>
+                    <div class="contact-form-container">
+                        <form id="contact-form" action="https://api.web3forms.com/submit" method="POST">
+                            <input type="hidden" name="access_key" value="70ab099d-edcf-41c9-ae74-e342df0dd085">
+                            <div class="form-group">
+                                <label class="form-label" for="contact-email">Correo Electrónico / Número</label>
+                                <input class="form-input" id="contact-email" type="text" name="contact" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="contact-message">Mensaje</label>
+                                <textarea class="form-textarea" id="contact-message" name="message"
+                                    placeholder="pueden hacer que se pueda apartar los productos por categoria?"
+                                    required></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-modal">Enviar Mensaje</button>
+                        </form>
+                        <br>
+                        <p>O si prefieres respuesta de inmediato, haz clic <a href="https://wa.link/dacyxv">aquí</a>.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+    <div id="message-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 class="modal-title">Mensaje</h2>
+            <p id="modal-message" class="modal-message"></p>
+            <button id="close-modal-btn" class="btn btn-modal">Aceptar</button>
+        </div>
+    </div>
+    <div id="payment-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 class="modal-title">Procesar Pago</h2>
+            <div class="payment-details">
+                <p class="payment-label">Total a Pagar:</p>
+                <p id="payment-total" class="payment-total">$0.00</p>
+                <label class="payment-input-label" for="payment-amount">Monto Recibido:</label>
+                <input class="payment-input" id="payment-amount" type="number" step="0.01" min="0">
+                <p class="payment-label">Cambio:</p>
+                <p id="payment-change" class="payment-change">$0.00</p>
+            </div>
+            <button id="confirm-payment-btn" class="btn btn-confirm" disabled>Confirmar Pago</button>
+            <button id="cancel-payment-btn" class="btn btn-cancel-payment">Cancelar</button>
+        </div>
+    </div>
+    <!-- Modal de Bienvenida -->
+    <div id="welcome-modal" class="welcome-modal">
+        <div class="welcome-modal-content">
+            <h2>Bienvenido a Lanzo Negocio</h2>
+
+            <div class="welcome-summary">
+                <p><strong>Lanzo</strong> es un sistema completo de punto de venta y gestión para pequeños negocios con
+                    las siguientes secciones principales:</p>
+                <ul>
+                    <li><strong>Punto de Venta</strong>: Interfaz para tomar pedidos, calcular totales y procesar
+                        ventas.</li>
+                    <li><strong>Gestión de Productos</strong>: Permite añadir, editar y eliminar productos.</li>
+                    <li><strong>Panel de Ventas</strong>: Muestra estadísticas e informes de ventas.</li>
+                    <li><strong>Configuración</strong>: Personaliza datos de la empresa y aspecto visual.</li>
+                    <li><strong>Donaciones</strong>: Apoya el desarrollo del proyecto.</li>
+                </ul>
+                <p>Características: diseño responsive, cálculo de costos, persistencia de datos local y más.</p>
+            </div>
+
+            <form id="license-form">
+                <div class="form-group">
+                    <label class="form-label" for="license-key">Ingrese su clave de licencia para acceder a todas las
+                        funcionalidades:</label>
+                    <input class="form-input" id="license-key" type="text" required
+                        placeholder="Ej: LANZO-XXXX-XXXX-XXXX">
+                </div>
+                <button type="submit" class="btn btn-save">Validar Licencia</button>
+            </form>
+
+            <p id="license-message" style="margin-top: 15px; display: none;"></p>
+        </div>
+    </div>
+
+    <!-- Modal para cálculo de costos (nuevo) -->
+    <div id="cost-calculation-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 class="modal-title">Calculadora de Costos</h2>
+            <p>Agrega los ingredientes y sus costos para calcular el precio unitario de tu producto.</p>
+
+            <div class="ingredient-form">
+                <input type="text" id="ingredient-name" class="form-input" placeholder="Nombre del ingrediente"
+                    style="flex: 2;">
+                <input type="number" id="ingredient-cost" class="form-input" step="0.01" min="0" placeholder="Costo ($)"
+                    style="flex: 1;">
+                <input type="number" id="ingredient-quantity" class="form-input" step="1" min="1" value="1"
+                    placeholder="Cantidad" style="flex: 1;">
+                <button type="button" id="add-ingredient" class="btn btn-save">Agregar</button>
+            </div>
+
+            <div class="ingredient-list" id="ingredient-list">
+                <!-- Los ingredientes se agregarán aquí dinámicamente -->
+            </div>
+
+            <div class="ingredient-total" id="ingredient-total">
+                Total: $0.00
+            </div>
+
+            <p><strong>Nota:</strong> Calcular correctamente el costo de tus productos es esencial para determinar un
+                precio de venta adecuado y asegurar la rentabilidad de tu negocio.</p>
+
+            <div class="btn-calcular">
+                <button id="assign-cost" class="btn btn-assign">Asignar a Costo</button>
+                <button id="close-cost-modal" class="btn btn-cancel">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
