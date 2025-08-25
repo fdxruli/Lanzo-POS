@@ -1444,28 +1444,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // Manejar envío del formulario de licencia
     licenseForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-
         const licenseKey = licenseKeyInput.value.trim();
-
         if (!licenseKey) {
             showLicenseMessage('Por favor ingrese una clave de licencia válida', 'error');
             return;
         }
 
-        // Simular validación con Supabase
         try {
-            const licenseData = await validateLicenseWithSupabase(licenseKey);
+            // La función `validateLicenseWithSupabase` ahora está definida globalmente en supabase-auth.js
+            const validationResult = await validateLicenseWithSupabase(licenseKey);
 
-            if (licenseData.valid) {
-                // Guardar licencia en localStorage
-                localStorage.setItem('lanzo_license', JSON.stringify(licenseData));
-                // Ocultar modal
+            if (validationResult.valid) {
+                // Añadimos la clave de licencia al objeto que guardaremos, para poder mostrarla después.
+                const licenseDataToStore = { ...validationResult, key: licenseKey };
+                
+                localStorage.setItem('lanzo_license', JSON.stringify(licenseDataToStore));
                 welcomeModal.style.display = 'none';
-                // Mostrar información de la licencia
-                renderLicenseInfo(licenseData);
+                renderLicenseInfo(licenseDataToStore); // Pasamos el objeto completo a la función de renderizado
                 showLicenseMessage('Licencia validada correctamente. ¡Bienvenido!', 'success');
             } else {
-                showLicenseMessage('Licencia no válida o expirada. Por favor verifique.', 'error');
+                // Usamos el mensaje de error que viene desde nuestra función de validación.
+                showLicenseMessage(validationResult.message || 'Licencia no válida o expirada.', 'error');
             }
         } catch (error) {
             console.error('Error validating license:', error);
