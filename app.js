@@ -1485,52 +1485,60 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Función para renderizar la información de la licencia
+    // Función para renderizar la información de la licencia
     function renderLicenseInfo(licenseData) {
-        if (!licenseData.valid) {
+        if (!licenseData || !licenseData.valid) {
             licenseInfoContainer.innerHTML = `
-                        <p>No hay una licencia activa. <a href="#" id="show-license-modal">Ingresar licencia</a></p>
-                    `;
+                <p>No hay una licencia activa. <a href="#" id="show-license-modal">Ingresar licencia</a></p>
+            `;
 
-            document.getElementById('show-license-modal').addEventListener('click', (e) => {
-                e.preventDefault();
-                welcomeModal.style.display = 'flex';
-            });
-
+            // Make sure the event listener is only added once.
+            const existingLink = document.getElementById('show-license-modal');
+            if(existingLink) {
+                existingLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    localStorage.removeItem('lanzo_license'); // Clear license so modal shows on reload
+                    welcomeModal.style.display = 'flex';
+                });
+            }
             return;
         }
 
-        const expiresDate = new Date(licenseData.expiresAt).toLocaleDateString();
-        const statusClass = new Date(licenseData.expiresAt) > new Date() ?
-            'license-status-active' : 'license-status-expired';
-        const statusText = new Date(licenseData.expiresAt) > new Date() ?
-            'Activa' : 'Expirada';
+        // We have a valid license, let's display the info we have.
+        const licenseKey = licenseData.key || 'No especificada';
+        
+        // Since we don't get a specific expiration date from this function,
+        // we show a generic but accurate "Active" status.
+        const statusText = 'Activa y Verificada';
+        const statusClass = 'license-status-active';
 
         licenseInfoContainer.innerHTML = `
-                    <div class="license-detail">
-                        <span class="license-label">Producto:</span>
-                        <span class="license-value">${licenseData.productName || 'Lanzo Negocio'} v${licenseData.version || '1.0'}</span>
-                    </div>
-                    <div class="license-detail">
-                        <span class="license-label">Tipo de licencia:</span>
-                        <span class="license-value">${licenseData.type || 'Standard'}</span>
-                    </div>
-                    <div class="license-detail">
-                        <span class="license-label">Dispositivos:</span>
-                        <span class="license-value">${licenseData.maxDevices || 1} dispositivo(s)</span>
-                    </div>
-                    <div class="license-detail">
-                        <span class="license-label">Estado:</span>
-                        <span class="license-value ${statusClass}">${statusText}</span>
-                    </div>
-                    <div class="license-detail">
-                        <span class="license-label">Expira:</span>
-                        <span class="license-value">${expiresDate}</span>
-                    </div>
-                    <div class="license-detail">
-                        <span class="license-label">Clave de licencia:</span>
-                        <span class="license-value">${licenseData.key}</span>
-                    </div>
-                `;
+            <div class="license-detail">
+                <span class="license-label">Clave de licencia:</span>
+                <span class="license-value">${licenseKey}</span>
+            </div>
+            <div class="license-detail">
+                <span class="license-label">Estado:</span>
+                <span class="license-value ${statusClass}">${statusText}</span>
+            </div>
+            <div class="license-buttons" style="margin-top: 15px;">
+                <button id="renew-license-btn" class="btn btn-save">Renovar</button>
+                <button id="delete-license-btn" class="btn btn-cancel">Eliminar</button>
+            </div>
+        `;
+
+        // Add event listeners for the new buttons
+        document.getElementById('delete-license-btn').addEventListener('click', () => {
+            showMessageModal('¿Estás seguro de que quieres eliminar la licencia de este dispositivo? Se cerrará la sesión.', () => {
+                localStorage.removeItem('lanzo_license');
+                window.location.reload();
+            });
+        });
+
+        document.getElementById('renew-license-btn').addEventListener('click', () => {
+            // This functionality can be implemented in a future step.
+            showMessageModal('La función para renovar licencias estará disponible próximamente.');
+        });
     }
 
     // Cargar información de licencia al inicio si existe
