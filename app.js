@@ -1429,12 +1429,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (savedLicense) {
         try {
             savedLicense = JSON.parse(savedLicense);
-            // Ocultar modal si la licencia es válida
-            welcomeModal.style.display = 'none';
-            // Cargar información de la licencia
-            renderLicenseInfo(savedLicense);
+            // Ocultar modal si la licencia es válida.
+            // La validez aquí se basa en lo que se guardó la última vez.
+            // La UI mostrará los datos guardados. Una verificación real podría hacerse aquí si se deseara.
+            if (savedLicense.valid) {
+                 welcomeModal.style.display = 'none';
+                 renderLicenseInfo(savedLicense);
+            } else {
+                 welcomeModal.style.display = 'flex';
+            }
         } catch (e) {
             console.error('Error parsing saved license:', e);
+            localStorage.removeItem('lanzo_license'); // Clear corrupted data
             welcomeModal.style.display = 'flex';
         }
     } else {
