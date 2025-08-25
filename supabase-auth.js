@@ -8,30 +8,28 @@ const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
 // --- LICENSE VALIDATION FUNCTION ---
 // We attach it to the window object to make it globally available to app.js
-window.validateLicenseWithSupabase = async function (licenseKey) {
+window.validateLicenseWithSupabase = async function(licenseKey) {
     try {
         // Intento 1: Llamar a una función RPC 'validate_license'
         console.log("Intentando validación de licencia con RPC 'validate_license'...");
         const { data: rpcData, error: rpcError } = await supabaseClient
             .rpc('validate_license', {
-                p_license_key: licenseKey
+                license_key: licenseKey // Reverted to use 'license_key' as hinted by the server
             });
 
-        if (rpcError) {
-            if (rpcError.code === '42P01') {
-                console.warn("Función RPC 'validate_license' no encontrada. Intentando consulta directa a la tabla 'licenses'.");
-            } else {
-                throw rpcError;
-            }
-        } else {
-            console.log('Respuesta de RPC recibida:', rpcData);
-            if (typeof rpcData === 'object' && rpcData !== null && 'valid' in rpcData) {
-                return rpcData;
-            }
-            return { valid: false, message: 'Respuesta de validación inesperada desde la función remota.' };
+        // If the RPC call is successful and returns a valid-looking object, we use its result.
+        if (!rpcError && typeof rpcData === 'object' && rpcData !== null && 'valid' in rpcData) {
+            console.log('Respuesta de RPC recibida y procesada:', rpcData);
+            return rpcData;
         }
 
-        // Intento 2: Consulta directa a la tabla (fallback si la RPC no existe)
+        // If the RPC call failed for any reason (e.g., ambiguity error, not found) or returned
+        // unexpected data, we log the issue and proceed to the more reliable fallback method.
+        if (rpcError) {
+            console.warn(`La llamada RPC falló (error: ${rpcError.message}). Se intentará el método de consulta directa como fallback.`);
+        }
+
+        // Intento 2: Consulta directa a la tabla (fallback)
         console.log("Intentando consulta directa a la tabla 'licenses'...");
         const { data, error } = await supabaseClient
             .from('licenses')
@@ -39,14 +37,16 @@ window.validateLicenseWithSupabase = async function (licenseKey) {
             .eq('license_key', licenseKey)
             .single();
 
+        // If the direct query returns an error (and it's not the "0 rows found" error), throw it.
         if (error && error.code !== 'PGRST116') {
             throw error;
         }
 
+        // If the direct query found no data, the license is not valid.
         if (!data) {
             return { valid: false, message: 'Licencia no encontrada.' };
         }
-
+        
         const license = data;
         const now = new Date();
         const expiresAt = new Date(license.expires_at);
@@ -70,14 +70,14 @@ window.validateLicenseWithSupabase = async function (licenseKey) {
         }
 
     } catch (error) {
-        console.error('Error al validar la licencia con Supabase:', error);
+        console.error('Error final al validar la licencia con Supabase:', error);
         let userMessage = 'Error al conectar con el servidor de licencias. Intente nuevamente.';
         if (error.message.includes('fetch') || error.message.includes('network')) {
             userMessage = 'No se pudo conectar al servidor. Verifique su conexión a internet.';
         } else if (error.message.includes('JWT')) {
             userMessage = 'La clave de API no es válida. Contacte al soporte.';
         } else if (error.code === 'PGRST000' || error.code === '42P01') {
-            userMessage = 'Error de configuración del servidor. No se puede acceder a los datos de licencia.';
+             userMessage = 'Error de configuración del servidor. No se puede acceder a los datos de licencia.';
         }
         return { valid: false, message: userMessage };
     }

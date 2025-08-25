@@ -7,6 +7,8 @@
     <title>Lanzo</title>
     <link rel="icon" type="image/png" href="icono/icono-web.png">
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-auth.js" defer></script>
     <script type="module" src="/app.js" defer></script>
 </head>
 
@@ -179,6 +181,8 @@
                     </div>
                     <button type="submit" class="btn btn-save">Guardar</button>
                 </form>
+                <h3 class="subtitle">Licencia</h3>
+                <div id="license-info-container" class="license-info"></div>
                 <h3 class="subtitle">Configuración de Tema</h3>
                 <form id="theme-form" class="company-form">
                     <div class="form-group">
