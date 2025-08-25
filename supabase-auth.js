@@ -8,13 +8,13 @@ const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
 // --- LICENSE VALIDATION FUNCTION ---
 // We attach it to the window object to make it globally available to app.js
-window.validateLicenseWithSupabase = async function(licenseKey) {
+window.validateLicenseWithSupabase = async function (licenseKey) {
     try {
         // Intento 1: Llamar a una función RPC 'validate_license'
         console.log("Intentando validación de licencia con RPC 'validate_license'...");
         const { data: rpcData, error: rpcError } = await supabaseClient
             .rpc('validate_license', {
-                license_key: licenseKey
+                p_license_key: licenseKey
             });
 
         if (rpcError) {
@@ -24,11 +24,11 @@ window.validateLicenseWithSupabase = async function(licenseKey) {
                 throw rpcError;
             }
         } else {
-             console.log('Respuesta de RPC recibida:', rpcData);
-             if (typeof rpcData === 'object' && rpcData !== null && 'valid' in rpcData) {
+            console.log('Respuesta de RPC recibida:', rpcData);
+            if (typeof rpcData === 'object' && rpcData !== null && 'valid' in rpcData) {
                 return rpcData;
-             }
-             return { valid: false, message: 'Respuesta de validación inesperada desde la función remota.' };
+            }
+            return { valid: false, message: 'Respuesta de validación inesperada desde la función remota.' };
         }
 
         // Intento 2: Consulta directa a la tabla (fallback si la RPC no existe)
@@ -77,7 +77,7 @@ window.validateLicenseWithSupabase = async function(licenseKey) {
         } else if (error.message.includes('JWT')) {
             userMessage = 'La clave de API no es válida. Contacte al soporte.';
         } else if (error.code === 'PGRST000' || error.code === '42P01') {
-             userMessage = 'Error de configuración del servidor. No se puede acceder a los datos de licencia.';
+            userMessage = 'Error de configuración del servidor. No se puede acceder a los datos de licencia.';
         }
         return { valid: false, message: userMessage };
     }
