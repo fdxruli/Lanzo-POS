@@ -1451,28 +1451,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- LICENSE HANDLING AT STARTUP ---
     const initializeLicense = async () => {
-        let savedLicense = localStorage.getItem('lanzo_license');
-        if (savedLicense) {
-            console.log('Found saved license. Revalidating with server...');
-            const validationResult = await window.revalidateLicense();
-
-            if (validationResult && validationResult.valid) {
-                console.log('Revalidation successful.');
-                localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
-                renderLicenseInfo(validationResult);
+        let savedLicenseJSON = localStorage.getItem('lanzo_license');
+        if (savedLicenseJSON) {
+            try {
+                const savedLicense = JSON.parse(savedLicenseJSON);
+                // Optimistically unlock the app with the stored license
+                console.log('Found saved license. Unlocking UI and revalidating in background...');
+                renderLicenseInfo(savedLicense);
                 isAppUnlocked = true;
                 welcomeModal.style.display = 'none';
-                // Start the main app UI
-                renderCompanyData();
+                await renderCompanyData(); // Make sure company data is loaded before showing section
                 showSection('pos');
-            } else {
-                console.log('Revalidation failed. Clearing local license.');
+
+                // Now, revalidate the license in the background
+                const validationResult = await window.revalidateLicense();
+
+                if (validationResult && validationResult.valid) {
+                    console.log('Background revalidation successful.');
+                    // Update the stored license data in case it has changed (e.g., expiration)
+                    localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
+                    renderLicenseInfo(validationResult); // Re-render with fresh data
+                } else {
+                    console.log('Background revalidation failed. Locking app.');
+                    isAppUnlocked = false;
+                    localStorage.removeItem('lanzo_license');
+                    renderLicenseInfo({ valid: false });
+                    welcomeModal.style.display = 'flex';
+                    showLicenseMessage(validationResult.message || 'Tu sesión de licencia no es válida. Por favor, ingrésala de nuevo.', 'error');
+                }
+            } catch (e) {
+                console.error("Could not parse saved license. Clearing it.", e);
                 localStorage.removeItem('lanzo_license');
                 renderLicenseInfo({ valid: false });
                 welcomeModal.style.display = 'flex';
-                if (validationResult.message) {
-                    showLicenseMessage(validationResult.message, 'error');
-                }
             }
         } else {
             console.log('No saved license found.');

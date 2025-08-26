@@ -10,7 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script>
-    <script src="supabase-auth.js" defer></script>
+    <script src="supabase-auth.js"></script>
     <script type="module" src="app.js" defer></script>
 </head>
 
@@ -52,6 +52,9 @@
             <div class="pos-grid">
                 <div class="pos-menu-container">
                     <h3 class="subtitle">Menú</h3>
+                    <div id="category-filters" class="category-filters">
+                        <!-- Las categorías se agregarán aquí dinámicamente -->
+                    </div>
                     <div id="menu-items" class="menu-items-grid"></div>
                 </div>
                 <div class="pos-order-container">
@@ -92,6 +95,18 @@
                             <label class="form-label" for="product-cost">Costo ($)</label>
                             <input class="form-input" id="product-cost" type="number" step="0.01" min="0" required>
                             <button type="button" id="cost-help-button" class="btn btn-help">Calcular Costo</button>
+                            <button type="button" id="category-modal-button" class="btn btn-help">Administrar Categorías</button>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="product-category">Categoría</label>
+                            <select class="form-input" id="product-category">
+                                <option value="">Sin categoría</option>
+                                <!-- Las categorías se llenarán dinámicamente -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="product-stock">Inventario (Stock)</label>
+                            <input class="form-input" id="product-stock" type="number" step="1" min="0" value="0" required>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="product-image-file">Imagen</label>
@@ -132,6 +147,10 @@
                         <div class="stat-card">
                             <h3 class="stat-title">Utilidad Neta</h3>
                             <p id="dashboard-net-profit" class="stat-value profit">$0.00</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 class="stat-title">Valor del Inventario</h3>
+                            <p id="dashboard-inventory-value" class="stat-value inventory">$0.00</p>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -321,7 +340,7 @@
             <form id="license-form">
                 <div class="form-group">
                     <label class="form-label" for="license-key">Ingrese su clave de licencia para acceder a todas las
-                        funcionalidades:</label>
+                        funciones:</label>
                     <input class="form-input" id="license-key" type="text" required
                         placeholder="Ej: LANZO-XXXX-XXXX-XXXX">
                 </div>
@@ -363,6 +382,27 @@
                 <button id="assign-cost" class="btn btn-assign">Asignar a Costo</button>
                 <button id="close-cost-modal" class="btn btn-cancel">Cerrar</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal para gestión de categorías -->
+    <div id="category-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 class="modal-title">Gestionar Categorías</h2>
+            <div id="category-form-container">
+                <input type="hidden" id="category-id">
+                <div class="form-group">
+                    <label for="category-name" class="form-label">Nombre de la Categoría</label>
+                    <input type="text" id="category-name" class="form-input" placeholder="Ej: Bebidas">
+                </div>
+                <button type="button" id="save-category-btn" class="btn btn-save">Guardar Categoría</button>
+                <button type="button" id="cancel-category-edit-btn" class="btn btn-cancel hidden">Cancelar Edición</button>
+            </div>
+            <h3 class="subtitle">Categorías Existentes</h3>
+            <div class="category-list" id="category-list">
+                <!-- Las categorías se mostrarán aquí -->
+            </div>
+            <button id="close-category-modal-btn" class="btn btn-cancel" style="margin-top: 1rem;">Cerrar</button>
         </div>
     </div>
 </body>
