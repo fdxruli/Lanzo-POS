@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel de Administración de Licencias</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
     <style>
         /* Variables de colores y estilos */
         :root {
@@ -769,6 +770,30 @@
             }
         });
         
+        // Estado local del dispositivo/licencia actual
+        let currentLicenseKey = null;
+        let currentDeviceFingerprint = null;
+
+        function loadLocalLicense() {
+            try {
+                const saved = localStorage.getItem('lanzo_license');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    currentLicenseKey = parsed && parsed.key ? parsed.key : null;
+                }
+            } catch (_) { /* noop */ }
+        }
+
+        async function initDeviceFingerprint() {
+            try {
+                if (window.FingerprintJS) {
+                    const fp = await FingerprintJS.load();
+                    const result = await fp.get();
+                    currentDeviceFingerprint = result.visitorId;
+                }
+            } catch (_) { /* noop */ }
+        }
+
         // Cargar licencias
         async function loadLicenses() {
             if (!supabase) {
@@ -783,8 +808,10 @@
                     .order('created_at', { ascending: false });
                 
                 if (error) throw error;
+                // Cargar uso de dispositivos para estas licencias en una sola consulta
+                const usageMap = await fetchUsageForLicenses(data.map(l => l.id));
                 
-                displayLicenses(data);
+                displayLicenses(data, usageMap);
                 updateStats(data);
                 
             } catch (error) {
@@ -792,7 +819,30 @@
             }
         }
         
-        function displayLicenses(licenses) {
+        async function fetchUsageForLicenses(licenseIds) {
+            const usageByLicense = {};
+            if (!licenseIds || licenseIds.length === 0) return usageByLicense;
+            try {
+                const { data, error } = await supabase
+                    .from('license_devices')
+                    .select('license_id, is_active, device_fingerprint')
+                    .in('license_id', licenseIds);
+                if (error) throw error;
+                for (const row of data) {
+                    if (!usageByLicense[row.license_id]) {
+                        usageByLicense[row.license_id] = { total: 0, active: 0, fingerprints: new Set() };
+                    }
+                    usageByLicense[row.license_id].total += 1;
+                    if (row.is_active) usageByLicense[row.license_id].active += 1;
+                    if (row.device_fingerprint) usageByLicense[row.license_id].fingerprints.add(row.device_fingerprint);
+                }
+            } catch (_) {
+                // Silently ignore usage errors to not block rendering
+            }
+            return usageByLicense;
+        }
+
+        function displayLicenses(licenses, usageMap = {}) {
             const container = document.getElementById('licenses-container');
             
             if (licenses.length === 0) {
@@ -804,12 +854,17 @@
                 const isExpired = license.expires_at && new Date(license.expires_at) < new Date();
                 const statusClass = isExpired ? 'status-expired' : 'status-active';
                 const statusText = isExpired ? 'Expirada' : 'Activa';
+                const usage = usageMap[license.id] || { active: 0, total: 0, fingerprints: new Set() };
+                const inThisDevice = (currentLicenseKey && currentLicenseKey === license.license_key) || (currentDeviceFingerprint && usage.fingerprints && usage.fingerprints.has(currentDeviceFingerprint));
                 
                 return `
                     <div class="license-card fade-in">
                         <div class="license-header">
                             <div class="license-key">${license.license_key}</div>
-                            <div class="status-badge ${statusClass}">${statusText}</div>
+                            <div>
+                                ${inThisDevice ? '<span class="status-badge status-active" style="margin-right:8px;">En este dispositivo</span>' : ''}
+                                <span class="status-badge ${statusClass}">${statusText}</span>
+                            </div>
                         </div>
                         
                         <div class="license-details">
@@ -818,8 +873,8 @@
                                 <div class="detail-label">Tipo</div>
                             </div>
                             <div class="detail-item">
-                                <div class="detail-value">${license.max_devices}</div>
-                                <div class="detail-label">Dispositivos</div>
+                                <div class="detail-value">${usage.active}/${license.max_devices}</div>
+                                <div class="detail-label">En uso</div>
                             </div>
                             <div class="detail-item">
                                 <div class="detail-value">$${license.price || '0'}</div>
@@ -904,8 +959,9 @@
                 
                 let deviceInfo = `Dispositivos registrados:\n\n`;
                 data.forEach((device, index) => {
+                    const here = currentDeviceFingerprint && device.device_fingerprint && device.device_fingerprint === currentDeviceFingerprint ? ' (este dispositivo)' : '';
                     deviceInfo += `${index + 1}. ${device.device_name || 'Sin nombre'}\n`;
-                    deviceInfo += `   Estado: ${device.is_active ? 'Activo' : 'Inactivo'}\n`;
+                    deviceInfo += `   Estado: ${device.is_active ? 'Activo' : 'Inactivo'}${here}\n`;
                     deviceInfo += `   Activado: ${new Date(device.activated_at).toLocaleDateString()}\n`;
                     deviceInfo += `   Último uso: ${new Date(device.last_used_at).toLocaleDateString()}\n\n`;
                 });
@@ -932,6 +988,12 @@
                 container.innerHTML = '';
             }, 5000);
         }
+
+        // Inicialización de contexto de dispositivo/licencia
+        document.addEventListener('DOMContentLoaded', async function() {
+            loadLocalLicense();
+            await initDeviceFingerprint();
+        });
     </script>
 </body>
 </html>
