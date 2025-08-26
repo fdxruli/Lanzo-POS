@@ -4,13 +4,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let order = [];
     let db = null;
     const DB_NAME = 'LanzoDB1';
-    const DB_VERSION = 4; // Incrementado para agregar almacenamiento de ingredientes
+    const DB_VERSION = 5; // Incrementado para agregar almacenamiento de categorías
     const STORES = {
         MENU: 'menu',
         SALES: 'sales',
         COMPANY: 'company',
         THEME: 'theme',
-        INGREDIENTS: 'ingredients' // Nuevo almacén para ingredientes
+        INGREDIENTS: 'ingredients',
+        CATEGORIES: 'categories' // Nuevo almacén para categorías
     };
     const initialMenu = [
         {
@@ -86,6 +87,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!db.objectStoreNames.contains(STORES.INGREDIENTS)) {
                     db.createObjectStore(STORES.INGREDIENTS, { keyPath: 'productId' });
                     console.log('Created ingredients store');
+                }
+                // Crear almacén para categorías si no existe
+                if (!db.objectStoreNames.contains(STORES.CATEGORIES)) {
+                    const categoryStore = db.createObjectStore(STORES.CATEGORIES, { keyPath: 'id' });
+                    categoryStore.createIndex('name', 'name', { unique: true });
+                    console.log('Created categories store');
                 }
             };
         });
@@ -216,6 +223,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Elementos para la calculadora de costos
     const costHelpButton = document.getElementById('cost-help-button');
     const costCalculationModal = document.getElementById('cost-calculation-modal');
+    const categoryModalButton = document.getElementById('category-modal-button');
+    const categoryModal = document.getElementById('category-modal');
+    const categoryFormContainer = document.getElementById('category-form-container');
+    const categoryIdInput = document.getElementById('category-id');
+    const categoryNameInput = document.getElementById('category-name');
+    const saveCategoryBtn = document.getElementById('save-category-btn');
+    const cancelCategoryEditBtn = document.getElementById('cancel-category-edit-btn');
+    const categoryListContainer = document.getElementById('category-list');
+    const closeCategoryModalBtn = document.getElementById('close-category-modal-btn');
+    const productCategorySelect = document.getElementById('product-category');
+    const categoryFiltersContainer = document.getElementById('category-filters');
     const ingredientNameInput = document.getElementById('ingredient-name');
     const ingredientCostInput = document.getElementById('ingredient-cost');
     const ingredientQuantityInput = document.getElementById('ingredient-quantity');
@@ -339,6 +357,146 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // --- GESTIÓN DE CATEGORÍAS ---
+    const renderCategories = async () => {
+        try {
+            const categories = await loadData(STORES.CATEGORIES);
+
+            // 1. Renderizar lista en el modal de gestión
+            categoryListContainer.innerHTML = '';
+            if (categories.length === 0) {
+                categoryListContainer.innerHTML = '<p>No hay categorías creadas.</p>';
+            } else {
+                categories.forEach(cat => {
+                    const div = document.createElement('div');
+                    div.className = 'category-item-managed';
+                    div.innerHTML = `
+                        <span>${cat.name}</span>
+                        <div class="category-item-controls">
+                            <button class="edit-category-btn" data-id="${cat.id}">✏️</button>
+                            <button class="delete-category-btn" data-id="${cat.id}">🗑️</button>
+                        </div>
+                    `;
+                    categoryListContainer.appendChild(div);
+                });
+            }
+
+            // 2. Poblar el select del formulario de productos
+            productCategorySelect.innerHTML = '<option value="">Sin categoría</option>';
+            categories.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.name;
+                productCategorySelect.appendChild(option);
+            });
+
+            // 3. Renderizar filtros en el TPV
+            categoryFiltersContainer.innerHTML = '';
+            const allButton = document.createElement('button');
+            allButton.className = 'category-filter-btn active';
+            allButton.textContent = 'Todos';
+            allButton.addEventListener('click', () => {
+                renderMenu(); // Sin filtro
+                document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
+                allButton.classList.add('active');
+            });
+            categoryFiltersContainer.appendChild(allButton);
+
+            categories.forEach(cat => {
+                const button = document.createElement('button');
+                button.className = 'category-filter-btn';
+                button.textContent = cat.name;
+                button.dataset.id = cat.id;
+                button.addEventListener('click', () => {
+                    renderMenu(cat.id); // Filtrar por esta categoría
+                    document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                });
+                categoryFiltersContainer.appendChild(button);
+            });
+
+        } catch (error) {
+            console.error('Error rendering categories:', error);
+            showMessageModal('Error al cargar las categorías.');
+        }
+    };
+
+    const saveCategory = async () => {
+        const id = categoryIdInput.value;
+        const name = categoryNameInput.value.trim();
+
+        if (!name) {
+            showMessageModal('El nombre de la categoría no puede estar vacío.');
+            return;
+        }
+
+        try {
+            const categoryData = {
+                id: id || `cat-${Date.now()}`,
+                name
+            };
+            await saveData(STORES.CATEGORIES, categoryData);
+            showMessageModal(`Categoría "${name}" guardada.`);
+            resetCategoryForm();
+            await renderCategories();
+        } catch (error) {
+            console.error('Error saving category:', error);
+            if (error.name === 'ConstraintError') {
+                showMessageModal('Ya existe una categoría con ese nombre.');
+            } else {
+                showMessageModal('Error al guardar la categoría.');
+            }
+        }
+    };
+
+    const editCategory = async (id) => {
+        try {
+            const category = await loadData(STORES.CATEGORIES, id);
+            if (category) {
+                categoryIdInput.value = category.id;
+                categoryNameInput.value = category.name;
+                saveCategoryBtn.textContent = 'Actualizar Categoría';
+                cancelCategoryEditBtn.classList.remove('hidden');
+            }
+        } catch (error) {
+            console.error('Error loading category for editing:', error);
+        }
+    };
+
+    const deleteCategory = async (id) => {
+        try {
+            const category = await loadData(STORES.CATEGORIES, id);
+            if (!category) return;
+
+            showMessageModal(`¿Seguro que quieres eliminar la categoría "${category.name}"? Los productos en esta categoría quedarán sin categoría.`, async () => {
+                await deleteData(STORES.CATEGORIES, id);
+
+                // Des-asignar esta categoría de todos los productos
+                const products = await loadData(STORES.MENU);
+                const productsToUpdate = products.filter(p => p.categoryId === id);
+                for (const product of productsToUpdate) {
+                    product.categoryId = '';
+                    await saveData(STORES.MENU, product);
+                }
+
+                showMessageModal('Categoría eliminada.');
+                await renderCategories();
+                await renderProductManagement();
+            });
+        } catch (error) {
+            console.error('Error deleting category:', error);
+            showMessageModal('Error al eliminar la categoría.');
+        }
+    };
+
+    const resetCategoryForm = () => {
+        categoryIdInput.value = '';
+        categoryNameInput.value = '';
+        saveCategoryBtn.textContent = 'Guardar Categoría';
+        cancelCategoryEditBtn.classList.add('hidden');
+    };
+
+
     // --- NAVEGACIÓN Y VISIBILIDAD ---
     const showSection = (sectionId) => {
         Object.values(sections).forEach(section => section.classList.remove('active'));
@@ -446,12 +604,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const renderMenu = async () => {
+    const renderMenu = async (filterCategoryId = null) => {
         try {
-            const menu = await loadData(STORES.MENU);
+            let menu = await loadData(STORES.MENU);
+
+            if (filterCategoryId) {
+                menu = menu.filter(item => item.categoryId === filterCategoryId);
+            }
+
             menuItemsContainer.innerHTML = '';
             if (menu.length === 0) {
-                menuItemsContainer.innerHTML = `<p class="empty-message">No hay productos.</p>`;
+                menuItemsContainer.innerHTML = `<p class="empty-message">No hay productos en esta categoría.</p>`;
                 return;
             }
             menu.forEach(item => {
@@ -1144,27 +1307,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderProductManagement = async () => {
         try {
-            const menu = await loadData(STORES.MENU);
+            const [menu, categories] = await Promise.all([
+                loadData(STORES.MENU),
+                loadData(STORES.CATEGORIES)
+            ]);
+
+            const categoryMap = new Map(categories.map(cat => [cat.id, cat.name]));
+
             productListContainer.innerHTML = '';
             emptyProductMessage.classList.toggle('hidden', menu.length > 0);
+
             menu.forEach(item => {
+                const categoryName = item.categoryId ? categoryMap.get(item.categoryId) || 'Categoría eliminada' : 'Sin categoría';
                 const div = document.createElement('div');
                 div.className = 'product-item';
                 div.innerHTML = `
-                            <div class="product-item-info">
-                                <img src="${item.image || defaultPlaceholder}" alt="${item.name}">
-                                <div class="product-item-details">
-                                    <span>${item.name}</span>
-                                    <p>Precio: $${item.price.toFixed(2)}</p>
-                                    <p>Costo: $${item.cost.toFixed(2)}</p>
-                                </div>
-                            </div>
-                            <div class="product-item-controls">
-                                <button class="edit-product-btn" data-id="${item.id}">✏️</button>
-                                <button class="delete-product-btn" data-id="${item.id}">🗑️</button>
-                            </div>`;
+                    <div class="product-item-info">
+                        <img src="${item.image || defaultPlaceholder}" alt="${item.name}">
+                        <div class="product-item-details">
+                            <span>${item.name}</span>
+                            <p><strong>Categoría:</strong> ${categoryName}</p>
+                            <p><strong>Precio:</strong> $${item.price.toFixed(2)}</p>
+                            <p><strong>Costo:</strong> $${item.cost.toFixed(2)}</p>
+                        </div>
+                    </div>
+                    <div class="product-item-controls">
+                        <button class="edit-product-btn" data-id="${item.id}">✏️</button>
+                        <button class="delete-product-btn" data-id="${item.id}">🗑️</button>
+                    </div>`;
                 productListContainer.appendChild(div);
             });
+
             productListContainer.querySelectorAll('.edit-product-btn').forEach(btn => btn.addEventListener('click', e => editProductForm(e.currentTarget.dataset.id)));
             productListContainer.querySelectorAll('.delete-product-btn').forEach(btn => btn.addEventListener('click', e => deleteProduct(e.currentTarget.dataset.id)));
         } catch (error) {
@@ -1182,6 +1355,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 productDescriptionInput.value = item.description || '';
                 productPriceInput.value = item.price;
                 productCostInput.value = item.cost || 0;
+                productCategorySelect.value = item.categoryId || '';
                 imagePreview.src = item.image || defaultPlaceholder;
                 productFormTitle.textContent = `Editar: ${item.name}`;
                 cancelEditBtn.classList.remove('hidden');
@@ -1212,6 +1386,7 @@ document.addEventListener('DOMContentLoaded', () => {
         imagePreview.src = defaultPlaceholder;
         productImageFileInput.value = null;
         productCostInput.value = '';
+        productCategorySelect.value = '';
 
         // Limpiar ingredientes al resetear
         currentIngredients = [];
@@ -1240,7 +1415,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 price,
                 cost,
                 description: productDescriptionInput.value.trim(),
-                image: imagePreview.src
+                image: imagePreview.src,
+                categoryId: productCategorySelect.value
             };
 
             // NUEVO: Setea editingProductId con el ID final (nuevo o existente) antes de guardar ingredientes
@@ -1443,6 +1619,31 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     contactForm.addEventListener('submit', submitContactForm);
 
+    // --- EVENT LISTENERS PARA CATEGORÍAS ---
+    categoryModalButton.addEventListener('click', () => {
+        resetCategoryForm();
+        categoryModal.classList.remove('hidden');
+    });
+
+    closeCategoryModalBtn.addEventListener('click', () => {
+        categoryModal.classList.add('hidden');
+    });
+
+    saveCategoryBtn.addEventListener('click', saveCategory);
+
+    cancelCategoryEditBtn.addEventListener('click', resetCategoryForm);
+
+    categoryListContainer.addEventListener('click', (e) => {
+        if (e.target.classList.contains('edit-category-btn')) {
+            const id = e.target.dataset.id;
+            editCategory(id);
+        }
+        if (e.target.classList.contains('delete-category-btn')) {
+            const id = e.target.dataset.id;
+            deleteCategory(id);
+        }
+    });
+
     const welcomeModal = document.getElementById('welcome-modal');
     const licenseForm = document.getElementById('license-form');
     const licenseKeyInput = document.getElementById('license-key');
@@ -1578,6 +1779,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await initDB();
             await initializeDefaultData();
+            await renderCategories(); // Cargar categorías al inicio
             // Event listeners for navigation and main actions
             document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
             document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
