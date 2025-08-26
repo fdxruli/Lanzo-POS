@@ -1,9 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
+    let isAppUnlocked = false;
     let order = [];
     let db = null;
     const DB_NAME = 'LanzoDB1';
-    const DB_VERSION = 3; // Incrementado para agregar almacenamiento de ingredientes
+    const DB_VERSION = 4; // Incrementado para agregar almacenamiento de ingredientes
     const STORES = {
         MENU: 'menu',
         SALES: 'sales',
@@ -92,6 +93,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- FUNCIONES DE ALMACENAMIENTO CON INDEXEDDB ---
     const saveData = (storeName, data) => {
+        if (!isAppUnlocked) {
+            showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
+            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
+            return;  // Bloquea la acción
+        }
         return new Promise((resolve, reject) => {
             if (!db.objectStoreNames.contains(storeName)) {
                 reject(new Error(`Store ${storeName} does not exist`));
@@ -137,6 +143,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const deleteData = (storeName, key) => {
+        if (!isAppUnlocked) {
+            showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
+            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
+            return;  // Bloquea la acción
+        }
         return new Promise((resolve, reject) => {
             if (!db.objectStoreNames.contains(storeName)) {
                 reject(new Error(`Store ${storeName} does not exist`));
@@ -523,6 +534,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const processOrder = async () => {
+        if (!isAppUnlocked) {
+            showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
+            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
+            return;  // Bloquea la acción
+        }
         try {
             const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const sale = {
@@ -1103,6 +1119,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const saveCompanyData = async (e) => {
+        if (!isAppUnlocked) {
+            showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
+            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
+            return;  // Bloquea la acción
+        }
         e.preventDefault();
         try {
             const companyData = {
@@ -1198,6 +1219,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const saveProduct = async (e) => {
+        if (!isAppUnlocked) {
+            showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
+            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
+            return;  // Bloquea la acción
+        }
         e.preventDefault();
         try {
             const id = productIdInput.value;
@@ -1423,134 +1449,117 @@ document.addEventListener('DOMContentLoaded', () => {
     const licenseMessage = document.getElementById('license-message');
     const licenseInfoContainer = document.getElementById('license-info-container');
 
-    // Verificar si ya hay una licencia guardada
-    let savedLicense = localStorage.getItem('lanzo_license');
+    // --- LICENSE HANDLING AT STARTUP ---
+    const initializeLicense = async () => {
+        let savedLicense = localStorage.getItem('lanzo_license');
+        if (savedLicense) {
+            console.log('Found saved license. Revalidating with server...');
+            const validationResult = await window.revalidateLicense();
 
-    if (savedLicense) {
-        try {
-            savedLicense = JSON.parse(savedLicense);
-            // Ocultar modal si la licencia es válida
-            welcomeModal.style.display = 'none';
-            // Cargar información de la licencia
-            renderLicenseInfo(savedLicense);
-        } catch (e) {
-            console.error('Error parsing saved license:', e);
+            if (validationResult && validationResult.valid) {
+                console.log('Revalidation successful.');
+                localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
+                renderLicenseInfo(validationResult);
+                isAppUnlocked = true;
+                welcomeModal.style.display = 'none';
+                // Start the main app UI
+                renderCompanyData();
+                showSection('pos');
+            } else {
+                console.log('Revalidation failed. Clearing local license.');
+                localStorage.removeItem('lanzo_license');
+                renderLicenseInfo({ valid: false });
+                welcomeModal.style.display = 'flex';
+                if (validationResult.message) {
+                    showLicenseMessage(validationResult.message, 'error');
+                }
+            }
+        } else {
+            console.log('No saved license found.');
+            renderLicenseInfo({ valid: false });
             welcomeModal.style.display = 'flex';
         }
-    } else {
-        welcomeModal.style.display = 'flex';
-    }
+    };
 
-    // Manejar envío del formulario de licencia
     licenseForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const licenseKey = licenseKeyInput.value.trim();
-        if (!licenseKey) {
-            showLicenseMessage('Por favor ingrese una clave de licencia válida', 'error');
-            return;
-        }
+        if (!licenseKey) return showLicenseMessage('Por favor ingrese una clave de licencia válida', 'error');
 
         try {
-            // La función `validateLicenseWithSupabase` ahora está definida globalmente en supabase-auth.js
-            const validationResult = await validateLicenseWithSupabase(licenseKey);
-
-            if (validationResult.valid) {
-                // Añadimos la clave de licencia al objeto que guardaremos, para poder mostrarla después.
-                const licenseDataToStore = { ...validationResult, key: licenseKey };
-                
+            const activationResult = await activateLicense(licenseKey);
+            if (activationResult.valid) {
+                const licenseDataToStore = activationResult.details;
                 localStorage.setItem('lanzo_license', JSON.stringify(licenseDataToStore));
+                isAppUnlocked = true;
                 welcomeModal.style.display = 'none';
-                renderLicenseInfo(licenseDataToStore); // Pasamos el objeto completo a la función de renderizado
-                showLicenseMessage('Licencia validada correctamente. ¡Bienvenido!', 'success');
+                renderLicenseInfo(licenseDataToStore);
+                // Start the main app UI
+                renderCompanyData();
+                showSection('pos');
             } else {
-                // Usamos el mensaje de error que viene desde nuestra función de validación.
-                showLicenseMessage(validationResult.message || 'Licencia no válida o expirada.', 'error');
+                showLicenseMessage(activationResult.message || 'Licencia no válida o no se pudo activar.', 'error');
             }
         } catch (error) {
-            console.error('Error validating license:', error);
-            showLicenseMessage('Error al conectar con el servidor de licencias. Intente nuevamente.', 'error');
+            showLicenseMessage(`Error al conectar con el servidor: ${error.message}`, 'error');
         }
     });
 
-    // Función para mostrar mensajes de licencia
     function showLicenseMessage(message, type) {
         licenseMessage.textContent = message;
         licenseMessage.style.display = 'block';
         licenseMessage.style.color = type === 'error' ? '#dc3545' : '#198754';
-
-        // Ocultar mensaje después de 5 segundos
-        setTimeout(() => {
-            licenseMessage.style.display = 'none';
-        }, 5000);
+        setTimeout(() => { licenseMessage.style.display = 'none'; }, 5000);
     }
 
-    // Función para renderizar la información de la licencia
-    // Función para renderizar la información de la licencia
     function renderLicenseInfo(licenseData) {
         if (!licenseData || !licenseData.valid) {
-            licenseInfoContainer.innerHTML = `
-                <p>No hay una licencia activa. <a href="#" id="show-license-modal">Ingresar licencia</a></p>
-            `;
-
-            // Make sure the event listener is only added once.
-            const existingLink = document.getElementById('show-license-modal');
-            if(existingLink) {
-                existingLink.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    localStorage.removeItem('lanzo_license'); // Clear license so modal shows on reload
-                    welcomeModal.style.display = 'flex';
-                });
-            }
+            licenseInfoContainer.innerHTML = `<p>No hay una licencia activa. <a href="#" id="show-license-modal">Ingresar licencia</a></p>`;
+            const link = document.getElementById('show-license-modal');
+            if (link) link.addEventListener('click', (e) => {
+                e.preventDefault();
+                localStorage.removeItem('lanzo_license');
+                welcomeModal.style.display = 'flex';
+            });
             return;
         }
 
-        // We have a valid license, let's display the info we have.
-        const licenseKey = licenseData.key || 'No especificada';
-        
-        // Since we don't get a specific expiration date from this function,
-        // we show a generic but accurate "Active" status.
+        const { license_key, product_name, expires_at } = licenseData;
         const statusText = 'Activa y Verificada';
-        const statusClass = 'license-status-active';
 
         licenseInfoContainer.innerHTML = `
-            <div class="license-detail">
-                <span class="license-label">Clave de licencia:</span>
-                <span class="license-value">${licenseKey}</span>
-            </div>
-            <div class="license-detail">
-                <span class="license-label">Estado:</span>
-                <span class="license-value ${statusClass}">${statusText}</span>
-            </div>
+            <div class="license-detail"><span>Clave:</span><span>${license_key || 'N/A'}</span></div>
+            <div class="license-detail"><span>Producto:</span><span>${product_name || 'N/A'}</span></div>
+            <div class="license-detail"><span>Expira:</span><span>${expires_at ? new Date(expires_at).toLocaleDateString() : 'Nunca'}</span></div>
+            <div class="license-detail"><span>Estado:</span><span class="license-status-active">${statusText}</span></div>
             <div class="license-buttons" style="margin-top: 15px;">
-                <button id="renew-license-btn" class="btn btn-save">Renovar</button>
-                <button id="delete-license-btn" class="btn btn-cancel">Eliminar</button>
+                <button id="delete-license-btn" class="btn btn-cancel">Desactivar en este dispositivo</button>
             </div>
         `;
 
-        // Add event listeners for the new buttons
-        document.getElementById('delete-license-btn').addEventListener('click', () => {
-            showMessageModal('¿Estás seguro de que quieres eliminar la licencia de este dispositivo? Se cerrará la sesión.', () => {
-                localStorage.removeItem('lanzo_license');
-                window.location.reload();
+        document.getElementById('delete-license-btn').addEventListener('click', async () => {
+            showMessageModal('¿Seguro que quieres desactivar la licencia en este dispositivo?', async () => {
+                try {
+                    const result = await window.deactivateCurrentDevice(license_key);
+                    if (result.success) {
+                        showMessageModal('Dispositivo desactivado. La aplicación se recargará.', () => {
+                            localStorage.removeItem('lanzo_license');
+                            window.location.reload();
+                        });
+                    } else {
+                        showMessageModal(`Error: ${result.message}. ¿Eliminar licencia localmente?`, () => {
+                            localStorage.removeItem('lanzo_license');
+                            window.location.reload();
+                        });
+                    }
+                } catch (error) {
+                    showMessageModal(`Error: ${error.message}. ¿Eliminar licencia localmente?`, () => {
+                        localStorage.removeItem('lanzo_license');
+                        window.location.reload();
+                    });
+                }
             });
         });
-
-        document.getElementById('renew-license-btn').addEventListener('click', () => {
-            // This functionality can be implemented in a future step.
-            showMessageModal('La función para renovar licencias estará disponible próximamente.');
-        });
-    }
-
-    // Cargar información de licencia al inicio si existe
-    if (savedLicense) {
-        try {
-            const licenseData = JSON.parse(savedLicense);
-            renderLicenseInfo(licenseData);
-        } catch (e) {
-            console.error('Error parsing saved license:', e);
-        }
-    } else {
-        renderLicenseInfo({ valid: false });
     }
 
     // --- INICIALIZACIÓN DE LA APLICACIÓN ---
@@ -1558,12 +1567,89 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await initDB();
             await initializeDefaultData();
-            renderCompanyData();
-            showSection('pos');
+            // Event listeners for navigation and main actions
+            document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
+            document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
+            document.getElementById('nav-product-management').addEventListener('click', () => showSection('product-management'));
+            document.getElementById('nav-dashboard').addEventListener('click', () => showSection('dashboard'));
+            document.getElementById('nav-company').addEventListener('click', () => showSection('company'));
+            document.getElementById('nav-donation').addEventListener('click', () => showSection('donation'));
+            document.getElementById('mobile-menu-button').addEventListener('click', () => document.getElementById('mobile-menu').classList.toggle('hidden'));
+            document.getElementById('mobile-nav-pos').addEventListener('click', () => showSection('pos'));
+            document.getElementById('mobile-nav-product-management').addEventListener('click', () => showSection('product-management'));
+            document.getElementById('mobile-nav-dashboard').addEventListener('click', () => showSection('dashboard'));
+            document.getElementById('mobile-nav-company').addEventListener('click', () => showSection('company'));
+            document.getElementById('mobile-nav-donation').addEventListener('click', () => showSection('donation'));
+            document.getElementById('process-order-btn').addEventListener('click', openPaymentProcess);
+            document.getElementById('clear-order-btn').addEventListener('click', () => {
+                if (order.length > 0) {
+                    showMessageModal('¿Seguro que quieres limpiar el pedido?', () => {
+                        order = [];
+                        updateOrderDisplay();
+                    });
+                }
+            });
+            paymentAmountInput.addEventListener('input', () => {
+                const total = parseFloat(paymentTotal.textContent.replace('$', ''));
+                const amountPaid = parseFloat(paymentAmountInput.value) || 0;
+                const change = amountPaid - total;
+                if (change >= 0) {
+                    paymentChange.textContent = `$${change.toFixed(2)}`;
+                    confirmPaymentBtn.disabled = false;
+                } else {
+                    paymentChange.textContent = '$0.00';
+                    confirmPaymentBtn.disabled = true;
+                }
+            });
+            confirmPaymentBtn.addEventListener('click', processOrder);
+            document.getElementById('cancel-payment-btn').addEventListener('click', () => paymentModal.classList.add('hidden'));
+            companyForm.addEventListener('submit', saveCompanyData);
+            companyLogoFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        companyLogoPreview.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            productForm.addEventListener('submit', saveProduct);
+            cancelEditBtn.addEventListener('click', resetProductForm);
+            productImageFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        imagePreview.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            themeForm.addEventListener('submit', saveThemeSettings);
+            resetThemeBtn.addEventListener('click', resetTheme);
+            costHelpButton.addEventListener('click', openCostCalculator);
+            addIngredientButton.addEventListener('click', addIngredient);
+            assignCostButton.addEventListener('click', assignCostToProduct);
+            closeCostModalButton.addEventListener('click', closeCostCalculator);
+            contactForm.addEventListener('submit', submitContactForm);
+
+            await initializeLicense(); // Handles license logic and decides if main UI should show
         } catch (error) {
             console.error('Error initializing application:', error.message);
-            showMessageModal(`Error al inicializar la aplicación: ${error.message}. Por favor, recarga la página.`);
+            showMessageModal(`Error fatal al inicializar: ${error.message}. Por favor, recarga la página.`);
         }
     };
+
     initApp();
+    setInterval(async () => {
+        if (isAppUnlocked) {
+            const validation = await window.revalidateLicense();
+            if (!validation.valid) {
+                isAppUnlocked = false;
+                welcomeModal.style.display = 'flex';
+                showMessageModal('Licencia expirada o inválida. Por favor, valida nuevamente.');
+            }
+        }
+    }, 1800000);  // Cada 30 minutos
 });
