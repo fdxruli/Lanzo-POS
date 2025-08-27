@@ -1,16 +1,18 @@
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('app.js: DOMContentLoaded event fired.');
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
     let isAppUnlocked = false;
     let order = [];
     let db = null;
     const DB_NAME = 'LanzoDB1';
-    const DB_VERSION = 4; // Incrementado para agregar almacenamiento de ingredientes
+    const DB_VERSION = 5; // Incrementado para agregar almacenamiento de categorías
     const STORES = {
         MENU: 'menu',
         SALES: 'sales',
         COMPANY: 'company',
         THEME: 'theme',
-        INGREDIENTS: 'ingredients' // Nuevo almacén para ingredientes
+        INGREDIENTS: 'ingredients',
+        CATEGORIES: 'categories' // Nuevo almacén para categorías
     };
     const initialMenu = [
         {
@@ -20,7 +22,10 @@ document.addEventListener('DOMContentLoaded', () => {
             cost: 5.00,
             description: 'Carne 100% res, lechuga, tomate y salsa especial.',
             image: 'https://placehold.co/150x100/FFC107/000000?text=Clásica',
-            ingredients: [] // Nuevo campo para ingredientes
+            ingredients: [], // Nuevo campo para ingredientes
+            stock: 20, // Cantidad inicial en inventario
+            categoryId: '',
+            TrackEvent: true
         }
     ];
     const defaultTheme = {
@@ -50,6 +55,24 @@ document.addEventListener('DOMContentLoaded', () => {
         // Return white for dark backgrounds, black for light backgrounds
         return luminance > 0.5 ? '#000000' : '#ffffff';
     };
+
+    // Función para normalizar productos existentes
+    function normalizeProducts(products) {
+        if (!Array.isArray(products)) {
+            console.error('normalizeProducts: Expected an array, got:', products);
+            return [];
+        }
+        return products.map(item => {
+            if (!item || typeof item !== 'object') {
+                console.warn('normalizeProducts: Invalid product item:', item);
+                return item;
+            }
+            return {
+                ...item,
+                trackStock: item.trackStock !== undefined ? item.trackStock : (typeof item.stock === 'number' && item.stock > 0)
+            };
+        });
+    }
 
     // --- INICIALIZACIÓN DE INDEXEDDB ---
     const initDB = () => {
@@ -87,16 +110,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     db.createObjectStore(STORES.INGREDIENTS, { keyPath: 'productId' });
                     console.log('Created ingredients store');
                 }
+                // Crear almacén para categorías si no existe
+                if (!db.objectStoreNames.contains(STORES.CATEGORIES)) {
+                    const categoryStore = db.createObjectStore(STORES.CATEGORIES, { keyPath: 'id' });
+                    categoryStore.createIndex('name', 'name', { unique: true });
+                    console.log('Created categories store');
+                }
             };
         });
     };
 
     // --- FUNCIONES DE ALMACENAMIENTO CON INDEXEDDB ---
     const saveData = (storeName, data) => {
-        if (!isAppUnlocked) {
-            showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
-            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
-            return;  // Bloquea la acción
+        if (!isAppUnlocked && welcomeModal.style.display === 'none') {
+            // Solo muestra el mensaje si el modal de bienvenida no está visible
+            showMessageModal('Por favor, valida tu licencia en Configuración > Ingresar licencia');
+            return Promise.reject('App not unlocked');
         }
         return new Promise((resolve, reject) => {
             if (!db.objectStoreNames.contains(storeName)) {
@@ -181,6 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const productDescriptionInput = document.getElementById('product-description');
     const productPriceInput = document.getElementById('product-price');
     const productCostInput = document.getElementById('product-cost');
+    const productStockInput = document.getElementById('product-stock');
     const productFormTitle = document.getElementById('product-form-title');
     const cancelEditBtn = document.getElementById('cancel-edit-btn');
     const productListContainer = document.getElementById('product-list');
@@ -216,6 +246,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Elementos para la calculadora de costos
     const costHelpButton = document.getElementById('cost-help-button');
     const costCalculationModal = document.getElementById('cost-calculation-modal');
+    const categoryModalButton = document.getElementById('category-modal-button');
+    const categoryModal = document.getElementById('category-modal');
+    const categoryFormContainer = document.getElementById('category-form-container');
+    const categoryIdInput = document.getElementById('category-id');
+    const categoryNameInput = document.getElementById('category-name');
+    const saveCategoryBtn = document.getElementById('save-category-btn');
+    const cancelCategoryEditBtn = document.getElementById('cancel-category-edit-btn');
+    const categoryListContainer = document.getElementById('category-list');
+    const closeCategoryModalBtn = document.getElementById('close-category-modal-btn');
+    const productCategorySelect = document.getElementById('product-category');
+    const categoryFiltersContainer = document.getElementById('category-filters');
     const ingredientNameInput = document.getElementById('ingredient-name');
     const ingredientCostInput = document.getElementById('ingredient-cost');
     const ingredientQuantityInput = document.getElementById('ingredient-quantity');
@@ -339,6 +380,146 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // --- GESTIÓN DE CATEGORÍAS ---
+    const renderCategories = async () => {
+        try {
+            const categories = await loadData(STORES.CATEGORIES);
+
+            // 1. Renderizar lista en el modal de gestión
+            categoryListContainer.innerHTML = '';
+            if (categories.length === 0) {
+                categoryListContainer.innerHTML = '<p>No hay categorías creadas.</p>';
+            } else {
+                categories.forEach(cat => {
+                    const div = document.createElement('div');
+                    div.className = 'category-item-managed';
+                    div.innerHTML = `
+                        <span>${cat.name}</span>
+                        <div class="category-item-controls">
+                            <button class="edit-category-btn" data-id="${cat.id}">✏️</button>
+                            <button class="delete-category-btn" data-id="${cat.id}">🗑️</button>
+                        </div>
+                    `;
+                    categoryListContainer.appendChild(div);
+                });
+            }
+
+            // 2. Poblar el select del formulario de productos
+            productCategorySelect.innerHTML = '<option value="">Sin categoría</option>';
+            categories.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.name;
+                productCategorySelect.appendChild(option);
+            });
+
+            // 3. Renderizar filtros en el TPV
+            categoryFiltersContainer.innerHTML = '';
+            const allButton = document.createElement('button');
+            allButton.className = 'category-filter-btn active';
+            allButton.textContent = 'Todos';
+            allButton.addEventListener('click', () => {
+                renderMenu(); // Sin filtro
+                document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
+                allButton.classList.add('active');
+            });
+            categoryFiltersContainer.appendChild(allButton);
+
+            categories.forEach(cat => {
+                const button = document.createElement('button');
+                button.className = 'category-filter-btn';
+                button.textContent = cat.name;
+                button.dataset.id = cat.id;
+                button.addEventListener('click', () => {
+                    renderMenu(cat.id); // Filtrar por esta categoría
+                    document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                });
+                categoryFiltersContainer.appendChild(button);
+            });
+
+        } catch (error) {
+            console.error('Error rendering categories:', error);
+            showMessageModal('Error al cargar las categorías.');
+        }
+    };
+
+    const saveCategory = async () => {
+        const id = categoryIdInput.value;
+        const name = categoryNameInput.value.trim();
+
+        if (!name) {
+            showMessageModal('El nombre de la categoría no puede estar vacío.');
+            return;
+        }
+
+        try {
+            const categoryData = {
+                id: id || `cat-${Date.now()}`,
+                name
+            };
+            await saveData(STORES.CATEGORIES, categoryData);
+            showMessageModal(`Categoría "${name}" guardada.`);
+            resetCategoryForm();
+            await renderCategories();
+        } catch (error) {
+            console.error('Error saving category:', error);
+            if (error.name === 'ConstraintError') {
+                showMessageModal('Ya existe una categoría con ese nombre.');
+            } else {
+                showMessageModal('Error al guardar la categoría.');
+            }
+        }
+    };
+
+    const editCategory = async (id) => {
+        try {
+            const category = await loadData(STORES.CATEGORIES, id);
+            if (category) {
+                categoryIdInput.value = category.id;
+                categoryNameInput.value = category.name;
+                saveCategoryBtn.textContent = 'Actualizar Categoría';
+                cancelCategoryEditBtn.classList.remove('hidden');
+            }
+        } catch (error) {
+            console.error('Error loading category for editing:', error);
+        }
+    };
+
+    const deleteCategory = async (id) => {
+        try {
+            const category = await loadData(STORES.CATEGORIES, id);
+            if (!category) return;
+
+            showMessageModal(`¿Seguro que quieres eliminar la categoría "${category.name}"? Los productos en esta categoría quedarán sin categoría.`, async () => {
+                await deleteData(STORES.CATEGORIES, id);
+
+                // Des-asignar esta categoría de todos los productos
+                const products = await loadData(STORES.MENU);
+                const productsToUpdate = products.filter(p => p.categoryId === id);
+                for (const product of productsToUpdate) {
+                    product.categoryId = '';
+                    await saveData(STORES.MENU, product);
+                }
+
+                showMessageModal('Categoría eliminada.');
+                await renderCategories();
+                await renderProductManagement();
+            });
+        } catch (error) {
+            console.error('Error deleting category:', error);
+            showMessageModal('Error al eliminar la categoría.');
+        }
+    };
+
+    const resetCategoryForm = () => {
+        categoryIdInput.value = '';
+        categoryNameInput.value = '';
+        saveCategoryBtn.textContent = 'Guardar Categoría';
+        cancelCategoryEditBtn.classList.add('hidden');
+    };
+
+
     // --- NAVEGACIÓN Y VISIBILIDAD ---
     const showSection = (sectionId) => {
         Object.values(sections).forEach(section => section.classList.remove('active'));
@@ -446,23 +627,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const renderMenu = async () => {
+    const renderMenu = async (filterCategoryId = null) => {
         try {
-            const menu = await loadData(STORES.MENU);
+            let menu = await loadData(STORES.MENU);
+            menu = normalizeProducts(menu);
+
+            if (filterCategoryId) {
+                menu = menu.filter(item => item.categoryId === filterCategoryId);
+            }
             menuItemsContainer.innerHTML = '';
             if (menu.length === 0) {
-                menuItemsContainer.innerHTML = `<p class="empty-message">No hay productos.</p>`;
+                menuItemsContainer.innerHTML = `<p class="empty-message">No hay productos en esta categoría.</p>`;
                 return;
             }
             menu.forEach(item => {
                 const menuItemDiv = document.createElement('div');
                 menuItemDiv.className = 'menu-item';
+
+                let stockInfo = '';
+                if (item.trackStock) {
+                    if (item.stock > 0) {
+                        stockInfo = `<div class="stock-info">Stock: ${item.stock}</div>`;
+                    } else {
+                        stockInfo = `<div class="stock-info out-of-stock-label">AGOTADO</div>`;
+                    }
+                } else {
+                    stockInfo = `<div class="stock-info no-stock-label">No llevado</div>`;
+                }
                 menuItemDiv.innerHTML = `
-                            <img src="${item.image || defaultPlaceholder}" alt="${item.name}" onerror="this.onerror=null;this.src='${defaultPlaceholder}';">
-                            <h3>${item.name}</h3>
-                            <p>$${item.price.toFixed(2)}</p>
-                        `;
-                menuItemDiv.addEventListener('click', () => addItemToOrder(item));
+                        <img src="${item.image || defaultPlaceholder}" alt="${item.name}" onerror="this.onerror=null;this.src='${defaultPlaceholder}';">
+                        <h3>${item.name}</h3>
+                        <p>$${item.price.toFixed(2)}</p>
+                        ${stockInfo}
+                    `;
+
+                // Permitir agregar si: no lleva control O (lleva control y tiene stock)
+                if (!item.trackStock || item.stock > 0) {
+                    menuItemDiv.addEventListener('click', () => addItemToOrder(item));
+                }
                 menuItemsContainer.appendChild(menuItemDiv);
             });
         } catch (error) {
@@ -472,9 +674,23 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const addItemToOrder = (item) => {
-        const existingItem = order.find(orderItem => orderItem.id === item.id);
-        if (existingItem) existingItem.quantity++;
-        else order.push({ ...item, quantity: 1 });
+        // Si el producto lleva control de stock, validamos
+        if (item.trackStock) {
+            const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
+            const currentQuantityInOrder = existingItemInOrder ? existingItemInOrder.quantity : 0;
+            if (currentQuantityInOrder >= item.stock) {
+                showMessageModal(`No puedes agregar más "${item.name}". No hay suficiente stock.`);
+                return;
+            }
+        }
+
+        // Si no lleva control, no validamos y agregamos directamente
+        const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
+        if (existingItemInOrder) {
+            existingItemInOrder.quantity++;
+        } else {
+            order.push({ ...item, quantity: 1 });
+        }
         updateOrderDisplay();
     };
 
@@ -536,10 +752,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const processOrder = async () => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
-            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
-            return;  // Bloquea la acción
+            welcomeModal.style.display = 'flex';
+            return;
         }
         try {
+            // 1. Validar stock ANTES de procesar (solo para productos con control)
+            for (const orderItem of order) {
+                const product = await loadData(STORES.MENU, orderItem.id);
+                if (product && product.trackStock) {
+                    if (product.stock < orderItem.quantity) {
+                        showMessageModal(`¡Stock insuficiente para "${orderItem.name}"! Solo quedan ${product.stock}.`);
+                        paymentModal.classList.add('hidden');
+                        return; // Detener el proceso
+                    }
+                }
+            }
+
+            // 2. Actualizar stock (solo para productos con control)
+            for (const orderItem of order) {
+                const product = await loadData(STORES.MENU, orderItem.id);
+                if (product && product.trackStock) {
+                    product.stock -= orderItem.quantity;
+                    await saveData(STORES.MENU, product);
+                }
+            }
+
+            // 3. Guardar la venta
             const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const sale = {
                 timestamp: new Date().toISOString(),
@@ -547,11 +785,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 total
             };
             await saveData(STORES.SALES, sale);
+
+            // 4. Limpiar y actualizar UI
             paymentModal.classList.add('hidden');
-            showMessageModal('¡Pedido agregado exitosamente!');
+            showMessageModal('¡Pedido procesado exitosamente!');
             order = [];
             updateOrderDisplay();
+            renderMenu(); // Re-renderizar menú para mostrar stock actualizado
             renderDashboard();
+            renderProductManagement();
         } catch (error) {
             console.error('Error processing order:', error.message);
             showMessageModal(`Error al procesar el pedido: ${error.message}`);
@@ -573,22 +815,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderDashboard = async () => {
         try {
+            // Use let instead of const to allow reassignment
+            let menu = await loadData(STORES.MENU);
+            menu = normalizeProducts(menu);
             const salesHistory = await loadData(STORES.SALES);
-            const menu = await loadData(STORES.MENU);
+
             // Elementos DOM
             const dashboardTotalRevenue = document.getElementById('dashboard-total-revenue');
             const dashboardTotalOrders = document.getElementById('dashboard-total-orders');
             const dashboardTotalItems = document.getElementById('dashboard-total-items');
             const dashboardNetProfit = document.getElementById('dashboard-net-profit');
+            const dashboardInventoryValue = document.getElementById('dashboard-inventory-value');
             const salesHistoryList = document.getElementById('sales-history-list');
             const emptySalesMessage = document.getElementById('empty-sales-message');
+
             // Crear un mapa de productos para búsqueda rápida
             const productMap = new Map();
             menu.forEach(product => {
                 productMap.set(product.id, product);
             });
+
             // Ordenar ventas por timestamp descendente (más recientes primero)
             const sortedSales = salesHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
             // Calcular estadísticas principales
             let totalRevenue = 0;
             let totalItemsSold = 0;
@@ -620,11 +869,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     stats.profit += itemProfit;
                 });
             });
+
             // Actualizar estadísticas en el DOM
             dashboardTotalRevenue.textContent = `$${totalRevenue.toFixed(2)}`;
             dashboardTotalOrders.textContent = sortedSales.length;
             dashboardTotalItems.textContent = totalItemsSold;
             dashboardNetProfit.textContent = `$${totalNetProfit.toFixed(2)}`;
+
+            // Calcular valor del inventario
+            const inventoryValue = menu.reduce((total, product) => {
+                if (product.trackStock) {
+                    return total + (product.cost * product.stock);
+                }
+                return total;
+            }, 0);
+            dashboardInventoryValue.textContent = `$${inventoryValue.toFixed(2)}`;
+
             // Mostrar historial de ventas
             salesHistoryList.innerHTML = '';
             emptySalesMessage.classList.toggle('hidden', sortedSales.length > 0);
@@ -640,12 +900,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const div = document.createElement('div');
                 div.className = 'sale-item';
                 div.innerHTML = `
-                        <div class="sale-item-info">
-                            <p>Pedido #${index + 1} - ${new Date(sale.timestamp).toLocaleString()}</p>
-                            <p>Total: <span class="revenue">$${sale.total.toFixed(2)}</span></p>
-                            <p>Utilidad: <span class="profit">$${saleNetProfit.toFixed(2)}</span></p>
-                            <ul>
-                                ${sale.items.map(item => {
+                <div class="sale-item-info">
+                    <p>Pedido #${index + 1} - ${new Date(sale.timestamp).toLocaleString()}</p>
+                    <p>Total: <span class="revenue">$${sale.total.toFixed(2)}</span></p>
+                    <p>Utilidad: <span class="profit">$${saleNetProfit.toFixed(2)}</span></p>
+                    <ul>
+                        ${sale.items.map(item => {
                     const product = productMap.get(item.id) || {
                         price: item.price,
                         cost: item.cost || item.price * 0.6
@@ -653,16 +913,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     const itemProfit = (item.price - product.cost) * item.quantity;
                     return `<li>${item.name} x ${item.quantity} (Utilidad: $${itemProfit.toFixed(2)})</li>`;
                 }).join('')}
-                            </ul>
-                        </div>
-                        <button class="delete-order-btn" data-timestamp="${sale.timestamp}">Eliminar</button>
-                    `;
+                    </ul>
+                </div>
+                <button class="delete-order-btn" data-timestamp="${sale.timestamp}">Eliminar</button>
+            `;
                 salesHistoryList.appendChild(div);
             });
+
             // Event listeners para botones de eliminar
             salesHistoryList.querySelectorAll('.delete-order-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => deleteOrder(e.currentTarget.dataset.timestamp));
             });
+
             // Renderizar productos más vendidos (solo si existen los elementos)
             renderTopProducts(productStats, totalRevenue);
         } catch (error) {
@@ -1144,25 +1406,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderProductManagement = async () => {
         try {
-            const menu = await loadData(STORES.MENU);
+            const [menu, categories] = await Promise.all([
+                loadData(STORES.MENU).then(normalizeProducts),
+                loadData(STORES.CATEGORIES)
+            ]);
+
+            const categoryMap = new Map(categories.map(cat => [cat.id, cat.name]));
             productListContainer.innerHTML = '';
             emptyProductMessage.classList.toggle('hidden', menu.length > 0);
             menu.forEach(item => {
+                const categoryName = item.categoryId ? categoryMap.get(item.categoryId) || 'Categoría eliminada' : 'Sin categoría';
                 const div = document.createElement('div');
                 div.className = 'product-item';
                 div.innerHTML = `
-                            <div class="product-item-info">
-                                <img src="${item.image || defaultPlaceholder}" alt="${item.name}">
-                                <div class="product-item-details">
-                                    <span>${item.name}</span>
-                                    <p>Precio: $${item.price.toFixed(2)}</p>
-                                    <p>Costo: $${item.cost.toFixed(2)}</p>
-                                </div>
-                            </div>
-                            <div class="product-item-controls">
-                                <button class="edit-product-btn" data-id="${item.id}">✏️</button>
-                                <button class="delete-product-btn" data-id="${item.id}">🗑️</button>
-                            </div>`;
+                <div class="product-item-info">
+                    <img src="${item.image || defaultPlaceholder}" alt="${item.name}">
+                    <div class="product-item-details">
+                        <span>${item.name}</span>
+                        <p><strong>Categoría:</strong> ${categoryName}</p>
+                        <p><strong>Precio:</strong> $${item.price.toFixed(2)}</p>
+                        <p><strong>Costo:</strong> $${item.cost.toFixed(2)}</p>
+                        <p><strong>Control de stock:</strong> ${item.trackStock ? 'Sí' : 'No'}</p>
+                        <p><strong>Stock:</strong> ${item.trackStock ? item.stock : 'No aplica'}</p>
+                    </div>
+                </div>
+                <div class="product-item-controls">
+                    <button class="edit-product-btn" data-id="${item.id}">✏️</button>
+                    <button class="delete-product-btn" data-id="${item.id}">🗑️</button>
+                </div>`;
                 productListContainer.appendChild(div);
             });
             productListContainer.querySelectorAll('.edit-product-btn').forEach(btn => btn.addEventListener('click', e => editProductForm(e.currentTarget.dataset.id)));
@@ -1182,6 +1453,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 productDescriptionInput.value = item.description || '';
                 productPriceInput.value = item.price;
                 productCostInput.value = item.cost || 0;
+                productStockInput.value = item.stock || 0;
+                productCategorySelect.value = item.categoryId || '';
                 imagePreview.src = item.image || defaultPlaceholder;
                 productFormTitle.textContent = `Editar: ${item.name}`;
                 cancelEditBtn.classList.remove('hidden');
@@ -1212,6 +1485,8 @@ document.addEventListener('DOMContentLoaded', () => {
         imagePreview.src = defaultPlaceholder;
         productImageFileInput.value = null;
         productCostInput.value = '';
+        productStockInput.value = '0';
+        productCategorySelect.value = '';
 
         // Limpiar ingredientes al resetear
         currentIngredients = [];
@@ -1234,18 +1509,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 showMessageModal('Por favor, ingresa un nombre, precio y costo de producción válidos.');
                 return;
             }
+
+            // Determinar si se lleva control de stock basado en el valor inicial
+            const stockValue = parseInt(productStockInput.value) || 0;
+            const trackStock = stockValue > 0;
+
             const productData = {
                 id: id || `product-${Date.now()}`,  // ID nuevo si es creación
                 name,
                 price,
                 cost,
+                stock: stockValue,
                 description: productDescriptionInput.value.trim(),
-                image: imagePreview.src
+                image: imagePreview.src,
+                categoryId: productCategorySelect.value,
+                trackStock: trackStock  // Nuevo campo
             };
 
             // NUEVO: Setea editingProductId con el ID final (nuevo o existente) antes de guardar ingredientes
             editingProductId = productData.id;
-
             await saveData(STORES.MENU, productData);
 
             // Ahora sí: Si hay ingredientes y editingProductId válido, guarda
@@ -1298,11 +1580,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Menu store not found during initialization');
                 throw new Error('Menu store not found');
             }
-            const existingMenu = await loadData(STORES.MENU);
+            let existingMenu = await loadData(STORES.MENU);
             if (existingMenu.length === 0) {
                 console.log('Initializing default menu');
                 await saveData(STORES.MENU, initialMenu);
+            } else {
+                console.log('Normalizing existing menu');
+                const normalizedMenu = normalizeProducts(existingMenu);
+                await saveData(STORES.MENU, normalizedMenu);
             }
+
             if (!db.objectStoreNames.contains(STORES.COMPANY)) {
                 console.error('Company store not found during initialization');
                 throw new Error('Company store not found');
@@ -1312,6 +1599,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Initializing default company data');
                 await saveData(STORES.COMPANY, { id: 'company', name: 'Lanzo Negocio', phone: '', address: '', logo: '' });
             }
+
             if (!db.objectStoreNames.contains(STORES.THEME)) {
                 console.error('Theme store not found during initialization');
                 throw new Error('Theme store not found');
@@ -1322,8 +1610,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 await saveData(STORES.THEME, defaultTheme);
             }
         } catch (error) {
-            console.error('Error initializing default data:', error.message);
-            throw error;
+            console.error('Error initializing default data:', error.message, error.stack);
+            throw error; // Re-lanzar para que initApp lo capture
         }
     };
 
@@ -1443,6 +1731,31 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     contactForm.addEventListener('submit', submitContactForm);
 
+    // --- EVENT LISTENERS PARA CATEGORÍAS ---
+    categoryModalButton.addEventListener('click', () => {
+        resetCategoryForm();
+        categoryModal.classList.remove('hidden');
+    });
+
+    closeCategoryModalBtn.addEventListener('click', () => {
+        categoryModal.classList.add('hidden');
+    });
+
+    saveCategoryBtn.addEventListener('click', saveCategory);
+
+    cancelCategoryEditBtn.addEventListener('click', resetCategoryForm);
+
+    categoryListContainer.addEventListener('click', (e) => {
+        if (e.target.classList.contains('edit-category-btn')) {
+            const id = e.target.dataset.id;
+            editCategory(id);
+        }
+        if (e.target.classList.contains('delete-category-btn')) {
+            const id = e.target.dataset.id;
+            deleteCategory(id);
+        }
+    });
+
     const welcomeModal = document.getElementById('welcome-modal');
     const licenseForm = document.getElementById('license-form');
     const licenseKeyInput = document.getElementById('license-key');
@@ -1451,43 +1764,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- LICENSE HANDLING AT STARTUP ---
     const initializeLicense = async () => {
+        console.log('Initializing license...');
         let savedLicenseJSON = localStorage.getItem('lanzo_license');
+
         if (savedLicenseJSON) {
             try {
                 const savedLicense = JSON.parse(savedLicenseJSON);
-                // Optimistically unlock the app with the stored license
-                console.log('Found saved license. Unlocking UI and revalidating in background...');
-                renderLicenseInfo(savedLicense);
+                console.log('Found saved license:', savedLicense);
+
+                // Desbloquea la app inmediatamente con la licencia local
                 isAppUnlocked = true;
                 welcomeModal.style.display = 'none';
-                await renderCompanyData(); // Make sure company data is loaded before showing section
+                renderLicenseInfo(savedLicense);
+                await renderCompanyData();
                 showSection('pos');
 
-                // Now, revalidate the license in the background
-                const validationResult = await window.revalidateLicense();
+                // Revalida en segundo plano PERO sin afectar el estado actual
+                try {
+                    const validationResult = await Promise.race([
+                        window.revalidateLicense(),
+                        new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error('Revalidación de licencia agotó el tiempo')), 15000)
+                        )
+                    ]);
 
-                if (validationResult && validationResult.valid) {
-                    console.log('Background revalidation successful.');
-                    // Update the stored license data in case it has changed (e.g., expiration)
-                    localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
-                    renderLicenseInfo(validationResult); // Re-render with fresh data
-                } else {
-                    console.log('Background revalidation failed. Locking app.');
-                    isAppUnlocked = false;
-                    localStorage.removeItem('lanzo_license');
-                    renderLicenseInfo({ valid: false });
-                    welcomeModal.style.display = 'flex';
-                    showLicenseMessage(validationResult.message || 'Tu sesión de licencia no es válida. Por favor, ingrésala de nuevo.', 'error');
+                    if (validationResult && validationResult.valid) {
+                        console.log('Background revalidation successful:', validationResult);
+                        localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
+                        renderLicenseInfo(validationResult);
+                    } else {
+                        console.warn('Background revalidation failed:', validationResult ? validationResult.message : 'No response');
+                        // NO desbloquees la app aquí, solo muestra una advertencia
+                        showLicenseMessage('Advertencia: No se pudo verificar la licencia con el servidor. Funcionando con copia local.', 'warning');
+                    }
+                } catch (revalidationError) {
+                    if (revalidationError.message === 'Revalidación de licencia agotó el tiempo') {
+                        console.log('La revalidación tardó demasiado, pero se continúa con la licencia local.');
+                    } else {
+                        console.warn('Error durante la revalidación:', revalidationError.message);
+                    }
+                    showLicenseMessage('Advertencia: Error de conexión. Funcionando en modo offline con licencia local.', 'warning');
                 }
-            } catch (e) {
-                console.error("Could not parse saved license. Clearing it.", e);
+            } catch (parseError) {
+                console.error('Could not parse saved license:', parseError.message);
                 localStorage.removeItem('lanzo_license');
                 renderLicenseInfo({ valid: false });
+                isAppUnlocked = false;
                 welcomeModal.style.display = 'flex';
+                showLicenseMessage('Licencia almacenada corrupta. Por favor, ingresa una nueva.', 'error');
             }
         } else {
             console.log('No saved license found.');
             renderLicenseInfo({ valid: false });
+            isAppUnlocked = false;
             welcomeModal.style.display = 'flex';
         }
     };
@@ -1578,6 +1907,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await initDB();
             await initializeDefaultData();
+            await renderCategories(); // Cargar categorías al inicio
             // Event listeners for navigation and main actions
             document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
             document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
@@ -1585,7 +1915,22 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('nav-dashboard').addEventListener('click', () => showSection('dashboard'));
             document.getElementById('nav-company').addEventListener('click', () => showSection('company'));
             document.getElementById('nav-donation').addEventListener('click', () => showSection('donation'));
-            document.getElementById('mobile-menu-button').addEventListener('click', () => document.getElementById('mobile-menu').classList.toggle('hidden'));
+
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+
+            console.log('app.js: mobileMenuButton element:', mobileMenuButton);
+            console.log('app.js: mobileMenu element:', mobileMenu);
+
+            if (mobileMenuButton && mobileMenu) {
+                mobileMenuButton.addEventListener('click', () => {
+                    console.log('app.js: mobile-menu-button clicked!');
+                    mobileMenu.classList.toggle('hidden');
+                    console.log('app.js: mobileMenu has hidden class:', mobileMenu.classList.contains('hidden'));
+                });
+            } else {
+                console.error('app.js: mobileMenuButton or mobileMenu element not found!');
+            }
             document.getElementById('mobile-nav-pos').addEventListener('click', () => showSection('pos'));
             document.getElementById('mobile-nav-product-management').addEventListener('click', () => showSection('product-management'));
             document.getElementById('mobile-nav-dashboard').addEventListener('click', () => showSection('dashboard'));
@@ -1653,7 +1998,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     initApp();
-    setInterval(async () => {
+    /*setInterval(async () => {
         if (isAppUnlocked) {
             const validation = await window.revalidateLicense();
             if (!validation.valid) {
@@ -1662,5 +2007,5 @@ document.addEventListener('DOMContentLoaded', () => {
                 showMessageModal('Licencia expirada o inválida. Por favor, valida nuevamente.');
             }
         }
-    }, 1800000);  // Cada 30 minutos
+    }, 1800000);  // Cada 30 minutos*/
 });

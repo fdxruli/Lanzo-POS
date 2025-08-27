@@ -1130,8 +1130,11 @@ textarea {
     display: block;
   }
 
+  
+
   .mobile-menu {
-    display: block;
+    display: flex;
+    flex-direction: column;
   }
 
   .mobile-menu.hidden {
@@ -1262,6 +1265,14 @@ textarea {
 }
 
 /* ===== ESTILOS DE INVENTARIO ===== */
+.stock-info.no-stock-label {
+    background-color: #4CAF50;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.8em;
+}
+
 .menu-item {
     position: relative; /* Necesario para el posicionamiento del overlay y el indicador */
     overflow: hidden; /* Para contener los elementos hijos */
