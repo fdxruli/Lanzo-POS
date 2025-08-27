@@ -7,11 +7,6 @@
     <title>Lanzo</title>
     <link rel="icon" type="image/png" href="icono/icono-web.png">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script>
-    <script src="supabase-auth.js"></script>
-    <script type="module" src="app.js" defer></script>
 </head>
 
 <body>
@@ -39,13 +34,13 @@
             </div>
         </div>
         <div id="backdrop" class="backdrop"></div>
-    <div id="mobile-menu" class="mobile-menu">
-        <button id="mobile-nav-pos" class="mobile-nav-btn">Punto de Venta</button>
-        <button id="mobile-nav-product-management" class="mobile-nav-btn">Productos</button>
-        <button id="mobile-nav-dashboard" class="mobile-nav-btn">Ventas</button>
-        <button id="mobile-nav-company" class="mobile-nav-btn">Configuración</button>
-        <button id="mobile-nav-donation" class="mobile-nav-btn">Donar</button>
-    </div>
+        <div id="mobile-menu" class="mobile-menu">
+            <button id="mobile-nav-pos" class="mobile-nav-btn">Punto de Venta</button>
+            <button id="mobile-nav-product-management" class="mobile-nav-btn">Productos</button>
+            <button id="mobile-nav-dashboard" class="mobile-nav-btn">Ventas</button>
+            <button id="mobile-nav-company" class="mobile-nav-btn">Configuración</button>
+            <button id="mobile-nav-donation" class="mobile-nav-btn">Donar</button>
+        </div>
     </nav>
     <main class="main-container">
         <section id="pos-section" class="section-content active">
@@ -109,11 +104,35 @@
                                 <option value="">Sin categoría</option>
                                 <!-- Las categorías se llenarán dinámicamente -->
                             </select>
-                            <button type="button" id="category-modal-button" class="btn btn-help">Administrar Categorías</button>
+                            <button type="button" id="category-modal-button" class="btn btn-help">Administrar
+                                Categorías</button>
                         </div>
                         <div class="form-group">
+                            <label class="form-label" for="sale-type">Tipo de Venta</label>
+                            <select class="form-input" id="sale-type">
+                                <option value="unit" selected>Por Unidad/Pieza</option>
+                                <option value="bulk">A Granel/Peso</option>
+                            </select>
+                        </div>
+
+                        <div id="bulk-options" class="hidden">
+                            <div class="form-group">
+                                <label class="form-label" for="product-unit">Unidad (ej: kg, litro, g)</label>
+                                <input class="form-input" id="product-unit" type="text" placeholder="kg">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="product-increment">Vender en incrementos de</label>
+                                <input class="form-input" id="product-increment" type="number" step="any" min="0.01"
+                                    value="1">
+                                <small>Ej: 0.5 para vender de medio en medio, 0.25 para cuartos.</small>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
                             <label class="form-label" for="product-stock">Inventario (Stock)</label>
-                            <input class="form-input" id="product-stock" type="number" step="1" min="0" value="0" required>
+                            <input class="form-input" id="product-stock" type="number" step="1" min="0" value="0"
+                                required>
+                            <small id="stock-unit-label">El stock se maneja en unidades/piezas.</small>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="product-image-file">Imagen</label>
@@ -133,7 +152,8 @@
                 <div class="product-list-container">
                     <h3 class="subtitle">Lista de Productos</h3>
                     <div class="search-container">
-                        <input type="text" id="product-search-input" class="form-input" placeholder="Buscar por nombre...">
+                        <input type="text" id="product-search-input" class="form-input"
+                            placeholder="Buscar por nombre...">
                     </div>
                     <div id="empty-product-message" class="empty-message hidden">No hay productos.</div>
                     <div id="product-list" class="product-list"></div>
@@ -142,7 +162,7 @@
         </section>
         <section id="dashboard-section" class="section-content">
             <h2 class="section-title">Panel de Ventas</h2>
-            
+
             <div class="tabs-container" id="sales-tabs">
                 <button class="tab-btn active" data-tab="stats-content">Estadísticas</button>
                 <button class="tab-btn" data-tab="history-content">Historial y Top</button>
@@ -359,7 +379,8 @@
                     <li><strong>Panel de Ventas</strong>: Muestra estadísticas e informes de ventas.</li>
                     <li><strong>Configuración</strong>: Personaliza datos de la empresa y aspecto visual.</li>
                 </ul>
-                <p>Características: diseño responsive(celulares, tablet, computadoras), cálculo de costos, persistencia de datos local y más.</p>
+                <p>Características: diseño responsive(celulares, tablet, computadoras), cálculo de costos, persistencia
+                    de datos local y más.</p>
             </div>
 
             <form id="license-form">
@@ -421,7 +442,8 @@
                     <input type="text" id="category-name" class="form-input" placeholder="Ej: Bebidas">
                 </div>
                 <button type="button" id="save-category-btn" class="btn btn-save">Guardar Categoría</button>
-                <button type="button" id="cancel-category-edit-btn" class="btn btn-cancel hidden">Cancelar Edición</button>
+                <button type="button" id="cancel-category-edit-btn" class="btn btn-cancel hidden">Cancelar
+                    Edición</button>
             </div>
             <h3 class="subtitle">Categorías Existentes</h3>
             <div class="category-list" id="category-list">
@@ -431,5 +453,13 @@
         </div>
     </div>
 </body>
+<script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<script src="https://unpkg.com/jwt-decode/build/jwt-decode.js" defer></script>
+<script src="supabase-auth.js" defer></script>
+<!-- Cargar módulos primero, con defer para garantizar el orden de ejecución -->
+<script src="dashboard.js" defer></script>
+<script src="business-tips.js" defer></script>
+<script src="app.js" defer></script>
 
 </html>

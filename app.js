@@ -1,9 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log('app.js: DOMContentLoaded event fired.');
+    
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
     let isAppUnlocked = false;
     let order = [];
     let db = null;
+    let dashboard, businessTips; // Declarar módulos aquí
+    
     const DB_NAME = 'LanzoDB1';
     const DB_VERSION = 5; // Incrementado para agregar almacenamiento de categorías
     const STORES = {
@@ -14,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         INGREDIENTS: 'ingredients',
         CATEGORIES: 'categories' // Nuevo almacén para categorías
     };
+    
     const initialMenu = [
         {
             id: 'burger-classic',
@@ -28,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
             TrackEvent: true
         }
     ];
+    
     const defaultTheme = {
         id: 'theme',
         primaryColor: '#374151',
@@ -39,11 +44,43 @@ document.addEventListener('DOMContentLoaded', () => {
         fontSize: 'medium',
         layoutDensity: 'spacious'
     };
-
+    
     // Variables para la gestión de ingredientes
     let currentIngredients = [];
     let editingProductId = null;
-
+    
+    // --- SISTEMA DE CACHÉ PARA DATOS FRECUENTES ---
+    const dataCache = {
+        menu: null,
+        company: null,
+        theme: null,
+        categories: null,
+        lastUpdated: {
+            menu: 0,
+            company: 0,
+            theme: 0,
+            categories: 0
+        }
+    };
+    
+    const loadDataWithCache = async (storeName, key = null, maxAge = 300000) => { // 5 minutos
+        const now = Date.now();
+        
+        // Verificar si tenemos datos en caché y son recientes
+        if (dataCache[storeName] && (now - dataCache.lastUpdated[storeName] < maxAge)) {
+            return key ? dataCache[storeName].find(item => item.id === key) : dataCache[storeName];
+        }
+        
+        // Cargar desde IndexedDB
+        const data = await loadData(storeName, key);
+        
+        // Actualizar caché
+        dataCache[storeName] = data;
+        dataCache.lastUpdated[storeName] = now;
+        
+        return data;
+    };
+    
     // --- FUNCIÓN PARA CALCULAR LUMINANCIA Y AJUSTAR COLOR DE TEXTO ---
     const getContrastColor = (hexColor) => {
         // Convert hex to RGB
@@ -55,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Return white for dark backgrounds, black for light backgrounds
         return luminance > 0.5 ? '#000000' : '#ffffff';
     };
-
+    
     // Función para normalizar productos existentes
     function normalizeProducts(products) {
         if (!Array.isArray(products)) {
@@ -73,7 +110,31 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
     }
-
+    
+    // --- FUNCIÓN PARA COMPRIMIR IMÁGENES ---
+    const compressImage = (file, maxWidth = 300, quality = 0.7) => {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            
+            img.onload = () => {
+                // Calcular nuevas dimensiones manteniendo la proporción
+                const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
+                canvas.width = img.width * ratio;
+                canvas.height = img.height * ratio;
+                
+                // Dibujar imagen redimensionada
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                
+                // Convertir a base64 con calidad reducida
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            
+            img.src = URL.createObjectURL(file);
+        });
+    };
+    
     // --- INICIALIZACIÓN DE INDEXEDDB ---
     const initDB = () => {
         return new Promise((resolve, reject) => {
@@ -119,10 +180,10 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
     };
-
+    
     // --- FUNCIONES DE ALMACENAMIENTO CON INDEXEDDB ---
     const saveData = (storeName, data) => {
-        if (!isAppUnlocked && welcomeModal.style.display === 'none') {
+        if (!isAppUnlocked && welcomeModal && welcomeModal.style.display === 'none') {
             // Solo muestra el mensaje si el modal de bienvenida no está visible
             showMessageModal('Por favor, valida tu licencia en Configuración > Ingresar licencia');
             return Promise.reject('App not unlocked');
@@ -149,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
-
+    
     const loadData = (storeName, key = null) => {
         return new Promise((resolve, reject) => {
             if (!db.objectStoreNames.contains(storeName)) {
@@ -170,11 +231,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
-
+    
     const deleteData = (storeName, key) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
-            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
+            if (welcomeModal) welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
             return;  // Bloquea la acción
         }
         return new Promise((resolve, reject) => {
@@ -189,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
             request.onerror = () => reject(request.error);
         });
     };
-
+    
     // --- ELEMENTOS DEL DOM ---
     const sections = {
         pos: document.getElementById('pos-section'),
@@ -198,6 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
         company: document.getElementById('company-section'),
         donation: document.getElementById('donation-section')
     };
+    
     const navCompanyName = document.getElementById('nav-company-name');
     const navCompanyLogo = document.getElementById('nav-company-logo');
     const menuItemsContainer = document.getElementById('menu-items');
@@ -242,7 +304,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const fontSizeSelect = document.getElementById('font-size');
     const layoutDensitySelect = document.getElementById('layout-density');
     const resetThemeBtn = document.getElementById('reset-theme-btn');
-
+    const loadingScreen = document.getElementById('loading-screen');
+    
     // Elementos para la calculadora de costos
     const costHelpButton = document.getElementById('cost-help-button');
     const costCalculationModal = document.getElementById('cost-calculation-modal');
@@ -265,12 +328,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const ingredientTotalElement = document.getElementById('ingredient-total');
     const assignCostButton = document.getElementById('assign-cost');
     const closeCostModalButton = document.getElementById('close-cost-modal');
-
+    const rememberDeviceCheckbox = document.getElementById('remember-device');
+    
     // --- FUNCIONES PARA LA CALCULADORA DE COSTOS ---
     const openCostCalculator = async () => {
         // Obtener el ID del producto que se está editando (si existe)
         editingProductId = productIdInput.value;
-
         // Si ya tenemos ingredientes cargados (desde editProductForm), no los volvemos a cargar
         if (currentIngredients.length === 0 && editingProductId) {
             try {
@@ -281,64 +344,55 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentIngredients = [];
             }
         }
-
         // Mostrar ingredientes en la lista
         renderIngredientList();
-
         // Mostrar el modal
-        costCalculationModal.classList.remove('hidden');
+        if (costCalculationModal) costCalculationModal.classList.remove('hidden');
     };
-
+    
     const closeCostCalculator = () => {
-        costCalculationModal.classList.add('hidden');
+        if (costCalculationModal) costCalculationModal.classList.add('hidden');
     };
-
+    
     const addIngredient = () => {
         const name = ingredientNameInput.value.trim();
         const cost = parseFloat(ingredientCostInput.value);
         const quantity = parseInt(ingredientQuantityInput.value) || 1;
-
         if (!name || isNaN(cost) || cost <= 0) {
             showMessageModal('Por favor, ingresa un nombre y costo válidos para el ingrediente.');
             return;
         }
-
         currentIngredients.push({
             id: Date.now(), // ID único para este ingrediente
             name,
             cost,
             quantity
         });
-
         // Limpiar campos de entrada
         ingredientNameInput.value = '';
         ingredientCostInput.value = '';
         ingredientQuantityInput.value = '1';
-
         // Actualizar la lista y el total
         renderIngredientList();
     };
-
+    
     const removeIngredient = (id) => {
         currentIngredients = currentIngredients.filter(ing => ing.id !== id);
         renderIngredientList();
     };
-
+    
     const renderIngredientList = () => {
+        if (!ingredientListContainer) return;
         ingredientListContainer.innerHTML = '';
-
         if (currentIngredients.length === 0) {
             ingredientListContainer.innerHTML = '<p>No hay ingredientes agregados.</p>';
-            ingredientTotalElement.textContent = 'Total: $0.00';
+            if (ingredientTotalElement) ingredientTotalElement.textContent = 'Total: $0.00';
             return;
         }
-
         let total = 0;
-
         currentIngredients.forEach(ingredient => {
             const ingredientTotal = ingredient.cost * ingredient.quantity;
             total += ingredientTotal;
-
             const ingredientElement = document.createElement('div');
             ingredientElement.className = 'ingredient-item';
             ingredientElement.innerHTML = `
@@ -349,7 +403,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     `;
             ingredientListContainer.appendChild(ingredientElement);
         });
-
         // Agregar event listeners a los botones de eliminar
         ingredientListContainer.querySelectorAll('.btn-remove').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -357,16 +410,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 removeIngredient(id);
             });
         });
-
-        ingredientTotalElement.textContent = `Total: $${total.toFixed(2)}`;
+        if (ingredientTotalElement) ingredientTotalElement.textContent = `Total: $${total.toFixed(2)}`;
     };
-
+    
     const assignCostToProduct = () => {
         const total = currentIngredients.reduce((sum, ing) => sum + (ing.cost * ing.quantity), 0);
-        productCostInput.value = total.toFixed(2);
+        if (productCostInput) productCostInput.value = total.toFixed(2);
         closeCostCalculator();
     };
-
+    
     const saveIngredients = async () => {
         if (editingProductId) {
             try {
@@ -379,86 +431,87 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-
+    
     // --- GESTIÓN DE CATEGORÍAS ---
     const renderCategories = async () => {
         try {
-            const categories = await loadData(STORES.CATEGORIES);
-
+            const categories = await loadDataWithCache(STORES.CATEGORIES);
             // 1. Renderizar lista en el modal de gestión
-            categoryListContainer.innerHTML = '';
-            if (categories.length === 0) {
-                categoryListContainer.innerHTML = '<p>No hay categorías creadas.</p>';
-            } else {
+            if (categoryListContainer) {
+                categoryListContainer.innerHTML = '';
+                if (categories.length === 0) {
+                    categoryListContainer.innerHTML = '<p>No hay categorías creadas.</p>';
+                } else {
+                    categories.forEach(cat => {
+                        const div = document.createElement('div');
+                        div.className = 'category-item-managed';
+                        div.innerHTML = `
+                            <span>${cat.name}</span>
+                            <div class="category-item-controls">
+                                <button class="edit-category-btn" data-id="${cat.id}">✏️</button>
+                                <button class="delete-category-btn" data-id="${cat.id}">🗑️</button>
+                            </div>
+                        `;
+                        categoryListContainer.appendChild(div);
+                    });
+                }
+            }
+            // 2. Poblar el select del formulario de productos
+            if (productCategorySelect) {
+                productCategorySelect.innerHTML = '<option value="">Sin categoría</option>';
                 categories.forEach(cat => {
-                    const div = document.createElement('div');
-                    div.className = 'category-item-managed';
-                    div.innerHTML = `
-                        <span>${cat.name}</span>
-                        <div class="category-item-controls">
-                            <button class="edit-category-btn" data-id="${cat.id}">✏️</button>
-                            <button class="delete-category-btn" data-id="${cat.id}">🗑️</button>
-                        </div>
-                    `;
-                    categoryListContainer.appendChild(div);
+                    const option = document.createElement('option');
+                    option.value = cat.id;
+                    option.textContent = cat.name;
+                    productCategorySelect.appendChild(option);
                 });
             }
-
-            // 2. Poblar el select del formulario de productos
-            productCategorySelect.innerHTML = '<option value="">Sin categoría</option>';
-            categories.forEach(cat => {
-                const option = document.createElement('option');
-                option.value = cat.id;
-                option.textContent = cat.name;
-                productCategorySelect.appendChild(option);
-            });
-
             // 3. Renderizar filtros en el TPV
-            categoryFiltersContainer.innerHTML = '';
-            const allButton = document.createElement('button');
-            allButton.className = 'category-filter-btn active';
-            allButton.textContent = 'Todos';
-            allButton.addEventListener('click', () => {
-                renderMenu(); // Sin filtro
-                document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
-                allButton.classList.add('active');
-            });
-            categoryFiltersContainer.appendChild(allButton);
-
-            categories.forEach(cat => {
-                const button = document.createElement('button');
-                button.className = 'category-filter-btn';
-                button.textContent = cat.name;
-                button.dataset.id = cat.id;
-                button.addEventListener('click', () => {
-                    renderMenu(cat.id); // Filtrar por esta categoría
+            if (categoryFiltersContainer) {
+                categoryFiltersContainer.innerHTML = '';
+                const allButton = document.createElement('button');
+                allButton.className = 'category-filter-btn active';
+                allButton.textContent = 'Todos';
+                allButton.addEventListener('click', () => {
+                    renderMenu(); // Sin filtro
                     document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
-                    button.classList.add('active');
+                    allButton.classList.add('active');
                 });
-                categoryFiltersContainer.appendChild(button);
-            });
-
+                categoryFiltersContainer.appendChild(allButton);
+                categories.forEach(cat => {
+                    const button = document.createElement('button');
+                    button.className = 'category-filter-btn';
+                    button.textContent = cat.name;
+                    button.dataset.id = cat.id;
+                    button.addEventListener('click', () => {
+                        renderMenu(cat.id); // Filtrar por esta categoría
+                        document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
+                        button.classList.add('active');
+                    });
+                    categoryFiltersContainer.appendChild(button);
+                });
+            }
         } catch (error) {
             console.error('Error rendering categories:', error);
             showMessageModal('Error al cargar las categorías.');
         }
     };
-
+    
     const saveCategory = async () => {
         const id = categoryIdInput.value;
         const name = categoryNameInput.value.trim();
-
         if (!name) {
             showMessageModal('El nombre de la categoría no puede estar vacío.');
             return;
         }
-
         try {
             const categoryData = {
                 id: id || `cat-${Date.now()}`,
                 name
             };
             await saveData(STORES.CATEGORIES, categoryData);
+            // Invalidar caché de categorías
+            dataCache.categories = null;
             showMessageModal(`Categoría "${name}" guardada.`);
             resetCategoryForm();
             await renderCategories();
@@ -471,37 +524,38 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-
+    
     const editCategory = async (id) => {
         try {
             const category = await loadData(STORES.CATEGORIES, id);
             if (category) {
-                categoryIdInput.value = category.id;
-                categoryNameInput.value = category.name;
-                saveCategoryBtn.textContent = 'Actualizar Categoría';
-                cancelCategoryEditBtn.classList.remove('hidden');
+                if (categoryIdInput) categoryIdInput.value = category.id;
+                if (categoryNameInput) categoryNameInput.value = category.name;
+                if (saveCategoryBtn) saveCategoryBtn.textContent = 'Actualizar Categoría';
+                if (cancelCategoryEditBtn) cancelCategoryEditBtn.classList.remove('hidden');
             }
         } catch (error) {
             console.error('Error loading category for editing:', error);
         }
     };
-
+    
     const deleteCategory = async (id) => {
         try {
             const category = await loadData(STORES.CATEGORIES, id);
             if (!category) return;
-
             showMessageModal(`¿Seguro que quieres eliminar la categoría "${category.name}"? Los productos en esta categoría quedarán sin categoría.`, async () => {
                 await deleteData(STORES.CATEGORIES, id);
-
+                // Invalidar caché de categorías
+                dataCache.categories = null;
                 // Des-asignar esta categoría de todos los productos
-                const products = await loadData(STORES.MENU);
+                const products = await loadDataWithCache(STORES.MENU);
                 const productsToUpdate = products.filter(p => p.categoryId === id);
                 for (const product of productsToUpdate) {
                     product.categoryId = '';
                     await saveData(STORES.MENU, product);
                 }
-
+                // Invalidar caché de menú
+                dataCache.menu = null;
                 showMessageModal('Categoría eliminada.');
                 await renderCategories();
                 await renderProductManagement();
@@ -511,24 +565,29 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal('Error al eliminar la categoría.');
         }
     };
-
+    
     const resetCategoryForm = () => {
-        categoryIdInput.value = '';
-        categoryNameInput.value = '';
-        saveCategoryBtn.textContent = 'Guardar Categoría';
-        cancelCategoryEditBtn.classList.add('hidden');
+        if (categoryIdInput) categoryIdInput.value = '';
+        if (categoryNameInput) categoryNameInput.value = '';
+        if (saveCategoryBtn) saveCategoryBtn.textContent = 'Guardar Categoría';
+        if (cancelCategoryEditBtn) cancelCategoryEditBtn.classList.add('hidden');
     };
-
-
+    
     // --- NAVEGACIÓN Y VISIBILIDAD ---
     const showSection = (sectionId) => {
-        Object.values(sections).forEach(section => section.classList.remove('active'));
-        document.getElementById(`${sectionId}-section`).classList.add('active');
+        Object.values(sections).forEach(section => {
+            if (section) section.classList.remove('active');
+        });
+        const sectionElement = document.getElementById(`${sectionId}-section`);
+        if (sectionElement) sectionElement.classList.add('active');
         if (sectionId === 'pos') renderMenu();
         if (sectionId === 'product-management') renderProductManagement();
-        if (sectionId === 'dashboard') renderDashboard();
+        if (sectionId === 'dashboard') {
+            loadDashboard().then(dash => {
+                if (dash) dash.renderDashboard();
+            });
+        }
         if (sectionId === 'company') renderCompanyData();
-
         // Close mobile menu if open
         const mobileMenu = document.getElementById('mobile-menu');
         const backdrop = document.getElementById('backdrop');
@@ -537,9 +596,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (backdrop) backdrop.classList.remove('open');
         }
     };
-
+    
     // --- LÓGICA DE LA APLICACIÓN ---
     const showMessageModal = (message, onConfirm = null) => {
+        if (!modalMessage || !messageModal || !closeModalBtn) return;
         modalMessage.textContent = message;
         messageModal.classList.remove('hidden');
         const originalText = closeModalBtn.textContent;
@@ -555,7 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModalBtn.textContent = 'Aceptar';
         };
     };
-
+    
     const applyTheme = (theme) => {
         document.documentElement.style.setProperty('--primary-color', theme.primaryColor);
         document.documentElement.style.setProperty('--secondary-color', theme.secondaryColor);
@@ -568,45 +628,50 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.remove('layout-compact', 'layout-spacious');
         document.body.classList.add(`layout-${theme.layoutDensity}`);
     };
-
+    
     const renderThemeSettings = async () => {
         try {
-            let theme = await loadData(STORES.THEME, 'theme');
+            let theme = await loadDataWithCache(STORES.THEME, 'theme');
             if (!theme) {
                 console.log('No theme data found, initializing with default');
                 theme = { ...defaultTheme };
                 await saveData(STORES.THEME, theme);
+                dataCache.theme = theme;
+                dataCache.lastUpdated.theme = Date.now();
             }
-            primaryColorInput.value = theme.primaryColor;
-            secondaryColorInput.value = theme.secondaryColor;
-            backgroundColorInput.value = theme.backgroundColor;
-            cardBackgroundColorInput.value = theme.cardBackgroundColor;
-            textColorInput.value = theme.textColor;
-            cardTextColorInput.value = theme.cardTextColor;
-            fontSizeSelect.value = theme.fontSize;
-            layoutDensitySelect.value = theme.layoutDensity;
+            if (primaryColorInput) primaryColorInput.value = theme.primaryColor;
+            if (secondaryColorInput) secondaryColorInput.value = theme.secondaryColor;
+            if (backgroundColorInput) backgroundColorInput.value = theme.backgroundColor;
+            if (cardBackgroundColorInput) cardBackgroundColorInput.value = theme.cardBackgroundColor;
+            if (textColorInput) textColorInput.value = theme.textColor;
+            if (cardTextColorInput) cardTextColorInput.value = theme.cardTextColor;
+            if (fontSizeSelect) fontSizeSelect.value = theme.fontSize;
+            if (layoutDensitySelect) layoutDensitySelect.value = theme.layoutDensity;
             applyTheme(theme);
         } catch (error) {
             console.error('Error loading theme settings:', error.message);
             showMessageModal(`Error al cargar configuración de tema: ${error.message}`);
         }
     };
-
+    
     const saveThemeSettings = async (e) => {
         e.preventDefault();
         try {
             const themeData = {
                 id: 'theme',
-                primaryColor: primaryColorInput.value,
-                secondaryColor: secondaryColorInput.value,
-                backgroundColor: backgroundColorInput.value,
-                cardBackgroundColor: cardBackgroundColorInput.value,
-                textColor: textColorInput.value,
-                cardTextColor: cardTextColorInput.value,
-                fontSize: fontSizeSelect.value,
-                layoutDensity: layoutDensitySelect.value
+                primaryColor: primaryColorInput ? primaryColorInput.value : defaultTheme.primaryColor,
+                secondaryColor: secondaryColorInput ? secondaryColorInput.value : defaultTheme.secondaryColor,
+                backgroundColor: backgroundColorInput ? backgroundColorInput.value : defaultTheme.backgroundColor,
+                cardBackgroundColor: cardBackgroundColorInput ? cardBackgroundColorInput.value : defaultTheme.cardBackgroundColor,
+                textColor: textColorInput ? textColorInput.value : defaultTheme.textColor,
+                cardTextColor: cardTextColorInput ? cardTextColorInput.value : defaultTheme.cardTextColor,
+                fontSize: fontSizeSelect ? fontSizeSelect.value : defaultTheme.fontSize,
+                layoutDensity: layoutDensitySelect ? layoutDensitySelect.value : defaultTheme.layoutDensity
             };
             await saveData(STORES.THEME, themeData);
+            // Actualizar caché
+            dataCache.theme = themeData;
+            dataCache.lastUpdated.theme = Date.now();
             applyTheme(themeData);
             showMessageModal('Configuración de tema guardada.');
         } catch (error) {
@@ -614,18 +679,21 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al guardar configuración de tema: ${error.message}`);
         }
     };
-
+    
     const resetTheme = async () => {
         try {
             await saveData(STORES.THEME, defaultTheme);
-            primaryColorInput.value = defaultTheme.primaryColor;
-            secondaryColorInput.value = defaultTheme.secondaryColor;
-            backgroundColorInput.value = defaultTheme.backgroundColor;
-            cardBackgroundColorInput.value = defaultTheme.cardBackgroundColor;
-            textColorInput.value = defaultTheme.textColor;
-            cardTextColorInput.value = defaultTheme.cardTextColor;
-            fontSizeSelect.value = defaultTheme.fontSize;
-            layoutDensitySelect.value = defaultTheme.layoutDensity;
+            // Actualizar caché
+            dataCache.theme = defaultTheme;
+            dataCache.lastUpdated.theme = Date.now();
+            if (primaryColorInput) primaryColorInput.value = defaultTheme.primaryColor;
+            if (secondaryColorInput) secondaryColorInput.value = defaultTheme.secondaryColor;
+            if (backgroundColorInput) backgroundColorInput.value = defaultTheme.backgroundColor;
+            if (cardBackgroundColorInput) cardBackgroundColorInput.value = defaultTheme.cardBackgroundColor;
+            if (textColorInput) textColorInput.value = defaultTheme.textColor;
+            if (cardTextColorInput) cardTextColorInput.value = defaultTheme.cardTextColor;
+            if (fontSizeSelect) fontSizeSelect.value = defaultTheme.fontSize;
+            if (layoutDensitySelect) layoutDensitySelect.value = defaultTheme.layoutDensity;
             applyTheme(defaultTheme);
             showMessageModal('Tema restablecido a valores predeterminados.');
         } catch (error) {
@@ -633,12 +701,12 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al restablecer tema: ${error.message}`);
         }
     };
-
+    
     const renderMenu = async (filterCategoryId = null) => {
+        if (!menuItemsContainer) return;
         try {
-            let menu = await loadData(STORES.MENU);
+            let menu = await loadDataWithCache(STORES.MENU);
             menu = normalizeProducts(menu);
-
             if (filterCategoryId) {
                 menu = menu.filter(item => item.categoryId === filterCategoryId);
             }
@@ -650,7 +718,6 @@ document.addEventListener('DOMContentLoaded', () => {
             menu.forEach(item => {
                 const menuItemDiv = document.createElement('div');
                 menuItemDiv.className = 'menu-item';
-
                 let stockInfo = '';
                 if (item.trackStock) {
                     if (item.stock > 0) {
@@ -667,7 +734,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         <p>$${item.price.toFixed(2)}</p>
                         ${stockInfo}
                     `;
-
                 // Permitir agregar si: no lleva control O (lleva control y tiene stock)
                 if (!item.trackStock || item.stock > 0) {
                     menuItemDiv.addEventListener('click', () => addItemToOrder(item));
@@ -679,7 +745,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar el menú: ${error.message}`);
         }
     };
-
+    
     const addItemToOrder = (item) => {
         // Si el producto lleva control de stock, validamos
         if (item.trackStock) {
@@ -690,7 +756,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
         }
-
         // Si no lleva control, no validamos y agregamos directamente
         const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
         if (existingItemInOrder) {
@@ -700,8 +765,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateOrderDisplay();
     };
-
+    
     const updateOrderDisplay = () => {
+        if (!orderListContainer || !emptyOrderMessage || !posTotalSpan) return;
         orderListContainer.innerHTML = '';
         emptyOrderMessage.classList.toggle('hidden', order.length > 0);
         order.forEach(item => {
@@ -736,13 +802,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
         calculateTotals();
     };
-
+    
     const calculateTotals = () => {
+        if (!posTotalSpan) return;
         const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         posTotalSpan.textContent = `$${total.toFixed(2)}`;
     };
-
+    
     const openPaymentProcess = () => {
+        if (!paymentModal || !paymentTotal || !paymentAmountInput || !paymentChange) return;
         if (order.length === 0) {
             showMessageModal('El pedido está vacío.');
             return;
@@ -754,11 +822,11 @@ document.addEventListener('DOMContentLoaded', () => {
         paymentModal.classList.remove('hidden');
         paymentAmountInput.focus();
     };
-
+    
     const processOrder = async () => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
-            welcomeModal.style.display = 'flex';
+            if (welcomeModal) welcomeModal.style.display = 'flex';
             return;
         }
         try {
@@ -768,21 +836,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (product && product.trackStock) {
                     if (product.stock < orderItem.quantity) {
                         showMessageModal(`¡Stock insuficiente para "${orderItem.name}"! Solo quedan ${product.stock}.`);
-                        paymentModal.classList.add('hidden');
+                        if (paymentModal) paymentModal.classList.add('hidden');
                         return; // Detener el proceso
                     }
                 }
             }
-
             // 2. Actualizar stock (solo para productos con control)
             for (const orderItem of order) {
                 const product = await loadData(STORES.MENU, orderItem.id);
                 if (product && product.trackStock) {
                     product.stock -= orderItem.quantity;
                     await saveData(STORES.MENU, product);
+                    // Invalidar caché de menú
+                    dataCache.menu = null;
                 }
             }
-
             // 3. Guardar la venta
             const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const sale = {
@@ -791,617 +859,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 total
             };
             await saveData(STORES.SALES, sale);
-
             // 4. Limpiar y actualizar UI
-            paymentModal.classList.add('hidden');
+            if (paymentModal) paymentModal.classList.add('hidden');
             showMessageModal('¡Pedido procesado exitosamente!');
             order = [];
             updateOrderDisplay();
             renderMenu(); // Re-renderizar menú para mostrar stock actualizado
-            renderDashboard();
+            if (dashboard) dashboard.renderDashboard();
             renderProductManagement();
         } catch (error) {
             console.error('Error processing order:', error.message);
             showMessageModal(`Error al procesar el pedido: ${error.message}`);
         }
     };
-
-    const deleteOrder = async (timestamp) => {
-        showMessageModal('¿Estás seguro de que quieres borrar este pedido? Esta acción no se puede deshacer.', async () => {
-            try {
-                await deleteData(STORES.SALES, timestamp);
-                renderDashboard();
-                showMessageModal('Pedido eliminado.');
-            } catch (error) {
-                console.error('Error deleting order:', error.message);
-                showMessageModal(`Error al eliminar el pedido: ${error.message}`);
-            }
-        });
-    };
-
-    const renderDashboard = async () => {
-        try {
-            // Use let instead of const to allow reassignment
-            let menu = await loadData(STORES.MENU);
-            menu = normalizeProducts(menu);
-            const salesHistory = await loadData(STORES.SALES);
-
-            // Elementos DOM
-            const dashboardTotalRevenue = document.getElementById('dashboard-total-revenue');
-            const dashboardTotalOrders = document.getElementById('dashboard-total-orders');
-            const dashboardTotalItems = document.getElementById('dashboard-total-items');
-            const dashboardNetProfit = document.getElementById('dashboard-net-profit');
-            const dashboardInventoryValue = document.getElementById('dashboard-inventory-value');
-            const salesHistoryList = document.getElementById('sales-history-list');
-            const emptySalesMessage = document.getElementById('empty-sales-message');
-
-            // Crear un mapa de productos para búsqueda rápida
-            const productMap = new Map();
-            menu.forEach(product => {
-                productMap.set(product.id, product);
-            });
-
-            // Ordenar ventas por timestamp descendente (más recientes primero)
-            const sortedSales = salesHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-            // Calcular estadísticas principales
-            let totalRevenue = 0;
-            let totalItemsSold = 0;
-            let totalNetProfit = 0;
-            const productStats = new Map(); // Para estadísticas de productos
-            sortedSales.forEach(sale => {
-                totalRevenue += sale.total;
-                sale.items.forEach(item => {
-                    totalItemsSold += item.quantity;
-                    // Obtener datos del producto (con fallback mejorado)
-                    const product = productMap.get(item.id) || {
-                        price: item.price,
-                        cost: item.cost || item.price * 0.6 // Asumir 40% de margen si no hay costo
-                    };
-                    const itemProfit = (item.price - product.cost) * item.quantity;
-                    totalNetProfit += itemProfit;
-                    // Acumular estadísticas de productos
-                    if (!productStats.has(item.id)) {
-                        productStats.set(item.id, {
-                            name: item.name,
-                            quantity: 0,
-                            revenue: 0,
-                            profit: 0
-                        });
-                    }
-                    const stats = productStats.get(item.id);
-                    stats.quantity += item.quantity;
-                    stats.revenue += item.price * item.quantity;
-                    stats.profit += itemProfit;
-                });
-            });
-
-            // Actualizar estadísticas en el DOM
-            dashboardTotalRevenue.textContent = `$${totalRevenue.toFixed(2)}`;
-            dashboardTotalOrders.textContent = sortedSales.length;
-            dashboardTotalItems.textContent = totalItemsSold;
-            dashboardNetProfit.textContent = `$${totalNetProfit.toFixed(2)}`;
-
-            // Calcular valor del inventario
-            const inventoryValue = menu.reduce((total, product) => {
-                if (product.trackStock) {
-                    return total + (product.cost * product.stock);
-                }
-                return total;
-            }, 0);
-            dashboardInventoryValue.textContent = `$${inventoryValue.toFixed(2)}`;
-
-            // Mostrar historial de ventas
-            salesHistoryList.innerHTML = '';
-            emptySalesMessage.classList.toggle('hidden', sortedSales.length > 0);
-            sortedSales.forEach((sale, index) => {
-                // Calcular utilidad de esta venta específica
-                const saleNetProfit = sale.items.reduce((sum, item) => {
-                    const product = productMap.get(item.id) || {
-                        price: item.price,
-                        cost: item.cost || item.price * 0.6
-                    };
-                    return sum + (item.price - product.cost) * item.quantity;
-                }, 0);
-                const div = document.createElement('div');
-                div.className = 'sale-item';
-                div.innerHTML = `
-                <div class="sale-item-info">
-                    <p>Pedido #${index + 1} - ${new Date(sale.timestamp).toLocaleString()}</p>
-                    <p>Total: <span class="revenue">$${sale.total.toFixed(2)}</span></p>
-                    <p>Utilidad: <span class="profit">$${saleNetProfit.toFixed(2)}</span></p>
-                    <ul>
-                        ${sale.items.map(item => {
-                    const product = productMap.get(item.id) || {
-                        price: item.price,
-                        cost: item.cost || item.price * 0.6
-                    };
-                    const itemProfit = (item.price - product.cost) * item.quantity;
-                    return `<li>${item.name} x ${item.quantity} (Utilidad: $${itemProfit.toFixed(2)})</li>`;
-                }).join('')}
-                    </ul>
-                </div>
-                <button class="delete-order-btn" data-timestamp="${sale.timestamp}">Eliminar</button>
-            `;
-                salesHistoryList.appendChild(div);
-            });
-
-            // Event listeners para botones de eliminar
-            salesHistoryList.querySelectorAll('.delete-order-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => deleteOrder(e.currentTarget.dataset.timestamp));
-            });
-
-            // Renderizar productos más vendidos (solo si existen los elementos)
-            renderTopProducts(productStats, totalRevenue);
-        } catch (error) {
-            console.error('Error loading dashboard:', error.message);
-            showMessageModal(`Error al cargar el panel de ventas: ${error.message}`);
-        }
-        renderBusinessTips();
-    };
-
-    // Función separada para manejar productos más vendidos
-    const renderTopProducts = (productStats, totalRevenue) => {
-        const topProductsSelect = document.getElementById('top-products-select');
-        const topProductsList = document.getElementById('top-products-list');
-        if (!topProductsSelect || !topProductsList) {
-            console.log('Top products elements not found in DOM');
-            return;
-        }
-        const updateTopProducts = (topN) => {
-            // Convertir Map a array y ordenar por cantidad vendida
-            const topProducts = Array.from(productStats.values())
-                .sort((a, b) => b.quantity - a.quantity)
-                .slice(0, topN);
-            // Calcular porcentajes
-            topProducts.forEach(product => {
-                product.percentage = totalRevenue > 0
-                    ? (product.revenue / totalRevenue * 100).toFixed(2)
-                    : 0;
-            });
-            // Renderizar lista
-            if (topProducts.length === 0) {
-                topProductsList.innerHTML = '<li>No hay ventas registradas.</li>';
-            } else {
-                topProductsList.innerHTML = topProducts.map(p => `
-                        <li>
-                            <strong>${p.name}</strong>: ${p.quantity} unidades<br>
-                            Ingresos: $${p.revenue.toFixed(2)}<br>
-                            Margen de ganancias: $${p.profit.toFixed(2)}<br>
-                            Porcentaje de ventas: ${p.percentage}%
-                        </li>
-                    `).join('');
-            }
-        };
-        // Inicializar con valor por defecto
-        const defaultTop = parseInt(topProductsSelect.value) || 5;
-        updateTopProducts(defaultTop);
-        // Event listener para cambios en el select
-        topProductsSelect.addEventListener('change', (e) => {
-            updateTopProducts(parseInt(e.target.value));
-        });
-    };
-
-    // Función auxiliar para calcular utilidad de un item específico
-    const calculateItemProfit = (item, productMap) => {
-        const product = productMap.get(item.id) || {
-            price: item.price,
-            cost: item.cost || item.price * 0.6 // Asumir 40% de margen por defecto
-        };
-        return (item.price - product.cost) * item.quantity;
-    };
-
-    const renderBusinessTips = async () => {
-        const tipsList = document.getElementById('business-tips');
-        const sales = await loadData(STORES.SALES);
-        const menu = await loadData(STORES.MENU);
-        const tips = [];
-        // Si no hay ventas, mostrar mensaje de inicio
-        if (sales.length === 0) {
-            tips.push(`
-                    <li class="tip-intro">
-                        <strong>🚀 ¡Hola emprendedor!</strong><br>
-                        Soy tu asistente de negocios(limitado). Aún no tienes ventas registradas, 
-                        pero eso está a punto de cambiar. Comienza registrando tus primeras ventas 
-                        y te daré consejos personalizados que pueden incrementar tus ganancias hasta 
-                        en un 30% desde la primera semana.
-                    </li>
-                `);
-            tipsList.innerHTML = tips.join('');
-            return;
-        }
-        // Análisis de datos
-        const now = new Date();
-        const last30Days = sales.filter(sale => {
-            const saleDate = new Date(sale.timestamp);
-            return (now - saleDate) / (1000 * 60 * 60 * 24) <= 30;
-        });
-        const last7Days = sales.filter(sale => {
-            const saleDate = new Date(sale.timestamp);
-            return (now - saleDate) / (1000 * 60 * 60 * 24) <= 7;
-        });
-        // Análisis de productos
-        const productStats = {};
-        const productMargins = {};
-        let totalRevenue = 0;
-        let totalProfit = 0;
-        let totalItemsSold = 0;
-        sales.forEach(sale => {
-            totalRevenue += sale.total;
-            sale.items.forEach(item => {
-                const product = menu.find(p => p.id === item.id) || { cost: item.price * 0.6 };
-                const itemProfit = (item.price - product.cost) * item.quantity;
-                const itemRevenue = item.price * item.quantity;
-                totalProfit += itemProfit;
-                totalItemsSold += item.quantity;
-                if (!productStats[item.id]) {
-                    productStats[item.id] = {
-                        name: item.name,
-                        quantity: 0,
-                        revenue: 0,
-                        profit: 0,
-                        avgPrice: item.price,
-                        cost: product.cost || item.price * 0.6
-                    };
-                }
-                productStats[item.id].quantity += item.quantity;
-                productStats[item.id].revenue += itemRevenue;
-                productStats[item.id].profit += itemProfit;
-                // Calcular margen de ganancia
-                const marginPercent = ((item.price - product.cost) / item.price * 100);
-                productMargins[item.id] = {
-                    name: item.name,
-                    margin: marginPercent,
-                    price: item.price,
-                    cost: product.cost
-                };
-            });
-        });
-        // Análisis de patrones temporales
-        const salesByHour = {};
-        const salesByDay = {};
-        const salesByDayOfWeek = {};
-        sales.forEach(sale => {
-            const date = new Date(sale.timestamp);
-            const hour = date.getHours();
-            const dayOfWeek = date.toLocaleDateString('es-ES', { weekday: 'long' });
-            const dayKey = date.toLocaleDateString();
-            salesByHour[hour] = (salesByHour[hour] || 0) + sale.total;
-            salesByDay[dayKey] = (salesByDay[dayKey] || 0) + sale.total;
-            salesByDayOfWeek[dayOfWeek] = (salesByDayOfWeek[dayOfWeek] || 0) + sale.total;
-        });
-        // Productos ordenados por diferentes métricas
-        const topSellingProducts = Object.values(productStats).sort((a, b) => b.quantity - a.quantity);
-        const topRevenueProducts = Object.values(productStats).sort((a, b) => b.revenue - a.revenue);
-        const topProfitProducts = Object.values(productStats).sort((a, b) => b.profit - a.profit);
-        const topMarginProducts = Object.values(productMargins).sort((a, b) => b.margin - a.margin);
-        // Horas más productivas
-        const bestHours = Object.entries(salesByHour)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3);
-        // Días más productivos
-        const bestDays = Object.entries(salesByDayOfWeek)
-            .sort((a, b) => b[1] - a[1]);
-        // CONSEJOS PERSONALIZADOS CON ENFOQUE DE IA
-        // 1. SALUDO PERSONALIZADO CON DATOS CLAVE
-        const avgSaleValue = totalRevenue / sales.length;
-        const profitMargin = (totalProfit / totalRevenue * 100);
-        const daysInBusiness = Math.max(1, Math.ceil((new Date() - new Date(sales[0].timestamp)) / (1000 * 60 * 60 * 24)));
-        const dailyAvgRevenue = totalRevenue / daysInBusiness;
-        tips.push(`
-                <li class="tip-intro">
-                    <strong>🤖 HOLA, SOY TU ASESOR DE NEGOCIOS(LIMITADO)</strong><br>
-                    He analizado tus ${sales.length} ventas de los últimos ${daysInBusiness} días y detecté 
-                    <span class="highlight">$${totalRevenue.toFixed(2)} en ingresos</span> con un 
-                    <span class="highlight">${profitMargin.toFixed(1)}% de margen neto</span>. 
-                    Tu ticket promedio es de <span class="highlight">$${avgSaleValue.toFixed(2)}</span>.<br><br>
-                    
-                    <strong>ESTOS SON MIS 5 CONSEJOS ESTRATÉGICOS PARA TI:</strong>
-                </li>
-            `);
-        // 2. PRODUCTO ESTRELLA CON RECOMENDACIÓN ESPECÍFICA
-        if (topProfitProducts.length > 0) {
-            const starProduct = topProfitProducts[0];
-            const revenuePercent = (starProduct.revenue / totalRevenue * 100).toFixed(1);
-            const validPrice = !isNaN(starProduct.price) && starProduct.price > 0;
-            const potentialUpsell = validPrice ? (starProduct.price * 1.15).toFixed(2) : 'N/A';
-            tips.push(`
-                <li class="tip-star-product">
-                    <strong>🎯 ESTRATEGIA #1: CAPITALIZA TU PRODUCTO ESTRELLA</strong><br>
-                    "<span class="highlight">${starProduct.name}</span>" genera el ${revenuePercent}% de tus ganancias ($${starProduct.profit.toFixed(2)}).<br>
-                    <strong>ACCIÓN INMEDIATA:</strong> 
-                    <ul>
-                        <li>${validPrice ? `Crea una versión premium a $${potentialUpsell} (añadiendo un ingrediente especial)` : 'Revisa el precio del producto para crear una versión premium'}</li>
-                        <li>Entrena a tu equipo para sugerirlo sistemáticamente</li>
-                        <li>Colócalo como primer elemento en tu menú/mostrador</li>
-                    </ul>
-                    <em>Impacto estimado: +${(starProduct.profit * 0.3).toFixed(2)} en ganancias semanales</em>
-                </li>
-            `);
-        }
-        // 3. ANÁLISIS DE MARGENES CON RECOMENDACIONES PRECISAS
-        const lowMarginProducts = Object.values(productMargins)
-            .filter(p => p.margin < 35)
-            .sort((a, b) => a.margin - b.margin);
-        if (lowMarginProducts.length > 0) {
-            const worstMargin = lowMarginProducts[0];
-            const recommendedPrice = (worstMargin.cost * 1.7).toFixed(2);
-            const potentialIncrease = (recommendedPrice - worstMargin.price).toFixed(2);
-            tips.push(`
-                    <li class="tip-warning">
-                        <strong>⚠️ ESTRATEGIA #2: CORRIGE MARGENES PELIGROSOS</strong><br>
-                        "<span class="highlight">${worstMargin.name}</span>" tiene solo ${worstMargin.margin.toFixed(1)}% de margen 
-                        (precio: $${worstMargin.price}, costo: $${worstMargin.cost.toFixed(2)}).<br>
-                        <strong>ACCIÓN INMEDIATA:</strong> 
-                        <ul>
-                            <li>Aumenta el precio a $${recommendedPrice} (+$${potentialIncrease})</li>
-                            <li>Si no puedes subir el precio, reduce porciones en un 15%</li>
-                            <li>Busca proveedores alternativos para bajar costos</li>
-                        </ul>
-                        <em>Impacto estimado: +${((worstMargin.price * 0.3) * (productStats[worstMargin.name]?.quantity || 1)).toFixed(2)} por semana</em>
-                    </li>
-                `);
-        }
-        // 4. OPTIMIZACIÓN DE HORARIOS BASADA EN DATOS
-        if (bestHours.length > 0) {
-            const peakHour = bestHours[0][0];
-            const peakRevenue = bestHours[0][1];
-            const hourlyAvg = totalRevenue / Object.keys(salesByHour).length;
-            const slowestHour = Object.entries(salesByHour)
-                .sort((a, b) => a[1] - b[1])[0][0];
-            if (peakRevenue > hourlyAvg * 1.5) {
-                tips.push(`
-                        <li class="tip-timing">
-                            <strong>⏰ ESTRATEGIA #3: OPTIMIZA TUS HORARIOS INTELIGENTEMENTE</strong><br>
-                            Entre las <span class="highlight">${peakHour}:00-${parseInt(peakHour) + 1}:00</span> generas 
-                            $${peakRevenue.toFixed(2)} (${((peakRevenue / totalRevenue) * 100).toFixed(1)}% de tus ventas).<br>
-                            <strong>ACCIÓN INMEDIATA:</strong> 
-                            <ul>
-                                <li>Programa promociones exclusivas para esta franja horaria</li>
-                                <li>Asegura el doble de inventario preparado</li>
-                                <li>Ofrece servicio express con 15% de recargo</li>
-                                <li>Reduce personal en la hora más lenta (${slowestHour}:00)</li>
-                            </ul>
-                            <em>Impacto estimado: +${(peakRevenue * 0.25).toFixed(2)} semanales</em>
-                        </li>
-                    `);
-            }
-        }
-        // 5. ESTRATEGIA DE UPSELL Y COMBOS
-        const avgTicketTarget = avgSaleValue * 1.3;
-        // Verificar que tengamos al menos 2 productos para hacer combos
-        let comboExamples = "Producto + Complemento";
-        let comboPrice = avgSaleValue.toFixed(2);
-        if (topSellingProducts.length >= 2) {
-            comboExamples = topSellingProducts.slice(0, 2).map(p => p.name).join(" + ");
-            comboPrice = (topSellingProducts[0].avgPrice + (topSellingProducts[1].avgPrice || topSellingProducts[0].avgPrice) * 0.7).toFixed(2);
-        } else if (topSellingProducts.length === 1) {
-            comboExamples = topSellingProducts[0].name + " + Bebida/Postre";
-            comboPrice = (topSellingProducts[0].avgPrice * 1.5).toFixed(2);
-        }
-        tips.push(`
-            <li class="tip-upsell">
-                <strong>📈 ESTRATEGIA #4: IMPLEMENTA VENTAS CRUZADAS ESTRATÉGICAS</strong><br>
-                Tu ticket promedio actual es $${avgSaleValue.toFixed(2)}. Puedes llevarlo a $${avgTicketTarget.toFixed(2)}.<br>
-                <strong>ACCIÓN INMEDIATA:</strong> 
-                <ul>
-                    <li>Crea el combo "${comboExamples}" por $${comboPrice} (ahorro de 15%)</li>
-                    <li>Entrena equipo en la técnica "¿Desea agregar...?"</li>
-                    <li>Implementa menú digital con sugerencias automáticas</li>
-                    <li>Ofrece postre/bebida con 20% de descuento al comprar plato principal</li>
-                </ul>
-                <em>Impacto estimado: +${(avgTicketTarget - avgSaleValue).toFixed(2)} por transacción</em>
-            </li>
-        `);
-        // 6. TENDENCIAS Y PROYECCIONES
-        if (last30Days.length > 0 && last7Days.length > 0) {
-            const last30Revenue = last30Days.reduce((sum, sale) => sum + sale.total, 0);
-            const last7Revenue = last7Days.reduce((sum, sale) => sum + sale.total, 0);
-            const weeklyRate = last7Revenue / 7;
-            const monthlyRate = last30Revenue / 30;
-            const growthRate = ((weeklyRate - monthlyRate) / monthlyRate * 100).toFixed(1);
-            if (weeklyRate > monthlyRate * 1.15) {
-                tips.push(`
-                        <li class="tip-growth">
-                            <strong>🚀 ESTRATEGIA #5: CAPITALIZA TU CRECIMIENTO ACELERADO</strong><br>
-                            ¡Estás creciendo a un ritmo del ${growthRate}% semanal!<br>
-                            <strong>ACCIÓN INMEDIATA:</strong> 
-                            <ul>
-                                <li>Incrementa inventario en un 25% para evitar desabastecimiento</li>
-                                <li>Contrata personal adicional para las horas pico</li>
-                                <li>Invierte en publicidad local dirigida (Facebook)</li>
-                                <li>Considera expandir horario de atención</li>
-                            </ul>
-                            <em>Oportunidad: Puedes duplicar tus ingresos en ${(70 / growthRate).toFixed(1)} semanas</em>
-                        </li>
-                    `);
-            } else if (weeklyRate < monthlyRate * 0.85) {
-                tips.push(`
-                        <li class="tip-decline">
-                            <strong>📉 ESTRATEGIA #5: REACCIÓN ANÁLITICA ANTE CAÍDA DE VENTAS</strong><br>
-                            Tus ventas han caído ${Math.abs(growthRate)}% esta semana.<br>
-                            <strong>ACCIÓN INMEDIATA:</strong> 
-                            <ul>
-                                <li>Contacta a 10 clientes anteriores para conocer causas</li>
-                                <li>Lanza promoción flash de 48 horas con 25% de descuento</li>
-                                <li>Revisa precios de 3 competidores directos</li>
-                            </ul>
-                            <em>Urgencia: Cada día de caída te cuesta $${(monthlyRate - weeklyRate).toFixed(2)}</em>
-                        </li>
-                    `);
-            }
-        }
-        // 7. PROYECCIÓN FINANCIERA
-        const projectedMonthly = 8364; // Salario mínimo mensual
-        const optimizedProjection = projectedMonthly * 1.2; // 20% de mejora con las estrategias
-        tips.push(`
-                <li class="tip-motivation">
-                    <strong>🎯 VISIÓN ESTRATÉGICA: TU PRÓXIMO MES</strong><br>
-                    Tu meta es alcanzar un ingreso mensual de <span class="highlight">$${projectedMonthly.toFixed(2)}</span>, equivalente al salario mínimo mensual. 
-                    Aplicando estas 5 estrategias, puedes alcanzar 
-                    <span class="highlight">$${optimizedProjection.toFixed(2)}</span> el próximo mes.<br><br>
-                    
-                    <strong>TU PLAN DE ACCIÓN PRIORITARIO:</strong>
-                    <ol>
-                        <li>Revisar márgenes y ajustar precios hoy mismo</li>
-                        <li>Crear 2 combos estratégicos antes de mañana</li>
-                        <li>Optimizar horarios de personal esta semana</li>
-                        <li>Implementar técnicas de upsell con el equipo</li>
-                        <li>Programar evaluación para dentro de 7 días</li>
-                    </ol>
-                    
-                    <em>Recuerda: Yo reanalizaré tus datos cada vez que ingreses para darte consejos actualizados. 
-                    ¡Tu éxito está en la ejecución consistente! si te preguntas por que 8364... me baso en el salario minimo mensual de tu region(chiapas)</em>
-                </li>
-            `);
-        // Agregar estilos CSS para las clases de tips
-        if (!document.getElementById('business-tips-styles')) {
-            const style = document.createElement('style');
-            style.id = 'business-tips-styles';
-            style.textContent = `
-                    .tip-intro { 
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                        color: white; 
-                        padding: 20px; 
-                        border-radius: 10px; 
-                        margin-bottom: 15px; 
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    .tip-star-product { 
-                        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
-                        color: white; 
-                        padding: 18px; 
-                        border-radius: 10px; 
-                        margin-bottom: 12px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    .tip-warning { 
-                        background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%); 
-                        color: #2d3748; 
-                        padding: 18px; 
-                        border-radius: 10px; 
-                        margin-bottom: 12px; 
-                        border-left: 5px solid #e53e3e;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    .tip-timing { 
-                        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); 
-                        color: #2d3748; 
-                        padding: 18px; 
-                        border-radius: 10px; 
-                        margin-bottom: 12px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    .tip-upsell { 
-                        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
-                        color: white; 
-                        padding: 18px; 
-                        border-radius: 10px; 
-                        margin-bottom: 12px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    .tip-growth { 
-                        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); 
-                        color: #2d3748; 
-                        padding: 18px; 
-                        border-radius: 10px; 
-                        margin-bottom: 12px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    .tip-decline { 
-                        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); 
-                        color: #2d3748; 
-                        padding: 18px; 
-                        border-radius: 10px; 
-                        margin-bottom: 12px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    .tip-motivation { 
-                        background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); 
-                        color: #2d3748; 
-                        padding: 20px; 
-                        border-radius: 10px; 
-                        margin-bottom: 12px; 
-                        border: 2px solid #f6ad55;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    #business-tips li { 
-                        list-style: none; 
-                        margin-bottom: 15px; 
-                        transition: transform 0.3s ease;
-                    }
-                    #business-tips li:hover {
-                        transform: translateY(-2px);
-                    }
-                    #business-tips strong { 
-                        display: block; 
-                        margin-bottom: 8px; 
-                        font-size: 1.1em;
-                    }
-                    #business-tips .highlight {
-                        background: rgba(255,255,255,0.2);
-                        padding: 2px 6px;
-                        border-radius: 4px;
-                        font-weight: bold;
-                    }
-                    #business-tips ul, #business-tips ol {
-                        margin: 10px 0;
-                        padding-left: 20px;
-                    }
-                    #business-tips li ul li, #business-tips li ol li {
-                        margin-bottom: 5px;
-                    }
-                    #business-tips em {
-                        display: block;
-                        margin-top: 10px;
-                        font-style: italic;
-                        font-size: 0.9em;
-                        opacity: 0.9;
-                    }
-                `;
-            document.head.appendChild(style);
-        }
-        tipsList.innerHTML = tips.join('');
-    };
-
+    
     const renderCompanyData = async () => {
         try {
-            let companyData = await loadData(STORES.COMPANY, 'company');
+            let companyData = await loadDataWithCache(STORES.COMPANY, 'company');
             if (!companyData) {
                 console.log('No company data found, initializing with default');
                 companyData = { id: 'company', name: 'Lanzo Negocio', phone: '', address: '', logo: '' };
                 await saveData(STORES.COMPANY, companyData);
+                dataCache.company = companyData;
+                dataCache.lastUpdated.company = Date.now();
             }
-            companyNameInput.value = companyData.name;
-            companyPhoneInput.value = companyData.phone;
-            companyAddressInput.value = companyData.address;
+            if (companyNameInput) companyNameInput.value = companyData.name;
+            if (companyPhoneInput) companyPhoneInput.value = companyData.phone;
+            if (companyAddressInput) companyAddressInput.value = companyData.address;
             const logoSrc = companyData.logo || 'https://placehold.co/100x100/FFFFFF/4A5568?text=LN';
-            companyLogoPreview.src = logoSrc;
-            navCompanyLogo.src = logoSrc;
-            navCompanyName.textContent = companyData.name || 'POS';
+            if (companyLogoPreview) companyLogoPreview.src = logoSrc;
+            if (navCompanyLogo) navCompanyLogo.src = logoSrc;
+            if (navCompanyName) navCompanyName.textContent = companyData.name || 'POS';
             await renderThemeSettings();
         } catch (error) {
             console.error('Error loading company data:', error.message);
             showMessageModal(`Error al cargar datos de la empresa: ${error.message}`);
         }
     };
-
+    
     const saveCompanyData = async (e) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
-            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
+            if (welcomeModal) welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
             return;  // Bloquea la acción
         }
         e.preventDefault();
         try {
             const companyData = {
                 id: 'company',
-                name: companyNameInput.value.trim(),
-                phone: companyPhoneInput.value.trim(),
-                address: companyAddressInput.value.trim(),
-                logo: companyLogoPreview.src
+                name: companyNameInput ? companyNameInput.value.trim() : '',
+                phone: companyPhoneInput ? companyPhoneInput.value.trim() : '',
+                address: companyAddressInput ? companyAddressInput.value.trim() : '',
+                logo: companyLogoPreview ? companyLogoPreview.src : ''
             };
             await saveData(STORES.COMPANY, companyData);
+            // Actualizar caché
+            dataCache.company = companyData;
+            dataCache.lastUpdated.company = Date.now();
             renderCompanyData();
             showMessageModal('Datos de la empresa guardados exitosamente.');
         } catch (error) {
@@ -1409,29 +923,25 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al guardar datos de la empresa: ${error.message}`);
         }
     };
-
+    
     const renderProductManagement = async (searchTerm = '') => {
+        if (!productListContainer || !emptyProductMessage) return;
         try {
             const [menu, categories] = await Promise.all([
-                loadData(STORES.MENU).then(normalizeProducts),
-                loadData(STORES.CATEGORIES)
+                loadDataWithCache(STORES.MENU).then(normalizeProducts),
+                loadDataWithCache(STORES.CATEGORIES)
             ]);
-
             const categoryMap = new Map(categories.map(cat => [cat.id, cat.name]));
-
             const filteredMenu = menu.filter(item =>
                 item.name.toLowerCase().includes(searchTerm.toLowerCase())
             );
-
             productListContainer.innerHTML = '';
             emptyProductMessage.classList.toggle('hidden', filteredMenu.length > 0);
-
             if (filteredMenu.length === 0 && searchTerm) {
                 emptyProductMessage.textContent = `No se encontraron productos para "${searchTerm}".`;
             } else {
                 emptyProductMessage.textContent = 'No hay productos.';
             }
-
             filteredMenu.forEach(item => {
                 const categoryName = item.categoryId ? categoryMap.get(item.categoryId) || 'Categoría eliminada' : 'Sin categoría';
                 const div = document.createElement('div');
@@ -1454,30 +964,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>`;
                 productListContainer.appendChild(div);
             });
-            productListContainer.querySelectorAll('.edit-product-btn').forEach(btn => btn.addEventListener('click', e => editProductForm(e.currentTarget.dataset.id)));
-            productListContainer.querySelectorAll('.delete-product-btn').forEach(btn => btn.addEventListener('click', e => deleteProduct(e.currentTarget.dataset.id)));
+            // Los listeners de eventos ahora se manejan por delegación en initApp
         } catch (error) {
             console.error('Error loading product management:', error.message);
             showMessageModal(`Error al cargar la gestión de productos: ${error.message}`);
         }
     };
-
+    
     const editProductForm = async (id) => {
         try {
             const item = await loadData(STORES.MENU, id);
             if (item) {
-                productIdInput.value = item.id;
-                productNameInput.value = item.name;
-                productDescriptionInput.value = item.description || '';
-                productPriceInput.value = item.price;
-                productCostInput.value = item.cost || 0;
-                productStockInput.value = item.stock || 0;
-                productCategorySelect.value = item.categoryId || '';
-                imagePreview.src = item.image || defaultPlaceholder;
-                productFormTitle.textContent = `Editar: ${item.name}`;
-                cancelEditBtn.classList.remove('hidden');
+                if (productIdInput) productIdInput.value = item.id;
+                if (productNameInput) productNameInput.value = item.name;
+                if (productDescriptionInput) productDescriptionInput.value = item.description || '';
+                if (productPriceInput) productPriceInput.value = item.price;
+                if (productCostInput) productCostInput.value = item.cost || 0;
+                if (productStockInput) productStockInput.value = item.stock || 0;
+                if (productCategorySelect) productCategorySelect.value = item.categoryId || '';
+                if (imagePreview) imagePreview.src = item.image || defaultPlaceholder;
+                if (productFormTitle) productFormTitle.textContent = `Editar: ${item.name}`;
+                if (cancelEditBtn) cancelEditBtn.classList.remove('hidden');
                 window.scrollTo(0, 0);
-
                 // Cargar ingredientes del producto si existen
                 try {
                     const ingredientsData = await loadData(STORES.INGREDIENTS, id);
@@ -1494,65 +1002,61 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar producto para edición: ${error.message}`);
         }
     };
-
+    
     const resetProductForm = () => {
-        productForm.reset();
-        productIdInput.value = '';
-        productFormTitle.textContent = 'Añadir Nuevo Producto';
-        cancelEditBtn.classList.add('hidden');
-        imagePreview.src = defaultPlaceholder;
-        productImageFileInput.value = null;
-        productCostInput.value = '';
-        productStockInput.value = '0';
-        productCategorySelect.value = '';
-
+        if (productForm) productForm.reset();
+        if (productIdInput) productIdInput.value = '';
+        if (productFormTitle) productFormTitle.textContent = 'Añadir Nuevo Producto';
+        if (cancelEditBtn) cancelEditBtn.classList.add('hidden');
+        if (imagePreview) imagePreview.src = defaultPlaceholder;
+        if (productImageFileInput) productImageFileInput.value = null;
+        if (productCostInput) productCostInput.value = '';
+        if (productStockInput) productStockInput.value = '0';
+        if (productCategorySelect) productCategorySelect.value = '';
         // Limpiar ingredientes al resetear
         currentIngredients = [];
         editingProductId = null;
     };
-
+    
     const saveProduct = async (e) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
-            welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
+            if (welcomeModal) welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
             return;  // Bloquea la acción
         }
         e.preventDefault();
         try {
-            const id = productIdInput.value;
-            const name = productNameInput.value.trim();
-            const price = parseFloat(productPriceInput.value);
-            const cost = parseFloat(productCostInput.value);
+            const id = productIdInput ? productIdInput.value : '';
+            const name = productNameInput ? productNameInput.value.trim() : '';
+            const price = productPriceInput ? parseFloat(productPriceInput.value) : 0;
+            const cost = productCostInput ? parseFloat(productCostInput.value) : 0;
             if (!name || isNaN(price) || price <= 0 || isNaN(cost) || cost < 0) {
                 showMessageModal('Por favor, ingresa un nombre, precio y costo de producción válidos.');
                 return;
             }
-
             // Determinar si se lleva control de stock basado en el valor inicial
-            const stockValue = parseInt(productStockInput.value) || 0;
+            const stockValue = productStockInput ? parseInt(productStockInput.value) || 0 : 0;
             const trackStock = stockValue > 0;
-
             const productData = {
                 id: id || `product-${Date.now()}`,  // ID nuevo si es creación
                 name,
                 price,
                 cost,
                 stock: stockValue,
-                description: productDescriptionInput.value.trim(),
-                image: imagePreview.src,
-                categoryId: productCategorySelect.value,
+                description: productDescriptionInput ? productDescriptionInput.value.trim() : '',
+                image: imagePreview ? imagePreview.src : defaultPlaceholder,
+                categoryId: productCategorySelect ? productCategorySelect.value : '',
                 trackStock: trackStock  // Nuevo campo
             };
-
             // NUEVO: Setea editingProductId con el ID final (nuevo o existente) antes de guardar ingredientes
             editingProductId = productData.id;
             await saveData(STORES.MENU, productData);
-
+            // Invalidar caché de menú
+            dataCache.menu = null;
             // Ahora sí: Si hay ingredientes y editingProductId válido, guarda
             if (currentIngredients.length > 0 && editingProductId) {
                 await saveIngredients();
             }
-
             showMessageModal(`Producto "${name}" guardado.`);
             resetProductForm();
             renderProductManagement();
@@ -1562,13 +1066,15 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al guardar producto: ${error.message}`);
         }
     };
-
+    
     const deleteProduct = async (id) => {
         try {
             const item = await loadData(STORES.MENU, id);
             showMessageModal(`¿Seguro que quieres eliminar "${item.name}"?`, async () => {
                 try {
                     await deleteData(STORES.MENU, id);
+                    // Invalidar caché de menú
+                    dataCache.menu = null;
                     // Eliminar los ingredientes asociados
                     try {
                         await deleteData(STORES.INGREDIENTS, id);
@@ -1590,7 +1096,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar producto para eliminar: ${error.message}`);
         }
     };
-
+    
     // --- INICIALIZACIÓN DE DATOS POR DEFECTO ---
     const initializeDefaultData = async () => {
         try {
@@ -1602,12 +1108,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (existingMenu.length === 0) {
                 console.log('Initializing default menu');
                 await saveData(STORES.MENU, initialMenu);
+                dataCache.menu = initialMenu;
+                dataCache.lastUpdated.menu = Date.now();
             } else {
                 console.log('Normalizing existing menu');
                 const normalizedMenu = normalizeProducts(existingMenu);
                 await saveData(STORES.MENU, normalizedMenu);
+                dataCache.menu = normalizedMenu;
+                dataCache.lastUpdated.menu = Date.now();
             }
-
             if (!db.objectStoreNames.contains(STORES.COMPANY)) {
                 console.error('Company store not found during initialization');
                 throw new Error('Company store not found');
@@ -1615,9 +1124,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const existingCompany = await loadData(STORES.COMPANY, 'company');
             if (!existingCompany) {
                 console.log('Initializing default company data');
-                await saveData(STORES.COMPANY, { id: 'company', name: 'Lanzo Negocio', phone: '', address: '', logo: '' });
+                const defaultCompany = { id: 'company', name: 'Lanzo Negocio', phone: '', address: '', logo: '' };
+                await saveData(STORES.COMPANY, defaultCompany);
+                dataCache.company = defaultCompany;
+                dataCache.lastUpdated.company = Date.now();
             }
-
             if (!db.objectStoreNames.contains(STORES.THEME)) {
                 console.error('Theme store not found during initialization');
                 throw new Error('Theme store not found');
@@ -1626,27 +1137,83 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!existingTheme) {
                 console.log('Initializing default theme');
                 await saveData(STORES.THEME, defaultTheme);
+                dataCache.theme = defaultTheme;
+                dataCache.lastUpdated.theme = Date.now();
             }
         } catch (error) {
             console.error('Error initializing default data:', error.message, error.stack);
             throw error; // Re-lanzar para que initApp lo capture
         }
     };
-
+    
+    // --- CARGA DIFERIDA DE MÓDULOS ---
+    const loadDashboard = async () => {
+        if (!dashboard) {
+            dashboard = createDashboardModule({
+                loadData,
+                showMessageModal,
+                deleteData,
+                normalizeProducts,
+                STORES
+            });
+        }
+        return dashboard;
+    };
+    
+    const loadBusinessTips = async () => {
+        if (!businessTips) {
+            businessTips = createBusinessTipsModule({
+                loadData,
+                showMessageModal,
+                STORES
+            });
+        }
+        return businessTips;
+    };
+    
+    // --- FUNCIÓN PARA REVALIDAR LICENCIA EN SEGUNDO PLANO ---
+    const revalidateLicenseInBackground = async (savedLicense) => {
+        try {
+            const validationResult = await Promise.race([
+                window.revalidateLicense(),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('License revalidation timeout')), 10000)
+                )
+            ]);
+            
+            if (validationResult && validationResult.valid) {
+                console.log('Background revalidation successful:', validationResult);
+                localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
+                renderLicenseInfo(validationResult);
+            }
+        } catch (error) {
+            console.warn('License revalidation failed:', error.message);
+            // No mostrar errores al usuario para no interrumpir su experiencia
+        }
+    };
+    
     // --- EVENT LISTENERS ---
-    document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
-    document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
-    document.getElementById('nav-product-management').addEventListener('click', () => showSection('product-management'));
-    document.getElementById('nav-dashboard').addEventListener('click', () => showSection('dashboard'));
-    document.getElementById('nav-company').addEventListener('click', () => showSection('company'));
-    document.getElementById('nav-donation').addEventListener('click', () => showSection('donation'));
-    document.getElementById('mobile-nav-pos').addEventListener('click', () => showSection('pos'));
-    document.getElementById('mobile-nav-product-management').addEventListener('click', () => showSection('product-management'));
-    document.getElementById('mobile-nav-dashboard').addEventListener('click', () => showSection('dashboard'));
-    document.getElementById('mobile-nav-company').addEventListener('click', () => showSection('company'));
-    document.getElementById('mobile-nav-donation').addEventListener('click', () => showSection('donation'));
-    document.getElementById('process-order-btn').addEventListener('click', openPaymentProcess);
-    document.getElementById('clear-order-btn').addEventListener('click', () => {
+    if (document.getElementById('home-link')) document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
+    if (document.getElementById('nav-pos')) document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
+    if (document.getElementById('nav-product-management')) document.getElementById('nav-product-management').addEventListener('click', () => showSection('product-management'));
+    if (document.getElementById('nav-dashboard')) document.getElementById('nav-dashboard').addEventListener('click', async () => {
+        showSection('dashboard');
+        const dashboardModule = await loadDashboard();
+        if (dashboardModule) dashboardModule.renderDashboard();
+    });
+    if (document.getElementById('nav-company')) document.getElementById('nav-company').addEventListener('click', () => showSection('company'));
+    if (document.getElementById('nav-donation')) document.getElementById('nav-donation').addEventListener('click', () => showSection('donation'));
+    if (document.getElementById('mobile-nav-pos')) document.getElementById('mobile-nav-pos').addEventListener('click', () => showSection('pos'));
+    if (document.getElementById('mobile-nav-product-management')) document.getElementById('mobile-nav-product-management').addEventListener('click', () => showSection('product-management'));
+    if (document.getElementById('mobile-nav-dashboard')) document.getElementById('mobile-nav-dashboard').addEventListener('click', async () => {
+        showSection('dashboard');
+        const dashboardModule = await loadDashboard();
+        if (dashboardModule) dashboardModule.renderDashboard();
+    });
+    if (document.getElementById('mobile-nav-company')) document.getElementById('mobile-nav-company').addEventListener('click', () => showSection('company'));
+    if (document.getElementById('mobile-nav-donation')) document.getElementById('mobile-nav-donation').addEventListener('click', () => showSection('donation'));
+    if (document.getElementById('process-order-btn')) document.getElementById('process-order-btn').addEventListener('click', openPaymentProcess);
+    if (document.getElementById('clear-order-btn')) document.getElementById('clear-order-btn').addEventListener('click', () => {
         if (order.length > 0) {
             showMessageModal('¿Seguro que quieres limpiar el pedido?', () => {
                 order = [];
@@ -1654,86 +1221,78 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
-    paymentAmountInput.addEventListener('input', () => {
+    if (paymentAmountInput) paymentAmountInput.addEventListener('input', () => {
         const total = parseFloat(paymentTotal.textContent.replace('$', ''));
         const amountPaid = parseFloat(paymentAmountInput.value) || 0;
         const change = amountPaid - total;
         if (change >= 0) {
-            paymentChange.textContent = `${change.toFixed(2)}`;
-            confirmPaymentBtn.disabled = false;
+            if (paymentChange) paymentChange.textContent = `$${change.toFixed(2)}`;
+            if (confirmPaymentBtn) confirmPaymentBtn.disabled = false;
         } else {
-            paymentChange.textContent = '$0.00';
+            if (paymentChange) paymentChange.textContent = '$0.00';
+            if (confirmPaymentBtn) confirmPaymentBtn.disabled = true;
         }
     });
-    confirmPaymentBtn.addEventListener('click', processOrder);
-    document.getElementById('cancel-payment-btn').addEventListener('click', () => paymentModal.classList.add('hidden'));
-    companyForm.addEventListener('submit', saveCompanyData);
-    companyLogoFileInput.addEventListener('change', (e) => {
+    if (confirmPaymentBtn) confirmPaymentBtn.addEventListener('click', processOrder);
+    if (document.getElementById('cancel-payment-btn')) document.getElementById('cancel-payment-btn').addEventListener('click', () => {
+        if (paymentModal) paymentModal.classList.add('hidden');
+    });
+    if (companyForm) companyForm.addEventListener('submit', saveCompanyData);
+    if (companyLogoFileInput) companyLogoFileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                companyLogoPreview.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
+            const compressedImage = await compressImage(file);
+            if (companyLogoPreview) companyLogoPreview.src = compressedImage;
         }
     });
-    productForm.addEventListener('submit', saveProduct);
-    cancelEditBtn.addEventListener('click', resetProductForm);
-    productImageFileInput.addEventListener('change', (e) => {
+    if (productForm) productForm.addEventListener('submit', saveProduct);
+    if (cancelEditBtn) cancelEditBtn.addEventListener('click', resetProductForm);
+    if (productImageFileInput) productImageFileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                imagePreview.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
+            const compressedImage = await compressImage(file);
+            if (imagePreview) imagePreview.src = compressedImage;
         }
     });
-    themeForm.addEventListener('submit', saveThemeSettings);
-    resetThemeBtn.addEventListener('click', resetTheme);
-
+    if (themeForm) themeForm.addEventListener('submit', saveThemeSettings);
+    if (resetThemeBtn) resetThemeBtn.addEventListener('click', resetTheme);
     // Event listeners para la calculadora de costos
-    costHelpButton.addEventListener('click', openCostCalculator);
-    addIngredientButton.addEventListener('click', addIngredient);
-    assignCostButton.addEventListener('click', assignCostToProduct);
-    closeCostModalButton.addEventListener('click', closeCostCalculator);
-
+    if (costHelpButton) costHelpButton.addEventListener('click', openCostCalculator);
+    if (addIngredientButton) addIngredientButton.addEventListener('click', addIngredient);
+    if (assignCostButton) assignCostButton.addEventListener('click', assignCostToProduct);
+    if (closeCostModalButton) closeCostModalButton.addEventListener('click', closeCostCalculator);
     // Permitir agregar ingredientes con la tecla Enter
-    ingredientNameInput.addEventListener('keypress', (e) => {
+    if (ingredientNameInput) ingredientNameInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             addIngredient();
         }
     });
-    ingredientCostInput.addEventListener('keypress', (e) => {
+    if (ingredientCostInput) ingredientCostInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             addIngredient();
         }
     });
-    ingredientQuantityInput.addEventListener('keypress', (e) => {
+    if (ingredientQuantityInput) ingredientQuantityInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             addIngredient();
         }
     });
-
+    
     // --- CONTACT FORM ---
     const contactForm = document.getElementById('contact-form');
     const submitContactForm = async (e) => {
+        if (!contactForm) return;
         e.preventDefault();
-
         const formData = new FormData(contactForm);
-
         try {
             const response = await fetch('https://api.web3forms.com/submit', {
                 method: 'POST',
                 body: formData
             });
-
             const result = await response.json();
-
             if (result.success) {
                 showMessageModal('¡Mensaje enviado con éxito! Nos pondremos en contacto pronto.');
                 contactForm.reset();
@@ -1745,23 +1304,19 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal('Error al enviar el mensaje: ' + error.message);
         }
     };
-    contactForm.addEventListener('submit', submitContactForm);
-
+    if (contactForm) contactForm.addEventListener('submit', submitContactForm);
+    
     // --- EVENT LISTENERS PARA CATEGORÍAS ---
-    categoryModalButton.addEventListener('click', () => {
+    if (categoryModalButton) categoryModalButton.addEventListener('click', () => {
         resetCategoryForm();
-        categoryModal.classList.remove('hidden');
+        if (categoryModal) categoryModal.classList.remove('hidden');
     });
-
-    closeCategoryModalBtn.addEventListener('click', () => {
-        categoryModal.classList.add('hidden');
+    if (closeCategoryModalBtn) closeCategoryModalBtn.addEventListener('click', () => {
+        if (categoryModal) categoryModal.classList.add('hidden');
     });
-
-    saveCategoryBtn.addEventListener('click', saveCategory);
-
-    cancelCategoryEditBtn.addEventListener('click', resetCategoryForm);
-
-    categoryListContainer.addEventListener('click', (e) => {
+    if (saveCategoryBtn) saveCategoryBtn.addEventListener('click', saveCategory);
+    if (cancelCategoryEditBtn) cancelCategoryEditBtn.addEventListener('click', resetCategoryForm);
+    if (categoryListContainer) categoryListContainer.addEventListener('click', (e) => {
         if (e.target.classList.contains('edit-category-btn')) {
             const id = e.target.dataset.id;
             editCategory(id);
@@ -1771,47 +1326,101 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteCategory(id);
         }
     });
-
+    
     const welcomeModal = document.getElementById('welcome-modal');
     const licenseForm = document.getElementById('license-form');
     const licenseKeyInput = document.getElementById('license-key');
     const licenseMessage = document.getElementById('license-message');
     const licenseInfoContainer = document.getElementById('license-info-container');
-
+    
     // --- LICENSE HANDLING AT STARTUP ---
     const initializeLicense = async () => {
         console.log('Initializing license...');
         let savedLicenseJSON = localStorage.getItem('lanzo_license');
-
+        
         if (savedLicenseJSON) {
             try {
                 const savedLicense = JSON.parse(savedLicenseJSON);
                 console.log('Found saved license:', savedLicense);
-                return savedLicense; // Simplemente retorna la licencia
+                
+                // Verificar si el usuario marcó "recordar" y no ha expirado el recordatorio local
+                if (savedLicense.remembered && savedLicense.localExpiry && 
+                    new Date(savedLicense.localExpiry) > new Date()) {
+                    // Desbloquear sin verificar en línea
+                    isAppUnlocked = true;
+                    if (welcomeModal) welcomeModal.style.display = 'none';
+                    renderLicenseInfo(savedLicense);
+                    
+                    // Revalidar en segundo plano
+                    revalidateLicenseInBackground(savedLicense).catch(error => {
+                        console.warn('Background license revalidation failed:', error.message);
+                    });
+                    
+                    return { unlocked: true };
+                }
+                
+                // Verificar si la licencia aún es válida (fecha de expiración)
+                if (savedLicense.expires_at && new Date(savedLicense.expires_at) > new Date()) {
+                    // Licencia válida - desbloquear aplicación inmediatamente
+                    isAppUnlocked = true;
+                    if (welcomeModal) welcomeModal.style.display = 'none';
+                    renderLicenseInfo(savedLicense);
+                    
+                    // Revalidación en segundo plano sin bloquear
+                    revalidateLicenseInBackground(savedLicense).catch(error => {
+                        console.warn('Background license revalidation failed:', error.message);
+                    });
+                    
+                    return { unlocked: true };
+                } else {
+                    // Licencia expirada
+                    localStorage.removeItem('lanzo_license');
+                    renderLicenseInfo({ valid: false });
+                    isAppUnlocked = false;
+                    if (welcomeModal) welcomeModal.style.display = 'flex';
+                    return { unlocked: false };
+                }
             } catch (parseError) {
                 console.error('Could not parse saved license:', parseError.message);
                 localStorage.removeItem('lanzo_license');
-                return { valid: false };
+                renderLicenseInfo({ valid: false });
+                isAppUnlocked = false;
+                if (welcomeModal) welcomeModal.style.display = 'flex';
+                return { unlocked: false };
             }
         } else {
             console.log('No saved license found.');
-            return { valid: false };
+            renderLicenseInfo({ valid: false });
+            isAppUnlocked = false;
+            if (welcomeModal) welcomeModal.style.display = 'flex';
+            return { unlocked: false };
         }
     };
-
-    licenseForm.addEventListener('submit', async (e) => {
+    
+    if (licenseForm) licenseForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const licenseKey = licenseKeyInput.value.trim();
+        const licenseKey = licenseKeyInput ? licenseKeyInput.value.trim() : '';
+        const rememberDevice = rememberDeviceCheckbox ? rememberDeviceCheckbox.checked : false;
+        
         if (!licenseKey) return showLicenseMessage('Por favor ingrese una clave de licencia válida', 'error');
-
+        
         try {
             const activationResult = await activateLicense(licenseKey);
             if (activationResult.valid) {
                 const licenseDataToStore = activationResult.details;
+                
+                // Si el usuario marcó "recordar", guardar con una fecha de expiración más lejana
+                if (rememberDevice) {
+                    licenseDataToStore.remembered = true;
+                    // Extender la validez local por 30 días (aunque la licencia real pueda expirar antes)
+                    licenseDataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+                }
+                
                 localStorage.setItem('lanzo_license', JSON.stringify(licenseDataToStore));
                 isAppUnlocked = true;
-                welcomeModal.style.display = 'none';
+                if (welcomeModal) welcomeModal.style.display = 'none';
                 renderLicenseInfo(licenseDataToStore);
+                
                 // Start the main app UI
                 renderCompanyData();
                 showSection('pos');
@@ -1822,29 +1431,31 @@ document.addEventListener('DOMContentLoaded', () => {
             showLicenseMessage(`Error al conectar con el servidor: ${error.message}`, 'error');
         }
     });
-
+    
     function showLicenseMessage(message, type) {
+        if (!licenseMessage) return;
         licenseMessage.textContent = message;
         licenseMessage.style.display = 'block';
         licenseMessage.style.color = type === 'error' ? '#dc3545' : '#198754';
-        setTimeout(() => { licenseMessage.style.display = 'none'; }, 5000);
+        setTimeout(() => { 
+            if (licenseMessage) licenseMessage.style.display = 'none'; 
+        }, 5000);
     }
-
+    
     function renderLicenseInfo(licenseData) {
+        if (!licenseInfoContainer) return;
         if (!licenseData || !licenseData.valid) {
             licenseInfoContainer.innerHTML = `<p>No hay una licencia activa. <a href="#" id="show-license-modal">Ingresar licencia</a></p>`;
             const link = document.getElementById('show-license-modal');
             if (link) link.addEventListener('click', (e) => {
                 e.preventDefault();
                 localStorage.removeItem('lanzo_license');
-                welcomeModal.style.display = 'flex';
+                if (welcomeModal) welcomeModal.style.display = 'flex';
             });
             return;
         }
-
         const { license_key, product_name, expires_at } = licenseData;
         const statusText = 'Activa y Verificada';
-
         licenseInfoContainer.innerHTML = `
             <div class="license-detail"><span>Clave:</span><span>${license_key || 'N/A'}</span></div>
             <div class="license-detail"><span>Producto:</span><span>${product_name || 'N/A'}</span></div>
@@ -1854,8 +1465,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button id="delete-license-btn" class="btn btn-cancel">Desactivar en este dispositivo</button>
             </div>
         `;
-
-        document.getElementById('delete-license-btn').addEventListener('click', async () => {
+        const deleteLicenseBtn = document.getElementById('delete-license-btn');
+        if (deleteLicenseBtn) deleteLicenseBtn.addEventListener('click', async () => {
             showMessageModal('¿Seguro que quieres desactivar la licencia en este dispositivo?', async () => {
                 try {
                     const result = await window.deactivateCurrentDevice(license_key);
@@ -1879,153 +1490,124 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
-
+    
     // --- INICIALIZACIÓN DE LA APLICACIÓN ---
-    // --- INICIALIZACIÓN DE LA APLICACIÓN OPTIMIZADA ---
     const initApp = async () => {
         try {
-            // Verificar primero si hay una licencia almacenada
-            let savedLicenseJSON = localStorage.getItem('lanzo_license');
+            // Mostrar pantalla de carga solo si el elemento existe
+            if (loadingScreen) loadingScreen.style.display = 'flex';
+            
+            await initDB();
+            
+            // Ejecutar operaciones en paralelo
+            const [licenseResult, defaultDataResult] = await Promise.all([
+                initializeLicense(),
+                initializeDefaultData()
+            ]);
+            
+            // Inicializar los módulos después de que las dependencias estén listas
+            // (carga diferida cuando se necesiten)
+            
+            await renderCategories(); // Cargar categorías al inicio
+            
+            // Lógica de Pestañas (Tabs) para Productos
+            const productTabsContainer = document.getElementById('product-tabs');
+            if (productTabsContainer) {
+                productTabsContainer.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('tab-btn')) {
+                        const tabName = e.target.dataset.tab;
+                        // Botones
+                        productTabsContainer.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                        e.target.classList.add('active');
+                        // Contenido
+                        document.querySelectorAll('#product-management-section .tab-content').forEach(content => {
+                            content.classList.remove('active');
+                        });
+                        const tabContent = document.getElementById(`${tabName}-content`);
+                        if (tabContent) tabContent.classList.add('active');
+                    }
+                });
+            }
+            
+            // Lógica del buscador de productos
+            const productSearchInput = document.getElementById('product-search-input');
+            if (productSearchInput) {
+                productSearchInput.addEventListener('input', (e) => {
+                    renderProductManagement(e.target.value);
+                });
+            }
 
-            if (savedLicenseJSON) {
-                try {
-                    const savedLicense = JSON.parse(savedLicenseJSON);
-                    console.log('Found saved license, showing app immediately');
+            // Delegación de eventos para la lista de productos
+            if (productListContainer) {
+                productListContainer.addEventListener('click', (e) => {
+                    const button = e.target.closest('.edit-product-btn, .delete-product-btn');
+                    if (!button) return;
 
-                    // Desbloquear la app inmediatamente con la licencia local
-                    isAppUnlocked = true;
-                    welcomeModal.style.display = 'none';
-                    renderLicenseInfo(savedLicense);
-
-                    // Mostrar UI inmediatamente mientras se carga el resto en segundo plano
-                    showLoader(); // Muestra un indicador de carga
-
-                    // Inicializar componentes críticos primero
-                    await initDB();
-                    await initializeDefaultData();
-
-                    // Ocultar loader y mostrar la aplicación
-                    hideLoader();
-                    await renderCompanyData();
-                    showSection('pos');
-
-                    // Cargar el resto de forma asíncrona
-                    setTimeout(async () => {
-                        await renderCategories();
-                        renderProductManagement();
-                        renderMenu();
-                        renderDashboard();
-                    }, 500);
-
-                    // Revalidar licencia en segundo plano
-                    validateLicenseInBackground(savedLicense);
-
-                } catch (parseError) {
-                    console.error('Error with saved license:', parseError);
-                    // Continuar con el flujo normal de verificación
-                    continueNormalInitialization();
-                }
+                    const id = button.dataset.id;
+                    if (button.classList.contains('edit-product-btn')) {
+                        editProductForm(id);
+                    } else if (button.classList.contains('delete-product-btn')) {
+                        deleteProduct(id);
+                    }
+                });
+            }
+            
+            // Lógica de Pestañas (Tabs) para Ventas
+            const salesTabsContainer = document.getElementById('sales-tabs');
+            if (salesTabsContainer) {
+                salesTabsContainer.addEventListener('click', async (e) => {
+                    if (e.target.classList.contains('tab-btn')) {
+                        const tabName = e.target.dataset.tab;
+                        // Botones
+                        salesTabsContainer.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                        e.target.classList.add('active');
+                        // Contenido
+                        document.querySelectorAll('#dashboard-section .tab-content').forEach(content => {
+                            content.classList.remove('active');
+                        });
+                        const tabContent = document.getElementById(tabName);
+                        if (tabContent) tabContent.classList.add('active');
+                        // Llama a la función de renderizado apropiada al cambiar de pestaña
+                        if (tabName === 'tips-content') {
+                            const businessTipsModule = await loadBusinessTips();
+                            if (businessTipsModule) businessTipsModule.renderBusinessTips();
+                        } else {
+                            const dashboardModule = await loadDashboard();
+                            if (dashboardModule) dashboardModule.renderDashboard();
+                        }
+                    }
+                });
+            }
+            
+            // Event listeners for navigation and main actions
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+            const backdrop = document.getElementById('backdrop');
+            const toggleMenu = () => {
+                if (mobileMenu) mobileMenu.classList.toggle('open');
+                if (backdrop) backdrop.classList.toggle('open');
+            };
+            if (mobileMenuButton && mobileMenu && backdrop) {
+                mobileMenuButton.addEventListener('click', toggleMenu);
+                backdrop.addEventListener('click', toggleMenu);
             } else {
-                // No hay licencia, seguir flujo normal
-                continueNormalInitialization();
+                console.error('app.js: Critical mobile menu elements not found!');
+            }
+            
+            // Ocultar pantalla de carga al finalizar (si existe)
+            if (loadingScreen) loadingScreen.style.display = 'none';
+            
+            // Si la licencia está desbloqueada, mostrar la sección principal
+            if (licenseResult.unlocked) {
+                renderCompanyData();
+                showSection('pos');
             }
         } catch (error) {
+            if (loadingScreen) loadingScreen.style.display = 'none';
             console.error('Error initializing application:', error.message);
             showMessageModal(`Error fatal al inicializar: ${error.message}. Por favor, recarga la página.`);
         }
     };
-
-    // Función para validar licencia en segundo plano
-    const validateLicenseInBackground = async (savedLicense) => {
-        try {
-            const validationResult = await Promise.race([
-                window.revalidateLicense(),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Timeout')), 10000)
-                )
-            ]);
-
-            if (validationResult && validationResult.valid) {
-                console.log('Background validation successful');
-                localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
-                renderLicenseInfo(validationResult);
-            } else {
-                console.warn('Background validation failed');
-                showLicenseMessage('Advertencia: No se pudo verificar la licencia con el servidor. Funcionando con copia local.', 'warning');
-            }
-        } catch (error) {
-            console.warn('Background validation error:', error);
-            showLicenseMessage('Advertencia: Error de conexión. Funcionando en modo offline con licencia local.', 'warning');
-        }
-    };
-
-    // Flujo normal de inicialización (para cuando no hay licencia)
-    const continueNormalInitialization = async () => {
-        showLoader();
-        await initDB();
-        await initializeDefaultData();
-        await renderCategories();
-        hideLoader();
-
-        // Mostrar modal de bienvenida para ingresar licencia
-        isAppUnlocked = false;
-        welcomeModal.style.display = 'flex';
-        renderLicenseInfo({ valid: false });
-    };
-
-    // Funciones auxiliares para loader
-    const showLoader = () => {
-        // Crear loader si no existe
-        if (!document.getElementById('app-loader')) {
-            const loader = document.createElement('div');
-            loader.id = 'app-loader';
-            loader.style = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.9);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 10000;
-            font-size: 1.2rem;
-        `;
-            loader.innerHTML = `
-            <div style="text-align: center;">
-                <div style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-                <p style="margin-top: 15px;">Cargando aplicación...</p>
-            </div>
-            <style>
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-            </style>
-        `;
-            document.body.appendChild(loader);
-        } else {
-            document.getElementById('app-loader').style.display = 'flex';
-        }
-    };
-
-    const hideLoader = () => {
-        const loader = document.getElementById('app-loader');
-        if (loader) {
-            loader.style.display = 'none';
-        }
-    };
-
+    
     initApp();
-    setInterval(async () => {
-        if (isAppUnlocked) {
-            const validation = await window.revalidateLicense();
-            if (!validation.valid) {
-                isAppUnlocked = false;
-                welcomeModal.style.display = 'flex';
-                showMessageModal('Licencia expirada o inválida. Por favor, valida nuevamente.');
-            }
-        }
-    }, 1800000);  // Cada 30 minutos
 });
