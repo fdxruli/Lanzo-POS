@@ -75,7 +75,13 @@
         </section>
         <section id="product-management-section" class="section-content">
             <h2 class="section-title">Gestión de Productos</h2>
-            <div class="product-management-grid">
+
+            <div class="tabs-container" id="product-tabs">
+                <button class="tab-btn active" data-tab="add-product">Añadir/Editar Producto</button>
+                <button class="tab-btn" data-tab="view-products">Ver Productos</button>
+            </div>
+
+            <div id="add-product-content" class="tab-content active">
                 <div class="product-form-container">
                     <h3 class="subtitle" id="product-form-title">Añadir Nuevo Producto</h3>
                     <form id="product-form">
@@ -121,8 +127,14 @@
                         <button type="button" id="cancel-edit-btn" class="btn btn-cancel hidden">Cancelar</button>
                     </form>
                 </div>
+            </div>
+
+            <div id="view-products-content" class="tab-content">
                 <div class="product-list-container">
-                    <h3 class="subtitle">Productos</h3>
+                    <h3 class="subtitle">Lista de Productos</h3>
+                    <div class="search-container">
+                        <input type="text" id="product-search-input" class="form-input" placeholder="Buscar por nombre...">
+                    </div>
                     <div id="empty-product-message" class="empty-message hidden">No hay productos.</div>
                     <div id="product-list" class="product-list"></div>
                 </div>
@@ -130,30 +142,40 @@
         </section>
         <section id="dashboard-section" class="section-content">
             <h2 class="section-title">Panel de Ventas</h2>
-            <div class="dashboard-grid">
-                <div class="dashboard-stats-container">
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <h3 class="stat-title">Ingresos Totales</h3>
-                            <p id="dashboard-total-revenue" class="stat-value revenue">$0.00</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3 class="stat-title">Pedidos Totales</h3>
-                            <p id="dashboard-total-orders" class="stat-value orders">0</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3 class="stat-title">Productos Vendidos</h3>
-                            <p id="dashboard-total-items" class="stat-value items">0</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3 class="stat-title">Utilidad Neta</h3>
-                            <p id="dashboard-net-profit" class="stat-value profit">$0.00</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3 class="stat-title">Valor del Inventario</h3>
-                            <p id="dashboard-inventory-value" class="stat-value inventory">$0.00</p>
-                        </div>
+            
+            <div class="tabs-container" id="sales-tabs">
+                <button class="tab-btn active" data-tab="stats-content">Estadísticas</button>
+                <button class="tab-btn" data-tab="history-content">Historial y Top</button>
+                <button class="tab-btn" data-tab="tips-content">Consejos</button>
+            </div>
+
+            <div id="stats-content" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3 class="stat-title">Ingresos Totales</h3>
+                        <p id="dashboard-total-revenue" class="stat-value revenue">$0.00</p>
                     </div>
+                    <div class="stat-card">
+                        <h3 class="stat-title">Pedidos Totales</h3>
+                        <p id="dashboard-total-orders" class="stat-value orders">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="stat-title">Productos Vendidos</h3>
+                        <p id="dashboard-total-items" class="stat-value items">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="stat-title">Utilidad Neta</h3>
+                        <p id="dashboard-net-profit" class="stat-value profit">$0.00</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="stat-title">Valor del Inventario</h3>
+                        <p id="dashboard-inventory-value" class="stat-value inventory">$0.00</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="history-content" class="tab-content">
+                <div class="dashboard-grid-condensed">
                     <div class="stat-card">
                         <h3 class="stat-title">Top Productos Más Vendidos</h3>
                         <select id="top-products-select" class="form-input">
@@ -168,6 +190,9 @@
                         <div id="sales-history-list" class="sales-history-list"></div>
                     </div>
                 </div>
+            </div>
+
+            <div id="tips-content" class="tab-content">
                 <div class="news-container">
                     <div class="news-placeholder">
                         <h3 class="news-title">Consejos para tu Negocio</h3>

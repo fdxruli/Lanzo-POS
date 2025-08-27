@@ -528,7 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sectionId === 'product-management') renderProductManagement();
         if (sectionId === 'dashboard') renderDashboard();
         if (sectionId === 'company') renderCompanyData();
-        
+
         // Close mobile menu if open
         const mobileMenu = document.getElementById('mobile-menu');
         const backdrop = document.getElementById('backdrop');
@@ -1411,7 +1411,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const renderProductManagement = async () => {
+    const renderProductManagement = async (searchTerm = '') => {
         try {
             const [menu, categories] = await Promise.all([
                 loadData(STORES.MENU).then(normalizeProducts),
@@ -1419,9 +1419,21 @@ document.addEventListener('DOMContentLoaded', () => {
             ]);
 
             const categoryMap = new Map(categories.map(cat => [cat.id, cat.name]));
+
+            const filteredMenu = menu.filter(item =>
+                item.name.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
             productListContainer.innerHTML = '';
-            emptyProductMessage.classList.toggle('hidden', menu.length > 0);
-            menu.forEach(item => {
+            emptyProductMessage.classList.toggle('hidden', filteredMenu.length > 0);
+
+            if (filteredMenu.length === 0 && searchTerm) {
+                emptyProductMessage.textContent = `No se encontraron productos para "${searchTerm}".`;
+            } else {
+                emptyProductMessage.textContent = 'No hay productos.';
+            }
+
+            filteredMenu.forEach(item => {
                 const categoryName = item.categoryId ? categoryMap.get(item.categoryId) || 'Categoría eliminada' : 'Sin categoría';
                 const div = document.createElement('div');
                 div.className = 'product-item';
@@ -1914,6 +1926,55 @@ document.addEventListener('DOMContentLoaded', () => {
             await initDB();
             await initializeDefaultData();
             await renderCategories(); // Cargar categorías al inicio
+
+            // Lógica de Pestañas (Tabs) para Productos
+            const productTabsContainer = document.getElementById('product-tabs');
+            if (productTabsContainer) {
+                productTabsContainer.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('tab-btn')) {
+                        const tabName = e.target.dataset.tab;
+
+                        // Botones
+                        productTabsContainer.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                        e.target.classList.add('active');
+
+                        // Contenido
+                        document.querySelectorAll('#product-management-section .tab-content').forEach(content => {
+                            content.classList.remove('active');
+                        });
+                        document.getElementById(`${tabName}-content`).classList.add('active');
+                    }
+                });
+            }
+
+            // Lógica del buscador de productos
+            const productSearchInput = document.getElementById('product-search-input');
+            if (productSearchInput) {
+                productSearchInput.addEventListener('input', (e) => {
+                    renderProductManagement(e.target.value);
+                });
+            }
+
+            // Lógica de Pestañas (Tabs) para Ventas
+            const salesTabsContainer = document.getElementById('sales-tabs');
+            if (salesTabsContainer) {
+                salesTabsContainer.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('tab-btn')) {
+                        const tabName = e.target.dataset.tab;
+
+                        // Botones
+                        salesTabsContainer.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                        e.target.classList.add('active');
+
+                        // Contenido
+                        document.querySelectorAll('#dashboard-section .tab-content').forEach(content => {
+                            content.classList.remove('active');
+                        });
+                        document.getElementById(tabName).classList.add('active');
+                    }
+                });
+            }
+
             // Event listeners for navigation and main actions
             document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
             document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
