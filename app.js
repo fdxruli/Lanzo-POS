@@ -528,7 +528,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sectionId === 'product-management') renderProductManagement();
         if (sectionId === 'dashboard') renderDashboard();
         if (sectionId === 'company') renderCompanyData();
-        document.getElementById('mobile-menu').classList.add('hidden');
+        
+        // Close mobile menu if open
+        const mobileMenu = document.getElementById('mobile-menu');
+        const backdrop = document.getElementById('backdrop');
+        if (mobileMenu && mobileMenu.classList.contains('open')) {
+            mobileMenu.classList.remove('open');
+            if (backdrop) backdrop.classList.remove('open');
+        }
     };
 
     // --- LÓGICA DE LA APLICACIÓN ---
@@ -1622,7 +1629,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('nav-dashboard').addEventListener('click', () => showSection('dashboard'));
     document.getElementById('nav-company').addEventListener('click', () => showSection('company'));
     document.getElementById('nav-donation').addEventListener('click', () => showSection('donation'));
-    document.getElementById('mobile-menu-button').addEventListener('click', () => document.getElementById('mobile-menu').classList.toggle('hidden'));
     document.getElementById('mobile-nav-pos').addEventListener('click', () => showSection('pos'));
     document.getElementById('mobile-nav-product-management').addEventListener('click', () => showSection('product-management'));
     document.getElementById('mobile-nav-dashboard').addEventListener('click', () => showSection('dashboard'));
@@ -1918,24 +1924,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.getElementById('mobile-menu');
+            const backdrop = document.getElementById('backdrop');
 
-            console.log('app.js: mobileMenuButton element:', mobileMenuButton);
-            console.log('app.js: mobileMenu element:', mobileMenu);
+            const toggleMenu = () => {
+                mobileMenu.classList.toggle('open');
+                backdrop.classList.toggle('open');
+            };
 
-            if (mobileMenuButton && mobileMenu) {
-                mobileMenuButton.addEventListener('click', () => {
-                    console.log('app.js: mobile-menu-button clicked!');
-                    mobileMenu.classList.toggle('hidden');
-                    console.log('app.js: mobileMenu has hidden class:', mobileMenu.classList.contains('hidden'));
-                });
+            if (mobileMenuButton && mobileMenu && backdrop) {
+                mobileMenuButton.addEventListener('click', toggleMenu);
+                backdrop.addEventListener('click', toggleMenu);
             } else {
-                console.error('app.js: mobileMenuButton or mobileMenu element not found!');
+                console.error('app.js: Critical mobile menu elements not found!');
             }
-            document.getElementById('mobile-nav-pos').addEventListener('click', () => showSection('pos'));
-            document.getElementById('mobile-nav-product-management').addEventListener('click', () => showSection('product-management'));
-            document.getElementById('mobile-nav-dashboard').addEventListener('click', () => showSection('dashboard'));
-            document.getElementById('mobile-nav-company').addEventListener('click', () => showSection('company'));
-            document.getElementById('mobile-nav-donation').addEventListener('click', () => showSection('donation'));
+            document.getElementById('mobile-nav-pos').addEventListener('click', (e) => { e.stopPropagation(); showSection('pos'); });
+            document.getElementById('mobile-nav-product-management').addEventListener('click', (e) => { e.stopPropagation(); showSection('product-management'); });
+            document.getElementById('mobile-nav-dashboard').addEventListener('click', (e) => { e.stopPropagation(); showSection('dashboard'); });
+            document.getElementById('mobile-nav-company').addEventListener('click', (e) => { e.stopPropagation(); showSection('company'); });
+            document.getElementById('mobile-nav-donation').addEventListener('click', (e) => { e.stopPropagation(); showSection('donation'); });
             document.getElementById('process-order-btn').addEventListener('click', openPaymentProcess);
             document.getElementById('clear-order-btn').addEventListener('click', () => {
                 if (order.length > 0) {
