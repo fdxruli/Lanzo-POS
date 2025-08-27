@@ -1,13 +1,13 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log('app.js: DOMContentLoaded event fired.');
-    
+
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
     let isAppUnlocked = false;
     let order = [];
     let db = null;
     let dashboard, businessTips; // Declarar módulos aquí
-    
-    const DB_NAME = 'LanzoDB1';
+
+    const DB_NAME = 'LanzoDB2';
     const DB_VERSION = 5; // Incrementado para agregar almacenamiento de categorías
     const STORES = {
         MENU: 'menu',
@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         INGREDIENTS: 'ingredients',
         CATEGORIES: 'categories' // Nuevo almacén para categorías
     };
-    
+
     const initialMenu = [
         {
             id: 'burger-classic',
@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
             TrackEvent: true
         }
     ];
-    
+
     const defaultTheme = {
         id: 'theme',
         primaryColor: '#374151',
@@ -44,11 +44,11 @@ document.addEventListener('DOMContentLoaded', () => {
         fontSize: 'medium',
         layoutDensity: 'spacious'
     };
-    
+
     // Variables para la gestión de ingredientes
     let currentIngredients = [];
     let editingProductId = null;
-    
+
     // --- SISTEMA DE CACHÉ PARA DATOS FRECUENTES ---
     const dataCache = {
         menu: null,
@@ -62,25 +62,34 @@ document.addEventListener('DOMContentLoaded', () => {
             categories: 0
         }
     };
-    
-    const loadDataWithCache = async (storeName, key = null, maxAge = 300000) => { // 5 minutos
+
+    const loadDataWithCache = async (storeName, key = null, maxAge = 300000) => {
         const now = Date.now();
-        
+
         // Verificar si tenemos datos en caché y son recientes
-        if (dataCache[storeName] && (now - dataCache.lastUpdated[storeName] < maxAge)) {
-            return key ? dataCache[storeName].find(item => item.id === key) : dataCache[storeName];
+        if (dataCache[storeName] !== null && (now - dataCache.lastUpdated[storeName] < maxAge)) {
+            // Si hay clave, buscar en el array o devolver el objeto único
+            if (key) {
+                // Si es un array, buscar el elemento
+                if (Array.isArray(dataCache[storeName])) {
+                    return dataCache[storeName].find(item => item.id === key);
+                }
+                // Si es un objeto único, verificar si coincide con la clave
+                return dataCache[storeName].id === key ? dataCache[storeName] : null;
+            }
+            return dataCache[storeName];
         }
-        
+
         // Cargar desde IndexedDB
         const data = await loadData(storeName, key);
-        
+
         // Actualizar caché
         dataCache[storeName] = data;
         dataCache.lastUpdated[storeName] = now;
-        
+
         return data;
     };
-    
+
     // --- FUNCIÓN PARA CALCULAR LUMINANCIA Y AJUSTAR COLOR DE TEXTO ---
     const getContrastColor = (hexColor) => {
         // Convert hex to RGB
@@ -92,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Return white for dark backgrounds, black for light backgrounds
         return luminance > 0.5 ? '#000000' : '#ffffff';
     };
-    
+
     // Función para normalizar productos existentes
     function normalizeProducts(products) {
         if (!Array.isArray(products)) {
@@ -110,31 +119,31 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
     }
-    
+
     // --- FUNCIÓN PARA COMPRIMIR IMÁGENES ---
     const compressImage = (file, maxWidth = 300, quality = 0.7) => {
         return new Promise((resolve) => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             const img = new Image();
-            
+
             img.onload = () => {
                 // Calcular nuevas dimensiones manteniendo la proporción
                 const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
                 canvas.width = img.width * ratio;
                 canvas.height = img.height * ratio;
-                
+
                 // Dibujar imagen redimensionada
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                
+
                 // Convertir a base64 con calidad reducida
                 resolve(canvas.toDataURL('image/jpeg', quality));
             };
-            
+
             img.src = URL.createObjectURL(file);
         });
     };
-    
+
     // --- INICIALIZACIÓN DE INDEXEDDB ---
     const initDB = () => {
         return new Promise((resolve, reject) => {
@@ -180,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
     };
-    
+
     // --- FUNCIONES DE ALMACENAMIENTO CON INDEXEDDB ---
     const saveData = (storeName, data) => {
         if (!isAppUnlocked && welcomeModal && welcomeModal.style.display === 'none') {
@@ -210,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
-    
+
     const loadData = (storeName, key = null) => {
         return new Promise((resolve, reject) => {
             if (!db.objectStoreNames.contains(storeName)) {
@@ -220,6 +229,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const transaction = db.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
+
+            transaction.onerror = () => reject(transaction.error);
+
             if (key) {
                 const request = store.get(key);
                 request.onsuccess = () => resolve(request.result);
@@ -231,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
-    
+
     const deleteData = (storeName, key) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
@@ -250,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
             request.onerror = () => reject(request.error);
         });
     };
-    
+
     // --- ELEMENTOS DEL DOM ---
     const sections = {
         pos: document.getElementById('pos-section'),
@@ -259,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
         company: document.getElementById('company-section'),
         donation: document.getElementById('donation-section')
     };
-    
+
     const navCompanyName = document.getElementById('nav-company-name');
     const navCompanyLogo = document.getElementById('nav-company-logo');
     const menuItemsContainer = document.getElementById('menu-items');
@@ -305,7 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const layoutDensitySelect = document.getElementById('layout-density');
     const resetThemeBtn = document.getElementById('reset-theme-btn');
     const loadingScreen = document.getElementById('loading-screen');
-    
+
     // Elementos para la calculadora de costos
     const costHelpButton = document.getElementById('cost-help-button');
     const costCalculationModal = document.getElementById('cost-calculation-modal');
@@ -329,7 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const assignCostButton = document.getElementById('assign-cost');
     const closeCostModalButton = document.getElementById('close-cost-modal');
     const rememberDeviceCheckbox = document.getElementById('remember-device');
-    
+
     // --- FUNCIONES PARA LA CALCULADORA DE COSTOS ---
     const openCostCalculator = async () => {
         // Obtener el ID del producto que se está editando (si existe)
@@ -349,11 +361,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Mostrar el modal
         if (costCalculationModal) costCalculationModal.classList.remove('hidden');
     };
-    
+
     const closeCostCalculator = () => {
         if (costCalculationModal) costCalculationModal.classList.add('hidden');
     };
-    
+
     const addIngredient = () => {
         const name = ingredientNameInput.value.trim();
         const cost = parseFloat(ingredientCostInput.value);
@@ -375,12 +387,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Actualizar la lista y el total
         renderIngredientList();
     };
-    
+
     const removeIngredient = (id) => {
         currentIngredients = currentIngredients.filter(ing => ing.id !== id);
         renderIngredientList();
     };
-    
+
     const renderIngredientList = () => {
         if (!ingredientListContainer) return;
         ingredientListContainer.innerHTML = '';
@@ -412,13 +424,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (ingredientTotalElement) ingredientTotalElement.textContent = `Total: $${total.toFixed(2)}`;
     };
-    
+
     const assignCostToProduct = () => {
         const total = currentIngredients.reduce((sum, ing) => sum + (ing.cost * ing.quantity), 0);
         if (productCostInput) productCostInput.value = total.toFixed(2);
         closeCostCalculator();
     };
-    
+
     const saveIngredients = async () => {
         if (editingProductId) {
             try {
@@ -431,7 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-    
+
     // --- GESTIÓN DE CATEGORÍAS ---
     const renderCategories = async () => {
         try {
@@ -496,7 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal('Error al cargar las categorías.');
         }
     };
-    
+
     const saveCategory = async () => {
         const id = categoryIdInput.value;
         const name = categoryNameInput.value.trim();
@@ -511,7 +523,8 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             await saveData(STORES.CATEGORIES, categoryData);
             // Invalidar caché de categorías
-            dataCache.categories = null;
+            dataCache[STORES.MENU] = null;
+dataCache.lastUpdated[STORES.MENU] = 0;
             showMessageModal(`Categoría "${name}" guardada.`);
             resetCategoryForm();
             await renderCategories();
@@ -524,7 +537,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-    
+
     const editCategory = async (id) => {
         try {
             const category = await loadData(STORES.CATEGORIES, id);
@@ -538,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error loading category for editing:', error);
         }
     };
-    
+
     const deleteCategory = async (id) => {
         try {
             const category = await loadData(STORES.CATEGORIES, id);
@@ -565,14 +578,14 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal('Error al eliminar la categoría.');
         }
     };
-    
+
     const resetCategoryForm = () => {
         if (categoryIdInput) categoryIdInput.value = '';
         if (categoryNameInput) categoryNameInput.value = '';
         if (saveCategoryBtn) saveCategoryBtn.textContent = 'Guardar Categoría';
         if (cancelCategoryEditBtn) cancelCategoryEditBtn.classList.add('hidden');
     };
-    
+
     // --- NAVEGACIÓN Y VISIBILIDAD ---
     const showSection = (sectionId) => {
         Object.values(sections).forEach(section => {
@@ -596,7 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (backdrop) backdrop.classList.remove('open');
         }
     };
-    
+
     // --- LÓGICA DE LA APLICACIÓN ---
     const showMessageModal = (message, onConfirm = null) => {
         if (!modalMessage || !messageModal || !closeModalBtn) return;
@@ -615,7 +628,7 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModalBtn.textContent = 'Aceptar';
         };
     };
-    
+
     const applyTheme = (theme) => {
         document.documentElement.style.setProperty('--primary-color', theme.primaryColor);
         document.documentElement.style.setProperty('--secondary-color', theme.secondaryColor);
@@ -628,7 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.remove('layout-compact', 'layout-spacious');
         document.body.classList.add(`layout-${theme.layoutDensity}`);
     };
-    
+
     const renderThemeSettings = async () => {
         try {
             let theme = await loadDataWithCache(STORES.THEME, 'theme');
@@ -653,7 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar configuración de tema: ${error.message}`);
         }
     };
-    
+
     const saveThemeSettings = async (e) => {
         e.preventDefault();
         try {
@@ -679,7 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al guardar configuración de tema: ${error.message}`);
         }
     };
-    
+
     const resetTheme = async () => {
         try {
             await saveData(STORES.THEME, defaultTheme);
@@ -701,7 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al restablecer tema: ${error.message}`);
         }
     };
-    
+
     const renderMenu = async (filterCategoryId = null) => {
         if (!menuItemsContainer) return;
         try {
@@ -745,7 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar el menú: ${error.message}`);
         }
     };
-    
+
     const addItemToOrder = (item) => {
         // Si el producto lleva control de stock, validamos
         if (item.trackStock) {
@@ -765,7 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateOrderDisplay();
     };
-    
+
     const updateOrderDisplay = () => {
         if (!orderListContainer || !emptyOrderMessage || !posTotalSpan) return;
         orderListContainer.innerHTML = '';
@@ -802,13 +815,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
         calculateTotals();
     };
-    
+
     const calculateTotals = () => {
         if (!posTotalSpan) return;
         const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         posTotalSpan.textContent = `$${total.toFixed(2)}`;
     };
-    
+
     const openPaymentProcess = () => {
         if (!paymentModal || !paymentTotal || !paymentAmountInput || !paymentChange) return;
         if (order.length === 0) {
@@ -822,7 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
         paymentModal.classList.remove('hidden');
         paymentAmountInput.focus();
     };
-    
+
     const processOrder = async () => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
@@ -872,7 +885,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al procesar el pedido: ${error.message}`);
         }
     };
-    
+
     const renderCompanyData = async () => {
         try {
             let companyData = await loadDataWithCache(STORES.COMPANY, 'company');
@@ -896,7 +909,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar datos de la empresa: ${error.message}`);
         }
     };
-    
+
     const saveCompanyData = async (e) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
@@ -923,7 +936,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al guardar datos de la empresa: ${error.message}`);
         }
     };
-    
+
     const renderProductManagement = async (searchTerm = '') => {
         if (!productListContainer || !emptyProductMessage) return;
         try {
@@ -970,7 +983,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar la gestión de productos: ${error.message}`);
         }
     };
-    
+
     const editProductForm = async (id) => {
         try {
             const item = await loadData(STORES.MENU, id);
@@ -1002,7 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar producto para edición: ${error.message}`);
         }
     };
-    
+
     const resetProductForm = () => {
         if (productForm) productForm.reset();
         if (productIdInput) productIdInput.value = '';
@@ -1017,7 +1030,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentIngredients = [];
         editingProductId = null;
     };
-    
+
     const saveProduct = async (e) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
@@ -1052,7 +1065,8 @@ document.addEventListener('DOMContentLoaded', () => {
             editingProductId = productData.id;
             await saveData(STORES.MENU, productData);
             // Invalidar caché de menú
-            dataCache.menu = null;
+            dataCache[STORES.MENU] = null;
+dataCache.lastUpdated[STORES.MENU] = 0;
             // Ahora sí: Si hay ingredientes y editingProductId válido, guarda
             if (currentIngredients.length > 0 && editingProductId) {
                 await saveIngredients();
@@ -1066,7 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al guardar producto: ${error.message}`);
         }
     };
-    
+
     const deleteProduct = async (id) => {
         try {
             const item = await loadData(STORES.MENU, id);
@@ -1074,7 +1088,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     await deleteData(STORES.MENU, id);
                     // Invalidar caché de menú
-                    dataCache.menu = null;
+                    dataCache[STORES.MENU] = null;
+dataCache.lastUpdated[STORES.MENU] = 0;
                     // Eliminar los ingredientes asociados
                     try {
                         await deleteData(STORES.INGREDIENTS, id);
@@ -1096,7 +1111,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar producto para eliminar: ${error.message}`);
         }
     };
-    
+
     // --- INICIALIZACIÓN DE DATOS POR DEFECTO ---
     const initializeDefaultData = async () => {
         try {
@@ -1145,7 +1160,7 @@ document.addEventListener('DOMContentLoaded', () => {
             throw error; // Re-lanzar para que initApp lo capture
         }
     };
-    
+
     // --- CARGA DIFERIDA DE MÓDULOS ---
     const loadDashboard = async () => {
         if (!dashboard) {
@@ -1159,7 +1174,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return dashboard;
     };
-    
+
     const loadBusinessTips = async () => {
         if (!businessTips) {
             businessTips = createBusinessTipsModule({
@@ -1170,7 +1185,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return businessTips;
     };
-    
+
     // --- FUNCIÓN PARA REVALIDAR LICENCIA EN SEGUNDO PLANO ---
     const revalidateLicenseInBackground = async (savedLicense) => {
         try {
@@ -1180,7 +1195,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     setTimeout(() => reject(new Error('License revalidation timeout')), 10000)
                 )
             ]);
-            
+
             if (validationResult && validationResult.valid) {
                 console.log('Background revalidation successful:', validationResult);
                 localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
@@ -1191,7 +1206,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // No mostrar errores al usuario para no interrumpir su experiencia
         }
     };
-    
+
     // --- EVENT LISTENERS ---
     if (document.getElementById('home-link')) document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
     if (document.getElementById('nav-pos')) document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
@@ -1280,7 +1295,7 @@ document.addEventListener('DOMContentLoaded', () => {
             addIngredient();
         }
     });
-    
+
     // --- CONTACT FORM ---
     const contactForm = document.getElementById('contact-form');
     const submitContactForm = async (e) => {
@@ -1305,7 +1320,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     if (contactForm) contactForm.addEventListener('submit', submitContactForm);
-    
+
     // --- EVENT LISTENERS PARA CATEGORÍAS ---
     if (categoryModalButton) categoryModalButton.addEventListener('click', () => {
         resetCategoryForm();
@@ -1326,51 +1341,51 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteCategory(id);
         }
     });
-    
+
     const welcomeModal = document.getElementById('welcome-modal');
     const licenseForm = document.getElementById('license-form');
     const licenseKeyInput = document.getElementById('license-key');
     const licenseMessage = document.getElementById('license-message');
     const licenseInfoContainer = document.getElementById('license-info-container');
-    
+
     // --- LICENSE HANDLING AT STARTUP ---
     const initializeLicense = async () => {
         console.log('Initializing license...');
         let savedLicenseJSON = localStorage.getItem('lanzo_license');
-        
+
         if (savedLicenseJSON) {
             try {
                 const savedLicense = JSON.parse(savedLicenseJSON);
                 console.log('Found saved license:', savedLicense);
-                
+
                 // Verificar si el usuario marcó "recordar" y no ha expirado el recordatorio local
-                if (savedLicense.remembered && savedLicense.localExpiry && 
+                if (savedLicense.remembered && savedLicense.localExpiry &&
                     new Date(savedLicense.localExpiry) > new Date()) {
                     // Desbloquear sin verificar en línea
                     isAppUnlocked = true;
                     if (welcomeModal) welcomeModal.style.display = 'none';
                     renderLicenseInfo(savedLicense);
-                    
+
                     // Revalidar en segundo plano
                     revalidateLicenseInBackground(savedLicense).catch(error => {
                         console.warn('Background license revalidation failed:', error.message);
                     });
-                    
+
                     return { unlocked: true };
                 }
-                
+
                 // Verificar si la licencia aún es válida (fecha de expiración)
                 if (savedLicense.expires_at && new Date(savedLicense.expires_at) > new Date()) {
                     // Licencia válida - desbloquear aplicación inmediatamente
                     isAppUnlocked = true;
                     if (welcomeModal) welcomeModal.style.display = 'none';
                     renderLicenseInfo(savedLicense);
-                    
+
                     // Revalidación en segundo plano sin bloquear
                     revalidateLicenseInBackground(savedLicense).catch(error => {
                         console.warn('Background license revalidation failed:', error.message);
                     });
-                    
+
                     return { unlocked: true };
                 } else {
                     // Licencia expirada
@@ -1396,31 +1411,31 @@ document.addEventListener('DOMContentLoaded', () => {
             return { unlocked: false };
         }
     };
-    
+
     if (licenseForm) licenseForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const licenseKey = licenseKeyInput ? licenseKeyInput.value.trim() : '';
         const rememberDevice = rememberDeviceCheckbox ? rememberDeviceCheckbox.checked : false;
-        
+
         if (!licenseKey) return showLicenseMessage('Por favor ingrese una clave de licencia válida', 'error');
-        
+
         try {
             const activationResult = await activateLicense(licenseKey);
             if (activationResult.valid) {
                 const licenseDataToStore = activationResult.details;
-                
+
                 // Si el usuario marcó "recordar", guardar con una fecha de expiración más lejana
                 if (rememberDevice) {
                     licenseDataToStore.remembered = true;
                     // Extender la validez local por 30 días (aunque la licencia real pueda expirar antes)
                     licenseDataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
                 }
-                
+
                 localStorage.setItem('lanzo_license', JSON.stringify(licenseDataToStore));
                 isAppUnlocked = true;
                 if (welcomeModal) welcomeModal.style.display = 'none';
                 renderLicenseInfo(licenseDataToStore);
-                
+
                 // Start the main app UI
                 renderCompanyData();
                 showSection('pos');
@@ -1431,17 +1446,17 @@ document.addEventListener('DOMContentLoaded', () => {
             showLicenseMessage(`Error al conectar con el servidor: ${error.message}`, 'error');
         }
     });
-    
+
     function showLicenseMessage(message, type) {
         if (!licenseMessage) return;
         licenseMessage.textContent = message;
         licenseMessage.style.display = 'block';
         licenseMessage.style.color = type === 'error' ? '#dc3545' : '#198754';
-        setTimeout(() => { 
-            if (licenseMessage) licenseMessage.style.display = 'none'; 
+        setTimeout(() => {
+            if (licenseMessage) licenseMessage.style.display = 'none';
         }, 5000);
     }
-    
+
     function renderLicenseInfo(licenseData) {
         if (!licenseInfoContainer) return;
         if (!licenseData || !licenseData.valid) {
@@ -1490,26 +1505,26 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
-    
+
     // --- INICIALIZACIÓN DE LA APLICACIÓN ---
     const initApp = async () => {
         try {
             // Mostrar pantalla de carga solo si el elemento existe
             if (loadingScreen) loadingScreen.style.display = 'flex';
-            
+
             await initDB();
-            
+
             // Ejecutar operaciones en paralelo
             const [licenseResult, defaultDataResult] = await Promise.all([
                 initializeLicense(),
                 initializeDefaultData()
             ]);
-            
+
             // Inicializar los módulos después de que las dependencias estén listas
             // (carga diferida cuando se necesiten)
-            
+
             await renderCategories(); // Cargar categorías al inicio
-            
+
             // Lógica de Pestañas (Tabs) para Productos
             const productTabsContainer = document.getElementById('product-tabs');
             if (productTabsContainer) {
@@ -1528,7 +1543,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-            
+
             // Lógica del buscador de productos
             const productSearchInput = document.getElementById('product-search-input');
             if (productSearchInput) {
@@ -1551,7 +1566,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-            
+
             // Lógica de Pestañas (Tabs) para Ventas
             const salesTabsContainer = document.getElementById('sales-tabs');
             if (salesTabsContainer) {
@@ -1578,7 +1593,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-            
+
             // Event listeners for navigation and main actions
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.getElementById('mobile-menu');
@@ -1593,10 +1608,10 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 console.error('app.js: Critical mobile menu elements not found!');
             }
-            
+
             // Ocultar pantalla de carga al finalizar (si existe)
             if (loadingScreen) loadingScreen.style.display = 'none';
-            
+
             // Si la licencia está desbloqueada, mostrar la sección principal
             if (licenseResult.unlocked) {
                 renderCompanyData();
@@ -1608,6 +1623,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error fatal al inicializar: ${error.message}. Por favor, recarga la página.`);
         }
     };
-    
+
     initApp();
 });
