@@ -748,10 +748,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        paymentTotal.textContent = `$${total.toFixed(2)}`;
+        paymentTotal.textContent = `${total.toFixed(2)}`;
         paymentAmountInput.value = '';
         paymentChange.textContent = '$0.00';
-        confirmPaymentBtn.disabled = true;
         paymentModal.classList.remove('hidden');
         paymentAmountInput.focus();
     };
@@ -1660,11 +1659,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const amountPaid = parseFloat(paymentAmountInput.value) || 0;
         const change = amountPaid - total;
         if (change >= 0) {
-            paymentChange.textContent = `$${change.toFixed(2)}`;
+            paymentChange.textContent = `${change.toFixed(2)}`;
             confirmPaymentBtn.disabled = false;
         } else {
             paymentChange.textContent = '$0.00';
-            confirmPaymentBtn.disabled = true;
         }
     });
     confirmPaymentBtn.addEventListener('click', processOrder);
