@@ -1787,53 +1787,15 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const savedLicense = JSON.parse(savedLicenseJSON);
                 console.log('Found saved license:', savedLicense);
-
-                // Desbloquea la app inmediatamente con la licencia local
-                isAppUnlocked = true;
-                welcomeModal.style.display = 'none';
-                renderLicenseInfo(savedLicense);
-                await renderCompanyData();
-                showSection('pos');
-
-                // Revalida en segundo plano PERO sin afectar el estado actual
-                try {
-                    const validationResult = await Promise.race([
-                        window.revalidateLicense(),
-                        new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error('Revalidación de licencia agotó el tiempo')), 15000)
-                        )
-                    ]);
-
-                    if (validationResult && validationResult.valid) {
-                        console.log('Background revalidation successful:', validationResult);
-                        localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
-                        renderLicenseInfo(validationResult);
-                    } else {
-                        console.warn('Background revalidation failed:', validationResult ? validationResult.message : 'No response');
-                        // NO desbloquees la app aquí, solo muestra una advertencia
-                        showLicenseMessage('Advertencia: No se pudo verificar la licencia con el servidor. Funcionando con copia local.', 'warning');
-                    }
-                } catch (revalidationError) {
-                    if (revalidationError.message === 'Revalidación de licencia agotó el tiempo') {
-                        console.log('La revalidación tardó demasiado, pero se continúa con la licencia local.');
-                    } else {
-                        console.warn('Error durante la revalidación:', revalidationError.message);
-                    }
-                    showLicenseMessage('Advertencia: Error de conexión. Funcionando en modo offline con licencia local.', 'warning');
-                }
+                return savedLicense; // Simplemente retorna la licencia
             } catch (parseError) {
                 console.error('Could not parse saved license:', parseError.message);
                 localStorage.removeItem('lanzo_license');
-                renderLicenseInfo({ valid: false });
-                isAppUnlocked = false;
-                welcomeModal.style.display = 'flex';
-                showLicenseMessage('Licencia almacenada corrupta. Por favor, ingresa una nueva.', 'error');
+                return { valid: false };
             }
         } else {
             console.log('No saved license found.');
-            renderLicenseInfo({ valid: false });
-            isAppUnlocked = false;
-            welcomeModal.style.display = 'flex';
+            return { valid: false };
         }
     };
 
@@ -1919,151 +1881,144 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- INICIALIZACIÓN DE LA APLICACIÓN ---
+    // --- INICIALIZACIÓN DE LA APLICACIÓN OPTIMIZADA ---
     const initApp = async () => {
         try {
-            await initDB();
-            await initializeDefaultData();
-            await renderCategories(); // Cargar categorías al inicio
+            // Verificar primero si hay una licencia almacenada
+            let savedLicenseJSON = localStorage.getItem('lanzo_license');
 
-            // Lógica de Pestañas (Tabs) para Productos
-            const productTabsContainer = document.getElementById('product-tabs');
-            if (productTabsContainer) {
-                productTabsContainer.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('tab-btn')) {
-                        const tabName = e.target.dataset.tab;
+            if (savedLicenseJSON) {
+                try {
+                    const savedLicense = JSON.parse(savedLicenseJSON);
+                    console.log('Found saved license, showing app immediately');
 
-                        // Botones
-                        productTabsContainer.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-                        e.target.classList.add('active');
+                    // Desbloquear la app inmediatamente con la licencia local
+                    isAppUnlocked = true;
+                    welcomeModal.style.display = 'none';
+                    renderLicenseInfo(savedLicense);
 
-                        // Contenido
-                        document.querySelectorAll('#product-management-section .tab-content').forEach(content => {
-                            content.classList.remove('active');
-                        });
-                        document.getElementById(`${tabName}-content`).classList.add('active');
-                    }
-                });
-            }
+                    // Mostrar UI inmediatamente mientras se carga el resto en segundo plano
+                    showLoader(); // Muestra un indicador de carga
 
-            // Lógica del buscador de productos
-            const productSearchInput = document.getElementById('product-search-input');
-            if (productSearchInput) {
-                productSearchInput.addEventListener('input', (e) => {
-                    renderProductManagement(e.target.value);
-                });
-            }
+                    // Inicializar componentes críticos primero
+                    await initDB();
+                    await initializeDefaultData();
 
-            // Lógica de Pestañas (Tabs) para Ventas
-            const salesTabsContainer = document.getElementById('sales-tabs');
-            if (salesTabsContainer) {
-                salesTabsContainer.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('tab-btn')) {
-                        const tabName = e.target.dataset.tab;
+                    // Ocultar loader y mostrar la aplicación
+                    hideLoader();
+                    await renderCompanyData();
+                    showSection('pos');
 
-                        // Botones
-                        salesTabsContainer.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-                        e.target.classList.add('active');
+                    // Cargar el resto de forma asíncrona
+                    setTimeout(async () => {
+                        await renderCategories();
+                        renderProductManagement();
+                        renderMenu();
+                        renderDashboard();
+                    }, 500);
 
-                        // Contenido
-                        document.querySelectorAll('#dashboard-section .tab-content').forEach(content => {
-                            content.classList.remove('active');
-                        });
-                        document.getElementById(tabName).classList.add('active');
-                    }
-                });
-            }
+                    // Revalidar licencia en segundo plano
+                    validateLicenseInBackground(savedLicense);
 
-            // Event listeners for navigation and main actions
-            document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
-            document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
-            document.getElementById('nav-product-management').addEventListener('click', () => showSection('product-management'));
-            document.getElementById('nav-dashboard').addEventListener('click', () => showSection('dashboard'));
-            document.getElementById('nav-company').addEventListener('click', () => showSection('company'));
-            document.getElementById('nav-donation').addEventListener('click', () => showSection('donation'));
-
-            const mobileMenuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-            const backdrop = document.getElementById('backdrop');
-
-            const toggleMenu = () => {
-                mobileMenu.classList.toggle('open');
-                backdrop.classList.toggle('open');
-            };
-
-            if (mobileMenuButton && mobileMenu && backdrop) {
-                mobileMenuButton.addEventListener('click', toggleMenu);
-                backdrop.addEventListener('click', toggleMenu);
+                } catch (parseError) {
+                    console.error('Error with saved license:', parseError);
+                    // Continuar con el flujo normal de verificación
+                    continueNormalInitialization();
+                }
             } else {
-                console.error('app.js: Critical mobile menu elements not found!');
+                // No hay licencia, seguir flujo normal
+                continueNormalInitialization();
             }
-            document.getElementById('mobile-nav-pos').addEventListener('click', (e) => { e.stopPropagation(); showSection('pos'); });
-            document.getElementById('mobile-nav-product-management').addEventListener('click', (e) => { e.stopPropagation(); showSection('product-management'); });
-            document.getElementById('mobile-nav-dashboard').addEventListener('click', (e) => { e.stopPropagation(); showSection('dashboard'); });
-            document.getElementById('mobile-nav-company').addEventListener('click', (e) => { e.stopPropagation(); showSection('company'); });
-            document.getElementById('mobile-nav-donation').addEventListener('click', (e) => { e.stopPropagation(); showSection('donation'); });
-            document.getElementById('process-order-btn').addEventListener('click', openPaymentProcess);
-            document.getElementById('clear-order-btn').addEventListener('click', () => {
-                if (order.length > 0) {
-                    showMessageModal('¿Seguro que quieres limpiar el pedido?', () => {
-                        order = [];
-                        updateOrderDisplay();
-                    });
-                }
-            });
-            paymentAmountInput.addEventListener('input', () => {
-                const total = parseFloat(paymentTotal.textContent.replace('$', ''));
-                const amountPaid = parseFloat(paymentAmountInput.value) || 0;
-                const change = amountPaid - total;
-                if (change >= 0) {
-                    paymentChange.textContent = `$${change.toFixed(2)}`;
-                    confirmPaymentBtn.disabled = false;
-                } else {
-                    paymentChange.textContent = '$0.00';
-                    confirmPaymentBtn.disabled = true;
-                }
-            });
-            confirmPaymentBtn.addEventListener('click', processOrder);
-            document.getElementById('cancel-payment-btn').addEventListener('click', () => paymentModal.classList.add('hidden'));
-            companyForm.addEventListener('submit', saveCompanyData);
-            companyLogoFileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        companyLogoPreview.src = event.target.result;
-                    };
-                    reader.readAsDataURL(file);
-                }
-            });
-            productForm.addEventListener('submit', saveProduct);
-            cancelEditBtn.addEventListener('click', resetProductForm);
-            productImageFileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        imagePreview.src = event.target.result;
-                    };
-                    reader.readAsDataURL(file);
-                }
-            });
-            themeForm.addEventListener('submit', saveThemeSettings);
-            resetThemeBtn.addEventListener('click', resetTheme);
-            costHelpButton.addEventListener('click', openCostCalculator);
-            addIngredientButton.addEventListener('click', addIngredient);
-            assignCostButton.addEventListener('click', assignCostToProduct);
-            closeCostModalButton.addEventListener('click', closeCostCalculator);
-            contactForm.addEventListener('submit', submitContactForm);
-
-            await initializeLicense(); // Handles license logic and decides if main UI should show
         } catch (error) {
             console.error('Error initializing application:', error.message);
             showMessageModal(`Error fatal al inicializar: ${error.message}. Por favor, recarga la página.`);
         }
     };
 
+    // Función para validar licencia en segundo plano
+    const validateLicenseInBackground = async (savedLicense) => {
+        try {
+            const validationResult = await Promise.race([
+                window.revalidateLicense(),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout')), 10000)
+                )
+            ]);
+
+            if (validationResult && validationResult.valid) {
+                console.log('Background validation successful');
+                localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
+                renderLicenseInfo(validationResult);
+            } else {
+                console.warn('Background validation failed');
+                showLicenseMessage('Advertencia: No se pudo verificar la licencia con el servidor. Funcionando con copia local.', 'warning');
+            }
+        } catch (error) {
+            console.warn('Background validation error:', error);
+            showLicenseMessage('Advertencia: Error de conexión. Funcionando en modo offline con licencia local.', 'warning');
+        }
+    };
+
+    // Flujo normal de inicialización (para cuando no hay licencia)
+    const continueNormalInitialization = async () => {
+        showLoader();
+        await initDB();
+        await initializeDefaultData();
+        await renderCategories();
+        hideLoader();
+
+        // Mostrar modal de bienvenida para ingresar licencia
+        isAppUnlocked = false;
+        welcomeModal.style.display = 'flex';
+        renderLicenseInfo({ valid: false });
+    };
+
+    // Funciones auxiliares para loader
+    const showLoader = () => {
+        // Crear loader si no existe
+        if (!document.getElementById('app-loader')) {
+            const loader = document.createElement('div');
+            loader.id = 'app-loader';
+            loader.style = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            font-size: 1.2rem;
+        `;
+            loader.innerHTML = `
+            <div style="text-align: center;">
+                <div style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                <p style="margin-top: 15px;">Cargando aplicación...</p>
+            </div>
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+        `;
+            document.body.appendChild(loader);
+        } else {
+            document.getElementById('app-loader').style.display = 'flex';
+        }
+    };
+
+    const hideLoader = () => {
+        const loader = document.getElementById('app-loader');
+        if (loader) {
+            loader.style.display = 'none';
+        }
+    };
+
     initApp();
-    /*setInterval(async () => {
+    setInterval(async () => {
         if (isAppUnlocked) {
             const validation = await window.revalidateLicense();
             if (!validation.valid) {
@@ -2072,5 +2027,5 @@ document.addEventListener('DOMContentLoaded', () => {
                 showMessageModal('Licencia expirada o inválida. Por favor, valida nuevamente.');
             }
         }
-    }, 1800000);  // Cada 30 minutos*/
+    }, 1800000);  // Cada 30 minutos
 });
