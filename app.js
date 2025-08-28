@@ -1,12 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log('app.js: DOMContentLoaded event fired.');
-
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
     let isAppUnlocked = false;
     let order = [];
     let db = null;
     let dashboard, businessTips; // Declarar módulos aquí
-
     const DB_NAME = 'LanzoDB1';
     const DB_VERSION = 5; // Incrementado para agregar almacenamiento de categorías
     const STORES = {
@@ -17,7 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
         INGREDIENTS: 'ingredients',
         CATEGORIES: 'categories' // Nuevo almacén para categorías
     };
-
     const initialMenu = [
         {
             id: 'burger-classic',
@@ -32,7 +29,6 @@ document.addEventListener('DOMContentLoaded', () => {
             TrackEvent: true
         }
     ];
-
     const defaultTheme = {
         id: 'theme',
         primaryColor: '#374151',
@@ -44,11 +40,9 @@ document.addEventListener('DOMContentLoaded', () => {
         fontSize: 'medium',
         layoutDensity: 'spacious'
     };
-
     // Variables para la gestión de ingredientes
     let currentIngredients = [];
     let editingProductId = null;
-
     // --- SISTEMA DE CACHÉ PARA DATOS FRECUENTES ---
     const dataCache = {
         menu: null,
@@ -62,10 +56,8 @@ document.addEventListener('DOMContentLoaded', () => {
             categories: 0
         }
     };
-
     const loadDataWithCache = async (storeName, key = null, maxAge = 300000) => {
         const now = Date.now();
-
         // Verificar si tenemos datos en caché y son recientes
         if (dataCache[storeName] !== null && (now - dataCache.lastUpdated[storeName] < maxAge)) {
             // Si hay clave, buscar en el array o devolver el objeto único
@@ -79,17 +71,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return dataCache[storeName];
         }
-
         // Cargar desde IndexedDB
         const data = await loadData(storeName, key);
-
         // Actualizar caché
         dataCache[storeName] = data;
         dataCache.lastUpdated[storeName] = now;
-
         return data;
     };
-
     // --- FUNCIÓN PARA CALCULAR LUMINANCIA Y AJUSTAR COLOR DE TEXTO ---
     const getContrastColor = (hexColor) => {
         // Convert hex to RGB
@@ -101,16 +89,116 @@ document.addEventListener('DOMContentLoaded', () => {
         // Return white for dark backgrounds, black for light backgrounds
         return luminance > 0.5 ? '#000000' : '#ffffff';
     };
-
-    // --- FUNCIÓN PARA VERIFICAR LOCALSTORAGE ---
+    // --- FUNCIÓN MEJORADA PARA VERIFICAR LOCALSTORAGE ---
     const isLocalStorageEnabled = () => {
         try {
             const testKey = 'lanzo-test';
-            localStorage.setItem(testKey, testKey);
+            const testValue = 'test-value-' + Date.now();
+            localStorage.setItem(testKey, testValue);
+            const value = localStorage.getItem(testKey);
             localStorage.removeItem(testKey);
-            return true;
+            return value === testValue;
         } catch (e) {
+            console.error('LocalStorage error:', e);
             return false;
+        }
+    };
+
+    // Función para guardar licencia en cookies (fallback) idexedDB
+    const saveLicenseToCookie = (licenseData) => {
+        const cookieValue = JSON.stringify(licenseData);
+        const expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 días
+        document.cookie = `lanzo_license=${encodeURIComponent(cookieValue)}; expires=${expiryDate.toUTCString()}; path=/; SameSite=Strict; Secure`;
+        console.log('License saved to cookie as fallback');
+    };
+
+    // Función para obtener licencia de cookies
+    const getLicenseFromCookie = () => {
+        const match = document.cookie.match(/lanzo_license=([^;]+)/);
+        if (match) {
+            try {
+                return JSON.parse(decodeURIComponent(match[1]));
+            } catch (e) {
+                console.error('Error parsing license from cookie:', e);
+            }
+        }
+        return null;
+    };
+
+    // saveLicenseToIndexedDB para también guardar en cookie
+    const saveLicenseToIndexedDB = async (licenseData) => {
+        try {
+            await saveData(STORES.COMPANY, {
+                id: 'license_backup',
+                data: licenseData,
+                timestamp: new Date().toISOString()
+            });
+            saveLicenseToCookie(licenseData); // Agrega fallback
+            console.log('License backed up to IndexedDB and cookie');
+        } catch (error) {
+            console.error('Error saving license to IndexedDB:', error);
+        }
+    };
+
+    // getLicenseFromIndexedDB para fallback a cookie
+    const getLicenseFromIndexedDB = async () => {
+        try {
+            const backup = await loadData(STORES.COMPANY, 'license_backup');
+            if (backup && backup.data) {
+                const now = new Date();
+                const expiryDate = new Date(backup.data.expires_at);
+                if (expiryDate > now) {
+                    console.log('License found in IndexedDB backup');
+                    return backup.data;
+                }
+            }
+        } catch (error) {
+            console.error('Error retrieving license from IndexedDB:', error);
+        }
+        // Fallback a cookie si IndexedDB falla
+        const cookieLicense = getLicenseFromCookie();
+        if (cookieLicense) {
+            console.log('License restored from cookie');
+            return cookieLicense;
+        }
+        return null;
+    };
+    // --- FUNCIÓN PARA NORMALIZAR FECHAS ---
+    const normalizeDate = (dateString) => {
+        const date = new Date(dateString);
+        return new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+    };
+    // --- DETECCIÓN DE NAVEGADOR EDGE ---
+    const isEdgeBrowser = () => {
+        return /Edg/.test(navigator.userAgent);
+    };
+
+    // --- FUNCIÓN DE RENOVACIÓN AUTOMÁTICA DE LICENCIA ---
+    const renewLicenseAutomatically = async () => {
+        try {
+            const savedLicenseJSON = localStorage.getItem('lanzo_license');
+            if (savedLicenseJSON) {
+                const savedLicense = JSON.parse(savedLicenseJSON);
+
+                // Renovar si falta menos de 7 días para expirar
+                const expiryDate = normalizeDate(savedLicense.expires_at);
+                const now = new Date();
+                const daysUntilExpiry = (expiryDate - now) / (1000 * 60 * 60 * 24);
+
+                if (daysUntilExpiry < 7 && daysUntilExpiry > 0) {
+                    console.log('License expiring soon, attempting renewal');
+                    const renewalResult = await renewLicense(savedLicense.license_key);
+                    if (renewalResult.valid) {
+                        // Actualizar almacenamientos
+                        localStorage.setItem('lanzo_license', JSON.stringify(renewalResult.details));
+                        await saveLicenseToIndexedDB(renewalResult.details);
+                        renderLicenseInfo(renewalResult.details);
+                        console.log('License renewed successfully');
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error in automatic license renewal:', error);
         }
     };
 
@@ -131,31 +219,25 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
     }
-
     // --- FUNCIÓN PARA COMPRIMIR IMÁGENES ---
     const compressImage = (file, maxWidth = 300, quality = 0.7) => {
         return new Promise((resolve) => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             const img = new Image();
-
             img.onload = () => {
                 // Calcular nuevas dimensiones manteniendo la proporción
                 const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
                 canvas.width = img.width * ratio;
                 canvas.height = img.height * ratio;
-
                 // Dibujar imagen redimensionada
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
                 // Convertir a base64 con calidad reducida
                 resolve(canvas.toDataURL('image/jpeg', quality));
             };
-
             img.src = URL.createObjectURL(file);
         });
     };
-
     // --- INICIALIZACIÓN DE INDEXEDDB ---
     const initDB = () => {
         return new Promise((resolve, reject) => {
@@ -201,7 +283,6 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
     };
-
     // --- FUNCIONES DE ALMACENAMIENTO CON INDEXEDDB ---
     const saveData = (storeName, data) => {
         if (!isAppUnlocked && welcomeModal && welcomeModal.style.display === 'none') {
@@ -241,9 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const transaction = db.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
-
             transaction.onerror = () => reject(transaction.error);
-
             if (key) {
                 const request = store.get(key);
                 request.onsuccess = () => resolve(request.result);
@@ -274,7 +353,6 @@ document.addEventListener('DOMContentLoaded', () => {
             request.onerror = () => reject(request.error);
         });
     };
-
     // --- ELEMENTOS DEL DOM ---
     const sections = {
         pos: document.getElementById('pos-section'),
@@ -283,7 +361,6 @@ document.addEventListener('DOMContentLoaded', () => {
         company: document.getElementById('company-section'),
         donation: document.getElementById('donation-section')
     };
-
     const navCompanyName = document.getElementById('nav-company-name');
     const navCompanyLogo = document.getElementById('nav-company-logo');
     const menuItemsContainer = document.getElementById('menu-items');
@@ -329,7 +406,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const layoutDensitySelect = document.getElementById('layout-density');
     const resetThemeBtn = document.getElementById('reset-theme-btn');
     const loadingScreen = document.getElementById('loading-screen');
-
     // Elementos para la calculadora de costos
     const costHelpButton = document.getElementById('cost-help-button');
     const costCalculationModal = document.getElementById('cost-calculation-modal');
@@ -353,7 +429,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const assignCostButton = document.getElementById('assign-cost');
     const closeCostModalButton = document.getElementById('close-cost-modal');
     const rememberDeviceCheckbox = document.getElementById('remember-device');
-
     // --- FUNCIONES PARA LA CALCULADORA DE COSTOS ---
     const openCostCalculator = async () => {
         // Obtener el ID del producto que se está editando (si existe)
@@ -463,7 +538,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const categories = await loadData(STORES.CATEGORIES);
             dataCache.categories = categories;
             dataCache.lastUpdated.categories = Date.now();
-
             // 1. Renderizar lista en el modal de gestión
             if (categoryListContainer) {
                 categoryListContainer.innerHTML = '';
@@ -484,7 +558,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
             }
-
             // 2. Poblar el select del formulario de productos
             if (productCategorySelect) {
                 const currentValue = productCategorySelect.value; // Guardar valor actual
@@ -500,12 +573,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     productCategorySelect.value = currentValue;
                 }
             }
-
             // 3. Renderizar filtros en el TPV
             if (categoryFiltersContainer) {
                 const activeFilter = categoryFiltersContainer.querySelector('.category-filter-btn.active');
                 const activeCategoryId = activeFilter ? activeFilter.dataset.id : null;
-
                 categoryFiltersContainer.innerHTML = '';
                 const allButton = document.createElement('button');
                 allButton.className = 'category-filter-btn' + (!activeCategoryId ? ' active' : '');
@@ -516,7 +587,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     allButton.classList.add('active');
                 });
                 categoryFiltersContainer.appendChild(allButton);
-
                 categories.forEach(cat => {
                     const button = document.createElement('button');
                     button.className = 'category-filter-btn' + (activeCategoryId === cat.id ? ' active' : '');
@@ -549,22 +619,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 name
             };
             await saveData(STORES.CATEGORIES, categoryData);
-
             // Invalidar la caché de categorías para forzar una nueva carga
             dataCache.categories = null;
             dataCache.lastUpdated.categories = 0;
-
             showMessageModal(`Categoría "${name}" guardada.`);
             resetCategoryForm();
-
             // Actualizar todas las partes de la UI que dependen de categorías
             await renderCategories(); // Esto actualiza filtros y selects
-
             // Si estamos en la sección de gestión de productos, actualizarla también
             if (document.getElementById('product-management-section').classList.contains('active')) {
                 renderProductManagement();
             }
-
             // Si estamos en el POS, actualizar el menú por si hay filtros aplicados
             if (document.getElementById('pos-section').classList.contains('active')) {
                 renderMenu();
@@ -626,7 +691,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (saveCategoryBtn) saveCategoryBtn.textContent = 'Guardar Categoría';
         if (cancelCategoryEditBtn) cancelCategoryEditBtn.classList.add('hidden');
     };
-
     // --- NAVEGACIÓN Y VISIBILIDAD ---
     const showSection = (sectionId) => {
         Object.values(sections).forEach(section => {
@@ -650,7 +714,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (backdrop) backdrop.classList.remove('open');
         }
     };
-
     // --- LÓGICA DE LA APLICACIÓN ---
     const showMessageModal = (message, onConfirm = null) => {
         if (!modalMessage || !messageModal || !closeModalBtn) return;
@@ -682,7 +745,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.remove('layout-compact', 'layout-spacious');
         document.body.classList.add(`layout-${theme.layoutDensity}`);
     };
-
     const renderThemeSettings = async () => {
         try {
             let theme = await loadDataWithCache(STORES.THEME, 'theme');
@@ -707,7 +769,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar configuración de tema: ${error.message}`);
         }
     };
-
     const saveThemeSettings = async (e) => {
         e.preventDefault();
         try {
@@ -733,7 +794,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al guardar configuración de tema: ${error.message}`);
         }
     };
-
     const resetTheme = async () => {
         try {
             await saveData(STORES.THEME, defaultTheme);
@@ -799,18 +859,15 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar el menú: ${error.message}`);
         }
     };
-
     // Función addItemToOrder mejorada
     const addItemToOrder = async (item) => {
         try {
             // Verificar si el producto tiene control de stock
             const hasStockControl = item.trackStock !== undefined ? item.trackStock :
                 (typeof item.stock === 'number' && item.stock > 0);
-
             // Para productos sin control de stock, no necesitamos verificar la base de datos
             if (!hasStockControl) {
                 const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
-
                 if (existingItemInOrder) {
                     existingItemInOrder.quantity++;
                 } else {
@@ -824,21 +881,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateOrderDisplay();
                 return;
             }
-
             // Para productos con control de stock, obtener información actualizada
             const currentProduct = await loadDataWithCache(STORES.MENU, item.id);
-
             // Validar que el producto existe
             if (!currentProduct) {
                 showMessageModal(`El producto "${item.name}" no está disponible en este momento.`);
                 console.error(`Producto no encontrado: ${item.id}`);
                 return;
             }
-
             // Buscar si el producto ya está en el pedido
             const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
             const currentQuantityInOrder = existingItemInOrder ? existingItemInOrder.quantity : 0;
-
             // Validar disponibilidad de stock
             if (currentQuantityInOrder >= currentProduct.stock) {
                 // Preguntar al usuario si desea agregar a pesar de no tener stock
@@ -861,7 +914,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
                 return;
             }
-
             // Agregar el producto al pedido normalmente si hay stock suficiente
             if (existingItemInOrder) {
                 existingItemInOrder.quantity++;
@@ -879,19 +931,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Función updateOrderDisplay mejorada
     const updateOrderDisplay = async () => {
         if (!orderListContainer || !emptyOrderMessage || !posTotalSpan) return;
-
         orderListContainer.innerHTML = '';
         emptyOrderMessage.classList.toggle('hidden', order.length > 0);
-
         for (const item of order) {
             try {
                 // Determinar si el producto tiene control de stock
                 const hasStockControl = item.trackStock !== undefined ? item.trackStock :
                     (typeof item.stock === 'number' && item.stock > 0);
-
                 // Para productos sin control de stock
                 if (!hasStockControl) {
                     const orderItemDiv = document.createElement('div');
@@ -912,10 +960,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     orderListContainer.appendChild(orderItemDiv);
                     continue;
                 }
-
                 // Para productos con control de stock, obtener información actualizada
                 const currentProduct = await loadDataWithCache(STORES.MENU, item.id, 60000); // 60 segundos de caché
-
                 // Validar que el producto existe
                 if (!currentProduct) {
                     console.warn(`Producto no encontrado: ${item.id}`);
@@ -935,17 +981,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     orderListContainer.appendChild(orderItemDiv);
                     continue;
                 }
-
                 const orderItemDiv = document.createElement('div');
                 orderItemDiv.className = 'order-item';
-
                 // Determinar clase CSS según el estado de stock
                 if (item.exceedsStock) {
                     orderItemDiv.classList.add('exceeds-stock');
                 } else if (currentProduct.stock < 5) {
                     orderItemDiv.classList.add('low-stock');
                 }
-
                 // Mostrar advertencia si el stock es bajo o insuficiente
                 let stockWarning = '';
                 if (item.exceedsStock) {
@@ -953,7 +996,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (currentProduct.stock < 5) {
                     stockWarning = `<div class="stock-warning low-stock-warning">Stock bajo: ${currentProduct.stock} unidades</div>`;
                 }
-
                 orderItemDiv.innerHTML = `
                 <div class="order-item-info">
                     <span class="order-item-name">${item.name}</span>
@@ -987,30 +1029,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 orderListContainer.appendChild(orderItemDiv);
             }
         }
-
         // Reasignar event listeners a los botones de cantidad
         orderListContainer.querySelectorAll('.quantity-btn').forEach(btn => btn.addEventListener('click', async (e) => {
             const { id, change } = e.currentTarget.dataset;
             const itemIndex = order.findIndex(i => i.id === id);
-
             if (itemIndex > -1) {
                 // Para productos sin control de stock, no necesitamos verificar la base de datos
                 const hasStockControl = order[itemIndex].trackStock !== undefined ? order[itemIndex].trackStock :
                     (typeof order[itemIndex].stock === 'number' && order[itemIndex].stock > 0);
-
                 if (!hasStockControl) {
                     const changeValue = parseInt(change);
                     order[itemIndex].quantity += changeValue;
-
                     if (order[itemIndex].quantity <= 0) order.splice(itemIndex, 1);
                     updateOrderDisplay();
                     return;
                 }
-
                 // Para productos con control de stock, obtener información actualizada
                 try {
                     const currentProduct = await loadDataWithCache(STORES.MENU, id, 60000); // 60 segundos de caché
-
                     // Validar que el producto existe
                     if (!currentProduct) {
                         showMessageModal('Este producto ya no está disponible.');
@@ -1019,9 +1055,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         updateOrderDisplay();
                         return;
                     }
-
                     const changeValue = parseInt(change);
-
                     // Si es un aumento y el producto lleva control de stock
                     if (changeValue > 0) {
                         if (order[itemIndex].quantity >= currentProduct.stock && !order[itemIndex].exceedsStock) {
@@ -1038,17 +1072,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             return;
                         }
                     }
-
                     // Cambiar la cantidad normalmente
                     order[itemIndex].quantity += changeValue;
-
                     // Actualizar el estado de excedeStock
                     if (order[itemIndex].quantity <= currentProduct.stock) {
                         order[itemIndex].exceedsStock = false;
                     } else if (changeValue > 0 && order[itemIndex].quantity > currentProduct.stock) {
                         order[itemIndex].exceedsStock = true;
                     }
-
                     if (order[itemIndex].quantity <= 0) order.splice(itemIndex, 1);
                     updateOrderDisplay();
                 } catch (error) {
@@ -1057,13 +1088,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }));
-
         // Reasignar event listeners a los botones de eliminar
         orderListContainer.querySelectorAll('.remove-item-btn').forEach(btn => btn.addEventListener('click', e => {
             order = order.filter(i => i.id !== e.currentTarget.dataset.id);
             updateOrderDisplay();
         }));
-
         calculateTotals();
     };
 
@@ -1093,11 +1122,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (welcomeModal) welcomeModal.style.display = 'flex';
             return;
         }
-
         try {
             let insufficientStockItems = [];
             let exceedsStockItems = [];
-
             // 1. Validar stock ANTES de procesar (solo para productos con control)
             for (const orderItem of order) {
                 const product = await loadData(STORES.MENU, orderItem.id);
@@ -1119,18 +1146,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             }
-
             // 2. Si hay productos con stock insuficiente, pedir confirmación
             if (insufficientStockItems.length > 0 || exceedsStockItems.length > 0) {
                 let message = "¡Atención! ";
-
                 if (insufficientStockItems.length > 0) {
                     message += "Stock insuficiente para:\n";
                     message += insufficientStockItems.map(item =>
                         `- ${item.name}: Solicitadas ${item.requested}, Disponibles ${item.available}`
                     ).join('\n');
                 }
-
                 if (exceedsStockItems.length > 0) {
                     if (insufficientStockItems.length > 0) message += "\n\n";
                     message += "Productos que exceden el stock:\n";
@@ -1138,16 +1162,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         `- ${item.name}: Solicitadas ${item.requested}, Disponibles ${item.available}`
                     ).join('\n');
                 }
-
                 message += "\n\n¿Deseas procesar el pedido de todas formas?";
-
                 showMessageModal(message, async () => {
                     // El usuario confirmó que quiere procesar a pesar del stock insuficiente
                     await completeOrderProcessing(insufficientStockItems, exceedsStockItems);
                 });
                 return;
             }
-
             // 3. Si no hay problemas de stock, procesar normalmente
             await completeOrderProcessing([], []);
         } catch (error) {
@@ -1170,7 +1191,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     dataCache.menu = null;
                 }
             }
-
             // Guardar la venta
             const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const sale = {
@@ -1180,12 +1200,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 hadStockIssues: insufficientStockItems.length > 0 || exceedsStockItems.length > 0,
                 exceedsStock: exceedsStockItems.length > 0
             };
-
             await saveData(STORES.SALES, sale);
-
             // Limpiar y actualizar UI
             if (paymentModal) paymentModal.classList.add('hidden');
-
             if (exceedsStockItems.length > 0) {
                 showMessageModal('¡Pedido procesado! Nota: Algunos productos excedieron el stock disponible.');
             } else if (insufficientStockItems.length > 0) {
@@ -1193,7 +1210,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 showMessageModal('¡Pedido procesado exitosamente!');
             }
-
             order = [];
             updateOrderDisplay();
             renderMenu(); // Re-renderizar menú para mostrar stock actualizado
@@ -1204,7 +1220,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al completar el procesamiento del pedido: ${error.message}`);
         }
     };
-
 
     const renderCompanyData = async () => {
         try {
@@ -1438,7 +1453,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar producto para eliminar: ${error.message}`);
         }
     };
-
     // --- INICIALIZACIÓN DE DATOS POR DEFECTO ---
     const initializeDefaultData = async () => {
         try {
@@ -1487,7 +1501,6 @@ document.addEventListener('DOMContentLoaded', () => {
             throw error; // Re-lanzar para que initApp lo capture
         }
     };
-
     // --- CARGA DIFERIDA DE MÓDULOS ---
     const loadDashboard = async () => {
         if (!dashboard) {
@@ -1501,7 +1514,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return dashboard;
     };
-
     const loadBusinessTips = async () => {
         if (!businessTips) {
             businessTips = createBusinessTipsModule({
@@ -1512,25 +1524,157 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return businessTips;
     };
-
     // --- FUNCIÓN PARA REVALIDAR LICENCIA EN SEGUNDO PLANO ---
     const revalidateLicenseInBackground = async (savedLicense) => {
         try {
             const validationResult = await Promise.race([
-                window.revalidateLicense(),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('License revalidation timeout')), 10000)
-                )
+                window.revalidateLicense(), // Asume que esta función existe
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000)) // Aumenta a 15s
             ]);
-
-            if (validationResult && validationResult.valid) {
-                console.log('Background revalidation successful:', validationResult);
+            if (validationResult.valid) {
                 localStorage.setItem('lanzo_license', JSON.stringify(validationResult));
+                await saveLicenseToIndexedDB(validationResult);
                 renderLicenseInfo(validationResult);
             }
         } catch (error) {
-            console.warn('License revalidation failed:', error.message);
-            // No mostrar errores al usuario para no interrumpir su experiencia
+            console.warn('Background revalidation failed:', error.message);
+            // NO borres nada; mantén la licencia local y reintenta en 5 min
+            setTimeout(() => revalidateLicenseInBackground(savedLicense), 5 * 60 * 1000);
+        }
+    };
+
+    // --- FUNCIÓN MEJORADA PARA INICIALIZAR LICENCIA ---
+    const initializeLicense = async () => {
+        console.log('Starting license initialization...');
+
+        // Verificar disponibilidad de almacenamientos
+        const localStorageAvailable = isLocalStorageEnabled();
+        console.log('LocalStorage available:', localStorageAvailable);
+
+        if (!localStorageAvailable) {
+            console.error("LocalStorage is not available.");
+            if (welcomeModal) {
+                welcomeModal.style.display = 'flex';
+                showLicenseMessage('Error: El almacenamiento local está desactivado. La licencia no se puede guardar.', 'error');
+                const submitBtn = licenseForm ? licenseForm.querySelector('button[type="submit"]') : null;
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                }
+            }
+            isAppUnlocked = false;
+            return { unlocked: false };
+        }
+
+        // Detección especial para Edge
+        if (isEdgeBrowser()) {
+            console.log('Edge browser detected, using enhanced storage');
+        }
+
+        let savedLicenseJSON = localStorage.getItem('lanzo_license');
+        let savedLicense = null;
+
+        // Intentar obtener de localStorage
+        if (savedLicenseJSON) {
+            try {
+                savedLicense = JSON.parse(savedLicenseJSON);
+                console.log('License found in localStorage:', savedLicense);
+            } catch (parseError) {
+                console.error('Error parsing localStorage license:', parseError);
+            }
+        }
+
+        // Si no hay en localStorage, intentar con IndexedDB o cookie (fallback)
+        if (!savedLicense) {
+            savedLicense = await getLicenseFromIndexedDB();  // Esto ya incluye fallback a cookie en tu modificación
+            if (savedLicense) {
+                // Restaurar en localStorage
+                localStorage.setItem('lanzo_license', JSON.stringify(savedLicense));
+                console.log('License restored from IndexedDB or cookie to localStorage');
+            }
+        }
+
+        // AQUÍ: Verifica localExpiry SOLO DESPUÉS de asignar savedLicense
+        if (savedLicense && savedLicense.localExpiry) {
+            const localExpiryDate = normalizeDate(savedLicense.localExpiry);
+            const now = new Date();
+
+            if (localExpiryDate > now) {
+                console.log('Using local expiry for valid license');
+                isAppUnlocked = true;
+                if (welcomeModal) welcomeModal.style.display = 'none';
+                renderLicenseInfo(savedLicense);
+
+                // Revalidar en segundo plano
+                revalidateLicenseInBackground(savedLicense).catch(error => {
+                    console.warn('Background license revalidation failed:', error.message);
+                });
+
+                return { unlocked: true };
+            }
+        }
+
+        if (!savedLicense) {
+            console.log('No license found in any storage');
+            renderLicenseInfo({ valid: false });
+            isAppUnlocked = false;
+            if (welcomeModal) welcomeModal.style.display = 'flex';
+            return { unlocked: false };
+        }
+
+        // Verificar si el usuario marcó "recordar" y no ha expirado el recordatorio local
+        if (savedLicense.remembered && savedLicense.localExpiry) {
+            const localExpiryDate = normalizeDate(savedLicense.localExpiry);
+            const now = new Date();
+
+            if (localExpiryDate > now) {
+                console.log('Using remembered license (local expiry valid)');
+                isAppUnlocked = true;
+                if (welcomeModal) welcomeModal.style.display = 'none';
+                renderLicenseInfo(savedLicense);
+
+                // Revalidar en segundo plano
+                revalidateLicenseInBackground(savedLicense).catch(error => {
+                    console.warn('Background license revalidation failed:', error.message);
+                });
+
+                return { unlocked: true };
+            }
+        }
+
+        // Verificar si la licencia aún es válida (fecha de expiración)
+        if (savedLicense.expires_at) {
+            const expiryDate = normalizeDate(savedLicense.expires_at);
+            const now = new Date();
+
+            if (expiryDate > now) {
+                // Licencia válida - desbloquear aplicación inmediatamente
+                console.log('License is valid, unlocking app');
+                isAppUnlocked = true;
+                if (welcomeModal) welcomeModal.style.display = 'none';
+                renderLicenseInfo(savedLicense);
+
+                // Revalidación en segundo plano sin bloquear
+                revalidateLicenseInBackground(savedLicense).catch(error => {
+                    console.warn('Background license revalidation failed:', error.message);
+                });
+
+                return { unlocked: true };
+            } else {
+                // Licencia expirada
+                console.log('License expired');
+                localStorage.removeItem('lanzo_license');
+                renderLicenseInfo({ valid: false });
+                isAppUnlocked = false;
+                if (welcomeModal) welcomeModal.style.display = 'flex';
+                return { unlocked: false };
+            }
+        } else {
+            // Sin fecha de expiración (licencia perpetua)
+            console.log('Perpetual license detected');
+            isAppUnlocked = true;
+            if (welcomeModal) welcomeModal.style.display = 'none';
+            renderLicenseInfo(savedLicense);
+            return { unlocked: true };
         }
     };
 
@@ -1622,7 +1766,6 @@ document.addEventListener('DOMContentLoaded', () => {
             addIngredient();
         }
     });
-
     // --- CONTACT FORM ---
     const contactForm = document.getElementById('contact-form');
     const submitContactForm = async (e) => {
@@ -1647,7 +1790,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     if (contactForm) contactForm.addEventListener('submit', submitContactForm);
-
     // --- EVENT LISTENERS PARA CATEGORÍAS ---
     if (categoryModalButton) categoryModalButton.addEventListener('click', () => {
         resetCategoryForm();
@@ -1668,90 +1810,12 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteCategory(id);
         }
     });
-
     const welcomeModal = document.getElementById('welcome-modal');
     const licenseForm = document.getElementById('license-form');
     const licenseKeyInput = document.getElementById('license-key');
     const licenseMessage = document.getElementById('license-message');
     const licenseInfoContainer = document.getElementById('license-info-container');
-
     // --- LICENSE HANDLING AT STARTUP ---
-    const initializeLicense = async () => {
-        if (!isLocalStorageEnabled()) {
-            console.error("LocalStorage is not available.");
-            if (welcomeModal) {
-                welcomeModal.style.display = 'flex';
-                showLicenseMessage('Error: El almacenamiento local está desactivado. La licencia no se puede guardar.', 'error');
-                const submitBtn = licenseForm ? licenseForm.querySelector('button[type="submit"]') : null;
-                if (submitBtn) {
-                    submitBtn.disabled = true;
-                }
-            }
-            isAppUnlocked = false;
-            return { unlocked: false };
-        }
-
-        console.log('Initializing license...');
-        let savedLicenseJSON = localStorage.getItem('lanzo_license');
-
-        if (savedLicenseJSON) {
-            try {
-                const savedLicense = JSON.parse(savedLicenseJSON);
-                console.log('Found saved license:', savedLicense);
-
-                // Verificar si el usuario marcó "recordar" y no ha expirado el recordatorio local
-                if (savedLicense.remembered && savedLicense.localExpiry &&
-                    new Date(savedLicense.localExpiry) > new Date()) {
-                    // Desbloquear sin verificar en línea
-                    isAppUnlocked = true;
-                    if (welcomeModal) welcomeModal.style.display = 'none';
-                    renderLicenseInfo(savedLicense);
-
-                    // Revalidar en segundo plano
-                    revalidateLicenseInBackground(savedLicense).catch(error => {
-                        console.warn('Background license revalidation failed:', error.message);
-                    });
-
-                    return { unlocked: true };
-                }
-
-                // Verificar si la licencia aún es válida (fecha de expiración)
-                if (savedLicense.expires_at && new Date(savedLicense.expires_at) > new Date()) {
-                    // Licencia válida - desbloquear aplicación inmediatamente
-                    isAppUnlocked = true;
-                    if (welcomeModal) welcomeModal.style.display = 'none';
-                    renderLicenseInfo(savedLicense);
-
-                    // Revalidación en segundo plano sin bloquear
-                    revalidateLicenseInBackground(savedLicense).catch(error => {
-                        console.warn('Background license revalidation failed:', error.message);
-                    });
-
-                    return { unlocked: true };
-                } else {
-                    // Licencia expirada
-                    localStorage.removeItem('lanzo_license');
-                    renderLicenseInfo({ valid: false });
-                    isAppUnlocked = false;
-                    if (welcomeModal) welcomeModal.style.display = 'flex';
-                    return { unlocked: false };
-                }
-            } catch (parseError) {
-                console.error('Could not parse saved license:', parseError.message);
-                localStorage.removeItem('lanzo_license');
-                renderLicenseInfo({ valid: false });
-                isAppUnlocked = false;
-                if (welcomeModal) welcomeModal.style.display = 'flex';
-                return { unlocked: false };
-            }
-        } else {
-            console.log('No saved license found.');
-            renderLicenseInfo({ valid: false });
-            isAppUnlocked = false;
-            if (welcomeModal) welcomeModal.style.display = 'flex';
-            return { unlocked: false };
-        }
-    };
 
     if (licenseForm) licenseForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1764,15 +1828,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const activationResult = await activateLicense(licenseKey);
             if (activationResult.valid) {
                 const licenseDataToStore = activationResult.details;
+                licenseDataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // siempre en 30dias locales
+                localStorage.setItem('lanzo_license', JSON.stringify(licenseDataToStore));
+                await saveLicenseToIndexedDB(licenseDataToStore);
 
                 // Si el usuario marcó "recordar", guardar con una fecha de expiración más lejana
                 if (rememberDevice) {
                     licenseDataToStore.remembered = true;
-                    // Extender la validez local por 30 días (aunque la licencia real pueda expirar antes)
+                    // Extender la validez local por 30 días
                     licenseDataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
                 }
 
+                // Guardar en localStorage
                 localStorage.setItem('lanzo_license', JSON.stringify(licenseDataToStore));
+
+                // Guardar respaldo en IndexedDB
+                await saveLicenseToIndexedDB(licenseDataToStore);
+
                 isAppUnlocked = true;
                 if (welcomeModal) welcomeModal.style.display = 'none';
                 renderLicenseInfo(licenseDataToStore);
@@ -1846,7 +1918,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
-
     // --- INICIALIZACIÓN DE LA APLICACIÓN ---
     const initApp = async () => {
         try {
@@ -1862,9 +1933,10 @@ document.addEventListener('DOMContentLoaded', () => {
             ]);
 
             // Inicializar los módulos después de que las dependencias estén listas
-            // (carga diferida cuando se necesiten)
-
             await renderCategories(); // Cargar categorías al inicio
+
+            // Configurar renovación automática de licencias (cada 24 horas)
+            setInterval(renewLicenseAutomatically, 24 * 60 * 60 * 1000);
 
             // Lógica de Pestañas (Tabs) para Productos
             const productTabsContainer = document.getElementById('product-tabs');
@@ -1898,7 +1970,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 productListContainer.addEventListener('click', (e) => {
                     const button = e.target.closest('.edit-product-btn, .delete-product-btn');
                     if (!button) return;
-
                     const id = button.dataset.id;
                     if (button.classList.contains('edit-product-btn')) {
                         editProductForm(id);
@@ -1964,6 +2035,5 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error fatal al inicializar: ${error.message}. Por favor, recarga la página.`);
         }
     };
-
     initApp();
 });
