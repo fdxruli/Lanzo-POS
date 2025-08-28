@@ -102,6 +102,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return luminance > 0.5 ? '#000000' : '#ffffff';
     };
 
+    // --- FUNCIÓN PARA VERIFICAR LOCALSTORAGE ---
+    const isLocalStorageEnabled = () => {
+        try {
+            const testKey = 'lanzo-test';
+            localStorage.setItem(testKey, testKey);
+            localStorage.removeItem(testKey);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    };
+
     // Función para normalizar productos existentes
     function normalizeProducts(products) {
         if (!Array.isArray(products)) {
@@ -1665,6 +1677,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- LICENSE HANDLING AT STARTUP ---
     const initializeLicense = async () => {
+        if (!isLocalStorageEnabled()) {
+            console.error("LocalStorage is not available.");
+            if (welcomeModal) {
+                welcomeModal.style.display = 'flex';
+                showLicenseMessage('Error: El almacenamiento local está desactivado. La licencia no se puede guardar.', 'error');
+                const submitBtn = licenseForm ? licenseForm.querySelector('button[type="submit"]') : null;
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                }
+            }
+            isAppUnlocked = false;
+            return { unlocked: false };
+        }
+
         console.log('Initializing license...');
         let savedLicenseJSON = localStorage.getItem('lanzo_license');
 
