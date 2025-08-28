@@ -946,6 +946,17 @@ textarea {
   animation: modalFadeIn 0.3s ease;
 }
 
+#message-modal{
+  z-index: 2000 !important;
+}
+
+#payment-modal,
+#cost-calculation-modal,
+#category-modal,
+#welcome-modal {
+    z-index: 1500;
+}
+
 @keyframes modalFadeIn {
   from {
     opacity: 0;
