@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let db = null;
     let dashboard, businessTips; // Declarar módulos aquí
 
-    const DB_NAME = 'LanzoDB2';
+    const DB_NAME = 'LanzoDB1';
     const DB_VERSION = 5; // Incrementado para agregar almacenamiento de categorías
     const STORES = {
         MENU: 'menu',
@@ -447,7 +447,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- GESTIÓN DE CATEGORÍAS ---
     const renderCategories = async () => {
         try {
-            const categories = await loadDataWithCache(STORES.CATEGORIES);
+            // Forzar recarga desde la base de datos omitiendo la caché
+            const categories = await loadData(STORES.CATEGORIES);
+            dataCache.categories = categories;
+            dataCache.lastUpdated.categories = Date.now();
+
             // 1. Renderizar lista en el modal de gestión
             if (categoryListContainer) {
                 categoryListContainer.innerHTML = '';
@@ -458,18 +462,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         const div = document.createElement('div');
                         div.className = 'category-item-managed';
                         div.innerHTML = `
-                            <span>${cat.name}</span>
-                            <div class="category-item-controls">
-                                <button class="edit-category-btn" data-id="${cat.id}">✏️</button>
-                                <button class="delete-category-btn" data-id="${cat.id}">🗑️</button>
-                            </div>
-                        `;
+                        <span>${cat.name}</span>
+                        <div class="category-item-controls">
+                            <button class="edit-category-btn" data-id="${cat.id}">✏️</button>
+                            <button class="delete-category-btn" data-id="${cat.id}">🗑️</button>
+                        </div>
+                    `;
                         categoryListContainer.appendChild(div);
                     });
                 }
             }
+
             // 2. Poblar el select del formulario de productos
             if (productCategorySelect) {
+                const currentValue = productCategorySelect.value; // Guardar valor actual
                 productCategorySelect.innerHTML = '<option value="">Sin categoría</option>';
                 categories.forEach(cat => {
                     const option = document.createElement('option');
@@ -477,26 +483,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     option.textContent = cat.name;
                     productCategorySelect.appendChild(option);
                 });
+                // Restaurar valor seleccionado si todavía existe
+                if (categories.some(cat => cat.id === currentValue)) {
+                    productCategorySelect.value = currentValue;
+                }
             }
+
             // 3. Renderizar filtros en el TPV
             if (categoryFiltersContainer) {
+                const activeFilter = categoryFiltersContainer.querySelector('.category-filter-btn.active');
+                const activeCategoryId = activeFilter ? activeFilter.dataset.id : null;
+
                 categoryFiltersContainer.innerHTML = '';
                 const allButton = document.createElement('button');
-                allButton.className = 'category-filter-btn active';
+                allButton.className = 'category-filter-btn' + (!activeCategoryId ? ' active' : '');
                 allButton.textContent = 'Todos';
                 allButton.addEventListener('click', () => {
-                    renderMenu(); // Sin filtro
+                    renderMenu();
                     document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                     allButton.classList.add('active');
                 });
                 categoryFiltersContainer.appendChild(allButton);
+
                 categories.forEach(cat => {
                     const button = document.createElement('button');
-                    button.className = 'category-filter-btn';
+                    button.className = 'category-filter-btn' + (activeCategoryId === cat.id ? ' active' : '');
                     button.textContent = cat.name;
                     button.dataset.id = cat.id;
                     button.addEventListener('click', () => {
-                        renderMenu(cat.id); // Filtrar por esta categoría
+                        renderMenu(cat.id);
                         document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                         button.classList.add('active');
                     });
@@ -522,12 +537,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 name
             };
             await saveData(STORES.CATEGORIES, categoryData);
-            // Invalidar caché de categorías
-            dataCache[STORES.MENU] = null;
-dataCache.lastUpdated[STORES.MENU] = 0;
+
+            // Invalidar la caché de categorías para forzar una nueva carga
+            dataCache.categories = null;
+            dataCache.lastUpdated.categories = 0;
+
             showMessageModal(`Categoría "${name}" guardada.`);
             resetCategoryForm();
-            await renderCategories();
+
+            // Actualizar todas las partes de la UI que dependen de categorías
+            await renderCategories(); // Esto actualiza filtros y selects
+
+            // Si estamos en la sección de gestión de productos, actualizarla también
+            if (document.getElementById('product-management-section').classList.contains('active')) {
+                renderProductManagement();
+            }
+
+            // Si estamos en el POS, actualizar el menú por si hay filtros aplicados
+            if (document.getElementById('pos-section').classList.contains('active')) {
+                renderMenu();
+            }
         } catch (error) {
             console.error('Error saving category:', error);
             if (error.name === 'ConstraintError') {
@@ -759,60 +788,270 @@ dataCache.lastUpdated[STORES.MENU] = 0;
         }
     };
 
-    const addItemToOrder = (item) => {
-        // Si el producto lleva control de stock, validamos
-        if (item.trackStock) {
-            const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
-            const currentQuantityInOrder = existingItemInOrder ? existingItemInOrder.quantity : 0;
-            if (currentQuantityInOrder >= item.stock) {
-                showMessageModal(`No puedes agregar más "${item.name}". No hay suficiente stock.`);
+    // Función addItemToOrder mejorada
+    const addItemToOrder = async (item) => {
+        try {
+            // Verificar si el producto tiene control de stock
+            const hasStockControl = item.trackStock !== undefined ? item.trackStock :
+                (typeof item.stock === 'number' && item.stock > 0);
+
+            // Para productos sin control de stock, no necesitamos verificar la base de datos
+            if (!hasStockControl) {
+                const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
+
+                if (existingItemInOrder) {
+                    existingItemInOrder.quantity++;
+                } else {
+                    order.push({
+                        ...item,
+                        quantity: 1,
+                        exceedsStock: false,
+                        trackStock: false // Asegurar que tenga la propiedad trackStock
+                    });
+                }
+                updateOrderDisplay();
                 return;
             }
-        }
-        // Si no lleva control, no validamos y agregamos directamente
-        const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
-        if (existingItemInOrder) {
-            existingItemInOrder.quantity++;
-        } else {
-            order.push({ ...item, quantity: 1 });
-        }
-        updateOrderDisplay();
-    };
 
-    const updateOrderDisplay = () => {
-        if (!orderListContainer || !emptyOrderMessage || !posTotalSpan) return;
-        orderListContainer.innerHTML = '';
-        emptyOrderMessage.classList.toggle('hidden', order.length > 0);
-        order.forEach(item => {
-            const orderItemDiv = document.createElement('div');
-            orderItemDiv.className = 'order-item';
-            orderItemDiv.innerHTML = `
-                        <div class="order-item-info">
-                            <span class="order-item-name">${item.name}</span>
-                            <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
-                        </div>
-                        <div class="order-item-controls">
-                            <button class="quantity-btn decrease" data-id="${item.id}" data-change="-1">-</button>
-                            <span class="quantity-value">${item.quantity}</span>
-                            <button class="quantity-btn increase" data-id="${item.id}" data-change="1">+</button>
-                            <button class="remove-item-btn" data-id="${item.id}">X</button>
-                        </div>
-                    `;
-            orderListContainer.appendChild(orderItemDiv);
-        });
-        orderListContainer.querySelectorAll('.quantity-btn').forEach(btn => btn.addEventListener('click', e => {
-            const { id, change } = e.currentTarget.dataset;
-            const itemIndex = order.findIndex(i => i.id === id);
-            if (itemIndex > -1) {
-                order[itemIndex].quantity += parseInt(change);
-                if (order[itemIndex].quantity <= 0) order.splice(itemIndex, 1);
+            // Para productos con control de stock, obtener información actualizada
+            const currentProduct = await loadDataWithCache(STORES.MENU, item.id);
+
+            // Validar que el producto existe
+            if (!currentProduct) {
+                showMessageModal(`El producto "${item.name}" no está disponible en este momento.`);
+                console.error(`Producto no encontrado: ${item.id}`);
+                return;
+            }
+
+            // Buscar si el producto ya está en el pedido
+            const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
+            const currentQuantityInOrder = existingItemInOrder ? existingItemInOrder.quantity : 0;
+
+            // Validar disponibilidad de stock
+            if (currentQuantityInOrder >= currentProduct.stock) {
+                // Preguntar al usuario si desea agregar a pesar de no tener stock
+                showMessageModal(
+                    `No hay suficiente stock de "${item.name}". Solo quedan ${currentProduct.stock} unidades. ¿Desea agregarlo de todas formas?`,
+                    () => {
+                        // El usuario confirmó que quiere agregar a pesar del stock insuficiente
+                        if (existingItemInOrder) {
+                            existingItemInOrder.quantity++;
+                            existingItemInOrder.exceedsStock = true;
+                        } else {
+                            order.push({
+                                ...item,
+                                quantity: 1,
+                                exceedsStock: true
+                            });
+                        }
+                        updateOrderDisplay();
+                    }
+                );
+                return;
+            }
+
+            // Agregar el producto al pedido normalmente si hay stock suficiente
+            if (existingItemInOrder) {
+                existingItemInOrder.quantity++;
+                // Si antes excedía stock pero ahora no, quitar la marca
+                if (existingItemInOrder.exceedsStock && currentQuantityInOrder + 1 <= currentProduct.stock) {
+                    existingItemInOrder.exceedsStock = false;
+                }
+            } else {
+                order.push({ ...item, quantity: 1, exceedsStock: false });
             }
             updateOrderDisplay();
+        } catch (error) {
+            console.error('Error adding item to order:', error);
+            showMessageModal('Error al agregar el producto al pedido.');
+        }
+    };
+
+    // Función updateOrderDisplay mejorada
+    const updateOrderDisplay = async () => {
+        if (!orderListContainer || !emptyOrderMessage || !posTotalSpan) return;
+
+        orderListContainer.innerHTML = '';
+        emptyOrderMessage.classList.toggle('hidden', order.length > 0);
+
+        for (const item of order) {
+            try {
+                // Determinar si el producto tiene control de stock
+                const hasStockControl = item.trackStock !== undefined ? item.trackStock :
+                    (typeof item.stock === 'number' && item.stock > 0);
+
+                // Para productos sin control de stock
+                if (!hasStockControl) {
+                    const orderItemDiv = document.createElement('div');
+                    orderItemDiv.className = 'order-item';
+                    orderItemDiv.innerHTML = `
+                    <div class="order-item-info">
+                        <span class="order-item-name">${item.name}</span>
+                        <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
+                        <div class="stock-warning no-stock-tracking">Sin control de stock</div>
+                    </div>
+                    <div class="order-item-controls">
+                        <button class="quantity-btn decrease" data-id="${item.id}" data-change="-1">-</button>
+                        <span class="quantity-value">${item.quantity}</span>
+                        <button class="quantity-btn increase" data-id="${item.id}" data-change="1">+</button>
+                        <button class="remove-item-btn" data-id="${item.id}">X</button>
+                    </div>
+                `;
+                    orderListContainer.appendChild(orderItemDiv);
+                    continue;
+                }
+
+                // Para productos con control de stock, obtener información actualizada
+                const currentProduct = await loadDataWithCache(STORES.MENU, item.id, 60000); // 60 segundos de caché
+
+                // Validar que el producto existe
+                if (!currentProduct) {
+                    console.warn(`Producto no encontrado: ${item.id}`);
+                    // Mostrar el producto con un mensaje de error
+                    const orderItemDiv = document.createElement('div');
+                    orderItemDiv.className = 'order-item error-item';
+                    orderItemDiv.innerHTML = `
+                    <div class="order-item-info">
+                        <span class="order-item-name">${item.name} (No disponible)</span>
+                        <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
+                        <div class="stock-warning error-warning">Producto no disponible</div>
+                    </div>
+                    <div class="order-item-controls">
+                        <button class="remove-item-btn" data-id="${item.id}">X</button>
+                    </div>
+                `;
+                    orderListContainer.appendChild(orderItemDiv);
+                    continue;
+                }
+
+                const orderItemDiv = document.createElement('div');
+                orderItemDiv.className = 'order-item';
+
+                // Determinar clase CSS según el estado de stock
+                if (item.exceedsStock) {
+                    orderItemDiv.classList.add('exceeds-stock');
+                } else if (currentProduct.stock < 5) {
+                    orderItemDiv.classList.add('low-stock');
+                }
+
+                // Mostrar advertencia si el stock es bajo o insuficiente
+                let stockWarning = '';
+                if (item.exceedsStock) {
+                    stockWarning = `<div class="stock-warning exceeds-stock-warning">¡Excede stock disponible! (Solo ${currentProduct.stock} disponibles)</div>`;
+                } else if (currentProduct.stock < 5) {
+                    stockWarning = `<div class="stock-warning low-stock-warning">Stock bajo: ${currentProduct.stock} unidades</div>`;
+                }
+
+                orderItemDiv.innerHTML = `
+                <div class="order-item-info">
+                    <span class="order-item-name">${item.name}</span>
+                    <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
+                    ${stockWarning}
+                </div>
+                <div class="order-item-controls">
+                    <button class="quantity-btn decrease" data-id="${item.id}" data-change="-1">-</button>
+                    <span class="quantity-value">${item.quantity}</span>
+                    <button class="quantity-btn increase" data-id="${item.id}" data-change="1" 
+                            ${item.quantity >= currentProduct.stock && !item.exceedsStock ? 'disabled' : ''}>+</button>
+                    <button class="remove-item-btn" data-id="${item.id}">X</button>
+                </div>
+            `;
+                orderListContainer.appendChild(orderItemDiv);
+            } catch (error) {
+                console.error('Error loading product info for display:', error);
+                // En caso de error, mostramos el producto sin información de stock actualizada
+                const orderItemDiv = document.createElement('div');
+                orderItemDiv.className = 'order-item error-item';
+                orderItemDiv.innerHTML = `
+                <div class="order-item-info">
+                    <span class="order-item-name">${item.name}</span>
+                    <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
+                    <div class="stock-warning error-warning">Error al cargar información</div>
+                </div>
+                <div class="order-item-controls">
+                    <button class="remove-item-btn" data-id="${item.id}">X</button>
+                </div>
+            `;
+                orderListContainer.appendChild(orderItemDiv);
+            }
+        }
+
+        // Reasignar event listeners a los botones de cantidad
+        orderListContainer.querySelectorAll('.quantity-btn').forEach(btn => btn.addEventListener('click', async (e) => {
+            const { id, change } = e.currentTarget.dataset;
+            const itemIndex = order.findIndex(i => i.id === id);
+
+            if (itemIndex > -1) {
+                // Para productos sin control de stock, no necesitamos verificar la base de datos
+                const hasStockControl = order[itemIndex].trackStock !== undefined ? order[itemIndex].trackStock :
+                    (typeof order[itemIndex].stock === 'number' && order[itemIndex].stock > 0);
+
+                if (!hasStockControl) {
+                    const changeValue = parseInt(change);
+                    order[itemIndex].quantity += changeValue;
+
+                    if (order[itemIndex].quantity <= 0) order.splice(itemIndex, 1);
+                    updateOrderDisplay();
+                    return;
+                }
+
+                // Para productos con control de stock, obtener información actualizada
+                try {
+                    const currentProduct = await loadDataWithCache(STORES.MENU, id, 60000); // 60 segundos de caché
+
+                    // Validar que el producto existe
+                    if (!currentProduct) {
+                        showMessageModal('Este producto ya no está disponible.');
+                        // Eliminar el producto del pedido
+                        order.splice(itemIndex, 1);
+                        updateOrderDisplay();
+                        return;
+                    }
+
+                    const changeValue = parseInt(change);
+
+                    // Si es un aumento y el producto lleva control de stock
+                    if (changeValue > 0) {
+                        if (order[itemIndex].quantity >= currentProduct.stock && !order[itemIndex].exceedsStock) {
+                            // Preguntar al usuario si desea exceder el stock
+                            showMessageModal(
+                                `No hay suficiente stock de "${order[itemIndex].name}". Solo quedan ${currentProduct.stock} unidades. ¿Desea agregar más de todas formas?`,
+                                () => {
+                                    // El usuario confirmó que quiere exceder el stock
+                                    order[itemIndex].quantity += changeValue;
+                                    order[itemIndex].exceedsStock = true;
+                                    updateOrderDisplay();
+                                }
+                            );
+                            return;
+                        }
+                    }
+
+                    // Cambiar la cantidad normalmente
+                    order[itemIndex].quantity += changeValue;
+
+                    // Actualizar el estado de excedeStock
+                    if (order[itemIndex].quantity <= currentProduct.stock) {
+                        order[itemIndex].exceedsStock = false;
+                    } else if (changeValue > 0 && order[itemIndex].quantity > currentProduct.stock) {
+                        order[itemIndex].exceedsStock = true;
+                    }
+
+                    if (order[itemIndex].quantity <= 0) order.splice(itemIndex, 1);
+                    updateOrderDisplay();
+                } catch (error) {
+                    console.error('Error verifying stock:', error);
+                    showMessageModal('Error al verificar el stock del producto.');
+                }
+            }
         }));
+
+        // Reasignar event listeners a los botones de eliminar
         orderListContainer.querySelectorAll('.remove-item-btn').forEach(btn => btn.addEventListener('click', e => {
             order = order.filter(i => i.id !== e.currentTarget.dataset.id);
             updateOrderDisplay();
         }));
+
         calculateTotals();
     };
 
@@ -842,49 +1081,118 @@ dataCache.lastUpdated[STORES.MENU] = 0;
             if (welcomeModal) welcomeModal.style.display = 'flex';
             return;
         }
+
         try {
+            let insufficientStockItems = [];
+            let exceedsStockItems = [];
+
             // 1. Validar stock ANTES de procesar (solo para productos con control)
             for (const orderItem of order) {
                 const product = await loadData(STORES.MENU, orderItem.id);
                 if (product && product.trackStock) {
                     if (product.stock < orderItem.quantity) {
-                        showMessageModal(`¡Stock insuficiente para "${orderItem.name}"! Solo quedan ${product.stock}.`);
-                        if (paymentModal) paymentModal.classList.add('hidden');
-                        return; // Detener el proceso
+                        if (orderItem.exceedsStock) {
+                            exceedsStockItems.push({
+                                name: orderItem.name,
+                                requested: orderItem.quantity,
+                                available: product.stock
+                            });
+                        } else {
+                            insufficientStockItems.push({
+                                name: orderItem.name,
+                                requested: orderItem.quantity,
+                                available: product.stock
+                            });
+                        }
                     }
                 }
             }
-            // 2. Actualizar stock (solo para productos con control)
+
+            // 2. Si hay productos con stock insuficiente, pedir confirmación
+            if (insufficientStockItems.length > 0 || exceedsStockItems.length > 0) {
+                let message = "¡Atención! ";
+
+                if (insufficientStockItems.length > 0) {
+                    message += "Stock insuficiente para:\n";
+                    message += insufficientStockItems.map(item =>
+                        `- ${item.name}: Solicitadas ${item.requested}, Disponibles ${item.available}`
+                    ).join('\n');
+                }
+
+                if (exceedsStockItems.length > 0) {
+                    if (insufficientStockItems.length > 0) message += "\n\n";
+                    message += "Productos que exceden el stock:\n";
+                    message += exceedsStockItems.map(item =>
+                        `- ${item.name}: Solicitadas ${item.requested}, Disponibles ${item.available}`
+                    ).join('\n');
+                }
+
+                message += "\n\n¿Deseas procesar el pedido de todas formas?";
+
+                showMessageModal(message, async () => {
+                    // El usuario confirmó que quiere procesar a pesar del stock insuficiente
+                    await completeOrderProcessing(insufficientStockItems, exceedsStockItems);
+                });
+                return;
+            }
+
+            // 3. Si no hay problemas de stock, procesar normalmente
+            await completeOrderProcessing([], []);
+        } catch (error) {
+            console.error('Error processing order:', error.message);
+            showMessageModal(`Error al procesar el pedido: ${error.message}`);
+        }
+    };
+
+    const completeOrderProcessing = async (insufficientStockItems, exceedsStockItems) => {
+        try {
+            // Actualizar stock (solo para productos con control y donde haya suficiente)
             for (const orderItem of order) {
                 const product = await loadData(STORES.MENU, orderItem.id);
                 if (product && product.trackStock) {
-                    product.stock -= orderItem.quantity;
+                    // Solo reducir stock si hay disponible, sino dejar en 0
+                    const stockReduction = Math.min(orderItem.quantity, product.stock);
+                    product.stock = Math.max(0, product.stock - stockReduction);
                     await saveData(STORES.MENU, product);
                     // Invalidar caché de menú
                     dataCache.menu = null;
                 }
             }
-            // 3. Guardar la venta
+
+            // Guardar la venta
             const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const sale = {
                 timestamp: new Date().toISOString(),
                 items: JSON.parse(JSON.stringify(order)),
-                total
+                total,
+                hadStockIssues: insufficientStockItems.length > 0 || exceedsStockItems.length > 0,
+                exceedsStock: exceedsStockItems.length > 0
             };
+
             await saveData(STORES.SALES, sale);
-            // 4. Limpiar y actualizar UI
+
+            // Limpiar y actualizar UI
             if (paymentModal) paymentModal.classList.add('hidden');
-            showMessageModal('¡Pedido procesado exitosamente!');
+
+            if (exceedsStockItems.length > 0) {
+                showMessageModal('¡Pedido procesado! Nota: Algunos productos excedieron el stock disponible.');
+            } else if (insufficientStockItems.length > 0) {
+                showMessageModal('¡Pedido procesado! Nota: Algunos productos tenían stock insuficiente.');
+            } else {
+                showMessageModal('¡Pedido procesado exitosamente!');
+            }
+
             order = [];
             updateOrderDisplay();
             renderMenu(); // Re-renderizar menú para mostrar stock actualizado
             if (dashboard) dashboard.renderDashboard();
             renderProductManagement();
         } catch (error) {
-            console.error('Error processing order:', error.message);
-            showMessageModal(`Error al procesar el pedido: ${error.message}`);
+            console.error('Error completing order processing:', error.message);
+            showMessageModal(`Error al completar el procesamiento del pedido: ${error.message}`);
         }
     };
+
 
     const renderCompanyData = async () => {
         try {
@@ -1009,6 +1317,13 @@ dataCache.lastUpdated[STORES.MENU] = 0;
                     currentIngredients = [];
                     editingProductId = id;
                 }
+                // Cambiar automáticamente a la sección de añadir/editar productos
+                const addTabBtn = document.querySelector('.tab-btn[data-tab="add-product"]'); // Asumiendo que el data-tab para añadir/editar es "add-product"
+                if (addTabBtn) {
+                    addTabBtn.click();
+                } else {
+                    console.warn('No se encontró el botón de tab para añadir/editar productos.');
+                }
             }
         } catch (error) {
             console.error('Error loading product for editing:', error.message);
@@ -1066,7 +1381,7 @@ dataCache.lastUpdated[STORES.MENU] = 0;
             await saveData(STORES.MENU, productData);
             // Invalidar caché de menú
             dataCache[STORES.MENU] = null;
-dataCache.lastUpdated[STORES.MENU] = 0;
+            dataCache.lastUpdated[STORES.MENU] = 0;
             // Ahora sí: Si hay ingredientes y editingProductId válido, guarda
             if (currentIngredients.length > 0 && editingProductId) {
                 await saveIngredients();
@@ -1089,7 +1404,7 @@ dataCache.lastUpdated[STORES.MENU] = 0;
                     await deleteData(STORES.MENU, id);
                     // Invalidar caché de menú
                     dataCache[STORES.MENU] = null;
-dataCache.lastUpdated[STORES.MENU] = 0;
+                    dataCache.lastUpdated[STORES.MENU] = 0;
                     // Eliminar los ingredientes asociados
                     try {
                         await deleteData(STORES.INGREDIENTS, id);

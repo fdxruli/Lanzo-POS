@@ -1474,3 +1474,120 @@ textarea {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+
+/* Estilos para productos que exceden stock */
+.order-item.exceeds-stock {
+    border-left: 4px solid #dc3545;
+    background-color: rgba(220, 53, 69, 0.05);
+}
+
+.exceeds-stock-warning {
+    color: #dc3545;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+/* Estilos para productos con stock bajo */
+.order-item.low-stock {
+    border-left: 4px solid #ffc107;
+    background-color: rgba(255, 193, 7, 0.05);
+}
+
+.low-stock-warning {
+    color: #ffc107;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.stock-warning {
+    margin-top: 5px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+}
+
+/* Estilos para productos sin control de stock */
+.order-item .no-stock-tracking {
+    color: #17a2b8;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+/* Estilos para productos con errores */
+.order-item.error-item {
+    border-left: 4px solid #6c757d;
+    background-color: rgba(108, 117, 125, 0.05);
+    opacity: 0.7;
+}
+
+.error-warning {
+    color: #6c757d;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+/* Estilos para productos que exceden stock */
+.order-item.exceeds-stock {
+    border-left: 4px solid #dc3545;
+    background-color: rgba(220, 53, 69, 0.05);
+}
+
+.exceeds-stock-warning {
+    color: #dc3545;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+/* Estilos para productos con stock bajo */
+.order-item.low-stock {
+    border-left: 4px solid #ffc107;
+    background-color: rgba(255, 193, 7, 0.05);
+}
+
+.low-stock-warning {
+    color: #ffc107;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.stock-warning {
+    margin-top: 5px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+}
+
+.order-item-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quantity-btn {
+    width: 30px;
+    height: 30px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.quantity-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.remove-item-btn {
+    width: 30px;
+    height: 30px;
+    border: 1px solid #dc3545;
+    background-color: #fff;
+    color: #dc3545;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.remove-item-btn:hover {
+    background-color: #dc3545;
+    color: #fff;
+}
