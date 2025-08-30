@@ -103,7 +103,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return false;
         }
     };
-
     // Función para guardar licencia en cookies (fallback) idexedDB
     const saveLicenseToCookie = (licenseData) => {
         const cookieValue = JSON.stringify(licenseData);
@@ -111,7 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.cookie = `lanzo_license=${encodeURIComponent(cookieValue)}; expires=${expiryDate.toUTCString()}; path=/; SameSite=Strict; Secure`;
         console.log('License saved to cookie as fallback');
     };
-
     // Función para obtener licencia de cookies
     const getLicenseFromCookie = () => {
         const match = document.cookie.match(/lanzo_license=([^;]+)/);
@@ -124,7 +122,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return null;
     };
-
     // saveLicenseToIndexedDB para también guardar en cookie
     const saveLicenseToIndexedDB = async (licenseData) => {
         try {
@@ -139,7 +136,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error saving license to IndexedDB:', error);
         }
     };
-
     // getLicenseFromIndexedDB para fallback a cookie
     const getLicenseFromIndexedDB = async () => {
         try {
@@ -172,19 +168,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const isEdgeBrowser = () => {
         return /Edg/.test(navigator.userAgent);
     };
-
     // --- FUNCIÓN DE RENOVACIÓN AUTOMÁTICA DE LICENCIA ---
     const renewLicenseAutomatically = async () => {
         try {
             const savedLicenseJSON = localStorage.getItem('lanzo_license');
             if (savedLicenseJSON) {
                 const savedLicense = JSON.parse(savedLicenseJSON);
-
                 // Renovar si falta menos de 7 días para expirar
                 const expiryDate = normalizeDate(savedLicense.expires_at);
                 const now = new Date();
                 const daysUntilExpiry = (expiryDate - now) / (1000 * 60 * 60 * 24);
-
                 if (daysUntilExpiry < 7 && daysUntilExpiry > 0) {
                     console.log('License expiring soon, attempting renewal');
                     const renewalResult = await renewLicense(savedLicense.license_key);
@@ -201,7 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error in automatic license renewal:', error);
         }
     };
-
     // Función para normalizar productos existentes
     function normalizeProducts(products) {
         if (!Array.isArray(products)) {
@@ -312,7 +304,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
-
     const loadData = (storeName, key = null) => {
         return new Promise((resolve, reject) => {
             if (!db.objectStoreNames.contains(storeName)) {
@@ -334,7 +325,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
-
     const deleteData = (storeName, key) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
@@ -448,11 +438,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Mostrar el modal
         if (costCalculationModal) costCalculationModal.classList.remove('hidden');
     };
-
     const closeCostCalculator = () => {
         if (costCalculationModal) costCalculationModal.classList.add('hidden');
     };
-
     const addIngredient = () => {
         const name = ingredientNameInput.value.trim();
         const cost = parseFloat(ingredientCostInput.value);
@@ -474,12 +462,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Actualizar la lista y el total
         renderIngredientList();
     };
-
     const removeIngredient = (id) => {
         currentIngredients = currentIngredients.filter(ing => ing.id !== id);
         renderIngredientList();
     };
-
     const renderIngredientList = () => {
         if (!ingredientListContainer) return;
         ingredientListContainer.innerHTML = '';
@@ -511,13 +497,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (ingredientTotalElement) ingredientTotalElement.textContent = `Total: $${total.toFixed(2)}`;
     };
-
     const assignCostToProduct = () => {
         const total = currentIngredients.reduce((sum, ing) => sum + (ing.cost * ing.quantity), 0);
         if (productCostInput) productCostInput.value = total.toFixed(2);
         closeCostCalculator();
     };
-
     const saveIngredients = async () => {
         if (editingProductId) {
             try {
@@ -530,7 +514,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-
     // --- GESTIÓN DE CATEGORÍAS ---
     const renderCategories = async () => {
         try {
@@ -605,7 +588,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal('Error al cargar las categorías.');
         }
     };
-
     const saveCategory = async () => {
         const id = categoryIdInput.value;
         const name = categoryNameInput.value.trim();
@@ -643,7 +625,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-
     const editCategory = async (id) => {
         try {
             const category = await loadData(STORES.CATEGORIES, id);
@@ -657,7 +638,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error loading category for editing:', error);
         }
     };
-
     const deleteCategory = async (id) => {
         try {
             const category = await loadData(STORES.CATEGORIES, id);
@@ -684,7 +664,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal('Error al eliminar la categoría.');
         }
     };
-
     const resetCategoryForm = () => {
         if (categoryIdInput) categoryIdInput.value = '';
         if (categoryNameInput) categoryNameInput.value = '';
@@ -732,7 +711,6 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModalBtn.textContent = 'Aceptar';
         };
     };
-
     const applyTheme = (theme) => {
         document.documentElement.style.setProperty('--primary-color', theme.primaryColor);
         document.documentElement.style.setProperty('--secondary-color', theme.secondaryColor);
@@ -815,7 +793,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al restablecer tema: ${error.message}`);
         }
     };
-
     const renderMenu = async (filterCategoryId = null) => {
         if (!menuItemsContainer) return;
         try {
@@ -930,7 +907,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal('Error al agregar el producto al pedido.');
         }
     };
-
     const updateOrderDisplay = async () => {
         if (!orderListContainer || !emptyOrderMessage || !posTotalSpan) return;
         orderListContainer.innerHTML = '';
@@ -1095,13 +1071,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
         calculateTotals();
     };
-
     const calculateTotals = () => {
         if (!posTotalSpan) return;
         const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         posTotalSpan.textContent = `$${total.toFixed(2)}`;
     };
-
     const openPaymentProcess = () => {
         if (!paymentModal || !paymentTotal || !paymentAmountInput || !paymentChange) return;
         if (order.length === 0) {
@@ -1115,7 +1089,6 @@ document.addEventListener('DOMContentLoaded', () => {
         paymentModal.classList.remove('hidden');
         paymentAmountInput.focus();
     };
-
     const processOrder = async () => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
@@ -1176,7 +1149,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al procesar el pedido: ${error.message}`);
         }
     };
-
     const completeOrderProcessing = async (insufficientStockItems, exceedsStockItems) => {
         try {
             // Actualizar stock (solo para productos con control y donde haya suficiente)
@@ -1220,7 +1192,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al completar el procesamiento del pedido: ${error.message}`);
         }
     };
-
     const renderCompanyData = async () => {
         try {
             let companyData = await loadDataWithCache(STORES.COMPANY, 'company');
@@ -1244,7 +1215,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar datos de la empresa: ${error.message}`);
         }
     };
-
     const saveCompanyData = async (e) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
@@ -1271,7 +1241,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al guardar datos de la empresa: ${error.message}`);
         }
     };
-
     const renderProductManagement = async (searchTerm = '') => {
         if (!productListContainer || !emptyProductMessage) return;
         try {
@@ -1318,7 +1287,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar la gestión de productos: ${error.message}`);
         }
     };
-
     const editProductForm = async (id) => {
         try {
             const item = await loadData(STORES.MENU, id);
@@ -1357,7 +1325,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar producto para edición: ${error.message}`);
         }
     };
-
     const resetProductForm = () => {
         if (productForm) productForm.reset();
         if (productIdInput) productIdInput.value = '';
@@ -1372,7 +1339,6 @@ document.addEventListener('DOMContentLoaded', () => {
         currentIngredients = [];
         editingProductId = null;
     };
-
     const saveProduct = async (e) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
@@ -1422,7 +1388,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al guardar producto: ${error.message}`);
         }
     };
-
     const deleteProduct = async (id) => {
         try {
             const item = await loadData(STORES.MENU, id);
@@ -1542,15 +1507,12 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => revalidateLicenseInBackground(savedLicense), 5 * 60 * 1000);
         }
     };
-
     // --- FUNCIÓN MEJORADA PARA INICIALIZAR LICENCIA ---
     const initializeLicense = async () => {
         console.log('Starting license initialization...');
-
         // Verificar disponibilidad de almacenamientos
         const localStorageAvailable = isLocalStorageEnabled();
         console.log('LocalStorage available:', localStorageAvailable);
-
         if (!localStorageAvailable) {
             console.error("LocalStorage is not available.");
             if (welcomeModal) {
@@ -1564,15 +1526,12 @@ document.addEventListener('DOMContentLoaded', () => {
             isAppUnlocked = false;
             return { unlocked: false };
         }
-
         // Detección especial para Edge
         if (isEdgeBrowser()) {
             console.log('Edge browser detected, using enhanced storage');
         }
-
         let savedLicenseJSON = localStorage.getItem('lanzo_license');
         let savedLicense = null;
-
         // Intentar obtener de localStorage
         if (savedLicenseJSON) {
             try {
@@ -1582,7 +1541,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error parsing localStorage license:', parseError);
             }
         }
-
         // Si no hay en localStorage, intentar con IndexedDB o cookie (fallback)
         if (!savedLicense) {
             savedLicense = await getLicenseFromIndexedDB();  // Esto ya incluye fallback a cookie en tu modificación
@@ -1592,27 +1550,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('License restored from IndexedDB or cookie to localStorage');
             }
         }
-
         // AQUÍ: Verifica localExpiry SOLO DESPUÉS de asignar savedLicense
         if (savedLicense && savedLicense.localExpiry) {
             const localExpiryDate = normalizeDate(savedLicense.localExpiry);
             const now = new Date();
-
             if (localExpiryDate > now) {
                 console.log('Using local expiry for valid license');
                 isAppUnlocked = true;
                 if (welcomeModal) welcomeModal.style.display = 'none';
                 renderLicenseInfo(savedLicense);
-
                 // Revalidar en segundo plano
                 revalidateLicenseInBackground(savedLicense).catch(error => {
                     console.warn('Background license revalidation failed:', error.message);
                 });
-
                 return { unlocked: true };
             }
         }
-
         if (!savedLicense) {
             console.log('No license found in any storage');
             renderLicenseInfo({ valid: false });
@@ -1620,44 +1573,36 @@ document.addEventListener('DOMContentLoaded', () => {
             if (welcomeModal) welcomeModal.style.display = 'flex';
             return { unlocked: false };
         }
-
         // Verificar si el usuario marcó "recordar" y no ha expirado el recordatorio local
         if (savedLicense.remembered && savedLicense.localExpiry) {
             const localExpiryDate = normalizeDate(savedLicense.localExpiry);
             const now = new Date();
-
             if (localExpiryDate > now) {
                 console.log('Using remembered license (local expiry valid)');
                 isAppUnlocked = true;
                 if (welcomeModal) welcomeModal.style.display = 'none';
                 renderLicenseInfo(savedLicense);
-
                 // Revalidar en segundo plano
                 revalidateLicenseInBackground(savedLicense).catch(error => {
                     console.warn('Background license revalidation failed:', error.message);
                 });
-
                 return { unlocked: true };
             }
         }
-
         // Verificar si la licencia aún es válida (fecha de expiración)
         if (savedLicense.expires_at) {
             const expiryDate = normalizeDate(savedLicense.expires_at);
             const now = new Date();
-
             if (expiryDate > now) {
                 // Licencia válida - desbloquear aplicación inmediatamente
                 console.log('License is valid, unlocking app');
                 isAppUnlocked = true;
                 if (welcomeModal) welcomeModal.style.display = 'none';
                 renderLicenseInfo(savedLicense);
-
                 // Revalidación en segundo plano sin bloquear
                 revalidateLicenseInBackground(savedLicense).catch(error => {
                     console.warn('Background license revalidation failed:', error.message);
                 });
-
                 return { unlocked: true };
             } else {
                 // Licencia expirada
@@ -1677,7 +1622,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return { unlocked: true };
         }
     };
-
     // --- EVENT LISTENERS ---
     if (document.getElementById('home-link')) document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
     if (document.getElementById('nav-pos')) document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
@@ -1766,30 +1710,7 @@ document.addEventListener('DOMContentLoaded', () => {
             addIngredient();
         }
     });
-    // --- CONTACT FORM ---
-    const contactForm = document.getElementById('contact-form');
-    const submitContactForm = async (e) => {
-        if (!contactForm) return;
-        e.preventDefault();
-        const formData = new FormData(contactForm);
-        try {
-            const response = await fetch('https://api.web3forms.com/submit', {
-                method: 'POST',
-                body: formData
-            });
-            const result = await response.json();
-            if (result.success) {
-                showMessageModal('¡Mensaje enviado con éxito! Nos pondremos en contacto pronto.');
-                contactForm.reset();
-            } else {
-                showMessageModal('Error al enviar el mensaje: ' + (result.message || 'Por favor, intenta de nuevo.'));
-            }
-        } catch (error) {
-            console.error('Error submitting contact form:', error.message);
-            showMessageModal('Error al enviar el mensaje: ' + error.message);
-        }
-    };
-    if (contactForm) contactForm.addEventListener('submit', submitContactForm);
+
     // --- EVENT LISTENERS PARA CATEGORÍAS ---
     if (categoryModalButton) categoryModalButton.addEventListener('click', () => {
         resetCategoryForm();
@@ -1816,14 +1737,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const licenseMessage = document.getElementById('license-message');
     const licenseInfoContainer = document.getElementById('license-info-container');
     // --- LICENSE HANDLING AT STARTUP ---
-
     if (licenseForm) licenseForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const licenseKey = licenseKeyInput ? licenseKeyInput.value.trim() : '';
         const rememberDevice = rememberDeviceCheckbox ? rememberDeviceCheckbox.checked : false;
-
         if (!licenseKey) return showLicenseMessage('Por favor ingrese una clave de licencia válida', 'error');
-
         try {
             const activationResult = await activateLicense(licenseKey);
             if (activationResult.valid) {
@@ -1831,24 +1749,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 licenseDataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // siempre en 30dias locales
                 localStorage.setItem('lanzo_license', JSON.stringify(licenseDataToStore));
                 await saveLicenseToIndexedDB(licenseDataToStore);
-
                 // Si el usuario marcó "recordar", guardar con una fecha de expiración más lejana
                 if (rememberDevice) {
                     licenseDataToStore.remembered = true;
                     // Extender la validez local por 30 días
                     licenseDataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
                 }
-
                 // Guardar en localStorage
                 localStorage.setItem('lanzo_license', JSON.stringify(licenseDataToStore));
-
                 // Guardar respaldo en IndexedDB
                 await saveLicenseToIndexedDB(licenseDataToStore);
-
                 isAppUnlocked = true;
                 if (welcomeModal) welcomeModal.style.display = 'none';
                 renderLicenseInfo(licenseDataToStore);
-
                 // Start the main app UI
                 renderCompanyData();
                 showSection('pos');
@@ -1859,7 +1772,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showLicenseMessage(`Error al conectar con el servidor: ${error.message}`, 'error');
         }
     });
-
     function showLicenseMessage(message, type) {
         if (!licenseMessage) return;
         licenseMessage.textContent = message;
@@ -1869,7 +1781,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (licenseMessage) licenseMessage.style.display = 'none';
         }, 5000);
     }
-
     function renderLicenseInfo(licenseData) {
         if (!licenseInfoContainer) return;
         if (!licenseData || !licenseData.valid) {
@@ -1923,21 +1834,16 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // Mostrar pantalla de carga solo si el elemento existe
             if (loadingScreen) loadingScreen.style.display = 'flex';
-
             await initDB();
-
             // Ejecutar operaciones en paralelo
             const [licenseResult, defaultDataResult] = await Promise.all([
                 initializeLicense(),
                 initializeDefaultData()
             ]);
-
             // Inicializar los módulos después de que las dependencias estén listas
             await renderCategories(); // Cargar categorías al inicio
-
             // Configurar renovación automática de licencias (cada 24 horas)
             setInterval(renewLicenseAutomatically, 24 * 60 * 60 * 1000);
-
             // Lógica de Pestañas (Tabs) para Productos
             const productTabsContainer = document.getElementById('product-tabs');
             if (productTabsContainer) {
@@ -1956,7 +1862,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-
             // Lógica del buscador de productos
             const productSearchInput = document.getElementById('product-search-input');
             if (productSearchInput) {
@@ -1964,7 +1869,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderProductManagement(e.target.value);
                 });
             }
-
             // Delegación de eventos para la lista de productos
             if (productListContainer) {
                 productListContainer.addEventListener('click', (e) => {
@@ -1978,7 +1882,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-
             // Lógica de Pestañas (Tabs) para Ventas
             const salesTabsContainer = document.getElementById('sales-tabs');
             if (salesTabsContainer) {
@@ -2005,7 +1908,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-
             // Event listeners for navigation and main actions
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.getElementById('mobile-menu');
@@ -2020,10 +1922,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 console.error('app.js: Critical mobile menu elements not found!');
             }
-
             // Ocultar pantalla de carga al finalizar (si existe)
             if (loadingScreen) loadingScreen.style.display = 'none';
-
             // Si la licencia está desbloqueada, mostrar la sección principal
             if (licenseResult.unlocked) {
                 renderCompanyData();
