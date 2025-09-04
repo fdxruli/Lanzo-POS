@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let dashboard, businessTips; // Declarar módulos aquí
     const DB_NAME = 'LanzoDB1';
     const DB_VERSION = 6; // Incrementado para agregar almacenamiento de clientes
+    let customersForSale = []; // Variable para guardar los clientes cargados
     const STORES = {
         MENU: 'menu',
         SALES: 'sales',
@@ -1271,6 +1272,7 @@ const calculateTotals = () => {
 // Hacer showMessageModal disponible globalmente
 window.showMessageModal = showMessageModal;
 
+
 const openPaymentProcess = async () => {
     if (!paymentModal || !paymentTotal || !paymentAmountInput || !paymentChange) return;
     if (order.length === 0) {
@@ -1278,27 +1280,37 @@ const openPaymentProcess = async () => {
         return;
     }
 
-    // Cargar la lista de clientes para el selector
-    const customerSelect = document.getElementById('sale-customer');
-    if (customerSelect) {
-        try {
-            const customers = await loadData(STORES.CUSTOMERS);
-            customerSelect.innerHTML = '<option value="">Sin cliente asignado</option>';
-            customers.forEach(customer => {
-                const option = document.createElement('option');
-                option.value = customer.id;
-                option.textContent = `${customer.name} - ${customer.phone}`;
-                customerSelect.appendChild(option);
-            });
-        } catch (error) {
-            console.error('Error loading customers:', error);
-        }
+    // Elementos del DOM
+    const customerInput = document.getElementById('sale-customer-input');
+    const customerDatalist = document.getElementById('customer-list-datalist');
+    const customerIdInput = document.getElementById('sale-customer-id');
+
+    // 1. Cargar clientes y poblar el datalist
+    try {
+        customersForSale = await loadData(STORES.CUSTOMERS);
+        customerDatalist.innerHTML = ''; // Limpiar opciones anteriores
+        customersForSale.forEach(customer => {
+            const option = document.createElement('option');
+            // Mostramos nombre y teléfono para evitar confusiones con nombres repetidos
+            option.value = `${customer.name} - ${customer.phone}`; 
+            option.dataset.id = customer.id; // Guardamos el ID en un atributo data
+            customerDatalist.appendChild(option);
+        });
+        customerInput.setAttribute('list', 'customer-list-datalist');
+    } catch (error) {
+        console.error('Error loading customers for sale:', error);
     }
 
+    // 2. Limpiar valores anteriores y mostrar modal
     const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     paymentTotal.textContent = `${total.toFixed(2)}`;
     paymentAmountInput.value = '';
     paymentChange.textContent = '$0.00';
+    
+    // Limpiar selección de cliente anterior
+    customerInput.value = '';
+    customerIdInput.value = '';
+
     paymentModal.classList.remove('hidden');
     paymentAmountInput.focus();
 };
@@ -1351,7 +1363,7 @@ const processOrder = async () => {
             message += "\n\n¿Deseas procesar el pedido de todas formas?";
             showMessageModal(message, async () => {
                 // El usuario confirmó que quiere procesar a pesar del stock insuficiente
-                await completeOrderProcessing(insufficientStockItems, exceedsStockItems);
+                await completeOrcompleteOrderProcessing(insufficientStockItems, exceedsStockItems);
             });
             return;
         }
@@ -1364,8 +1376,8 @@ const processOrder = async () => {
 };
 const completeOrderProcessing = async (insufficientStockItems, exceedsStockItems) => {
     try {
-        const processedItems = []; // New array to store processed items with stock info
-
+        // ... (la lógica de inventario que ya tienes se queda igual) ...
+        const processedItems = [];
         for (const orderItem of order) {
             const product = await loadData(STORES.MENU, orderItem.id);
             let stockDeducted = 0;
@@ -1376,37 +1388,46 @@ const completeOrderProcessing = async (insufficientStockItems, exceedsStockItems
             }
             processedItems.push({
                 ...orderItem,
-                stockDeducted: stockDeducted // Store how much stock was actually deducted
+                stockDeducted: stockDeducted
             });
         }
 
         const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        const customerSelect = document.getElementById('sale-customer');
-        const customerId = customerSelect ? customerSelect.value : null;
+
+        // --- LÓGICA DE CLIENTE MEJORADA ---
+        const customerInput = document.getElementById('sale-customer-input');
+        const customerNameAndPhone = customerInput.value;
+        let customerId = null;
+
+        // Busca el cliente que coincida exactamente con el valor del input
+        const selectedCustomer = customersForSale.find(
+            c => `${c.name} - ${c.phone}` === customerNameAndPhone
+        );
+
+        if (selectedCustomer) {
+            customerId = selectedCustomer.id;
+        }
+        // Si no hay una coincidencia exacta, se guardará sin cliente (customerId será null)
 
         const sale = {
             timestamp: new Date().toISOString(),
-            items: processedItems, // Use the new array with stockDeducted
+            items: processedItems,
             total,
-            customerId,
+            customerId, // ID del cliente asignado o null
             hadStockIssues: insufficientStockItems.length > 0 || exceedsStockItems.length > 0,
             exceedsStock: exceedsStockItems.length > 0
         };
         await saveData(STORES.SALES, sale);
-        // Limpiar y actualizar UI
+        
+        // ... (el resto de la función para limpiar y actualizar la UI se queda igual) ...
         if (paymentModal) paymentModal.classList.add('hidden');
-        if (exceedsStockItems.length > 0) {
-            showMessageModal('¡Pedido procesado! Nota: Algunos productos excedieron el stock disponible.');
-        } else if (insufficientStockItems.length > 0) {
-            showMessageModal('¡Pedido procesado! Nota: Algunos productos tenían stock insuficiente.');
-        } else {
-            showMessageModal('¡Pedido procesado exitosamente!');
-        }
+        showMessageModal('¡Pedido procesado exitosamente!');
         order = [];
         updateOrderDisplay();
-        renderMenu(); // Re-renderizar menú para mostrar stock actualizado
+        renderMenu(); 
         if (dashboard) dashboard.renderDashboard();
         renderProductManagement();
+
     } catch (error) {
         console.error('Error completing order processing:', error.message);
         showMessageModal(`Error al completar el procesamiento del pedido: ${error.message}`);

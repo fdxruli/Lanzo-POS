@@ -1,21 +1,24 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lanzo - Sistema de Punto de Venta y Gestión para Pequeños Negocios</title>
-    <meta name="description" content="Lanzo es un sistema completo de punto de venta y gestión para pequeños negocios. Gestiona productos, ventas e inventario desde cualquier dispositivo.">
-    <meta name="keywords" content="punto de venta, sistema POS, gestión de inventario, ventas, pequeños negocios, software POS">
+    <meta name="description"
+        content="Lanzo es un sistema completo de punto de venta y gestión para pequeños negocios. Gestiona productos, ventas e inventario desde cualquier dispositivo.">
+    <meta name="keywords"
+        content="punto de venta, sistema POS, gestión de inventario, ventas, pequeños negocios, software POS">
     <meta name="author" content="Lanzo">
     <meta name="robots" content="index, follow">
-    
+
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="icono/icono-web.png">
     <link rel="apple-touch-icon" href="icono/icono-apple.png">
-    
+
     <!-- CSS -->
     <link rel="stylesheet" href="styles.css">
-    
+
     <!-- Schema.org structured data -->
     <script type="application/ld+json">
     {
@@ -37,6 +40,7 @@
     }
     </script>
 </head>
+
 <body>
     <nav class="navbar">
         <div class="nav-container">
@@ -45,7 +49,7 @@
                     alt="Logo de Lanzo - Sistema de Punto de Venta">
                 <h1 id="nav-company-name" class="nav-title">Lanzo</h1>
             </div>
-                        <div class="nav-buttons-desktop">
+            <div class="nav-buttons-desktop">
                 <button id="nav-pos" class="nav-btn btn-pos">Punto de Venta</button>
                 <button id="nav-product-management" class="nav-btn btn-products">Productos</button>
                 <button id="nav-customers" class="nav-btn btn-customers">Clientes</button>
@@ -123,7 +127,8 @@
                                 <option value="unit" selected>Por Unidad/Pieza</option>
                                 <option value="bulk">A Granel (Peso/Volumen)</option>
                             </select>
-                            <label id="stock-unit-label" class="form-help-text">El stock se maneja en unidades/piezas.</label>
+                            <label id="stock-unit-label" class="form-help-text">El stock se maneja en
+                                unidades/piezas.</label>
                         </div>
 
                         <!-- Opciones para venta por UNIDAD -->
@@ -136,7 +141,8 @@
                             <div class="form-group">
                                 <label class="form-label" for="product-price">Precio de Venta ($)</label>
                                 <input class="form-input" id="product-price" type="number" step="0.01" min="0">
-                                <small id="unit-profit-margin-message" class="form-help-text" style="display: none;"></small>
+                                <small id="unit-profit-margin-message" class="form-help-text"
+                                    style="display: none;"></small>
                             </div>
                         </div>
 
@@ -145,7 +151,8 @@
                             <div class="form-group bulk-purchase-group">
                                 <label class="form-label">Información de Compra a Granel</label>
                                 <div class="sub-group">
-                                    <input class="form-input" id="bulk-purchase-quantity" type="number" step="any" placeholder="Cantidad Comprada (ej. 50)">
+                                    <input class="form-input" id="bulk-purchase-quantity" type="number" step="any"
+                                        placeholder="Cantidad Comprada (ej. 50)">
                                     <select class="form-input" id="bulk-purchase-unit">
                                         <optgroup label="Peso">
                                             <option value="kg">Kilogramos (kg)</option>
@@ -163,16 +170,21 @@
                                             <option value="cm">Centímetros (cm)</option>
                                         </optgroup>
                                     </select>
-                                    <input class="form-input" id="bulk-purchase-cost" type="number" step="0.01" placeholder="Costo Total (ej. 1000)">
+                                    <input class="form-input" id="bulk-purchase-cost" type="number" step="0.01"
+                                        placeholder="Costo Total (ej. 1000)">
                                 </div>
-                                <small>Ej: Compraste 50 kg de maíz por $1000. Esta cantidad se usará como el stock inicial.</small>
-                                <small id="bulk-cost-per-unit-message" class="form-help-text" style="display: none;"></small>
+                                <small>Ej: Compraste 50 kg de maíz por $1000. Esta cantidad se usará como el stock
+                                    inicial.</small>
+                                <small id="bulk-cost-per-unit-message" class="form-help-text"
+                                    style="display: none;"></small>
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="bulk-sale-price">Precio de Venta por Unidad ($)</label>
-                                <input class="form-input" id="bulk-sale-price" type="number" step="0.01" min="0" placeholder="Precio de venta (ej. 25)">
+                                <input class="form-input" id="bulk-sale-price" type="number" step="0.01" min="0"
+                                    placeholder="Precio de venta (ej. 25)">
                                 <small>Este es el precio al que venderás cada unidad de venta (ej. cada kg).</small>
-                                <small id="bulk-profit-margin-message" class="form-help-text" style="display: none;"></small>
+                                <small id="bulk-profit-margin-message" class="form-help-text"
+                                    style="display: none;"></small>
                             </div>
                         </div>
 
@@ -182,21 +194,24 @@
                                 <option value="">Sin categoría</option>
                                 <!-- Las categorías se llenarán dinámicamente -->
                             </select>
-                            <button type="button" id="category-modal-button" class="btn btn-help">Administrar Categorías</button>
+                            <button type="button" id="category-modal-button" class="btn btn-help">Administrar
+                                Categorías</button>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="product-stock">Stock del Producto</label>
-                            <input class="form-input" id="product-stock" type="number" step="1" min="0" placeholder="Cantidad en stock">
+                            <input class="form-input" id="product-stock" type="number" step="1" min="0"
+                                placeholder="Cantidad en stock">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="product-image-file">Imagen</label>
                             <div class="image-upload-container">
                                 <img id="image-preview" class="image-preview"
-                                    src="https://placehold.co/100x100/CCCCCC/000000?text=Elegir" alt="Vista previa de imagen del producto">
+                                    src="https://placehold.co/100x100/CCCCCC/000000?text=Elegir"
+                                    alt="Vista previa de imagen del producto">
                                 <input class="file-input" id="product-image-file" type="file" accept="image/*">
                             </div>
                         </div>
-                        
+
                         <button type="submit" class="btn btn-save">Guardar</button>
                         <button type="button" id="cancel-edit-btn" class="btn btn-cancel hidden">Cancelar</button>
                     </form>
@@ -235,10 +250,12 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="customer-address">Dirección</label>
-                            <textarea class="form-textarea" id="customer-address" required aria-required="true"></textarea>
+                            <textarea class="form-textarea" id="customer-address" required
+                                aria-required="true"></textarea>
                         </div>
                         <button type="submit" class="btn btn-save">Guardar</button>
-                        <button type="button" id="cancel-customer-edit-btn" class="btn btn-cancel hidden">Cancelar</button>
+                        <button type="button" id="cancel-customer-edit-btn"
+                            class="btn btn-cancel hidden">Cancelar</button>
                     </form>
                 </div>
             </div>
@@ -293,7 +310,8 @@
                             <option value="3">Top 3</option>
                             <option value="5" selected>Top 5</option>
                         </select>
-                        <ul id="top-products-list" class="top-products-list" aria-label="Top productos más vendidos"></ul>
+                        <ul id="top-products-list" class="top-products-list" aria-label="Top productos más vendidos">
+                        </ul>
                     </div>
                     <div class="sales-history-container">
                         <h3 class="subtitle">Historial de Ventas</h3>
@@ -332,7 +350,8 @@
                         <label class="form-label" for="company-logo-file">Logo</label>
                         <div class="image-upload-container">
                             <img id="company-logo-preview" class="image-preview"
-                                src="https://placehold.co/100x100/FFFFFF/4A5568?text=L" alt="Vista previa del logo de la empresa">
+                                src="https://placehold.co/100x100/FFFFFF/4A5568?text=L"
+                                alt="Vista previa del logo de la empresa">
                             <input class="file-input" id="company-logo-file" type="file" accept="image/*">
                         </div>
                     </div>
@@ -393,8 +412,8 @@
                 <h2 class="donation-heading">¡Apoya Lanzo Negocio!</h2>
                 <p class="donation-text">Tu donación ayuda a mantener este proyecto gratuito y en constante mejora.</p>
                 <div class="donation-buttons-container">
-                    <a href="https://www.paypal.com/invoice/p/#AXZ4W24TKCUTHQGR" class="donation-button"
-                        target="_blank" rel="noopener noreferrer">
+                    <a href="https://www.paypal.com/invoice/p/#AXZ4W24TKCUTHQGR" class="donation-button" target="_blank"
+                        rel="noopener noreferrer">
                         Donar $50 <span class="donation-amount">MXN (paypal)</span>
                     </a>
                     <a href="https://pago.clip.mx/9ed1f2e2-fef2-4e68-8f0a-252ca7707289" rel="noopener noreferrer">
@@ -414,7 +433,8 @@
                         <form id="contact-form" action="https://api.web3forms.com/submit" method="POST">
                             <div class="form-group">
                                 <label class="form-label" for="contact-email">Correo Electrónico / Número</label>
-                                <input class="form-input" id="contact-email" type="text" name="contact" required aria-required="true">
+                                <input class="form-input" id="contact-email" type="text" name="contact" required
+                                    aria-required="true">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="contact-message">Mensaje</label>
@@ -425,7 +445,8 @@
                             <button type="submit" class="btn btn-modal">Enviar Mensaje</button>
                         </form>
                         <br>
-                        <p>O si prefieres respuesta de inmediato, <a href="https://wa.link/dacyxv" rel="noopener noreferrer">haz clic aquí</a>.
+                        <p>O si prefieres respuesta de inmediato, <a href="https://wa.link/dacyxv"
+                                rel="noopener noreferrer">haz clic aquí</a>.
                         </p>
                     </div>
                 </div>
@@ -447,9 +468,10 @@
                 <p id="payment-total" class="payment-total">$0.00</p>
                 <div class="form-group">
                     <label class="form-label" for="sale-customer">Cliente:</label>
-                    <input class="form-input" id="sale-customer" type="text" placeholder="Buscar cliente..." list="sale-customer-options">
-                    <datalist id="sale-customer-options"></datalist>
-                    <div id="sale-customer-results" class="search-results hidden"></div>
+                    <input type="hidden" id="sale-customer-id">
+                    <input class="form-input" id="sale-customer-input" type="text"
+                        placeholder="Buscar por nombre o teléfono..." autocomplete="off">
+                    <datalist id="customer-list-datalist"></datalist>
                 </div>
                 <label class="payment-input-label" for="payment-amount">Monto Recibido:</label>
                 <input class="payment-input" id="payment-amount" type="number" step="0.01" min="0">
@@ -538,7 +560,7 @@
             <button id="close-category-modal-btn" class="btn btn-cancel" style="margin-top: 1rem;">Cerrar</button>
         </div>
     </div>
-    
+
     <!-- Modal de Historial de Compras -->
     <div id="purchase-history-modal" class="modal hidden">
         <div class="modal-content">
@@ -570,4 +592,5 @@
     <script type="module" src="business-tips.js" defer></script>
     <script type="module" src="app.js" defer></script>
 </body>
+
 </html>
