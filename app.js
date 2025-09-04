@@ -1,3 +1,4 @@
+import { initDB, STORES, saveData, loadData, deleteData } from './database.js';
 import { initCustomersModule } from './customers.js';
 import { createDashboardModule } from './dashboard.js';
 import { createBusinessTipsModule } from './business-tips.js';
@@ -6,20 +7,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
     let isAppUnlocked = false;
     let order = [];
-    let db = null;
     let dashboard, businessTips; // Declarar módulos aquí
-    const DB_NAME = 'LanzoDB1';
-    const DB_VERSION = 6; // Incrementado para agregar almacenamiento de clientes
     let customersForSale = []; // Variable para guardar los clientes cargados
-    const STORES = {
-        MENU: 'menu',
-        SALES: 'sales',
-        COMPANY: 'company',
-        THEME: 'theme',
-        INGREDIENTS: 'ingredients',
-        CATEGORIES: 'categories',
-        CUSTOMERS: 'customers' // Nuevo almacén para clientes
-    };
+    
     const initialMenu = [
         {
             id: 'burger-classic',
@@ -265,136 +255,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 resolve(canvas.toDataURL('image/jpeg', quality));
             };
             img.src = URL.createObjectURL(file);
-        });
-    };
-    // --- INICIALIZACIÓN DE INDEXEDDB ---
-    const initDB = () => {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => {
-                db = request.result;
-                console.log('Database opened successfully:', db.objectStoreNames);
-                resolve(db);
-            };
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-                console.log('Upgrading database to version', DB_VERSION);
-                if (!db.objectStoreNames.contains(STORES.MENU)) {
-                    const menuStore = db.createObjectStore(STORES.MENU, { keyPath: 'id' });
-                    menuStore.createIndex('name', 'name', { unique: false });
-                    console.log('Created menu store');
-                }
-                if (!db.objectStoreNames.contains(STORES.SALES)) {
-                    const salesStore = db.createObjectStore(STORES.SALES, { keyPath: 'timestamp' });
-                    salesStore.createIndex('date', 'timestamp', { unique: true });
-                    salesStore.createIndex('customerId', 'customerId', { unique: false });
-                    console.log('Created sales store');
-                }
-                if (!db.objectStoreNames.contains(STORES.COMPANY)) {
-                    db.createObjectStore(STORES.COMPANY, { keyPath: 'id' });
-                    console.log('Created company store');
-                }
-                if (!db.objectStoreNames.contains(STORES.THEME)) {
-                    db.createObjectStore(STORES.THEME, { keyPath: 'id' });
-                    console.log('Created theme store');
-                }
-                // Crear almacén para ingredientes si no existe
-                if (!db.objectStoreNames.contains(STORES.INGREDIENTS)) {
-                    db.createObjectStore(STORES.INGREDIENTS, { keyPath: 'productId' });
-                    console.log('Created ingredients store');
-                }
-                // Crear almacén para categorías si no existe
-                if (!db.objectStoreNames.contains(STORES.CATEGORIES)) {
-                    const categoryStore = db.createObjectStore(STORES.CATEGORIES, { keyPath: 'id' });
-                    categoryStore.createIndex('name', 'name', { unique: true });
-                    console.log('Created categories store');
-                }
-                // Crear almacén para clientes si no existe
-                if (!db.objectStoreNames.contains(STORES.CUSTOMERS)) {
-                    const customerStore = db.createObjectStore(STORES.CUSTOMERS, { keyPath: 'id' });
-                    customerStore.createIndex('name', 'name', { unique: false });
-                    customerStore.createIndex('phone', 'phone', { unique: false });
-                    console.log('Created customers store');
-                }
-            };
-        });
-    };
-    // --- FUNCIONES DE ALMACENAMIENTO CON INDEXEDDB ---
-    const saveData = (storeName, data) => {
-        if (!isAppUnlocked && welcomeModal && welcomeModal.style.display === 'none') {
-            showMessageModal('Por favor, valida tu licencia en Configuración > Ingresar licencia');
-            return Promise.reject('App not unlocked');
-        }
-        return new Promise((resolve, reject) => {
-            if (!db.objectStoreNames.contains(storeName)) {
-                reject(new Error(`Store ${storeName} does not exist`));
-                return;
-            }
-            const transaction = db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-
-            const invalidateCache = () => {
-                if (dataCache.hasOwnProperty(storeName)) {
-                    dataCache[storeName] = null;
-                    dataCache.lastUpdated[storeName] = 0;
-                    console.log(`Cache invalidated for ${storeName}`);
-                }
-            };
-
-            transaction.oncomplete = () => {
-                invalidateCache();
-                resolve();
-            };
-
-            transaction.onerror = () => {
-                reject(transaction.error);
-            };
-
-            if (Array.isArray(data)) {
-                data.forEach(item => store.put(item));
-            } else {
-                store.put(data);
-            }
-        });
-    };
-    const loadData = (storeName, key = null) => {
-        return new Promise((resolve, reject) => {
-            if (!db.objectStoreNames.contains(storeName)) {
-                console.error(`Store ${storeName} not found in database`);
-                reject(new Error(`Store ${storeName} does not exist`));
-                return;
-            }
-            const transaction = db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
-            transaction.onerror = () => reject(transaction.error);
-            if (key) {
-                const request = store.get(key);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            } else {
-                const request = store.getAll();
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            }
-        });
-    };
-    const deleteData = (storeName, key) => {
-        if (!isAppUnlocked) {
-            showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
-            if (welcomeModal) welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
-            return;  // Bloquea la acción
-        }
-        return new Promise((resolve, reject) => {
-            if (!db.objectStoreNames.contains(storeName)) {
-                reject(new Error(`Store ${storeName} does not exist`));
-                return;
-            }
-            const transaction = db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.delete(key);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
         });
     };
     // --- ELEMENTOS DEL DOM ---
@@ -2163,7 +2023,7 @@ const initApp = async () => {
     try {
         // Mostrar pantalla de carga solo si el elemento existe
         if (loadingScreen) loadingScreen.style.display = 'flex';
-        await initDB();
+        initDB();
         // Ejecutar operaciones en paralelo
         const [licenseResult, defaultDataResult] = await Promise.all([
             initializeLicense(),

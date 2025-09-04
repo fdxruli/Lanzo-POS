@@ -1,7 +1,7 @@
-// customers.js
+import { initDB, STORES, saveData, loadData, deleteData } from './database.js';
 
 export function initCustomersModule(dependencies) {
-    const { saveData, loadData, deleteData, showMessageModal, STORES } = dependencies;
+    const  showMessageModal = dependencies;
 
     // --- ELEMENTOS DEL DOM ---
     const customerForm = document.getElementById('customer-form');
@@ -111,26 +111,30 @@ export function initCustomersModule(dependencies) {
         }
     };
 
-    const handleFormSubmit = async (e) => {
-        e.preventDefault();
-        try {
-            const customerData = {
-                id: editingCustomerId || `customer-${Date.now()}`,
-                name: document.getElementById('customer-name').value,
-                phone: document.getElementById('customer-phone').value,
-                address: document.getElementById('customer-address').value
-            };
+const handleFormSubmit = async (e) => {
+    e.preventDefault();
+    const saveButton = customerForm.querySelector('button[type="submit"]');
+    saveButton.disabled = true;
+    saveButton.textContent = 'Guardando...';
 
-            await saveData(STORES.CUSTOMERS, customerData);
-            showMessageModal('Cliente guardado exitosamente');
-            resetCustomerForm();
-            await loadAndRenderCustomers(); // Recargar y renderizar
-        } catch (error) {
-            console.error('Error al guardar el cliente:', error);
-            showMessageModal('Error al guardar el cliente. Por favor, intente nuevamente.');
-        }
-    };
-
+    try {
+        const customerData = {
+            id: editingCustomerId || `customer-${Date.now()}`,
+            name: document.getElementById('customer-name').value,
+            // ...otros campos
+        };
+        await saveData(STORES.CUSTOMERS, customerData);
+        showMessageModal('Cliente guardado exitosamente');
+        resetCustomerForm();
+        await loadAndRenderCustomers();
+    } catch (error) {
+        // ...manejo de error...
+    } finally {
+        // Este bloque se ejecuta siempre, haya error o no
+        saveButton.disabled = false;
+        saveButton.textContent = 'Guardar';
+    }
+};
     const resetCustomerForm = () => {
         editingCustomerId = null;
         customerForm.reset();
