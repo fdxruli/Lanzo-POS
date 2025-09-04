@@ -1583,6 +1583,7 @@ const deleteProduct = async (id) => {
 // --- INICIALIZACIÓN DE DATOS POR DEFECTO ---
 const initializeDefaultData = async () => {
     try {
+        const db = await initDB(); // Get the database instance
         if (!db.objectStoreNames.contains(STORES.MENU)) {
             console.error('Menu store not found during initialization');
             throw new Error('Menu store not found');
@@ -2024,7 +2025,7 @@ const initApp = async () => {
     try {
         // Mostrar pantalla de carga solo si el elemento existe
         if (loadingScreen) loadingScreen.style.display = 'flex';
-        initDB();
+        await initDB();
         // Ejecutar operaciones en paralelo
         const [licenseResult, defaultDataResult] = await Promise.all([
             initializeLicense(),
