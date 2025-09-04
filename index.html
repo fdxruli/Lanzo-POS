@@ -45,9 +45,10 @@
                     alt="Logo de Lanzo - Sistema de Punto de Venta">
                 <h1 id="nav-company-name" class="nav-title">Lanzo</h1>
             </div>
-            <div class="nav-buttons-desktop">
+                        <div class="nav-buttons-desktop">
                 <button id="nav-pos" class="nav-btn btn-pos">Punto de Venta</button>
                 <button id="nav-product-management" class="nav-btn btn-products">Productos</button>
+                <button id="nav-customers" class="nav-btn btn-customers">Clientes</button>
                 <button id="nav-dashboard" class="nav-btn btn-sales">Ventas</button>
                 <button id="nav-company" class="nav-btn btn-config">Configuración</button>
                 <button id="nav-donation" class="nav-btn btn-donate">Donar</button>
@@ -65,6 +66,7 @@
         <div id="mobile-menu" class="mobile-menu">
             <button id="mobile-nav-pos" class="mobile-nav-btn">Punto de Venta</button>
             <button id="mobile-nav-product-management" class="mobile-nav-btn">Productos</button>
+            <button id="mobile-nav-customers" class="mobile-nav-btn">Clientes</button>
             <button id="mobile-nav-dashboard" class="mobile-nav-btn">Ventas</button>
             <button id="mobile-nav-company" class="mobile-nav-btn">Configuración</button>
             <button id="mobile-nav-donation" class="mobile-nav-btn">Donar</button>
@@ -116,47 +118,75 @@
                             <textarea class="form-textarea" id="product-description"></textarea>
                         </div>
                         <div class="form-group">
-                            <label class="form-label" for="product-price">Precio ($)</label>
-                            <input class="form-input" id="product-price" type="number" step="0.01" min="0" required aria-required="true">
+                            <label class="form-label" for="sale-type">Tipo de Venta</label>
+                            <select class="form-input" id="sale-type">
+                                <option value="unit" selected>Por Unidad/Pieza</option>
+                                <option value="bulk">A Granel (Peso/Volumen)</option>
+                            </select>
+                            <label id="stock-unit-label" class="form-help-text">El stock se maneja en unidades/piezas.</label>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label" for="product-cost">Costo ($)</label>
-                            <input class="form-input" id="product-cost" type="number" step="0.01" min="0" required aria-required="true">
-                            <button type="button" id="cost-help-button" class="btn btn-help">Calcular Costo</button>
+
+                        <!-- Opciones para venta por UNIDAD -->
+                        <div id="unit-options">
+                            <div class="form-group">
+                                <label class="form-label" for="product-cost">Costo por Unidad ($)</label>
+                                <input class="form-input" id="product-cost" type="number" step="0.01" min="0">
+                                <button type="button" id="cost-help-button" class="btn btn-help">Calcular Costo</button>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="product-price">Precio de Venta ($)</label>
+                                <input class="form-input" id="product-price" type="number" step="0.01" min="0">
+                                <small id="unit-profit-margin-message" class="form-help-text" style="display: none;"></small>
+                            </div>
                         </div>
+
+                        <!-- Opciones para venta a GRANEL -->
+                        <div id="bulk-options" class="hidden">
+                            <div class="form-group bulk-purchase-group">
+                                <label class="form-label">Información de Compra a Granel</label>
+                                <div class="sub-group">
+                                    <input class="form-input" id="bulk-purchase-quantity" type="number" step="any" placeholder="Cantidad Comprada (ej. 50)">
+                                    <select class="form-input" id="bulk-purchase-unit">
+                                        <optgroup label="Peso">
+                                            <option value="kg">Kilogramos (kg)</option>
+                                            <option value="g">Gramos (g)</option>
+                                            <option value="lb">Libras (lb)</option>
+                                            <option value="oz">Onzas (oz)</option>
+                                        </optgroup>
+                                        <optgroup label="Volumen">
+                                            <option value="L">Litros (L)</option>
+                                            <option value="ml">Mililitros (ml)</option>
+                                            <option value="gal">Galones (gal)</option>
+                                        </optgroup>
+                                        <optgroup label="Longitud">
+                                            <option value="m">Metros (m)</option>
+                                            <option value="cm">Centímetros (cm)</option>
+                                        </optgroup>
+                                    </select>
+                                    <input class="form-input" id="bulk-purchase-cost" type="number" step="0.01" placeholder="Costo Total (ej. 1000)">
+                                </div>
+                                <small>Ej: Compraste 50 kg de maíz por $1000. Esta cantidad se usará como el stock inicial.</small>
+                                <small id="bulk-cost-per-unit-message" class="form-help-text" style="display: none;"></small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="bulk-sale-price">Precio de Venta por Unidad ($)</label>
+                                <input class="form-input" id="bulk-sale-price" type="number" step="0.01" min="0" placeholder="Precio de venta (ej. 25)">
+                                <small>Este es el precio al que venderás cada unidad de venta (ej. cada kg).</small>
+                                <small id="bulk-profit-margin-message" class="form-help-text" style="display: none;"></small>
+                            </div>
+                        </div>
+
                         <div class="form-group">
                             <label class="form-label" for="product-category">Categoría</label>
                             <select class="form-input" id="product-category">
                                 <option value="">Sin categoría</option>
                                 <!-- Las categorías se llenarán dinámicamente -->
                             </select>
-                            <button type="button" id="category-modal-button" class="btn btn-help">Administrar
-                                Categorías</button>
+                            <button type="button" id="category-modal-button" class="btn btn-help">Administrar Categorías</button>
                         </div>
                         <div class="form-group">
-                            <label class="form-label" for="sale-type">Tipo de Venta</label>
-                            <select class="form-input" id="sale-type">
-                                <option value="unit" selected>Por Unidad/Pieza</option>
-                                <option value="bulk">A Granel/Peso</option>
-                            </select>
-                        </div>
-                        <div id="bulk-options" class="hidden">
-                            <div class="form-group">
-                                <label class="form-label" for="product-unit">Unidad (ej: kg, litro, g)</label>
-                                <input class="form-input" id="product-unit" type="text" placeholder="kg">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="product-increment">Vender en incrementos de</label>
-                                <input class="form-input" id="product-increment" type="number" step="any" min="0.01"
-                                    value="1">
-                                <small>Ej: 0.5 para vender de medio en medio, 0.25 para cuartos.</small>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" for="product-stock">Inventario (Stock)</label>
-                            <input class="form-input" id="product-stock" type="number" step="1" min="0" value="0"
-                                required aria-required="true">
-                            <small id="stock-unit-label">El stock se maneja en unidades/piezas.</small>
+                            <label class="form-label" for="product-stock">Stock del Producto</label>
+                            <input class="form-input" id="product-stock" type="number" step="1" min="0" placeholder="Cantidad en stock">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="product-image-file">Imagen</label>
@@ -166,6 +196,7 @@
                                 <input class="file-input" id="product-image-file" type="file" accept="image/*">
                             </div>
                         </div>
+                        
                         <button type="submit" class="btn btn-save">Guardar</button>
                         <button type="button" id="cancel-edit-btn" class="btn btn-cancel hidden">Cancelar</button>
                     </form>
@@ -180,6 +211,46 @@
                     </div>
                     <div id="empty-product-message" class="empty-message hidden">No hay productos.</div>
                     <div id="product-list" class="product-list" aria-label="Lista de productos"></div>
+                </div>
+            </div>
+        </section>
+        <section id="customers-section" class="section-content">
+            <h2 class="section-title">Gestión de Clientes</h2>
+            <div class="tabs-container" id="customers-tabs">
+                <button class="tab-btn active" data-tab="add-customer">Añadir/Editar Cliente</button>
+                <button class="tab-btn" data-tab="view-customers">Ver Clientes</button>
+            </div>
+            <div id="add-customer-content" class="tab-content active">
+                <div class="customer-form-container">
+                    <h3 class="subtitle" id="customer-form-title">Añadir Nuevo Cliente</h3>
+                    <form id="customer-form">
+                        <input type="hidden" id="customer-id">
+                        <div class="form-group">
+                            <label class="form-label" for="customer-name">Nombre Completo</label>
+                            <input class="form-input" id="customer-name" type="text" required aria-required="true">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="customer-phone">Teléfono</label>
+                            <input class="form-input" id="customer-phone" type="tel" required aria-required="true">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="customer-address">Dirección</label>
+                            <textarea class="form-textarea" id="customer-address" required aria-required="true"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-save">Guardar</button>
+                        <button type="button" id="cancel-customer-edit-btn" class="btn btn-cancel hidden">Cancelar</button>
+                    </form>
+                </div>
+            </div>
+            <div id="view-customers-content" class="tab-content">
+                <div class="customer-list-container">
+                    <h3 class="subtitle">Lista de Clientes</h3>
+                    <div class="search-container">
+                        <input type="text" id="customer-search-input" class="form-input"
+                            placeholder="Buscar por nombre o teléfono..." aria-label="Buscar clientes">
+                    </div>
+                    <div id="empty-customer-message" class="empty-message hidden">No hay clientes registrados.</div>
+                    <div id="customer-list" class="customer-list" aria-label="Lista de clientes"></div>
                 </div>
             </div>
         </section>
@@ -374,6 +445,12 @@
             <div class="payment-details">
                 <p class="payment-label">Total a Pagar:</p>
                 <p id="payment-total" class="payment-total">$0.00</p>
+                <div class="form-group">
+                    <label class="form-label" for="sale-customer">Cliente:</label>
+                    <input class="form-input" id="sale-customer" type="text" placeholder="Buscar cliente..." list="sale-customer-options">
+                    <datalist id="sale-customer-options"></datalist>
+                    <div id="sale-customer-results" class="search-results hidden"></div>
+                </div>
                 <label class="payment-input-label" for="payment-amount">Monto Recibido:</label>
                 <input class="payment-input" id="payment-amount" type="number" step="0.01" min="0">
                 <p class="payment-label">Cambio:</p>
@@ -462,6 +539,26 @@
         </div>
     </div>
     
+    <!-- Modal de Historial de Compras -->
+    <div id="purchase-history-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 class="modal-title">Historial de Compras</h2>
+            <div class="purchase-history-container">
+                <h3 id="customer-history-name" class="subtitle">Historial de: <span></span></h3>
+                <div id="purchase-history-list" class="purchase-history-list">
+                    <!-- El historial se mostrará aquí -->
+                </div>
+                <div class="purchase-summary">
+                    <h4>Resumen</h4>
+                    <p>Total de compras: <span id="total-purchases">0</span></p>
+                    <p>Monto total: <span id="total-amount">$0.00</span></p>
+                    <p>Promedio por compra: <span id="average-purchase">$0.00</span></p>
+                </div>
+            </div>
+            <button id="close-history-modal-btn" class="btn btn-modal">Cerrar</button>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
@@ -469,8 +566,92 @@
     <script src="supabase-auth.js" defer></script>
     <!-- Cargar módulos primero, con defer para garantizar el orden de ejecución -->
     <script type="module" src="donation-seccion.js" defer></script>
-    <script src="dashboard.js" defer></script>
-    <script src="business-tips.js" defer></script>
+    <script type="module" src="dashboard.js" defer></script>
+    <script type="module" src="business-tips.js" defer></script>
     <script type="module" src="app.js" defer></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const productCostInput = document.getElementById('product-cost');
+            const productPriceInput = document.getElementById('product-price');
+            const profitMarginMessage = document.getElementById('unit-profit-margin-message');
+
+            function updateProfitMargin() {
+                const cost = parseFloat(productCostInput.value);
+                const price = parseFloat(productPriceInput.value);
+
+                if (cost > 0 && price >= cost) {
+                    const profitMargin = ((price - cost) / cost) * 100;
+                    profitMarginMessage.textContent = `Margen de ganancia: ${profitMargin.toFixed(2)}%`;
+                    profitMarginMessage.style.display = 'block';
+                } else {
+                    profitMarginMessage.style.display = 'none';
+                }
+            }
+
+            productCostInput.addEventListener('input', updateProfitMargin);
+            productPriceInput.addEventListener('input', updateProfitMargin);
+        });
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const customerInput = document.getElementById('sale-customer');
+            const customerResults = document.getElementById('sale-customer-results');
+
+            // Lista de clientes simulada (esto debería venir de tu base de datos o backend)
+            const customers = [
+                'Juan Pérez',
+                'María López',
+                'Carlos García',
+                'Ana Martínez',
+                'Luis Hernández'
+            ];
+
+            // Función para mostrar resultados filtrados
+            function filterCustomers(query) {
+                const filtered = customers.filter(customer => 
+                    customer.toLowerCase().includes(query.toLowerCase())
+                );
+
+                customerResults.innerHTML = ''; // Limpiar resultados previos
+
+                if (filtered.length > 0) {
+                    filtered.forEach(customer => {
+                        const div = document.createElement('div');
+                        div.textContent = customer;
+                        div.classList.add('result-item');
+                        div.addEventListener('click', () => {
+                            customerInput.value = customer;
+                            customerResults.classList.add('hidden');
+                        });
+                        customerResults.appendChild(div);
+                    });
+                    customerResults.classList.remove('hidden');
+                } else {
+                    customerResults.classList.add('hidden');
+                }
+            }
+
+            // Mostrar resultados al enfocar el campo
+            customerInput.addEventListener('focus', () => {
+                if (customerInput.value.trim() !== '') {
+                    filterCustomers(customerInput.value);
+                }
+            });
+
+            // Filtrar resultados mientras se escribe
+            customerInput.addEventListener('input', () => {
+                filterCustomers(customerInput.value);
+            });
+
+            // Ocultar resultados al hacer clic fuera del campo
+            document.addEventListener('click', (event) => {
+                if (!customerInput.contains(event.target) && !customerResults.contains(event.target)) {
+                    customerResults.classList.add('hidden');
+                }
+            });
+        });
+    </script>
 </body>
 </html>

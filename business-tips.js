@@ -382,3 +382,5 @@ async function renderBusinessTips() {
         renderBusinessTips
     };
 }
+
+export { createBusinessTipsModule };

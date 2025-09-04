@@ -6,9 +6,64 @@ function createDashboardModule(dependencies) {
         loadData,
         showMessageModal,
         deleteData,
+        saveData,
         normalizeProducts,
-        STORES
+        STORES,
+        renderMenu // ¡Nueva dependencia!
     } = dependencies;
+
+    // --- NUEVO: Modal de confirmación avanzado ---
+    function showAdvancedConfirmModal(message, options) {
+        // Crear el contenedor del modal
+        const modalContainer = document.createElement('div');
+        modalContainer.className = 'modal';
+        modalContainer.style.display = 'flex';
+
+        // Crear el contenido del modal
+        const modalContent = document.createElement('div');
+        modalContent.className = 'modal-content';
+
+        // Título y mensaje
+        const title = document.createElement('h2');
+        title.className = 'modal-title';
+        title.textContent = 'Confirmación';
+        const text = document.createElement('p');
+        text.className = 'modal-message';
+        text.textContent = message;
+
+        // Contenedor de botones
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.className = 'modal-buttons'; // Usar una clase para estilizar los botones
+
+        // Función para cerrar el modal
+        const closeModal = () => {
+            document.body.removeChild(modalContainer);
+        };
+
+        // Crear botones dinámicamente
+        options.forEach(opt => {
+            const button = document.createElement('button');
+            button.textContent = opt.text;
+            button.className = opt.class; // Asignar clases para estilizar
+            button.addEventListener('click', () => {
+                if (opt.action) {
+                    opt.action();
+                }
+                closeModal();
+            });
+            buttonsContainer.appendChild(button);
+        });
+
+        // Ensamblar el modal
+        modalContent.appendChild(title);
+        modalContent.appendChild(text);
+        modalContent.appendChild(buttonsContainer);
+        modalContainer.appendChild(modalContent);
+
+        // Añadir el modal al body
+        document.body.appendChild(modalContainer);
+    }
+
 
     // Función principal para renderizar el dashboard
     async function renderDashboard() {
@@ -122,19 +177,89 @@ function createDashboardModule(dependencies) {
         }
     }
 
-    // Función para eliminar pedidos
-    function deleteOrder(timestamp) {
-        showMessageModal('¿Estás seguro de que quieres borrar este pedido? Esta acción no se puede deshacer.', async () => {
-            try {
-                await deleteData(STORES.SALES, timestamp);
-                renderDashboard();
-                showMessageModal('Pedido eliminado.');
-            } catch (error) {
-                console.error('Error deleting order:', error.message);
-                showMessageModal(`Error al eliminar el pedido: ${error.message}`);
+    // --- FUNCIÓN PARA ELIMINAR PEDIDOS (MODIFICADA) ---
+    async function deleteOrder(timestamp) {
+        try {
+            // 1. Obtener los datos de la venta que se va a eliminar
+            const saleToDelete = await loadData(STORES.SALES, timestamp);
+            if (!saleToDelete) {
+                showMessageModal('Error: No se encontró el pedido.');
+                return;
             }
-        });
+
+            // 2. Mostrar el modal de confirmación avanzado
+            showAdvancedConfirmModal(
+                '¿Deseas regresar los productos de este pedido al inventario?',
+                [
+                    {
+                        text: 'Sí, regresar y eliminar',
+                        class: 'btn btn-save',
+                        action: async () => {
+                            // 3a. Lógica para regresar stock
+                            try {
+                                let totalQuantityInOrder = 0;
+                                let totalStockRestored = 0;
+
+                                for (const item of saleToDelete.items) {
+                                    totalQuantityInOrder += item.quantity;
+                                    if (item.trackStock) {
+                                        const product = await loadData(STORES.MENU, item.id);
+                                        if (product) {
+                                            const stockToReturn = item.stockDeducted !== undefined ? item.stockDeducted : item.quantity;
+                                            totalStockRestored += stockToReturn;
+                                            product.stock += stockToReturn;
+                                            await saveData(STORES.MENU, product);
+                                        }
+                                    }
+                                }
+
+                                // 4. Eliminar el pedido
+                                await deleteData(STORES.SALES, timestamp);
+
+                                // 5. Mostrar mensaje detallado
+                                let message = `Pedido eliminado. Se restauraron ${totalStockRestored} unidades al stock.`;
+                                if (totalQuantityInOrder > totalStockRestored) {
+                                    const difference = totalQuantityInOrder - totalStockRestored;
+                                    message += ` ${difference} unidad(es) que se vendieron por encima del stock no se restauraron para mantener la integridad del inventario.`;
+                                }
+
+                                showMessageModal(message);
+                                renderDashboard(); // Actualizar la vista del dashboard
+                                if (renderMenu) renderMenu(); // ¡Actualizar el menú del TPV!
+                            } catch (error) {
+                                console.error('Error restoring stock:', error);
+                                showMessageModal('Error al restaurar el stock.');
+                            }
+                        }
+                    },
+                    {
+                        text: 'No, solo eliminar',
+                        class: 'btn btn-cancel',
+                        action: async () => {
+                            // 3b. Solo eliminar el pedido
+                            try {
+                                await deleteData(STORES.SALES, timestamp);
+                                showMessageModal('Pedido eliminado.');
+                                renderDashboard(); // Actualizar la vista
+                            } catch (error) {
+                                console.error('Error deleting order:', error);
+                                showMessageModal('Error al eliminar el pedido.');
+                            }
+                        }
+                    },
+                    {
+                        text: 'Cancelar',
+                        class: 'btn btn-modal',
+                        action: () => { /* No hacer nada */ }
+                    }
+                ]
+            );
+        } catch (error) {
+            console.error('Error preparing to delete order:', error);
+            showMessageModal('Error al obtener los datos del pedido para eliminar.');
+        }
     }
+
 
     // Función separada para manejar productos más vendidos
     function renderTopProducts(productStats, totalRevenue) {
@@ -146,7 +271,7 @@ function createDashboardModule(dependencies) {
         }
         const updateTopProducts = (topN) => {
             const topProducts = Array.from(productStats.values())
-                .sort((a, b) => b.quantity - a.quantity)
+                .sort((a, b) => b.quantity - a.qzuantity)
                 .slice(0, topN);
 
             topProducts.forEach(product => {
@@ -192,3 +317,5 @@ function createDashboardModule(dependencies) {
         deleteOrder
     };
 }
+
+export { createDashboardModule };
