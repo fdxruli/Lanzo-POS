@@ -31,7 +31,7 @@ export function initCustomersModule(dependencies) {
 
         const sales = await loadData(STORES.SALES) || [];
         const customerSales = sales.filter(sale => sale.customerId === customerId)
-                                   .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
         customerHistoryName.textContent = customer.name;
 
@@ -78,14 +78,23 @@ export function initCustomersModule(dependencies) {
     }
 
     const renderCustomerList = (filteredCustomers = customers) => {
-        if (!customerList) return;
-        customerList.innerHTML = '';
-        emptyCustomerMessage.classList.toggle('hidden', filteredCustomers.length === 0);
+        if (!customerList || !emptyCustomerMessage) return; // Asegurarse de que los elementos existan
 
-        filteredCustomers.forEach(customer => {
-            const customerCard = document.createElement('div');
-            customerCard.className = 'customer-card';
-            customerCard.innerHTML = `
+        // 1. Limpiar la lista anterior
+        customerList.innerHTML = '';
+
+        // 2. Comprobar si hay clientes DESPUÉS de filtrar
+        if (filteredCustomers.length === 0) {
+            // Solo si no hay clientes, mostramos el mensaje
+            emptyCustomerMessage.classList.remove('hidden');
+        } else {
+            // Si SÍ hay clientes, nos aseguramos de que el mensaje esté oculto
+            emptyCustomerMessage.classList.add('hidden');
+            // Y luego construimos la lista
+            filteredCustomers.forEach(customer => {
+                const customerCard = document.createElement('div');
+                customerCard.className = 'customer-card';
+                customerCard.innerHTML = `
                 <div class="customer-info">
                     <h4>${customer.name}</h4>
                     <p><strong>Teléfono:</strong> ${customer.phone}</p>
@@ -97,8 +106,9 @@ export function initCustomersModule(dependencies) {
                     <button class="btn btn-history" data-id="${customer.id}">Ver Historial</button>
                 </div>
             `;
-            customerList.appendChild(customerCard);
-        });
+                customerList.appendChild(customerCard);
+            });
+        }
     };
 
     const handleFormSubmit = async (e) => {
@@ -120,7 +130,7 @@ export function initCustomersModule(dependencies) {
             showMessageModal('Error al guardar el cliente. Por favor, intente nuevamente.');
         }
     };
-    
+
     const resetCustomerForm = () => {
         editingCustomerId = null;
         customerForm.reset();
@@ -134,7 +144,7 @@ export function initCustomersModule(dependencies) {
 
     customerSearchInput?.addEventListener('input', (e) => {
         const searchTerm = e.target.value.toLowerCase();
-        const filtered = customers.filter(c => 
+        const filtered = customers.filter(c =>
             c.name.toLowerCase().includes(searchTerm) || c.phone.includes(searchTerm)
         );
         renderCustomerList(filtered);
@@ -167,7 +177,7 @@ export function initCustomersModule(dependencies) {
     });
 
     closeHistoryModalBtn?.addEventListener('click', () => purchaseHistoryModal.classList.add('hidden'));
-    
+
     purchaseHistoryList?.addEventListener('click', e => {
         if (e.target.classList.contains('btn-details')) {
             const itemsContainer = e.target.closest('.purchase-history-item').querySelector('.purchase-items-container');
@@ -175,7 +185,7 @@ export function initCustomersModule(dependencies) {
             e.target.textContent = itemsContainer.classList.contains('hidden') ? 'Detalles' : 'Ocultar';
         }
     });
-    
+
     cancelCustomerEditBtn?.addEventListener('click', resetCustomerForm);
 
     customerTabs?.addEventListener('click', (e) => {
@@ -183,7 +193,7 @@ export function initCustomersModule(dependencies) {
             const tabId = e.target.dataset.tab;
             customerTabs.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             e.target.classList.add('active');
-            
+
             addCustomerContent.classList.toggle('active', tabId === 'add-customer');
             viewCustomersContent.classList.toggle('active', tabId === 'view-customers');
         }
