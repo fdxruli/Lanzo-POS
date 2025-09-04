@@ -1,4 +1,5 @@
-import { initDB, STORES, saveData, loadData, deleteData } from './database.js';
+// app.js
+import { initDB, saveData, loadData, deleteData, STORES } from './database.js';
 import { initCustomersModule } from './customers.js';
 import { createDashboardModule } from './dashboard.js';
 import { createBusinessTipsModule } from './business-tips.js';

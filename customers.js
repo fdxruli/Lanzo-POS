@@ -1,7 +1,8 @@
-import { initDB, STORES, saveData, loadData, deleteData } from './database.js';
+// customers.js
+import { saveData, loadData, deleteData, STORES } from './database.js';
 
 export function initCustomersModule(dependencies) {
-    const  showMessageModal = dependencies;
+const { showMessageModal } = dependencies; 
 
     // --- ELEMENTOS DEL DOM ---
     const customerForm = document.getElementById('customer-form');
