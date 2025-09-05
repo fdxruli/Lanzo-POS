@@ -1,10 +1,8 @@
-// dashboard.js - Versión modificada para recibir dependencias
-
+import { showMessageModal } from './utils.js';
 // Función factory que crea el módulo del dashboard con sus dependencias
 function createDashboardModule(dependencies) {
     const {
         loadData,
-        showMessageModal,
         deleteData,
         saveData,
         normalizeProducts,

@@ -1,8 +1,8 @@
+import { showMessageModal } from './utils.js';
 // business-tips.js - Lógica de consejos de negocio
 function createBusinessTipsModule(dependencies) {
     const {
         loadData,
-        showMessageModal,
         STORES
     } = dependencies;
 // Función para renderizar consejos de negocio

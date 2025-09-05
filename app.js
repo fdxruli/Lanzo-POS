@@ -1,4 +1,5 @@
 // app.js
+import { showMessageModal, compressImage, getContrastColor, isLocalStorageEnabled, normalizeDate } from './utils.js';
 import { initDB, saveData, loadData, deleteData, STORES } from './database.js';
 import { initCustomersModule } from './customers.js';
 import { createDashboardModule } from './dashboard.js';
@@ -106,31 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return data;
     };
-    // --- FUNCIÓN PARA CALCULAR LUMINANCIA Y AJUSTAR COLOR DE TEXTO ---
-    const getContrastColor = (hexColor) => {
-        // Convert hex to RGB
-        const r = parseInt(hexColor.slice(1, 3), 16) / 255;
-        const g = parseInt(hexColor.slice(3, 5), 16) / 255;
-        const b = parseInt(hexColor.slice(5, 7), 16) / 255;
-        // Calculate luminance (ITU-R BT.709 formula)
-        const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        // Return white for dark backgrounds, black for light backgrounds
-        return luminance > 0.5 ? '#000000' : '#ffffff';
-    };
-    // --- FUNCIÓN MEJORADA PARA VERIFICAR LOCALSTORAGE ---
-    const isLocalStorageEnabled = () => {
-        try {
-            const testKey = 'lanzo-test';
-            const testValue = 'test-value-' + Date.now();
-            localStorage.setItem(testKey, testValue);
-            const value = localStorage.getItem(testKey);
-            localStorage.removeItem(testKey);
-            return value === testValue;
-        } catch (e) {
-            console.error('LocalStorage error:', e);
-            return false;
-        }
-    };
+    
     // Función para guardar licencia en cookies (fallback) idexedDB
     const saveLicenseToCookie = (licenseData) => {
         const cookieValue = JSON.stringify(licenseData);
@@ -187,11 +164,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return null;
     };
-    // --- FUNCIÓN PARA NORMALIZAR FECHAS ---
-    const normalizeDate = (dateString) => {
-        const date = new Date(dateString);
-        return new Date(date.getTime() + date.getTimezoneOffset() * 60000);
-    };
     // --- DETECCIÓN DE NAVEGADOR EDGE ---
     const isEdgeBrowser = () => {
         return /Edg/.test(navigator.userAgent);
@@ -239,25 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
     }
-    // --- FUNCIÓN PARA COMPRIMIR IMÁGENES ---
-    const compressImage = (file, maxWidth = 300, quality = 0.7) => {
-        return new Promise((resolve) => {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            const img = new Image();
-            img.onload = () => {
-                // Calcular nuevas dimensiones manteniendo la proporción
-                const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
-                canvas.width = img.width * ratio;
-                canvas.height = img.height * ratio;
-                // Dibujar imagen redimensionada
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                // Convertir a base64 con calidad reducida
-                resolve(canvas.toDataURL('image/jpeg', quality));
-            };
-            img.src = URL.createObjectURL(file);
-        });
-    };
+    
     // --- ELEMENTOS DEL DOM ---
     const sections = {
         pos: document.getElementById('pos-section'),
@@ -747,24 +701,7 @@ const showSection = (sectionId) => {
         if (backdrop) backdrop.classList.remove('open');
     }
 };
-// --- LÓGICA DE LA APLICACIÓN ---
-const showMessageModal = (message, onConfirm = null) => {
-    if (!modalMessage || !messageModal || !closeModalBtn) return;
-    modalMessage.textContent = message;
-    messageModal.classList.remove('hidden');
-    const originalText = closeModalBtn.textContent;
-    const confirmMode = typeof onConfirm === 'function';
-    if (confirmMode) {
-        closeModalBtn.textContent = 'Sí, continuar';
-    } else {
-        closeModalBtn.textContent = 'Aceptar';
-    }
-    closeModalBtn.onclick = () => {
-        messageModal.classList.add('hidden');
-        if (confirmMode) onConfirm();
-        closeModalBtn.textContent = 'Aceptar';
-    };
-};
+
 const applyTheme = (theme) => {
     document.documentElement.style.setProperty('--primary-color', theme.primaryColor);
     document.documentElement.style.setProperty('--secondary-color', theme.secondaryColor);
@@ -1130,9 +1067,6 @@ const calculateTotals = () => {
     const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     posTotalSpan.textContent = `$${total.toFixed(2)}`;
 };
-// Hacer showMessageModal disponible globalmente
-window.showMessageModal = showMessageModal;
-
 
 const openPaymentProcess = async () => {
     if (!paymentModal || !paymentTotal || !paymentAmountInput || !paymentChange) return;
