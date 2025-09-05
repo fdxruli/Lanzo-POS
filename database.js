@@ -1,7 +1,7 @@
 // database.js
 
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 6; // Asegúrate que esta versión coincida con la de tu app.js
+const DB_VERSION = 8; // Asegúrate que esta versión coincida con la de tu app.js
 export const STORES = { // Exportamos STORES para que todos los usen
     MENU: 'menu',
     SALES: 'sales',
@@ -9,7 +9,11 @@ export const STORES = { // Exportamos STORES para que todos los usen
     THEME: 'theme',
     INGREDIENTS: 'ingredients',
     CATEGORIES: 'categories',
-    CUSTOMERS: 'customers'
+    CUSTOMERS: 'customers',
+    //almacenes para los elementos eliminados
+    DELETED_MENU: 'deleted_menu',
+    DELETED_CUSTOMERS: 'deleted_customers',
+    DELETED_SALES: 'deleted_sales'
 };
 
 let db = null;
@@ -59,6 +63,15 @@ export function initDB() {
             if (!tempDb.objectStoreNames.contains(STORES.CUSTOMERS)) {
                 const customerStore = tempDb.createObjectStore(STORES.CUSTOMERS, { keyPath: 'id' });
                 customerStore.createIndex('name', 'name', { unique: false });
+            }
+            if (!tempDb.objectStoreNames.contains(STORES.DELETED_MENU)) {
+                tempDb.createObjectStore(STORES.DELETED_MENU, { keyPath: 'id' });
+            }
+            if (!tempDb.objectStoreNames.contains(STORES.DELETED_CUSTOMERS)) {
+                tempDb.createObjectStore(STORES.DELETED_CUSTOMERS, { keyPath: 'id' });
+            }
+            if (!tempDb.objectStoreNames.contains(STORES.DELETED_SALES)) {
+                tempDb.createObjectStore(STORES.DELETED_SALES, { keyPath: 'timestamp' });
             }
         };
     });

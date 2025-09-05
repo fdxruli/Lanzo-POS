@@ -112,30 +112,30 @@ export function initCustomersModule(dependencies) {
         }
     };
 
-const handleFormSubmit = async (e) => {
-    e.preventDefault();
-    const saveButton = customerForm.querySelector('button[type="submit"]');
-    saveButton.disabled = true;
-    saveButton.textContent = 'Guardando...';
+    const handleFormSubmit = async (e) => {
+        e.preventDefault();
+        const saveButton = customerForm.querySelector('button[type="submit"]');
+        saveButton.disabled = true;
+        saveButton.textContent = 'Guardando...';
 
-    try {
-        const customerData = {
-            id: editingCustomerId || `customer-${Date.now()}`,
-            name: document.getElementById('customer-name').value,
-            // ...otros campos
-        };
-        await saveData(STORES.CUSTOMERS, customerData);
-        showMessageModal('Cliente guardado exitosamente');
-        resetCustomerForm();
-        await loadAndRenderCustomers();
-    } catch (error) {
-        // ...manejo de error...
-    } finally {
-        // Este bloque se ejecuta siempre, haya error o no
-        saveButton.disabled = false;
-        saveButton.textContent = 'Guardar';
-    }
-};
+        try {
+            const customerData = {
+                id: editingCustomerId || `customer-${Date.now()}`,
+                name: document.getElementById('customer-name').value,
+                // ...otros campos
+            };
+            await saveData(STORES.CUSTOMERS, customerData);
+            showMessageModal('Cliente guardado exitosamente');
+            resetCustomerForm();
+            await loadAndRenderCustomers();
+        } catch (error) {
+            // ...manejo de error...
+        } finally {
+            // Este bloque se ejecuta siempre, haya error o no
+            saveButton.disabled = false;
+            saveButton.textContent = 'Guardar';
+        }
+    };
     const resetCustomerForm = () => {
         editingCustomerId = null;
         customerForm.reset();
@@ -171,15 +171,50 @@ const handleFormSubmit = async (e) => {
             cancelCustomerEditBtn.classList.remove('hidden');
             customerTabs.querySelector('[data-tab="add-customer"]').click();
         } else if (button.classList.contains('btn-delete')) {
-            showMessageModal(`¿Estás seguro de que deseas eliminar a ${customer.name}?`, async () => {
+            showMessageModal(`¿Estás seguro de que deseas eliminar a ${customer.name}? Se moverá a la papelera.`, async () => {
+
+                // Añade marca de tiempo
+                customer.deletedTimestamp = new Date().toISOString();
+
+                // Mueve el cliente a la tabla de eliminados
+                await saveData(STORES.DELETED_CUSTOMERS, customer);
+                // Elimina el cliente de la tabla principal
                 await deleteData(STORES.CUSTOMERS, customerId);
+
                 await loadAndRenderCustomers();
-                showMessageModal('Cliente eliminado exitosamente');
+                showMessageModal('Cliente movido a la papelera.');
+                // Actualiza el dashboard si existe
+                if (window.dashboard) window.dashboard.renderDashboard();
             });
         } else if (button.classList.contains('btn-history')) {
             await showPurchaseHistory(customerId);
         }
     });
+
+    //funcion para restauracion
+    window.restoreCustomer = async (id) => {
+        try {
+            const customer = await loadData(STORES.DELETED_CUSTOMERS, id);
+            if (!customer) {
+                showMessageModal('Error: No se encontró el cliente en la papelera.');
+                return;
+            }
+
+            delete customer.deletedTimestamp;
+
+            await saveData(STORES.CUSTOMERS, customer);
+            await deleteData(STORES.DELETED_CUSTOMERS, id);
+
+            // La función `loadAndRenderCustomers` ya refresca la lista
+            document.dispatchEvent(new Event('customersUpdated')); // Disparamos un evento para que otras partes de la app sepan
+            showMessageModal(`Cliente "${customer.name}" restaurado.`);
+
+        } catch (error) {
+            console.error('Error restoring customer:', error.message);
+            showMessageModal('Error al restaurar el cliente.');
+        }
+    };
+    document.addEventListener('customersUpdated', loadAndRenderCustomers);
 
     closeHistoryModalBtn?.addEventListener('click', () => purchaseHistoryModal.classList.add('hidden'));
 

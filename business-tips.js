@@ -1,22 +1,24 @@
 import { showMessageModal } from './utils.js';
-// business-tips.js - Lógica de consejos de negocio
+// business-tips.js - Lógica de consejos de negocio para cualquier tipo de negocio
 function createBusinessTipsModule(dependencies) {
     const {
         loadData,
         STORES
     } = dependencies;
+
 // Función para renderizar consejos de negocio
 async function renderBusinessTips() {
     const tipsList = document.getElementById('business-tips');
     const sales = await loadData(STORES.SALES);
     const menu = await loadData(STORES.MENU);
     const tips = [];
+    
     // Si no hay ventas, mostrar mensaje de inicio
     if (sales.length === 0) {
         tips.push(`
                 <li class="tip-intro">
                     <strong>🚀 ¡Hola emprendedor!</strong><br>
-                    Soy tu asistente de negocios(limitado). Aún no tienes ventas registradas, 
+                    Soy tu asistente de negocios. Aún no tienes ventas registradas, 
                     pero eso está a punto de cambiar. Comienza registrando tus primeras ventas 
                     y te daré consejos personalizados que pueden incrementar tus ganancias hasta 
                     en un 30% desde la primera semana.
@@ -25,6 +27,7 @@ async function renderBusinessTips() {
         tipsList.innerHTML = tips.join('');
         return;
     }
+
     // Análisis de datos
     const now = new Date();
     const last30Days = sales.filter(sale => {
@@ -35,12 +38,14 @@ async function renderBusinessTips() {
         const saleDate = new Date(sale.timestamp);
         return (now - saleDate) / (1000 * 60 * 60 * 24) <= 7;
     });
+
     // Análisis de productos
     const productStats = {};
     const productMargins = {};
     let totalRevenue = 0;
     let totalProfit = 0;
     let totalItemsSold = 0;
+    
     sales.forEach(sale => {
         totalRevenue += sale.total;
         sale.items.forEach(item => {
@@ -49,6 +54,7 @@ async function renderBusinessTips() {
             const itemRevenue = item.price * item.quantity;
             totalProfit += itemProfit;
             totalItemsSold += item.quantity;
+            
             if (!productStats[item.id]) {
                 productStats[item.id] = {
                     name: item.name,
@@ -59,9 +65,11 @@ async function renderBusinessTips() {
                     cost: product.cost || item.price * 0.6
                 };
             }
+            
             productStats[item.id].quantity += item.quantity;
             productStats[item.id].revenue += itemRevenue;
             productStats[item.id].profit += itemProfit;
+            
             // Calcular margen de ganancia
             const marginPercent = ((item.price - product.cost) / item.price * 100);
             productMargins[item.id] = {
@@ -72,40 +80,48 @@ async function renderBusinessTips() {
             };
         });
     });
+
     // Análisis de patrones temporales
     const salesByHour = {};
     const salesByDay = {};
     const salesByDayOfWeek = {};
+    
     sales.forEach(sale => {
         const date = new Date(sale.timestamp);
         const hour = date.getHours();
         const dayOfWeek = date.toLocaleDateString('es-ES', { weekday: 'long' });
         const dayKey = date.toLocaleDateString();
+        
         salesByHour[hour] = (salesByHour[hour] || 0) + sale.total;
         salesByDay[dayKey] = (salesByDay[dayKey] || 0) + sale.total;
         salesByDayOfWeek[dayOfWeek] = (salesByDayOfWeek[dayOfWeek] || 0) + sale.total;
     });
+
     // Productos ordenados por diferentes métricas
     const topSellingProducts = Object.values(productStats).sort((a, b) => b.quantity - a.quantity);
     const topRevenueProducts = Object.values(productStats).sort((a, b) => b.revenue - a.revenue);
     const topProfitProducts = Object.values(productStats).sort((a, b) => b.profit - a.profit);
     const topMarginProducts = Object.values(productMargins).sort((a, b) => b.margin - a.margin);
+
     // Horas más productivas
     const bestHours = Object.entries(salesByHour)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3);
+
     // Días más productivos
     const bestDays = Object.entries(salesByDayOfWeek)
         .sort((a, b) => b[1] - a[1]);
+
     // CONSEJOS PERSONALIZADOS CON ENFOQUE DE IA
     // 1. SALUDO PERSONALIZADO CON DATOS CLAVE
     const avgSaleValue = totalRevenue / sales.length;
     const profitMargin = (totalProfit / totalRevenue * 100);
     const daysInBusiness = Math.max(1, Math.ceil((new Date() - new Date(sales[0].timestamp)) / (1000 * 60 * 60 * 24)));
     const dailyAvgRevenue = totalRevenue / daysInBusiness;
+    
     tips.push(`
             <li class="tip-intro">
-                <strong>🤖 HOLA, SOY TU ASESOR DE NEGOCIOS(LIMITADO)</strong><br>
+                <strong>🤖 HOLA, SOY TU ASESOR DE NEGOCIOS</strong><br>
                 He analizado tus ${sales.length} ventas de los últimos ${daysInBusiness} días y detecté 
                 <span class="highlight">$${totalRevenue.toFixed(2)} en ingresos</span> con un 
                 <span class="highlight">${profitMargin.toFixed(1)}% de margen neto</span>. 
@@ -114,34 +130,39 @@ async function renderBusinessTips() {
                 <strong>ESTOS SON MIS 5 CONSEJOS ESTRATÉGICOS PARA TI:</strong>
             </li>
         `);
+
     // 2. PRODUCTO ESTRELLA CON RECOMENDACIÓN ESPECÍFICA
     if (topProfitProducts.length > 0) {
         const starProduct = topProfitProducts[0];
         const revenuePercent = (starProduct.revenue / totalRevenue * 100).toFixed(1);
         const validPrice = !isNaN(starProduct.price) && starProduct.price > 0;
         const potentialUpsell = validPrice ? (starProduct.price * 1.15).toFixed(2) : 'N/A';
+        
         tips.push(`
             <li class="tip-star-product">
-                <strong>🎯 ESTRATEGIA #1: CAPITALIZA TU PRODUCTO ESTRELLA</strong><br>
+                <strong>🎯 ESTRATEGIA #1: CAPITALIZA TU PRODUCTO/SERVICIO ESTRELLA</strong><br>
                 "<span class="highlight">${starProduct.name}</span>" genera el ${revenuePercent}% de tus ganancias ($${starProduct.profit.toFixed(2)}).<br>
                 <strong>ACCIÓN INMEDIATA:</strong> 
                 <ul>
-                    <li>${validPrice ? `Crea una versión premium a $${potentialUpsell} (añadiendo un ingrediente especial)` : 'Revisa el precio del producto para crear una versión premium'}</li>
+                    <li>${validPrice ? `Crea una versión premium a $${potentialUpsell} (con características adicionales)` : 'Revisa el precio del producto/servicio para crear una versión premium'}</li>
                     <li>Entrena a tu equipo para sugerirlo sistemáticamente</li>
-                    <li>Colócalo como primer elemento en tu menú/mostrador</li>
+                    <li>Colócalo en un lugar destacado en tu establecimiento</li>
                 </ul>
                 <em>Impacto estimado: +${(starProduct.profit * 0.3).toFixed(2)} en ganancias semanales</em>
             </li>
         `);
     }
+
     // 3. ANÁLISIS DE MARGENES CON RECOMENDACIONES PRECISAS
     const lowMarginProducts = Object.values(productMargins)
         .filter(p => p.margin < 35)
         .sort((a, b) => a.margin - b.margin);
+    
     if (lowMarginProducts.length > 0) {
         const worstMargin = lowMarginProducts[0];
         const recommendedPrice = (worstMargin.cost * 1.7).toFixed(2);
         const potentialIncrease = (recommendedPrice - worstMargin.price).toFixed(2);
+        
         tips.push(`
                 <li class="tip-warning">
                     <strong>⚠️ ESTRATEGIA #2: CORRIGE MARGENES PELIGROSOS</strong><br>
@@ -150,13 +171,14 @@ async function renderBusinessTips() {
                     <strong>ACCIÓN INMEDIATA:</strong> 
                     <ul>
                         <li>Aumenta el precio a $${recommendedPrice} (+$${potentialIncrease})</li>
-                        <li>Si no puedes subir el precio, reduce porciones en un 15%</li>
+                        <li>Si no puedes subir el precio, reconsidera la presentación o el tamaño</li>
                         <li>Busca proveedores alternativos para bajar costos</li>
                     </ul>
                     <em>Impacto estimado: +${((worstMargin.price * 0.3) * (productStats[worstMargin.name]?.quantity || 1)).toFixed(2)} por semana</em>
                 </li>
             `);
     }
+
     // 4. OPTIMIZACIÓN DE HORARIOS BASADA EN DATOS
     if (bestHours.length > 0) {
         const peakHour = bestHours[0][0];
@@ -164,6 +186,7 @@ async function renderBusinessTips() {
         const hourlyAvg = totalRevenue / Object.keys(salesByHour).length;
         const slowestHour = Object.entries(salesByHour)
             .sort((a, b) => a[1] - b[1])[0][0];
+        
         if (peakRevenue > hourlyAvg * 1.5) {
             tips.push(`
                     <li class="tip-timing">
@@ -173,8 +196,8 @@ async function renderBusinessTips() {
                         <strong>ACCIÓN INMEDIATA:</strong> 
                         <ul>
                             <li>Programa promociones exclusivas para esta franja horaria</li>
-                            <li>Asegura el doble de inventario preparado</li>
-                            <li>Ofrece servicio express con 15% de recargo</li>
+                            <li>Asegura inventario suficiente para estos momentos</li>
+                            <li>Ofrece servicio prioritario con 15% de recargo (si aplica)</li>
                             <li>Reduce personal en la hora más lenta (${slowestHour}:00)</li>
                         </ul>
                         <em>Impacto estimado: +${(peakRevenue * 0.25).toFixed(2)} semanales</em>
@@ -182,32 +205,36 @@ async function renderBusinessTips() {
                 `);
         }
     }
+
     // 5. ESTRATEGIA DE UPSELL Y COMBOS
     const avgTicketTarget = avgSaleValue * 1.3;
     // Verificar que tengamos al menos 2 productos para hacer combos
     let comboExamples = "Producto + Complemento";
     let comboPrice = avgSaleValue.toFixed(2);
+    
     if (topSellingProducts.length >= 2) {
         comboExamples = topSellingProducts.slice(0, 2).map(p => p.name).join(" + ");
         comboPrice = (topSellingProducts[0].avgPrice + (topSellingProducts[1].avgPrice || topSellingProducts[0].avgPrice) * 0.7).toFixed(2);
     } else if (topSellingProducts.length === 1) {
-        comboExamples = topSellingProducts[0].name + " + Bebida/Postre";
+        comboExamples = topSellingProducts[0].name + " + Producto complementario";
         comboPrice = (topSellingProducts[0].avgPrice * 1.5).toFixed(2);
     }
+    
     tips.push(`
         <li class="tip-upsell">
             <strong>📈 ESTRATEGIA #4: IMPLEMENTA VENTAS CRUZADAS ESTRATÉGICAS</strong><br>
             Tu ticket promedio actual es $${avgSaleValue.toFixed(2)}. Puedes llevarlo a $${avgTicketTarget.toFixed(2)}.<br>
             <strong>ACCIÓN INMEDIATA:</strong> 
             <ul>
-                <li>Crea el combo "${comboExamples}" por $${comboPrice} (ahorro de 15%)</li>
+                <li>Crea el paquete promocional "${comboExamples}" por $${comboPrice} (ahorro de 15%)</li>
                 <li>Entrena equipo en la técnica "¿Desea agregar...?"</li>
-                <li>Implementa menú digital con sugerencias automáticas</li>
-                <li>Ofrece postre/bebida con 20% de descuento al comprar plato principal</li>
+                <li>Implementa sistema de sugerencias automáticas</li>
+                <li>Ofrece un producto complementario con 20% de descuento al comprar el producto principal</li>
             </ul>
             <em>Impacto estimado: +${(avgTicketTarget - avgSaleValue).toFixed(2)} por transacción</em>
         </li>
     `);
+
     // 6. TENDENCIAS Y PROYECCIONES
     if (last30Days.length > 0 && last7Days.length > 0) {
         const last30Revenue = last30Days.reduce((sum, sale) => sum + sale.total, 0);
@@ -215,6 +242,7 @@ async function renderBusinessTips() {
         const weeklyRate = last7Revenue / 7;
         const monthlyRate = last30Revenue / 30;
         const growthRate = ((weeklyRate - monthlyRate) / monthlyRate * 100).toFixed(1);
+        
         if (weeklyRate > monthlyRate * 1.15) {
             tips.push(`
                     <li class="tip-growth">
@@ -224,7 +252,7 @@ async function renderBusinessTips() {
                         <ul>
                             <li>Incrementa inventario en un 25% para evitar desabastecimiento</li>
                             <li>Contrata personal adicional para las horas pico</li>
-                            <li>Invierte en publicidad local dirigida (Facebook)</li>
+                            <li>Invierte en publicidad local dirigida</li>
                             <li>Considera expandir horario de atención</li>
                         </ul>
                         <em>Oportunidad: Puedes duplicar tus ingresos en ${(70 / growthRate).toFixed(1)} semanas</em>
@@ -246,9 +274,11 @@ async function renderBusinessTips() {
                 `);
         }
     }
+
     // 7. PROYECCIÓN FINANCIERA
     const projectedMonthly = 8364; // Salario mínimo mensual
     const optimizedProjection = projectedMonthly * 1.2; // 20% de mejora con las estrategias
+    
     tips.push(`
             <li class="tip-motivation">
                 <strong>🎯 VISIÓN ESTRATÉGICA: TU PRÓXIMO MES</strong><br>
@@ -259,16 +289,17 @@ async function renderBusinessTips() {
                 <strong>TU PLAN DE ACCIÓN PRIORITARIO:</strong>
                 <ol>
                     <li>Revisar márgenes y ajustar precios hoy mismo</li>
-                    <li>Crear 2 combos estratégicos antes de mañana</li>
+                    <li>Crear 2 paquetes promocionales antes de mañana</li>
                     <li>Optimizar horarios de personal esta semana</li>
-                    <li>Implementar técnicas de upsell con el equipo</li>
+                    <li>Implementar técnicas de ventas cruzadas con el equipo</li>
                     <li>Programar evaluación para dentro de 7 días</li>
                 </ol>
                 
                 <em>Recuerda: Yo reanalizaré tus datos cada vez que ingreses para darte consejos actualizados. 
-                ¡Tu éxito está en la ejecución consistente! si te preguntas por que 8364... me baso en el salario minimo mensual de tu region(chiapas)</em>
+                ¡Tu éxito está en la ejecución consistente! Si te preguntas por qué 8364... me baso en el salario mínimo mensual de tu región (Chiapas)</em>
             </li>
         `);
+
     // Agregar estilos CSS para las clases de tips
     if (!document.getElementById('business-tips-styles')) {
         const style = document.createElement('style');
@@ -376,8 +407,10 @@ async function renderBusinessTips() {
             `;
         document.head.appendChild(style);
     }
+
     tipsList.innerHTML = tips.join('');
 }
+
     return {
         renderBusinessTips
     };

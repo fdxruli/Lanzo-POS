@@ -80,7 +80,7 @@ export const compressImage = (
             );
         };
         img.onerror = () => reject(new Error("Error al cargar la imagen"));
-        img.src = URL, createObjetURL(file);
+        img.src = URL.createObjetURL(file);
     });
 };
 

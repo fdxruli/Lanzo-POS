@@ -107,6 +107,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return data;
     };
+
+    // --- FUNCIÓN AUXILIAR PARA ACTUALIZACIÓN GRANULAR DE CACHÉ ---
+    const updateMenuCache = (productData) => {
+        // Solo proceder si la caché del menú ya ha sido cargada alguna vez
+        if (dataCache.menu && Array.isArray(dataCache.menu)) {
+            const index = dataCache.menu.findIndex(p => p.id === productData.id);
+
+            if (index > -1) {
+                // Si el producto ya existe en la caché, lo actualizamos
+                dataCache.menu[index] = productData;
+                console.log('Cache: Producto actualizado', productData.name);
+            } else {
+                // Si es un producto nuevo, lo añadimos al final
+                dataCache.menu.push(productData);
+                console.log('Cache: Producto nuevo añadido', productData.name);
+            }
+        }
+        // Si la caché es null, no hacemos nada. Se cargará de la base de datos
+        // la próxima vez que se necesite, lo cual es el comportamiento esperado.
+    };
     
     // Función para guardar licencia en cookies (fallback) idexedDB
     const saveLicenseToCookie = (licenseData) => {
@@ -1470,6 +1490,8 @@ const saveProduct = async (e) => {
         editingProductId = productData.id;
         await saveData(STORES.MENU, productData);
 
+        updateMenuCache(productData);
+
         if (currentIngredients.length > 0 && editingProductId) {
             await saveIngredients();
         }
@@ -1484,36 +1506,76 @@ const saveProduct = async (e) => {
         showMessageModal(`Error al guardar producto: ${error.message}`);
     }
 };
+
+// función eliminar producto
 const deleteProduct = async (id) => {
     try {
         const item = await loadData(STORES.MENU, id);
-        showMessageModal(`¿Seguro que quieres eliminar "${item.name}"?`, async () => {
+        if (!item) return;
+
+        showMessageModal(`¿Seguro que quieres eliminar "${item.name}"? Se moverá a la papelera.`, async () => {
             try {
+                // Añade una marca de tiempo para saber cuándo se eliminó
+                item.deletedTimestamp = new Date().toISOString();
+                
+                // Mueve el item a la tabla de eliminados
+                await saveData(STORES.DELETED_MENU, item);
+                // Elimina el item de la tabla principal
                 await deleteData(STORES.MENU, id);
-                // Invalidar caché de menú
-                dataCache[STORES.MENU] = null;
-                dataCache.lastUpdated[STORES.MENU] = 0;
-                // Eliminar los ingredientes asociados
-                try {
-                    await deleteData(STORES.INGREDIENTS, id);
-                } catch (err) {
-                    console.log('No ingredients to delete for this product');
+
+                // Limpia la caché y actualiza la UI
+                if (dataCache.menu) {
+                    dataCache.menu = dataCache.menu.filter(p => p.id !== id);
                 }
                 order = order.filter(i => i.id !== id);
-                showMessageModal('Producto eliminado.');
+                
+                showMessageModal('Producto movido a la papelera.');
                 renderProductManagement();
                 renderMenu();
                 updateOrderDisplay();
+                // Actualiza el dashboard para mostrar el nuevo historial
+                if (dashboard) dashboard.renderDashboard();
+
             } catch (error) {
-                console.error('Error deleting product:', error.message);
+                console.error('Error moving product to deleted store:', error.message);
                 showMessageModal(`Error al eliminar producto: ${error.message}`);
             }
         });
     } catch (error) {
         console.error('Error loading product for deletion:', error.message);
-        showMessageModal(`Error al cargar producto para eliminar: ${error.message}`);
     }
 };
+
+//nueva función global para restaurar (la llamaremos desde dashboard.js)
+window.restoreProduct = async (id) => {
+    try {
+        const item = await loadData(STORES.DELETED_MENU, id);
+        if (!item) {
+            showMessageModal('Error: No se encontró el producto en la papelera.');
+            return;
+        }
+
+        // Quita la marca de tiempo de eliminación
+        delete item.deletedTimestamp;
+
+        // Mueve el item de vuelta a la tabla principal
+        await saveData(STORES.MENU, item);
+        // Elimina el item de la papelera
+        await deleteData(STORES.DELETED_MENU, id);
+
+        // Actualiza la caché y la UI
+        updateMenuCache(item); // Tu función optimizada
+        showMessageModal(`Producto "${item.name}" restaurado.`);
+        renderProductManagement();
+        renderMenu();
+        if (dashboard) dashboard.renderDashboard();
+
+    } catch (error) {
+        console.error('Error restoring product:', error.message);
+        showMessageModal('Error al restaurar el producto.');
+    }
+};
+
 // --- INICIALIZACIÓN DE DATOS POR DEFECTO ---
 const initializeDefaultData = async () => {
     try {
@@ -1746,10 +1808,7 @@ if (document.getElementById('nav-customers')) document.getElementById('nav-custo
 if (document.getElementById('nav-donation')) document.getElementById('nav-donation').addEventListener('click', () => showSection('donation'));
 if (document.getElementById('mobile-nav-pos')) document.getElementById('mobile-nav-pos').addEventListener('click', () => showSection('pos'));
 if (document.getElementById('mobile-nav-product-management')) document.getElementById('mobile-nav-product-management').addEventListener('click', () => showSection('product-management'));
-if (document.getElementById('mobile-nav-dashboard')) document.getElementById('mobile-nav-dashboard').addEventListener('click', () => {
-    showSection('dashboard');
-    if (dashboard) dashboard.renderDashboard();
-});
+if (document.getElementById('mobile-nav-dashboard')) document.getElementById('mobile-nav-dashboard').addEventListener('click', () => {showSection('dashboard');if (dashboard) dashboard.renderDashboard();});
 if (document.getElementById('mobile-nav-company')) document.getElementById('mobile-nav-company').addEventListener('click', () => showSection('company'));
 if (document.getElementById('mobile-nav-customers')) document.getElementById('mobile-nav-customers').addEventListener('click', () => showSection('customers'));
 if (document.getElementById('mobile-nav-donation')) document.getElementById('mobile-nav-donation').addEventListener('click', () => showSection('donation'));

@@ -790,6 +790,106 @@ textarea {
   color: var(--success-color);
 }
 
+/* ===== ESTILOS PARA HISTORIAL DE MOVIMIENTOS ===== */
+.movement-history-container {
+  margin-top: var(--spacing-xl);
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+}
+
+.movement-history-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.movement-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.movement-item:last-child {
+  border-bottom: none;
+}
+
+.movement-item-info p {
+  margin: 0;
+  color: var(--text-dark);
+}
+
+.movement-item-info .item-type {
+  font-size: 0.8rem;
+  color: var(--text-light);
+  background-color: var(--light-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.btn-restore {
+  background-color: var(--success-color);
+  color: white;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.875rem;
+}
+
+.btn-restore:hover {
+  background-color: #059669;
+}
+
+/* ===== ESTILOS PARA DETALLES DE MOVIMIENTOS ===== */
+.movement-item-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.btn-details-movement {
+  background-color: var(--light-background);
+  color: var(--primary-color);
+  border: 1px solid #e5e7eb;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.875rem;
+}
+
+.btn-details-movement:hover {
+  background-color: rgba(99, 102, 241, 0.1);
+}
+
+.movement-details-content {
+  max-height: 60vh;
+  overflow-y: auto;
+  line-height: 1.8;
+}
+
+.movement-details-content p {
+  margin-bottom: var(--spacing-xs);
+  border-bottom: 1px solid #f3f4f6;
+  padding-bottom: var(--spacing-xs);
+}
+
+.movement-details-content strong {
+  color: var(--text-dark);
+  display: inline-block;
+  width: 120px; /* Alinea los valores */
+}
+
+.movement-details-content ul {
+  list-style-type: none;
+  padding-left: 0;
+  margin-top: var(--spacing-sm);
+}
+
+.movement-details-content li {
+  background-color: var(--light-background);
+  padding: var(--spacing-sm);
+  border-radius: var(--border-radius-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
 .news-container {
   display: flex;
   flex-direction: column;

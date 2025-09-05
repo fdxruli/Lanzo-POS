@@ -173,88 +173,93 @@ function createDashboardModule(dependencies) {
             console.error('Error loading dashboard:', error.message);
             showMessageModal(`Error al cargar el panel de ventas: ${error.message}`);
         }
+        await renderMovementHistory();
     }
 
     // --- FUNCIÓN PARA ELIMINAR PEDIDOS (MODIFICADA) ---
     async function deleteOrder(timestamp) {
         try {
-            // 1. Obtener los datos de la venta que se va a eliminar
             const saleToDelete = await loadData(STORES.SALES, timestamp);
             if (!saleToDelete) {
                 showMessageModal('Error: No se encontró el pedido.');
                 return;
             }
 
-            // 2. Mostrar el modal de confirmación avanzado
-            showAdvancedConfirmModal(
-                '¿Deseas regresar los productos de este pedido al inventario?',
-                [
-                    {
-                        text: 'Sí, regresar y eliminar',
-                        class: 'btn btn-save',
-                        action: async () => {
-                            // 3a. Lógica para regresar stock
-                            try {
-                                let totalQuantityInOrder = 0;
-                                let totalStockRestored = 0;
-
-                                for (const item of saleToDelete.items) {
-                                    totalQuantityInOrder += item.quantity;
-                                    if (item.trackStock) {
-                                        const product = await loadData(STORES.MENU, item.id);
-                                        if (product) {
-                                            const stockToReturn = item.stockDeducted !== undefined ? item.stockDeducted : item.quantity;
-                                            totalStockRestored += stockToReturn;
-                                            product.stock += stockToReturn;
-                                            await saveData(STORES.MENU, product);
-                                        }
-                                    }
+            // Usamos el modal de confirmación
+            showMessageModal(
+                '¿Seguro que quieres eliminar este pedido? Se moverá a la papelera y el stock de los productos será restaurado.',
+                async () => {
+                    try {
+                        // a. Restaurar el stock de los productos
+                        for (const item of saleToDelete.items) {
+                            if (item.trackStock) {
+                                const product = await loadData(STORES.MENU, item.id);
+                                if (product) {
+                                    // Usamos stockDeducted para devolver la cantidad exacta que se restó
+                                    const stockToReturn = item.stockDeducted !== undefined ? item.stockDeducted : item.quantity;
+                                    product.stock += stockToReturn;
+                                    await saveData(STORES.MENU, product);
                                 }
-
-                                // 4. Eliminar el pedido
-                                await deleteData(STORES.SALES, timestamp);
-
-                                // 5. Mostrar mensaje detallado
-                                let message = `Pedido eliminado. Se restauraron ${totalStockRestored} unidades al stock.`;
-                                if (totalQuantityInOrder > totalStockRestored) {
-                                    const difference = totalQuantityInOrder - totalStockRestored;
-                                    message += ` ${difference} unidad(es) que se vendieron por encima del stock no se restauraron para mantener la integridad del inventario.`;
-                                }
-
-                                showMessageModal(message);
-                                renderDashboard(); // Actualizar la vista del dashboard
-                                if (renderMenu) renderMenu(); // ¡Actualizar el menú del TPV!
-                            } catch (error) {
-                                console.error('Error restoring stock:', error);
-                                showMessageModal('Error al restaurar el stock.');
                             }
                         }
-                    },
-                    {
-                        text: 'No, solo eliminar',
-                        class: 'btn btn-cancel',
-                        action: async () => {
-                            // 3b. Solo eliminar el pedido
-                            try {
-                                await deleteData(STORES.SALES, timestamp);
-                                showMessageModal('Pedido eliminado.');
-                                renderDashboard(); // Actualizar la vista
-                            } catch (error) {
-                                console.error('Error deleting order:', error);
-                                showMessageModal('Error al eliminar el pedido.');
-                            }
-                        }
-                    },
-                    {
-                        text: 'Cancelar',
-                        class: 'btn btn-modal',
-                        action: () => { /* No hacer nada */ }
+                        
+                        // b. Mover el pedido a la papelera
+                        saleToDelete.deletedTimestamp = new Date().toISOString();
+                        await saveData(STORES.DELETED_SALES, saleToDelete);
+                        await deleteData(STORES.SALES, timestamp);
+
+                        showMessageModal('Pedido movido a la papelera y stock restaurado.');
+                        renderDashboard(); // Actualizar la vista del dashboard
+                        if (renderMenu) renderMenu(); // Actualizar el menú del TPV
+                    } catch (error) {
+                        console.error('Error moving sale to deleted store:', error);
+                        showMessageModal('Error al mover el pedido a la papelera.');
                     }
-                ]
+                }
             );
         } catch (error) {
             console.error('Error preparing to delete order:', error);
             showMessageModal('Error al obtener los datos del pedido para eliminar.');
+        }
+    }
+    //funcion para restaurar pedidos:
+    async function restoreSale(timestamp) {
+        try {
+            const saleToRestore = await loadData(STORES.DELETED_SALES, timestamp);
+            if (!saleToRestore) {
+                showMessageModal('Error: El pedido no se encontró en la papelera.');
+                return;
+            }
+
+            // Preguntar al usuario si desea volver a descontar el stock
+            showMessageModal(
+                'Al restaurar este pedido, ¿deseas descontar nuevamente los productos del inventario actual?',
+                async () => {
+                    // a. Volver a descontar el stock
+                    for (const item of saleToRestore.items) {
+                        if (item.trackStock) {
+                            const product = await loadData(STORES.MENU, item.id);
+                            if (product) {
+                                const stockToDeduct = item.stockDeducted !== undefined ? item.stockDeducted : item.quantity;
+                                product.stock -= stockToDeduct;
+                                await saveData(STORES.MENU, product);
+                            }
+                        }
+                    }
+
+                    // b. Mover el pedido de vuelta a la tabla principal
+                    delete saleToRestore.deletedTimestamp;
+                    await saveData(STORES.SALES, saleToRestore);
+                    await deleteData(STORES.DELETED_SALES, timestamp);
+                    
+                    showMessageModal('Pedido restaurado y stock actualizado.');
+                    renderDashboard();
+                    if (renderMenu) renderMenu();
+                }
+            );
+        } catch (error) {
+            console.error('Error restoring sale:', error);
+            showMessageModal('Error al restaurar el pedido.');
         }
     }
 
@@ -269,7 +274,7 @@ function createDashboardModule(dependencies) {
         }
         const updateTopProducts = (topN) => {
             const topProducts = Array.from(productStats.values())
-                .sort((a, b) => b.quantity - a.qzuantity)
+                .sort((a, b) => b.quantity - a.quantity)
                 .slice(0, topN);
 
             topProducts.forEach(product => {
@@ -308,6 +313,152 @@ function createDashboardModule(dependencies) {
         };
         return (item.price - product.cost) * item.quantity;
     }
+
+    //funcion para redenrizar el historial de movimientos
+    async function renderMovementHistory() {
+        const movementList = document.getElementById('movement-history-list');
+        const emptyMessage = document.getElementById('empty-movements-message');
+        if (!movementList || !emptyMessage) return;
+
+        try {
+            const deletedProducts = await loadData(STORES.DELETED_MENU);
+            const deletedCustomers = await loadData(STORES.DELETED_CUSTOMERS);
+            const deletedSales = await loadData(STORES.DELETED_SALES);
+
+            const allMovements = [
+                ...deletedProducts.map(p => ({ ...p, type: 'Producto' })),
+                ...deletedCustomers.map(c => ({ ...c, type: 'Cliente' })),
+                ...deletedSales.map(s => ({ ...s, type: 'Pedido', name: `Pedido por $${s.total.toFixed(2)}` }))
+            ];
+
+            // Ordena por fecha de eliminación, los más recientes primero
+            allMovements.sort((a, b) => new Date(b.deletedTimestamp) - new Date(a.deletedTimestamp));
+            
+            movementList.innerHTML = '';
+            emptyMessage.classList.toggle('hidden', allMovements.length > 0);
+
+            allMovements.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'movement-item';
+            
+            // Usamos item.id para productos/clientes y item.timestamp para pedidos
+            const uniqueId = item.type === 'Pedido' ? item.timestamp : item.id;
+            
+            div.innerHTML = `
+                <div class="movement-item-info">
+                    <p>${item.name}</p>
+                    <p>
+                        <span class="item-type">${item.type}</span> 
+                        Eliminado el: ${new Date(item.deletedTimestamp).toLocaleString()}
+                    </p>
+                </div>
+                <div class="movement-item-actions">
+                    <button class="btn-details-movement" data-id="${uniqueId}" data-type="${item.type}">Detalles</button>
+                    <button class="btn-restore" data-id="${uniqueId}" data-type="${item.type}">Restaurar</button>
+                </div>
+            `;
+            movementList.appendChild(div);
+        });
+
+        } catch (error) {
+            console.error('Error rendering movement history:', error);
+            movementList.innerHTML = '<p>Error al cargar el historial.</p>';
+        }
+    }
+    //eventos para los botones de restauracion
+    document.getElementById('movement-history-list')?.addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (!button) return;
+
+        const { id, type } = button.dataset;
+
+        if (button.classList.contains('btn-restore')) {
+            if (type === 'Producto') window.restoreProduct(id);
+            else if (type === 'Cliente') {
+                window.restoreCustomer(id);
+                document.dispatchEvent(new Event('customersUpdated'));
+            } else if (type === 'Pedido') restoreSale(id);
+        } 
+        // AÑADE ESTA CONDICIÓN
+        else if (button.classList.contains('btn-details-movement')) {
+            showMovementDetails(id, type);
+        }
+    });
+
+    // elements para modal de detalle que se elimino
+    const movementDetailsModal = document.getElementById('movement-details-modal');
+    const movementDetailsTitle = document.getElementById('movement-details-title');
+    const movementDetailsContent = document.getElementById('movement-details-content');
+    const closeMovementDetailsBtn = document.getElementById('close-movement-details-btn');
+
+    closeMovementDetailsBtn?.addEventListener('click', () => {
+        movementDetailsModal?.classList.add('hidden');
+    });
+    async function showMovementDetails(id, type) {
+        if (!movementDetailsModal) return;
+
+        let contentHtml = '<p>No se encontraron detalles.</p>';
+        let title = `Detalles del ${type}`;
+        
+        try {
+            switch (type) {
+                case 'Producto': {
+                    const product = await loadData(STORES.DELETED_MENU, id);
+                    const ingredientsData = await loadData(STORES.INGREDIENTS, id);
+                    contentHtml = `
+                        <p><strong>ID:</strong> ${product.id}</p>
+                        <p><strong>Nombre:</strong> ${product.name}</p>
+                        <p><strong>Descripción:</strong> ${product.description || 'N/A'}</p>
+                        <p><strong>Precio Venta:</strong> $${product.price.toFixed(2)}</p>
+                        <p><strong>Costo:</strong> $${product.cost.toFixed(2)}</p>
+                        <p><strong>Stock (al eliminar):</strong> ${product.stock}</p>
+                    `;
+                    if (ingredientsData && ingredientsData.ingredients.length > 0) {
+                        contentHtml += '<h4>Ingredientes:</h4><ul>';
+                        ingredientsData.ingredients.forEach(ing => {
+                            contentHtml += `<li>${ing.name} (x${ing.quantity}) - Costo: $${(ing.cost * ing.quantity).toFixed(2)}</li>`;
+                        });
+                        contentHtml += '</ul>';
+                    }
+                    break;
+                }
+                case 'Cliente': {
+                    const customer = await loadData(STORES.DELETED_CUSTOMERS, id);
+                    contentHtml = `
+                        <p><strong>ID:</strong> ${customer.id}</p>
+                        <p><strong>Nombre:</strong> ${customer.name}</p>
+                        <p><strong>Teléfono:</strong> ${customer.phone}</p>
+                        <p><strong>Dirección:</strong> ${customer.address}</p>
+                    `;
+                    break;
+                }
+                case 'Pedido': {
+                    const sale = await loadData(STORES.DELETED_SALES, id);
+                    title = 'Detalles del Pedido Eliminado';
+                    contentHtml = `
+                        <p><strong>Timestamp:</strong> ${new Date(sale.timestamp).toLocaleString()}</p>
+                        <p><strong>Total del Pedido:</strong> $${sale.total.toFixed(2)}</p>
+                    `;
+                    if (sale.items && sale.items.length > 0) {
+                        contentHtml += '<h4>Artículos en el pedido:</h4><ul>';
+                        sale.items.forEach(item => {
+                            contentHtml += `<li>${item.name} (x${item.quantity}) - $${(item.price * item.quantity).toFixed(2)}</li>`;
+                        });
+                        contentHtml += '</ul>';
+                    }
+                    break;
+                }
+            }
+        } catch (error) {
+            console.error(`Error loading details for ${type}:`, error);
+            contentHtml = `<p>Error al cargar los detalles: ${error.message}</p>`;
+        }
+
+        movementDetailsTitle.textContent = title;
+        movementDetailsContent.innerHTML = contentHtml;
+        movementDetailsModal.classList.remove('hidden');
+    }
+
 
     // Devolver las funciones públicas del módulo
     return {
