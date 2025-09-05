@@ -1751,6 +1751,7 @@ if (document.getElementById('mobile-nav-dashboard')) document.getElementById('mo
     if (dashboard) dashboard.renderDashboard();
 });
 if (document.getElementById('mobile-nav-company')) document.getElementById('mobile-nav-company').addEventListener('click', () => showSection('company'));
+if (document.getElementById('mobile-nav-customers')) document.getElementById('mobile-nav-customers').addEventListener('click', () => showSection('customers'));
 if (document.getElementById('mobile-nav-donation')) document.getElementById('mobile-nav-donation').addEventListener('click', () => showSection('donation'));
 if (document.getElementById('process-order-btn')) document.getElementById('process-order-btn').addEventListener('click', openPaymentProcess);
 if (document.getElementById('clear-order-btn')) document.getElementById('clear-order-btn').addEventListener('click', () => {
