@@ -14,7 +14,7 @@ const scanForInputBtn = document.getElementById('scan-for-input-btn');
 const scannerVideo = document.getElementById('scanner-video');
 const cameraSelect = document.getElementById('camera-select');
 const scannerControls = document.getElementById('scanner-controls');
-const scannerOverlay = document.getElementById('scanner-overlay'); // Nuevo elemento para el overlay
+const scannerOverlay = document.getElementById('scanner-overlay');
 
 // --- VARIABLES DEL MÓDULO ---
 let scannerTarget = null;
@@ -23,30 +23,37 @@ let selectedDeviceId = null;
 let scanTimeout = null;
 let isScanning = false;
 
-// Configuración de formatos de código soportados
+// --- CONFIGURACIÓN DE FORMATOS DE CÓDIGO ---
+// Añadimos más formatos comunes como CODE_128
 const SUPPORTED_FORMATS = [
     ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.CODE_128,
     ZXing.BarcodeFormat.UPC_A,
     ZXing.BarcodeFormat.UPC_E,
     ZXing.BarcodeFormat.EAN_8,
 ];
 
-
+/**
+ * Inicia el escáner, solicitando acceso a la cámara y configurando los dispositivos.
+ */
 const startScanner = async () => {
     if (!scannerModal || !scannerVideo || !cameraSelect) return;
+
     try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             throw new Error('La cámara no es compatible con este navegador.');
         }
 
-        // Define las restricciones para solicitar una mejor resolución de la cámara
+        // --- OPTIMIZACIÓN DE CÁMARA ---
+        // Pedimos la cámara trasera por defecto ("environment") y una resolución HD.
         const constraints = {
             video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
+                facingMode: "environment", // Prioriza la cámara trasera
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
             }
         };
-        codeReader = new ZXing.BrowserMultiFormatReader(null, { constraints });
+        codeReader = new ZXing.BrowserMultiFormatReader();
         const videoInputDevices = await codeReader.listVideoInputDevices();
 
         cameraSelect.innerHTML = '';
@@ -59,20 +66,19 @@ const startScanner = async () => {
             });
 
             scannerControls.style.display = videoInputDevices.length > 1 ? 'block' : 'none';
+
+            // Intenta seleccionar la cámara trasera inteligentemente
             const rearCamera = videoInputDevices.find(device =>
                 device.label.toLowerCase().includes('back') ||
                 device.label.toLowerCase().includes('rear') ||
                 device.label.toLowerCase().includes('trasera')
             );
-
             selectedDeviceId = rearCamera ? rearCamera.deviceId : videoInputDevices[0].deviceId;
             cameraSelect.value = selectedDeviceId;
+
             scannerModal.classList.remove('hidden');
-
-            
-
-            // Iniciamos el escaneo
             decodeFromDevice(selectedDeviceId);
+
         } else {
             showMessageModal('No se encontraron cámaras en este dispositivo.');
         }
@@ -86,38 +92,46 @@ const startScanner = async () => {
     }
 };
 
+/**
+ * Inicia el proceso de decodificación desde un dispositivo de video específico.
+ * @param {string} deviceId - El ID del dispositivo de la cámara.
+ */
 const decodeFromDevice = (deviceId) => {
     if (codeReader) {
         codeReader.reset();
     }
 
-    // Configurar hints para optimizar la detección
     const hints = new Map();
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, SUPPORTED_FORMATS);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true); // Pide a la librería que se esfuerce más
 
     codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', (result, err) => {
         if (result) {
-            // Implementar throttling para evitar múltiples lecturas rápidas
             if (!isScanning) {
                 isScanning = true;
+                // --- MEJORA: Vibración para feedback ---
+                if (navigator.vibrate) {
+                    navigator.vibrate(100); // Vibra por 100ms
+                }
                 handleScanResult(result.getText());
 
-                // Restablecer el estado después de un breve período
                 clearTimeout(scanTimeout);
                 scanTimeout = setTimeout(() => {
                     isScanning = false;
-                }, 1000); // 1 segundo de bloqueo entre lecturas
+                }, 1500); // Aumentamos un poco el tiempo de espera para evitar lecturas dobles
             }
         }
         if (err && !(err instanceof ZXing.NotFoundException)) {
             console.error('Error de escaneo:', err);
         }
-    }, { hints }).catch(err => {
+    }).catch(err => {
         console.error(`Error al decodificar desde el dispositivo ${deviceId}:`, err);
     });
 };
 
+/**
+ * Detiene el escáner y cierra el modal.
+ */
 const stopScanner = () => {
     if (codeReader) {
         codeReader.reset();
@@ -133,15 +147,16 @@ const stopScanner = () => {
     scannerTarget = null;
 };
 
+/**
+ * Procesa el código de barras una vez que es detectado.
+ * @param {string} code - El código de barras detectado.
+ */
 const handleScanResult = async (code) => {
-    // 1. Guardar el objetivo y el código ANTES de limpiar el estado
     const currentTarget = scannerTarget;
     const trimmedCode = code ? code.trim() : "";
 
-    // 2. Ahora, detener el escáner y limpiar las variables globales
-    stopScanner();
+    stopScanner(); // Detiene el escáner para evitar lecturas continuas
 
-    // 3. Procesar el resultado usando las variables locales guardadas
     if (!trimmedCode) {
         console.warn("El escaneo resultó en un código vacío.");
         return;
@@ -158,7 +173,6 @@ const handleScanResult = async (code) => {
             }
         } else if (currentTarget && typeof currentTarget.value !== 'undefined') {
             currentTarget.value = trimmedCode;
-            // Disparamos un evento para que cualquier listener en el campo se active
             currentTarget.dispatchEvent(new Event('input', { bubbles: true }));
         }
     } catch (error) {
@@ -168,15 +182,13 @@ const handleScanResult = async (code) => {
 };
 
 /**
- * Inicializa el módulo del escáner y configura los event listeners.
- * @param {object} dependencies - Un objeto con las funciones necesarias de app.js.
+ * Inicializa el módulo del escáner, configurando los listeners de eventos.
+ * @param {object} dependencies - Objeto con las dependencias de app.js.
  */
 export function initScannerModule(dependencies) {
-    // Asigna las funciones pasadas a las variables locales
     loadDataWithCache = dependencies.loadDataWithCache;
     addItemToOrder = dependencies.addItemToOrder;
 
-    // --- EVENT LISTENERS ---
     if (scanBarcodeBtn) {
         scanBarcodeBtn.addEventListener('click', () => {
             scannerTarget = 'addToOrder';
@@ -199,5 +211,5 @@ export function initScannerModule(dependencies) {
         });
     }
 
-    console.log('Scanner module initialized.');
+    console.log('Scanner module initialized with optimizations.');
 }
