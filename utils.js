@@ -34,53 +34,47 @@ export function showMessageModal(message, onConfirm = null) {
  * @param {number} quality La calidad de la imagen resultante (0 a 1).
  * @returns {Promise<string>} Una promesa que resuelve con la URL en base64 de la imagen comprimida.
  */
+// Dentro de utils.js
+
 export const compressImage = (
     file,
-    maxWidth = 800,
-    maxHeight= 800,
-    quality = 0.6
+    targetSize = 300, // Un solo tamaño para ancho y alto
+    quality = 0.7
 ) => {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        const canvas = document.getElementById("canvas");
+        const canvas = document.createElement('canvas'); // No necesitas un canvas en el HTML
         const ctx = canvas.getContext("2d");
 
         img.onload = () => {
-            //mantener proporciones
-            let width = img.width;
-            let height = img.height;
+            let sourceX = 0;
+            let sourceY = 0;
+            let sourceWidth = img.width;
+            let sourceHeight = img.height;
 
-            if (width > maxWidth || height > maxHeight) {
-                const retio = Math.min(maxWidth / width, maxHeight / height);
-                width = width * ratio;
-                height = height * ratio;
+            // Lógica para el recorte cuadrado
+            if (sourceWidth > sourceHeight) { // Imagen horizontal
+                sourceX = (sourceWidth - sourceHeight) / 2;
+                sourceWidth = sourceHeight;
+            } else if (sourceHeight > sourceWidth) { // Imagen vertical
+                sourceY = (sourceHeight - sourceWidth) / 2;
+                sourceHeight = sourceWidth;
             }
+            // Si ya es cuadrada, no hace nada
 
-            canvas.width = width;
-            canvas.height = height;
+            canvas.width = targetSize;
+            canvas.height = targetSize;
 
-            //dibujar en el canvas
-            ctx.drawImage(img, 0, 0, width, height);
-            //convertir a Blob comprimido
-            canvas.toBlob(
-                (blob) => {
-                    if (!blob) {
-                        reject(new Error("Error al comprimir la imagen"));
-                        return;
-                    }
-                    //convertir Blob a file para que se pueda subir
-                    const compressedfile = new File([blob], file.name, {
-                        type: "image/jpeg",
-                        lastModified: Date.now(),
-                    });
-                    resolve(compressedFile);
-                },
-                "image/jpeg",
-                quality
-            );
+            // Dibuja la parte recortada de la imagen en el canvas
+            ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetSize, targetSize);
+            
+            // Convierte el canvas a una URL de datos base64
+            const dataUrl = canvas.toDataURL("image/jpeg", quality);
+            resolve(dataUrl); // Devolvemos la imagen como base64
         };
-        img.onerror = () => reject(new Error("Error al cargar la imagen"));
-        img.src = URL.createObjetURL(file);
+        
+        img.onerror = (err) => reject(new Error("Error al cargar la imagen."));
+        img.src = URL.createObjectURL(file);
     });
 };
 

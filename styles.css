@@ -364,9 +364,9 @@ textarea {
 }
 
 .menu-item-image {
-  width: 80px;
-  height: 80px;
-  object-fit: cover;
+  width: 100%; /* La imagen ocupará todo el ancho de su contenedor */
+  height: 120px; /* Dale una altura fija para unificar todas las tarjetas */
+  object-fit: cover; /* ¡Esta es la clave! */
   border-radius: var(--border-radius-sm);
   margin-bottom: var(--spacing-sm);
 }
