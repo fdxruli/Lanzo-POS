@@ -22,7 +22,6 @@ let codeReader = null;
 let selectedDeviceId = null;
 let scanTimeout = null;
 let isScanning = false;
-let scanRegion = null; // Región de escaneo
 
 // Configuración de formatos de código soportados
 const SUPPORTED_FORMATS = [
@@ -32,44 +31,6 @@ const SUPPORTED_FORMATS = [
     ZXing.BarcodeFormat.EAN_8,
 ];
 
-// Función para calcular la región de escaneo
-const calculateScanRegion = (video) => {
-    if (!video.videoWidth || !video.videoHeight) return null;
-
-    // Definimos un rectángulo central del 60% de ancho y 30% de alto
-    const width = video.videoWidth * 0.6;
-    const height = video.videoHeight * 0.3;
-    const x = (video.videoWidth - width) / 2;
-    const y = (video.videoHeight - height) / 2;
-
-    return { x, y, width, height };
-};
-
-// Función para actualizar el overlay visual
-const updateScannerOverlay = () => {
-    if (!scannerVideo || !scannerOverlay) return;
-
-    // Calculamos las dimensiones del video en pantalla
-    const videoRect = scannerVideo.getBoundingClientRect();
-
-    // Posicionamos el overlay sobre el video
-    scannerOverlay.style.width = `${videoRect.width}px`;
-    scannerOverlay.style.height = `${videoRect.height}px`;
-    scannerOverlay.style.top = `${videoRect.top}px`;
-    scannerOverlay.style.left = `${videoRect.left}px`;
-
-    // Creamos el rectángulo de escaneo
-    const scanWidth = videoRect.width * 0.6;
-    const scanHeight = videoRect.height * 0.3;
-    const scanX = (videoRect.width - scanWidth) / 2;
-    const scanY = (videoRect.height - scanHeight) / 2;
-
-    // Actualizamos el pseudo-elemento del overlay
-    scannerOverlay.style.setProperty('--scan-width', `${scanWidth}px`);
-    scannerOverlay.style.setProperty('--scan-height', `${scanHeight}px`);
-    scannerOverlay.style.setProperty('--scan-x', `${scanX}px`);
-    scannerOverlay.style.setProperty('--scan-y', `${scanY}px`);
-};
 
 const startScanner = async () => {
     if (!scannerModal || !scannerVideo || !cameraSelect) return;
@@ -78,7 +39,6 @@ const startScanner = async () => {
             throw new Error('La cámara no es compatible con este navegador.');
         }
 
-        codeReader = new ZXing.BrowserMultiFormatReader();
         // Define las restricciones para solicitar una mejor resolución de la cámara
         const constraints = {
             video: {
@@ -109,11 +69,7 @@ const startScanner = async () => {
             cameraSelect.value = selectedDeviceId;
             scannerModal.classList.remove('hidden');
 
-            // Configuramos el listener para actualizar el overlay cuando el video esté listo
-            scannerVideo.addEventListener('loadedmetadata', () => {
-                scanRegion = calculateScanRegion(scannerVideo);
-                updateScannerOverlay();
-            });
+            
 
             // Iniciamos el escaneo
             decodeFromDevice(selectedDeviceId);
@@ -140,9 +96,6 @@ const decodeFromDevice = (deviceId) => {
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, SUPPORTED_FORMATS);
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 
-    // Si tenemos una región de escaneo definida, la usamos
-    const options = scanRegion ? { hints, region: scanRegion } : { hints };
-
     codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', (result, err) => {
         if (result) {
             // Implementar throttling para evitar múltiples lecturas rápidas
@@ -160,7 +113,7 @@ const decodeFromDevice = (deviceId) => {
         if (err && !(err instanceof ZXing.NotFoundException)) {
             console.error('Error de escaneo:', err);
         }
-    }, options).catch(err => {
+    }, { hints }).catch(err => {
         console.error(`Error al decodificar desde el dispositivo ${deviceId}:`, err);
     });
 };
@@ -178,7 +131,6 @@ const stopScanner = () => {
     }
     isScanning = false;
     scannerTarget = null;
-    scanRegion = null;
 };
 
 const handleScanResult = async (code) => {
@@ -246,9 +198,6 @@ export function initScannerModule(dependencies) {
             decodeFromDevice(selectedDeviceId);
         });
     }
-
-    // Actualizar overlay cuando la ventana cambia de tamaño
-    window.addEventListener('resize', updateScannerOverlay);
 
     console.log('Scanner module initialized.');
 }
