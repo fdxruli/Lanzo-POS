@@ -25,16 +25,27 @@ let codeReader = null;
 let selectedDeviceId = null;
 let scanTimeout = null;
 let isScanning = false;
+let scanAttempts = 0;
+let lastScannedCode = '';
 
 // --- CONFIGURACIÓN DE FORMATOS DE CÓDIGO ---
-// Añadimos más formatos comunes como CODE_128
 const SUPPORTED_FORMATS = [
     ZXing.BarcodeFormat.EAN_13,
     ZXing.BarcodeFormat.CODE_128,
     ZXing.BarcodeFormat.UPC_A,
     ZXing.BarcodeFormat.UPC_E,
     ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.CODE_39,
+    ZXing.BarcodeFormat.ITF,
+    ZXing.BarcodeFormat.CODABAR,
+    // QR Code para el futuro
+    ZXing.BarcodeFormat.QR_CODE,
 ];
+
+// --- OPTIMIZACIONES DE RENDIMIENTO ---
+// Preparamos un canvas para procesamiento de imagen
+const offscreenCanvas = document.createElement('canvas');
+const offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
 
 /**
  * Inicia el escáner, solicitando acceso a la cámara y configurando los dispositivos.
@@ -47,15 +58,17 @@ const startScanner = async () => {
             throw new Error('La cámara no es compatible con este navegador.');
         }
 
-        // --- OPTIMIZACIÓN DE CÁMARA ---
-        // Pedimos la cámara trasera por defecto ("environment") y una resolución HD.
+        // Configuración optimizada para POS
         const constraints = {
             video: {
-                facingMode: "environment", // Prioriza la cámara trasera
-                width: { ideal: 1920 },
-                height: { ideal: 1080 }
+                facingMode: "environment",
+                width: { ideal: 1280, max: 1920 },  // Reducimos resolución para mejor rendimiento
+                height: { ideal: 720, max: 1080 },
+                // Priorizamos framerate sobre resolución para escaneo rápido
+                frameRate: { ideal: 30, min: 20 }
             }
         };
+
         codeReader = new ZXing.BrowserMultiFormatReader();
         const videoInputDevices = await codeReader.listVideoInputDevices();
 
@@ -70,7 +83,7 @@ const startScanner = async () => {
 
             scannerControls.style.display = videoInputDevices.length > 1 ? 'block' : 'none';
 
-            // Intenta seleccionar la cámara trasera inteligentemente
+            // Intenta seleccionar la cámara trasera
             const rearCamera = videoInputDevices.find(device =>
                 device.label.toLowerCase().includes('back') ||
                 device.label.toLowerCase().includes('rear') ||
@@ -104,32 +117,125 @@ const decodeFromDevice = (deviceId) => {
         codeReader.reset();
     }
 
+    // Configuramos hints para optimizar el escaneo
     const hints = new Map();
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, SUPPORTED_FORMATS);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER, true); // Pide a la librería que se esfuerce más
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, false); // Mejor rendimiento
+    hints.set(ZXing.DecodeHintType.ALSO_INVERTED, true); // Escanear códigos invertidos
 
-    codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', (result, err) => {
-        if (result) {
-            if (!isScanning) {
-                isScanning = true;
-                // --- MEJORA: Vibración para feedback ---
-                if (navigator.vibrate) {
-                    navigator.vibrate(100); // Vibra por 100ms
+    // Configuración de constraints para el dispositivo seleccionado
+    const constraints = {
+        deviceId: { exact: deviceId },
+        video: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+        }
+    };
+
+    codeReader.decodeFromVideoDevice(
+        deviceId, 
+        'scanner-video', 
+        (result, err) => {
+            if (result) {
+                const code = result.text;
+                
+                // Evitar procesar el mismo código múltiples veces
+                if (!isScanning && code !== lastScannedCode) {
+                    isScanning = true;
+                    lastScannedCode = code;
+                    
+                    // Feedback háptico
+                    if (navigator.vibrate) {
+                        navigator.vibrate(100);
+                    }
+                    
+                    handleScanResult(code);
+
+                    // Prevenir escaneos duplicados por un breve periodo
+                    clearTimeout(scanTimeout);
+                    scanTimeout = setTimeout(() => {
+                        isScanning = false;
+                        scanAttempts = 0;
+                    }, 1000);
                 }
-                handleScanResult(result.getText());
-
-                clearTimeout(scanTimeout);
-                scanTimeout = setTimeout(() => {
-                    isScanning = false;
-                }, 1500); // Aumentamos un poco el tiempo de espera para evitar lecturas dobles
+            }
+            
+            if (err) {
+                if (!(err instanceof ZXing.NotFoundException)) {
+                    console.warn('Error de escaneo:', err);
+                }
+                
+                // Incrementar contador de intentos fallidos
+                scanAttempts++;
+                
+                // Si hay muchos intentos fallidos, intentar mejorar la imagen
+                if (scanAttempts > 15) {
+                    applyImageEnhancement();
+                    scanAttempts = 0;
+                }
+            }
+        },
+        {
+            constraints: constraints,
+            // Enfocamos en el área central (región de interés)
+            regionOfInterest: {
+                x: Math.round(scannerVideo.videoWidth * 0.2),
+                y: Math.round(scannerVideo.videoHeight * 0.2),
+                width: Math.round(scannerVideo.videoWidth * 0.6),
+                height: Math.round(scannerVideo.videoHeight * 0.6)
             }
         }
-        if (err && !(err instanceof ZXing.NotFoundException)) {
-            console.error('Error de escaneo:', err);
-        }
-    }).catch(err => {
+    ).catch(err => {
         console.error(`Error al decodificar desde el dispositivo ${deviceId}:`, err);
     });
+};
+
+/**
+ * Aplica mejoras a la imagen para facilitar el escaneo
+ */
+const applyImageEnhancement = () => {
+    if (!scannerVideo.videoWidth || !scannerVideo.videoHeight) return;
+    
+    // Configurar canvas con las dimensiones del video
+    offscreenCanvas.width = scannerVideo.videoWidth;
+    offscreenCanvas.height = scannerVideo.videoHeight;
+    
+    // Dibujar el frame actual en el canvas
+    offscreenCtx.drawImage(scannerVideo, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+    
+    // Obtener los datos de la imagen
+    const imageData = offscreenCtx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+    const data = imageData.data;
+    
+    // Aplicar contraste para mejorar la legibilidad del código de barras
+    const contrast = 1.5; // Aumentar contraste
+    const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+    
+    for (let i = 0; i < data.length; i += 4) {
+        // Ajustar contraste
+        data[i] = factor * (data[i] - 128) + 128;     // R
+        data[i + 1] = factor * (data[i + 1] - 128) + 128; // G
+        data[i + 2] = factor * (data[i + 2] - 128) + 128; // B
+        
+        // Convertir a escala de grises (más eficiente para el escaneo)
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        data[i] = data[i + 1] = data[i + 2] = avg;
+    }
+    
+    // Devolver la imagen procesada al canvas
+    offscreenCtx.putImageData(imageData, 0, 0);
+    
+    // Intentar escanear desde la imagen mejorada
+    try {
+        codeReader.decodeFromCanvas(offscreenCanvas, (result, err) => {
+            if (result) {
+                handleScanResult(result.text);
+            }
+        });
+    } catch (error) {
+        console.warn("Error al procesar imagen mejorada:", error);
+    }
 };
 
 /**
@@ -138,6 +244,7 @@ const decodeFromDevice = (deviceId) => {
 const stopScanner = () => {
     if (codeReader) {
         codeReader.reset();
+        codeReader = null;
     }
     if (scannerModal) {
         scannerModal.classList.add('hidden');
@@ -147,7 +254,9 @@ const stopScanner = () => {
         scanTimeout = null;
     }
     isScanning = false;
+    scanAttempts = 0;
     scannerTarget = null;
+    lastScannedCode = '';
 };
 
 /**
@@ -214,5 +323,5 @@ export function initScannerModule(dependencies) {
         });
     }
 
-    console.log('Scanner module initialized with optimizations.');
+    console.log('Scanner module optimized for POS environment.');
 }
