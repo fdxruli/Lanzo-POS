@@ -1489,10 +1489,7 @@ const saveProduct = async (e) => {
             description: productDescriptionInput.value.trim(),
             image: imagePreview.src,
             categoryId: productCategorySelect.value,
-            //para que se guarden los codigos de barras
-            barcode: document.getElementById('product-barcode').value.trim(),
-            image: imagePreview.src,
-            categoryId: productCategorySelect.value
+            barcode: document.getElementById('product-barcode').value.trim()
         };
 
         editingProductId = productData.id;

@@ -518,6 +518,64 @@ textarea {
     width: 100%;
     height: auto;
 }
+/*stilos para el ovelay en scaner*/
+/* styles.css */
+.scanner-container {
+    position: relative;
+    width: 100%;
+    height: 400px;
+    overflow: hidden;
+}
+
+#scanner-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#scanner-overlay {
+    position: fixed;
+    pointer-events: none;
+    z-index: 1000;
+}
+
+#scanner-overlay::before {
+    content: '';
+    position: absolute;
+    top: var(--scan-y, 30%);
+    left: var(--scan-x, 20%);
+    width: var(--scan-width, 60%);
+    height: var(--scan-height, 30%);
+    border: 2px solid #4CAF50;
+    border-radius: 8px;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    background: transparent;
+}
+
+#scanner-overlay::after {
+    content: 'Coloca el código aquí';
+    position: absolute;
+    top: calc(var(--scan-y, 30%) - 25px);
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+/* Animación para el borde del rectángulo de escaneo */
+@keyframes scanner-pulse {
+    0% { border-color: #4CAF50; }
+    50% { border-color: #8BC34A; }
+    100% { border-color: #4CAF50; }
+}
+
+#scanner-overlay::before {
+    animation: scanner-pulse 2s infinite;
+}
 
 /* ===== SECCIÓN GESTIÓN DE PRODUCTOS ===== */
 .product-management-grid {

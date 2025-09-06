@@ -174,17 +174,36 @@ const stopScanner = () => {
 };
 
 const handleScanResult = async (code) => {
+    // 1. Guardar el objetivo y el código ANTES de limpiar el estado
+    const currentTarget = scannerTarget;
+    const trimmedCode = code ? code.trim() : "";
+
+    // 2. Ahora, detener el escáner y limpiar las variables globales
     stopScanner();
-    if (scannerTarget === 'addToOrder') {
-        const menu = await loadDataWithCache(STORES.MENU);
-        const product = menu.find(p => p.barcode === code);
-        if (product) {
-            addItemToOrder(product);
-        } else {
-            showMessageModal(`Producto con código de barras "${code}" no encontrado.`);
+
+    // 3. Procesar el resultado usando las variables locales guardadas
+    if (!trimmedCode) {
+        console.warn("El escaneo resultó en un código vacío.");
+        return;
+    }
+    
+    try {
+        if (currentTarget === 'addToOrder') {
+            const menu = await loadDataWithCache(STORES.MENU);
+            const product = menu.find(p => p.barcode === trimmedCode);
+            if (product) {
+                addItemToOrder(product);
+            } else {
+                showMessageModal(`Producto con código de barras "${trimmedCode}" no encontrado.`);
+            }
+        } else if (currentTarget && typeof currentTarget.value !== 'undefined') {
+            currentTarget.value = trimmedCode;
+            // Disparamos un evento para que cualquier listener en el campo se active
+            currentTarget.dispatchEvent(new Event('input', { bubbles: true }));
         }
-    } else if (scannerTarget && typeof scannerTarget.value !== 'undefined') {
-        scannerTarget.value = code;
+    } catch(error) {
+        console.error("Error al procesar el resultado del escaneo:", error);
+        showMessageModal("Ocurrió un error al procesar el código.");
     }
 };
 
