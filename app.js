@@ -4,6 +4,7 @@ import { initDB, saveData, loadData, deleteData, STORES } from './database.js';
 import { initCustomersModule } from './customers.js';
 import { createDashboardModule } from './dashboard.js';
 import { createBusinessTipsModule } from './business-tips.js';
+
 document.addEventListener('DOMContentLoaded', () => {
     
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
@@ -40,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Variables para la gestión de ingredientes
     let currentIngredients = [];
     let editingProductId = null;
+    
     // --- SISTEMA DE CACHÉ PARA DATOS FRECUENTES ---
     const dataCache = {
         menu: null,
@@ -60,50 +62,88 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeScannerBtn = document.getElementById('close-scanner-btn');
     const scanForInputBtn = document.getElementById('scan-for-input-btn');
     const scannerVideo = document.getElementById('scanner-video');
+    const cameraSelect = document.getElementById('camera-select');
+    const scannerControls = document.getElementById('scanner-controls');
+
     let scannerTarget = null;
     let codeReader = null;
     let selectedDeviceId = null;
 
     const startScanner = async () => {
-        if (!scannerModal || !scannerVideo) return;
+        if (!scannerModal || !scannerVideo || !cameraSelect) return;
 
         try {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('La cámara no es compatible con este navegador.');
+            }
+
             codeReader = new ZXing.BrowserMultiFormatReader();
             const videoInputDevices = await codeReader.listVideoInputDevices();
+            
+            cameraSelect.innerHTML = ''; // Limpiar opciones previas
+
             if (videoInputDevices.length > 0) {
-                // Preferir la cámara trasera ('environment')
-                const rearCamera = videoInputDevices.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('rear') || device.label.toLowerCase().includes('trasera'));
+                videoInputDevices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Cámara ${cameraSelect.length + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+
+                // Mostrar controles si hay más de una cámara
+                scannerControls.style.display = videoInputDevices.length > 1 ? 'block' : 'none';
+
+                // Intentar seleccionar la cámara trasera por defecto
+                const rearCamera = videoInputDevices.find(device => 
+                    device.label.toLowerCase().includes('back') || 
+                    device.label.toLowerCase().includes('rear') || 
+                    device.label.toLowerCase().includes('trasera')
+                );
                 selectedDeviceId = rearCamera ? rearCamera.deviceId : videoInputDevices[0].deviceId;
+                cameraSelect.value = selectedDeviceId;
 
                 scannerModal.classList.remove('hidden');
+                decodeFromDevice(selectedDeviceId);
 
-                codeReader.decodeFromVideoDevice(selectedDeviceId, 'scanner-video', (result, err) => {
-                    if (result) {
-                        handleScanResult(result.getText());
-                    }
-                    if (err && !(err instanceof ZXing.NotFoundException)) {
-                        console.error('Error de escaneo:', err);
-                        showMessageModal('Ocurrió un error durante el escaneo.');
-                        stopScanner();
-                    }
-                });
             } else {
                 showMessageModal('No se encontraron cámaras en este dispositivo.');
             }
         } catch (error) {
             console.error('Error al iniciar el escáner:', error);
-            showMessageModal('No se pudo acceder a la cámara. Asegúrate de haber dado los permisos necesarios.');
+            let message = 'No se pudo acceder a la cámara. Asegúrate de haber dado los permisos necesarios.';
+            if (error.name === "NotAllowedError") {
+                message = "Has bloqueado el acceso a la cámara. Por favor, habilítalo en la configuración de tu navegador.";
+            }
+            showMessageModal(message);
         }
+    };
+
+    const decodeFromDevice = (deviceId) => {
+        // Detener cualquier instancia anterior antes de iniciar una nueva
+        if (codeReader) {
+            codeReader.reset();
+        }
+
+        codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', (result, err) => {
+            if (result) {
+                handleScanResult(result.getText());
+            }
+            if (err && !(err instanceof ZXing.NotFoundException)) {
+                console.error('Error de escaneo:', err);
+                // No mostramos un modal aquí para no interrumpir el escaneo continuo
+            }
+        }).catch(err => {
+            console.error(`Error al decodificar desde el dispositivo ${deviceId}:`, err);
+        });
     };
 
     const stopScanner = () => {
         if (codeReader) {
-            codeReader.reset(); // Detiene el stream de la cámara
+            codeReader.reset(); // Detiene el stream de la cámara y libera recursos
         }
         if (scannerModal) {
             scannerModal.classList.add('hidden');
         }
-        codeReader = null;
         scannerTarget = null;
     };
 
@@ -122,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             scannerTarget.value = code;
         }
     };
-
+    
     // --- EVENT LISTENERS del Escáner ---
     if (scanBarcodeBtn) {
         scanBarcodeBtn.addEventListener('click', () => {
@@ -138,6 +178,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (closeScannerBtn) {
         closeScannerBtn.addEventListener('click', stopScanner);
+    }
+    if (cameraSelect) {
+        cameraSelect.addEventListener('change', () => {
+            selectedDeviceId = cameraSelect.value;
+            decodeFromDevice(selectedDeviceId);
+        });
     }
 
     const loadDataWithCache = async (storeName, key = null, maxAge = 300000) => {
@@ -2232,5 +2278,7 @@ const initApp = async () => {
         showMessageModal(`Error fatal al inicializar: ${error.message}. Por favor, recarga la página.`);
     }
 };
+
 initApp();
+
 });
