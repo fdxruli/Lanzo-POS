@@ -5,7 +5,7 @@ import { initCustomersModule } from './customers.js';
 import { createDashboardModule } from './dashboard.js';
 import { createBusinessTipsModule } from './business-tips.js';
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('app.js: DOMContentLoaded event fired.');
+    
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
     let isAppUnlocked = false;
     let order = [];
@@ -53,6 +53,101 @@ document.addEventListener('DOMContentLoaded', () => {
             categories: 0
         }
     };
+
+    // Elementos del DOM para el escáner
+    const scanBarcodeBtn = document.getElementById('scan-barcode-btn');
+    const scannerModal = document.getElementById('scanner-modal');
+    const closeScannerBtn = document.getElementById('close-scanner-btn');
+    const scanForInputBtn = document.getElementById('scan-for-input-btn');
+
+    // Variable de estado para el objetivo del escáner
+    let scannerTarget = null; 
+
+    // ===== ¡CORRECCIÓN AQUÍ! Se mueven las funciones antes de usarlas =====
+
+    // Función para iniciar el escáner
+    const startScanner = () => {
+        if (!scannerModal) return;
+        scannerModal.classList.remove('hidden');
+        
+        Quagga.init({
+            inputStream: {
+                name: "Live",
+                type: "LiveStream",
+                target: document.querySelector('#scanner-container'),
+                constraints: {
+                    facingMode: "environment" // Usa la cámara trasera
+                },
+            },
+            decoder: {
+                readers: ["ean_reader", "upc_reader", "code_128_reader"]
+            }
+        }, function(err) {
+            if (err) {
+                console.error(err);
+                showMessageModal('Error al iniciar la cámara. Asegúrate de dar los permisos necesarios.');
+                if (scannerModal) scannerModal.classList.add('hidden');
+                return;
+            }
+            Quagga.start();
+        });
+    };
+
+    // Función para detener el escáner
+    const stopScanner = () => {
+        if (typeof Quagga !== 'undefined') {
+            Quagga.stop();
+        }
+        if (scannerModal) scannerModal.classList.add('hidden');
+    };
+    
+    // =================================================================
+
+    // --- EVENT LISTENERS (Ahora las funciones ya existen) ---
+
+    // Botón para escanear y AÑADIR AL PEDIDO
+    if (scanBarcodeBtn) {
+        scanBarcodeBtn.addEventListener('click', () => {
+            scannerTarget = 'addToOrder';
+            startScanner();
+        });
+    }
+
+    // Botón para escanear y RELLENAR EL CAMPO
+    if (scanForInputBtn) {
+        scanForInputBtn.addEventListener('click', () => {
+            scannerTarget = document.getElementById('product-barcode');
+            startScanner();
+        });
+    }
+
+    // Botón para cerrar el modal
+    if (closeScannerBtn) {
+        closeScannerBtn.addEventListener('click', stopScanner);
+    }
+    
+    // --- LÓGICA DE DETECCIÓN (Se queda igual) ---
+
+    Quagga.onDetected(async (result) => {
+        const code = result.codeResult.code;
+        stopScanner(); // Detiene la cámara inmediatamente
+
+        if (scannerTarget === 'addToOrder') {
+            const menu = await loadDataWithCache(STORES.MENU);
+            const product = menu.find(p => p.barcode === code);
+
+            if (product) {
+                addItemToOrder(product);
+            } else {
+                showMessageModal(`Producto con código de barras "${code}" no encontrado.`);
+            }
+        } else if (scannerTarget && typeof scannerTarget.value !== 'undefined') {
+            scannerTarget.value = code;
+        }
+
+        scannerTarget = null;
+    });
+
     const loadDataWithCache = async (storeName, key = null, maxAge = 300000) => {
         const now = Date.now();
 
@@ -1483,6 +1578,10 @@ const saveProduct = async (e) => {
             saleType,
             bulkData, // Será null si es por unidad
             description: productDescriptionInput.value.trim(),
+            image: imagePreview.src,
+            categoryId: productCategorySelect.value,
+            //para que se guarden los codigos de barras
+            barcode: document.getElementById('product-barcode').value.trim(),
             image: imagePreview.src,
             categoryId: productCategorySelect.value
         };

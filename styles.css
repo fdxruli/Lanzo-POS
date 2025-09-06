@@ -505,6 +505,20 @@ textarea {
   border-color: var(--error-color);
 }
 
+/*estilos para el boton de scaner y el scaner*/
+.btn-scan {
+    background-color: var(--secondary-color);
+    color: white;
+    margin-bottom: var(--spacing-md);
+}
+.btn-scan:hover {
+    opacity: 0.9;
+}
+#scanner-container video {
+    width: 100%;
+    height: auto;
+}
+
 /* ===== SECCIÓN GESTIÓN DE PRODUCTOS ===== */
 .product-management-grid {
   display: grid;
@@ -589,6 +603,34 @@ textarea {
   background-color: rgba(239, 68, 68, 0.1);
   color: var(--error-color);
   border-color: var(--error-color);
+}
+
+/*estilos para el boton de scaner del campo de codigo de barras*/
+/* En styles.css, puedes añadir esto al final de la sección GESTIÓN DE PRODUCTOS */
+
+.input-with-button-container {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.input-with-button-container .form-input {
+    flex-grow: 1; /* El input tomará el espacio disponible */
+}
+
+.btn-scan-input {
+    flex-shrink: 0; /* Evita que el botón se encoja */
+    padding: var(--spacing-sm);
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-scan-input:hover {
+    background-color: var(--secondary-color);
 }
 
 .product-list-container {
@@ -1126,6 +1168,11 @@ textarea {
 #category-modal,
 #welcome-modal {
     z-index: 1500;
+}
+
+/*para que el modal de scaner nos aparezca encima de todo*/
+#scanner-modal {
+  z-index: 1600;
 }
 
 @keyframes modalFadeIn {

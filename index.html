@@ -82,8 +82,15 @@
             <div class="pos-grid">
                 <div class="pos-menu-container">
                     <h3 class="subtitle">Menú</h3>
-                    <div id="category-filters" class="category-filters" aria-label="Filtros de categorías">
-                        <!-- Las categorías se agregarán aquí dinámicamente -->
+                    <div id="category-filters" class="category-filters">
+                    </div>
+                    <button id="scan-barcode-btn" class="btn btn-scan">📷 Escanear Producto</button>
+                    <div id="scanner-modal" class="modal hidden">
+                        <div class="modal-content">
+                            <h2 class="modal-title">Escaneando...</h2>
+                            <div id="scanner-container" style="width: 100%; height: 300px;"></div>
+                            <button id="close-scanner-btn" class="btn btn-cancel">Cancelar</button>
+                        </div>
                     </div>
                     <div id="menu-items" class="menu-items-grid" aria-label="Elementos del menú"></div>
                 </div>
@@ -116,6 +123,15 @@
                         <div class="form-group">
                             <label class="form-label" for="product-name">Nombre</label>
                             <input class="form-input" id="product-name" type="text" required aria-required="true">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="product-barcode">Código de Barras (Opcional)</label>
+                            <div class="input-with-button-container">
+                                <input class="form-input" id="product-barcode" type="text"
+                                    placeholder="Escanea o introduce el código">
+                                <button type="button" id="scan-for-input-btn" class="btn-scan-input"
+                                    aria-label="Escanear código de barras">📷</button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="product-description">Descripción</label>
@@ -321,12 +337,13 @@
                     <div class="movement-history-container">
                         <h3 class="subtitle">Historial de Movimientos (Papelera)</h3>
                         <div id="empty-movements-message" class="empty-message">No hay elementos eliminados.</div>
-                        <div id="movement-history-list" class="movement-history-list" aria-label="Historial de movimientos">
-                            </div>
+                        <div id="movement-history-list" class="movement-history-list"
+                            aria-label="Historial de movimientos">
+                        </div>
                     </div>
-                    </div>
-            </div>
                 </div>
+            </div>
+            </div>
             </div>
             <div id="tips-content" class="tab-content">
                 <div class="news-container">
@@ -594,18 +611,19 @@
         <div class="modal-content">
             <h2 id="movement-details-title" class="modal-title">Detalles del Movimiento</h2>
             <div id="movement-details-content" class="movement-details-content">
-                </div>
+            </div>
             <button id="close-movement-details-btn" class="btn btn-modal" style="margin-top: 1rem;">Cerrar</button>
         </div>
     </div>
 
     <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
     <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js" defer></script>
     <script src="supabase-auth.js" defer></script>
     <!-- Cargar módulos primero, con defer para garantizar el orden de ejecución -->
-     <script type="module" src="utils.js" defer></script>
+    <script type="module" src="utils.js" defer></script>
     <script type="module" src="database.js" defer></script>
     <script type="module" src="donation-seccion.js" defer></script>
     <script type="module" src="dashboard.js" defer></script>
