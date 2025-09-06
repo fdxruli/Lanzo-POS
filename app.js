@@ -831,9 +831,9 @@ const renderMenu = async (filterCategoryId = null) => {
                 stockInfo = `<div class="stock-info no-stock-label">No llevado</div>`;
             }
             menuItemDiv.innerHTML = `
-                        <img src="${item.image || defaultPlaceholder}" alt="${item.name}" onerror="this.onerror=null;this.src='${defaultPlaceholder}';">
-                        <h3>${item.name}</h3>
-                        <p>$${item.price.toFixed(2)}</p>
+                        <img class="menu-item-image" src="${item.image || defaultPlaceholder}" alt="${item.name}" onerror="this.onerror=null;this.src='${defaultPlaceholder}';">
+                        <h3 class="menu-item-name">${item.name}</h3>
+                        <p class="menu-item-price">$${item.price.toFixed(2)}</p>
                         ${stockInfo}
                     `;
             // Permitir agregar si: no lleva control O (lleva control y tiene stock)
