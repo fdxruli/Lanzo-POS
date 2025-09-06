@@ -2033,7 +2033,19 @@ const initApp = async () => {
         ]);
         // Inicializar los módulos después de que las dependencias estén listas
         await renderCategories(); // Cargar categorías al inicio
-        initScannerModule({loadDataWithCache, addItemToOrder});
+        
+        // Función para inicializar el escáner de forma segura, esperando a que ZXing esté listo
+        const initializeScannerWhenReady = () => {
+            if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) {
+                console.log('ZXing library loaded, initializing scanner module.');
+                initScannerModule({ loadDataWithCache, addItemToOrder });
+            } else {
+                console.log('ZXing library not ready, waiting...');
+                setTimeout(initializeScannerWhenReady, 150); // Reintentar en 150ms
+            }
+        };
+        initializeScannerWhenReady();
+        
         initCustomersModule({
             saveData,
             loadData,
