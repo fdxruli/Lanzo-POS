@@ -1211,6 +1211,24 @@ textarea {
     margin-top: var(--spacing-md);
 }
 
+/* ===== ESTILOS PARA VALIDACIÓN DINÁMICA ===== */
+.form-help-text.validation-message {
+    font-size: 0.875rem;
+    margin-top: var(--spacing-xs);
+    font-weight: 500;
+    display: none; /* Oculto por defecto */
+}
+
+.form-help-text.validation-message.error {
+    color: var(--error-color);
+    display: block; /* Se muestra cuando hay error */
+}
+
+.form-input.invalid {
+    border-color: var(--error-color);
+    box-shadow: 0 0 0 1px var(--error-color);
+}
+
 /* ===== SECCIÓN CONFIGURACIÓN ===== */
 .company-form-container {
   background-color: var(--card-background-color);

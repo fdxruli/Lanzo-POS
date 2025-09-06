@@ -21,11 +21,50 @@ export function initCustomersModule(dependencies) {
     const totalAmount = document.getElementById('total-amount');
     const averagePurchase = document.getElementById('average-purchase');
 
+    // --- NUEVOS ELEMENTOS PARA VALIDACIÓN DINÁMICA ---
+    const customerPhoneInput = document.getElementById('customer-phone');
+    const phoneValidationMessage = document.getElementById('phone-validation-message');
+    const saveCustomerBtn = customerForm.querySelector('button[type="submit"]');
+
+
     // --- ESTADO DEL MÓDULO ---
     let customers = [];
     let editingCustomerId = null;
+    let isPhoneValid = true; // Nueva variable de estado
 
     // --- FUNCIONES ---
+
+    // ▼▼ FUNCIÓN DE VALIDACIÓN EN TIEMPO REAL (NUEVA) ▼▼
+    const validatePhoneNumber = () => {
+        const phone = customerPhoneInput.value.trim();
+        
+        if (!phone) { // Si el campo está vacío, limpiar todo
+            phoneValidationMessage.textContent = '';
+            phoneValidationMessage.classList.remove('error');
+            customerPhoneInput.classList.remove('invalid');
+            saveCustomerBtn.disabled = false;
+            isPhoneValid = true;
+            return;
+        }
+
+        const existingCustomer = customers.find(c => c.phone === phone);
+
+        if (existingCustomer && existingCustomer.id !== editingCustomerId) {
+            phoneValidationMessage.textContent = `Teléfono ya usado por: ${existingCustomer.name}`;
+            phoneValidationMessage.classList.add('error');
+            customerPhoneInput.classList.add('invalid');
+            saveCustomerBtn.disabled = true; // Deshabilita el botón de guardar
+            isPhoneValid = false;
+        } else {
+            phoneValidationMessage.textContent = '';
+            phoneValidationMessage.classList.remove('error');
+            customerPhoneInput.classList.remove('invalid');
+            saveCustomerBtn.disabled = false; // Habilita el botón
+            isPhoneValid = true;
+        }
+    };
+
+
     async function showPurchaseHistory(customerId) {
         const customer = customers.find(c => c.id === customerId);
         if (!customer) return;
@@ -79,19 +118,14 @@ export function initCustomersModule(dependencies) {
     }
 
     const renderCustomerList = (filteredCustomers = customers) => {
-        if (!customerList || !emptyCustomerMessage) return; // Asegurarse de que los elementos existan
+        if (!customerList || !emptyCustomerMessage) return; 
 
-        // 1. Limpiar la lista anterior
         customerList.innerHTML = '';
 
-        // 2. Comprobar si hay clientes DESPUÉS de filtrar
         if (filteredCustomers.length === 0) {
-            // Solo si no hay clientes, mostramos el mensaje
             emptyCustomerMessage.classList.remove('hidden');
         } else {
-            // Si SÍ hay clientes, nos aseguramos de que el mensaje esté oculto
             emptyCustomerMessage.classList.add('hidden');
-            // Y luego construimos la lista
             filteredCustomers.forEach(customer => {
                 const customerCard = document.createElement('div');
                 customerCard.className = 'customer-card';
@@ -111,12 +145,19 @@ export function initCustomersModule(dependencies) {
             });
         }
     };
-
+    
+    // ▼▼ FUNCIÓN DE GUARDADO MODIFICADA ▼▼
     const handleFormSubmit = async (e) => {
         e.preventDefault();
-        const saveButton = customerForm.querySelector('button[type="submit"]');
-        saveButton.disabled = true;
-        saveButton.textContent = 'Guardando...';
+        
+        // Se detiene si la validación en tiempo real encontró un error.
+        if (!isPhoneValid) {
+            showMessageModal('Por favor, corrige el número de teléfono antes de guardar.');
+            return;
+        }
+
+        saveCustomerBtn.disabled = true;
+        saveCustomerBtn.textContent = 'Guardando...';
 
         try {
             const customerData = {
@@ -130,23 +171,34 @@ export function initCustomersModule(dependencies) {
             resetCustomerForm();
             await loadAndRenderCustomers();
         } catch (error) {
-            // ...manejo de error...
+            console.error("Error al procesar el resultado del escaneo:", error);
+            showMessageModal("Ocurrió un error al procesar el código.");
         } finally {
-            // Este bloque se ejecuta siempre, haya error o no
-            saveButton.disabled = false;
-            saveButton.textContent = 'Guardar';
+            saveCustomerBtn.disabled = false;
+            saveCustomerBtn.textContent = 'Guardar';
         }
     };
+
     const resetCustomerForm = () => {
         editingCustomerId = null;
         customerForm.reset();
         document.getElementById('customer-form-title').textContent = 'Añadir Nuevo Cliente';
         cancelCustomerEditBtn.classList.add('hidden');
+        
+        // Limpiar estilos y mensajes de validación al resetear
+        phoneValidationMessage.textContent = '';
+        phoneValidationMessage.classList.remove('error');
+        customerPhoneInput.classList.remove('invalid');
+        saveCustomerBtn.disabled = false;
+        isPhoneValid = true;
     }
 
     // --- EVENT LISTENERS ---
 
     customerForm?.addEventListener('submit', handleFormSubmit);
+
+    // ▼▼ NUEVO EVENT LISTENER PARA VALIDACIÓN DINÁMICA ▼▼
+    customerPhoneInput?.addEventListener('input', validatePhoneNumber);
 
     customerSearchInput?.addEventListener('input', (e) => {
         const searchTerm = e.target.value.toLowerCase();
@@ -164,27 +216,26 @@ export function initCustomersModule(dependencies) {
         const customer = customers.find(c => c.id === customerId);
 
         if (button.classList.contains('btn-edit')) {
+            // Primero reseteamos por si había un error de validación
+            resetCustomerForm(); 
+            
             document.getElementById('customer-name').value = customer.name;
             document.getElementById('customer-phone').value = customer.phone;
             document.getElementById('customer-address').value = customer.address;
             document.getElementById('customer-form-title').textContent = `Editar: ${customer.name}`;
-            editingCustomerId = customerId;
+            editingCustomerId = customerId; // Establecemos el ID de edición
             cancelCustomerEditBtn.classList.remove('hidden');
             customerTabs.querySelector('[data-tab="add-customer"]').click();
+
         } else if (button.classList.contains('btn-delete')) {
             showMessageModal(`¿Estás seguro de que deseas eliminar a ${customer.name}? Se moverá a la papelera.`, async () => {
 
-                // Añade marca de tiempo
                 customer.deletedTimestamp = new Date().toISOString();
-
-                // Mueve el cliente a la tabla de eliminados
                 await saveData(STORES.DELETED_CUSTOMERS, customer);
-                // Elimina el cliente de la tabla principal
                 await deleteData(STORES.CUSTOMERS, customerId);
 
                 await loadAndRenderCustomers();
                 showMessageModal('Cliente movido a la papelera.');
-                // Actualiza el dashboard si existe
                 if (window.dashboard) window.dashboard.renderDashboard();
             });
         } else if (button.classList.contains('btn-history')) {
@@ -192,7 +243,6 @@ export function initCustomersModule(dependencies) {
         }
     });
 
-    //funcion para restauracion
     window.restoreCustomer = async (id) => {
         try {
             const customer = await loadData(STORES.DELETED_CUSTOMERS, id);
@@ -206,8 +256,7 @@ export function initCustomersModule(dependencies) {
             await saveData(STORES.CUSTOMERS, customer);
             await deleteData(STORES.DELETED_CUSTOMERS, id);
 
-            // La función `loadAndRenderCustomers` ya refresca la lista
-            document.dispatchEvent(new Event('customersUpdated')); // Disparamos un evento para que otras partes de la app sepan
+            document.dispatchEvent(new Event('customersUpdated'));
             showMessageModal(`Cliente "${customer.name}" restaurado.`);
 
         } catch (error) {

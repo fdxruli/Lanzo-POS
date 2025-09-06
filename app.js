@@ -2140,15 +2140,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         editProductForm(id);
                     } else if (button.classList.contains('delete-product-btn')) {
                         deleteProduct(id);
-                    }
-                    // ▼▼▼ AÑADE ESTE ELSE IF ▼▼▼
-                    else if (button.classList.contains('btn-toggle-status')) {
+                    } else if (button.classList.contains('btn-toggle-status')) {
                         try {
                             const product = await loadData(STORES.MENU, id);
                             if (product) {
                                 // Invertir el estado (si es undefined o true, se vuelve false)
                                 product.isActive = !(product.isActive !== false);
                                 await saveData(STORES.MENU, product);
+
+                                // --- INICIO DE LA CORRECCIÓN ---
+                                // Se añade esta línea para actualizar la caché con el nuevo estado del producto.
+                                updateMenuCache(product);
+                                // --- FIN DE LA CORRECCIÓN ---
+
                                 await renderProductManagement(); // Refrescar la lista de productos
                                 await renderMenu(); // Refrescar el punto de venta
                             }
