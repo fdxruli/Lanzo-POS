@@ -616,17 +616,34 @@
 
     <!-- Modal del Escáner de Códigos de Barras -->
     <div id="scanner-modal" class="modal hidden">
-        <div class="modal-content">
-            <h2 class="modal-title">Escaneando...</h2>
-            <div id="scanner-controls" class="form-group" style="display: none; margin-bottom: 1rem;">
-                <label for="camera-select" class="form-label">Seleccionar cámara:</label>
-                <select id="camera-select" class="form-input"></select>
+        <div class="modal-content scanner-modal-content">
+            <h2 class="modal-title">Escanear Productos</h2>
+            <div class="scanner-main-container">
+                <div class="scanner-video-container">
+                    <div id="scanner-controls" class="form-group" style="display: none; margin-bottom: 1rem;">
+                        <label for="camera-select" class="form-label">Seleccionar cámara:</label>
+                        <select id="camera-select" class="form-input"></select>
+                    </div>
+                    <div id="scanner-container">
+                        <video id="scanner-video"></video>
+                        <div id="scanner-overlay"></div>
+                    </div>
+                </div>
+                <div class="scanner-results-container">
+                    <h3 class="subtitle">Productos Escaneados</h3>
+                    <div id="scanned-items-list" class="scanned-items-list">
+                        <p class="empty-message">Aún no hay productos escaneados.</p>
+                    </div>
+                    <div class="scanner-total-container">
+                        <span class="total-label">Total Escaneado:</span>
+                        <span id="scanner-total" class="total-amount">$0.00</span>
+                    </div>
+                </div>
             </div>
-            <div id="scanner-container">
-                <video id="scanner-video"></video>
-                <div id="scanner-overlay"></div>
+            <div class="scanner-actions">
+                <button id="confirm-scan-btn" class="btn btn-process">Confirmar y Agregar</button>
+                <button id="close-scanner-btn" class="btn btn-cancel">Cancelar</button>
             </div>
-            <button id="close-scanner-btn" class="btn btn-cancel" style="margin-top: 1rem;">Cancelar</button>
         </div>
     </div>
 

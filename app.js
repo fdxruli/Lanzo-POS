@@ -2040,7 +2040,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         });
-    }
+    };
+
+    const addMultipleItemsToOrder = (itemsToAdd) => {
+        itemsToAdd.forEach(itemToAdd => {
+            const existingItem = order.find(orderItem => orderItem.id === itemToAdd.id);
+            if (existingItem) {
+                existingItem.quantity += itemToAdd.quantity;
+            } else {
+                // Aseguramos que solo se añadan las propiedades necesarias
+                order.push({
+                    id: itemToAdd.id,
+                    name: itemToAdd.name,
+                    price: itemToAdd.price,
+                    cost: itemToAdd.cost,
+                    image: itemToAdd.image,
+                    trackStock: itemToAdd.trackStock,
+                    quantity: itemToAdd.quantity
+                });
+            }
+        });
+        updateOrderDisplay();
+    };
     // --- INICIALIZACIÓN DE LA APLICACIÓN ---
     const initApp = async () => {
         try {
@@ -2059,10 +2080,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const initializeScannerWhenReady = () => {
                 if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) {
                     console.log('ZXing library loaded, initializing scanner module.');
-                    initScannerModule({ loadDataWithCache, addItemToOrder });
+                    // Pasamos la nueva función como dependencia
+                    initScannerModule({
+                        loadDataWithCache,
+                        addItemToOrder,
+                        addMultipleItemsToOrder // <--- NUEVA DEPENDENCIA
+                    });
                 } else {
                     console.log('ZXing library not ready, waiting...');
-                    setTimeout(initializeScannerWhenReady, 150); // Reintentar en 150ms
+                    setTimeout(initializeScannerWhenReady, 150);
                 }
             };
             initializeScannerWhenReady();

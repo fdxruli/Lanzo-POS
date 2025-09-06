@@ -569,7 +569,7 @@ textarea {
 
 /* Crea el texto de ayuda */
 #scanner-overlay::after {
-    content: 'Coloca el código de barras aquí';
+    content: 'Código aqui';
     position: absolute;
     /* Centrado horizontal */
     left: 50%;
@@ -582,6 +582,254 @@ textarea {
     border-radius: 4px;
     font-size: 0.9rem;
     font-weight: 500;
+}
+
+/* ===== ESTILOS ADICIONALES PARA EL MODAL DEL ESCÁNER MEJORADO ===== */
+
+/* Ajustar el tamaño del modal para dar más espacio */
+.modal-content.scanner-modal-content {
+    max-width: 800px; /* Más ancho */
+    width: 95%;
+}
+
+/* Contenedor principal para dividir video y resultados */
+.scanner-main-container {
+    display: flex;
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+}
+
+.scanner-video-container {
+    flex: 1;
+    min-width: 0;
+}
+
+.scanner-results-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--light-background);
+    border-radius: var(--border-radius-sm);
+    padding: var(--spacing-md);
+}
+
+/* Lista de productos escaneados */
+.scanned-items-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    max-height: 250px; /* Altura máxima para la lista */
+    margin-bottom: var(--spacing-md);
+    border-top: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+    padding: var(--spacing-sm) 0;
+}
+
+.scanned-item {
+    display: grid;
+    grid-template-columns: 2fr 1.5fr auto auto; /* Columnas para nombre, controles, precio y eliminar */
+    gap: var(--spacing-sm);
+    align-items: center;
+    padding: var(--spacing-sm);
+    border-bottom: 1px solid #e5e7eb;
+}
+.scanned-item:last-child {
+    border-bottom: none;
+}
+
+.scanned-item-name {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.scanned-item-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-xs);
+}
+
+.scanned-item-price {
+    font-weight: 600;
+    color: var(--primary-color);
+    text-align: right;
+}
+
+/* Contenedor del total y botones de acción */
+.scanner-total-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: var(--spacing-md);
+    border-top: 2px solid #e5e7eb;
+}
+
+.scanner-actions {
+    display: flex;
+    gap: var(--spacing-md);
+    justify-content: flex-end; /* Alinea los botones a la derecha */
+}
+.scanner-actions .btn {
+    width: auto; /* Ancho automático para los botones */
+}
+
+
+/* ===== ESTILOS PARA EL ESCÁNER CONDICIONAL ===== */
+
+/* Por defecto, los elementos del modo POS (carrito) están ocultos */
+.modal-content.simple-scan-mode .scanner-results-container,
+.modal-content.simple-scan-mode .scanner-actions .btn-process {
+    display: none;
+}
+
+/* En modo simple, el contenedor de video ocupa todo el espacio */
+.modal-content.simple-scan-mode .scanner-main-container {
+    flex-direction: column;
+}
+
+/* En modo simple, el botón de cancelar es la única acción visible */
+.modal-content.simple-scan-mode .scanner-actions {
+    justify-content: center;
+}
+
+/* Cuando estamos en modo POS, mostramos los elementos del carrito */
+.modal-content.pos-scan-mode .scanner-results-container,
+.modal-content.pos-scan-mode .scanner-actions .btn-process {
+    display: flex; /* O 'block' según el elemento */
+}
+
+/* Y aplicamos el layout de dos columnas */
+.modal-content.pos-scan-mode .scanner-main-container {
+    display: flex;
+    flex-direction: row;
+    gap: var(--spacing-lg);
+}
+.modal-content.pos-scan-mode .scanner-actions {
+    justify-content: flex-end;
+}
+
+/* --- GENERAL MOBILE STYLES FOR SCANNER MODAL --- */
+@media (max-width: 768px) {
+    .modal-content.scanner-modal-content {
+        max-width: 95%; /* Ajuste a casi el ancho completo del móvil */
+        width: auto;
+        padding: var(--spacing-md);
+    }
+
+    .modal-title {
+        text-align: center;
+        margin-bottom: var(--spacing-md);
+    }
+
+    /* Ajustes para el contenedor principal en móvil */
+    .scanner-main-container {
+        flex-direction: column; /* Apila los elementos verticalmente */
+        gap: var(--spacing-md);
+    }
+
+    .scanner-video-container {
+        width: 100%; /* El video ocupa todo el ancho disponible */
+        height: 200px; /* Altura fija para el video en móvil */
+        /* Asegurarse que el video se adapte */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden; /* Recorta si es necesario */
+        position: relative;
+        border-radius: var(--border-radius-sm);
+        background-color: black;
+    }
+
+    #scanner-video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* Cubre el área manteniendo la relación de aspecto */
+    }
+
+    #scanner-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(circle, transparent 60%, rgba(0, 0, 0, 0.5) 75%);
+        pointer-events: none; /* Permite interactuar con el video debajo */
+    }
+
+
+    .scanner-results-container {
+        width: 100%; /* Ocupa todo el ancho */
+        max-height: 180px; /* Limitar la altura de los resultados */
+        padding: var(--spacing-sm);
+    }
+
+    .scanned-items-list {
+        max-height: 100px; /* Altura más compacta para la lista de productos */
+        margin-bottom: var(--spacing-sm);
+        padding: var(--spacing-xs) 0;
+    }
+
+    .scanned-item {
+        grid-template-columns: 1fr auto auto; /* Nombre, controles/precio, eliminar */
+        gap: var(--spacing-xs);
+        padding: var(--spacing-xs);
+        font-size: var(--font-size-sm); /* Tamaño de fuente más pequeño */
+    }
+
+    .scanned-item-name {
+        font-size: var(--font-size-sm);
+        white-space: normal; /* Permite que el nombre se envuelva */
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-height: 2.4em; /* Mostrar hasta 2 líneas */
+        line-height: 1.2em;
+    }
+
+    .scanned-item-controls {
+        flex-shrink: 0; /* Evita que los botones se encojan */
+        min-width: 80px; /* Ancho mínimo para que los botones sean usables */
+    }
+
+    .quantity-btn {
+        width: 28px; /* Botones de cantidad más pequeños */
+        height: 28px;
+        font-size: var(--font-size-sm);
+        padding: 0;
+    }
+
+    .quantity-value {
+        min-width: 20px; /* Asegura espacio para la cantidad */
+        text-align: center;
+    }
+
+    .scanned-item-price {
+        font-size: var(--font-size-sm);
+        text-align: right;
+    }
+
+    .remove-item-btn {
+        width: 28px; /* Botón de eliminar más pequeño */
+        height: 28px;
+        font-size: var(--font-size-sm);
+        padding: 0;
+    }
+
+    .scanner-total-container {
+        padding-top: var(--spacing-sm);
+        font-size: var(--font-size-md);
+    }
+
+    .scanner-actions {
+        flex-direction: column-reverse; /* Pone "Cancelar" arriba de "Confirmar" */
+        gap: var(--spacing-sm);
+        width: 100%;
+    }
+
+    .scanner-actions .btn {
+        width: 100%; /* Los botones ocupan todo el ancho */
+        padding: var(--spacing-sm);
+    }
 }
 
 /* ===== SECCIÓN GESTIÓN DE PRODUCTOS ===== */
@@ -1679,6 +1927,7 @@ textarea {
   .donation-buttons-container {
     flex-direction: column;
   }
+  
 }
 
 @media (max-width: 480px) {
