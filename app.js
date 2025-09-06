@@ -54,88 +54,65 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Elementos del DOM para el escáner
+    // --- LÓGICA DEL ESCÁNER (ZXing) ---
     const scanBarcodeBtn = document.getElementById('scan-barcode-btn');
     const scannerModal = document.getElementById('scanner-modal');
     const closeScannerBtn = document.getElementById('close-scanner-btn');
     const scanForInputBtn = document.getElementById('scan-for-input-btn');
+    const scannerVideo = document.getElementById('scanner-video');
+    let scannerTarget = null;
+    let codeReader = null;
+    let selectedDeviceId = null;
 
-    // Variable de estado para el objetivo del escáner
-    let scannerTarget = null; 
+    const startScanner = async () => {
+        if (!scannerModal || !scannerVideo) return;
 
-    // ===== ¡CORRECCIÓN AQUÍ! Se mueven las funciones antes de usarlas =====
+        codeReader = new ZXing.BrowserMultiFormatReader();
+        try {
+            const videoInputDevices = await codeReader.listVideoInputDevices();
+            if (videoInputDevices.length > 0) {
+                // Preferir la cámara trasera ('environment')
+                const rearCamera = videoInputDevices.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('rear') || device.label.toLowerCase().includes('trasera'));
+                selectedDeviceId = rearCamera ? rearCamera.deviceId : videoInputDevices[0].deviceId;
 
-    // Función para iniciar el escáner
-    const startScanner = () => {
-        if (!scannerModal) return;
-        scannerModal.classList.remove('hidden');
-        
-        Quagga.init({
-            inputStream: {
-                name: "Live",
-                type: "LiveStream",
-                target: document.querySelector('#scanner-container'),
-                constraints: {
-                    facingMode: "environment" // Usa la cámara trasera
-                },
-            },
-            decoder: {
-                readers: ["ean_reader", "upc_reader", "code_128_reader"]
+                scannerModal.classList.remove('hidden');
+
+                codeReader.decodeFromVideoDevice(selectedDeviceId, 'scanner-video', (result, err) => {
+                    if (result) {
+                        handleScanResult(result.getText());
+                    }
+                    if (err && !(err instanceof ZXing.NotFoundException)) {
+                        console.error('Error de escaneo:', err);
+                        showMessageModal('Ocurrió un error durante el escaneo.');
+                        stopScanner();
+                    }
+                });
+            } else {
+                showMessageModal('No se encontraron cámaras en este dispositivo.');
             }
-        }, function(err) {
-            if (err) {
-                console.error(err);
-                showMessageModal('Error al iniciar la cámara. Asegúrate de dar los permisos necesarios.');
-                if (scannerModal) scannerModal.classList.add('hidden');
-                return;
-            }
-            Quagga.start();
-        });
-    };
-
-    // Función para detener el escáner
-    const stopScanner = () => {
-        if (typeof Quagga !== 'undefined') {
-            Quagga.stop();
+        } catch (error) {
+            console.error('Error al iniciar el escáner:', error);
+            showMessageModal('No se pudo acceder a la cámara. Asegúrate de haber dado los permisos necesarios.');
         }
-        if (scannerModal) scannerModal.classList.add('hidden');
     };
-    
-    // =================================================================
 
-    // --- EVENT LISTENERS (Ahora las funciones ya existen) ---
+    const stopScanner = () => {
+        if (codeReader) {
+            codeReader.reset(); // Detiene el stream de la cámara
+        }
+        if (scannerModal) {
+            scannerModal.classList.add('hidden');
+        }
+        codeReader = null;
+        scannerTarget = null;
+    };
 
-    // Botón para escanear y AÑADIR AL PEDIDO
-    if (scanBarcodeBtn) {
-        scanBarcodeBtn.addEventListener('click', () => {
-            scannerTarget = 'addToOrder';
-            startScanner();
-        });
-    }
-
-    // Botón para escanear y RELLENAR EL CAMPO
-    if (scanForInputBtn) {
-        scanForInputBtn.addEventListener('click', () => {
-            scannerTarget = document.getElementById('product-barcode');
-            startScanner();
-        });
-    }
-
-    // Botón para cerrar el modal
-    if (closeScannerBtn) {
-        closeScannerBtn.addEventListener('click', stopScanner);
-    }
-    
-    // --- LÓGICA DE DETECCIÓN (Se queda igual) ---
-
-    Quagga.onDetected(async (result) => {
-        const code = result.codeResult.code;
+    const handleScanResult = async (code) => {
         stopScanner(); // Detiene la cámara inmediatamente
 
         if (scannerTarget === 'addToOrder') {
             const menu = await loadDataWithCache(STORES.MENU);
             const product = menu.find(p => p.barcode === code);
-
             if (product) {
                 addItemToOrder(product);
             } else {
@@ -144,9 +121,24 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (scannerTarget && typeof scannerTarget.value !== 'undefined') {
             scannerTarget.value = code;
         }
+    };
 
-        scannerTarget = null;
-    });
+    // --- EVENT LISTENERS del Escáner ---
+    if (scanBarcodeBtn) {
+        scanBarcodeBtn.addEventListener('click', () => {
+            scannerTarget = 'addToOrder';
+            startScanner();
+        });
+    }
+    if (scanForInputBtn) {
+        scanForInputBtn.addEventListener('click', () => {
+            scannerTarget = document.getElementById('product-barcode');
+            startScanner();
+        });
+    }
+    if (closeScannerBtn) {
+        closeScannerBtn.addEventListener('click', stopScanner);
+    }
 
     const loadDataWithCache = async (storeName, key = null, maxAge = 300000) => {
         const now = Date.now();
