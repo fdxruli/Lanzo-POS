@@ -197,25 +197,26 @@ textarea {
 }
 
 .mobile-menu {
-  display: none; /* Hidden by default */
+  display: none;
+  /* Hidden by default */
 }
 
 .backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0,0.5);
-    z-index: 1005;
-    opacity: 0;
-    transition: opacity 0.3s ease-in-out;
-    pointer-events: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1005;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+  pointer-events: none;
 }
 
 .backdrop.open {
-    opacity: 1;
-    pointer-events: auto;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .mobile-nav-btn {
@@ -293,7 +294,8 @@ textarea {
   border-radius: var(--border-radius);
   padding: var(--spacing-lg);
   box-shadow: var(--box-shadow);
-  min-width: 0; /* Fix for flexbox overflow in a grid container */
+  min-width: 0;
+  /* Fix for flexbox overflow in a grid container */
 }
 
 .pos-menu-container .subtitle {
@@ -364,9 +366,12 @@ textarea {
 }
 
 .menu-item-image {
-  width: 100%; /* La imagen ocupará todo el ancho de su contenedor */
-  height: 120px; /* Dale una altura fija para unificar todas las tarjetas */
-  object-fit: cover; /* ¡Esta es la clave! */
+  width: 100%;
+  /* La imagen ocupará todo el ancho de su contenedor */
+  height: 120px;
+  /* Dale una altura fija para unificar todas las tarjetas */
+  object-fit: cover;
+  /* ¡Esta es la clave! */
   border-radius: var(--border-radius-sm);
   margin-bottom: var(--spacing-sm);
 }
@@ -507,171 +512,181 @@ textarea {
 
 /*estilos para el boton de scaner y el scaner*/
 .btn-scan {
-    background-color: var(--secondary-color);
-    color: white;
-    margin-bottom: var(--spacing-md);
+  background-color: var(--secondary-color);
+  color: white;
+  margin-bottom: var(--spacing-md);
 }
+
 .btn-scan:hover {
-    opacity: 0.9;
+  opacity: 0.9;
 }
+
 #scanner-container video {
-    width: 100%;
-    height: auto;
+  width: 100%;
+  height: auto;
 }
 
 /* ===== ESTILOS PARA EL OVERLAY DEL ESCÁNER (VERSIÓN CORREGIDA) ===== */
 #scanner-container {
-    position: relative;
-    width: 100%;
-    /* Proporción para estabilizar el video */
-    aspect-ratio: 16 / 9;
-    background-color: #000;
-    border-radius: var(--border-radius-sm);
-    overflow: hidden; /* Muy importante */
+  position: relative;
+  width: 100%;
+  /* Proporción para estabilizar el video */
+  aspect-ratio: 16 / 9;
+  background-color: #000;
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+  /* Muy importante */
 }
 
 #scanner-video {
-    /* Hacemos que el video llene el contenedor */
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
+  /* Hacemos que el video llene el contenedor */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 #scanner-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 10;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
 }
 
 /* Crea el recuadro verde y el fondo oscuro */
 #scanner-overlay::before {
-    content: '';
-    position: absolute;
-    /* Centrado perfecto */
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    /* Tamaño del área de escaneo */
-    width: 85%;
-    height: 50%;
-    /* Estilo del recuadro */
-    border: 3px solid #10b981;
-    border-radius: var(--border-radius);
-    /* Efecto de "corte" para el fondo oscuro */
-    box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.6);
+  content: '';
+  position: absolute;
+  /* Centrado perfecto */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* Tamaño del área de escaneo */
+  width: 85%;
+  height: 50%;
+  /* Estilo del recuadro */
+  border: 3px solid #10b981;
+  border-radius: var(--border-radius);
+  /* Efecto de "corte" para el fondo oscuro */
+  box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.6);
 }
 
 /* Crea el texto de ayuda */
 #scanner-overlay::after {
-    content: 'Código aqui';
-    position: absolute;
-    /* Centrado horizontal */
-    left: 50%;
-    transform: translateX(-50%);
-    /* Posición sobre el recuadro */
-    top: 15%; 
-    background: rgba(0, 0, 0, 0.75);
-    color: white;
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    font-weight: 500;
+  content: 'Código aqui';
+  position: absolute;
+  /* Centrado horizontal */
+  left: 50%;
+  transform: translateX(-50%);
+  /* Posición sobre el recuadro */
+  top: 15%;
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 500;
 }
 
 /* ===== ESTILOS ADICIONALES PARA EL MODAL DEL ESCÁNER MEJORADO ===== */
 
 /* Ajustar el tamaño del modal para dar más espacio */
 .modal-content.scanner-modal-content {
-    max-width: 800px; /* Más ancho */
-    width: 95%;
+  max-width: 800px;
+  /* Más ancho */
+  width: 95%;
 }
 
 /* Contenedor principal para dividir video y resultados */
 .scanner-main-container {
-    display: flex;
-    gap: var(--spacing-lg);
-    margin-bottom: var(--spacing-lg);
+  display: flex;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
 }
 
 .scanner-video-container {
-    flex: 1;
-    min-width: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .scanner-results-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background-color: var(--light-background);
-    border-radius: var(--border-radius-sm);
-    padding: var(--spacing-md);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
 }
 
 /* Lista de productos escaneados */
 .scanned-items-list {
-    flex-grow: 1;
-    overflow-y: auto;
-    max-height: 250px; /* Altura máxima para la lista */
-    margin-bottom: var(--spacing-md);
-    border-top: 1px solid #e5e7eb;
-    border-bottom: 1px solid #e5e7eb;
-    padding: var(--spacing-sm) 0;
+  flex-grow: 1;
+  overflow-y: auto;
+  max-height: 250px;
+  /* Altura máxima para la lista */
+  margin-bottom: var(--spacing-md);
+  border-top: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  padding: var(--spacing-sm) 0;
 }
 
 .scanned-item {
-    display: grid;
-    grid-template-columns: 2fr 1.5fr auto auto; /* Columnas para nombre, controles, precio y eliminar */
-    gap: var(--spacing-sm);
-    align-items: center;
-    padding: var(--spacing-sm);
-    border-bottom: 1px solid #e5e7eb;
+  display: grid;
+  grid-template-columns: 2fr 1.5fr auto auto;
+  /* Columnas para nombre, controles, precio y eliminar */
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid #e5e7eb;
 }
+
 .scanned-item:last-child {
-    border-bottom: none;
+  border-bottom: none;
 }
 
 .scanned-item-name {
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .scanned-item-controls {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
 }
 
 .scanned-item-price {
-    font-weight: 600;
-    color: var(--primary-color);
-    text-align: right;
+  font-weight: 600;
+  color: var(--primary-color);
+  text-align: right;
 }
 
 /* Contenedor del total y botones de acción */
 .scanner-total-container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-top: var(--spacing-md);
-    border-top: 2px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--spacing-md);
+  border-top: 2px solid #e5e7eb;
 }
 
 .scanner-actions {
-    display: flex;
-    gap: var(--spacing-md);
-    justify-content: flex-end; /* Alinea los botones a la derecha */
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+  /* Alinea los botones a la derecha */
 }
+
 .scanner-actions .btn {
-    width: auto; /* Ancho automático para los botones */
+  width: auto;
+  /* Ancho automático para los botones */
 }
 
 
@@ -680,156 +695,182 @@ textarea {
 /* Por defecto, los elementos del modo POS (carrito) están ocultos */
 .modal-content.simple-scan-mode .scanner-results-container,
 .modal-content.simple-scan-mode .scanner-actions .btn-process {
-    display: none;
+  display: none;
 }
 
 /* En modo simple, el contenedor de video ocupa todo el espacio */
 .modal-content.simple-scan-mode .scanner-main-container {
-    flex-direction: column;
+  flex-direction: column;
 }
 
 /* En modo simple, el botón de cancelar es la única acción visible */
 .modal-content.simple-scan-mode .scanner-actions {
-    justify-content: center;
+  justify-content: center;
 }
 
 /* Cuando estamos en modo POS, mostramos los elementos del carrito */
 .modal-content.pos-scan-mode .scanner-results-container,
 .modal-content.pos-scan-mode .scanner-actions .btn-process {
-    display: flex; /* O 'block' según el elemento */
+  display: flex;
+  /* O 'block' según el elemento */
 }
 
 /* Y aplicamos el layout de dos columnas */
 .modal-content.pos-scan-mode .scanner-main-container {
-    display: flex;
-    flex-direction: row;
-    gap: var(--spacing-lg);
+  display: flex;
+  flex-direction: row;
+  gap: var(--spacing-lg);
 }
+
 .modal-content.pos-scan-mode .scanner-actions {
-    justify-content: flex-end;
+  justify-content: flex-end;
 }
 
 /* --- GENERAL MOBILE STYLES FOR SCANNER MODAL --- */
 @media (max-width: 768px) {
-    .modal-content.scanner-modal-content {
-        max-width: 95%; /* Ajuste a casi el ancho completo del móvil */
-        width: auto;
-        padding: var(--spacing-md);
-    }
+  .modal-content.scanner-modal-content {
+    max-width: 95%;
+    /* Ajuste a casi el ancho completo del móvil */
+    width: auto;
+    padding: var(--spacing-md);
+  }
 
-    .modal-title {
-        text-align: center;
-        margin-bottom: var(--spacing-md);
-    }
+  .modal-title {
+    text-align: center;
+    margin-bottom: var(--spacing-md);
+  }
 
-    /* Ajustes para el contenedor principal en móvil */
-    .scanner-main-container {
-        flex-direction: column; /* Apila los elementos verticalmente */
-        gap: var(--spacing-md);
-    }
+  /* Ajustes para el contenedor principal en móvil */
+  .scanner-main-container {
+    flex-direction: column !important;
+    /* Apila los elementos verticalmente SIEMPRE en móvil */
+    gap: var(--spacing-md);
+  }
 
-    .scanner-video-container {
-        width: 100%; /* El video ocupa todo el ancho disponible */
-        height: 200px; /* Altura fija para el video en móvil */
-        /* Asegurarse que el video se adapte */
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        overflow: hidden; /* Recorta si es necesario */
-        position: relative;
-        border-radius: var(--border-radius-sm);
-        background-color: black;
-    }
+  .scanner-video-container {
+    width: 100%;
+    /* El video ocupa todo el ancho disponible */
+    height: 200px;
+    /* Altura fija para el video en móvil */
+    /* Asegurarse que el video se adapte */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    /* Recorta si es necesario */
+    position: relative;
+    border-radius: var(--border-radius-sm);
+    background-color: black;
+  }
 
-    #scanner-video {
-        width: 100%;
-        height: 100%;
-        object-fit: cover; /* Cubre el área manteniendo la relación de aspecto */
-    }
+  #scanner-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* Cubre el área manteniendo la relación de aspecto */
+  }
 
-    #scanner-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: radial-gradient(circle, transparent 60%, rgba(0, 0, 0, 0.5) 75%);
-        pointer-events: none; /* Permite interactuar con el video debajo */
-    }
+  #scanner-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, transparent 60%, rgba(0, 0, 0, 0.5) 75%);
+    pointer-events: none;
+    /* Permite interactuar con el video debajo */
+  }
 
 
-    .scanner-results-container {
-        width: 100%; /* Ocupa todo el ancho */
-        max-height: 180px; /* Limitar la altura de los resultados */
-        padding: var(--spacing-sm);
-    }
+  .scanner-results-container {
+    width: 100%;
+    /* Ocupa todo el ancho */
+    max-height: 180px;
+    /* Limitar la altura de los resultados */
+    padding: var(--spacing-sm);
+  }
 
-    .scanned-items-list {
-        max-height: 100px; /* Altura más compacta para la lista de productos */
-        margin-bottom: var(--spacing-sm);
-        padding: var(--spacing-xs) 0;
-    }
+  .scanned-items-list {
+    max-height: 100px;
+    /* Altura más compacta para la lista de productos */
+    margin-bottom: var(--spacing-sm);
+    padding: var(--spacing-xs) 0;
+  }
 
-    .scanned-item {
-        grid-template-columns: 1fr auto auto; /* Nombre, controles/precio, eliminar */
-        gap: var(--spacing-xs);
-        padding: var(--spacing-xs);
-        font-size: var(--font-size-sm); /* Tamaño de fuente más pequeño */
-    }
+  .scanned-item {
+    grid-template-columns: 1fr auto auto;
+    /* Nombre, controles/precio, eliminar */
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs);
+    font-size: var(--font-size-sm);
+    /* Tamaño de fuente más pequeño */
+  }
 
-    .scanned-item-name {
-        font-size: var(--font-size-sm);
-        white-space: normal; /* Permite que el nombre se envuelva */
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-height: 2.4em; /* Mostrar hasta 2 líneas */
-        line-height: 1.2em;
-    }
+  .scanned-item-name {
+    font-size: var(--font-size-sm);
+    white-space: normal;
+    /* Permite que el nombre se envuelva */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-height: 2.4em;
+    /* Mostrar hasta 2 líneas */
+    line-height: 1.2em;
+  }
 
-    .scanned-item-controls {
-        flex-shrink: 0; /* Evita que los botones se encojan */
-        min-width: 80px; /* Ancho mínimo para que los botones sean usables */
-    }
+  .scanned-item-controls {
+    flex-shrink: 0;
+    /* Evita que los botones se encojan */
+    min-width: 80px;
+    /* Ancho mínimo para que los botones sean usables */
+  }
 
-    .quantity-btn {
-        width: 28px; /* Botones de cantidad más pequeños */
-        height: 28px;
-        font-size: var(--font-size-sm);
-        padding: 0;
-    }
+  .quantity-btn {
+    width: 28px;
+    /* Botones de cantidad más pequeños */
+    height: 28px;
+    font-size: var(--font-size-sm);
+    padding: 0;
+  }
 
-    .quantity-value {
-        min-width: 20px; /* Asegura espacio para la cantidad */
-        text-align: center;
-    }
+  .quantity-value {
+    min-width: 20px;
+    /* Asegura espacio para la cantidad */
+    text-align: center;
+  }
 
-    .scanned-item-price {
-        font-size: var(--font-size-sm);
-        text-align: right;
-    }
+  .scanned-item-price {
+    font-size: var(--font-size-sm);
+    text-align: right;
+  }
 
-    .remove-item-btn {
-        width: 28px; /* Botón de eliminar más pequeño */
-        height: 28px;
-        font-size: var(--font-size-sm);
-        padding: 0;
-    }
+  .remove-item-btn {
+    width: 28px;
+    /* Botón de eliminar más pequeño */
+    height: 28px;
+    font-size: var(--font-size-sm);
+    padding: 0;
+  }
 
-    .scanner-total-container {
-        padding-top: var(--spacing-sm);
-        font-size: var(--font-size-md);
-    }
+  .scanner-total-container {
+    padding-top: var(--spacing-sm);
+    font-size: var(--font-size-md);
+  }
 
-    .scanner-actions {
-        flex-direction: column-reverse; /* Pone "Cancelar" arriba de "Confirmar" */
-        gap: var(--spacing-sm);
-        width: 100%;
-    }
+  .scanner-actions {
+    flex-direction: column;
+    /* Pone "Cancelar" arriba de "Confirmar" */
+    gap: var(--spacing-sm);
+    width: 100%;
+  }
 
-    .scanner-actions .btn {
-        width: 100%; /* Los botones ocupan todo el ancho */
-        padding: var(--spacing-sm);
-    }
+  .scanner-actions .btn {
+    width: 100%;
+    /* Los botones ocupan todo el ancho */
+    padding: var(--spacing-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 /* ===== SECCIÓN GESTIÓN DE PRODUCTOS ===== */
@@ -920,28 +961,30 @@ textarea {
 
 /*estilos para el boton de scaner del campo de codigo de barras*/
 .input-with-button-container {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
 
 .input-with-button-container .form-input {
-    flex-grow: 1; /* El input tomará el espacio disponible */
+  flex-grow: 1;
+  /* El input tomará el espacio disponible */
 }
 
 .btn-scan-input {
-    flex-shrink: 0; /* Evita que el botón se encoja */
-    padding: var(--spacing-sm);
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: var(--border-radius-sm);
-    cursor: pointer;
-    transition: var(--transition);
+  flex-shrink: 0;
+  /* Evita que el botón se encoja */
+  padding: var(--spacing-sm);
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
 }
 
 .btn-scan-input:hover {
-    background-color: var(--secondary-color);
+  background-color: var(--secondary-color);
 }
 
 .product-list-container {
@@ -1001,143 +1044,149 @@ textarea {
 
 /* ===== ESTILOS MEJORADOS PARA GESTIÓN DE PRODUCTOS ===== */
 .product-item {
-    position: relative;
-    background-color: var(--card-background-color);
-    border-radius: var(--border-radius);
-    padding: var(--spacing-md);
-    box-shadow: var(--box-shadow);
-    transition: var(--transition);
-    display: flex;
-    flex-direction: column;
+  position: relative;
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-md);
+  box-shadow: var(--box-shadow);
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
 }
 
 .product-item:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--box-shadow-lg);
+  transform: translateY(-3px);
+  box-shadow: var(--box-shadow-lg);
 }
 
 .product-status-badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    padding: 5px 10px;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: white;
-    z-index: 2;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+  z-index: 2;
 }
 
 .product-status-badge.active {
-    background-color: var(--success-color);
+  background-color: var(--success-color);
 }
 
 .product-status-badge.inactive {
-    background-color: var(--text-light);
+  background-color: var(--text-light);
 }
 
 .product-item-info {
-    display: flex;
-    gap: var(--spacing-md);
-    align-items: center;
-    margin-bottom: var(--spacing-md);
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  margin-bottom: var(--spacing-md);
 }
 
 .product-item-info img {
-    width: 80px;
-    height: 80px;
-    border-radius: var(--border-radius-sm);
-    object-fit: cover;
-    flex-shrink: 0;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--border-radius-sm);
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .product-item-details {
-    flex-grow: 1;
+  flex-grow: 1;
 }
 
 .product-item-details span {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text-dark);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-dark);
 }
 
 .product-item-details p {
-    font-size: 0.875rem;
-    color: var(--text-light);
-    margin: 4px 0 0;
+  font-size: 0.875rem;
+  color: var(--text-light);
+  margin: 4px 0 0;
 }
 
 .product-item-controls {
-    display: flex;
-    gap: var(--spacing-sm);
-    margin-top: auto; /* Empuja los controles al final */
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: auto;
+  /* Empuja los controles al final */
 }
 
 .product-item-controls .btn-toggle-status,
 .product-item-controls .edit-product-btn,
 .product-item-controls .delete-product-btn {
-    flex-grow: 1;
-    padding: var(--spacing-sm);
-    font-size: 0.875rem;
-    border: none;
-    border-radius: var(--border-radius-sm);
+  flex-grow: 1;
+  padding: var(--spacing-sm);
+  font-size: 0.875rem;
+  border: none;
+  border-radius: var(--border-radius-sm);
 }
 
 .btn-toggle-status.btn-activate {
-    background-color: var(--success-color);
-    color: white;
+  background-color: var(--success-color);
+  color: white;
 }
 
 .btn-toggle-status.btn-activate:hover {
-    background-color: #059669; /* Un verde más oscuro */
+  background-color: #059669;
+  /* Un verde más oscuro */
 }
 
 .btn-toggle-status.btn-deactivate {
-    background-color: var(--warning-color);
-    color: white;
+  background-color: var(--warning-color);
+  color: white;
 }
 
 .btn-toggle-status.btn-deactivate:hover {
-    background-color: #d97706; /* Un naranja más oscuro */
+  background-color: #d97706;
+  /* Un naranja más oscuro */
 }
 
-.edit-product-btn, .delete-product-btn {
-    background-color: var(--light-background);
-    color: var(--text-dark);
-    font-size: 1.2rem; /* Íconos más grandes */
+.edit-product-btn,
+.delete-product-btn {
+  background-color: var(--light-background);
+  color: var(--text-dark);
+  font-size: 1.2rem;
+  /* Íconos más grandes */
 }
 
-.edit-product-btn:hover, .delete-product-btn:hover {
-    background-color: #e5e7eb;
+.edit-product-btn:hover,
+.delete-product-btn:hover {
+  background-color: #e5e7eb;
 }
 
 /* Estilos para el estado del producto */
 .product-status {
-    padding: 4px 8px;
-    border-radius: var(--border-radius-sm);
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: white;
+  padding: 4px 8px;
+  border-radius: var(--border-radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: white;
 }
 
 .product-status.active {
-    background-color: var(--success-color);
+  background-color: var(--success-color);
 }
 
 .product-status.inactive {
-    background-color: var(--text-light);
+  background-color: var(--text-light);
 }
 
 .btn-toggle-status {
-    padding: var(--spacing-xs) var(--spacing-sm);
-    font-size: 0.875rem;
-    border: 1px solid var(--primary-color);
-    background-color: transparent;
-    color: var(--primary-color);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.875rem;
+  border: 1px solid var(--primary-color);
+  background-color: transparent;
+  color: var(--primary-color);
 }
 
 .btn-toggle-status:hover {
-    background-color: rgba(99, 102, 241, 0.1);
+  background-color: rgba(99, 102, 241, 0.1);
 }
 
 .product-card-actions {
@@ -1368,7 +1417,8 @@ textarea {
 .movement-details-content strong {
   color: var(--text-dark);
   display: inline-block;
-  width: 120px; /* Alinea los valores */
+  width: 120px;
+  /* Alinea los valores */
 }
 
 .movement-details-content ul {
@@ -1416,65 +1466,67 @@ textarea {
 
 /* ===== SECCIÓN CLIENTES ===== */
 .customer-form-container {
-    background-color: var(--card-background-color);
-    border-radius: var(--border-radius);
-    padding: var(--spacing-lg);
-    box-shadow: var(--box-shadow);
-    max-width: 600px;
-    margin: 0 auto;
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+  max-width: 600px;
+  margin: 0 auto;
 }
 
 .customer-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: var(--spacing-md);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--spacing-md);
 }
 
 .customer-card {
-    background-color: var(--light-background);
-    border-radius: var(--border-radius-sm);
-    padding: var(--spacing-md);
-    transition: var(--transition);
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  transition: var(--transition);
 }
 
 .customer-card:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--box-shadow);
+  transform: translateY(-3px);
+  box-shadow: var(--box-shadow);
 }
 
 .customer-info h4 {
-    color: var(--text-dark);
-    margin-bottom: var(--spacing-xs);
+  color: var(--text-dark);
+  margin-bottom: var(--spacing-xs);
 }
 
 .customer-info p {
-    margin-bottom: var(--spacing-xs);
-    color: var(--text-light);
+  margin-bottom: var(--spacing-xs);
+  color: var(--text-light);
 }
 
 .customer-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--spacing-sm);
-    margin-top: var(--spacing-md);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
 }
 
 /* ===== ESTILOS PARA VALIDACIÓN DINÁMICA ===== */
 .form-help-text.validation-message {
-    font-size: 0.875rem;
-    margin-top: var(--spacing-xs);
-    font-weight: 500;
-    display: none; /* Oculto por defecto */
+  font-size: 0.875rem;
+  margin-top: var(--spacing-xs);
+  font-weight: 500;
+  display: none;
+  /* Oculto por defecto */
 }
 
 .form-help-text.validation-message.error {
-    color: var(--error-color);
-    display: block; /* Se muestra cuando hay error */
+  color: var(--error-color);
+  display: block;
+  /* Se muestra cuando hay error */
 }
 
 .form-input.invalid {
-    border-color: var(--error-color);
-    box-shadow: 0 0 0 1px var(--error-color);
+  border-color: var(--error-color);
+  box-shadow: 0 0 0 1px var(--error-color);
 }
 
 /* ===== SECCIÓN CONFIGURACIÓN ===== */
@@ -1492,103 +1544,103 @@ textarea {
 /* ===== SECCIÓN DONACIÓN ===== */
 /* donation-styles.css */
 .donation-container {
-    text-align: center;
-    padding: 2rem;
-    max-width: 800px;
-    margin: 0 auto;
+  text-align: center;
+  padding: 2rem;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .donation-heart {
-    font-size: 3rem;
-    display: block;
-    margin-bottom: 1rem;
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 1rem;
 }
 
 .donation-heading {
-    color: var(--primary-color);
-    margin-bottom: 1rem;
+  color: var(--primary-color);
+  margin-bottom: 1rem;
 }
 
 .donation-text {
-    margin-bottom: 2rem;
-    color: var(--text-color);
+  margin-bottom: 2rem;
+  color: var(--text-color);
 }
 
 .donation-buttons-container {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-bottom: 2rem;
-    align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  align-items: center;
 }
 
 .donation-button {
-    display: inline-block;
-    padding: 1rem 2rem;
-    background-color: var(--secondary-color);
-    color: white;
-    text-decoration: none;
-    border-radius: 8px;
-    font-weight: bold;
-    transition: background-color 0.3s ease;
+  display: inline-block;
+  padding: 1rem 2rem;
+  background-color: var(--secondary-color);
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: bold;
+  transition: background-color 0.3s ease;
 }
 
 .donation-button:hover {
-    background-color: #2563eb;
-    transform: translateY(-2px);
+  background-color: #2563eb;
+  transform: translateY(-2px);
 }
 
 .donation-amount {
-    display: block;
-    font-size: 0.9rem;
-    margin-top: 0.5rem;
-    opacity: 0.9;
+  display: block;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  opacity: 0.9;
 }
 
 .donation-info {
-    margin-bottom: 2rem;
-    padding: 1rem;
-    background-color: #f8f9fa;
-    border-radius: 8px;
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
 }
 
 .donation-info-text {
-    color: var(--text-color);
-    margin: 0;
+  color: var(--text-color);
+  margin: 0;
 }
 
 .contact-container {
-    margin-top: 2rem;
-    padding: 2rem;
-    background-color: var(--card-background-color);
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin-top: 2rem;
+  padding: 2rem;
+  background-color: var(--card-background-color);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .contact-heading {
-    color: var(--primary-color);
-    margin-bottom: 1rem;
+  color: var(--primary-color);
+  margin-bottom: 1rem;
 }
 
 .contact-text {
-    color: var(--text-color);
-    margin-bottom: 1.5rem;
+  color: var(--text-color);
+  margin-bottom: 1.5rem;
 }
 
 .contact-form-container {
-    text-align: left;
+  text-align: left;
 }
 
 /* Responsive */
 @media (min-width: 768px) {
-    .donation-buttons-container {
-        flex-direction: row;
-        justify-content: center;
-    }
-    
-    .donation-button {
-        min-width: 200px;
-    }
+  .donation-buttons-container {
+    flex-direction: row;
+    justify-content: center;
+  }
+
+  .donation-button {
+    min-width: 200px;
+  }
 }
 
 .btn-modal {
@@ -1627,10 +1679,11 @@ textarea {
   width: 90%;
   box-shadow: var(--box-shadow-lg);
   animation: modalFadeIn 0.3s ease;
-  margin: auto; /* <-- AÑADE ESTA LÍNEA */
+  margin: auto;
+  /* <-- AÑADE ESTA LÍNEA */
 }
 
-#message-modal{
+#message-modal {
   z-index: 2000 !important;
 }
 
@@ -1638,7 +1691,7 @@ textarea {
 #cost-calculation-modal,
 #category-modal,
 #welcome-modal {
-    z-index: 1500;
+  z-index: 1500;
 }
 
 /*para que el modal de scaner nos aparezca encima de todo*/
@@ -1893,7 +1946,7 @@ textarea {
     display: block;
   }
 
-  
+
 
   .mobile-menu {
     position: fixed;
@@ -1903,7 +1956,7 @@ textarea {
     width: 280px;
     max-width: 80%;
     background-color: var(--card-background-color);
-    box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+    box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
     z-index: 1010;
     transform: translateX(100%);
     transition: transform 0.3s ease-in-out;
@@ -1927,7 +1980,7 @@ textarea {
   .donation-buttons-container {
     flex-direction: column;
   }
-  
+
 }
 
 @media (max-width: 480px) {
@@ -2046,272 +2099,284 @@ textarea {
 
 /* ===== ESTILOS DE INVENTARIO ===== */
 .stock-info.no-stock-label {
-    background-color: #4CAF50;
-    color: white;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.8em;
+  background-color: #4CAF50;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.8em;
 }
 
 .menu-item {
-    position: relative; /* Necesario para el posicionamiento del overlay y el indicador */
-    overflow: hidden; /* Para contener los elementos hijos */
+  position: relative;
+  /* Necesario para el posicionamiento del overlay y el indicador */
+  overflow: hidden;
+  /* Para contener los elementos hijos */
 }
 
 .stock-indicator {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-    background-color: rgba(0, 0, 0, 0.6);
-    color: white;
-    padding: 2px 6px;
-    border-radius: 10px;
-    font-size: 0.75rem;
-    font-weight: 500;
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .menu-item.out-of-stock {
-    cursor: not-allowed;
-    filter: grayscale(100%);
-    opacity: 0.6;
+  cursor: not-allowed;
+  filter: grayscale(100%);
+  opacity: 0.6;
 }
 
 .menu-item.out-of-stock:hover {
-    transform: none; /* Deshabilita el efecto hover */
-    box-shadow: none;
+  transform: none;
+  /* Deshabilita el efecto hover */
+  box-shadow: none;
 }
 
 .stock-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(255, 255, 255, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-    font-weight: 700;
-    color: #ef4444; /* Color de error */
-    text-transform: uppercase;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ef4444;
+  /* Color de error */
+  text-transform: uppercase;
 }
 
 .stat-value.inventory {
-    color: #8b5cf6; /* Color morado para inventario */
+  color: #8b5cf6;
+  /* Color morado para inventario */
 }
 
 /* ===== ESTILOS DE PESTAÑAS (TABS) ===== */
 .tabs-container {
-    display: flex;
-    gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-lg);
-    border-bottom: 2px solid #e5e7eb;
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  border-bottom: 2px solid #e5e7eb;
 }
 
 .tab-btn {
-    padding: var(--spacing-sm) var(--spacing-md);
-    border: none;
-    background-color: transparent;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--text-light);
-    border-bottom: 2px solid transparent;
-    transition: var(--transition);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-light);
+  border-bottom: 2px solid transparent;
+  transition: var(--transition);
 }
 
 .tab-btn:hover {
-    color: var(--primary-color);
+  color: var(--primary-color);
 }
 
 .tab-btn.active {
-    color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
 }
 
 .tab-content {
-    display: none;
-    animation: fadeIn 0.5s ease;
+  display: none;
+  animation: fadeIn 0.5s ease;
 }
 
 .tab-content.active {
-    display: block;
+  display: block;
 }
 
 .search-container {
-    margin-bottom: var(--spacing-lg);
-    max-width: 400px;
+  margin-bottom: var(--spacing-lg);
+  max-width: 400px;
 }
 
 .dashboard-grid-condensed {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--spacing-lg);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-lg);
 }
 
 /*estilos para el loader*/
 #app-loader {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(255, 255, 255, 0.9);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-    font-size: 1.2rem;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  font-size: 1.2rem;
 }
 
 .loader-spinner {
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #3498db;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-    margin: 0 auto;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #3498db;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 
 /* Estilos para productos que exceden stock */
 .order-item.exceeds-stock {
-    border-left: 4px solid #dc3545;
-    background-color: rgba(220, 53, 69, 0.05);
+  border-left: 4px solid #dc3545;
+  background-color: rgba(220, 53, 69, 0.05);
 }
 
 .exceeds-stock-warning {
-    color: #dc3545;
-    font-weight: bold;
-    font-size: 0.85rem;
+  color: #dc3545;
+  font-weight: bold;
+  font-size: 0.85rem;
 }
 
 /* Estilos para productos con stock bajo */
 .order-item.low-stock {
-    border-left: 4px solid #ffc107;
-    background-color: rgba(255, 193, 7, 0.05);
+  border-left: 4px solid #ffc107;
+  background-color: rgba(255, 193, 7, 0.05);
 }
 
 .low-stock-warning {
-    color: #ffc107;
-    font-weight: bold;
-    font-size: 0.85rem;
+  color: #ffc107;
+  font-weight: bold;
+  font-size: 0.85rem;
 }
 
 .stock-warning {
-    margin-top: 5px;
-    padding: 3px 6px;
-    border-radius: 3px;
-    font-size: 0.8rem;
+  margin-top: 5px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 0.8rem;
 }
 
 /* Estilos para productos sin control de stock */
 .order-item .no-stock-tracking {
-    color: #17a2b8;
-    font-weight: bold;
-    font-size: 0.85rem;
+  color: #17a2b8;
+  font-weight: bold;
+  font-size: 0.85rem;
 }
 
 /* Estilos para productos con errores */
 .order-item.error-item {
-    border-left: 4px solid #6c757d;
-    background-color: rgba(108, 117, 125, 0.05);
-    opacity: 0.7;
+  border-left: 4px solid #6c757d;
+  background-color: rgba(108, 117, 125, 0.05);
+  opacity: 0.7;
 }
 
 .error-warning {
-    color: #6c757d;
-    font-weight: bold;
-    font-size: 0.85rem;
+  color: #6c757d;
+  font-weight: bold;
+  font-size: 0.85rem;
 }
 
 /* Estilos para productos que exceden stock */
 .order-item.exceeds-stock {
-    border-left: 4px solid #dc3545;
-    background-color: rgba(220, 53, 69, 0.05);
+  border-left: 4px solid #dc3545;
+  background-color: rgba(220, 53, 69, 0.05);
 }
 
 .exceeds-stock-warning {
-    color: #dc3545;
-    font-weight: bold;
-    font-size: 0.85rem;
+  color: #dc3545;
+  font-weight: bold;
+  font-size: 0.85rem;
 }
 
 /* Estilos para productos con stock bajo */
 .order-item.low-stock {
-    border-left: 4px solid #ffc107;
-    background-color: rgba(255, 193, 7, 0.05);
+  border-left: 4px solid #ffc107;
+  background-color: rgba(255, 193, 7, 0.05);
 }
 
 .low-stock-warning {
-    color: #ffc107;
-    font-weight: bold;
-    font-size: 0.85rem;
+  color: #ffc107;
+  font-weight: bold;
+  font-size: 0.85rem;
 }
 
 .stock-warning {
-    margin-top: 5px;
-    padding: 3px 6px;
-    border-radius: 3px;
-    font-size: 0.8rem;
+  margin-top: 5px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 0.8rem;
 }
 
 /* Estilos para el buscador y controles del POS */
 .pos-controls {
-    display: flex;
-    gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-lg);
-    align-items: center;
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  align-items: center;
 }
 
 #pos-product-search {
-    flex-grow: 1; /* El buscador ocupa el espacio disponible */
+  flex-grow: 1;
+  /* El buscador ocupa el espacio disponible */
 }
 
 .pos-controls .btn-scan {
-    flex-shrink: 0; /* Evita que el botón se encoja */
-    padding: var(--spacing-sm);
+  flex-shrink: 0;
+  /* Evita que el botón se encoja */
+  padding: var(--spacing-sm);
 }
 
 .order-item-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .quantity-btn {
-    width: 30px;
-    height: 30px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    cursor: pointer;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .quantity-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .remove-item-btn {
-    width: 30px;
-    height: 30px;
-    border: 1px solid #dc3545;
-    background-color: #fff;
-    color: #dc3545;
-    border-radius: 4px;
-    cursor: pointer;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #dc3545;
+  background-color: #fff;
+  color: #dc3545;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .remove-item-btn:hover {
-    background-color: #dc3545;
-    color: #fff;
+  background-color: #dc3545;
+  color: #fff;
 }
 
 /* Estilos para el modal de historial de compras */
