@@ -35,35 +35,35 @@ const SUPPORTED_FORMATS = [
 // Función para calcular la región de escaneo
 const calculateScanRegion = (video) => {
     if (!video.videoWidth || !video.videoHeight) return null;
-    
+
     // Definimos un rectángulo central del 60% de ancho y 30% de alto
     const width = video.videoWidth * 0.6;
     const height = video.videoHeight * 0.3;
     const x = (video.videoWidth - width) / 2;
     const y = (video.videoHeight - height) / 2;
-    
+
     return { x, y, width, height };
 };
 
 // Función para actualizar el overlay visual
 const updateScannerOverlay = () => {
     if (!scannerVideo || !scannerOverlay) return;
-    
+
     // Calculamos las dimensiones del video en pantalla
     const videoRect = scannerVideo.getBoundingClientRect();
-    
+
     // Posicionamos el overlay sobre el video
     scannerOverlay.style.width = `${videoRect.width}px`;
     scannerOverlay.style.height = `${videoRect.height}px`;
     scannerOverlay.style.top = `${videoRect.top}px`;
     scannerOverlay.style.left = `${videoRect.left}px`;
-    
+
     // Creamos el rectángulo de escaneo
     const scanWidth = videoRect.width * 0.6;
     const scanHeight = videoRect.height * 0.3;
     const scanX = (videoRect.width - scanWidth) / 2;
     const scanY = (videoRect.height - scanHeight) / 2;
-    
+
     // Actualizamos el pseudo-elemento del overlay
     scannerOverlay.style.setProperty('--scan-width', `${scanWidth}px`);
     scannerOverlay.style.setProperty('--scan-height', `${scanHeight}px`);
@@ -77,10 +77,18 @@ const startScanner = async () => {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             throw new Error('La cámara no es compatible con este navegador.');
         }
-        
+
         codeReader = new ZXing.BrowserMultiFormatReader();
+        // Define las restricciones para solicitar una mejor resolución de la cámara
+        const constraints = {
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        };
+        codeReader = new ZXing.BrowserMultiFormatReader(null, { constraints });
         const videoInputDevices = await codeReader.listVideoInputDevices();
-        
+
         cameraSelect.innerHTML = '';
         if (videoInputDevices.length > 0) {
             videoInputDevices.forEach(device => {
@@ -89,24 +97,24 @@ const startScanner = async () => {
                 option.textContent = device.label || `Cámara ${cameraSelect.length + 1}`;
                 cameraSelect.appendChild(option);
             });
-            
+
             scannerControls.style.display = videoInputDevices.length > 1 ? 'block' : 'none';
-            const rearCamera = videoInputDevices.find(device => 
-                device.label.toLowerCase().includes('back') || 
-                device.label.toLowerCase().includes('rear') || 
+            const rearCamera = videoInputDevices.find(device =>
+                device.label.toLowerCase().includes('back') ||
+                device.label.toLowerCase().includes('rear') ||
                 device.label.toLowerCase().includes('trasera')
             );
-            
+
             selectedDeviceId = rearCamera ? rearCamera.deviceId : videoInputDevices[0].deviceId;
             cameraSelect.value = selectedDeviceId;
             scannerModal.classList.remove('hidden');
-            
+
             // Configuramos el listener para actualizar el overlay cuando el video esté listo
             scannerVideo.addEventListener('loadedmetadata', () => {
                 scanRegion = calculateScanRegion(scannerVideo);
                 updateScannerOverlay();
             });
-            
+
             // Iniciamos el escaneo
             decodeFromDevice(selectedDeviceId);
         } else {
@@ -126,22 +134,22 @@ const decodeFromDevice = (deviceId) => {
     if (codeReader) {
         codeReader.reset();
     }
-    
+
     // Configurar hints para optimizar la detección
     const hints = new Map();
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, SUPPORTED_FORMATS);
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-    
+
     // Si tenemos una región de escaneo definida, la usamos
     const options = scanRegion ? { hints, region: scanRegion } : { hints };
-    
+
     codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', (result, err) => {
         if (result) {
             // Implementar throttling para evitar múltiples lecturas rápidas
             if (!isScanning) {
                 isScanning = true;
                 handleScanResult(result.getText());
-                
+
                 // Restablecer el estado después de un breve período
                 clearTimeout(scanTimeout);
                 scanTimeout = setTimeout(() => {
@@ -186,7 +194,7 @@ const handleScanResult = async (code) => {
         console.warn("El escaneo resultó en un código vacío.");
         return;
     }
-    
+
     try {
         if (currentTarget === 'addToOrder') {
             const menu = await loadDataWithCache(STORES.MENU);
@@ -201,7 +209,7 @@ const handleScanResult = async (code) => {
             // Disparamos un evento para que cualquier listener en el campo se active
             currentTarget.dispatchEvent(new Event('input', { bubbles: true }));
         }
-    } catch(error) {
+    } catch (error) {
         console.error("Error al procesar el resultado del escaneo:", error);
         showMessageModal("Ocurrió un error al procesar el código.");
     }
@@ -215,7 +223,7 @@ export function initScannerModule(dependencies) {
     // Asigna las funciones pasadas a las variables locales
     loadDataWithCache = dependencies.loadDataWithCache;
     addItemToOrder = dependencies.addItemToOrder;
-    
+
     // --- EVENT LISTENERS ---
     if (scanBarcodeBtn) {
         scanBarcodeBtn.addEventListener('click', () => {
@@ -238,9 +246,9 @@ export function initScannerModule(dependencies) {
             decodeFromDevice(selectedDeviceId);
         });
     }
-    
+
     // Actualizar overlay cuando la ventana cambia de tamaño
     window.addEventListener('resize', updateScannerOverlay);
-    
+
     console.log('Scanner module initialized.');
 }
