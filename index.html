@@ -85,13 +85,6 @@
                     <div id="category-filters" class="category-filters">
                     </div>
                     <button id="scan-barcode-btn" class="btn btn-scan">📷 Escanear Producto</button>
-                    <div id="scanner-modal" class="modal hidden">
-                        <div class="modal-content">
-                            <h2 class="modal-title">Escaneando...</h2>
-                            <div id="scanner-container" style="width: 100%; height: 300px;"></div>
-                            <button id="close-scanner-btn" class="btn btn-cancel">Cancelar</button>
-                        </div>
-                    </div>
                     <div id="menu-items" class="menu-items-grid" aria-label="Elementos del menú"></div>
                 </div>
                 <div class="pos-order-container">
@@ -477,6 +470,16 @@
                 </div>
             </div>
         </section>
+        <!-- Modal de Escáner (movido aquí para que sea global) -->
+        <div id="scanner-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2 class="modal-title">Escaneando...</h2>
+                <div id="scanner-container">
+                    <video id="scanner-video" style="width: 100%; height: auto;"></video>
+                </div>
+                <button id="close-scanner-btn" class="btn btn-cancel">Cancelar</button>
+            </div>
+        </div>
     </main>
     <div id="message-modal" class="modal hidden">
         <div class="modal-content">
@@ -617,7 +620,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <!-- ZXing (nuevo escáner) -->
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@latest/umd/zxing.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
     <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js" defer></script>

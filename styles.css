@@ -505,18 +505,67 @@ textarea {
   border-color: var(--error-color);
 }
 
-/*estilos para el boton de scaner y el scaner*/
+/* ===== ESTILOS MEJORADOS PARA EL ESCÁNER ===== */
 .btn-scan {
     background-color: var(--secondary-color);
     color: white;
     margin-bottom: var(--spacing-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
 }
 .btn-scan:hover {
     opacity: 0.9;
 }
-#scanner-container video {
+
+#scanner-modal .modal-content {
+    max-width: 480px; /* Ancho máximo para el modal del escáner */
+    padding: var(--spacing-md);
+}
+
+#scanner-container {
+    position: relative;
     width: 100%;
-    height: auto;
+    padding-top: 100%; /* Proporción 1:1 para el contenedor del escáner */
+    margin: var(--spacing-md) 0;
+    border-radius: var(--border-radius);
+    overflow: hidden; /* Asegura que el video no se salga */
+    background-color: #000;
+}
+
+#scanner-video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Cubre el contenedor sin deformar la imagen */
+    z-index: 1;
+}
+
+/* Overlay con un marco para guiar al usuario */
+#scanner-container::after {
+    content: '';
+    position: absolute;
+    top: 10%;
+    left: 10%;
+    right: 10%;
+    bottom: 10%;
+    border: 2px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    border-radius: var(--border-radius-sm);
+    z-index: 2;
+}
+
+#close-scanner-btn {
+    width: 100%;
+}
+
+@media (max-width: 480px) {
+    #scanner-modal .modal-content {
+        padding: var(--spacing-sm);
+    }
 }
 
 /* ===== SECCIÓN GESTIÓN DE PRODUCTOS ===== */
