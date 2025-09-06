@@ -1339,6 +1339,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const div = document.createElement('div');
                 div.className = 'product-item';
                 div.innerHTML = `
+                <div class="product-status-badge ${item.isActive !== false ? 'active' : 'inactive'}">
+                    ${item.isActive !== false ? 'Activo' : 'Inactivo'}
+                </div>
                 <div class="product-item-info">
                     <img src="${item.image || defaultPlaceholder}" alt="${item.name}">
                     <div class="product-item-details">
@@ -1351,10 +1354,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
                 <div class="product-item-controls">
-                            <span class="product-status ${item.isActive !== false ? 'active' : 'inactive'}">
-             ${item.isActive !== false ? 'Activo' : 'Inactivo'}
-    </span>
-    <button class="btn-toggle-status" data-id="${item.id}">
+    <button class="btn-toggle-status ${item.isActive !== false ? 'btn-deactivate' : 'btn-activate'}" data-id="${item.id}">
         ${item.isActive !== false ? 'Desactivar' : 'Activar'}
     </button>
     <button class="edit-product-btn" data-id="${item.id}">✏️</button>

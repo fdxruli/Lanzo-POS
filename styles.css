@@ -751,6 +751,118 @@ textarea {
   color: var(--primary-color);
 }
 
+/* ===== ESTILOS MEJORADOS PARA GESTIÓN DE PRODUCTOS ===== */
+.product-item {
+    position: relative;
+    background-color: var(--card-background-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    box-shadow: var(--box-shadow);
+    transition: var(--transition);
+    display: flex;
+    flex-direction: column;
+}
+
+.product-item:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--box-shadow-lg);
+}
+
+.product-status-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 5px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    z-index: 2;
+}
+
+.product-status-badge.active {
+    background-color: var(--success-color);
+}
+
+.product-status-badge.inactive {
+    background-color: var(--text-light);
+}
+
+.product-item-info {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: center;
+    margin-bottom: var(--spacing-md);
+}
+
+.product-item-info img {
+    width: 80px;
+    height: 80px;
+    border-radius: var(--border-radius-sm);
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.product-item-details {
+    flex-grow: 1;
+}
+
+.product-item-details span {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-dark);
+}
+
+.product-item-details p {
+    font-size: 0.875rem;
+    color: var(--text-light);
+    margin: 4px 0 0;
+}
+
+.product-item-controls {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-top: auto; /* Empuja los controles al final */
+}
+
+.product-item-controls .btn-toggle-status,
+.product-item-controls .edit-product-btn,
+.product-item-controls .delete-product-btn {
+    flex-grow: 1;
+    padding: var(--spacing-sm);
+    font-size: 0.875rem;
+    border: none;
+    border-radius: var(--border-radius-sm);
+}
+
+.btn-toggle-status.btn-activate {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.btn-toggle-status.btn-activate:hover {
+    background-color: #059669; /* Un verde más oscuro */
+}
+
+.btn-toggle-status.btn-deactivate {
+    background-color: var(--warning-color);
+    color: white;
+}
+
+.btn-toggle-status.btn-deactivate:hover {
+    background-color: #d97706; /* Un naranja más oscuro */
+}
+
+.edit-product-btn, .delete-product-btn {
+    background-color: var(--light-background);
+    color: var(--text-dark);
+    font-size: 1.2rem; /* Íconos más grandes */
+}
+
+.edit-product-btn:hover, .delete-product-btn:hover {
+    background-color: #e5e7eb;
+}
+
 /* Estilos para el estado del producto */
 .product-status {
     padding: 4px 8px;
