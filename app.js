@@ -67,8 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const startScanner = async () => {
         if (!scannerModal || !scannerVideo) return;
 
-        codeReader = new ZXing.BrowserMultiFormatReader();
         try {
+            codeReader = new ZXing.BrowserMultiFormatReader();
             const videoInputDevices = await codeReader.listVideoInputDevices();
             if (videoInputDevices.length > 0) {
                 // Preferir la cámara trasera ('environment')
