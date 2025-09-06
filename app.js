@@ -5,6 +5,7 @@ import { initScannerModule } from './scanner.js';
 import { initCustomersModule } from './customers.js';
 import { createDashboardModule } from './dashboard.js';
 import { createBusinessTipsModule } from './business-tips.js';
+import { initializeDonationSection } from './donation-seccion.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     
@@ -2146,6 +2147,7 @@ const initApp = async () => {
         console.error('Error initializing application:', error.message);
         showMessageModal(`Error fatal al inicializar: ${error.message}. Por favor, recarga la página.`);
     }
+    initializeDonationSection();
 };
 
 initApp();

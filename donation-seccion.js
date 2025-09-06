@@ -1,4 +1,5 @@
-// donation-section.js
+import { showMessageModal } from './utils.js';
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log('donation-section.js: DOMContentLoaded event fired.');
     
@@ -35,36 +36,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error submitting contact form:', error.message);
             showMessageModal('Error al enviar el mensaje: ' + error.message);
         }
-    };
-    
-    /**
-     * Función para mostrar mensajes modales (se mantiene aquí por dependencia)
-     * Esta función debería estar en un archivo de utilidades comunes
-     */
-    const showMessageModal = (message, onConfirm = null) => {
-        const messageModal = document.getElementById('message-modal');
-        const modalMessage = document.getElementById('modal-message');
-        const closeModalBtn = document.getElementById('close-modal-btn');
-        
-        if (!modalMessage || !messageModal || !closeModalBtn) return;
-        
-        modalMessage.textContent = message;
-        messageModal.classList.remove('hidden');
-        
-        const originalText = closeModalBtn.textContent;
-        const confirmMode = typeof onConfirm === 'function';
-        
-        if (confirmMode) {
-            closeModalBtn.textContent = 'Sí, continuar';
-        } else {
-            closeModalBtn.textContent = 'Aceptar';
-        }
-        
-        closeModalBtn.onclick = () => {
-            messageModal.classList.add('hidden');
-            if (confirmMode) onConfirm();
-            closeModalBtn.textContent = 'Aceptar';
-        };
     };
     
     // --- EVENT LISTENERS PARA LA SECCIÓN DE DONACIÓN ---

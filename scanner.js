@@ -1,6 +1,9 @@
-// scanner.js
 import { showMessageModal } from './utils.js';
 import { STORES } from './database.js';
+
+const SCAN_TARGETS = {
+    ADD_TO_ORDER: 'addToOrder',
+}
 
 // Las dependencias (funciones de app.js) se pasarán durante la inicialización
 let loadDataWithCache;
@@ -163,7 +166,7 @@ const handleScanResult = async (code) => {
     }
 
     try {
-        if (currentTarget === 'addToOrder') {
+        if (currentTarget === SCAN_TARGETS.ADD_TO_ORDER) {
             const menu = await loadDataWithCache(STORES.MENU);
             const product = menu.find(p => p.barcode === trimmedCode);
             if (product) {
@@ -191,7 +194,7 @@ export function initScannerModule(dependencies) {
 
     if (scanBarcodeBtn) {
         scanBarcodeBtn.addEventListener('click', () => {
-            scannerTarget = 'addToOrder';
+            scannerTarget = SCAN_TARGETS.ADD_TO_ORDER;
             startScanner();
         });
     }
