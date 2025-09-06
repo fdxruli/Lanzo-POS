@@ -1,6 +1,7 @@
 // app.js
 import { showMessageModal, compressImage, getContrastColor, isLocalStorageEnabled, normalizeDate } from './utils.js';
 import { initDB, saveData, loadData, deleteData, STORES } from './database.js';
+import { initScannerModule } from './scanner.js';
 import { initCustomersModule } from './customers.js';
 import { createDashboardModule } from './dashboard.js';
 import { createBusinessTipsModule } from './business-tips.js';
@@ -55,136 +56,6 @@ document.addEventListener('DOMContentLoaded', () => {
             categories: 0
         }
     };
-
-    // --- LÓGICA DEL ESCÁNER (ZXing) ---
-    const scanBarcodeBtn = document.getElementById('scan-barcode-btn');
-    const scannerModal = document.getElementById('scanner-modal');
-    const closeScannerBtn = document.getElementById('close-scanner-btn');
-    const scanForInputBtn = document.getElementById('scan-for-input-btn');
-    const scannerVideo = document.getElementById('scanner-video');
-    const cameraSelect = document.getElementById('camera-select');
-    const scannerControls = document.getElementById('scanner-controls');
-
-    let scannerTarget = null;
-    let codeReader = null;
-    let selectedDeviceId = null;
-
-    const startScanner = async () => {
-        if (!scannerModal || !scannerVideo || !cameraSelect) return;
-
-        try {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error('La cámara no es compatible con este navegador.');
-            }
-
-            codeReader = new ZXing.BrowserMultiFormatReader();
-            const videoInputDevices = await codeReader.listVideoInputDevices();
-            
-            cameraSelect.innerHTML = ''; // Limpiar opciones previas
-
-            if (videoInputDevices.length > 0) {
-                videoInputDevices.forEach(device => {
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.textContent = device.label || `Cámara ${cameraSelect.length + 1}`;
-                    cameraSelect.appendChild(option);
-                });
-
-                // Mostrar controles si hay más de una cámara
-                scannerControls.style.display = videoInputDevices.length > 1 ? 'block' : 'none';
-
-                // Intentar seleccionar la cámara trasera por defecto
-                const rearCamera = videoInputDevices.find(device => 
-                    device.label.toLowerCase().includes('back') || 
-                    device.label.toLowerCase().includes('rear') || 
-                    device.label.toLowerCase().includes('trasera')
-                );
-                selectedDeviceId = rearCamera ? rearCamera.deviceId : videoInputDevices[0].deviceId;
-                cameraSelect.value = selectedDeviceId;
-
-                scannerModal.classList.remove('hidden');
-                decodeFromDevice(selectedDeviceId);
-
-            } else {
-                showMessageModal('No se encontraron cámaras en este dispositivo.');
-            }
-        } catch (error) {
-            console.error('Error al iniciar el escáner:', error);
-            let message = 'No se pudo acceder a la cámara. Asegúrate de haber dado los permisos necesarios.';
-            if (error.name === "NotAllowedError") {
-                message = "Has bloqueado el acceso a la cámara. Por favor, habilítalo en la configuración de tu navegador.";
-            }
-            showMessageModal(message);
-        }
-    };
-
-    const decodeFromDevice = (deviceId) => {
-        // Detener cualquier instancia anterior antes de iniciar una nueva
-        if (codeReader) {
-            codeReader.reset();
-        }
-
-        codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', (result, err) => {
-            if (result) {
-                handleScanResult(result.getText());
-            }
-            if (err && !(err instanceof ZXing.NotFoundException)) {
-                console.error('Error de escaneo:', err);
-                // No mostramos un modal aquí para no interrumpir el escaneo continuo
-            }
-        }).catch(err => {
-            console.error(`Error al decodificar desde el dispositivo ${deviceId}:`, err);
-        });
-    };
-
-    const stopScanner = () => {
-        if (codeReader) {
-            codeReader.reset(); // Detiene el stream de la cámara y libera recursos
-        }
-        if (scannerModal) {
-            scannerModal.classList.add('hidden');
-        }
-        scannerTarget = null;
-    };
-
-    const handleScanResult = async (code) => {
-        stopScanner(); // Detiene la cámara inmediatamente
-
-        if (scannerTarget === 'addToOrder') {
-            const menu = await loadDataWithCache(STORES.MENU);
-            const product = menu.find(p => p.barcode === code);
-            if (product) {
-                addItemToOrder(product);
-            } else {
-                showMessageModal(`Producto con código de barras "${code}" no encontrado.`);
-            }
-        } else if (scannerTarget && typeof scannerTarget.value !== 'undefined') {
-            scannerTarget.value = code;
-        }
-    };
-    
-    // --- EVENT LISTENERS del Escáner ---
-    if (scanBarcodeBtn) {
-        scanBarcodeBtn.addEventListener('click', () => {
-            scannerTarget = 'addToOrder';
-            startScanner();
-        });
-    }
-    if (scanForInputBtn) {
-        scanForInputBtn.addEventListener('click', () => {
-            scannerTarget = document.getElementById('product-barcode');
-            startScanner();
-        });
-    }
-    if (closeScannerBtn) {
-        closeScannerBtn.addEventListener('click', stopScanner);
-    }
-    if (cameraSelect) {
-        cameraSelect.addEventListener('change', () => {
-            selectedDeviceId = cameraSelect.value;
-            decodeFromDevice(selectedDeviceId);
-        });
-    }
 
     const loadDataWithCache = async (storeName, key = null, maxAge = 300000) => {
         const now = Date.now();
@@ -2164,6 +2035,7 @@ const initApp = async () => {
         ]);
         // Inicializar los módulos después de que las dependencias estén listas
         await renderCategories(); // Cargar categorías al inicio
+        initScannerModule({loadDataWithCache, addItemToOrder});
         initCustomersModule({
             saveData,
             loadData,

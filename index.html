@@ -85,6 +85,23 @@
                     <div id="category-filters" class="category-filters">
                     </div>
                     <button id="scan-barcode-btn" class="btn btn-scan">📷 Escanear Producto</button>
+                    <div id="scanner-modal" class="modal hidden">
+                        <div class="modal-content">
+                            <h2 class="modal-title">Escaneando...</h2>
+
+                            <div id="scanner-controls" class="form-group" style="display: none; margin-bottom: 1rem;">
+                                <label for="camera-select" class="form-label">Seleccionar cámara:</label>
+                                <select id="camera-select" class="form-input"></select>
+                            </div>
+
+                            <div id="scanner-container">
+                                <video id="scanner-video" style="width: 100%; height: auto;"></video>
+                                <div id="scanner-overlay"></div>
+                            </div>
+                            <button id="close-scanner-btn" class="btn btn-cancel"
+                                style="margin-top: 1rem;">Cancelar</button>
+                        </div>
+                    </div>
                     <div id="menu-items" class="menu-items-grid" aria-label="Elementos del menú"></div>
                 </div>
                 <div class="pos-order-container">
@@ -471,22 +488,6 @@
             </div>
         </section>
     </main>
-    <div id="scanner-modal" class="modal hidden">
-        <div class="modal-content">
-            <h2 class="modal-title">Escaneando...</h2>
-
-            <div id="scanner-controls" class="form-group" style="display: none; margin-bottom: 1rem;">
-                <label for="camera-select" class="form-label">Seleccionar cámara:</label>
-                <select id="camera-select" class="form-input"></select>
-            </div>
-
-            <div id="scanner-container">
-                <video id="scanner-video" style="width: 100%; height: auto;"></video>
-            </div>
-            <button id="close-scanner-btn" class="btn btn-cancel"
-                style="margin-top: 1rem;">Cancelar</button>
-        </div>
-    </div>
     <div id="message-modal" class="modal hidden">
         <div class="modal-content">
             <h2 class="modal-title">Mensaje</h2>
@@ -625,13 +626,13 @@
         </div>
     </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@zxing/library@latest/umd/index.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
-<script src="https://unpkg.com/jwt-decode/build/jwt-decode.js" defer></script>
-<script src="supabase-auth.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@latest/umd/index.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js" defer></script>
+    <script src="supabase-auth.js" defer></script>
 
-<script type="module" src="app.js"></script>
+    <script type="module" src="app.js"></script>
 </body>
 
 </html>
