@@ -519,18 +519,25 @@ textarea {
     height: auto;
 }
 
-/* ===== ESTILOS PARA EL OVERLAY DEL ESCÁNER ===== */
+/* ===== ESTILOS PARA EL OVERLAY DEL ESCÁNER (VERSIÓN CORREGIDA) ===== */
 #scanner-container {
     position: relative;
-    overflow: hidden;
-    border-radius: var(--border-radius-sm);
+    width: 100%;
+    /* Proporción para estabilizar el video */
+    aspect-ratio: 4 / 3;
     background-color: #000;
+    border-radius: var(--border-radius-sm);
+    overflow: hidden; /* Muy importante */
 }
 
 #scanner-video {
+    /* Hacemos que el video llene el contenedor */
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
-    height: auto;
-    display: block;
+    height: 100%;
+    object-fit: cover;
 }
 
 #scanner-overlay {
@@ -539,38 +546,41 @@ textarea {
     left: 0;
     width: 100%;
     height: 100%;
-    pointer-events: none; /* Permite hacer clic a través del overlay si es necesario */
 }
 
-/* Crea el recuadro central y la sombra exterior */
+/* Crea el recuadro verde y el fondo oscuro */
 #scanner-overlay::before {
     content: '';
     position: absolute;
+    /* Centrado perfecto */
     top: 50%;
     left: 50%;
-    /* Define el tamaño del recuadro (80% de ancho, 40% de alto) */
-    width: 80%;
-    height: 40%;
     transform: translate(-50%, -50%);
-    border: 2px solid #10b981; /* Verde éxito */
+    /* Tamaño del área de escaneo */
+    width: 85%;
+    height: 50%;
+    /* Estilo del recuadro */
+    border: 3px solid #10b981;
     border-radius: var(--border-radius);
-    /* Este truco crea el efecto de oscurecer todo excepto el recuadro */
-    box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.5);
+    /* Efecto de "corte" para el fondo oscuro */
+    box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.6);
 }
 
-/* Agrega el texto de ayuda sobre el recuadro */
+/* Crea el texto de ayuda */
 #scanner-overlay::after {
     content: 'Coloca el código de barras aquí';
     position: absolute;
-    top: calc(50% - 20% - 30px); /* Posiciona el texto justo arriba del recuadro */
+    /* Centrado horizontal */
     left: 50%;
     transform: translateX(-50%);
+    /* Posición sobre el recuadro */
+    top: 15%; 
+    background: rgba(0, 0, 0, 0.75);
     color: white;
-    background: rgba(0, 0, 0, 0.7);
-    padding: 5px 10px;
+    padding: 8px 12px;
     border-radius: 4px;
-    font-size: 14px;
-    white-space: nowrap;
+    font-size: 0.9rem;
+    font-weight: 500;
 }
 
 /* ===== SECCIÓN GESTIÓN DE PRODUCTOS ===== */
@@ -1211,6 +1221,7 @@ textarea {
   width: 90%;
   box-shadow: var(--box-shadow-lg);
   animation: modalFadeIn 0.3s ease;
+  margin: auto; /* <-- AÑADE ESTA LÍNEA */
 }
 
 #message-modal{
