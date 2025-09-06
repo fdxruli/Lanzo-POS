@@ -671,8 +671,6 @@ textarea {
 }
 
 /*estilos para el boton de scaner del campo de codigo de barras*/
-/* En styles.css, puedes añadir esto al final de la sección GESTIÓN DE PRODUCTOS */
-
 .input-with-button-container {
     display: flex;
     align-items: center;
@@ -751,6 +749,35 @@ textarea {
 .product-card-price {
   font-weight: 600;
   color: var(--primary-color);
+}
+
+/* Estilos para el estado del producto */
+.product-status {
+    padding: 4px 8px;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: white;
+}
+
+.product-status.active {
+    background-color: var(--success-color);
+}
+
+.product-status.inactive {
+    background-color: var(--text-light);
+}
+
+.btn-toggle-status {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: 0.875rem;
+    border: 1px solid var(--primary-color);
+    background-color: transparent;
+    color: var(--primary-color);
+}
+
+.btn-toggle-status:hover {
+    background-color: rgba(99, 102, 241, 0.1);
 }
 
 .product-card-actions {
@@ -1540,6 +1567,10 @@ textarea {
   .product-list {
     grid-template-columns: 1fr;
   }
+
+  .customer-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Estilos para el modal de bienvenida */
@@ -1851,6 +1882,23 @@ textarea {
     padding: 3px 6px;
     border-radius: 3px;
     font-size: 0.8rem;
+}
+
+/* Estilos para el buscador y controles del POS */
+.pos-controls {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
+    align-items: center;
+}
+
+#pos-product-search {
+    flex-grow: 1; /* El buscador ocupa el espacio disponible */
+}
+
+.pos-controls .btn-scan {
+    flex-shrink: 0; /* Evita que el botón se encoja */
+    padding: var(--spacing-sm);
 }
 
 .order-item-controls {

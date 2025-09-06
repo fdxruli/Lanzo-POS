@@ -122,7 +122,8 @@ export function initCustomersModule(dependencies) {
             const customerData = {
                 id: editingCustomerId || `customer-${Date.now()}`,
                 name: document.getElementById('customer-name').value,
-                // ...otros campos
+                phone: document.getElementById('customer-phone').value,
+                address: document.getElementById('customer-address').value
             };
             await saveData(STORES.CUSTOMERS, customerData);
             showMessageModal('Cliente guardado exitosamente');
