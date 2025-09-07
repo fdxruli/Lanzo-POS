@@ -16,7 +16,6 @@ const scannerModal = document.getElementById('scanner-modal');
 const closeScannerBtn = document.getElementById('close-scanner-btn');
 const scanForInputBtn = document.getElementById('scan-for-input-btn');
 const scannerVideo = document.getElementById('scanner-video');
-const cameraSelect = document.getElementById('camera-select');
 // --- Elementos del modal mejorado ---
 const modalContent = scannerModal.querySelector('.modal-content');
 const modalTitle = scannerModal.querySelector('.modal-title');
@@ -63,7 +62,7 @@ const updateScannerUI = (mode) => {
  * Inicia el escáner, configurando la UI según el target.
  */
 const startScanner = async () => {
-    if (!scannerModal || !scannerVideo || !cameraSelect) return;
+    if (!scannerModal || !scannerVideo) return;
 
     // Configurar la UI ANTES de mostrar el modal
     updateScannerUI(scannerTarget);
@@ -72,7 +71,6 @@ const startScanner = async () => {
     renderScannedItems();
 
     try {
-        // ... (el resto de la función startScanner se mantiene igual, sin cambios en la lógica de la cámara)
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             throw new Error('La cámara no es compatible con este navegador.');
         }
@@ -80,20 +78,10 @@ const startScanner = async () => {
         codeReader = new ZXing.BrowserMultiFormatReader();
         const videoInputDevices = await codeReader.listVideoInputDevices();
 
-        cameraSelect.innerHTML = '';
         if (videoInputDevices.length > 0) {
-            videoInputDevices.forEach(device => {
-                const option = document.createElement('option');
-                option.value = device.deviceId;
-                option.textContent = device.label || `Cámara ${cameraSelect.length + 1}`;
-                cameraSelect.appendChild(option);
-            });
-
-            document.getElementById('scanner-controls').style.display = videoInputDevices.length > 1 ? 'block' : 'none';
-
+            // Intenta encontrar la cámara trasera por defecto
             const rearCamera = videoInputDevices.find(d => d.label.toLowerCase().includes('back'));
             selectedDeviceId = rearCamera ? rearCamera.deviceId : videoInputDevices[0].deviceId;
-            cameraSelect.value = selectedDeviceId;
 
             scannerModal.classList.remove('hidden');
             decodeFromDevice(selectedDeviceId);
@@ -233,10 +221,7 @@ export function initScannerModule(dependencies) {
     }
 
     if (closeScannerBtn) closeScannerBtn.addEventListener('click', stopScanner);
-    if (cameraSelect) cameraSelect.addEventListener('change', () => {
-        selectedDeviceId = cameraSelect.value;
-        decodeFromDevice(selectedDeviceId);
-    });
+
     if (confirmScanBtn) confirmScanBtn.addEventListener('click', () => {
         if (scannedItems.length > 0) addMultipleItemsToOrder(scannedItems);
         stopScanner();

@@ -873,6 +873,42 @@ textarea {
   }
 }
 
+/* ===== ESTILOS SECCIÓN CAJA ===== */
+.caja-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
+}
+
+#caja-status-container h3, #caja-actions-container h3 {
+    margin-top: 0;
+    color: var(--primary-color);
+}
+
+.error-message {
+    color: var(--error-color);
+    font-weight: bold;
+}
+
+#caja-history-container .history-list {
+    max-height: 400px;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--spacing-md);
+}
+
+#caja-history-container .history-item {
+    background-color: var(--light-background);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius-sm);
+    border-left: 4px solid var(--secondary-color);
+}
+
+#caja-history-container .history-item p {
+    margin: 0 0 var(--spacing-xs) 0;
+}
+
 /* ===== SECCIÓN GESTIÓN DE PRODUCTOS ===== */
 .product-management-grid {
   display: grid;

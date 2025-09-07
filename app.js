@@ -6,6 +6,7 @@ import { initCustomersModule } from './customers.js';
 import { createDashboardModule } from './dashboard.js';
 import { createBusinessTipsModule } from './business-tips.js';
 import { initializeDonationSection } from './donation-seccion.js';
+import { initCajaModule, validarCaja, getCajaActual } from './caja.js';
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -240,6 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- ELEMENTOS DEL DOM ---
     const sections = {
         pos: document.getElementById('pos-section'),
+        caja: document.getElementById('caja-section'),
         productManagement: document.getElementById('product-management-section'),
         customers: document.getElementById('customers-section'),
         dashboard: document.getElementById('dashboard-section'),
@@ -714,6 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sectionElement = document.getElementById(`${sectionId}-section`);
         if (sectionElement) sectionElement.classList.add('active');
         if (sectionId === 'pos') renderMenu();
+        if (sectionId === 'caja') document.dispatchEvent(new Event('cajaOpened')); // Evento personalizado para abrir caja
         if (sectionId === 'product-management') renderProductManagement();
         if (sectionId === 'dashboard') {
             if (dashboard) dashboard.renderDashboard();
@@ -1149,6 +1152,11 @@ document.addEventListener('DOMContentLoaded', () => {
         paymentAmountInput.focus();
     };
     const processOrder = async () => {
+        const cajaActual = getCajaActual();
+        if (!cajaActual || cajaAcual.estado !== 'abierta') {
+            showMessageModal('No se puede procesar la venta. No hay una caja abierta y activa. Por favor, ve a la seccion de "Caja" para abrir una.');
+            return;
+        }
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
             if (welcomeModal) welcomeModal.style.display = 'flex';
@@ -1825,6 +1833,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- EVENT LISTENERS ---
     if (document.getElementById('home-link')) document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
     if (document.getElementById('nav-pos')) document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
+    if (document.getElementById('nav-caja')) document.getElementById('nav-caja').addEventListener('click', () => showSection('caja'));
     if (document.getElementById('nav-product-management')) document.getElementById('nav-product-management').addEventListener('click', () => showSection('product-management'));
     if (document.getElementById('nav-dashboard')) document.getElementById('nav-dashboard').addEventListener('click', () => {
         showSection('dashboard');
@@ -1834,6 +1843,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('nav-customers')) document.getElementById('nav-customers').addEventListener('click', () => showSection('customers'));
     if (document.getElementById('nav-donation')) document.getElementById('nav-donation').addEventListener('click', () => showSection('donation'));
     if (document.getElementById('mobile-nav-pos')) document.getElementById('mobile-nav-pos').addEventListener('click', () => showSection('pos'));
+    if (document.getElementById('mobile-nav-caja')) document.getElementById('mobile-nav-caja').addEventListener('click', () => showSection('caja'));
     if (document.getElementById('mobile-nav-product-management')) document.getElementById('mobile-nav-product-management').addEventListener('click', () => showSection('product-management'));
     if (document.getElementById('mobile-nav-dashboard')) document.getElementById('mobile-nav-dashboard').addEventListener('click', () => { showSection('dashboard'); if (dashboard) dashboard.renderDashboard(); });
     if (document.getElementById('mobile-nav-company')) document.getElementById('mobile-nav-company').addEventListener('click', () => showSection('company'));
@@ -2068,6 +2078,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Mostrar pantalla de carga solo si el elemento existe
             if (loadingScreen) loadingScreen.style.display = 'flex';
             await initDB();
+
+            // --- VALIDACION DE CAJA AL INICIO ---
+            await validarCaja();
             // Ejecutar operaciones en paralelo
             const [licenseResult, defaultDataResult] = await Promise.all([
                 initializeLicense(),
@@ -2076,6 +2089,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Inicializar los módulos después de que las dependencias estén listas
             await renderCategories(); // Cargar categorías al inicio
 
+            initCajaModule(); // Inicializar módulo de caja
             // Función para inicializar el escáner de forma segura, esperando a que ZXing esté listo
             const initializeScannerWhenReady = () => {
                 if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) {

@@ -51,6 +51,7 @@
             </div>
             <div class="nav-buttons-desktop">
                 <button id="nav-pos" class="nav-btn btn-pos">Punto de Venta</button>
+                <button id="nav-caja" class="nav-btn btn-caja">Caja</button>
                 <button id="nav-product-management" class="nav-btn btn-products">Productos</button>
                 <button id="nav-customers" class="nav-btn btn-customers">Clientes</button>
                 <button id="nav-dashboard" class="nav-btn btn-sales">Ventas</button>
@@ -69,6 +70,7 @@
         <div id="backdrop" class="backdrop"></div>
         <div id="mobile-menu" class="mobile-menu">
             <button id="mobile-nav-pos" class="mobile-nav-btn">Punto de Venta</button>
+            <button id="nav-caja" class="nav-btn btn-caja">Caja</button>
             <button id="mobile-nav-product-management" class="mobile-nav-btn">Productos</button>
             <button id="mobile-nav-customers" class="mobile-nav-btn">Clientes</button>
             <button id="mobile-nav-dashboard" class="mobile-nav-btn">Ventas</button>
@@ -77,6 +79,17 @@
         </div>
     </nav>
     <main class="main-container">
+        <section id="caja-section" class="section-content">
+            <h2 class="section-title">Gestión de Caja</h2>
+            <div class="caja-grid">
+                <div id="caja-status-container" class="stat-card">
+                </div>
+                <div id="caja-actions-container" class="stat-card">
+                </div>
+                <div id="caja-history-container" class="sales-history-container">
+                </div>
+            </div>
+        </section>
         <section id="pos-section" class="section-content active">
             <h2 class="section-title">Punto de Venta</h2>
             <div class="pos-grid">
@@ -620,10 +633,6 @@
             <h2 class="modal-title">Escanear Productos</h2>
             <div class="scanner-main-container">
                 <div class="scanner-video-container">
-                    <div id="scanner-controls" class="form-group" style="display: none; margin-bottom: 1rem;">
-                        <label for="camera-select" class="form-label">Seleccionar cámara:</label>
-                        <select id="camera-select" class="form-input"></select>
-                    </div>
                     <div id="scanner-container">
                         <video id="scanner-video"></video>
                         <div id="scanner-overlay"></div>
@@ -644,6 +653,31 @@
                 <button id="confirm-scan-btn" class="btn btn-process">Confirmar y Agregar</button>
                 <button id="close-scanner-btn" class="btn btn-cancel">Cancelar</button>
             </div>
+        </div>
+    </div>
+    
+    <!-- Modales para abrir y cerrar caja -->
+    <div id="open-caja-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 class="modal-title">Abrir Caja</h2>
+            <div class="form-group">
+                <label for="monto-inicial-input" class="form-label">Monto inicial en efectivo:</label>
+                <input type="number" id="monto-inicial-input" class="form-input" step="0.01" min="0" placeholder="0.00">
+            </div>
+            <button id="confirm-open-caja-btn" class="btn btn-save">Confirmar Apertura</button>
+            <button id="cancel-open-caja-btn" class="btn btn-cancel">Cancelar</button>
+        </div>
+    </div>
+
+    <div id="close-caja-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 class="modal-title">Cerrar Caja</h2>
+            <div class="form-group">
+                <label for="monto-cierre-input" class="form-label">Monto final en efectivo (conteo manual):</label>
+                <input type="number" id="monto-cierre-input" class="form-input" step="0.01" min="0" placeholder="0.00">
+            </div>
+            <button id="confirm-close-caja-btn" class="btn btn-process">Confirmar Cierre</button>
+            <button id="cancel-close-caja-btn" class="btn btn-cancel">Cancelar</button>
         </div>
     </div>
 
