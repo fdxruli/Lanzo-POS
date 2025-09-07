@@ -597,12 +597,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (categoryFiltersContainer) {
                 const activeFilter = categoryFiltersContainer.querySelector('.category-filter-btn.active');
                 const activeCategoryId = activeFilter ? activeFilter.dataset.id : null;
+                const posProductSearch = document.getElementById('pos-product-search');
                 categoryFiltersContainer.innerHTML = '';
                 const allButton = document.createElement('button');
                 allButton.className = 'category-filter-btn' + (!activeCategoryId ? ' active' : '');
                 allButton.textContent = 'Todos';
                 allButton.addEventListener('click', () => {
-                    renderMenu();
+                    const searchTerm = posProductSearch ? posProductSearch.value : '';
+                    renderMenu(null, searchTerm);
                     document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                     allButton.classList.add('active');
                 });
@@ -614,7 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     button.dataset.id = cat.id;
                     button.addEventListener('click', () => {
                         const searchTerm = posProductSearch ? posProductSearch.value : '';
-                        renderMenu(cat.id);
+                        renderMenu(cat.id, searchTerm);
                         document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                         button.classList.add('active');
                     });
@@ -816,8 +818,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderMenu = async (filterCategoryId = null, searchTerm = '') => {
         if (!menuItemsContainer) return;
         try {
-            let menu = await loadDataWithCache(STORES.MENU);
-            // 1. Filtrar productos activos (nos adelantamos a la Parte 2)
+            // Normalize the entire menu first
+            let menu = await loadDataWithCache(STORES.MENU).then(normalizeProducts);
+
+            // 1. Filtrar productos activos
             menu = menu.filter(item => item.isActive !== false);
 
             // 2. Filtrar por categoría si se seleccionó una
@@ -830,10 +834,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const lowerCaseSearchTerm = searchTerm.toLowerCase();
                 menu = menu.filter(item => item.name.toLowerCase().includes(lowerCaseSearchTerm));
             }
-            menu = normalizeProducts(menu);
-            if (filterCategoryId) {
-                menu = menu.filter(item => item.categoryId === filterCategoryId);
-            }
+
             menuItemsContainer.innerHTML = '';
             if (menu.length === 0) {
                 menuItemsContainer.innerHTML = `<p class="empty-message">No hay productos en esta categoría.</p>`;
