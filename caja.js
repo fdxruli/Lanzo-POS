@@ -1,5 +1,5 @@
 // caja.js
-import { saveData, loadData, STORES } from './database.js';
+import { saveData, loadData, STORES, initDB } from './database.js';
 import { showMessageModal } from './utils.js';
 
 let currentCaja = null;
@@ -261,4 +261,5 @@ async function renderCajaStatus() {
     } else {
         historyContainer.innerHTML = `<h3 class="subtitle">No hay historial de cajas.</h3>`;
     }
+
 }
