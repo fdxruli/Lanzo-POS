@@ -31,7 +31,7 @@ let codeReader = null;
 let selectedDeviceId = null;
 let lastCode = '';
 let lastScanTime = 0;
-const cooldown = 1000; // 1 segundo de enfriamiento
+const cooldown = 1500; // 1 segundo de enfriamiento
 let scannedItems = [];
 
 // ... (SUPPORTED_FORMATS se mantiene igual)
@@ -251,4 +251,5 @@ export function initScannerModule(dependencies) {
     }
 
     console.log('Conditional scanner module initialized.');
+
 }
