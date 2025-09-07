@@ -29,9 +29,9 @@ let scannerTarget = null;
 let targetInputElement = null; // Guardará la referencia al input del producto
 let codeReader = null;
 let selectedDeviceId = null;
-let scanTimeout = null;
-let isScanning = false;
-let lastScannedCode = '';
+let lastCode = '';
+let lastScanTime = 0;
+const cooldown = 1000; // 1 segundo de enfriamiento
 let scannedItems = [];
 
 // ... (SUPPORTED_FORMATS se mantiene igual)
@@ -167,7 +167,8 @@ const stopScanner = () => {
         codeReader = null;
     }
     if (scannerModal) scannerModal.classList.add('hidden');
-    isScanning = false;
+    lastCode = '';
+    lastScanTime = 0;
     scannerTarget = null;
     targetInputElement = null;
     scannedItems = [];
@@ -179,20 +180,25 @@ const decodeFromDevice = (deviceId) => {
     codeReader.decodeFromVideoDevice(
         deviceId, 'scanner-video', (result, err) => {
             if (result) {
-                const code = result.text;
-                if (!isScanning && code !== lastScannedCode) {
-                    isScanning = true;
-                    lastScannedCode = code;
-                    if (navigator.vibrate) navigator.vibrate(100);
-                    handleScanResult(code);
-                    clearTimeout(scanTimeout);
-                    scanTimeout = setTimeout(() => {
-                        isScanning = false;
-                        lastScannedCode = '';
-                    }, (scannerTarget === SCAN_TARGETS.ADD_TO_ORDER ? 500 : 0)); // Delay más corto para POS, 0 para input
+                const code = result.text.trim();
+                const now = Date.now();
+
+                if (code === lastCode && (now - lastScanTime < cooldown)) {
+                    // Mismo código, demasiado pronto, ignorar.
+                    return;
                 }
+
+                // Si es un código nuevo O el mismo código después del cooldown
+                lastCode = code;
+                lastScanTime = now;
+
+                if (navigator.vibrate) navigator.vibrate(100);
+                handleScanResult(code);
             }
-            if (err && !(err instanceof ZXing.NotFoundException)) console.warn('Error de escaneo:', err);
+            if (err && !(err instanceof ZXing.NotFoundException)) {
+                // No loguear NotFoundException, es muy común y llena la consola
+                console.warn('Error de escaneo:', err);
+            }
         }
     ).catch(err => console.error(`Error al decodificar:`, err));
 };
