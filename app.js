@@ -719,7 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
         Object.values(sections).forEach(section => {
             if (section) section.classList.remove('active');
         });
-        
+
         // Mostrar la sección seleccionada
         const sectionElement = document.getElementById(`${sectionId}-section`);
         if (sectionElement) sectionElement.classList.add('active');
@@ -734,9 +734,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sectionId === 'pos') renderMenu();
         if (sectionId === 'caja') document.dispatchEvent(new Event('cajaOpened'));
         if (sectionId === 'product-management') renderProductManagement();
-        if (sectionId === 'dashboard') {
-            if (dashboard) dashboard.renderDashboard();
-        }
+        if (sectionId === 'dashboard' && dashboard) dashboard.renderDashboard();
         if (sectionId === 'company') renderCompanyData();
 
         // Cerrar el menú móvil si está abierto
@@ -1853,9 +1851,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     // --- EVENT LISTENERS ---
     // Listener para el logo/home link
-    if (document.getElementById('home-link')) {
-        document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
+    const homeLink = document.getElementById('home-link');
+    if (homeLink) {
+        homeLink.addEventListener('click', () => showSection('pos'));
     }
+
 
     // Listener unificado para todos los botones de navegación
     const navLinksContainer = document.getElementById('main-nav-links');
@@ -1871,14 +1871,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Listeners para el menú móvil (hamburguesa y fondo)
     const mobileMenuButton = document.getElementById('mobile-menu-button');
     const backdrop = document.getElementById('backdrop');
+
     const toggleMenu = () => {
+        // Ahora usamos navLinksContainer en lugar del antiguo mobileMenu
         if (navLinksContainer) navLinksContainer.classList.toggle('open');
         if (backdrop) backdrop.classList.toggle('open');
     };
 
+    // La condición ahora busca el contenedor correcto y no debería fallar
     if (mobileMenuButton && navLinksContainer && backdrop) {
         mobileMenuButton.addEventListener('click', toggleMenu);
         backdrop.addEventListener('click', toggleMenu);
+    } else {
+        // Este mensaje ya no debería aparecer en la consola
+        console.error('Error: No se encontraron los elementos críticos del menú móvil.');
     }
     if (document.getElementById('process-order-btn')) document.getElementById('process-order-btn').addEventListener('click', openPaymentProcess);
     if (document.getElementById('clear-order-btn')) document.getElementById('clear-order-btn').addEventListener('click', () => {
@@ -1889,6 +1895,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
+
+    
     if (paymentAmountInput) paymentAmountInput.addEventListener('input', () => {
         const total = parseFloat(paymentTotal.textContent.replace('$', ''));
         const amountPaid = parseFloat(paymentAmountInput.value) || 0;
