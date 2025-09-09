@@ -614,7 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     button.dataset.id = cat.id;
                     button.addEventListener('click', () => {
                         const searchTerm = posProductSearch ? posProductSearch.value : '';
-                        renderMenu(cat.id);
+                        renderMenu(cat.id, searchTerm);
                         document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                         button.classList.add('active');
                     });
@@ -816,29 +816,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderMenu = async (filterCategoryId = null, searchTerm = '') => {
         if (!menuItemsContainer) return;
         try {
+            // 1. Cargar todos los productos
             let menu = await loadDataWithCache(STORES.MENU);
-            // 1. Filtrar productos activos (nos adelantamos a la Parte 2)
+
+            // 2. Normalizar los productos (asegurar que todos tengan las propiedades necesarias)
+            menu = normalizeProducts(menu);
+
+            // 3. Filtrar solo los productos que están activos
             menu = menu.filter(item => item.isActive !== false);
 
-            // 2. Filtrar por categoría si se seleccionó una
+            // 4. Filtrar por categoría SI se ha proporcionado una
             if (filterCategoryId) {
                 menu = menu.filter(item => item.categoryId === filterCategoryId);
             }
 
-            // 3. Filtrar por el término de búsqueda
+            // 5. Filtrar por el término de búsqueda SI se ha proporcionado uno
             if (searchTerm) {
                 const lowerCaseSearchTerm = searchTerm.toLowerCase();
                 menu = menu.filter(item => item.name.toLowerCase().includes(lowerCaseSearchTerm));
             }
-            menu = normalizeProducts(menu);
-            if (filterCategoryId) {
-                menu = menu.filter(item => item.categoryId === filterCategoryId);
-            }
+
+            // 6. Mostrar los productos resultantes en la pantalla
             menuItemsContainer.innerHTML = '';
             if (menu.length === 0) {
                 menuItemsContainer.innerHTML = `<p class="empty-message">No hay productos en esta categoría.</p>`;
                 return;
             }
+
             menu.forEach(item => {
                 const menuItemDiv = document.createElement('div');
                 menuItemDiv.className = 'menu-item';
@@ -853,11 +857,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     stockInfo = `<div class="stock-info no-stock-label">No llevado</div>`;
                 }
                 menuItemDiv.innerHTML = `
-                        <img class="menu-item-image" src="${item.image || defaultPlaceholder}" alt="${item.name}" onerror="this.onerror=null;this.src='${defaultPlaceholder}';">
-                        <h3 class="menu-item-name">${item.name}</h3>
-                        <p class="menu-item-price">$${item.price.toFixed(2)}</p>
-                        ${stockInfo}
-                    `;
+                    <img class="menu-item-image" src="${item.image || defaultPlaceholder}" alt="${item.name}" onerror="this.onerror=null;this.src='${defaultPlaceholder}';">
+                    <h3 class="menu-item-name">${item.name}</h3>
+                    <p class="menu-item-price">$${item.price.toFixed(2)}</p>
+                    ${stockInfo}
+                `;
                 // Permitir agregar si: no lleva control O (lleva control y tiene stock)
                 if (!item.trackStock || item.stock > 0) {
                     menuItemDiv.addEventListener('click', () => addItemToOrder(item));
@@ -1153,7 +1157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const processOrder = async () => {
         const cajaActual = getCajaActual();
-        if (!cajaActual || cajaAcual.estado !== 'abierta') {
+        if (!cajaActual || cajaActual.estado !== 'abierta') {
             showMessageModal('No se puede procesar la venta. No hay una caja abierta y activa. Por favor, ve a la seccion de "Caja" para abrir una.');
             return;
         }
