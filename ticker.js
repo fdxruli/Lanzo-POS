@@ -29,6 +29,12 @@ export function createTickerModule() {
             if (!menu || menu.length === 0) return [];
 
             menu.forEach(product => {
+                // --- NUEVA CONDICIÓN ---
+                // Si el producto está inactivo (isActive es false), no se generan alertas para él.
+                if (product.isActive === false) {
+                    return; // Salta a la siguiente iteración del bucle
+                }
+
                 // Alerta de stock bajo
                 if (product.trackStock && product.stock > 0 && product.stock < LOW_STOCK_THRESHOLD) {
                     alerts.push(`¡Stock bajo! Quedan ${product.stock} unidades de ${product.name}.`);
