@@ -55,41 +55,34 @@
 
 <body>
     <nav class="navbar">
-        <div class="nav-container">
-            <div class="nav-logo-container" id="home-link">
-                <img id="nav-company-logo" class="nav-logo" src="https://placehold.co/100x100/FFFFFF/4A5568?text=L"
-                    alt="Logo de Lanzo POS">
-                <h1 id="nav-company-name" class="nav-title">Lanzo</h1>
-            </div>
-            <div class="nav-buttons-desktop">
-                <button id="nav-pos" class="nav-btn btn-pos" title="Ir al Punto de Venta">Punto de Venta</button>
-                <button id="nav-caja" class="nav-btn btn-caja" title="Gestionar Caja">Caja</button>
-                <button id="nav-product-management" class="nav-btn btn-products" title="Gestionar Productos">Productos</button>
-                <button id="nav-customers" class="nav-btn btn-customers" title="Gestionar Clientes">Clientes</button>
-                <button id="nav-dashboard" class="nav-btn btn-sales" title="Ver Ventas y Estadísticas">Ventas</button>
-                <button id="nav-company" class="nav-btn btn-config" title="Configurar tu Negocio">Configuración</button>
-                <button id="nav-donation" class="nav-btn btn-donate" title="Apoya el Proyecto Lanzo">Donar</button>
-            </div>
-            <div class="nav-mobile-toggle">
-                <button id="mobile-menu-button" class="mobile-menu-btn" aria-label="Abrir menú móvil">
-                    <svg class="mobile-menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 6h16M4 12h16m-7 6h7" />
-                    </svg>
-                </button>
-            </div>
+    <div class="nav-container">
+        <div class="nav-logo-container" id="home-link">
+            <img id="nav-company-logo" class="nav-logo" src="https://placehold.co/100x100/FFFFFF/4A5568?text=L"
+                alt="Logo de Lanzo POS">
+            <h1 id="nav-company-name" class="nav-title">Lanzo</h1>
         </div>
-        <div id="backdrop" class="backdrop"></div>
-        <div id="mobile-menu" class="mobile-menu">
-            <button id="mobile-nav-pos" class="mobile-nav-btn">Punto de Venta</button>
-            <button id="nav-caja" class="nav-btn btn-caja">Caja</button>
-            <button id="mobile-nav-product-management" class="mobile-nav-btn">Productos</button>
-            <button id="mobile-nav-customers" class="mobile-nav-btn">Clientes</button>
-            <button id="mobile-nav-dashboard" class="mobile-nav-btn">Ventas</button>
-            <button id="mobile-nav-company" class="mobile-nav-btn">Configuración</button>
-            <button id="mobile-nav-donation" class="mobile-nav-btn">Donar</button>
+
+        <div id="main-nav-links" class="nav-links">
+            <button class="nav-link" data-section="pos" title="Ir al Punto de Venta">Punto de Venta</button>
+            <button class="nav-link" data-section="caja" title="Gestionar Caja">Caja</button>
+            <button class="nav-link" data-section="product-management" title="Gestionar Productos">Productos</button>
+            <button class="nav-link" data-section="customers" title="Gestionar Clientes">Clientes</button>
+            <button class="nav-link" data-section="dashboard" title="Ver Ventas y Estadísticas">Ventas</button>
+            <button class="nav-link" data-section="company" title="Configurar tu Negocio">Configuración</button>
+            <button class="nav-link" data-section="donation" title="Apoya el Proyecto Lanzo">Donar</button>
         </div>
-    </nav>
+
+        <div class="nav-mobile-toggle">
+            <button id="mobile-menu-button" class="mobile-menu-btn" aria-label="Abrir menú móvil">
+                <svg class="mobile-menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 6h16M4 12h16m-7 6h7" />
+                </svg>
+            </button>
+        </div>
+    </div>
+    <div id="backdrop" class="backdrop"></div>
+</nav>
     <main class="main-container">
         <section id="caja-section" class="section-content">
             <h2 class="section-title">Gestión de Caja</h2>

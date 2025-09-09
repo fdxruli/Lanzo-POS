@@ -715,23 +715,35 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     // --- NAVEGACIÓN Y VISIBILIDAD ---
     const showSection = (sectionId) => {
+        // Ocultar todas las secciones
         Object.values(sections).forEach(section => {
             if (section) section.classList.remove('active');
         });
+        
+        // Mostrar la sección seleccionada
         const sectionElement = document.getElementById(`${sectionId}-section`);
         if (sectionElement) sectionElement.classList.add('active');
+
+        // Actualizar el botón activo en el menú de navegación
+        const navLinks = document.querySelectorAll('.nav-link');
+        navLinks.forEach(link => {
+            link.classList.toggle('active', link.dataset.section === sectionId);
+        });
+
+        // Lógica específica de cada sección
         if (sectionId === 'pos') renderMenu();
-        if (sectionId === 'caja') document.dispatchEvent(new Event('cajaOpened')); // Evento personalizado para abrir caja
+        if (sectionId === 'caja') document.dispatchEvent(new Event('cajaOpened'));
         if (sectionId === 'product-management') renderProductManagement();
         if (sectionId === 'dashboard') {
             if (dashboard) dashboard.renderDashboard();
         }
         if (sectionId === 'company') renderCompanyData();
-        // Close mobile menu if open
-        const mobileMenu = document.getElementById('mobile-menu');
+
+        // Cerrar el menú móvil si está abierto
+        const navLinksContainer = document.getElementById('main-nav-links');
         const backdrop = document.getElementById('backdrop');
-        if (mobileMenu && mobileMenu.classList.contains('open')) {
-            mobileMenu.classList.remove('open');
+        if (navLinksContainer && navLinksContainer.classList.contains('open')) {
+            navLinksContainer.classList.remove('open');
             if (backdrop) backdrop.classList.remove('open');
         }
     };
@@ -1840,24 +1852,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     // --- EVENT LISTENERS ---
-    if (document.getElementById('home-link')) document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
-    if (document.getElementById('nav-pos')) document.getElementById('nav-pos').addEventListener('click', () => showSection('pos'));
-    if (document.getElementById('nav-caja')) document.getElementById('nav-caja').addEventListener('click', () => showSection('caja'));
-    if (document.getElementById('nav-product-management')) document.getElementById('nav-product-management').addEventListener('click', () => showSection('product-management'));
-    if (document.getElementById('nav-dashboard')) document.getElementById('nav-dashboard').addEventListener('click', () => {
-        showSection('dashboard');
-        if (dashboard) dashboard.renderDashboard();
-    });
-    if (document.getElementById('nav-company')) document.getElementById('nav-company').addEventListener('click', () => showSection('company'));
-    if (document.getElementById('nav-customers')) document.getElementById('nav-customers').addEventListener('click', () => showSection('customers'));
-    if (document.getElementById('nav-donation')) document.getElementById('nav-donation').addEventListener('click', () => showSection('donation'));
-    if (document.getElementById('mobile-nav-pos')) document.getElementById('mobile-nav-pos').addEventListener('click', () => showSection('pos'));
-    if (document.getElementById('mobile-nav-caja')) document.getElementById('mobile-nav-caja').addEventListener('click', () => showSection('caja'));
-    if (document.getElementById('mobile-nav-product-management')) document.getElementById('mobile-nav-product-management').addEventListener('click', () => showSection('product-management'));
-    if (document.getElementById('mobile-nav-dashboard')) document.getElementById('mobile-nav-dashboard').addEventListener('click', () => { showSection('dashboard'); if (dashboard) dashboard.renderDashboard(); });
-    if (document.getElementById('mobile-nav-company')) document.getElementById('mobile-nav-company').addEventListener('click', () => showSection('company'));
-    if (document.getElementById('mobile-nav-customers')) document.getElementById('mobile-nav-customers').addEventListener('click', () => showSection('customers'));
-    if (document.getElementById('mobile-nav-donation')) document.getElementById('mobile-nav-donation').addEventListener('click', () => showSection('donation'));
+    // Listener para el logo/home link
+    if (document.getElementById('home-link')) {
+        document.getElementById('home-link').addEventListener('click', () => showSection('pos'));
+    }
+
+    // Listener unificado para todos los botones de navegación
+    const navLinksContainer = document.getElementById('main-nav-links');
+    if (navLinksContainer) {
+        navLinksContainer.addEventListener('click', (e) => {
+            const link = e.target.closest('.nav-link');
+            if (link && link.dataset.section) {
+                showSection(link.dataset.section);
+            }
+        });
+    }
+
+    // Listeners para el menú móvil (hamburguesa y fondo)
+    const mobileMenuButton = document.getElementById('mobile-menu-button');
+    const backdrop = document.getElementById('backdrop');
+    const toggleMenu = () => {
+        if (navLinksContainer) navLinksContainer.classList.toggle('open');
+        if (backdrop) backdrop.classList.toggle('open');
+    };
+
+    if (mobileMenuButton && navLinksContainer && backdrop) {
+        mobileMenuButton.addEventListener('click', toggleMenu);
+        backdrop.addEventListener('click', toggleMenu);
+    }
     if (document.getElementById('process-order-btn')) document.getElementById('process-order-btn').addEventListener('click', openPaymentProcess);
     if (document.getElementById('clear-order-btn')) document.getElementById('clear-order-btn').addEventListener('click', () => {
         if (order.length > 0) {
