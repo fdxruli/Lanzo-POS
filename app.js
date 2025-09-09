@@ -7,13 +7,14 @@ import { createDashboardModule } from './dashboard.js';
 import { createBusinessTipsModule } from './business-tips.js';
 import { initializeDonationSection } from './donation-seccion.js';
 import { initCajaModule, validarCaja, getCajaActual } from './caja.js';
+import { createTickerModule } from './ticker.js';
 
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
     let isAppUnlocked = false;
     let order = [];
-    let dashboard, businessTips; // Declarar módulos aquí
+    let dashboard, businessTips, ticker; // Declarar módulos aquí
     let customersForSale = []; // Variable para guardar los clientes cargados
 
     const initialMenu = [
@@ -321,13 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rememberDeviceCheckbox = document.getElementById('remember-device');
 
     // ▼▼ NUEVO: ELEMENTOS PARA CARRUSEL DE ALERTAS Y FECHA DE CADUCIDAD ▼▼
-    const alertCarouselContainer = document.getElementById('alert-carousel-container');
-    const alertCarousel = document.getElementById('alert-carousel');
-    const prevAlertBtn = document.getElementById('prev-alert');
-    const nextAlertBtn = document.getElementById('next-alert');
     const productExpiryDateInput = document.getElementById('product-expiry-date');
-    let alertInterval;
-    let currentAlertIndex = 0;
     // ▲▲ FIN DE NUEVOS ELEMENTOS ▲▲
 
     // --- NUEVOS ELEMENTOS DEL DOM PARA VENTA A GRANEL Y UNIDAD ---
@@ -466,110 +461,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // --- ▼▼ NUEVA LÓGICA: GESTIÓN DE ALERTAS Y CARRUSEL ▼▼ ---
-
-    /**
-     * Revisa todos los productos para generar alertas de stock y caducidad.
-     */
-    const checkProductAlerts = async () => {
-        const LOW_STOCK_THRESHOLD = 5;
-        const EXPIRY_DAYS_THRESHOLD = 7;
-        const alerts = [];
-        const now = new Date();
-        now.setHours(0, 0, 0, 0); // Normalizar para comparar solo fechas
-
-        try {
-            const menu = await loadDataWithCache(STORES.MENU);
-            if (!menu || menu.length === 0) return;
-
-            menu.forEach(product => {
-                // Alerta de stock bajo
-                if (product.trackStock && product.stock > 0 && product.stock < LOW_STOCK_THRESHOLD) {
-                    alerts.push({
-                        type: 'low-stock',
-                        message: `¡Stock bajo! Quedan ${product.stock} unidades de ${product.name}.`
-                    });
-                }
-
-                // Alerta de caducidad
-                if (product.expiryDate) {
-                    const expiryDate = new Date(product.expiryDate);
-                    const diffTime = expiryDate - now;
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                    if (diffDays >= 0 && diffDays <= EXPIRY_DAYS_THRESHOLD) {
-                        const message = diffDays === 0 ?
-                            `¡Atención! ${product.name} caduca hoy.` :
-                            `¡Atención! ${product.name} caduca en ${diffDays} días.`;
-                        alerts.push({
-                            type: 'expiry-alert',
-                            message: message
-                        });
-                    }
-                }
-            });
-
-            renderAlertCarousel(alerts);
-        } catch (error) {
-            console.error("Error al verificar alertas de productos:", error);
-        }
-    };
-
-    /**
-     * Muestra las alertas generadas en un carrusel.
-     * @param {Array} alerts - Un array de objetos de alerta.
-     */
-    const renderAlertCarousel = (alerts) => {
-        if (!alertCarousel || !alertCarouselContainer) return;
-
-        clearInterval(alertInterval); // Limpiar intervalo anterior
-        alertCarousel.innerHTML = '';
-
-        if (alerts.length === 0) {
-            alertCarouselContainer.classList.add('hidden');
-            return;
-        }
-
-        alertCarouselContainer.classList.remove('hidden');
-        alerts.forEach(alert => {
-            const div = document.createElement('div');
-            div.className = `alert-message ${alert.type}`;
-            div.textContent = alert.message;
-            alertCarousel.appendChild(div);
-        });
-
-        const alertMessages = alertCarousel.querySelectorAll('.alert-message');
-        if (alertMessages.length <= 1) {
-            prevAlertBtn.classList.add('hidden');
-            nextAlertBtn.classList.add('hidden');
-            return;
-        }
-
-        prevAlertBtn.classList.remove('hidden');
-        nextAlertBtn.classList.remove('hidden');
-        currentAlertIndex = 0;
-
-        const showAlert = (index) => {
-            alertCarousel.style.transform = `translateX(-${index * 100}%)`;
-        };
-
-        const showNextAlert = () => {
-            currentAlertIndex = (currentAlertIndex + 1) % alertMessages.length;
-            showAlert(currentAlertIndex);
-        };
-
-        const showPrevAlert = () => {
-            currentAlertIndex = (currentAlertIndex - 1 + alertMessages.length) % alertMessages.length;
-            showAlert(currentAlertIndex);
-        };
-
-        nextAlertBtn.onclick = showNextAlert;
-        prevAlertBtn.onclick = showPrevAlert;
-
-        showAlert(currentAlertIndex);
-        alertInterval = setInterval(showNextAlert, 5000); // Cambia de alerta cada 5 segundos
-    };
-
     // --- ▲▲ FIN DE NUEVA LÓGICA ▲▲ ---
 
     // --- FUNCIONES PARA LA CALCULADORA DE COSTOS ---
@@ -1405,7 +1296,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderProductManagement();
             
             // ▼▼ MODIFICADO: Actualizar alertas después de una venta ▼▼
-            await checkProductAlerts();
+            if(ticker) await ticker.updateAlerts();
 
         } catch (error) {
             console.error('Error completing order processing:', error.message);
@@ -1686,7 +1577,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderMenu();
             
             // ▼▼ MODIFICADO: Actualizar alertas después de guardar ▼▼
-            await checkProductAlerts();
+            if(ticker) await ticker.updateAlerts();
 
         } catch (error) {
             console.error('Error saving product:', error.message);
@@ -1717,7 +1608,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (dashboard) dashboard.renderDashboard();
                     
                     // ▼▼ MODIFICADO: Actualizar alertas después de eliminar ▼▼
-                    await checkProductAlerts();
+                    if(ticker) await ticker.updateAlerts();
 
                 } catch (error) {
                     console.error('Error moving product to deleted store:', error.message);
@@ -1746,7 +1637,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dashboard) dashboard.renderDashboard();
 
             // ▼▼ MODIFICADO: Actualizar alertas después de restaurar ▼▼
-            await checkProductAlerts();
+            if(ticker) await ticker.updateAlerts();
 
         } catch (error) {
             console.error('Error restoring product:', error.message);
@@ -2293,6 +2184,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 showMessageModal,
                 STORES
             });
+
+            ticker = createTickerModule();
             // Configurar renovación automática de licencias (cada 24 horas)
             setInterval(renewLicenseAutomatically, 24 * 60 * 60 * 1000);
             // Lógica de Pestañas (Tabs) para Productos
@@ -2392,7 +2285,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             // ▼▼ MODIFICADO: Llamar a la comprobación de alertas al iniciar ▼▼
-            await checkProductAlerts();
+            if(ticker) await ticker.renderTicker();
 
             // Ocultar pantalla de carga al finalizar (si existe)
             if (loadingScreen) loadingScreen.style.display = 'none';
