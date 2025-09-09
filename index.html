@@ -4,30 +4,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lanzo - Sistema de Punto de Venta y Gestión para Pequeños Negocios</title>
+    <title>Lanzo POS | Sistema Punto de Venta Gratuito para Negocios</title>
+
     <meta name="description"
-        content="Lanzo es un sistema completo de punto de venta y gestión para pequeños negocios. Gestiona productos, ventas e inventario desde cualquier dispositivo.">
+        content="Potencia tu negocio con Lanzo POS, el sistema de punto de venta (POS) gratuito y fácil de usar. Gestiona inventario, ventas, clientes y más. ¡Ideal para pequeños negocios y emprendedores!">
     <meta name="keywords"
-        content="punto de venta, sistema POS, gestión de inventario, ventas, pequeños negocios, software POS">
+        content="POS gratis, sistema punto de venta, software para tiendas, control de inventario, TPV, punto de venta para abarrotes, software para restaurantes, gestión de clientes">
     <meta name="author" content="Lanzo">
     <meta name="robots" content="index, follow">
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="icono/icono-web.png">
-    <link rel="apple-touch-icon" href="icono/icono-apple.png">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://tu-dominio.com/">
+    <meta property="og:title" content="Lanzo POS | Sistema Punto de Venta Gratuito para Negocios">
+    <meta property="og:description"
+        content="Gestiona tu inventario, ventas y clientes de forma fácil y gratuita con Lanzo POS.">
+    <meta property="og:image" content="https://tu-dominio.com/icono/icono.png">
 
-    <!-- CSS -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://tu-dominio.com/">
+    <meta property="twitter:title" content="Lanzo POS | Sistema Punto de Venta Gratuito para Negocios">
+    <meta property="twitter:description"
+        content="Gestiona tu inventario, ventas y clientes de forma fácil y gratuita con Lanzo POS.">
+    <meta property="twitter:image" content="https://tu-dominio.com/icono/icono.png">
+
+    <link rel="icon" type="image/png" href="icono/icono-web.png">
+    <link rel="apple-touch-icon" href="icono/icono.png">
+
     <link rel="stylesheet" href="styles.css">
 
-    <!-- Schema.org structured data -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
-      "name": "Lanzo",
+      "name": "Lanzo POS",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web",
-      "description": "Sistema completo de punto de venta y gestión para pequeños negocios",
+      "description": "Sistema de punto de venta (POS) gratuito para la gestión de inventario, ventas y clientes en pequeños negocios.",
       "offers": {
         "@type": "Offer",
         "price": "0",
@@ -46,17 +58,17 @@
         <div class="nav-container">
             <div class="nav-logo-container" id="home-link">
                 <img id="nav-company-logo" class="nav-logo" src="https://placehold.co/100x100/FFFFFF/4A5568?text=L"
-                    alt="Logo de Lanzo - Sistema de Punto de Venta">
+                    alt="Logo de Lanzo POS">
                 <h1 id="nav-company-name" class="nav-title">Lanzo</h1>
             </div>
             <div class="nav-buttons-desktop">
-                <button id="nav-pos" class="nav-btn btn-pos">Punto de Venta</button>
-                <button id="nav-caja" class="nav-btn btn-caja">Caja</button>
-                <button id="nav-product-management" class="nav-btn btn-products">Productos</button>
-                <button id="nav-customers" class="nav-btn btn-customers">Clientes</button>
-                <button id="nav-dashboard" class="nav-btn btn-sales">Ventas</button>
-                <button id="nav-company" class="nav-btn btn-config">Configuración</button>
-                <button id="nav-donation" class="nav-btn btn-donate">Donar</button>
+                <button id="nav-pos" class="nav-btn btn-pos" title="Ir al Punto de Venta">Punto de Venta</button>
+                <button id="nav-caja" class="nav-btn btn-caja" title="Gestionar Caja">Caja</button>
+                <button id="nav-product-management" class="nav-btn btn-products" title="Gestionar Productos">Productos</button>
+                <button id="nav-customers" class="nav-btn btn-customers" title="Gestionar Clientes">Clientes</button>
+                <button id="nav-dashboard" class="nav-btn btn-sales" title="Ver Ventas y Estadísticas">Ventas</button>
+                <button id="nav-company" class="nav-btn btn-config" title="Configurar tu Negocio">Configuración</button>
+                <button id="nav-donation" class="nav-btn btn-donate" title="Apoya el Proyecto Lanzo">Donar</button>
             </div>
             <div class="nav-mobile-toggle">
                 <button id="mobile-menu-button" class="mobile-menu-btn" aria-label="Abrir menú móvil">
@@ -91,21 +103,21 @@
             </div>
         </section>
         <section id="pos-section" class="section-content active">
-            <h2 class="section-title">Punto de Venta</h2>
+            <h2 class="section-title">Punto de Venta Rápido y Eficiente</h2>
             <div class="pos-grid">
                 <div class="pos-menu-container">
-                    <h3 class="subtitle">Menú</h3>
+                    <h3 class="subtitle">Menú de Productos</h3>
                     <div id="category-filters" class="category-filters">
                     </div>
                     <div class="pos-controls">
                         <input type="text" id="pos-product-search" class="form-input"
-                            placeholder="Buscar producto por nombre...">
-                        <button id="scan-barcode-btn" class="btn btn-scan">📷</button>
+                            placeholder="Buscar producto por nombre..." title="Buscar producto">
+                        <button id="scan-barcode-btn" class="btn btn-scan" title="Escanear código de barras">📷</button>
                     </div>
                     <div id="menu-items" class="menu-items-grid" aria-label="Elementos del menú"></div>
                 </div>
                 <div class="pos-order-container">
-                    <h3 class="subtitle">Pedido</h3>
+                    <h3 class="subtitle">Resumen del Pedido</h3>
                     <div id="empty-order-message" class="empty-message">No hay elementos en el pedido.</div>
                     <div id="order-list" class="order-list" aria-label="Lista de pedidos"></div>
                     <div class="order-total-container">
@@ -113,14 +125,14 @@
                             <span class="total-label">Total:</span>
                             <span id="pos-total" class="total-amount">$0.00</span>
                         </div>
-                        <button id="process-order-btn" class="btn btn-process">Procesar</button>
-                        <button id="clear-order-btn" class="btn btn-clear">Limpiar</button>
+                        <button id="process-order-btn" class="btn btn-process" title="Procesar el pedido actual">Procesar</button>
+                        <button id="clear-order-btn" class="btn btn-clear" title="Limpiar todos los artículos del pedido">Limpiar</button>
                     </div>
                 </div>
             </div>
         </section>
         <section id="product-management-section" class="section-content">
-            <h2 class="section-title">Gestión de Productos</h2>
+            <h2 class="section-title">Gestión de Productos e Inventario</h2>
             <div class="tabs-container" id="product-tabs">
                 <button class="tab-btn active" data-tab="add-product">Añadir/Editar Producto</button>
                 <button class="tab-btn" data-tab="view-products">Ver Productos</button>
@@ -131,7 +143,7 @@
                     <form id="product-form">
                         <input type="hidden" id="product-id">
                         <div class="form-group">
-                            <label class="form-label" for="product-name">Nombre</label>
+                            <label class="form-label" for="product-name">Nombre del Producto</label>
                             <input class="form-input" id="product-name" type="text" required aria-required="true">
                         </div>
                         <div class="form-group">
@@ -157,7 +169,6 @@
                                 unidades/piezas.</label>
                         </div>
 
-                        <!-- Opciones para venta por UNIDAD -->
                         <div id="unit-options">
                             <div class="form-group">
                                 <label class="form-label" for="product-cost">Costo por Unidad ($)</label>
@@ -172,7 +183,6 @@
                             </div>
                         </div>
 
-                        <!-- Opciones para venta a GRANEL -->
                         <div id="bulk-options" class="hidden">
                             <div class="form-group bulk-purchase-group">
                                 <label class="form-label">Información de Compra a Granel</label>
@@ -218,8 +228,7 @@
                             <label class="form-label" for="product-category">Categoría</label>
                             <select class="form-input" id="product-category">
                                 <option value="">Sin categoría</option>
-                                <!-- Las categorías se llenarán dinámicamente -->
-                            </select>
+                                </select>
                             <button type="button" id="category-modal-button" class="btn btn-help">Administrar
                                 Categorías</button>
                         </div>
@@ -229,7 +238,7 @@
                                 placeholder="Cantidad en stock">
                         </div>
                         <div class="form-group">
-                            <label class="form-label" for="product-image-file">Imagen</label>
+                            <label class="form-label" for="product-image-file">Imagen del Producto</label>
                             <div class="image-upload-container">
                                 <img id="image-preview" class="image-preview"
                                     src="https://placehold.co/100x100/CCCCCC/000000?text=Elegir"
@@ -238,7 +247,7 @@
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-save">Guardar</button>
+                        <button type="submit" class="btn btn-save">Guardar Producto</button>
                         <button type="button" id="cancel-edit-btn" class="btn btn-cancel hidden">Cancelar</button>
                     </form>
                 </div>
@@ -256,7 +265,7 @@
             </div>
         </section>
         <section id="customers-section" class="section-content">
-            <h2 class="section-title">Gestión de Clientes</h2>
+            <h2 class="section-title">Administración de Clientes</h2>
             <div class="tabs-container" id="customers-tabs">
                 <button class="tab-btn active" data-tab="add-customer">Añadir/Editar Cliente</button>
                 <button class="tab-btn" data-tab="view-customers">Ver Clientes</button>
@@ -280,7 +289,7 @@
                             <textarea class="form-textarea" id="customer-address" required
                                 aria-required="true"></textarea>
                         </div>
-                        <button type="submit" class="btn btn-save">Guardar</button>
+                        <button type="submit" class="btn btn-save">Guardar Cliente</button>
                         <button type="button" id="cancel-customer-edit-btn"
                             class="btn btn-cancel hidden">Cancelar</button>
                     </form>
@@ -299,11 +308,11 @@
             </div>
         </section>
         <section id="dashboard-section" class="section-content">
-            <h2 class="section-title">Panel de Ventas</h2>
+            <h2 class="section-title">Panel de Ventas y Estadísticas</h2>
             <div class="tabs-container" id="sales-tabs">
-                <button class="tab-btn active" data-tab="stats-content">Estadísticas</button>
-                <button class="tab-btn" data-tab="history-content">Historial y Top</button>
-                <button class="tab-btn" data-tab="tips-content">Consejos</button>
+                <button class="tab-btn active" data-tab="stats-content">Estadísticas Clave</button>
+                <button class="tab-btn" data-tab="history-content">Historial y Productos Top</button>
+                <button class="tab-btn" data-tab="tips-content">Consejos para tu Negocio</button>
             </div>
             <div id="stats-content" class="tab-content active">
                 <div class="stats-grid">
@@ -320,7 +329,7 @@
                         <p id="dashboard-total-items" class="stat-value items">0</p>
                     </div>
                     <div class="stat-card">
-                        <h3 class="stat-title">Utilidad Neta</h3>
+                        <h3 class="stat-title">Utilidad Neta Estimada</h3>
                         <p id="dashboard-net-profit" class="stat-value profit">$0.00</p>
                     </div>
                     <div class="stat-card">
@@ -333,7 +342,7 @@
                 <div class="dashboard-grid-condensed">
                     <div class="stat-card">
                         <h3 class="stat-title">Top Productos Más Vendidos</h3>
-                        <select id="top-products-select" class="form-input">
+                        <select id="top-products-select" class="form-input" title="Seleccionar cantidad de productos a mostrar">
                             <option value="3">Top 3</option>
                             <option value="5" selected>Top 5</option>
                         </select>
@@ -346,15 +355,13 @@
                         <div id="sales-history-list" class="sales-history-list" aria-label="Historial de ventas"></div>
                     </div>
                     <div class="movement-history-container">
-                        <h3 class="subtitle">Historial de Movimientos (Papelera)</h3>
+                        <h3 class="subtitle">Papelera de Reciclaje</h3>
                         <div id="empty-movements-message" class="empty-message">No hay elementos eliminados.</div>
                         <div id="movement-history-list" class="movement-history-list"
                             aria-label="Historial de movimientos">
                         </div>
                     </div>
                 </div>
-            </div>
-            </div>
             </div>
             <div id="tips-content" class="tab-content">
                 <div class="news-container">
@@ -366,24 +373,24 @@
             </div>
         </section>
         <section id="company-section" class="section-content">
-            <h2 class="section-title">Configuración</h2>
+            <h2 class="section-title">Configuración del Negocio</h2>
             <div class="company-form-container">
                 <h3 class="subtitle">Datos de la Empresa</h3>
                 <form id="company-form" class="company-form">
                     <div class="form-group">
-                        <label class="form-label" for="company-name">Nombre</label>
+                        <label class="form-label" for="company-name">Nombre del Negocio</label>
                         <input class="form-input" id="company-name" type="text" required aria-required="true">
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="company-phone">Teléfono</label>
+                        <label class="form-label" for="company-phone">Teléfono de Contacto</label>
                         <input class="form-input" id="company-phone" type="tel">
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="company-address">Dirección</label>
+                        <label class="form-label" for="company-address">Dirección del Negocio</label>
                         <textarea class="form-textarea" id="company-address"></textarea>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="company-logo-file">Logo</label>
+                        <label class="form-label" for="company-logo-file">Logo del Negocio</label>
                         <div class="image-upload-container">
                             <img id="company-logo-preview" class="image-preview"
                                 src="https://placehold.co/100x100/FFFFFF/4A5568?text=L"
@@ -391,33 +398,33 @@
                             <input class="file-input" id="company-logo-file" type="file" accept="image/*">
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-save">Guardar</button>
+                    <button type="submit" class="btn btn-save">Guardar Cambios</button>
                 </form>
-                <h3 class="subtitle">Configuración de Tema</h3>
+                <h3 class="subtitle">Configuración de Tema Visual</h3>
                 <form id="theme-form" class="company-form">
                     <div class="form-group">
                         <label class="form-label" for="primary-color">Color Primario</label>
-                        <input class="form-input" id="primary-color" type="color" value="#374151">
+                        <input class="form-input" id="primary-color" type="color" value="#374151" title="Seleccionar color primario">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="secondary-color">Color Secundario</label>
-                        <input class="form-input" id="secondary-color" type="color" value="#3b82f6">
+                        <input class="form-input" id="secondary-color" type="color" value="#3b82f6" title="Seleccionar color secundario">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="background-color">Color de Fondo Principal</label>
-                        <input class="form-input" id="background-color" type="color" value="#f3f4f6">
+                        <input class="form-input" id="background-color" type="color" value="#f3f4f6" title="Seleccionar color de fondo">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="card-background-color">Color de Fondo de Tarjetas</label>
-                        <input class="form-input" id="card-background-color" type="color" value="#ffffff">
+                        <input class="form-input" id="card-background-color" type="color" value="#ffffff" title="Seleccionar color de fondo de tarjetas">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="text-color">Color de Texto Principal</label>
-                        <input class="form-input" id="text-color" type="color" value="#374151">
+                        <input class="form-input" id="text-color" type="color" value="#374151" title="Seleccionar color de texto principal">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="card-text-color">Color de Texto de Tarjetas</label>
-                        <input class="form-input" id="card-text-color" type="color" value="#374151">
+                        <input class="form-input" id="card-text-color" type="color" value="#374151" title="Seleccionar color de texto de tarjetas">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="font-size">Tamaño de Fuente</label>
@@ -437,53 +444,49 @@
                     <button type="submit" class="btn btn-save">Guardar Tema</button>
                     <button type="button" id="reset-theme-btn" class="btn btn-cancel">Restablecer Tema</button>
                 </form>
-                <h3 class="subtitle">Licencia</h3>
+                <h3 class="subtitle">Licencia del Software</h3>
                 <div id="license-info-container" class="license-info"></div>
             </div>
         </section>
-        <!-- Modificar esta parte del HTML -->
         <section id="donation-section" class="section-content">
             <div class="donation-container">
                 <span class="donation-heart">❤️</span>
-                <h2 class="donation-heading">¡Apoya Lanzo Negocio!</h2>
-                <p class="donation-text">Tu donación ayuda a mantener este proyecto gratuito y en constante mejora.</p>
+                <h2 class="donation-heading">¡Apoya el Crecimiento de Lanzo POS!</h2>
+                <p class="donation-text">Tu donación nos ayuda a mantener este proyecto gratuito y en constante mejora para todos los emprendedores.</p>
                 <div class="donation-buttons-container">
                     <a href="https://www.paypal.com/invoice/p/#AXZ4W24TKCUTHQGR" class="donation-button" target="_blank"
-                        rel="noopener noreferrer">
-                        Donar $50 <span class="donation-amount">MXN (paypal)</span>
+                        rel="noopener noreferrer" title="Donar $50 MXN a través de PayPal">
+                        Donar $50 <span class="donation-amount">MXN (PayPal)</span>
                     </a>
-                    <a href="https://pago.clip.mx/9ed1f2e2-fef2-4e68-8f0a-252ca7707289" rel="noopener noreferrer">
+                    <a href="https://pago.clip.mx/9ed1f2e2-fef2-4e68-8f0a-252ca7707289" target="_blank" rel="noopener noreferrer" title="Donar a través de Clip">
                         <img src="https://assets-global.website-files.com/62588b32d8d6105ab7aa9721/63bf568610f3fdf437235192_Preview.svg"
-                            alt="Logo Paga con Clip">
+                            alt="Logo Paga con Clip para donar">
                     </a>
                 </div>
                 <div class="donation-info">
-                    <p class="donation-info-text">Tu apoyo nos permite añadir nuevas funciones y mantener accesible para
-                        todos.</p>
+                    <p class="donation-info-text">Tu apoyo nos permite añadir nuevas funciones y mantener la plataforma accesible para todos.</p>
                 </div>
                 <div class="contact-container">
                     <h3 class="contact-heading">Contáctanos</h3>
-                    <p class="contact-text">¿Tienes sugerencias, dudas o necesitas una función específica? Escríbenos:
-                    </p>
+                    <p class="contact-text">¿Tienes sugerencias, dudas o necesitas una función específica? Escríbenos:</p>
                     <div class="contact-form-container">
                         <form id="contact-form" action="https://api.web3forms.com/submit" method="POST">
                             <div class="form-group">
-                                <label class="form-label" for="contact-email">Correo Electrónico / Número</label>
+                                <label class="form-label" for="contact-email">Tu Correo Electrónico o Teléfono</label>
                                 <input class="form-input" id="contact-email" type="text" name="contact" required
                                     aria-required="true">
                             </div>
                             <div class="form-group">
-                                <label class="form-label" for="contact-message">Mensaje</label>
+                                <label class="form-label" for="contact-message">Tu Mensaje</label>
                                 <textarea class="form-textarea" id="contact-message" name="message"
-                                    placeholder="pueden hacer que se pueda apartar los productos por categoria?"
+                                    placeholder="Ej: Me gustaría que se pudieran agrupar los productos por proveedor."
                                     required aria-required="true"></textarea>
                             </div>
                             <button type="submit" class="btn btn-modal">Enviar Mensaje</button>
                         </form>
                         <br>
-                        <p>O si prefieres respuesta de inmediato, <a href="https://wa.link/dacyxv"
-                                rel="noopener noreferrer">haz clic aquí</a>.
-                        </p>
+                        <p>O si prefieres una respuesta inmediata, <a href="https://wa.link/dacyxv"
+                                target="_blank" rel="noopener noreferrer">contáctanos por WhatsApp</a>.</p>
                     </div>
                 </div>
             </div>
@@ -503,7 +506,7 @@
                 <p class="payment-label">Total a Pagar:</p>
                 <p id="payment-total" class="payment-total">$0.00</p>
                 <div class="form-group">
-                    <label class="form-label" for="sale-customer">Cliente:</label>
+                    <label class="form-label" for="sale-customer">Asignar a Cliente (Opcional):</label>
                     <input type="hidden" id="sale-customer-id">
                     <input class="form-input" id="sale-customer-input" type="text"
                         placeholder="Buscar por nombre o teléfono..." autocomplete="off">
@@ -518,10 +521,9 @@
             <button id="cancel-payment-btn" class="btn btn-cancel-payment">Cancelar</button>
         </div>
     </div>
-    <!-- Modal de Bienvenida -->
     <div id="welcome-modal" class="welcome-modal">
         <div class="welcome-modal-content">
-            <h2>Bienvenido a Lanzo Negocio</h2>
+            <h2>Bienvenido a Lanzo POS</h2>
             <div class="welcome-summary">
                 <p><strong>Lanzo</strong> es un sistema completo de punto de venta y gestión para pequeños negocios con
                     las siguientes secciones principales:</p>
@@ -532,12 +534,12 @@
                     <li><strong>Panel de Ventas</strong>: Muestra estadísticas e informes de ventas.</li>
                     <li><strong>Configuración</strong>: Personaliza datos de la empresa y aspecto visual.</li>
                 </ul>
-                <p>Características: diseño responsive(celulares, tablet, computadoras), cálculo de costos, persistencia
-                    de datos local y más.</p>
+                <p>Características: diseño responsive para celulares, tablets y computadoras, cálculo de costos, persistencia
+                    de datos local y mucho más.</p>
             </div>
             <form id="license-form">
                 <div class="form-group">
-                    <label class="form-label" for="license-key">Ingrese su clave de licencia para acceder a todas las
+                    <label class="form-label" for="license-key">Ingresa tu clave de licencia para acceder a todas las
                         funciones:</label>
                     <input class="form-input" id="license-key" type="text" required aria-required="true"
                         placeholder="Ej: LANZO-XXXX-XXXX-XXXX">
@@ -547,7 +549,6 @@
             <p id="license-message" style="margin-top: 15px; display: none;"></p>
         </div>
     </div>
-    <!-- Modal para cálculo de costos (nuevo) -->
     <div id="cost-calculation-modal" class="modal hidden">
         <div class="modal-content">
             <h2 class="modal-title">Calculadora de Costos</h2>
@@ -562,8 +563,7 @@
                 <button type="button" id="add-ingredient" class="btn btn-save">Agregar</button>
             </div>
             <div class="ingredient-list" id="ingredient-list">
-                <!-- Los ingredientes se agregarán aquí dinámicamente -->
-            </div>
+                </div>
             <div class="ingredient-total" id="ingredient-total">
                 Total: $0.00
             </div>
@@ -575,7 +575,6 @@
             </div>
         </div>
     </div>
-    <!-- Modal para gestión de categorías -->
     <div id="category-modal" class="modal hidden">
         <div class="modal-content">
             <h2 class="modal-title">Gestionar Categorías</h2>
@@ -591,21 +590,18 @@
             </div>
             <h3 class="subtitle">Categorías Existentes</h3>
             <div class="category-list" id="category-list">
-                <!-- Las categorías se mostrarán aquí -->
-            </div>
+                </div>
             <button id="close-category-modal-btn" class="btn btn-cancel" style="margin-top: 1rem;">Cerrar</button>
         </div>
     </div>
 
-    <!-- Modal de Historial de Compras -->
     <div id="purchase-history-modal" class="modal hidden">
         <div class="modal-content">
-            <h2 class="modal-title">Historial de Compras</h2>
+            <h2 class="modal-title">Historial de Compras del Cliente</h2>
             <div class="purchase-history-container">
                 <h3 id="customer-history-name" class="subtitle">Historial de: <span></span></h3>
                 <div id="purchase-history-list" class="purchase-history-list">
-                    <!-- El historial se mostrará aquí -->
-                </div>
+                    </div>
                 <div class="purchase-summary">
                     <h4>Resumen</h4>
                     <p>Total de compras: <span id="total-purchases">0</span></p>
@@ -617,7 +613,6 @@
         </div>
     </div>
 
-    <!-- Modal de Detalles del Movimiento -->
     <div id="movement-details-modal" class="modal hidden">
         <div class="modal-content">
             <h2 id="movement-details-title" class="modal-title">Detalles del Movimiento</h2>
@@ -627,14 +622,13 @@
         </div>
     </div>
 
-    <!-- Modal del Escáner de Códigos de Barras -->
     <div id="scanner-modal" class="modal hidden">
         <div class="modal-content scanner-modal-content">
             <h2 class="modal-title">Escanear Productos</h2>
             <div class="scanner-main-container">
                 <div class="scanner-video-container">
                     <div id="scanner-container">
-                        <video id="scanner-video"></video>
+                        <video id="scanner-video" playsinline></video>
                         <div id="scanner-overlay"></div>
                     </div>
                 </div>
@@ -656,7 +650,6 @@
         </div>
     </div>
     
-    <!-- Modales para abrir y cerrar caja -->
     <div id="open-caja-modal" class="modal hidden">
         <div class="modal-content">
             <h2 class="modal-title">Abrir Caja</h2>
