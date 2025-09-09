@@ -554,11 +554,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- GESTIÓN DE CATEGORÍAS ---
     const renderCategories = async () => {
         try {
-            // Forzar recarga desde la base de datos omitiendo la caché
             const categories = await loadData(STORES.CATEGORIES);
             dataCache.categories = categories;
             dataCache.lastUpdated.categories = Date.now();
-            // 1. Renderizar lista en el modal de gestión
+
             if (categoryListContainer) {
                 categoryListContainer.innerHTML = '';
                 if (categories.length === 0) {
@@ -568,19 +567,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         const div = document.createElement('div');
                         div.className = 'category-item-managed';
                         div.innerHTML = `
-                        <span>${cat.name}</span>
-                        <div class="category-item-controls">
-                            <button class="edit-category-btn" data-id="${cat.id}">✏️</button>
-                            <button class="delete-category-btn" data-id="${cat.id}">🗑️</button>
-                        </div>
-                    `;
+                    <span>${cat.name}</span>
+                    <div class="category-item-controls">
+                        <button class="edit-category-btn" data-id="${cat.id}">✏️</button>
+                        <button class="delete-category-btn" data-id="${cat.id}">🗑️</button>
+                    </div>
+                `;
                         categoryListContainer.appendChild(div);
                     });
                 }
             }
-            // 2. Poblar el select del formulario de productos
+
             if (productCategorySelect) {
-                const currentValue = productCategorySelect.value; // Guardar valor actual
+                const currentValue = productCategorySelect.value;
                 productCategorySelect.innerHTML = '<option value="">Sin categoría</option>';
                 categories.forEach(cat => {
                     const option = document.createElement('option');
@@ -588,32 +587,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     option.textContent = cat.name;
                     productCategorySelect.appendChild(option);
                 });
-                // Restaurar valor seleccionado si todavía existe
                 if (categories.some(cat => cat.id === currentValue)) {
                     productCategorySelect.value = currentValue;
                 }
             }
-            // 3. Renderizar filtros en el TPV
+
             if (categoryFiltersContainer) {
                 const activeFilter = categoryFiltersContainer.querySelector('.category-filter-btn.active');
                 const activeCategoryId = activeFilter ? activeFilter.dataset.id : null;
                 categoryFiltersContainer.innerHTML = '';
+
                 const allButton = document.createElement('button');
                 allButton.className = 'category-filter-btn' + (!activeCategoryId ? ' active' : '');
                 allButton.textContent = 'Todos';
                 allButton.addEventListener('click', () => {
-                    renderMenu();
+                    // CORRECCIÓN: Obtener la barra de búsqueda y su valor aquí
+                    const searchInput = document.getElementById('pos-product-search');
+                    const searchTerm = searchInput ? searchInput.value : '';
+                    renderMenu(null, searchTerm);
                     document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                     allButton.classList.add('active');
                 });
                 categoryFiltersContainer.appendChild(allButton);
+
                 categories.forEach(cat => {
                     const button = document.createElement('button');
                     button.className = 'category-filter-btn' + (activeCategoryId === cat.id ? ' active' : '');
                     button.textContent = cat.name;
                     button.dataset.id = cat.id;
                     button.addEventListener('click', () => {
-                        const searchTerm = posProductSearch ? posProductSearch.value : '';
+                        // CORRECCIÓN: Obtener la barra de búsqueda y su valor aquí
+                        const searchInput = document.getElementById('pos-product-search');
+                        const searchTerm = searchInput ? searchInput.value : '';
                         renderMenu(cat.id, searchTerm);
                         document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                         button.classList.add('active');
