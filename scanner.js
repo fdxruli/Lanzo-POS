@@ -3,7 +3,7 @@ import { STORES } from './database.js';
 
 const SCAN_TARGETS = {
     ADD_TO_ORDER: 'addToOrder',
-    PRODUCT_INPUT: 'productInput' // Un nuevo target para claridad
+    PRODUCT_INPUT: 'productInput'
 }
 
 // Dependencias de app.js
@@ -16,34 +16,30 @@ const scannerModal = document.getElementById('scanner-modal');
 const closeScannerBtn = document.getElementById('close-scanner-btn');
 const scanForInputBtn = document.getElementById('scan-for-input-btn');
 const scannerVideo = document.getElementById('scanner-video');
-// --- Elementos del modal mejorado ---
 const modalContent = scannerModal.querySelector('.modal-content');
 const modalTitle = scannerModal.querySelector('.modal-title');
 const scannedItemsList = document.getElementById('scanned-items-list');
 const scannerTotal = document.getElementById('scanner-total');
 const confirmScanBtn = document.getElementById('confirm-scan-btn');
 
-
 // --- VARIABLES DEL MÓDULO ---
 let scannerTarget = null;
-let targetInputElement = null; // Guardará la referencia al input del producto
+let targetInputElement = null;
 let codeReader = null;
 let selectedDeviceId = null;
-let scanTimeout = null;
-let isScanning = false;
-let lastScannedCode = '';
 let scannedItems = [];
 
-// ... (SUPPORTED_FORMATS se mantiene igual)
+// --- NUEVAS VARIABLES PARA CONTROLAR ESCANEOS REPETIDOS ---
+let lastCode = '';
+let lastScanTime = 0;
+const cooldown = 2000; // 2 segundos de enfriamiento
+
 const SUPPORTED_FORMATS = [
     ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.UPC_A,
     ZXing.BarcodeFormat.UPC_E, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.CODE_39,
     ZXing.BarcodeFormat.ITF, ZXing.BarcodeFormat.CODABAR, ZXing.BarcodeFormat.QR_CODE,
 ];
 
-/**
- * --- NUEVO: Actualiza la UI del modal según el modo ---
- */
 const updateScannerUI = (mode) => {
     if (!modalContent || !modalTitle) return;
 
@@ -51,22 +47,17 @@ const updateScannerUI = (mode) => {
         modalTitle.textContent = 'Escanear Productos';
         modalContent.classList.remove('simple-scan-mode');
         modalContent.classList.add('pos-scan-mode');
-    } else { // Modo para input
+    } else {
         modalTitle.textContent = 'Escanear Código de Barras';
         modalContent.classList.add('simple-scan-mode');
         modalContent.classList.remove('pos-scan-mode');
     }
 };
 
-/**
- * Inicia el escáner, configurando la UI según el target.
- */
 const startScanner = async () => {
     if (!scannerModal || !scannerVideo) return;
 
-    // Configurar la UI ANTES de mostrar el modal
     updateScannerUI(scannerTarget);
-
     scannedItems = [];
     renderScannedItems();
 
@@ -79,13 +70,11 @@ const startScanner = async () => {
         const videoInputDevices = await codeReader.listVideoInputDevices();
 
         if (videoInputDevices.length > 0) {
-            // Intenta encontrar la cámara trasera por defecto
             const rearCamera = videoInputDevices.find(d => d.label.toLowerCase().includes('back'));
             selectedDeviceId = rearCamera ? rearCamera.deviceId : videoInputDevices[0].deviceId;
 
             scannerModal.classList.remove('hidden');
             decodeFromDevice(selectedDeviceId);
-
         } else {
             showMessageModal('No se encontraron cámaras en este dispositivo.');
         }
@@ -99,15 +88,10 @@ const startScanner = async () => {
     }
 };
 
-
-/**
- * Procesa el resultado del escaneo según el modo activo.
- */
 const handleScanResult = async (code) => {
     const trimmedCode = code ? code.trim() : "";
     if (!trimmedCode) return;
 
-    // --- LÓGICA CONDICIONAL ---
     if (scannerTarget === SCAN_TARGETS.ADD_TO_ORDER) {
         const menu = await loadDataWithCache(STORES.MENU);
         const product = menu.find(p => p.barcode === trimmedCode);
@@ -125,13 +109,11 @@ const handleScanResult = async (code) => {
         }
     } else if (scannerTarget === SCAN_TARGETS.PRODUCT_INPUT && targetInputElement) {
         targetInputElement.value = trimmedCode;
-        // Disparamos un evento para que cualquier listener en el input reaccione
         targetInputElement.dispatchEvent(new Event('input', { bubbles: true }));
-        stopScanner(); // En este modo, cerramos el modal inmediatamente
+        stopScanner();
     }
 };
 
-// ... (renderScannedItems, stopScanner, decodeFromDevice se mantienen sin cambios)
 const renderScannedItems = () => {
     if (!scannedItemsList || !scannerTotal) return;
     scannedItemsList.innerHTML = '';
@@ -167,11 +149,13 @@ const stopScanner = () => {
         codeReader = null;
     }
     if (scannerModal) scannerModal.classList.add('hidden');
-    isScanning = false;
     scannerTarget = null;
     targetInputElement = null;
     scannedItems = [];
     renderScannedItems();
+    // Reseteamos las variables de control
+    lastCode = '';
+    lastScanTime = 0;
 };
 
 const decodeFromDevice = (deviceId) => {
@@ -180,27 +164,31 @@ const decodeFromDevice = (deviceId) => {
         deviceId, 'scanner-video', (result, err) => {
             if (result) {
                 const code = result.text;
-                if (!isScanning && code !== lastScannedCode) {
-                    isScanning = true;
-                    lastScannedCode = code;
-                    if (navigator.vibrate) navigator.vibrate(100);
-                    handleScanResult(code);
-                    clearTimeout(scanTimeout);
-                    scanTimeout = setTimeout(() => {
-                        isScanning = false;
-                        lastScannedCode = '';
-                    }, (scannerTarget === SCAN_TARGETS.ADD_TO_ORDER ? 500 : 0)); // Delay más corto para POS, 0 para input
+                const now = Date.now();
+
+                // --- LÓGICA DE ENFRIAMIENTO (COOLDOWN) ---
+                if (code === lastCode && (now - lastScanTime < cooldown)) {
+                    // Mismo código dentro del período de enfriamiento, lo ignoramos.
+                    return;
                 }
+
+                // Si es un código nuevo o el enfriamiento ha pasado, lo procesamos.
+                lastCode = code;
+                lastScanTime = now;
+
+                if (navigator.vibrate) {
+                    navigator.vibrate(100);
+                }
+
+                handleScanResult(code);
             }
-            if (err && !(err instanceof ZXing.NotFoundException)) console.warn('Error de escaneo:', err);
+            if (err && !(err instanceof ZXing.NotFoundException)) {
+                console.warn('Error de escaneo:', err);
+            }
         }
     ).catch(err => console.error(`Error al decodificar:`, err));
 };
 
-
-/**
- * Inicializa el módulo, asignando los targets correctos a cada botón.
- */
 export function initScannerModule(dependencies) {
     loadDataWithCache = dependencies.loadDataWithCache;
     addMultipleItemsToOrder = dependencies.addMultipleItemsToOrder;
