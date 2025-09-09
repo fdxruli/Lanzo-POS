@@ -2266,20 +2266,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-            // Event listeners for navigation and main actions
-            const mobileMenuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-            const backdrop = document.getElementById('backdrop');
-            const toggleMenu = () => {
-                if (mobileMenu) mobileMenu.classList.toggle('open');
-                if (backdrop) backdrop.classList.toggle('open');
-            };
-            if (mobileMenuButton && mobileMenu && backdrop) {
-                mobileMenuButton.addEventListener('click', toggleMenu);
-                backdrop.addEventListener('click', toggleMenu);
-            } else {
-                console.error('app.js: Critical mobile menu elements not found!');
-            }
             // Ocultar pantalla de carga al finalizar (si existe)
             if (loadingScreen) loadingScreen.style.display = 'none';
             // Si la licencia está desbloqueada, mostrar la sección principal
