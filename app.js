@@ -597,14 +597,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (categoryFiltersContainer) {
                 const activeFilter = categoryFiltersContainer.querySelector('.category-filter-btn.active');
                 const activeCategoryId = activeFilter ? activeFilter.dataset.id : null;
-                const posProductSearch = document.getElementById('pos-product-search');
                 categoryFiltersContainer.innerHTML = '';
                 const allButton = document.createElement('button');
                 allButton.className = 'category-filter-btn' + (!activeCategoryId ? ' active' : '');
                 allButton.textContent = 'Todos';
                 allButton.addEventListener('click', () => {
-                    const searchTerm = posProductSearch ? posProductSearch.value : '';
-                    renderMenu(null, searchTerm);
+                    renderMenu();
                     document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                     allButton.classList.add('active');
                 });
@@ -616,7 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     button.dataset.id = cat.id;
                     button.addEventListener('click', () => {
                         const searchTerm = posProductSearch ? posProductSearch.value : '';
-                        renderMenu(cat.id, searchTerm);
+                        renderMenu(cat.id);
                         document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                         button.classList.add('active');
                     });
@@ -818,10 +816,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderMenu = async (filterCategoryId = null, searchTerm = '') => {
         if (!menuItemsContainer) return;
         try {
-            // Normalize the entire menu first
-            let menu = await loadDataWithCache(STORES.MENU).then(normalizeProducts);
-
-            // 1. Filtrar productos activos
+            let menu = await loadDataWithCache(STORES.MENU);
+            // 1. Filtrar productos activos (nos adelantamos a la Parte 2)
             menu = menu.filter(item => item.isActive !== false);
 
             // 2. Filtrar por categoría si se seleccionó una
@@ -834,7 +830,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const lowerCaseSearchTerm = searchTerm.toLowerCase();
                 menu = menu.filter(item => item.name.toLowerCase().includes(lowerCaseSearchTerm));
             }
-
+            menu = normalizeProducts(menu);
+            if (filterCategoryId) {
+                menu = menu.filter(item => item.categoryId === filterCategoryId);
+            }
             menuItemsContainer.innerHTML = '';
             if (menu.length === 0) {
                 menuItemsContainer.innerHTML = `<p class="empty-message">No hay productos en esta categoría.</p>`;
@@ -1120,15 +1119,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Elementos del DOM
         const customerInput = document.getElementById('sale-customer-input');
-        const customerResultsList = document.getElementById('customer-results-list');
+        const customerDatalist = document.getElementById('customer-list-datalist');
         const customerIdInput = document.getElementById('sale-customer-id');
 
-        // 1. Cargar clientes
+        // 1. Cargar clientes y poblar el datalist
         try {
             customersForSale = await loadData(STORES.CUSTOMERS);
+            customerDatalist.innerHTML = ''; // Limpiar opciones anteriores
+            customersForSale.forEach(customer => {
+                const option = document.createElement('option');
+                // Mostramos nombre y teléfono para evitar confusiones con nombres repetidos
+                option.value = `${customer.name} - ${customer.phone}`;
+                option.dataset.id = customer.id; // Guardamos el ID en un atributo data
+                customerDatalist.appendChild(option);
+            });
+            customerInput.setAttribute('list', 'customer-list-datalist');
         } catch (error) {
             console.error('Error loading customers for sale:', error);
-            customersForSale = [];
         }
 
         // 2. Limpiar valores anteriores y mostrar modal
@@ -1140,48 +1147,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Limpiar selección de cliente anterior
         customerInput.value = '';
         customerIdInput.value = '';
-        customerResultsList.innerHTML = '';
-        customerResultsList.classList.add('hidden');
-
 
         paymentModal.classList.remove('hidden');
         paymentAmountInput.focus();
     };
-
-    const filterAndShowCustomers = (searchTerm) => {
-        const customerResultsList = document.getElementById('customer-results-list');
-        customerResultsList.innerHTML = '';
-        if (!searchTerm) {
-            customerResultsList.classList.add('hidden');
-            return;
-        }
-
-        const filteredCustomers = customersForSale.filter(customer =>
-            customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            customer.phone.includes(searchTerm)
-        );
-
-        if (filteredCustomers.length > 0) {
-            filteredCustomers.forEach(customer => {
-                const item = document.createElement('div');
-                item.classList.add('customer-result-item');
-                item.textContent = `${customer.name} - ${customer.phone}`;
-                item.addEventListener('click', () => {
-                    document.getElementById('sale-customer-input').value = `${customer.name} - ${customer.phone}`;
-                    document.getElementById('sale-customer-id').value = customer.id;
-                    customerResultsList.innerHTML = '';
-                    customerResultsList.classList.add('hidden');
-                });
-                customerResultsList.appendChild(item);
-            });
-            customerResultsList.classList.remove('hidden');
-        } else {
-            customerResultsList.classList.add('hidden');
-        }
-    };
     const processOrder = async () => {
         const cajaActual = getCajaActual();
-        if (!cajaActual || cajaActual.estado !== 'abierta') {
+        if (!cajaActual || cajaAcual.estado !== 'abierta') {
             showMessageModal('No se puede procesar la venta. No hay una caja abierta y activa. Por favor, ve a la seccion de "Caja" para abrir una.');
             return;
         }
@@ -1265,7 +1237,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
             // --- LÓGICA DE CLIENTE MEJORADA ---
-            const customerId = document.getElementById('sale-customer-id').value || null;
+            const customerInput = document.getElementById('sale-customer-input');
+            const customerNameAndPhone = customerInput.value;
+            let customerId = null;
+
+            // Busca el cliente que coincida exactamente con el valor del input
+            const selectedCustomer = customersForSale.find(
+                c => `${c.name} - ${c.phone}` === customerNameAndPhone
+            );
+
+            if (selectedCustomer) {
+                customerId = selectedCustomer.id;
+            }
+            // Si no hay una coincidencia exacta, se guardará sin cliente (customerId será null)
 
             const sale = {
                 timestamp: new Date().toISOString(),
@@ -2182,21 +2166,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (productSearchInput) {
                 productSearchInput.addEventListener('input', (e) => {
                     renderProductManagement(e.target.value);
-                });
-            }
-
-            // Lógica del buscador de clientes en el modal de pago
-            const saleCustomerInput = document.getElementById('sale-customer-input');
-            if (saleCustomerInput) {
-                saleCustomerInput.addEventListener('input', (e) => {
-                    filterAndShowCustomers(e.target.value);
-                });
-                // Ocultar resultados si se hace clic fuera
-                document.addEventListener('click', (e) => {
-                    const customerResultsList = document.getElementById('customer-results-list');
-                    if (customerResultsList && !saleCustomerInput.contains(e.target) && !customerResultsList.contains(e.target)) {
-                        customerResultsList.classList.add('hidden');
-                    }
                 });
             }
             // Delegación de eventos para la lista de productos

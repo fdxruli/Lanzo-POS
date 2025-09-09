@@ -261,5 +261,4 @@ async function renderCajaStatus() {
     } else {
         historyContainer.innerHTML = `<h3 class="subtitle">No hay historial de cajas.</h3>`;
     }
-
 }

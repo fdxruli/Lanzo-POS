@@ -70,7 +70,7 @@
         <div id="backdrop" class="backdrop"></div>
         <div id="mobile-menu" class="mobile-menu">
             <button id="mobile-nav-pos" class="mobile-nav-btn">Punto de Venta</button>
-            <button id="mobile-nav-caja" class="mobile-nav-btn">Caja</button>
+            <button id="nav-caja" class="nav-btn btn-caja">Caja</button>
             <button id="mobile-nav-product-management" class="mobile-nav-btn">Productos</button>
             <button id="mobile-nav-customers" class="mobile-nav-btn">Clientes</button>
             <button id="mobile-nav-dashboard" class="mobile-nav-btn">Ventas</button>
@@ -507,7 +507,7 @@
                     <input type="hidden" id="sale-customer-id">
                     <input class="form-input" id="sale-customer-input" type="text"
                         placeholder="Buscar por nombre o teléfono..." autocomplete="off">
-                    <div id="customer-results-list" class="customer-results-list"></div>
+                    <datalist id="customer-list-datalist"></datalist>
                 </div>
                 <label class="payment-input-label" for="payment-amount">Monto Recibido:</label>
                 <input class="payment-input" id="payment-amount" type="number" step="0.01" min="0">
