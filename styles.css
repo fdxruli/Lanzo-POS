@@ -242,6 +242,88 @@ textarea {
   color: white;
 }
 
+/* ===== NUEVO: ESTILOS PARA CARRUSEL DE ALERTAS ===== */
+.alert-carousel-container {
+    background-color: var(--card-background-color);
+    box-shadow: var(--box-shadow);
+    padding: var(--spacing-sm) var(--spacing-xl);
+    position: relative;
+    max-width: 1400px;
+    margin: var(--spacing-md) auto 0;
+    border-radius: var(--border-radius-sm);
+    overflow: hidden;
+}
+
+.alert-carousel {
+    display: flex;
+    transition: transform 0.5s ease-in-out;
+}
+
+.alert-message {
+    min-width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+    padding: 0 var(--spacing-lg);
+    font-weight: 500;
+}
+
+.alert-message.low-stock {
+    color: #d97706; /* Naranja oscuro */
+}
+
+.alert-message.expiry-alert {
+    color: var(--error-color);
+}
+
+.carousel-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: rgba(0, 0, 0, 0.1);
+    border: none;
+    color: var(--text-color);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 10;
+}
+
+.carousel-nav-btn.prev {
+    left: var(--spacing-md);
+}
+
+.carousel-nav-btn.next {
+    right: var(--spacing-md);
+}
+
+/* ===== NUEVO: ESTILOS PARA INDICADORES DE ALERTA EN PRODUCTOS ===== */
+.menu-item.low-stock-warning, .product-item.low-stock-warning {
+    border-left: 5px solid #f59e0b; /* Naranja */
+}
+
+.menu-item.nearing-expiry-warning, .product-item.nearing-expiry-warning {
+    border-left: 5px solid #ef4444; /* Rojo */
+}
+
+.product-item-details .alert-indicator {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 4px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: white;
+    text-align: center;
+}
+
+.product-item-details .low-stock-indicator {
+    background-color: #f59e0b;
+}
+
+.product-item-details .nearing-expiry-indicator {
+    background-color: #ef4444;
+}
+
 /* ===== CONTENEDOR PRINCIPAL ===== */
 .main-container {
   max-width: 1400px;

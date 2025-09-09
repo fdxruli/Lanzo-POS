@@ -320,6 +320,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeCostModalButton = document.getElementById('close-cost-modal');
     const rememberDeviceCheckbox = document.getElementById('remember-device');
 
+    // ▼▼ NUEVO: ELEMENTOS PARA CARRUSEL DE ALERTAS Y FECHA DE CADUCIDAD ▼▼
+    const alertCarouselContainer = document.getElementById('alert-carousel-container');
+    const alertCarousel = document.getElementById('alert-carousel');
+    const prevAlertBtn = document.getElementById('prev-alert');
+    const nextAlertBtn = document.getElementById('next-alert');
+    const productExpiryDateInput = document.getElementById('product-expiry-date');
+    let alertInterval;
+    let currentAlertIndex = 0;
+    // ▲▲ FIN DE NUEVOS ELEMENTOS ▲▲
+
     // --- NUEVOS ELEMENTOS DEL DOM PARA VENTA A GRANEL Y UNIDAD ---
     const saleTypeSelect = document.getElementById('sale-type');
     const unitOptions = document.getElementById('unit-options');
@@ -455,6 +465,112 @@ document.addEventListener('DOMContentLoaded', () => {
             updateBulkMessages();
         }
     };
+    
+    // --- ▼▼ NUEVA LÓGICA: GESTIÓN DE ALERTAS Y CARRUSEL ▼▼ ---
+
+    /**
+     * Revisa todos los productos para generar alertas de stock y caducidad.
+     */
+    const checkProductAlerts = async () => {
+        const LOW_STOCK_THRESHOLD = 5;
+        const EXPIRY_DAYS_THRESHOLD = 7;
+        const alerts = [];
+        const now = new Date();
+        now.setHours(0, 0, 0, 0); // Normalizar para comparar solo fechas
+
+        try {
+            const menu = await loadDataWithCache(STORES.MENU);
+            if (!menu || menu.length === 0) return;
+
+            menu.forEach(product => {
+                // Alerta de stock bajo
+                if (product.trackStock && product.stock > 0 && product.stock < LOW_STOCK_THRESHOLD) {
+                    alerts.push({
+                        type: 'low-stock',
+                        message: `¡Stock bajo! Quedan ${product.stock} unidades de ${product.name}.`
+                    });
+                }
+
+                // Alerta de caducidad
+                if (product.expiryDate) {
+                    const expiryDate = new Date(product.expiryDate);
+                    const diffTime = expiryDate - now;
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                    if (diffDays >= 0 && diffDays <= EXPIRY_DAYS_THRESHOLD) {
+                        const message = diffDays === 0 ?
+                            `¡Atención! ${product.name} caduca hoy.` :
+                            `¡Atención! ${product.name} caduca en ${diffDays} días.`;
+                        alerts.push({
+                            type: 'expiry-alert',
+                            message: message
+                        });
+                    }
+                }
+            });
+
+            renderAlertCarousel(alerts);
+        } catch (error) {
+            console.error("Error al verificar alertas de productos:", error);
+        }
+    };
+
+    /**
+     * Muestra las alertas generadas en un carrusel.
+     * @param {Array} alerts - Un array de objetos de alerta.
+     */
+    const renderAlertCarousel = (alerts) => {
+        if (!alertCarousel || !alertCarouselContainer) return;
+
+        clearInterval(alertInterval); // Limpiar intervalo anterior
+        alertCarousel.innerHTML = '';
+
+        if (alerts.length === 0) {
+            alertCarouselContainer.classList.add('hidden');
+            return;
+        }
+
+        alertCarouselContainer.classList.remove('hidden');
+        alerts.forEach(alert => {
+            const div = document.createElement('div');
+            div.className = `alert-message ${alert.type}`;
+            div.textContent = alert.message;
+            alertCarousel.appendChild(div);
+        });
+
+        const alertMessages = alertCarousel.querySelectorAll('.alert-message');
+        if (alertMessages.length <= 1) {
+            prevAlertBtn.classList.add('hidden');
+            nextAlertBtn.classList.add('hidden');
+            return;
+        }
+
+        prevAlertBtn.classList.remove('hidden');
+        nextAlertBtn.classList.remove('hidden');
+        currentAlertIndex = 0;
+
+        const showAlert = (index) => {
+            alertCarousel.style.transform = `translateX(-${index * 100}%)`;
+        };
+
+        const showNextAlert = () => {
+            currentAlertIndex = (currentAlertIndex + 1) % alertMessages.length;
+            showAlert(currentAlertIndex);
+        };
+
+        const showPrevAlert = () => {
+            currentAlertIndex = (currentAlertIndex - 1 + alertMessages.length) % alertMessages.length;
+            showAlert(currentAlertIndex);
+        };
+
+        nextAlertBtn.onclick = showNextAlert;
+        prevAlertBtn.onclick = showPrevAlert;
+
+        showAlert(currentAlertIndex);
+        alertInterval = setInterval(showNextAlert, 5000); // Cambia de alerta cada 5 segundos
+    };
+
+    // --- ▲▲ FIN DE NUEVA LÓGICA ▲▲ ---
 
     // --- FUNCIONES PARA LA CALCULADORA DE COSTOS ---
     const openCostCalculator = async () => {
@@ -831,53 +947,62 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderMenu = async (filterCategoryId = null, searchTerm = '') => {
         if (!menuItemsContainer) return;
         try {
-            // 1. Cargar todos los productos
             let menu = await loadDataWithCache(STORES.MENU);
+            menu = normalizeProducts(menu).filter(item => item.isActive !== false);
 
-            // 2. Normalizar los productos (asegurar que todos tengan las propiedades necesarias)
-            menu = normalizeProducts(menu);
-
-            // 3. Filtrar solo los productos que están activos
-            menu = menu.filter(item => item.isActive !== false);
-
-            // 4. Filtrar por categoría SI se ha proporcionado una
             if (filterCategoryId) {
                 menu = menu.filter(item => item.categoryId === filterCategoryId);
             }
-
-            // 5. Filtrar por el término de búsqueda SI se ha proporcionado uno
             if (searchTerm) {
                 const lowerCaseSearchTerm = searchTerm.toLowerCase();
                 menu = menu.filter(item => item.name.toLowerCase().includes(lowerCaseSearchTerm));
             }
 
-            // 6. Mostrar los productos resultantes en la pantalla
             menuItemsContainer.innerHTML = '';
             if (menu.length === 0) {
-                menuItemsContainer.innerHTML = `<p class="empty-message">No hay productos en esta categoría.</p>`;
+                menuItemsContainer.innerHTML = `<p class="empty-message">No hay productos.</p>`;
                 return;
             }
+
+            // ▼▼ MODIFICADO: LÓGICA PARA INDICADORES VISUALES ▼▼
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
 
             menu.forEach(item => {
                 const menuItemDiv = document.createElement('div');
                 menuItemDiv.className = 'menu-item';
+
+                // Verificar stock bajo
+                if (item.trackStock && item.stock > 0 && item.stock < 5) {
+                    menuItemDiv.classList.add('low-stock-warning');
+                }
+
+                // Verificar caducidad
+                if (item.expiryDate) {
+                    const expiryDate = new Date(item.expiryDate);
+                    const diffTime = expiryDate - now;
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    if (diffDays >= 0 && diffDays <= 7) {
+                        menuItemDiv.classList.add('nearing-expiry-warning');
+                    }
+                }
+                // ▲▲ FIN DE MODIFICACIÓN ▲▲
+
                 let stockInfo = '';
                 if (item.trackStock) {
-                    if (item.stock > 0) {
-                        stockInfo = `<div class="stock-info">Stock: ${item.stock}</div>`;
-                    } else {
-                        stockInfo = `<div class="stock-info out-of-stock-label">AGOTADO</div>`;
-                    }
+                    stockInfo = item.stock > 0 ?
+                        `<div class="stock-info">Stock: ${item.stock}</div>` :
+                        `<div class="stock-info out-of-stock-label">AGOTADO</div>`;
                 } else {
-                    stockInfo = `<div class="stock-info no-stock-label">No llevado</div>`;
+                    stockInfo = `<div class="stock-info no-stock-label">Sin seguimiento</div>`;
                 }
+
                 menuItemDiv.innerHTML = `
                     <img class="menu-item-image" src="${item.image || defaultPlaceholder}" alt="${item.name}" onerror="this.onerror=null;this.src='${defaultPlaceholder}';">
                     <h3 class="menu-item-name">${item.name}</h3>
                     <p class="menu-item-price">$${item.price.toFixed(2)}</p>
                     ${stockInfo}
                 `;
-                // Permitir agregar si: no lleva control O (lleva control y tiene stock)
                 if (!item.trackStock || item.stock > 0) {
                     menuItemDiv.addEventListener('click', () => addItemToOrder(item));
                 }
@@ -1224,7 +1349,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 message += "\n\n¿Deseas procesar el pedido de todas formas?";
                 showMessageModal(message, async () => {
                     // El usuario confirmó que quiere procesar a pesar del stock insuficiente
-                    await completeOrcompleteOrderProcessing(insufficientStockItems, exceedsStockItems);
+                    await completeOrderProcessing(insufficientStockItems, exceedsStockItems);
                 });
                 return;
             }
@@ -1237,7 +1362,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const completeOrderProcessing = async (insufficientStockItems, exceedsStockItems) => {
         try {
-            // ... (la lógica de inventario que ya tienes se queda igual) ...
             const processedItems = [];
             for (const orderItem of order) {
                 const product = await loadData(STORES.MENU, orderItem.id);
@@ -1254,33 +1378,24 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-            // --- LÓGICA DE CLIENTE MEJORADA ---
             const customerInput = document.getElementById('sale-customer-input');
             const customerNameAndPhone = customerInput.value;
             let customerId = null;
-
-            // Busca el cliente que coincida exactamente con el valor del input
-            const selectedCustomer = customersForSale.find(
-                c => `${c.name} - ${c.phone}` === customerNameAndPhone
-            );
-
+            const selectedCustomer = customersForSale.find(c => `${c.name} - ${c.phone}` === customerNameAndPhone);
             if (selectedCustomer) {
                 customerId = selectedCustomer.id;
             }
-            // Si no hay una coincidencia exacta, se guardará sin cliente (customerId será null)
 
             const sale = {
                 timestamp: new Date().toISOString(),
                 items: processedItems,
                 total,
-                customerId, // ID del cliente asignado o null
+                customerId,
                 hadStockIssues: insufficientStockItems.length > 0 || exceedsStockItems.length > 0,
                 exceedsStock: exceedsStockItems.length > 0
             };
             await saveData(STORES.SALES, sale);
-
-            // ... (el resto de la función para limpiar y actualizar la UI se queda igual) ...
+            
             if (paymentModal) paymentModal.classList.add('hidden');
             showMessageModal('¡Pedido procesado exitosamente!');
             order = [];
@@ -1288,6 +1403,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderMenu();
             if (dashboard) dashboard.renderDashboard();
             renderProductManagement();
+            
+            // ▼▼ MODIFICADO: Actualizar alertas después de una venta ▼▼
+            await checkProductAlerts();
 
         } catch (error) {
             console.error('Error completing order processing:', error.message);
@@ -1361,10 +1479,38 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 emptyProductMessage.textContent = 'No hay productos.';
             }
+
+            // ▼▼ MODIFICADO: LÓGICA PARA INDICADORES VISUALES EN GESTIÓN ▼▼
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
+
             filteredMenu.forEach(item => {
                 const categoryName = item.categoryId ? categoryMap.get(item.categoryId) || 'Categoría eliminada' : 'Sin categoría';
                 const div = document.createElement('div');
                 div.className = 'product-item';
+
+                let stockIndicator = '';
+                let expiryIndicator = '';
+
+                // Verificar stock bajo
+                if (item.trackStock && item.stock > 0 && item.stock < 5) {
+                    div.classList.add('low-stock-warning');
+                    stockIndicator = `<span class="alert-indicator low-stock-indicator">Stock bajo: ${item.stock}</span>`;
+                }
+
+                // Verificar caducidad
+                if (item.expiryDate) {
+                    const expiryDate = new Date(item.expiryDate);
+                    const diffTime = expiryDate - now;
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    if (diffDays >= 0 && diffDays <= 7) {
+                        div.classList.add('nearing-expiry-warning');
+                        const expiryText = diffDays === 0 ? 'Caduca hoy' : `Caduca en ${diffDays} días`;
+                        expiryIndicator = `<span class="alert-indicator nearing-expiry-indicator">${expiryText}</span>`;
+                    }
+                }
+                // ▲▲ FIN DE MODIFICACIÓN ▲▲
+
                 div.innerHTML = `
                 <div class="product-status-badge ${item.isActive !== false ? 'active' : 'inactive'}">
                     ${item.isActive !== false ? 'Activo' : 'Inactivo'}
@@ -1376,20 +1522,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         <p><strong>Categoría:</strong> ${categoryName}</p>
                         <p><strong>Precio:</strong> $${item.price.toFixed(2)}</p>
                         <p><strong>Costo:</strong> $${item.cost.toFixed(2)}</p>
-                        <p><strong>Control de stock:</strong> ${item.trackStock ? 'Sí' : 'No'}</p>
-                        <p><strong>Stock:</strong> ${item.trackStock ? item.stock : 'No aplica'}</p>
+                        <p><strong>Stock:</strong> ${item.trackStock ? item.stock : 'N/A'}</p>
+                        ${stockIndicator}
+                        ${expiryIndicator}
                     </div>
                 </div>
                 <div class="product-item-controls">
-    <button class="btn-toggle-status ${item.isActive !== false ? 'btn-deactivate' : 'btn-activate'}" data-id="${item.id}">
-        ${item.isActive !== false ? 'Desactivar' : 'Activar'}
-    </button>
-    <button class="edit-product-btn" data-id="${item.id}">✏️</button>
-    <button class="delete-product-btn" data-id="${item.id}">🗑️</button>
-</div>`;
+                    <button class="btn-toggle-status ${item.isActive !== false ? 'btn-deactivate' : 'btn-activate'}" data-id="${item.id}">
+                        ${item.isActive !== false ? 'Desactivar' : 'Activar'}
+                    </button>
+                    <button class="edit-product-btn" data-id="${item.id}">✏️</button>
+                    <button class="delete-product-btn" data-id="${item.id}">🗑️</button>
+                </div>`;
                 productListContainer.appendChild(div);
             });
-            // Los listeners de eventos ahora se manejan por delegación en initApp
         } catch (error) {
             console.error('Error loading product management:', error.message);
             showMessageModal(`Error al cargar la gestión de productos: ${error.message}`);
@@ -1399,8 +1545,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const item = await loadData(STORES.MENU, id);
             if (item) {
-                resetProductForm(); // Primero resetea para limpiar el estado
-
+                resetProductForm();
                 productIdInput.value = item.id;
                 productNameInput.value = item.name;
                 productDescriptionInput.value = item.description || '';
@@ -1409,30 +1554,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 productFormTitle.textContent = `Editar: ${item.name}`;
                 cancelEditBtn.classList.remove('hidden');
 
-                // Lógica para tipo de venta
+                // ▼▼ MODIFICADO: Llenar campo de fecha de caducidad ▼▼
+                productExpiryDateInput.value = item.expiryDate || '';
+
                 saleTypeSelect.value = item.saleType || 'unit';
-                updateProductForm(); // Actualiza la UI según el tipo de venta
+                updateProductForm();
 
                 if (item.saleType === 'bulk' && item.bulkData) {
-                    // Llenar campos a granel
                     bulkPurchaseQuantityInput.value = item.bulkData.purchase.quantity;
                     bulkPurchaseUnitInput.value = item.bulkData.purchase.unit;
                     bulkPurchaseCostInput.value = item.bulkData.purchase.cost;
-
-                    // The bulk sale price is now manually entered, so no recalculation needed here.
-                    // The stock for bulk products is derived from purchaseQty, so no need to set productStockInput here.
-
                 } else {
-                    // Llenar campos de unidad estándar
                     productPriceInput.value = item.price;
                     productCostInput.value = item.cost || 0;
-                    const productStockInput = document.getElementById('product-stock'); // Get local reference
+                    const productStockInput = document.getElementById('product-stock');
                     if (productStockInput) productStockInput.value = item.stock || 0;
                 }
 
                 window.scrollTo(0, 0);
 
-                // Cargar ingredientes del producto si existen
                 try {
                     const ingredientsData = await loadData(STORES.INGREDIENTS, id);
                     currentIngredients = ingredientsData ? ingredientsData.ingredients : [];
@@ -1443,7 +1583,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     editingProductId = id;
                 }
 
-                // Cambiar a la pestaña de añadir/editar
                 document.querySelector('.tab-btn[data-tab="add-product"]').click();
             }
         } catch (error) {
@@ -1461,16 +1600,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (productCostInput) productCostInput.value = '';
         if (productStockInput) productStockInput.value = '0';
         if (productCategorySelect) productCategorySelect.value = '';
+        if (productExpiryDateInput) productExpiryDateInput.value = ''; // Limpiar fecha
 
-        // Resetear campos de venta a granel y vista del formulario
         if (saleTypeSelect) saleTypeSelect.value = 'unit';
         const bulkSalePriceInput = document.getElementById('bulk-sale-price');
         if (bulkSalePriceInput) bulkSalePriceInput.value = '';
         if (bulkCostPerUnitMessage) bulkCostPerUnitMessage.style.display = 'none';
         if (bulkProfitMarginMessage) bulkProfitMarginMessage.style.display = 'none';
-        updateProductForm(); // Esto restaurará la visibilidad correcta
+        updateProductForm();
 
-        // Limpiar ingredientes al resetear
         currentIngredients = [];
         editingProductId = null;
     };
@@ -1503,25 +1641,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const purchaseUnit = bulkPurchaseUnitInput.value.trim();
                 const purchaseCost = parseFloat(bulkPurchaseCostInput.value);
                 price = parseFloat(bulkSalePriceInput.value);
-                stock = purchaseQty; // Stock is the purchased quantity
-
+                stock = purchaseQty;
                 if (!name || isNaN(purchaseQty) || !purchaseUnit || isNaN(purchaseCost) || isNaN(price) || price <= 0) {
                     showMessageModal('Por favor, completa todos los campos para la venta a granel con valores válidos.');
                     return;
                 }
-
-                cost = purchaseCost / purchaseQty; // Cost per unit
+                cost = purchaseCost / purchaseQty;
                 trackStock = stock > 0;
-
                 bulkData = {
-                    purchase: {
-                        quantity: purchaseQty,
-                        unit: purchaseUnit,
-                        cost: purchaseCost
-                    },
-                    sale: {
-                        unit: purchaseUnit
-                    }
+                    purchase: { quantity: purchaseQty, unit: purchaseUnit, cost: purchaseCost },
+                    sale: { unit: purchaseUnit }
                 };
             }
 
@@ -1533,17 +1662,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 stock,
                 trackStock,
                 saleType,
-                bulkData, // Será null si es por unidad
+                bulkData,
                 description: productDescriptionInput.value.trim(),
                 image: imagePreview.src,
                 categoryId: productCategorySelect.value,
-                isActive: id ? (await loadData(STORES.MENU, id)).isActive : true, // Mantener estado si es edición, o true si es nuevo
-                barcode: document.getElementById('product-barcode').value.trim()
+                isActive: id ? (await loadData(STORES.MENU, id)).isActive : true,
+                barcode: document.getElementById('product-barcode').value.trim(),
+                // ▼▼ MODIFICADO: Guardar fecha de caducidad ▼▼
+                expiryDate: productExpiryDateInput.value || null
             };
 
             editingProductId = productData.id;
             await saveData(STORES.MENU, productData);
-
             updateMenuCache(productData);
 
             if (currentIngredients.length > 0 && editingProductId) {
@@ -1554,6 +1684,9 @@ document.addEventListener('DOMContentLoaded', () => {
             resetProductForm();
             renderProductManagement();
             renderMenu();
+            
+            // ▼▼ MODIFICADO: Actualizar alertas después de guardar ▼▼
+            await checkProductAlerts();
 
         } catch (error) {
             console.error('Error saving product:', error.message);
@@ -1561,7 +1694,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // función eliminar producto
     const deleteProduct = async (id) => {
         try {
             const item = await loadData(STORES.MENU, id);
@@ -1569,15 +1701,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             showMessageModal(`¿Seguro que quieres eliminar "${item.name}"? Se moverá a la papelera.`, async () => {
                 try {
-                    // Añade una marca de tiempo para saber cuándo se eliminó
                     item.deletedTimestamp = new Date().toISOString();
-
-                    // Mueve el item a la tabla de eliminados
                     await saveData(STORES.DELETED_MENU, item);
-                    // Elimina el item de la tabla principal
                     await deleteData(STORES.MENU, id);
 
-                    // Limpia la caché y actualiza la UI
                     if (dataCache.menu) {
                         dataCache.menu = dataCache.menu.filter(p => p.id !== id);
                     }
@@ -1587,8 +1714,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderProductManagement();
                     renderMenu();
                     updateOrderDisplay();
-                    // Actualiza el dashboard para mostrar el nuevo historial
                     if (dashboard) dashboard.renderDashboard();
+                    
+                    // ▼▼ MODIFICADO: Actualizar alertas después de eliminar ▼▼
+                    await checkProductAlerts();
 
                 } catch (error) {
                     console.error('Error moving product to deleted store:', error.message);
@@ -1600,7 +1729,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    //nueva función global para restaurar (la llamaremos desde dashboard.js)
     window.restoreProduct = async (id) => {
         try {
             const item = await loadData(STORES.DELETED_MENU, id);
@@ -1608,21 +1736,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 showMessageModal('Error: No se encontró el producto en la papelera.');
                 return;
             }
-
-            // Quita la marca de tiempo de eliminación
             delete item.deletedTimestamp;
-
-            // Mueve el item de vuelta a la tabla principal
             await saveData(STORES.MENU, item);
-            // Elimina el item de la papelera
             await deleteData(STORES.DELETED_MENU, id);
-
-            // Actualiza la caché y la UI
-            updateMenuCache(item); // Tu función optimizada
+            updateMenuCache(item);
             showMessageModal(`Producto "${item.name}" restaurado.`);
             renderProductManagement();
             renderMenu();
             if (dashboard) dashboard.renderDashboard();
+
+            // ▼▼ MODIFICADO: Actualizar alertas después de restaurar ▼▼
+            await checkProductAlerts();
 
         } catch (error) {
             console.error('Error restoring product:', error.message);
@@ -2266,6 +2390,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
+            
+            // ▼▼ MODIFICADO: Llamar a la comprobación de alertas al iniciar ▼▼
+            await checkProductAlerts();
+
             // Ocultar pantalla de carga al finalizar (si existe)
             if (loadingScreen) loadingScreen.style.display = 'none';
             // Si la licencia está desbloqueada, mostrar la sección principal

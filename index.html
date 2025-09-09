@@ -83,6 +83,13 @@
     </div>
     <div id="backdrop" class="backdrop"></div>
 </nav>
+
+    <div id="alert-carousel-container" class="alert-carousel-container hidden">
+        <div id="alert-carousel" class="alert-carousel">
+            </div>
+        <button id="prev-alert" class="carousel-nav-btn prev">&#10094;</button>
+        <button id="next-alert" class="carousel-nav-btn next">&#10095;</button>
+    </div>
     <main class="main-container">
         <section id="caja-section" class="section-content">
             <h2 class="section-title">Gestión de Caja</h2>
@@ -229,6 +236,11 @@
                             <label class="form-label" for="product-stock">Stock del Producto</label>
                             <input class="form-input" id="product-stock" type="number" step="1" min="0"
                                 placeholder="Cantidad en stock">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="product-expiry-date">Fecha de Caducidad (Opcional)</label>
+                            <input class="form-input" id="product-expiry-date" type="date">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="product-image-file">Imagen del Producto</label>
