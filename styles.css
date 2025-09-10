@@ -252,7 +252,7 @@ textarea {
   box-shadow: var(--box-shadow);
   padding: var(--spacing-sm) 0;
   max-width: 1400px;
-  margin: var(--spacing-md) auto 0;
+  margin: 4px auto 0;
   border-radius: var(--border-radius-sm);
   overflow: hidden;
 }
@@ -2173,6 +2173,44 @@ textarea {
 
 .welcome-summary li {
   margin-bottom: 8px;
+}
+
+/* ===== ESTILOS PARA COPIA DE SEGURIDAD ===== */
+.backup-container {
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-lg);
+  background-color: var(--light-background);
+  border-radius: var(--border-radius);
+  border: 1px solid #e5e7eb;
+}
+
+.backup-container .form-help-text {
+  margin-bottom: var(--spacing-md);
+  color: var(--text-light);
+}
+
+.backup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.backup-actions .btn {
+  max-width: 300px;
+}
+
+.backup-divider {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: var(--spacing-lg) 0;
+}
+
+@media (min-width: 768px) {
+  .backup-actions {
+    flex-direction: row;
+    align-items: center;
+  }
 }
 
 .license-info-container {
