@@ -16,10 +16,14 @@ export async function abrirCaja(monto_inicial) {
         return false;
     }
 
-    // Verificar si ya hay una caja abierta
-    const cajasAbiertas = await loadData(STORES.CAJAS, null, 'estado', 'abierta');
-    if (cajasAbiertas && cajasAbiertas.length > 0) {
-        showMessageModal('Ya existe una caja abierta. Debes cerrarla antes de abrir una nueva.');
+    // Verificar si ya hay una caja abierta o pendiente de cierre
+    const todasLasCajas = await loadData(STORES.CAJAS);
+    const cajasNoCerradas = todasLasCajas.filter(caja => 
+        caja.estado === 'abierta' || caja.estado === 'pendiente_cierre'
+    );
+    
+    if (cajasNoCerradas && cajasNoCerradas.length > 0) {
+        showMessageModal('Ya existe una caja abierta o pendiente de cierre. Debes cerrarla antes de abrir una nueva.');
         return false;
     }
 
@@ -57,7 +61,8 @@ export async function abrirCaja(monto_inicial) {
  * @param {number} monto_cierre - El monto final en efectivo contado.
  */
 export async function cerrarCaja(monto_cierre) {
-    if (!currentCaja || currentCaja.estado !== 'abierta') {
+    // Permitir cerrar cajas en estado 'abierta' o 'pendiente_cierre'
+    if (!currentCaja || (currentCaja.estado !== 'abierta' && currentCaja.estado !== 'pendiente_cierre')) {
         showMessageModal('No hay una caja abierta para cerrar.');
         return false;
     }
@@ -75,11 +80,8 @@ export async function cerrarCaja(monto_cierre) {
             ventas_efectivo += venta.total;
         });
 
-        // --- INICIO DE MODIFICACIÓN ---
-        // Se usan los totales de la caja actual que ya incluyen los movimientos
         const total_teorico = currentCaja.monto_inicial + ventas_efectivo + currentCaja.entradas_efectivo - currentCaja.salidas_efectivo;
         const diferencia = monto_cierre - total_teorico;
-        // --- FIN DE MODIFICACIÓN ---
 
         currentCaja.fecha_cierre = new Date().toISOString();
         currentCaja.monto_cierre = parseFloat(monto_cierre);
