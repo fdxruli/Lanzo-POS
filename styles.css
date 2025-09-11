@@ -968,6 +968,56 @@ textarea {
   }
 }
 
+/* ===== ESTILOS PARA PRODUCTOS A GRANEL EN EL PEDIDO ===== */
+
+.order-item-controls.bulk-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.order-item-quantity-input {
+    width: 100px; /* Ancho ajustable */
+    padding: var(--spacing-xs);
+    border: 1px solid #ccc;
+    border-radius: var(--border-radius-sm);
+    text-align: right;
+    font-size: 0.9rem;
+    -moz-appearance: textfield; /* Para Firefox */
+}
+
+/* Ocultar flechas en inputs numéricos para un look más limpio */
+.order-item-quantity-input::-webkit-outer-spin-button,
+.order-item-quantity-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.unit-label {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    font-weight: 500;
+}
+
+/* Ajustes para el botón de eliminar cuando es a granel */
+.bulk-controls .remove-item-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    border: 1px solid var(--error-color);
+    color: var(--error-color);
+    transition: var(--transition);
+}
+
+.bulk-controls .remove-item-btn:hover {
+    background-color: var(--error-color);
+    color: white;
+}
+
 /* ===== ESTILOS SECCIÓN CAJA ===== */
 .caja-grid {
   display: grid;
@@ -1343,6 +1393,7 @@ textarea {
   color: white;
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: 0.875rem;
+  width: 100%;
 }
 
 .btn-delete:hover {

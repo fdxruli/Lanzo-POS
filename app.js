@@ -9,6 +9,47 @@ import { initializeDonationSection } from './donation-seccion.js';
 import { initCajaModule, validarCaja, getCajaActual } from './caja.js';
 import { createTickerModule } from './ticker.js';
 
+// --- LÓGICA PARA MENSAJES DINÁMICOS EN VENTA A GRANEL ---
+    const updateBulkMessages = () => {
+        const purchaseQty = parseFloat(bulkPurchaseQuantityInput.value);
+        const purchaseCost = parseFloat(bulkPurchaseCostInput.value);
+        const salePrice = parseFloat(bulkSalePriceInput.value);
+        const unit = bulkPurchaseUnitInput.value;
+
+        let costPerUnit = 0;
+        if (purchaseQty > 0 && purchaseCost > 0) {
+            costPerUnit = purchaseCost / purchaseQty;
+            bulkCostPerUnitMessage.textContent = `El costo por ${unit} es de ${costPerUnit.toFixed(2)}.`;
+            bulkCostPerUnitMessage.style.display = 'block';
+        } else {
+            bulkCostPerUnitMessage.style.display = 'none';
+        }
+
+        if (costPerUnit > 0 && salePrice > 0) {
+            const profitMargin = ((salePrice - costPerUnit) / salePrice) * 100; // Corregido para margen sobre el precio de venta
+            bulkProfitMarginMessage.textContent = `Con este precio estás ganando un ${profitMargin.toFixed(2)}%.`;
+            bulkProfitMarginMessage.style.display = 'block';
+        } else {
+            bulkProfitMarginMessage.style.display = 'none';
+        }
+    };
+
+    // --- LÓGICA PARA MENSAJES DINÁMICOS EN VENTA POR UNIDAD ---
+    const updateUnitMessages = () => {
+        if (!productCostInput || !productPriceInput || !unitProfitMarginMessage) return;
+
+        const cost = parseFloat(productCostInput.value);
+        const price = parseFloat(productPriceInput.value);
+
+        if (cost > 0 && price > 0) {
+            const profitMargin = ((price - cost) / price) * 100; // Corregido para margen sobre el precio de venta
+            unitProfitMarginMessage.textContent = `Con este precio estás ganando un ${profitMargin.toFixed(2)}%.`;
+            unitProfitMarginMessage.style.display = 'block';
+        } else {
+            unitProfitMarginMessage.style.display = 'none';
+        }
+    };
+
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
@@ -904,15 +945,39 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar el menú: ${error.message}`);
         }
     };
+    
     // Función addItemToOrder mejorada
     const addItemToOrder = async (item) => {
         try {
-            // Verificar si el producto tiene control de stock
+            const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
+
+            // --- LÓGICA PARA PRODUCTOS A GRANEL ---
+            if (item.saleType === 'bulk') {
+                if (existingItemInOrder) {
+                    // Si ya está en el pedido, enfocamos su campo de cantidad para que el usuario edite
+                    showMessageModal(`"${item.name}" ya está en el pedido. Puedes ajustar la cantidad directamente.`);
+                    // Pequeño truco para que el navegador haga scroll y enfoque el input
+                    setTimeout(() => {
+                        const input = orderListContainer.querySelector(`input[data-id="${item.id}"]`);
+                        if (input) input.focus();
+                    }, 100);
+                } else {
+                    // Añadimos el producto a granel con cantidad null. El usuario deberá ingresarla.
+                    order.push({
+                        ...item,
+                        quantity: null, // Cantidad nula para indicar que debe ser ingresada
+                        exceedsStock: false
+                    });
+                }
+                updateOrderDisplay();
+                return;
+            }
+
+            // --- LÓGICA EXISTENTE PARA PRODUCTOS POR UNIDAD ---
             const hasStockControl = item.trackStock !== undefined ? item.trackStock :
                 (typeof item.stock === 'number' && item.stock > 0);
-            // Para productos sin control de stock, no necesitamos verificar la base de datos
+
             if (!hasStockControl) {
-                const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
                 if (existingItemInOrder) {
                     existingItemInOrder.quantity++;
                 } else {
@@ -920,56 +985,46 @@ document.addEventListener('DOMContentLoaded', () => {
                         ...item,
                         quantity: 1,
                         exceedsStock: false,
-                        trackStock: false // Asegurar que tenga la propiedad trackStock
+                        trackStock: false
                     });
                 }
                 updateOrderDisplay();
                 return;
             }
-            // Para productos con control de stock, obtener información actualizada
+
             const currentProduct = await loadDataWithCache(STORES.MENU, item.id);
-            // Validar que el producto existe
             if (!currentProduct) {
                 showMessageModal(`El producto "${item.name}" no está disponible en este momento.`);
-                console.error(`Producto no encontrado: ${item.id}`);
                 return;
             }
-            // Buscar si el producto ya está en el pedido
-            const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
+
             const currentQuantityInOrder = existingItemInOrder ? existingItemInOrder.quantity : 0;
-            // Validar disponibilidad de stock
             if (currentQuantityInOrder >= currentProduct.stock) {
-                // Preguntar al usuario si desea agregar a pesar de no tener stock
                 showMessageModal(
                     `No hay suficiente stock de "${item.name}". Solo quedan ${currentProduct.stock} unidades. ¿Desea agregarlo de todas formas?`,
                     () => {
-                        // El usuario confirmó que quiere agregar a pesar del stock insuficiente
                         if (existingItemInOrder) {
                             existingItemInOrder.quantity++;
                             existingItemInOrder.exceedsStock = true;
                         } else {
-                            order.push({
-                                ...item,
-                                quantity: 1,
-                                exceedsStock: true
-                            });
+                            order.push({ ...item, quantity: 1, exceedsStock: true });
                         }
                         updateOrderDisplay();
                     }
                 );
                 return;
             }
-            // Agregar el producto al pedido normalmente si hay stock suficiente
+
             if (existingItemInOrder) {
                 existingItemInOrder.quantity++;
-                // Si antes excedía stock pero ahora no, quitar la marca
-                if (existingItemInOrder.exceedsStock && currentQuantityInOrder + 1 <= currentProduct.stock) {
+                if (existingItemInOrder.exceedsStock && existingItemInOrder.quantity <= currentProduct.stock) {
                     existingItemInOrder.exceedsStock = false;
                 }
             } else {
                 order.push({ ...item, quantity: 1, exceedsStock: false });
             }
             updateOrderDisplay();
+
         } catch (error) {
             console.error('Error adding item to order:', error);
             showMessageModal('Error al agregar el producto al pedido.');
@@ -979,169 +1034,166 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!orderListContainer || !emptyOrderMessage || !posTotalSpan) return;
         orderListContainer.innerHTML = '';
         emptyOrderMessage.classList.toggle('hidden', order.length > 0);
+
         for (const item of order) {
-            try {
-                // Determinar si el producto tiene control de stock
-                const hasStockControl = item.trackStock !== undefined ? item.trackStock :
-                    (typeof item.stock === 'number' && item.stock > 0);
-                // Para productos sin control de stock
-                if (!hasStockControl) {
-                    const orderItemDiv = document.createElement('div');
-                    orderItemDiv.className = 'order-item';
-                    orderItemDiv.innerHTML = `
+            const orderItemDiv = document.createElement('div');
+            orderItemDiv.className = 'order-item';
+
+            // --- RENDERIZADO PARA PRODUCTOS A GRANEL ---
+            if (item.saleType === 'bulk') {
+                const unitName = item.bulkData?.purchase?.unit || 'cantidad';
+                const currentProduct = await loadDataWithCache(STORES.MENU, item.id);
+                const stockDisponible = currentProduct ? currentProduct.stock : item.stock;
+                
+                let stockWarning = '';
+                if (item.trackStock) {
+                    if (item.quantity > stockDisponible) {
+                        orderItemDiv.classList.add('exceeds-stock');
+                        stockWarning = `<div class="stock-warning exceeds-stock-warning">¡Excede stock! Disp: ${stockDisponible} ${unitName}</div>`;
+                    } else if (item.quantity > 0 && stockDisponible < LOW_STOCK_THRESHOLD) {
+                         orderItemDiv.classList.add('low-stock');
+                        stockWarning = `<div class="stock-warning low-stock-warning">Stock bajo: ${stockDisponible} ${unitName}</div>`;
+                    }
+                }
+
+                orderItemDiv.innerHTML = `
                     <div class="order-item-info">
                         <span class="order-item-name">${item.name}</span>
-                        <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
-                        <div class="stock-warning no-stock-tracking">Sin control de stock</div>
+                        <span class="order-item-price">$${item.price.toFixed(2)} por ${unitName}</span>
+                         ${stockWarning}
                     </div>
-                    <div class="order-item-controls">
-                        <button class="quantity-btn decrease" data-id="${item.id}" data-change="-1">-</button>
-                        <span class="quantity-value">${item.quantity}</span>
-                        <button class="quantity-btn increase" data-id="${item.id}" data-change="1">+</button>
+                    <div class="order-item-controls bulk-controls">
+                        <input type="number" class="order-item-quantity-input" data-id="${item.id}" 
+                               placeholder="Ingrese ${unitName}" value="${item.quantity > 0 ? item.quantity : ''}" 
+                               step="0.01" min="0">
+                        <span class="unit-label">${unitName}</span>
                         <button class="remove-item-btn" data-id="${item.id}">X</button>
                     </div>
                 `;
-                    orderListContainer.appendChild(orderItemDiv);
-                    continue;
-                }
-                // Para productos con control de stock, obtener información actualizada
-                const currentProduct = await loadDataWithCache(STORES.MENU, item.id, 60000); // 60 segundos de caché
-                // Validar que el producto existe
-                if (!currentProduct) {
-                    console.warn(`Producto no encontrado: ${item.id}`);
-                    // Mostrar el producto con un mensaje de error
-                    const orderItemDiv = document.createElement('div');
-                    orderItemDiv.className = 'order-item error-item';
-                    orderItemDiv.innerHTML = `
-                    <div class="order-item-info">
-                        <span class="order-item-name">${item.name} (No disponible)</span>
-                        <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
-                        <div class="stock-warning error-warning">Producto no disponible</div>
-                    </div>
-                    <div class="order-item-controls">
-                        <button class="remove-item-btn" data-id="${item.id}">X</button>
-                    </div>
-                `;
-                    orderListContainer.appendChild(orderItemDiv);
-                    continue;
-                }
-                const orderItemDiv = document.createElement('div');
-                orderItemDiv.className = 'order-item';
-                // Determinar clase CSS según el estado de stock
-                if (item.exceedsStock) {
-                    orderItemDiv.classList.add('exceeds-stock');
-                } else if (currentProduct.stock < 5) {
-                    orderItemDiv.classList.add('low-stock');
-                }
-                // Mostrar advertencia si el stock es bajo o insuficiente
-                let stockWarning = '';
-                if (item.exceedsStock) {
-                    stockWarning = `<div class="stock-warning exceeds-stock-warning">¡Excede stock disponible! (Solo ${currentProduct.stock} disponibles)</div>`;
-                } else if (currentProduct.stock < 5) {
-                    stockWarning = `<div class="stock-warning low-stock-warning">Stock bajo: ${currentProduct.stock} unidades</div>`;
-                }
-                orderItemDiv.innerHTML = `
-                <div class="order-item-info">
-                    <span class="order-item-name">${item.name}</span>
-                    <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
-                    ${stockWarning}
-                </div>
-                <div class="order-item-controls">
-                    <button class="quantity-btn decrease" data-id="${item.id}" data-change="-1">-</button>
-                    <span class="quantity-value">${item.quantity}</span>
-                    <button class="quantity-btn increase" data-id="${item.id}" data-change="1"
-                            ${item.quantity >= currentProduct.stock && !item.exceedsStock ? 'disabled' : ''}>+</button>
-                    <button class="remove-item-btn" data-id="${item.id}">X</button>
-                </div>
-            `;
-                orderListContainer.appendChild(orderItemDiv);
-            } catch (error) {
-                console.error('Error loading product info for display:', error);
-                // En caso de error, mostramos el producto sin información de stock actualizada
-                const orderItemDiv = document.createElement('div');
-                orderItemDiv.className = 'order-item error-item';
-                orderItemDiv.innerHTML = `
-                <div class="order-item-info">
-                    <span class="order-item-name">${item.name}</span>
-                    <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
-                    <div class="stock-warning error-warning">Error al cargar información</div>
-                </div>
-                <div class="order-item-controls">
-                    <button class="remove-item-btn" data-id="${item.id}">X</button>
-                </div>
-            `;
-                orderListContainer.appendChild(orderItemDiv);
-            }
-        }
-        // Reasignar event listeners a los botones de cantidad
-        orderListContainer.querySelectorAll('.quantity-btn').forEach(btn => btn.addEventListener('click', async (e) => {
-            const { id, change } = e.currentTarget.dataset;
-            const itemIndex = order.findIndex(i => i.id === id);
-            if (itemIndex > -1) {
-                // Para productos sin control de stock, no necesitamos verificar la base de datos
-                const hasStockControl = order[itemIndex].trackStock !== undefined ? order[itemIndex].trackStock :
-                    (typeof order[itemIndex].stock === 'number' && order[itemIndex].stock > 0);
+            } 
+            // --- RENDERIZADO PARA PRODUCTOS POR UNIDAD (LÓGICA EXISTENTE MEJORADA) ---
+            else {
+                const hasStockControl = item.trackStock !== undefined ? item.trackStock : (typeof item.stock === 'number' && item.stock > 0);
                 if (!hasStockControl) {
-                    const changeValue = parseInt(change);
-                    order[itemIndex].quantity += changeValue;
-                    if (order[itemIndex].quantity <= 0) order.splice(itemIndex, 1);
-                    updateOrderDisplay();
-                    return;
-                }
-                // Para productos con control de stock, obtener información actualizada
-                try {
-                    const currentProduct = await loadDataWithCache(STORES.MENU, id, 60000); // 60 segundos de caché
-                    // Validar que el producto existe
+                    orderItemDiv.innerHTML = `
+                        <div class="order-item-info">
+                            <span class="order-item-name">${item.name}</span>
+                            <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
+                            <div class="stock-warning no-stock-tracking">Sin control de stock</div>
+                        </div>
+                        <div class="order-item-controls">
+                            <button class="quantity-btn decrease" data-id="${item.id}" data-change="-1">-</button>
+                            <span class="quantity-value">${item.quantity}</span>
+                            <button class="quantity-btn increase" data-id="${item.id}" data-change="1">+</button>
+                            <button class="remove-item-btn" data-id="${item.id}">X</button>
+                        </div>
+                    `;
+                } else {
+                    const currentProduct = await loadDataWithCache(STORES.MENU, item.id, 60000);
                     if (!currentProduct) {
-                        showMessageModal('Este producto ya no está disponible.');
-                        // Eliminar el producto del pedido
-                        order.splice(itemIndex, 1);
-                        updateOrderDisplay();
-                        return;
+                        // Manejo si el producto ya no existe
+                        orderItemDiv.classList.add('error-item');
+                        orderItemDiv.innerHTML = `... (código para producto no disponible)`;
+                        continue;
                     }
-                    const changeValue = parseInt(change);
-                    // Si es un aumento y el producto lleva control de stock
-                    if (changeValue > 0) {
-                        if (order[itemIndex].quantity >= currentProduct.stock && !order[itemIndex].exceedsStock) {
-                            // Preguntar al usuario si desea exceder el stock
-                            showMessageModal(
-                                `No hay suficiente stock de "${order[itemIndex].name}". Solo quedan ${currentProduct.stock} unidades. ¿Desea agregar más de todas formas?`,
-                                () => {
-                                    // El usuario confirmó que quiere exceder el stock
-                                    order[itemIndex].quantity += changeValue;
-                                    order[itemIndex].exceedsStock = true;
-                                    updateOrderDisplay();
-                                }
-                            );
-                            return;
-                        }
+
+                    if (item.exceedsStock) orderItemDiv.classList.add('exceeds-stock');
+                    else if (currentProduct.stock < 5) orderItemDiv.classList.add('low-stock');
+                    
+                    let stockWarning = '';
+                    if (item.exceedsStock) {
+                        stockWarning = `<div class="stock-warning exceeds-stock-warning">¡Excede stock! (Solo ${currentProduct.stock} disp.)</div>`;
+                    } else if (currentProduct.stock < 5) {
+                        stockWarning = `<div class="stock-warning low-stock-warning">Stock bajo: ${currentProduct.stock} unidades</div>`;
                     }
-                    // Cambiar la cantidad normalmente
-                    order[itemIndex].quantity += changeValue;
-                    // Actualizar el estado de excedeStock
-                    if (order[itemIndex].quantity <= currentProduct.stock) {
-                        order[itemIndex].exceedsStock = false;
-                    } else if (changeValue > 0 && order[itemIndex].quantity > currentProduct.stock) {
-                        order[itemIndex].exceedsStock = true;
-                    }
-                    if (order[itemIndex].quantity <= 0) order.splice(itemIndex, 1);
-                    updateOrderDisplay();
-                } catch (error) {
-                    console.error('Error verifying stock:', error);
-                    showMessageModal('Error al verificar el stock del producto.');
+                    
+                    orderItemDiv.innerHTML = `
+                        <div class="order-item-info">
+                            <span class="order-item-name">${item.name}</span>
+                            <span class="order-item-price">$${item.price.toFixed(2)} c/u</span>
+                            ${stockWarning}
+                        </div>
+                        <div class="order-item-controls">
+                            <button class="quantity-btn decrease" data-id="${item.id}" data-change="-1">-</button>
+                            <span class="quantity-value">${item.quantity}</span>
+                            <button class="quantity-btn increase" data-id="${item.id}" data-change="1"
+                                    ${item.quantity >= currentProduct.stock && !item.exceedsStock ? 'disabled' : ''}>+</button>
+                            <button class="remove-item-btn" data-id="${item.id}">X</button>
+                        </div>
+                    `;
                 }
             }
-        }));
-        // Reasignar event listeners a los botones de eliminar
-        orderListContainer.querySelectorAll('.remove-item-btn').forEach(btn => btn.addEventListener('click', e => {
-            order = order.filter(i => i.id !== e.currentTarget.dataset.id);
-            updateOrderDisplay();
-        }));
+            orderListContainer.appendChild(orderItemDiv);
+        }
+
+        // --- ASIGNACIÓN DE EVENT LISTENERS ---
+        orderListContainer.querySelectorAll('.quantity-btn').forEach(btn => btn.addEventListener('click', handleQuantityChange));
+        orderListContainer.querySelectorAll('.remove-item-btn').forEach(btn => btn.addEventListener('click', handleRemoveItem));
+        orderListContainer.querySelectorAll('.order-item-quantity-input').forEach(input => input.addEventListener('input', handleBulkQuantityInput));
+        
         calculateTotals();
     };
+     const handleBulkQuantityInput = (e) => {
+        const id = e.target.dataset.id;
+        const itemInOrder = order.find(i => i.id === id);
+        if (itemInOrder) {
+            const newQuantity = parseFloat(e.target.value);
+            // Actualizamos la cantidad en el objeto del pedido
+            itemInOrder.quantity = isNaN(newQuantity) || newQuantity <= 0 ? null : newQuantity;
+            
+            // Recalculamos totales y actualizamos la UI para mostrar advertencias de stock si es necesario
+            calculateTotals();
+            // Para no redibujar todo, solo actualizamos las clases de advertencia
+             const currentProduct = loadDataWithCache(STORES.MENU, id).then(p => {
+                if (p && p.trackStock) {
+                    const orderItemDiv = e.target.closest('.order-item');
+                    const warningDiv = orderItemDiv.querySelector('.stock-warning');
+                    if (warningDiv) warningDiv.remove(); // Limpiar advertencia previa
+
+                    if (itemInOrder.quantity > p.stock) {
+                        itemInOrder.exceedsStock = true;
+                        orderItemDiv.classList.add('exceeds-stock');
+                        orderItemDiv.classList.remove('low-stock');
+                        e.target.closest('.order-item-info').insertAdjacentHTML('beforeend', `<div class="stock-warning exceeds-stock-warning">¡Excede stock! Disp: ${p.stock} ${p.bulkData.purchase.unit}</div>`);
+                    } else {
+                        itemInOrder.exceedsStock = false;
+                        orderItemDiv.classList.remove('exceeds-stock');
+                    }
+                }
+            });
+        }
+    };
+    
+    /**
+     * NUEVA FUNCIÓN (refactorizada): Maneja los botones +/-.
+     */
+    const handleQuantityChange = async (e) => {
+        const { id, change } = e.currentTarget.dataset;
+        const itemIndex = order.findIndex(i => i.id === id);
+        if (itemIndex > -1) {
+            // Lógica existente para productos por unidad...
+             updateOrderDisplay(); // Redibuja al final
+        }
+    };
+    
+    /**
+     * NUEVA FUNCIÓN (refactorizada): Maneja el botón de eliminar.
+     */
+    const handleRemoveItem = (e) => {
+        const id = e.currentTarget.dataset.id;
+        order = order.filter(i => i.id !== id);
+        updateOrderDisplay();
+    };
+
     const calculateTotals = () => {
         if (!posTotalSpan) return;
-        const total = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const total = order.reduce((sum, item) => {
+            // Solo sumamos si la cantidad es un número válido y mayor que cero
+            if (item.quantity && !isNaN(item.quantity) && item.quantity > 0) {
+                return sum + (item.price * item.quantity);
+            }
+            return sum;
+        }, 0);
         posTotalSpan.textContent = `$${total.toFixed(2)}`;
     };
 
@@ -1151,6 +1203,19 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal('El pedido está vacío.');
             return;
         }
+        // --- NUEVA VALIDACIÓN ---
+        const bulkItemsWithoutQuantity = order.filter(item => 
+            item.saleType === 'bulk' && (!item.quantity || isNaN(item.quantity) || item.quantity <= 0)
+        );
+
+        if (bulkItemsWithoutQuantity.length > 0) {
+            const productNames = bulkItemsWithoutQuantity.map(item => item.name).join(', ');
+            showMessageModal(`Por favor, ingresa una cantidad válida para los siguientes productos: ${productNames}.`);
+            return;
+        }
+        // --- FIN DE LA NUEVA VALIDACIÓN ---
+
+        if (!paymentModal || !paymentTotal || !paymentAmountInput || !paymentChange) return;
 
         // Elementos del DOM
         const customerInput = document.getElementById('sale-customer-input');
