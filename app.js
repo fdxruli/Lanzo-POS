@@ -366,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- LÓGICA PARA MENSAJES DINÁMICOS EN VENTA POR UNIDAD ---
-     const updateUnitMessages = () => {
+    const updateUnitMessages = () => {
         if (!productCostInput || !productPriceInput || !unitProfitMarginMessage) return;
 
         const cost = parseFloat(productCostInput.value);
@@ -462,7 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateBulkMessages();
         }
     };
-    
+
     // --- ▲▲ FIN DE NUEVA LÓGICA ▲▲ ---
 
     // --- FUNCIONES PARA LA CALCULADORA DE COSTOS ---
@@ -975,7 +975,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
                 return;
             }
-            
+
             if (existingItemInOrder) {
                 existingItemInOrder.quantity++;
                 if (existingItemInOrder.exceedsStock && currentQuantityInOrder + 1 <= currentProduct.stock) {
@@ -1005,14 +1005,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const unitName = item.bulkData?.purchase?.unit || 'cantidad';
                 const currentProduct = await loadDataWithCache(STORES.MENU, item.id);
                 const stockDisponible = currentProduct ? currentProduct.stock : item.stock;
-                
+
                 let stockWarning = '';
                 if (item.trackStock) {
                     if (item.quantity > stockDisponible) {
                         orderItemDiv.classList.add('exceeds-stock');
                         stockWarning = `<div class="stock-warning exceeds-stock-warning">¡Excede stock! Disp: ${stockDisponible} ${unitName}</div>`;
                     } else if (item.quantity > 0 && stockDisponible < LOW_STOCK_THRESHOLD) {
-                         orderItemDiv.classList.add('low-stock');
+                        orderItemDiv.classList.add('low-stock');
                         stockWarning = `<div class="stock-warning low-stock-warning">Stock bajo: ${stockDisponible} ${unitName}</div>`;
                     }
                 }
@@ -1031,7 +1031,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="remove-item-btn" data-id="${item.id}">X</button>
                     </div>
                 `;
-            } 
+            }
             // --- RENDERIZADO PARA PRODUCTOS POR UNIDAD (LÓGICA EXISTENTE MEJORADA) ---
             else {
                 const hasStockControl = item.trackStock !== undefined ? item.trackStock : (typeof item.stock === 'number' && item.stock > 0);
@@ -1060,14 +1060,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     if (item.exceedsStock) orderItemDiv.classList.add('exceeds-stock');
                     else if (currentProduct.stock < 5) orderItemDiv.classList.add('low-stock');
-                    
+
                     let stockWarning = '';
                     if (item.exceedsStock) {
                         stockWarning = `<div class="stock-warning exceeds-stock-warning">¡Excede stock! (Solo ${currentProduct.stock} disp.)</div>`;
                     } else if (currentProduct.stock < 5) {
                         stockWarning = `<div class="stock-warning low-stock-warning">Stock bajo: ${currentProduct.stock} unidades</div>`;
                     }
-                    
+
                     orderItemDiv.innerHTML = `
                         <div class="order-item-info">
                             <span class="order-item-name">${item.name}</span>
@@ -1091,12 +1091,12 @@ document.addEventListener('DOMContentLoaded', () => {
         orderListContainer.querySelectorAll('.quantity-btn').forEach(btn => btn.addEventListener('click', handleQuantityChange));
         orderListContainer.querySelectorAll('.remove-item-btn').forEach(btn => btn.addEventListener('click', handleRemoveItem));
         orderListContainer.querySelectorAll('.order-item-quantity-input').forEach(input => input.addEventListener('input', handleBulkQuantityInput));
-        
+
         calculateTotals();
     };
-     /**
-     * NUEVA FUNCIÓN: Maneja el cambio en el input de cantidad para productos a granel.
-     */
+    /**
+    * NUEVA FUNCIÓN: Maneja el cambio en el input de cantidad para productos a granel.
+    */
     const handleBulkQuantityInput = async (e) => {
         const id = e.target.dataset.id;
         const itemInOrder = order.find(i => i.id === id);
@@ -1138,7 +1138,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-    
+
     /**
      * NUEVA FUNCIÓN (refactorizada): Maneja los botones +/-.
      */
@@ -1234,8 +1234,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-         // --- NUEVA VALIDACIÓN ---
-        const bulkItemsWithoutQuantity = order.filter(item => 
+        // --- NUEVA VALIDACIÓN ---
+        const bulkItemsWithoutQuantity = order.filter(item =>
             item.saleType === 'bulk' && (!item.quantity || isNaN(item.quantity) || item.quantity <= 0)
         );
 
@@ -1391,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 exceedsStock: exceedsStockItems.length > 0
             };
             await saveData(STORES.SALES, sale);
-            
+
             if (paymentModal) paymentModal.classList.add('hidden');
             showMessageModal('¡Pedido procesado exitosamente!');
             order = [];
@@ -1399,9 +1399,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderMenu();
             if (dashboard) dashboard.renderDashboard();
             renderProductManagement();
-            
+
             // ▼▼ MODIFICADO: Actualizar alertas después de una venta ▼▼
-            if(ticker) await ticker.updateAlerts();
+            if (ticker) await ticker.updateAlerts();
 
         } catch (error) {
             console.error('Error completing order processing:', error.message);
@@ -1413,7 +1413,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let companyData = await loadDataWithCache(STORES.COMPANY, 'company');
             if (!companyData) {
                 console.log('No company data found, initializing with default');
-                companyData = { id: 'company', name: 'Lanzo Negocio', phone: '', address: '', logo: '' };
+                // Initialize with the new field
+                companyData = { id: 'company', name: 'Lanzo Negocio', phone: '', address: '', logo: '', business_type: '' };
                 await saveData(STORES.COMPANY, companyData);
                 dataCache.company = companyData;
                 dataCache.lastUpdated.company = Date.now();
@@ -1421,7 +1422,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (companyNameInput) companyNameInput.value = companyData.name;
             if (companyPhoneInput) companyPhoneInput.value = companyData.phone;
             if (companyAddressInput) companyAddressInput.value = companyData.address;
+
+            // Correctly load the business type value
             if (businessTypeSelect) businessTypeSelect.value = companyData.business_type || '';
+
             const logoSrc = companyData.logo || 'https://placehold.co/100x100/FFFFFF/4A5568?text=LN';
             if (companyLogoPreview) companyLogoPreview.src = logoSrc;
             if (navCompanyLogo) navCompanyLogo.src = logoSrc;
@@ -1435,8 +1439,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveCompanyData = async (e) => {
         if (!isAppUnlocked) {
             showMessageModal('Por favor, valida tu licencia en el modal de bienvenida para usar esta función. Ó en configuracion al final click en Ingresar licencia');
-            if (welcomeModal) welcomeModal.style.display = 'flex';  // Fuerza mostrar el modal de nuevo
-            return;  // Bloquea la acción
+            if (welcomeModal) welcomeModal.style.display = 'flex';
+            return;
         }
         e.preventDefault();
         try {
@@ -1445,15 +1449,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 name: companyNameInput ? companyNameInput.value.trim() : '',
                 phone: companyPhoneInput ? companyPhoneInput.value.trim() : '',
                 address: companyAddressInput ? companyAddressInput.value.trim() : '',
-                business_type: businessTypeSelect ? businessTypeSelect.value : '',
+                business_type: businessTypeSelect ? businessTypeSelect.value : '', // Field correctly added
                 logo: companyLogoPreview ? companyLogoPreview.src : ''
             };
             await saveData(STORES.COMPANY, companyData);
-            // Actualizar caché
+
+            // Update cache
             dataCache.company = companyData;
             dataCache.lastUpdated.company = Date.now();
             renderCompanyData();
             showMessageModal('Datos de la empresa guardados exitosamente.');
+
+            // BONUS: Sync with Supabase after saving locally
+            const savedLicenseJSON = localStorage.getItem('lanzo_license');
+            if (savedLicenseJSON) {
+                const savedLicense = JSON.parse(savedLicenseJSON);
+                if (savedLicense.license_key) {
+                    console.log("Syncing business profile to Supabase...");
+                    await window.saveBusinessProfile(savedLicense.license_key, companyData);
+                    console.log('Business profile synced successfully.');
+                }
+            }
+
         } catch (error) {
             console.error('Error saving company data:', error.message);
             showMessageModal(`Error al guardar datos de la empresa: ${error.message}`);
@@ -1680,9 +1697,9 @@ document.addEventListener('DOMContentLoaded', () => {
             resetProductForm();
             renderProductManagement();
             renderMenu();
-            
+
             // ▼▼ MODIFICADO: Actualizar alertas después de guardar ▼▼
-            if(ticker) await ticker.updateAlerts();
+            if (ticker) await ticker.updateAlerts();
 
         } catch (error) {
             console.error('Error saving product:', error.message);
@@ -1711,9 +1728,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderMenu();
                     updateOrderDisplay();
                     if (dashboard) dashboard.renderDashboard();
-                    
+
                     // ▼▼ MODIFICADO: Actualizar alertas después de eliminar ▼▼
-                    if(ticker) await ticker.updateAlerts();
+                    if (ticker) await ticker.updateAlerts();
 
                 } catch (error) {
                     console.error('Error moving product to deleted store:', error.message);
@@ -1742,7 +1759,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dashboard) dashboard.renderDashboard();
 
             // ▼▼ MODIFICADO: Actualizar alertas después de restaurar ▼▼
-            if(ticker) await ticker.updateAlerts();
+            if (ticker) await ticker.updateAlerts();
 
         } catch (error) {
             console.error('Error restoring product:', error.message);
@@ -2016,7 +2033,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    
+
     if (paymentAmountInput) paymentAmountInput.addEventListener('input', () => {
         const total = parseFloat(paymentTotal.textContent.replace('$', ''));
         const amountPaid = parseFloat(paymentAmountInput.value) || 0;
@@ -2394,9 +2411,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-            
+
             // ▼▼ MODIFICADO: Llamar a la comprobación de alertas al iniciar ▼▼
-            if(ticker) await ticker.renderTicker();
+            if (ticker) await ticker.renderTicker();
 
             // Ocultar pantalla de carga al finalizar (si existe)
             if (loadingScreen) loadingScreen.style.display = 'none';
