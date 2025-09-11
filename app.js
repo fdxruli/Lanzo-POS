@@ -9,50 +9,10 @@ import { initializeDonationSection } from './donation-seccion.js';
 import { initCajaModule, validarCaja, getCajaActual } from './caja.js';
 import { createTickerModule } from './ticker.js';
 
-// --- LÓGICA PARA MENSAJES DINÁMICOS EN VENTA A GRANEL ---
-    const updateBulkMessages = () => {
-        const purchaseQty = parseFloat(bulkPurchaseQuantityInput.value);
-        const purchaseCost = parseFloat(bulkPurchaseCostInput.value);
-        const salePrice = parseFloat(bulkSalePriceInput.value);
-        const unit = bulkPurchaseUnitInput.value;
-
-        let costPerUnit = 0;
-        if (purchaseQty > 0 && purchaseCost > 0) {
-            costPerUnit = purchaseCost / purchaseQty;
-            bulkCostPerUnitMessage.textContent = `El costo por ${unit} es de ${costPerUnit.toFixed(2)}.`;
-            bulkCostPerUnitMessage.style.display = 'block';
-        } else {
-            bulkCostPerUnitMessage.style.display = 'none';
-        }
-
-        if (costPerUnit > 0 && salePrice > 0) {
-            const profitMargin = ((salePrice - costPerUnit) / salePrice) * 100; // Corregido para margen sobre el precio de venta
-            bulkProfitMarginMessage.textContent = `Con este precio estás ganando un ${profitMargin.toFixed(2)}%.`;
-            bulkProfitMarginMessage.style.display = 'block';
-        } else {
-            bulkProfitMarginMessage.style.display = 'none';
-        }
-    };
-
-    // --- LÓGICA PARA MENSAJES DINÁMICOS EN VENTA POR UNIDAD ---
-    const updateUnitMessages = () => {
-        if (!productCostInput || !productPriceInput || !unitProfitMarginMessage) return;
-
-        const cost = parseFloat(productCostInput.value);
-        const price = parseFloat(productPriceInput.value);
-
-        if (cost > 0 && price > 0) {
-            const profitMargin = ((price - cost) / price) * 100; // Corregido para margen sobre el precio de venta
-            unitProfitMarginMessage.textContent = `Con este precio estás ganando un ${profitMargin.toFixed(2)}%.`;
-            unitProfitMarginMessage.style.display = 'block';
-        } else {
-            unitProfitMarginMessage.style.display = 'none';
-        }
-    };
-
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- VARIABLES GLOBALES Y DATOS INICIALES ---
+    const LOW_STOCK_THRESHOLD = 5;
     let isAppUnlocked = false;
     let order = [];
     let dashboard, businessTips, ticker; // Declarar módulos aquí
@@ -396,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (costPerUnit > 0 && salePrice > 0) {
-            const profitMargin = ((salePrice - costPerUnit) / costPerUnit) * 100;
+            const profitMargin = ((salePrice - costPerUnit) / salePrice) * 100; // Corregido para margen sobre el precio de venta
             bulkProfitMarginMessage.textContent = `Con este precio estás ganando un ${profitMargin.toFixed(2)}%.`;
             bulkProfitMarginMessage.style.display = 'block';
         } else {
@@ -405,14 +365,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- LÓGICA PARA MENSAJES DINÁMICOS EN VENTA POR UNIDAD ---
-    const updateUnitMessages = () => {
+     const updateUnitMessages = () => {
         if (!productCostInput || !productPriceInput || !unitProfitMarginMessage) return;
 
         const cost = parseFloat(productCostInput.value);
         const price = parseFloat(productPriceInput.value);
 
         if (cost > 0 && price > 0) {
-            const profitMargin = ((price - cost) / cost) * 100;
+            const profitMargin = ((price - cost) / price) * 100; // Corregido para margen sobre el precio de venta
             unitProfitMarginMessage.textContent = `Con este precio estás ganando un ${profitMargin.toFixed(2)}%.`;
             unitProfitMarginMessage.style.display = 'block';
         } else {
@@ -945,27 +905,24 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal(`Error al cargar el menú: ${error.message}`);
         }
     };
-    
     // Función addItemToOrder mejorada
     const addItemToOrder = async (item) => {
         try {
+            // Se declara UNA SOLA VEZ aquí
             const existingItemInOrder = order.find(orderItem => orderItem.id === item.id);
 
             // --- LÓGICA PARA PRODUCTOS A GRANEL ---
             if (item.saleType === 'bulk') {
                 if (existingItemInOrder) {
-                    // Si ya está en el pedido, enfocamos su campo de cantidad para que el usuario edite
                     showMessageModal(`"${item.name}" ya está en el pedido. Puedes ajustar la cantidad directamente.`);
-                    // Pequeño truco para que el navegador haga scroll y enfoque el input
                     setTimeout(() => {
                         const input = orderListContainer.querySelector(`input[data-id="${item.id}"]`);
                         if (input) input.focus();
                     }, 100);
                 } else {
-                    // Añadimos el producto a granel con cantidad null. El usuario deberá ingresarla.
                     order.push({
                         ...item,
-                        quantity: null, // Cantidad nula para indicar que debe ser ingresada
+                        quantity: null,
                         exceedsStock: false
                     });
                 }
@@ -973,11 +930,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // --- LÓGICA EXISTENTE PARA PRODUCTOS POR UNIDAD ---
+            // --- LÓGICA PARA PRODUCTOS POR UNIDAD ---
             const hasStockControl = item.trackStock !== undefined ? item.trackStock :
                 (typeof item.stock === 'number' && item.stock > 0);
 
             if (!hasStockControl) {
+                // YA NO se vuelve a declarar `existingItemInOrder` aquí
                 if (existingItemInOrder) {
                     existingItemInOrder.quantity++;
                 } else {
@@ -992,6 +950,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Para productos con control de stock... (el resto de tu lógica se mantiene igual)
             const currentProduct = await loadDataWithCache(STORES.MENU, item.id);
             if (!currentProduct) {
                 showMessageModal(`El producto "${item.name}" no está disponible en este momento.`);
@@ -1007,17 +966,21 @@ document.addEventListener('DOMContentLoaded', () => {
                             existingItemInOrder.quantity++;
                             existingItemInOrder.exceedsStock = true;
                         } else {
-                            order.push({ ...item, quantity: 1, exceedsStock: true });
+                            order.push({
+                                ...item,
+                                quantity: 1,
+                                exceedsStock: true
+                            });
                         }
                         updateOrderDisplay();
                     }
                 );
                 return;
             }
-
+            
             if (existingItemInOrder) {
                 existingItemInOrder.quantity++;
-                if (existingItemInOrder.exceedsStock && existingItemInOrder.quantity <= currentProduct.stock) {
+                if (existingItemInOrder.exceedsStock && currentQuantityInOrder + 1 <= currentProduct.stock) {
                     existingItemInOrder.exceedsStock = false;
                 }
             } else {
@@ -1133,7 +1096,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         calculateTotals();
     };
-     const handleBulkQuantityInput = (e) => {
+     /**
+     * NUEVA FUNCIÓN: Maneja el cambio en el input de cantidad para productos a granel.
+     */
+    const handleBulkQuantityInput = (e) => {
         const id = e.target.dataset.id;
         const itemInOrder = order.find(i => i.id === id);
         if (itemInOrder) {
@@ -1203,7 +1169,8 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessageModal('El pedido está vacío.');
             return;
         }
-        // --- NUEVA VALIDACIÓN ---
+
+         // --- NUEVA VALIDACIÓN ---
         const bulkItemsWithoutQuantity = order.filter(item => 
             item.saleType === 'bulk' && (!item.quantity || isNaN(item.quantity) || item.quantity <= 0)
         );
