@@ -5,27 +5,64 @@
  * o como un modal de confirmación con una acción a ejecutar.
  * @param {string} message El mensaje a mostrar.
  * @param {function | null} onConfirm La función a ejecutar si el usuario confirma. Si es null, funciona como un modal simple.
+ * @param {object} options Opciones adicionales, como un botón extra.
  */
-export function showMessageModal(message, onConfirm = null) {
+export function showMessageModal(message, onConfirm = null, options = {}) {
     const messageModal = document.getElementById('message-modal');
     const modalMessage = document.getElementById('modal-message');
-    const closeModalBtn = document.getElementById('close-modal-btn');
+    const modalButtons = messageModal.querySelector('.modal-buttons');
 
-    if (!modalMessage || !messageModal || !closeModalBtn) return;
+    if (!modalMessage || !messageModal || !modalButtons) {
+        console.error('Modal elements not found!');
+        return;
+    }
 
     modalMessage.textContent = message;
-    messageModal.classList.remove('hidden');
+    modalButtons.innerHTML = ''; // Limpiar botones previos
 
     const confirmMode = typeof onConfirm === 'function';
 
-    closeModalBtn.textContent = confirmMode ? 'Sí, continuar' : 'Aceptar';
+    if (options.extraButton) {
+        const extraButton = document.createElement('button');
+        extraButton.textContent = options.extraButton.text;
+        extraButton.className = 'btn btn-secondary'; // Asignamos una clase para estilo
+        extraButton.onclick = () => {
+            messageModal.classList.add('hidden');
+            options.extraButton.action();
+        };
+        modalButtons.appendChild(extraButton);
+    }
 
-    // Se usa .onclick para reemplazar cualquier listener anterior y evitar ejecuciones múltiples
-    closeModalBtn.onclick = () => {
-        messageModal.classList.add('hidden');
-        if (confirmMode) onConfirm();
-    };
+    if (confirmMode) {
+        const confirmButton = document.createElement('button');
+        confirmButton.textContent = 'Sí, continuar';
+        confirmButton.className = 'btn btn-confirm';
+        confirmButton.onclick = () => {
+            messageModal.classList.add('hidden');
+            onConfirm();
+        };
+        modalButtons.appendChild(confirmButton);
+
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = 'Cancelar';
+        cancelButton.className = 'btn btn-cancel';
+        cancelButton.onclick = () => {
+            messageModal.classList.add('hidden');
+        };
+        modalButtons.appendChild(cancelButton);
+    } else {
+        const acceptButton = document.createElement('button');
+        acceptButton.textContent = 'Aceptar';
+        acceptButton.className = 'btn btn-modal';
+        acceptButton.onclick = () => {
+            messageModal.classList.add('hidden');
+        };
+        modalButtons.appendChild(acceptButton);
+    }
+
+    messageModal.classList.remove('hidden');
 }
+
 
 /**
  * Comprime una imagen a un tamaño máximo y calidad específicos.

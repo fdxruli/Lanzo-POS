@@ -55,34 +55,35 @@
 
 <body>
     <nav class="navbar">
-    <div class="nav-container">
-        <div class="nav-logo-container" id="home-link">
-            <img id="nav-company-logo" class="nav-logo" src="https://placehold.co/100x100/FFFFFF/4A5568?text=L"
-                alt="Logo de Lanzo POS">
-            <h1 id="nav-company-name" class="nav-title">Lanzo</h1>
-        </div>
+        <div class="nav-container">
+            <div class="nav-logo-container" id="home-link">
+                <img id="nav-company-logo" class="nav-logo" src="https://placehold.co/100x100/FFFFFF/4A5568?text=L"
+                    alt="Logo de Lanzo POS">
+                <h1 id="nav-company-name" class="nav-title">Lanzo</h1>
+            </div>
 
-        <div id="main-nav-links" class="nav-links">
-            <button class="nav-link" data-section="pos" title="Ir al Punto de Venta">Punto de Venta</button>
-            <button class="nav-link" data-section="caja" title="Gestionar Caja">Caja</button>
-            <button class="nav-link" data-section="product-management" title="Gestionar Productos">Productos</button>
-            <button class="nav-link" data-section="customers" title="Gestionar Clientes">Clientes</button>
-            <button class="nav-link" data-section="dashboard" title="Ver Ventas y Estadísticas">Ventas</button>
-            <button class="nav-link" data-section="company" title="Configurar tu Negocio">Configuración</button>
-            <button class="nav-link" data-section="donation" title="Apoya el Proyecto Lanzo">Donar</button>
-        </div>
+            <div id="main-nav-links" class="nav-links">
+                <button class="nav-link" data-section="pos" title="Ir al Punto de Venta">Punto de Venta</button>
+                <button class="nav-link" data-section="caja" title="Gestionar Caja">Caja</button>
+                <button class="nav-link" data-section="product-management"
+                    title="Gestionar Productos">Productos</button>
+                <button class="nav-link" data-section="customers" title="Gestionar Clientes">Clientes</button>
+                <button class="nav-link" data-section="dashboard" title="Ver Ventas y Estadísticas">Ventas</button>
+                <button class="nav-link" data-section="company" title="Configurar tu Negocio">Configuración</button>
+                <button class="nav-link" data-section="donation" title="Apoya el Proyecto Lanzo">Donar</button>
+            </div>
 
-        <div class="nav-mobile-toggle">
-            <button id="mobile-menu-button" class="mobile-menu-btn" aria-label="Abrir menú móvil">
-                <svg class="mobile-menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M4 6h16M4 12h16m-7 6h7" />
-                </svg>
-            </button>
+            <div class="nav-mobile-toggle">
+                <button id="mobile-menu-button" class="mobile-menu-btn" aria-label="Abrir menú móvil">
+                    <svg class="mobile-menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                </button>
+            </div>
         </div>
-    </div>
-    <div id="backdrop" class="backdrop"></div>
-</nav>
+        <div id="backdrop" class="backdrop"></div>
+    </nav>
 
     <div id="notification-ticker-container" class="notification-ticker-container"></div>
     <main class="main-container">
@@ -93,10 +94,48 @@
                 </div>
                 <div id="caja-actions-container" class="stat-card">
                 </div>
+                <div id="caja-movements-container" class="stat-card hidden">
+                    <h3>Movimientos de Caja</h3>
+                    <div id="caja-movements-list"></div>
+                </div>
                 <div id="caja-history-container" class="sales-history-container">
                 </div>
             </div>
         </section>
+        <div id="entrada-caja-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2 class="modal-title">Registrar Entrada de Efectivo</h2>
+                <div class="form-group">
+                    <label for="entrada-monto-input" class="form-label">Monto:</label>
+                    <input type="number" id="entrada-monto-input" class="form-input" step="0.01" min="0"
+                        placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label for="entrada-concepto-input" class="form-label">Concepto:</label>
+                    <input type="text" id="entrada-concepto-input" class="form-input"
+                        placeholder="Ej: Aportación del dueño">
+                </div>
+                <button id="confirm-entrada-caja-btn" class="btn btn-save">Confirmar Entrada</button>
+                <button id="cancel-entrada-caja-btn" class="btn btn-cancel">Cancelar</button>
+            </div>
+        </div>
+
+        <div id="salida-caja-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2 class="modal-title">Registrar Salida de Efectivo</h2>
+                <div class="form-group">
+                    <label for="salida-monto-input" class="form-label">Monto:</label>
+                    <input type="number" id="salida-monto-input" class="form-input" step="0.01" min="0"
+                        placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label for="salida-concepto-input" class="form-label">Concepto:</label>
+                    <input type="text" id="salida-concepto-input" class="form-input" placeholder="Ej: Compra de azúcar">
+                </div>
+                <button id="confirm-salida-caja-btn" class="btn btn-process">Confirmar Salida</button>
+                <button id="cancel-salida-caja-btn" class="btn btn-cancel">Cancelar</button>
+            </div>
+        </div>
         <section id="pos-section" class="section-content active">
             <h2 class="section-title">Punto de Venta Rápido y Eficiente</h2>
             <div class="pos-grid">
@@ -120,8 +159,10 @@
                             <span class="total-label">Total:</span>
                             <span id="pos-total" class="total-amount">$0.00</span>
                         </div>
-                        <button id="process-order-btn" class="btn btn-process" title="Procesar el pedido actual">Procesar</button>
-                        <button id="clear-order-btn" class="btn btn-clear" title="Limpiar todos los artículos del pedido">Limpiar</button>
+                        <button id="process-order-btn" class="btn btn-process"
+                            title="Procesar el pedido actual">Procesar</button>
+                        <button id="clear-order-btn" class="btn btn-clear"
+                            title="Limpiar todos los artículos del pedido">Limpiar</button>
                     </div>
                 </div>
             </div>
@@ -223,7 +264,7 @@
                             <label class="form-label" for="product-category">Categoría</label>
                             <select class="form-input" id="product-category">
                                 <option value="">Sin categoría</option>
-                                </select>
+                            </select>
                             <button type="button" id="category-modal-button" class="btn btn-help">Administrar
                                 Categorías</button>
                         </div>
@@ -314,7 +355,7 @@
                 <button class="tab-btn" data-tab="history-content">Historial y Productos Top</button>
                 <button class="tab-btn" data-tab="tips-content">Consejos para tu Negocio</button>
             </div>
-            
+
             <div id="stats-content" class="tab-content active">
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -343,7 +384,8 @@
                 <div class="dashboard-grid-condensed">
                     <div class="stat-card">
                         <h3 class="stat-title">Top Productos Más Vendidos</h3>
-                        <select id="top-products-select" class="form-input" title="Seleccionar cantidad de productos a mostrar">
+                        <select id="top-products-select" class="form-input"
+                            title="Seleccionar cantidad de productos a mostrar">
                             <option value="3">Top 3</option>
                             <option value="5" selected>Top 5</option>
                         </select>
@@ -405,27 +447,33 @@
                 <form id="theme-form" class="company-form">
                     <div class="form-group">
                         <label class="form-label" for="primary-color">Color Primario</label>
-                        <input class="form-input" id="primary-color" type="color" value="#374151" title="Seleccionar color primario">
+                        <input class="form-input" id="primary-color" type="color" value="#374151"
+                            title="Seleccionar color primario">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="secondary-color">Color Secundario</label>
-                        <input class="form-input" id="secondary-color" type="color" value="#3b82f6" title="Seleccionar color secundario">
+                        <input class="form-input" id="secondary-color" type="color" value="#3b82f6"
+                            title="Seleccionar color secundario">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="background-color">Color de Fondo Principal</label>
-                        <input class="form-input" id="background-color" type="color" value="#f3f4f6" title="Seleccionar color de fondo">
+                        <input class="form-input" id="background-color" type="color" value="#f3f4f6"
+                            title="Seleccionar color de fondo">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="card-background-color">Color de Fondo de Tarjetas</label>
-                        <input class="form-input" id="card-background-color" type="color" value="#ffffff" title="Seleccionar color de fondo de tarjetas">
+                        <input class="form-input" id="card-background-color" type="color" value="#ffffff"
+                            title="Seleccionar color de fondo de tarjetas">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="text-color">Color de Texto Principal</label>
-                        <input class="form-input" id="text-color" type="color" value="#374151" title="Seleccionar color de texto principal">
+                        <input class="form-input" id="text-color" type="color" value="#374151"
+                            title="Seleccionar color de texto principal">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="card-text-color">Color de Texto de Tarjetas</label>
-                        <input class="form-input" id="card-text-color" type="color" value="#374151" title="Seleccionar color de texto de tarjetas">
+                        <input class="form-input" id="card-text-color" type="color" value="#374151"
+                            title="Seleccionar color de texto de tarjetas">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="font-size">Tamaño de Fuente</label>
@@ -453,23 +501,27 @@
             <div class="donation-container">
                 <span class="donation-heart">❤️</span>
                 <h2 class="donation-heading">¡Apoya el Crecimiento de Lanzo POS!</h2>
-                <p class="donation-text">Tu donación nos ayuda a mantener este proyecto gratuito y en constante mejora para todos los emprendedores.</p>
+                <p class="donation-text">Tu donación nos ayuda a mantener este proyecto gratuito y en constante mejora
+                    para todos los emprendedores.</p>
                 <div class="donation-buttons-container">
                     <a href="https://www.paypal.com/invoice/p/#AXZ4W24TKCUTHQGR" class="donation-button" target="_blank"
                         rel="noopener noreferrer" title="Donar $50 MXN a través de PayPal">
                         Donar $50 <span class="donation-amount">MXN (PayPal)</span>
                     </a>
-                    <a href="https://pago.clip.mx/9ed1f2e2-fef2-4e68-8f0a-252ca7707289" target="_blank" rel="noopener noreferrer" title="Donar a través de Clip">
+                    <a href="https://pago.clip.mx/9ed1f2e2-fef2-4e68-8f0a-252ca7707289" target="_blank"
+                        rel="noopener noreferrer" title="Donar a través de Clip">
                         <img src="https://assets-global.website-files.com/62588b32d8d6105ab7aa9721/63bf568610f3fdf437235192_Preview.svg"
                             alt="Logo Paga con Clip para donar">
                     </a>
                 </div>
                 <div class="donation-info">
-                    <p class="donation-info-text">Tu apoyo nos permite añadir nuevas funciones y mantener la plataforma accesible para todos.</p>
+                    <p class="donation-info-text">Tu apoyo nos permite añadir nuevas funciones y mantener la plataforma
+                        accesible para todos.</p>
                 </div>
                 <div class="contact-container">
                     <h3 class="contact-heading">Contáctanos</h3>
-                    <p class="contact-text">¿Tienes sugerencias, dudas o necesitas una función específica? Escríbenos:</p>
+                    <p class="contact-text">¿Tienes sugerencias, dudas o necesitas una función específica? Escríbenos:
+                    </p>
                     <div class="contact-form-container">
                         <form id="contact-form" action="https://api.web3forms.com/submit" method="POST">
                             <div class="form-group">
@@ -486,8 +538,8 @@
                             <button type="submit" class="btn btn-modal">Enviar Mensaje</button>
                         </form>
                         <br>
-                        <p>O si prefieres una respuesta inmediata, <a href="https://wa.link/dacyxv"
-                                target="_blank" rel="noopener noreferrer">contáctanos por WhatsApp</a>.</p>
+                        <p>O si prefieres una respuesta inmediata, <a href="https://wa.link/dacyxv" target="_blank"
+                                rel="noopener noreferrer">contáctanos por WhatsApp</a>.</p>
                     </div>
                 </div>
             </div>
@@ -497,7 +549,8 @@
         <div class="modal-content">
             <h2 class="modal-title">Mensaje</h2>
             <p id="modal-message" class="modal-message"></p>
-            <button id="close-modal-btn" class="btn btn-modal">Aceptar</button>
+            <div class="modal-buttons">
+            </div>
         </div>
     </div>
     <div id="payment-modal" class="modal hidden">
@@ -535,7 +588,8 @@
                     <li><strong>Panel de Ventas</strong>: Muestra estadísticas e informes de ventas.</li>
                     <li><strong>Configuración</strong>: Personaliza datos de la empresa y aspecto visual.</li>
                 </ul>
-                <p>Características: diseño responsive para celulares, tablets y computadoras, cálculo de costos, persistencia
+                <p>Características: diseño responsive para celulares, tablets y computadoras, cálculo de costos,
+                    persistencia
                     de datos local y mucho más.</p>
             </div>
             <form id="license-form">
@@ -564,7 +618,7 @@
                 <button type="button" id="add-ingredient" class="btn btn-save">Agregar</button>
             </div>
             <div class="ingredient-list" id="ingredient-list">
-                </div>
+            </div>
             <div class="ingredient-total" id="ingredient-total">
                 Total: $0.00
             </div>
@@ -591,7 +645,7 @@
             </div>
             <h3 class="subtitle">Categorías Existentes</h3>
             <div class="category-list" id="category-list">
-                </div>
+            </div>
             <button id="close-category-modal-btn" class="btn btn-cancel" style="margin-top: 1rem;">Cerrar</button>
         </div>
     </div>
@@ -602,7 +656,7 @@
             <div class="purchase-history-container">
                 <h3 id="customer-history-name" class="subtitle">Historial de: <span></span></h3>
                 <div id="purchase-history-list" class="purchase-history-list">
-                    </div>
+                </div>
                 <div class="purchase-summary">
                     <h4>Resumen</h4>
                     <p>Total de compras: <span id="total-purchases">0</span></p>
@@ -650,7 +704,7 @@
             </div>
         </div>
     </div>
-    
+
     <div id="open-caja-modal" class="modal hidden">
         <div class="modal-content">
             <h2 class="modal-title">Abrir Caja</h2>

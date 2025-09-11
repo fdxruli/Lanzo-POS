@@ -1189,7 +1189,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const processOrder = async () => {
         const cajaActual = getCajaActual();
         if (!cajaActual || cajaActual.estado !== 'abierta') {
-            showMessageModal('No se puede procesar la venta. No hay una caja abierta y activa. Por favor, ve a la seccion de "Caja" para abrir una.');
+            showMessageModal(
+                'No se puede procesar la venta. No hay una caja abierta y activa. Por favor, ve a la seccion de "Caja" para abrir una.',
+                null,
+                {
+                    extraButton: {
+                        text: 'Ir a Caja',
+                        action: () => showSection('caja')
+                    }
+                }
+            );
             return;
         }
         if (!isAppUnlocked) {
@@ -2129,6 +2138,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- INICIALIZACIÓN DE LA APLICACIÓN ---
     const initApp = async () => {
         try {
+            // Escuchar eventos de navegación personalizados
+            document.addEventListener('navigateTo', (e) => {
+                if (e.detail) {
+                    showSection(e.detail);
+                }
+            });
             // Mostrar pantalla de carga solo si el elemento existe
             if (loadingScreen) loadingScreen.style.display = 'flex';
             await initDB();

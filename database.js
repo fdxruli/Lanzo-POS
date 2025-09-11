@@ -1,7 +1,7 @@
 // database.js
 
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 9; // Asegúrate que esta versión coincida con la de tu app.js
+const DB_VERSION = 10; // Asegúrate que esta versión coincida con la de tu app.js
 export const STORES = { // Exportamos STORES para que todos los usen
     MENU: 'menu',
     SALES: 'sales',
@@ -69,17 +69,18 @@ export function initDB() {
                 const cajaStore = tempDb.createObjectStore(STORES.CAJAS, { keyPath: 'id' });
                 cajaStore.createIndex('estado', 'estado', { unique: false });
             }
-            if (!tempDb.objectStoreNames.contains(STORES.DELETED_MENU)) {
-                tempDb.createObjectStore(STORES.DELETED_MENU, { keyPath: 'id' });
-            }
-            if (!tempDb.objectStoreNames.contains(STORES.DELETED_MENU)) {
-                tempDb.createObjectStore(STORES.DELETED_MENU, { keyPath: 'id' });
-            }
             if (!tempDb.objectStoreNames.contains(STORES.DELETED_CUSTOMERS)) {
                 tempDb.createObjectStore(STORES.DELETED_CUSTOMERS, { keyPath: 'id' });
             }
             if (!tempDb.objectStoreNames.contains(STORES.DELETED_SALES)) {
                 tempDb.createObjectStore(STORES.DELETED_SALES, { keyPath: 'timestamp' });
+            }
+            if (!tempDb.objectStoreNames.contains(STORES.MOVIMIENTOS_CAJA)) {
+                const movimientosStore = tempDb.createObjectStore(STORES.MOVIMIENTOS_CAJA, { keyPath: 'id' });
+                movimientosStore.createIndex('caja_id', 'caja_id', { unique: false });
+            }
+            if (!tempDb.objectStoreNames.contains(STORES.DELETED_MENU)) {
+                tempDb.createObjectStore(STORES.DELETED_MENU, { keyPath: 'id' });
             }
         };
     });
