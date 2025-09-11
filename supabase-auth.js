@@ -119,3 +119,86 @@ window.deactivateCurrentDevice = async function(licenseKey) {
         return { success: false, message: error.message };
     }
 };
+
+// --- BUSINESS PROFILE MANAGEMENT ---
+
+/**
+ * Saves or updates the business profile linked to a license.
+ * @param {string} licenseKey - The user's license key.
+ * @param {object} profileData - The business profile data.
+ * @returns {Promise<object>} The result of the operation.
+ */
+window.saveBusinessProfile = async function(licenseKey, profileData) {
+    try {
+        const user = await getSupabaseUser();
+        if (!user) return { success: false, message: 'Could not get a user session.' };
+
+        // First, get the license ID from the license key
+        const { data: license, error: licenseError } = await supabaseClient
+            .from('licenses')
+            .select('id')
+            .eq('license_key', licenseKey)
+            .single();
+
+        if (licenseError || !license) {
+            throw new Error('License not found.');
+        }
+
+        // Prepare the data to be saved, linking it to the user and license
+        const dataToUpsert = {
+            license_id: license.id,
+            user_id: user.id,
+            business_name: profileData.name,
+            phone_number: profileData.phone,
+            address: profileData.address,
+            logo_url: profileData.logo,
+            business_type: profileData.business_type,
+            updated_at: new Date().toISOString()
+        };
+
+        // Use upsert to either create a new profile or update an existing one
+        const { data, error } = await supabaseClient
+            .from('business_profiles')
+            .upsert(dataToUpsert, { onConflict: 'license_id' })
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        return { success: true, data };
+
+    } catch (error) {
+        console.error('Error saving business profile:', error);
+        return { success: false, message: `Client-side error: ${error.message}` };
+    }
+};
+
+/**
+ * Retrieves the business profile for a given user.
+ * @returns {Promise<object>} The business profile data.
+ */
+window.getBusinessProfile = async function() {
+    try {
+        const user = await getSupabaseUser();
+        if (!user) return { success: false, message: 'Could not get a user session.' };
+
+        const { data, error } = await supabaseClient
+            .from('business_profiles')
+            .select('*')
+            .eq('user_id', user.id)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') { // Code for "Not a single row"
+                return { success: true, data: null }; // No profile found is not an error
+            }
+            throw error;
+        }
+
+        return { success: true, data };
+
+    } catch (error) {
+        console.error('Error getting business profile:', error);
+        return { success: false, message: `Client-side error: ${error.message}` };
+    }
+};

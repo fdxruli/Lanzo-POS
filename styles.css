@@ -336,6 +336,14 @@ textarea {
   background-color: #ef4444;
 }
 
+/* ===== ESTILOS ADICIONALES PARA UNIDAD DE VENTA ===== */
+.menu-item-unit, .product-item-unit {
+  font-size: 0.85em; /* Ligeramente más pequeño que el precio */
+  color: var(--text-light);
+  font-weight: 500;
+  margin-left: 4px; /* Un pequeño espacio desde el precio */
+}
+
 /* ===== CONTENEDOR PRINCIPAL ===== */
 .main-container {
   max-width: 1400px;

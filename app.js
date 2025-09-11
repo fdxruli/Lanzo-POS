@@ -287,6 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const companyAddressInput = document.getElementById('company-address');
     const companyLogoPreview = document.getElementById('company-logo-preview');
     const companyLogoFileInput = document.getElementById('company-logo-file');
+    const businessTypeSelect = document.getElementById('business-type');
     const themeForm = document.getElementById('theme-form');
     const primaryColorInput = document.getElementById('primary-color');
     const secondaryColorInput = document.getElementById('secondary-color');
@@ -856,7 +857,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // ▼▼ MODIFICADO: LÓGICA PARA INDICADORES VISUALES ▼▼
             const now = new Date();
             now.setHours(0, 0, 0, 0);
 
@@ -864,12 +864,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const menuItemDiv = document.createElement('div');
                 menuItemDiv.className = 'menu-item';
 
-                // Verificar stock bajo
                 if (item.trackStock && item.stock > 0 && item.stock < 5) {
                     menuItemDiv.classList.add('low-stock-warning');
                 }
 
-                // Verificar caducidad
                 if (item.expiryDate) {
                     const expiryDate = new Date(item.expiryDate);
                     const diffTime = expiryDate - now;
@@ -878,12 +876,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         menuItemDiv.classList.add('nearing-expiry-warning');
                     }
                 }
-                // ▲▲ FIN DE MODIFICACIÓN ▲▲
 
+                const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
                 let stockInfo = '';
                 if (item.trackStock) {
                     stockInfo = item.stock > 0 ?
-                        `<div class="stock-info">Stock: ${item.stock}</div>` :
+                        `<div class="stock-info">Stock: ${item.stock}${unit}</div>` :
                         `<div class="stock-info out-of-stock-label">AGOTADO</div>`;
                 } else {
                     stockInfo = `<div class="stock-info no-stock-label">Sin seguimiento</div>`;
@@ -1423,6 +1421,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (companyNameInput) companyNameInput.value = companyData.name;
             if (companyPhoneInput) companyPhoneInput.value = companyData.phone;
             if (companyAddressInput) companyAddressInput.value = companyData.address;
+            if (businessTypeSelect) businessTypeSelect.value = companyData.business_type || '';
             const logoSrc = companyData.logo || 'https://placehold.co/100x100/FFFFFF/4A5568?text=LN';
             if (companyLogoPreview) companyLogoPreview.src = logoSrc;
             if (navCompanyLogo) navCompanyLogo.src = logoSrc;
@@ -1446,6 +1445,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 name: companyNameInput ? companyNameInput.value.trim() : '',
                 phone: companyPhoneInput ? companyPhoneInput.value.trim() : '',
                 address: companyAddressInput ? companyAddressInput.value.trim() : '',
+                business_type: businessTypeSelect ? businessTypeSelect.value : '',
                 logo: companyLogoPreview ? companyLogoPreview.src : ''
             };
             await saveData(STORES.COMPANY, companyData);
@@ -1478,7 +1478,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 emptyProductMessage.textContent = 'No hay productos.';
             }
 
-            // ▼▼ MODIFICADO: LÓGICA PARA INDICADORES VISUALES EN GESTIÓN ▼▼
             const now = new Date();
             now.setHours(0, 0, 0, 0);
 
@@ -1490,13 +1489,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 let stockIndicator = '';
                 let expiryIndicator = '';
 
-                // Verificar stock bajo
                 if (item.trackStock && item.stock > 0 && item.stock < 5) {
                     div.classList.add('low-stock-warning');
                     stockIndicator = `<span class="alert-indicator low-stock-indicator">Stock bajo: ${item.stock}</span>`;
                 }
 
-                // Verificar caducidad
                 if (item.expiryDate) {
                     const expiryDate = new Date(item.expiryDate);
                     const diffTime = expiryDate - now;
@@ -1507,7 +1504,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         expiryIndicator = `<span class="alert-indicator nearing-expiry-indicator">${expiryText}</span>`;
                     }
                 }
-                // ▲▲ FIN DE MODIFICACIÓN ▲▲
+
+                const stockUnit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
 
                 div.innerHTML = `
                 <div class="product-status-badge ${item.isActive !== false ? 'active' : 'inactive'}">
@@ -1520,7 +1518,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <p><strong>Categoría:</strong> ${categoryName}</p>
                         <p><strong>Precio:</strong> $${item.price.toFixed(2)}</p>
                         <p><strong>Costo:</strong> $${item.cost.toFixed(2)}</p>
-                        <p><strong>Stock:</strong> ${item.trackStock ? item.stock : 'N/A'}</p>
+                        <p><strong>Stock:</strong> ${item.trackStock ? item.stock + stockUnit : 'N/A'}</p>
                         ${stockIndicator}
                         ${expiryIndicator}
                     </div>

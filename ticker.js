@@ -64,37 +64,48 @@ export function createTickerModule() {
      * Renderiza el ticker en el DOM con las alertas o mensajes promocionales.
      */
     async function renderTicker() {
-        tickerContainer = document.getElementById('notification-ticker-container');
-        if (!tickerContainer) return;
+    tickerContainer = document.getElementById('notification-ticker-container');
+    if (!tickerContainer) return;
 
-        let messages = await getProductAlerts();
+    let messages = await getProductAlerts();
 
-        // Si no hay alertas, usamos los mensajes promocionales
-        if (messages.length === 0) {
-            messages = promotionalMessages;
-        }
-
-        // Limpiamos el contenedor
-        tickerContainer.innerHTML = '';
-
-        if (messages.length > 0) {
-            const tickerWrap = document.createElement('div');
-            tickerWrap.className = 'ticker-wrap';
-
-            const tickerMove = document.createElement('div');
-            tickerMove.className = 'ticker-move';
-
-            messages.forEach(msg => {
-                const tickerItem = document.createElement('div');
-                tickerItem.className = 'ticker-item';
-                tickerItem.textContent = msg;
-                tickerMove.appendChild(tickerItem);
-            });
-
-            tickerWrap.appendChild(tickerMove);
-            tickerContainer.appendChild(tickerWrap);
-        }
+    // Si no hay alertas, usamos los mensajes promocionales
+    if (messages.length === 0) {
+        messages = promotionalMessages;
     }
+
+    // Limpiamos el contenedor
+    tickerContainer.innerHTML = '';
+
+    if (messages.length > 0) {
+        const tickerWrap = document.createElement('div');
+        tickerWrap.className = 'ticker-wrap';
+
+        const tickerMove = document.createElement('div');
+        tickerMove.className = 'ticker-move';
+
+        messages.forEach(msg => {
+            const tickerItem = document.createElement('div');
+            tickerItem.className = 'ticker-item';
+            tickerItem.textContent = msg;
+            tickerMove.appendChild(tickerItem);
+        });
+
+        // Forzamos el reinicio de la animación
+        // 1. Añadimos el elemento sin la animación
+        tickerWrap.appendChild(tickerMove);
+        tickerContainer.appendChild(tickerWrap);
+
+        // 2. Quitamos la clase de animación (si la tuviera)
+        tickerMove.classList.remove('ticker-move');
+
+        // 3. Forzamos un "reflow" para que el navegador aplique el cambio
+        void tickerMove.offsetWidth;
+
+        // 4. Volvemos a añadir la clase para que la animación comience de nuevo
+        tickerMove.classList.add('ticker-move');
+    }
+}
 
     /**
      * Función pública para actualizar las alertas del ticker.
