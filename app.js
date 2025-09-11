@@ -1099,34 +1099,45 @@ document.addEventListener('DOMContentLoaded', () => {
      /**
      * NUEVA FUNCIÓN: Maneja el cambio en el input de cantidad para productos a granel.
      */
-    const handleBulkQuantityInput = (e) => {
+    const handleBulkQuantityInput = async (e) => {
         const id = e.target.dataset.id;
         const itemInOrder = order.find(i => i.id === id);
         if (itemInOrder) {
             const newQuantity = parseFloat(e.target.value);
-            // Actualizamos la cantidad en el objeto del pedido
             itemInOrder.quantity = isNaN(newQuantity) || newQuantity <= 0 ? null : newQuantity;
-            
-            // Recalculamos totales y actualizamos la UI para mostrar advertencias de stock si es necesario
             calculateTotals();
-            // Para no redibujar todo, solo actualizamos las clases de advertencia
-             const currentProduct = loadDataWithCache(STORES.MENU, id).then(p => {
-                if (p && p.trackStock) {
-                    const orderItemDiv = e.target.closest('.order-item');
-                    const warningDiv = orderItemDiv.querySelector('.stock-warning');
-                    if (warningDiv) warningDiv.remove(); // Limpiar advertencia previa
 
-                    if (itemInOrder.quantity > p.stock) {
+            try {
+                const product = await loadDataWithCache(STORES.MENU, id);
+                if (product && product.trackStock) {
+                    // 1. Primero, encontramos el contenedor principal del item en el pedido
+                    const orderItemDiv = e.target.closest('.order-item');
+                    if (!orderItemDiv) return; // Salida segura si no se encuentra
+
+                    // 2. Limpiamos cualquier advertencia previa para evitar duplicados
+                    const existingWarning = orderItemDiv.querySelector('.stock-warning');
+                    if (existingWarning) {
+                        existingWarning.remove();
+                    }
+                    orderItemDiv.classList.remove('exceeds-stock', 'low-stock');
+                    itemInOrder.exceedsStock = false;
+
+                    // 3. Verificamos si la cantidad excede el stock
+                    if (itemInOrder.quantity > product.stock) {
                         itemInOrder.exceedsStock = true;
                         orderItemDiv.classList.add('exceeds-stock');
-                        orderItemDiv.classList.remove('low-stock');
-                        e.target.closest('.order-item-info').insertAdjacentHTML('beforeend', `<div class="stock-warning exceeds-stock-warning">¡Excede stock! Disp: ${p.stock} ${p.bulkData.purchase.unit}</div>`);
-                    } else {
-                        itemInOrder.exceedsStock = false;
-                        orderItemDiv.classList.remove('exceeds-stock');
+
+                        // 4. CORRECCIÓN: Buscamos el contenedor correcto (el hermano) para la advertencia
+                        const infoContainer = orderItemDiv.querySelector('.order-item-info');
+                        if (infoContainer) { // Verificamos que el contenedor exista antes de modificarlo
+                            const unitName = product.bulkData?.purchase?.unit || 'unidades';
+                            infoContainer.insertAdjacentHTML('beforeend', `<div class="stock-warning exceeds-stock-warning">¡Excede stock! Disp: ${product.stock} ${unitName}</div>`);
+                        }
                     }
                 }
-            });
+            } catch (error) {
+                console.error("Error al verificar stock en producto a granel:", error);
+            }
         }
     };
     
@@ -1136,14 +1147,69 @@ document.addEventListener('DOMContentLoaded', () => {
     const handleQuantityChange = async (e) => {
         const { id, change } = e.currentTarget.dataset;
         const itemIndex = order.findIndex(i => i.id === id);
+
         if (itemIndex > -1) {
-            // Lógica existente para productos por unidad...
-             updateOrderDisplay(); // Redibuja al final
+            try {
+                const changeValue = parseInt(change);
+                const currentItem = order[itemIndex];
+
+                // Para productos sin control de stock, simplemente ajustamos la cantidad.
+                if (!currentItem.trackStock) {
+                    currentItem.quantity += changeValue;
+                    if (currentItem.quantity <= 0) {
+                        order.splice(itemIndex, 1); // Eliminar si la cantidad es 0 o menos
+                    }
+                    updateOrderDisplay(); // Actualizar la vista
+                    return;
+                }
+
+                // Para productos CON control de stock, validamos
+                const currentProduct = await loadDataWithCache(STORES.MENU, id);
+                if (!currentProduct) {
+                    showMessageModal('Este producto ya no está disponible.');
+                    order.splice(itemIndex, 1);
+                    updateOrderDisplay();
+                    return;
+                }
+
+                // Si se está incrementando la cantidad (+)
+                if (changeValue > 0) {
+                    if (currentItem.quantity >= currentProduct.stock && !currentItem.exceedsStock) {
+                        // Si se alcanza el límite del stock, preguntar al usuario
+                        showMessageModal(
+                            `No hay suficiente stock de "${currentItem.name}". Solo quedan ${currentProduct.stock} unidades. ¿Desea agregar más de todas formas?`,
+                            () => {
+                                currentItem.quantity += changeValue;
+                                currentItem.exceedsStock = true;
+                                updateOrderDisplay();
+                            }
+                        );
+                        return; // Detener la ejecución hasta que el usuario responda
+                    }
+                }
+
+                // Si no hay problemas de stock, cambiar la cantidad normalmente
+                currentItem.quantity += changeValue;
+
+                // Actualizar el estado 'exceedsStock'
+                currentItem.exceedsStock = currentItem.quantity > currentProduct.stock;
+
+                // Si la cantidad llega a cero, eliminar el producto del pedido
+                if (currentItem.quantity <= 0) {
+                    order.splice(itemIndex, 1);
+                }
+
+                // Finalmente, actualizar la pantalla del pedido
+                updateOrderDisplay();
+
+            } catch (error) {
+                console.error('Error al verificar el stock:', error);
+                showMessageModal('Error al verificar el stock del producto.');
+            }
         }
     };
-    
     /**
-     * NUEVA FUNCIÓN (refactorizada): Maneja el botón de eliminar.
+     * FUNCIÓN COMPLEMENTARIA: Maneja el botón de eliminar (X).
      */
     const handleRemoveItem = (e) => {
         const id = e.currentTarget.dataset.id;
