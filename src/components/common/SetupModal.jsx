@@ -67,33 +67,42 @@ export default function SetupModal() {
     <div id="business-setup-modal" className="modal" style={{ display: 'flex' }}>
       <div className="modal-content">
         <h2>Configura tu Negocio</h2>
-        <p>¡Felicidades por activar tu licencia! Ahora, personalicemos la información de tu negocio.</p>
+        <p style={{ marginBottom: 'var(--spacing-lg)' }}>
+          ¡Felicidades por activar tu licencia! Ahora, personalicemos la información de tu negocio.
+        </p>
         <form id="business-setup-form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="setup-company-name">Nombre del Negocio</label>
+            <label className="form-label" htmlFor="setup-company-name">Nombre del Negocio *</label>
             <input className="form-input" id="setup-company-name" type="text" required 
-              value={name} onChange={(e) => setName(e.target.value)} />
+              value={name} onChange={(e) => setName(e.target.value)} 
+              placeholder="Ej: Mi Tiendita" />
           </div>
+          
           <div className="form-group">
             <label className="form-label" htmlFor="setup-company-phone">Teléfono</label>
             <input className="form-input" id="setup-company-phone" type="tel"
-              value={phone} onChange={(e) => setPhone(e.target.value)} />
+              value={phone} onChange={(e) => setPhone(e.target.value)}
+              placeholder="Ej: 9611234567" />
           </div>
+          
           <div className="form-group">
             <label className="form-label" htmlFor="setup-company-address">Dirección</label>
-            <textarea className="form-textarea" id="setup-company-address"
-              value={address} onChange={(e) => setAddress(e.target.value)} />
+            <textarea className="form-textarea" id="setup-company-address" rows="2"
+              value={address} onChange={(e) => setAddress(e.target.value)}
+              placeholder="Calle, Colonia, Ciudad" />
           </div>
+          
           <div className="form-group">
-            <label className="form-label" htmlFor="setup-company-logo-file">Logo</label>
+            <label className="form-label" htmlFor="setup-company-logo-file">Logo (Opcional)</label>
             <div className="image-upload-container">
               <img id="setup-company-logo-preview" className="image-preview" src={logoPreview} alt="Preview" />
               <input className="file-input" id="setup-company-logo-file" type="file" accept="image/*"
                 onChange={handleImageChange} />
             </div>
           </div>
+          
           <div className="form-group">
-            <label className="form-label">¿A qué se dedica tu negocio?</label>
+            <label className="form-label">¿A qué se dedica tu negocio? *</label>
             <div id="business-type-selection" className="business-type-container">
               {['farmacia', 'abarrotes', 'verduleria/fruteria', 'antojitos', 'darkitchen', 'restaurante', 'otro'].map(type => (
                 <div 
@@ -106,10 +115,16 @@ export default function SetupModal() {
               ))}
             </div>
             {error && <p className="form-help-text validation-message error" style={{ display: 'block' }}>{error}</p>}
+            <small className="form-help-text" style={{ display: 'block', marginTop: 'var(--spacing-xs)' }}>
+              Selecciona al menos uno (máximo 4)
+            </small>
           </div>
+          
           <button type="submit" className="btn btn-save">Guardar y Empezar</button>
         </form>
       </div>
     </div>
   );
+}
+
 }
