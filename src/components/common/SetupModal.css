@@ -33,4 +33,14 @@
   background-color: var(--primary-color);
   color: white;
   border-color: var(--primary-color);
+
+}
+
+/* Ajusta el ancho del modal de configuración */
+#business-setup-modal .modal-content {
+  max-width: 600px;
+  max-height: 90vh; /* Limita la altura máxima */
+  overflow-y: auto; /* Permite scroll vertical */
+  display: flex;
+  flex-direction: column;
 }
