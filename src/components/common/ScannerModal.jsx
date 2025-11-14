@@ -1,66 +1,56 @@
 // src/components/common/ScannerModal.jsx
-import React, { useState } from 'react';
-import { BarcodeScanner } from 'react-zxing'; // ¡CORRECCIÓN #1!
+import React, { useState, useRef } from 'react';
+import { useZxing } from 'react-zxing';
 import { useOrderStore } from '../../store/useOrderStore';
 import { loadData, STORES } from '../../services/database';
 import './ScannerModal.css';
 
-// props:
-// - show: un booleano para mostrar/ocultar el modal
-// - onClose: una función para cerrar el modal
 export default function ScannerModal({ show, onClose }) {
   const [scannedItems, setScannedItems] = useState([]);
   const [lastCode, setLastCode] = useState('');
 
-  // 1. Conectamos al store de Zustand
   const addMultipleItemsToOrder = useOrderStore((state) => state.setOrder);
   const currentOrder = useOrderStore((state) => state.order);
 
-  // 2. Esta es la función que se llama CADA VEZ que se detecta un código
-  const handleScanResult = (result) => {
-    if (!result) return;
-
-    const code = result.getText();
-
-    // 3. Lógica de "enfriamiento" (Cooldown) de tu scanner.js
-    if (code === lastCode) return; // Mismo código, lo ignoramos
-    setLastCode(code);
-
-    // (Opcional) Vibrar al escanear
-    if (navigator.vibrate) {
-      navigator.vibrate(100);
-    }
-
-    // 4. Buscar el producto en la DB
-    processScannedCode(code);
-  };
+  // Hook de react-zxing
+  const { ref } = useZxing({
+    onDecodeResult(result) {
+      const code = result.getText();
+      
+      // Cooldown
+      if (code === lastCode) return;
+      setLastCode(code);
+      
+      // Vibrar
+      if (navigator.vibrate) {
+        navigator.vibrate(100);
+      }
+      
+      // Procesar código
+      processScannedCode(code);
+    },
+  });
 
   const processScannedCode = async (code) => {
-    const menu = await loadData(STORES.MENU); // Carga desde IndexedDB
+    const menu = await loadData(STORES.MENU);
     const product = menu.find(p => p.barcode === code);
 
     if (product) {
       setScannedItems(prevItems => {
         const existing = prevItems.find(i => i.id === product.id);
         if (existing) {
-          // Aumenta la cantidad si ya está en la lista del modal
           return prevItems.map(i =>
             i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
           );
         }
-        // Añade el producto a la lista del modal
         return [...prevItems, { ...product, quantity: 1 }];
       });
     } else {
-      // (Aquí usamos tu showMessageModal)
       console.warn(`Producto con código ${code} no encontrado.`);
     }
   };
 
-  // 5. Confirmar y añadir al pedido principal
   const handleConfirmScan = () => {
-    // Lógica de 'addMultipleItemsToOrder'
-    // Fusionamos la orden actual con los items escaneados
     const newOrder = [...currentOrder];
 
     scannedItems.forEach(scannedItem => {
@@ -72,28 +62,22 @@ export default function ScannerModal({ show, onClose }) {
       }
     });
 
-    // 6. Usamos la acción 'setOrder' del store
     addMultipleItemsToOrder(newOrder);
-
-    // 7. Cerramos y limpiamos
     handleClose();
   };
 
   const handleClose = () => {
-    setScannedItems([]); // Limpia la lista
-    setLastCode(''); // Resetea el cooldown
-    onClose(); // Llama a la función del padre para cerrar
+    setScannedItems([]);
+    setLastCode('');
+    onClose();
   };
 
-  // Lógica de UI para el modal (de scanner.js)
   const totalScaneado = scannedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-  // Si no se debe mostrar, no renderiza nada
   if (!show) {
     return null;
   }
 
-  // 8. Renderizamos el JSX
   return (
     <div id="scanner-modal" className="modal">
       <div className="modal-content scanner-modal-content pos-scan-mode">
@@ -101,15 +85,8 @@ export default function ScannerModal({ show, onClose }) {
         <div className="scanner-main-container">
           <div className="scanner-video-container">
             <div id="scanner-container">
-
-              {/* ¡AQUÍ ESTÁ LA NUEVA LIBRERÍA! */}
-              {/* ¡CORRECCIÓN #2! */}
-              <BarcodeScanner
-                onResult={handleScanResult}
-                onError={(error) => console.log('Error de scanner:', error?.message)}
-              />
-              {/* No más <video> ni overlay manual */}
-
+              {/* Video element controlado por useZxing */}
+              <video ref={ref} style={{ width: '100%', height: '100%' }} />
             </div>
           </div>
           <div className="scanner-results-container">
@@ -121,7 +98,7 @@ export default function ScannerModal({ show, onClose }) {
                 scannedItems.map(item => (
                   <div key={item.id} className="scanned-item">
                     <span className="scanned-item-name">{item.name}</span>
-                    <span className-="quantity-value">{item.quantity}</span>
+                    <span className="quantity-value">{item.quantity}</span>
                     <span className="scanned-item-price">${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 ))
