@@ -1,0 +1,110 @@
+/*
+ * Estilos para BusinessTips.jsx
+ */
+
+.news-placeholder {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+}
+
+.news-title {
+  margin-bottom: var(--spacing-md);
+  color: var(--primary-color);
+}
+
+.business-alerts {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+.business-alerts li {
+  padding: 15px;
+  margin-bottom: 15px;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  transition: transform 0.3s ease;
+  list-style: none;
+}
+
+.business-alerts li:hover {
+  transform: translateY(-2px);
+}
+
+/* * NOTA: Estos estilos .tip-* son muy específicos.
+ * Están bien aquí, pero si alguna vez los reutilizas, 
+ * deberían ir a un CSS global de "utilidades".
+*/
+.tip-intro {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.tip-star-product {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+}
+
+.tip-warning {
+  background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%);
+  color: #2d3748;
+}
+
+.tip-timing {
+  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  color: #2d3748;
+}
+
+.tip-upsell {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: white;
+}
+
+.tip-growth {
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+  color: #2d3748;
+}
+
+.tip-decline {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+  color: #2d3748;
+}
+
+.tip-motivation {
+  background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+  color: #2d3748;
+  border: 2px solid #f6ad55;
+}
+
+.business-alerts strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1.1em;
+}
+
+.business-alerts .highlight {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.business-alerts ul,
+.business-alerts ol {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.business-alerts li ul li,
+.business-alerts li ol li {
+  margin-bottom: 5px;
+}
+
+.business-alerts em {
+  display: block;
+  margin-top: 10px;
+  font-style: italic;
+  font-size: 0.9em;
+  opacity: 0.9;
+}

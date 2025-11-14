@@ -1,0 +1,86 @@
+/*
+ * Estilos para ProductForm.jsx
+ */
+
+.product-form-container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+}
+
+.form-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-weight: 500;
+  color: var(--text-dark);
+}
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  /* Estilos base ya están en index.css */
+}
+
+/* Botón de ayuda (ej. Calcular Costo, Administrar Categorías) */
+.btn-help {
+  background-color: var(--light-background);
+  color: var(--primary-color);
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.875rem;
+  margin-top: var(--spacing-xs);
+}
+
+.btn-help:hover {
+  background-color: rgba(99, 102, 241, 0.1);
+}
+
+/* Contenedor de carga de imagen */
+.image-upload-container {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.image-preview {
+  width: 100px;
+  height: 100px;
+  border-radius: var(--border-radius-sm);
+  object-fit: cover;
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+}
+
+.file-input {
+  flex-grow: 1;
+  padding: var(--spacing-xs);
+}
+
+/* Botones de Guardar y Cancelar */
+.btn-save {
+  background-color: var(--primary-color);
+  color: white;
+  width: 100%;
+  margin-bottom: var(--spacing-sm);
+}
+
+.btn-save:hover {
+  background-color: #5558e3; /* TODO: Usar variable */
+}
+
+.btn-cancel {
+  background-color: transparent;
+  color: var(--text-light);
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  width: 100%;
+}
+
+.btn-cancel:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--error-color);
+  border-color: var(--error-color);
+}

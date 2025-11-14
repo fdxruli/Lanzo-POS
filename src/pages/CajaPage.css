@@ -1,0 +1,79 @@
+/*
+ * Estilos para CajaPage.jsx
+ *
+ * Contiene los estilos para:
+ * - El layout de la página (.caja-grid)
+ * - Los contenedores de estado (#caja-status-container, #caja-actions-container)
+ * - El historial de cajas (#caja-history-container)
+ * - El componente .stat-card (usado en esta página y en el Dashboard)
+ */
+
+.caja-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-lg);
+}
+
+/* Títulos de los contenedores de estado */
+#caja-status-container h3,
+#caja-actions-container h3 {
+  margin-top: 0;
+  color: var(--primary-color);
+}
+
+/* Contenedor del historial */
+#caja-history-container .history-list {
+  max-height: 400px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--spacing-md);
+}
+
+#caja-history-container .history-item {
+  background-color: var(--light-background);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+  border-left: 4px solid var(--secondary-color);
+}
+
+#caja-history-container .history-item p {
+  margin: 0 0 var(--spacing-xs) 0;
+}
+
+/*
+ * Estilos para .stat-card
+ * NOTA: Este estilo también es usado por StatsGrid.jsx en el Dashboard.
+ * Idealmente, .stat-card sería su propio componente (ej. StatCard.jsx)
+ * con su propio CSS (StatCard.css) para evitar duplicar este código.
+ * Por ahora, lo incluimos aquí porque CajaPage.jsx lo usa directamente.
+ */
+.stat-card {
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  text-align: center;
+  transition: var(--transition);
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--box-shadow);
+}
+
+.stat-title {
+  font-size: 0.875rem;
+  color: var(--text-light);
+  margin-bottom: var(--spacing-xs);
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+/* Estilo para las ganancias (usado en el historial) */
+.profit {
+  color: var(--success-color);
+  font-weight: bold;
+}

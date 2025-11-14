@@ -1,0 +1,16 @@
+/*
+ * Estilos para ProductsPage.jsx
+ */
+
+.product-management-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: var(--spacing-lg);
+}
+
+/* Responsive para la cuadrícula de la página */
+@media (max-width: 1024px) {
+  .product-management-grid {
+    grid-template-columns: 1fr;
+  }
+}

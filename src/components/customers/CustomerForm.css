@@ -1,0 +1,12 @@
+/*
+ * Estilos para CustomerForm.jsx
+ */
+
+.customer-form-container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+  max-width: 600px;
+  margin: 0 auto;
+}

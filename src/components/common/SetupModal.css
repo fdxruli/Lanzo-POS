@@ -1,0 +1,36 @@
+/*
+ * Estilos para SetupModal.jsx
+ */
+
+/* Ajusta el ancho del modal de configuración */
+#business-setup-modal .modal-content {
+  max-width: 600px;
+}
+
+.business-type-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.type-box {
+  padding: var(--spacing-lg);
+  border: 2px solid #e5e7eb; /* TODO: Usar variable */
+  border-radius: var(--border-radius-sm);
+  text-align: center;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.type-box:hover {
+  border-color: var(--secondary-color);
+  color: var(--secondary-color);
+}
+
+.type-box.selected {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}

@@ -1,0 +1,383 @@
+/*
+ * Estilos completos para ScannerModal.jsx
+ */
+
+/* * Nivel de apilamiento (z-index)
+ * Asegura que el modal del escáner aparezca encima de otros modales.
+ */
+#scanner-modal {
+  z-index: 2100;
+}
+
+/* * Estilos del visor de la cámara (Video y Overlay)
+ * (Estos estilos eran para el overlay manual, puede que los 
+ * necesites o no con 'react-zxing', pero los muevo por si acaso).
+ */
+#scanner-container {
+  position: relative;
+  width: 100%;
+  /* Proporción para estabilizar el video */
+  aspect-ratio: 16 / 9;
+  background-color: #000;
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+  /* Muy importante */
+}
+
+#scanner-video {
+  /* Hacemos que el video llene el contenedor */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+#scanner-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+}
+
+/* Crea el recuadro verde y el fondo oscuro */
+#scanner-overlay::before {
+  content: '';
+  position: absolute;
+  /* Centrado perfecto */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* Tamaño del área de escaneo */
+  width: 85%;
+  height: 50%;
+  /* Estilo del recuadro */
+  border: 3px solid var(--success-color);
+  border-radius: var(--border-radius);
+  /* Efecto de "corte" para el fondo oscuro */
+  box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.6);
+}
+
+/* Crea el texto de ayuda */
+#scanner-overlay::after {
+  content: 'Código aqui';
+  position: absolute;
+  /* Centrado horizontal */
+  left: 50%;
+  transform: translateX(-50%);
+  /* Posición sobre el recuadro */
+  top: 15%;
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* * Estilos del Layout del Modal (Escritorio)
+ */
+
+/* Ajustar el tamaño del modal para dar más espacio */
+.modal-content.scanner-modal-content {
+  max-width: 800px;
+  /* Más ancho */
+  width: 95%;
+}
+
+/* Contenedor principal para dividir video y resultados */
+.scanner-main-container {
+  display: flex;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.scanner-video-container {
+  flex: 1;
+  min-width: 0;
+}
+
+.scanner-results-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+}
+
+/* Lista de productos escaneados */
+.scanned-items-list {
+  flex-grow: 1;
+  overflow-y: auto;
+  max-height: 250px;
+  /* Altura máxima para la lista */
+  margin-bottom: var(--spacing-md);
+  border-top: 1px solid #e5e7eb;
+  /* TODO: Usar variable */
+  border-bottom: 1px solid #e5e7eb;
+  /* TODO: Usar variable */
+  padding: var(--spacing-sm) 0;
+}
+
+.scanned-item {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr auto auto;
+  /* Columnas para nombre, controles, precio y eliminar */
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid #e5e7eb;
+  /* TODO: Usar variable */
+}
+
+.scanned-item:last-child {
+  border-bottom: none;
+}
+
+.scanned-item-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scanned-item-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+}
+
+.scanned-item-price {
+  font-weight: 600;
+  color: var(--primary-color);
+  text-align: right;
+}
+
+/* Contenedor del total y botones de acción */
+.scanner-total-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--spacing-md);
+  border-top: 2px solid #e5e7eb;
+  /* TODO: Usar variable */
+}
+
+.scanner-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+  /* Alinea los botones a la derecha */
+}
+
+.scanner-actions .btn {
+  width: auto;
+  /* Ancho automático para los botones */
+}
+
+
+/* * Estilos para los modos condicionales (simple vs. POS)
+ */
+
+/* Por defecto, los elementos del modo POS (carrito) están ocultos */
+.modal-content.simple-scan-mode .scanner-results-container,
+.modal-content.simple-scan-mode .scanner-actions .btn-process {
+  display: none;
+}
+
+/* En modo simple, el contenedor de video ocupa todo el espacio */
+.modal-content.simple-scan-mode .scanner-main-container {
+  flex-direction: column;
+}
+
+/* En modo simple, el botón de cancelar es la única acción visible */
+.modal-content.simple-scan-mode .scanner-actions {
+  justify-content: center;
+}
+
+/* Cuando estamos en modo POS, mostramos los elementos del carrito */
+.modal-content.pos-scan-mode .scanner-results-container,
+.modal-content.pos-scan-mode .scanner-actions .btn-process {
+  display: flex;
+  /* O 'block' según el elemento */
+}
+
+/* Y aplicamos el layout de dos columnas */
+.modal-content.pos-scan-mode .scanner-main-container {
+  display: flex;
+  flex-direction: row;
+  gap: var(--spacing-lg);
+}
+
+.modal-content.pos-scan-mode .scanner-actions {
+  justify-content: flex-end;
+}
+
+
+/* * ======================================================
+ * ESTILOS RESPONSIVOS PARA MÓVIL (Como solicitaste)
+ * ======================================================
+ */
+@media (max-width: 768px) {
+  .modal-content.scanner-modal-content {
+    max-width: 95%;
+    /* Ajuste a casi el ancho completo del móvil */
+    width: auto;
+    padding: var(--spacing-md);
+  }
+
+  /*
+   * NOTA: Este estilo .modal-title es muy genérico.
+   * Si rompe otros modales, debes hacerlo más específico,
+   * ej: .scanner-modal-content .modal-title
+   */
+  .modal-title {
+    text-align: center;
+    margin-bottom: var(--spacing-md);
+  }
+
+  /* Ajustes para el contenedor principal en móvil */
+  .scanner-main-container {
+    flex-direction: column !important;
+    /* Apila los elementos verticalmente SIEMPRE en móvil */
+    gap: var(--spacing-md);
+  }
+
+  .scanner-video-container {
+    width: 100%;
+    /* El video ocupa todo el ancho disponible */
+    height: 200px;
+    /* Altura fija para el video en móvil */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+    border-radius: var(--border-radius-sm);
+    background-color: black;
+  }
+
+  /* * NOTA: Es posible que react-zxing ignore esto, 
+   * pero #scanner-video es como se llamaba tu video original.
+   */
+  #scanner-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* Cubre el área manteniendo la relación de aspecto */
+  }
+
+  /* * Este overlay es para el recorte visual,
+   * puede que no sea necesario con react-zxing.
+   */
+  #scanner-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, transparent 60%, rgba(0, 0, 0, 0.5) 75%);
+    pointer-events: none;
+    /* Permite interactuar con el video debajo */
+  }
+
+
+  .scanner-results-container {
+    width: 100%;
+    /* Ocupa todo el ancho */
+    max-height: 180px;
+    /* Limitar la altura de los resultados */
+    padding: var(--spacing-sm);
+  }
+
+  .scanned-items-list {
+    max-height: 100px;
+    /* Altura más compacta para la lista de productos */
+    margin-bottom: var(--spacing-sm);
+    padding: var(--spacing-xs) 0;
+  }
+
+  .scanned-item {
+    grid-template-columns: 1fr auto auto;
+    /* Nombre, controles/precio, eliminar */
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs);
+    font-size: 0.9rem;
+    /* Tamaño de fuente más pequeño */
+  }
+
+  .scanned-item-name {
+    font-size: 0.9rem;
+    white-space: normal;
+    /* Permite que el nombre se envuelva */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-height: 2.4em;
+    /* Mostrar hasta 2 líneas */
+    line-height: 1.2em;
+  }
+
+  .scanned-item-controls {
+    flex-shrink: 0;
+    /* Evita que los botones se encojan */
+    min-width: 80px;
+    /* Ancho mínimo para que los botones sean usables */
+  }
+
+  /* * NOTA: La clase .quantity-btn está definida en OrderSummary.css,
+   * pero el escáner tenía su propia versión. 
+   * ¡Cuidado con conflictos!
+   */
+  .scanner-modal-content .quantity-btn {
+    width: 28px;
+    /* Botones de cantidad más pequeños */
+    height: 28px;
+    font-size: 0.9rem;
+    padding: 0;
+  }
+
+  .scanner-modal-content .quantity-value {
+    min-width: 20px;
+    /* Asegura espacio para la cantidad */
+    text-align: center;
+  }
+
+  .scanned-item-price {
+    font-size: 0.9rem;
+    text-align: right;
+  }
+
+  .scanner-modal-content .remove-item-btn {
+    width: 28px;
+    /* Botón de eliminar más pequeño */
+    height: 28px;
+    font-size: 0.9rem;
+    padding: 0;
+  }
+
+  .scanner-total-container {
+    padding-top: var(--spacing-sm);
+    font-size: 1.1rem;
+  }
+
+  .scanner-actions {
+    flex-direction: column;
+    /* Pone "Cancelar" arriba de "Confirmar" */
+    gap: var(--spacing-sm);
+    width: 100%;
+  }
+
+  .scanner-actions .btn {
+    width: 100%;
+    /* Los botones ocupan todo el ancho */
+    padding: var(--spacing-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}

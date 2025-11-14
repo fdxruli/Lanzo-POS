@@ -1,0 +1,35 @@
+/*
+ * Estilos para WelcomeModal.jsx
+ */
+
+.welcome-modal-content {
+  background-color: var(--card-background-color);
+  padding: 30px;
+  border-radius: 10px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.welcome-modal-content h2 {
+  color: var(--primary-color);
+  margin-top: 0;
+  text-align: center;
+}
+
+.welcome-summary {
+  background-color: var(--light-background);
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.welcome-summary ul {
+  padding-left: 20px;
+}
+
+.welcome-summary li {
+  margin-bottom: 8px;
+}

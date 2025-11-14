@@ -1,0 +1,42 @@
+/*
+ * Estilos para Ticker.jsx
+ */
+
+.notification-ticker-container {
+  background-color: var(--card-background-color);
+  box-shadow: var(--box-shadow);
+  padding: var(--spacing-sm) 0;
+  max-width: 1400px;
+  margin: 4px auto 0;
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+}
+
+.ticker-wrap {
+  width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.ticker-move {
+  display: inline-block;
+  white-space: nowrap;
+  animation: ticker 30s linear infinite;
+}
+
+.ticker-item {
+  display: inline-block;
+  padding: 0 2rem;
+  font-size: 0.9rem;
+  color: var(--text-light);
+}
+
+@keyframes ticker {
+  0% {
+    transform: translateX(100%);
+  }
+
+  100% {
+    transform: translateX(-100%);
+  }
+}

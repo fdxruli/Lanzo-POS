@@ -1,0 +1,193 @@
+/*
+ * Estilos para OrderSummary.jsx
+ */
+
+.pos-order-container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+  display: flex;
+  flex-direction: column;
+  height: fit-content;
+  /* Evita que se estire con la cuadrícula */
+}
+
+.empty-message {
+  text-align: center;
+  color: var(--text-light);
+  padding: var(--spacing-lg);
+  font-style: italic;
+}
+
+.order-list {
+  flex-grow: 1;
+  margin-bottom: var(--spacing-md);
+  max-height: 400px;
+  /* Límite para que no crezca indefinidamente */
+  overflow-y: auto;
+}
+
+.order-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--light-background);
+}
+
+.order-item:last-child {
+  border-bottom: none;
+}
+
+.order-item-info {
+  flex-grow: 1;
+}
+
+.order-item-name {
+  font-weight: 500;
+}
+
+.order-item-price {
+  color: var(--text-light);
+  font-size: 0.875rem;
+}
+
+.order-item-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quantity-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--primary-color);
+  color: white;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quantity-btn:hover {
+  background-color: var(--secondary-color);
+}
+
+.remove-item-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--error-color);
+  background-color: #fff;
+  /* TODO: Usar variable */
+  color: var(--error-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.remove-item-btn:hover {
+  background-color: var(--error-color);
+  color: #fff;
+}
+
+/* Controles para "A Granel" */
+.order-item-controls.bulk-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.order-item-quantity-input {
+  width: 100px;
+  padding: var(--spacing-xs);
+  text-align: right;
+  font-size: 0.9rem;
+  -moz-appearance: textfield;
+}
+
+.order-item-quantity-input::-webkit-outer-spin-button,
+.order-item-quantity-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.bulk-controls .remove-item-btn {
+  background-color: transparent;
+}
+
+/* Total del Pedido */
+.order-total-container {
+  margin-top: auto;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--light-background);
+}
+
+.total-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.total-label {
+  font-weight: 500;
+}
+
+.total-amount {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.btn-process {
+  background-color: var(--success-color);
+  color: white;
+  width: 100%;
+  margin-bottom: var(--spacing-sm);
+}
+
+.btn-process:hover {
+  background-color: #059669;
+}
+
+.btn-clear {
+  background-color: transparent;
+  color: var(--text-light);
+  border: 1px solid #e5e7eb;
+  /* TODO: Usar variable */
+  width: 100%;
+}
+
+.btn-clear:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--error-color);
+  border-color: var(--error-color);
+}
+
+/* Alertas de Stock en el Carrito */
+.stock-warning {
+  margin-top: 5px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.order-item.exceeds-stock {
+  border-left: 4px solid var(--error-color);
+  background-color: rgba(220, 53, 69, 0.05);
+}
+
+.exceeds-stock-warning {
+  color: var(--error-color);
+}
+
+.order-item.low-stock {
+  border-left: 4px solid var(--warning-color);
+  background-color: rgba(255, 193, 7, 0.05);
+}
+
+.low-stock-warning {
+  color: var(--warning-color);
+}

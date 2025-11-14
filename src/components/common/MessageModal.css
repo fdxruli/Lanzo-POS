@@ -1,0 +1,24 @@
+/*
+ * Estilos para MessageModal.jsx
+ */
+
+#message-modal {
+  z-index: 2000 !important;
+}
+
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.btn-secondary {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.btn-secondary:hover {
+  opacity: 0.9;
+}

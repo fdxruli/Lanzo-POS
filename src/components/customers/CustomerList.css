@@ -1,0 +1,53 @@
+/*
+ * Estilos para CustomerList.jsx
+ */
+
+.customer-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.customer-card {
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.customer-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--box-shadow);
+}
+
+.customer-info h4 {
+  color: var(--text-dark);
+  margin-bottom: var(--spacing-xs);
+}
+
+.customer-info p {
+  margin-bottom: var(--spacing-xs);
+  color: var(--text-light);
+}
+
+.customer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+/* Botón específico de esta lista */
+.btn-history {
+  background-color: var(--primary-color);
+  color: white;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.875rem;
+}
+
+.btn-history:hover {
+  background-color: var(--secondary-color);
+}

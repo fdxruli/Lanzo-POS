@@ -1,0 +1,15 @@
+/*
+ * Estilos para PosPage.jsx
+ */
+
+.pos-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--spacing-lg);
+}
+
+@media (max-width: 768px) {
+  .pos-grid {
+    grid-template-columns: 1fr;
+  }
+}
