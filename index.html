@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>lanzo POS</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    (function () {
+      // Función para aplicar el tema en el <html>
+      function applyTheme(theme) {
+        if (theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+        }
+      }
+
+      // 1. Obtener la preferencia guardada por el usuario
+      var savedTheme = localStorage.getItem('theme-preference');
+
+      if (savedTheme && savedTheme !== 'system') {
+        // Si el usuario eligió "claro" u "oscuro", aplicarlo
+        applyTheme(savedTheme);
+      } else {
+        // Si no hay nada o eligió "system", usar la preferencia del OS
+        var systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (systemPrefersDark) {
+          applyTheme('dark');
+        } else {
+          applyTheme('light');
+        }
+      }
+    })();
+  </script>
+
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
+</html>
