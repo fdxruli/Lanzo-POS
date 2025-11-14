@@ -1,3 +1,4 @@
+// src/components/customers/CustomerList.jsx
 import React, { useState } from 'react';
 import PurchaseHistoryModal from './PurchaseHistoryModal';
 import './CustomerList.css';
@@ -6,6 +7,7 @@ export default function CustomerList({ customers, isLoading, onEdit, onDelete })
     const [showHistory, setShowHistory] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
 
+    // Esta es la función que abre el modal
     const handleViewHistory = (customer) => {
         setSelectedCustomer(customer);
         setShowHistory(true);
@@ -37,8 +39,12 @@ export default function CustomerList({ customers, isLoading, onEdit, onDelete })
                                 <button className="btn btn-delete" onClick={() => onDelete(customer.id)}>
                                     Eliminar
                                 </button>
-                                {/* 5. Conecta el botón */}
-                                <button className="btn btn-history" onClick={() => handleShowHistory(customer)}>
+                                
+                                {/* --- AQUÍ ESTÁ LA CORRECCIÓN --- */}
+                                <button 
+                                    className="btn btn-history" 
+                                    onClick={() => handleViewHistory(customer)}
+                                >
                                     Ver Historial
                                 </button>
                             </div>
@@ -47,7 +53,7 @@ export default function CustomerList({ customers, isLoading, onEdit, onDelete })
                 </div>
             </div>
 
-            {/* 6. Renderiza el modal */}
+            {/* Renderiza el modal */}
             <PurchaseHistoryModal
                 show={showHistory}
                 onClose={() => setShowHistory(false)}

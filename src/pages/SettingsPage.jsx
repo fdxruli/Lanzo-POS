@@ -1,12 +1,13 @@
 // src/pages/SettingsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { loadData, saveData, STORES } from '../services/database';
-import { compressImage } from '../services/utils'; // Importamos tu compresor de imágenes
-import './SettingsPage.css'
+import { compressImage } from '../services/utils';
+import { useAppStore } from '../store/useAppStore'; // 1. Importa el store
+import './SettingsPage.css'; // Importa el CSS
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
-const MQL = window.matchMedia('(preders-color-scheme: dark)');
+const MQL = window.matchMedia('(prefers-color-scheme: dark)');
 
 const applyTheme = (theme) => {
   if (theme === 'dark') {
@@ -22,53 +23,50 @@ const getInitialTheme = () => {
 
 export default function SettingsPage() {
 
-  // 1. ESTADO
-  // Estado para los campos del formulario
+  // ======================================================
+  // ¡AQUÍ ESTÁ LA CORRECCIÓN!
+  // Seleccionamos cada valor del store de forma individual.
+  // ======================================================
+  const companyProfile = useAppStore((state) => state.companyProfile);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
+  const logout = useAppStore((state) => state.logout);
+
+  // Estado local del formulario
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
-  const [businessType, setBusinessType] = useState(''); // Manejo simple
+  const [businessType, setBusinessType] = useState('');
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
-  const [logoData, setLogoData] = useState(null); // La imagen comprimida en base64
+  const [logoData, setLogoData] = useState(null);
 
   const [activeTheme, setActiveTheme] = useState(getInitialTheme);
 
-  // 2. EFECTO DE CARGA
-  // Reemplaza tu lógica 'renderCompanyData'
+  // Este useEffect ahora es seguro, porque 'companyProfile'
+  // solo cambiará si de verdad cambia en el store.
   useEffect(() => {
-    const loadSettings = async () => {
-      const companyData = await loadData(STORES.COMPANY, 'company');
-      if (companyData) {
-        setName(companyData.name || 'Lanzo Negocio');
-        setPhone(companyData.phone || '');
-        setAddress(companyData.address || '');
-        setBusinessType(companyData.business_type || ''); // Carga el tipo de negocio
-        setLogoPreview(companyData.logo || logoPlaceholder);
-        setLogoData(companyData.logo || null);
-      }
-    };
-    loadSettings();
-  }, []); // Se ejecuta 1 vez al cargar la página
+    if (companyProfile) {
+      setName(companyProfile.name || 'Lanzo Negocio');
+      setPhone(companyProfile.phone || '');
+      setAddress(companyProfile.address || '');
+      setBusinessType(companyArrayToString(companyProfile.business_type) || '');
+      setLogoPreview(companyProfile.logo || logoPlaceholder);
+      setLogoData(companyProfile.logo || null);
+    }
+  }, [companyProfile]);
 
   useEffect(() => {
     const systemThemeListener = (e) => {
       if (activeTheme === 'system') {
-        // Si el usuario tiene "system" seleccionado, actualizamos al instante
         applyTheme(e.matches ? 'dark' : 'light');
       }
     };
-
     MQL.addEventListener('change', systemThemeListener);
-
     return () => {
       MQL.removeEventListener('change', systemThemeListener);
     };
   }, [activeTheme]);
 
-  /**
-   * Maneja la subida y compresión del logo
-   * Reemplaza tu listener 'companyLogoFileInput'
-   */
   const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -82,10 +80,6 @@ export default function SettingsPage() {
     }
   };
 
-  /**
-   * Guarda los datos de la empresa
-   * Reemplaza tu 'saveCompanyData'
-   */
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -94,17 +88,13 @@ export default function SettingsPage() {
         name: name,
         phone: phone,
         address: address,
-        business_type: businessType,
+        business_type: stringToArray(businessType),
         logo: logoData
       };
-
-      await saveData(STORES.COMPANY, companyData);
-
-      // Opcional: Actualizar el Navbar
-      // (Por ahora, el Navbar no está conectado a este estado,
-      // pero podemos arreglarlo en el Paso 6)
-
-      alert('¡Configuración guardada!'); // Reemplazamos showMessageModal por simplicidad
+      
+      await updateCompanyProfile(companyData); 
+      
+      alert('¡Configuración guardada!');
 
     } catch (error) {
       console.error("Error al guardar configuración:", error);
@@ -113,11 +103,8 @@ export default function SettingsPage() {
 
   const handleThemeChange = (e) => {
     const newTheme = e.target.value;
-
     setActiveTheme(newTheme);
-
     localStorage.setItem('theme-preference', newTheme);
-
     if (newTheme === 'system') {
       applyTheme(MQL.matches ? 'dark' : 'light');
     } else {
@@ -125,14 +112,50 @@ export default function SettingsPage() {
     }
   }
 
-  // 4. VISTA
-  // HTML de 'company-section' (sin el theme-form)
+  const renderLicenseInfo = () => {
+    if (!licenseDetails || !licenseDetails.valid) {
+      return <p>No hay una licencia activa.</p>;
+    }
+    const { license_key, product_name, expires_at } = licenseDetails;
+    const statusText = 'Activa y Verificada';
+    
+    return (
+      <div className="license-info">
+        <div className="license-detail">
+          <span className="license-label">Clave:</span>
+          <span className="license-value">{license_key || 'N/A'}</span>
+        </div>
+        <div className="license-detail">
+          <span className="license-label">Producto:</span>
+          <span className="license-value">{product_name || 'N/A'}</span>
+        </div>
+        <div className="license-detail">
+          <span className="license-label">Expira:</span>
+          <span className="license-value">{expires_at ? new Date(expires_at).toLocaleDateString() : 'Nunca'}</span>
+        </div>
+        <div className="license-detail">
+          <span className="license-label">Estado:</span>
+          <span className="license-status-active">{statusText}</span>
+        </div>
+        <button 
+          id="delete-license-btn" 
+          className="btn btn-cancel" 
+          style={{width: 'auto', marginTop: '1rem'}}
+          onClick={logout}
+        >
+          Desactivar en este dispositivo
+        </button>
+      </div>
+    );
+  };
+  
+  const stringToArray = (str) => (str ? str.split(',').map(s => s.trim()) : []);
+  const companyArrayToString = (arr) => (Array.isArray(arr) ? arr.join(', ') : arr);
+
   return (
     <>
       <h2 className="section-title">Configuración del Negocio</h2>
       <div className="company-form-container">
-
-        {/* --- Formulario de Empresa --- */}
         <h3 className="subtitle">Datos de la Empresa</h3>
         <form id="company-form" className="company-form" onSubmit={handleSubmit}>
           <div className="form-group">
@@ -165,6 +188,7 @@ export default function SettingsPage() {
               onChange={(e) => setAddress(e.target.value)}
             ></textarea>
           </div>
+          
           <div className="form-group">
             <label className="form-label" htmlFor="business-type">Rubro del Negocio</label>
             <select
@@ -183,6 +207,7 @@ export default function SettingsPage() {
               <option value="otro">Otro</option>
             </select>
           </div>
+          
           <div className="form-group">
             <label className="form-label" htmlFor="company-logo-file">Logo del Negocio</label>
             <div className="image-upload-container">
@@ -206,8 +231,7 @@ export default function SettingsPage() {
 
         <h3 className="subtitle">Tema de la Aplicación</h3>
         <div className="theme-toggle-container" role="radiogroup" aria-label="Seleccionar tema">
-
-          <label className="theme-radio-label">
+           <label className="theme-radio-label">
             <input 
               type="radio" 
               name="theme" 
@@ -217,7 +241,6 @@ export default function SettingsPage() {
             />
             <span className="theme-radio-text">Claro</span>
           </label>
-
           <label className="theme-radio-label">
             <input 
               type="radio" 
@@ -228,7 +251,6 @@ export default function SettingsPage() {
             />
             <span className="theme-radio-text">Oscuro</span>
           </label>
-
           <label className="theme-radio-label">
             <input 
               type="radio" 
@@ -239,17 +261,10 @@ export default function SettingsPage() {
             />
             <span className="theme-radio-text">Por Defecto</span>
           </label>
-
         </div>
 
-        {/* --- Contenedor de Licencia --- */}
-        {/* Como pediste, omitimos el 'theme-form' */}
         <h3 className="subtitle">Licencia del Software</h3>
-        <div id="license-info-container" className="license-info">
-          {/* La lógica de la licencia (Paso 6) irá aquí */}
-          <p>La información de la licencia aparecerá aquí...</p>
-        </div>
-
+        {renderLicenseInfo()}
       </div>
     </>
   );
