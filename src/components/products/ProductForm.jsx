@@ -300,7 +300,16 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                         </button>
                     </div>
 
-                    {/* ... (Fecha de Caducidad) ... */}
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="product-expiry">Fecha de Caducidad (Opcional)</label>
+                        <input
+                            className="form-input"
+                            id="product-expiry"
+                            type="date"
+                            value={expiryDate}
+                            onChange={(e) => setExpiryDate(e.target.value)}
+                        />
+                    </div>
 
                     <div className="form-group">
                         <label className="form-label" htmlFor="product-image-file">Imagen</label>

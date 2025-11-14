@@ -104,3 +104,49 @@ export const normalizeDate = (dateString) => {
     const date = new Date(dateString);
     return new Date(date.getTime() + date.getTimezoneOffset() * 60000);
 };
+
+export const LOW_STOCK_THRESHOLD = 5;
+export const EXPIRY_DAYS_THRESHOLD = 7;
+
+/**
+ * Calcula el estado de alerta de un producto (stock y caducidad).
+ * @param {object} product - El objeto del producto a revisar.
+ * @returns {{isLowStock: boolean, isNearingExpiry: boolean, isOutOfStock: boolean, expiryDays: number|null}}
+ */
+export const getProductAlerts = (product) => {
+  let isLowStock = false;
+  let isNearingExpiry = false;
+  let expiryDays = null;
+  
+  // 1. Revisar si está agotado
+  const isOutOfStock = product.trackStock && product.stock <= 0;
+
+  // 2. Revisar stock bajo (solo si no está agotado)
+  if (
+    product.trackStock &&
+    product.stock > 0 &&
+    product.stock < LOW_STOCK_THRESHOLD
+  ) {
+    isLowStock = true;
+  }
+
+  // 3. Revisar caducidad
+  if (product.expiryDate) {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0); // Comparamos solo fechas
+
+    // Asumimos que la fecha guardada (ej. '2025-11-20')
+    // se interpreta correctamente en la zona horaria local.
+    const expiryDate = new Date(product.expiryDate);
+
+    const diffTime = expiryDate - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays >= 0 && diffDays <= EXPIRY_DAYS_THRESHOLD) {
+      isNearingExpiry = true;
+      expiryDays = diffDays;
+    }
+  }
+
+  return { isLowStock, isNearingExpiry, isOutOfStock, expiryDays };
+};

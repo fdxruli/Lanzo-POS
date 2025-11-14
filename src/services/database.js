@@ -14,7 +14,8 @@ export const STORES = { // Exportamos STORES para que todos los usen
     //almacenes para los elementos eliminados
     DELETED_MENU: 'deleted_menu',
     DELETED_CUSTOMERS: 'deleted_customers',
-    DELETED_SALES: 'deleted_sales'
+    DELETED_SALES: 'deleted_sales',
+    MOVIMIENTOS_CAJA: 'movimientos_caja',
 };
 
 let db = null;

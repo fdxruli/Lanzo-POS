@@ -1,14 +1,9 @@
 // src/components/pos/ProductMenu.jsx
 import React from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
-import './ProductMenu.css'; // Importamos los estilos
-
-// Constantes para las alertas, traídas de tu lógica original
-const LOW_STOCK_THRESHOLD = 5;
-const EXPIRY_DAYS_THRESHOLD = 7;
-// Calculamos 'hoy' una sola vez para eficiencia
-const now = new Date();
-now.setHours(0, 0, 0, 0);
+// 1. Importamos el nuevo helper
+import { getProductAlerts } from '../../services/utils'; 
+import './ProductMenu.css';
 
 /**
  * Este es el componente "tonto" (de vista).
@@ -27,14 +22,12 @@ export default function ProductMenu({
   const addItemToOrder = useOrderStore((state) => state.addItem);
 
   const handleProductClick = (product, isOutOfStock) => {
-    // No hacer nada si está agotado
     if (isOutOfStock) return;
     addItemToOrder(product);
   };
 
   /**
    * Helper para renderizar la información de stock
-   * (Esta es la lógica que faltaba de tu 'renderMenu' en app.js)
    */
   const renderStockInfo = (item) => {
     if (!item.trackStock) {
@@ -99,31 +92,17 @@ export default function ProductMenu({
           <p className="empty-message">No hay productos que coincidan.</p>
         ) : (
           products.map((item) => {
-            // Lógica de alertas de stock y caducidad (de app.js)
-            let isLowStock = false;
-            let isNearingExpiry = false;
-            const isOutOfStock = item.trackStock && item.stock <= 0;
-
-            if (item.trackStock && item.stock > 0 && item.stock < LOW_STOCK_THRESHOLD) {
-              isLowStock = true;
-            }
-
-            if (item.expiryDate) {
-              const expiryDate = new Date(item.expiryDate);
-              const diffTime = expiryDate - now;
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              if (diffDays >= 0 && diffDays <= EXPIRY_DAYS_THRESHOLD) {
-                isNearingExpiry = true;
-              }
-            }
             
-            // Construye las clases CSS dinámicamente
+            // 2. Usamos el helper. ¡Toda la lógica duplicada desaparece!
+            const { isLowStock, isNearingExpiry, isOutOfStock } = getProductAlerts(item);
+            
+            // 3. Construimos las clases (esto ya estaba, pero ahora usa los datos del helper)
             const itemClasses = [
               'menu-item',
               isLowStock ? 'low-stock-warning' : '',
               isNearingExpiry ? 'nearing-expiry-warning' : '',
               isOutOfStock ? 'out-of-stock' : ''
-            ].filter(Boolean).join(' '); // .filter(Boolean) elimina strings vacíos
+            ].filter(Boolean).join(' ');
 
             return (
               <div

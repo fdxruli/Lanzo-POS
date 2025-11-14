@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useZxing } from 'react-zxing';
+import { useOrderStore } from '../../stores/orderStore';
 
 // Simulamos el store y servicios para el ejemplo
 const useOrderStore = (selector) => {
@@ -27,6 +28,8 @@ const loadData = async (store) => {
 };
 
 export default function ScannerModal({ show, onClose }) {
+  const addItemToOrder = useOrderStore((state) => state.addItem);
+  const currentOrder = useOrderStore((state) => state.order);
   const [scannedItems, setScannedItems] = useState([]);
   const [lastCode, setLastCode] = useState('');
   const [isScanning, setIsScanning] = useState(false);
@@ -34,7 +37,6 @@ export default function ScannerModal({ show, onClose }) {
   const [scanFeedback, setScanFeedback] = useState(''); // Para mostrar qué se escaneó
 
   const addMultipleItemsToOrder = useOrderStore((state) => state.setOrder);
-  const currentOrder = useOrderStore((state) => state.order);
 
   // ✅ Configuración correcta de react-zxing
   const { ref } = useZxing({

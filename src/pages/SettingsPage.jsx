@@ -53,7 +53,13 @@ export default function SettingsPage() {
       setLogoPreview(companyProfile.logo || logoPlaceholder);
       setLogoData(companyProfile.logo || null);
     }
-  }, [companyProfile]);
+  }, [
+    companyProfile?.name,
+    companyProfile?.phone,
+    companyProfile?.address,
+    companyProfile?.business_type,
+    companyProfile?.logo
+  ]);
 
   useEffect(() => {
     const systemThemeListener = (e) => {
@@ -91,9 +97,9 @@ export default function SettingsPage() {
         business_type: stringToArray(businessType),
         logo: logoData
       };
-      
-      await updateCompanyProfile(companyData); 
-      
+
+      await updateCompanyProfile(companyData);
+
       alert('¡Configuración guardada!');
 
     } catch (error) {
@@ -118,7 +124,7 @@ export default function SettingsPage() {
     }
     const { license_key, product_name, expires_at } = licenseDetails;
     const statusText = 'Activa y Verificada';
-    
+
     return (
       <div className="license-info">
         <div className="license-detail">
@@ -137,10 +143,10 @@ export default function SettingsPage() {
           <span className="license-label">Estado:</span>
           <span className="license-status-active">{statusText}</span>
         </div>
-        <button 
-          id="delete-license-btn" 
-          className="btn btn-cancel" 
-          style={{width: 'auto', marginTop: '1rem'}}
+        <button
+          id="delete-license-btn"
+          className="btn btn-cancel"
+          style={{ width: 'auto', marginTop: '1rem' }}
           onClick={logout}
         >
           Desactivar en este dispositivo
@@ -148,7 +154,7 @@ export default function SettingsPage() {
       </div>
     );
   };
-  
+
   const stringToArray = (str) => (str ? str.split(',').map(s => s.trim()) : []);
   const companyArrayToString = (arr) => (Array.isArray(arr) ? arr.join(', ') : arr);
 
@@ -188,7 +194,7 @@ export default function SettingsPage() {
               onChange={(e) => setAddress(e.target.value)}
             ></textarea>
           </div>
-          
+
           <div className="form-group">
             <label className="form-label" htmlFor="business-type">Rubro del Negocio</label>
             <select
@@ -207,7 +213,7 @@ export default function SettingsPage() {
               <option value="otro">Otro</option>
             </select>
           </div>
-          
+
           <div className="form-group">
             <label className="form-label" htmlFor="company-logo-file">Logo del Negocio</label>
             <div className="image-upload-container">
@@ -231,33 +237,33 @@ export default function SettingsPage() {
 
         <h3 className="subtitle">Tema de la Aplicación</h3>
         <div className="theme-toggle-container" role="radiogroup" aria-label="Seleccionar tema">
-           <label className="theme-radio-label">
-            <input 
-              type="radio" 
-              name="theme" 
-              value="light" 
-              checked={activeTheme === 'light'} 
+          <label className="theme-radio-label">
+            <input
+              type="radio"
+              name="theme"
+              value="light"
+              checked={activeTheme === 'light'}
               onChange={handleThemeChange}
             />
             <span className="theme-radio-text">Claro</span>
           </label>
           <label className="theme-radio-label">
-            <input 
-              type="radio" 
-              name="theme" 
-              value="dark" 
-              checked={activeTheme === 'dark'} 
+            <input
+              type="radio"
+              name="theme"
+              value="dark"
+              checked={activeTheme === 'dark'}
               onChange={handleThemeChange}
             />
             <span className="theme-radio-text">Oscuro</span>
           </label>
           <label className="theme-radio-label">
-            <input 
-              type="radio" 
-              name="theme" 
-              value="system" 
-              checked={activeTheme === 'system'} 
-              onChange={handleThemeChange} 
+            <input
+              type="radio"
+              name="theme"
+              value="system"
+              checked={activeTheme === 'system'}
+              onChange={handleThemeChange}
             />
             <span className="theme-radio-text">Por Defecto</span>
           </label>
