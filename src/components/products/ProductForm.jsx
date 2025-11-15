@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { compressImage } from '../../services/utils'; //
 import CostCalculatorModal from './CostCalculatorModal';
+import ScannerModal from '../common/ScannerModal';
 import './ProductForm.css'
 
 const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
@@ -19,6 +20,8 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
     const handleAssignCost = (totalCost) => {
         setCost(totalCost.toFixed(2));
     };
+
+    const [isScannerOpen, setIsScannerOpen] = useState(false);
 
     // Lógica de "Tipo de Venta"
     const [saleType, setSaleType] = useState('unit'); // 'unit' o 'bulk'
@@ -61,6 +64,11 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
             resetForm();
         }
     }, [productToEdit]);
+
+    const handleBarcodeScanned = (code) => {
+        setBarcode(code); // Actualiza el estado del formulario
+        setIsScannerOpen(false); // Cierra el modal
+    };
 
     // 3. LÓGICA INTERNA Y HANDLERS
 
@@ -190,16 +198,26 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
 
                     <div className="form-group">
                         <label className="form-label" htmlFor="product-barcode">Código de Barras (Opcional)</label>
-                        <input
-                            className="form-input"
-                            id="product-barcode"
-                            type="text"
-                            placeholder="Escanea o ingresa el código"
-                            value={barcode}
-                            onChange={(e) => setBarcode(e.target.value)}
-                        />
+                        <div className="input-with-button"> {/* <-- Nuevo Contenedor */}
+                            <input
+                                className="form-input"
+                                id="product-barcode"
+                                type="text"
+                                placeholder="Escanea o ingresa el código"
+                                value={barcode}
+                                onChange={(e) => setBarcode(e.target.value)}
+                            />
+                            {/* --- ¡NUEVO BOTÓN DE ESCÁNER! --- */}
+                            <button
+                                type="button"
+                                className="btn-scan-inline"
+                                onClick={() => setIsScannerOpen(true)}
+                                title="Escanear código de barras"
+                            >
+                                📷
+                            </button>
+                        </div>
                     </div>
-
                     <div className="form-group">
                         <label className="form-label" htmlFor="product-description">Descripción (Opcional)</label>
                         <textarea
@@ -369,6 +387,11 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                 show={showCostCalculator}
                 onClose={() => setShowCostCalculator(false)}
                 onAssignCost={handleAssignCost}
+            />
+            <ScannerModal
+                show={isScannerOpen}
+                onClose={() => setIsScannerOpen(false)}
+                onScanSuccess={handleBarcodeScanned}
             />
         </>
     );

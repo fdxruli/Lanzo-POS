@@ -1,0 +1,10 @@
+/* Estilos para ContactModal.jsx */
+.modal-content.contact-modal {
+  max-width: 500px;
+}
+
+/* Asegura que los textareas en el modal tengan una altura mínima */
+.modal-content.contact-modal .form-textarea {
+  min-height: 100px;
+  resize: vertical;
+}

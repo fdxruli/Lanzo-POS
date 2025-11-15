@@ -69,8 +69,8 @@ function Navbar() {
             <NavLink to="/configuracion" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
               Configuración
             </NavLink>
-            <NavLink to="/donar" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              Donar
+            <NavLink to="/acerca-de" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+              Acerca de
             </NavLink>
           </div>
 

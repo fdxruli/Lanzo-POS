@@ -1,7 +1,8 @@
 // src/components/layout/Ticker.jsx
 import React, { useMemo } from 'react';
-import { useDashboard } from '../../hooks/useDashboard';
-// 1. Importamos el helper
+// 1. Importa el store en lugar del hook
+import { useDashboardStore } from '../../store/useDashboardStore';
+// 2. Importamos el helper
 import { getProductAlerts } from '../../services/utils';
 import './Ticker.css';
 
@@ -11,10 +12,7 @@ const promotionalMessages = [
   "✨ ¡Sigue creciendo tu negocio con nosotros!"
 ];
 
-/**
- * 2. Renombramos la función local para que sea más clara
- * y usamos el helper 'getProductAlerts' adentro.
- */
+// ... (función generateAlertMessages sin cambios) ...
 function generateAlertMessages(menu) {
   const alerts = [];
 
@@ -44,8 +42,11 @@ function generateAlertMessages(menu) {
   return alerts;
 }
 
+
 export default function Ticker() {
-  const { menu, isLoading } = useDashboard();
+  // 3. Lee los datos directamente del store centralizado
+  const menu = useDashboardStore((state) => state.menu);
+  const isLoading = useDashboardStore((state) => state.isLoading);
 
   const messages = useMemo(() => {
     if (isLoading || !menu) return promotionalMessages;
@@ -63,6 +64,7 @@ export default function Ticker() {
   }, [menu, isLoading]);
 
   return (
+    // ... (El JSX de retorno no cambia) ...
     <div id="notification-ticker-container" className="notification-ticker-container">
       <div className="ticker-wrap">
         <div className="ticker-move">

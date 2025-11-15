@@ -10,7 +10,7 @@ import './ScannerModal.css';
 
 // 4. (Se eliminaron las funciones simuladas de 'useOrderStore' y 'loadData')
 
-export default function ScannerModal({ show, onClose }) {
+export default function ScannerModal({ show, onClose, onScanSuccess }) {
   // 5. Conectamos al store REAL
   const currentOrder = useOrderStore((state) => state.order);
   const setOrder = useOrderStore((state) => state.setOrder);
@@ -19,17 +19,36 @@ export default function ScannerModal({ show, onClose }) {
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [scanFeedback, setScanFeedback] = useState('');
+  const mode = onScanSuccess ? 'single' : 'pos'; // Modo de escaneo
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const { ref } = useZxing({
-    paused: !isScanning,
+    paused: !isScanning || !!isProcessing,
     onDecodeResult(result) {
       const code = result.getText();
-      
-      // ¡Nueva lógica!
-      
+
+      // --- ¡NUEVA LÓGICA DE MODO! ---
+      // Si el modal se usa para un simple escaneo (como en el formulario de productos),
+      // solo devuelve el código y ciérrate.
+      if (onScanSuccess) {
+        if (navigator.vibrate) navigator.vibrate(50); // Vibración corta
+        onScanSuccess(code); // Devuelve el código
+        handleClose(true);   // Cierra el modal
+        return; // Detiene el procesamiento
+      }
+      // --- FIN DE LA NUEVA LÓGICA ---
+
+      // Si onScanSuccess no existe, continúa con la lógica normal del POS:
+      if (isProcessing) return;
+
+      setProcessing(true);
+      setIsScanning(false); // Pausar el escáner durante el procesamiento
+
+      // ¡Nueva lógica! (Esto ya estaba en tu archivo)
+
       // 1. Pausar el escáner inmediatamente
       setIsScanning(false);
-      
+
       // 2. Dar feedback visual y físico
       if (navigator.vibrate) navigator.vibrate(100);
       setScanFeedback(`✓ Escaneado: ${code}`);
@@ -40,6 +59,7 @@ export default function ScannerModal({ show, onClose }) {
       // 4. Establecer un "cooldown" antes de reactivar el escáner
       setTimeout(() => {
         setIsScanning(true); // Reactivar el escáner
+        setIsProcessing(false);
         setScanFeedback(''); // Limpiar el mensaje de feedback
       }, 1000); // <-- ¡Cooldown de 1.5 segundos! Puedes ajustar este valor
     },
@@ -63,11 +83,11 @@ export default function ScannerModal({ show, onClose }) {
     if (show) {
       setIsScanning(false);
       setCameraError(null);
-      
+
       const timer = setTimeout(async () => {
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'environment' } 
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
           });
           stream.getTracks().forEach(track => track.stop());
           setIsScanning(true);
@@ -153,7 +173,7 @@ export default function ScannerModal({ show, onClose }) {
         return;
       }
     }
-    
+
     setScannedItems([]);
     setIsScanning(false);
     setCameraError(null);
@@ -171,7 +191,7 @@ export default function ScannerModal({ show, onClose }) {
   // Reemplazamos todos los 'style' por 'className' de tu archivo .css
   return (
     <div id="scanner-modal" className="modal" style={{ display: 'flex' }}>
-      <div className="modal-content scanner-modal-content pos-scan-mode">
+      <div className={`modal-content scanner-modal-content ${mode === 'pos' ? 'pos-scan-mode' : 'simple-scan-mode'}`}>
         <h2 className="modal-title">Escanear Productos</h2>
 
         <div className="scanner-main-container">
@@ -193,12 +213,12 @@ export default function ScannerModal({ show, onClose }) {
             ) : (
               <>
                 <video ref={ref} id="scanner-video" />
-                
+
                 {/* --- ¡AQUÍ ESTABA EL ERROR! --- 
                   La línea <div id="scanner-overlay" /> se ha eliminado.
                   react-zxing maneja sus propios visuales.
                 */}
-                
+
                 {scanFeedback && (
                   <div className="scan-feedback-overlay">
                     {scanFeedback}
@@ -211,7 +231,7 @@ export default function ScannerModal({ show, onClose }) {
           {/* Lista de productos escaneados */}
           <div className="scanner-results-container">
             <h3 className="subtitle">Productos Escaneados</h3>
-            
+
             <div className="scanned-items-list">
               {scannedItems.length === 0 ? (
                 <p className="empty-message" style={{ padding: '2rem 0' }}>

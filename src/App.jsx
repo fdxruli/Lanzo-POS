@@ -13,7 +13,7 @@ import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
-import DonationPage from './pages/DonationPage';
+import AboutPage from './pages/AboutPage';
 
 function App() {
   
@@ -57,7 +57,7 @@ function App() {
             <Route path="clientes" element={<CustomersPage />} />
             <Route path="ventas" element={<DashboardPage />} />
             <Route path="configuracion" element={<SettingsPage />} />
-            <Route path="donar" element={<DonationPage />} />
+            <Route path="acerca-de" element={<AboutPage />} />
           </Route>
         </Routes>
       );

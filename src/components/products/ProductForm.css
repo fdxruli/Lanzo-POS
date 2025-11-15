@@ -84,3 +84,26 @@
   color: var(--error-color);
   border-color: var(--error-color);
 }
+
+.input-with-button {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.input-with-button .form-input {
+  flex-grow: 1; /* El input ocupa el espacio disponible */
+}
+
+.btn-scan-inline {
+  flex-shrink: 0; /* Evita que el botón se encoja */
+  padding: var(--spacing-sm);
+  background-color: var(--secondary-color);
+  color: white;
+  font-size: 1.2rem;
+  line-height: 1; /* Asegura que el emoji esté centrado */
+}
+
+.btn-scan-inline:hover {
+  background-color: var(--primary-color);
+}

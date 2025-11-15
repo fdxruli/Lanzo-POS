@@ -1,0 +1,183 @@
+/* src/pages/AboutPage.css */
+
+.about-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-lg);
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.about-card {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+  transition: var(--transition);
+}
+
+.about-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--box-shadow-lg);
+}
+
+.about-heading {
+  color: var(--primary-color);
+  border-bottom: 2px solid var(--light-background);
+  padding-bottom: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.about-text {
+  color: var(--text-color);
+  font-size: 1.1rem;
+  line-height: 1.7;
+}
+
+.about-text strong {
+  color: var(--text-dark);
+}
+
+.sponsored-by {
+  border-left: 5px solid var(--secondary-color);
+  background-color: var(--light-background);
+}
+
+.sponsor-name {
+  color: var(--secondary-color);
+  font-size: 1.5rem;
+  margin-bottom: var(--spacing-md);
+}
+
+.social-links {
+  display: flex;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-lg);
+}
+
+.social-link {
+  background-color: var(--primary-color);
+  color: white;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.social-link:hover {
+  background-color: var(--secondary-color);
+}
+
+@media (min-width: 768px) {
+  .about-container {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+/* Estilos para la lista de funcionalidades */
+.features-list {
+  list-style-type: '✓'; /* Un 'check' simple */
+  padding-left: 2rem;
+  margin-top: var(--spacing-md);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-sm);
+}
+
+.features-list li {
+  padding-left: var(--spacing-sm);
+  color: var(--text-color);
+  font-size: 1.05rem; /* Ligeramente más grande */
+}
+
+/* --- Modificaciones al Media Query --- */
+@media (min-width: 600px) {
+  /* Hace que la lista se ponga en 2 columnas en pantallas medianas */
+  .features-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 768px) {
+  .about-container {
+    grid-template-columns: 2fr 1fr;
+  }
+
+  /* * ¡Esta es la regla clave! 
+   * Hace que la tarjeta de "features" ocupe las 2 columnas 
+   * de la cuadrícula en escritorio, colocándose debajo.
+  */
+  .about-card.features-card {
+    grid-column: 1 / -1; /* Ocupa todo el ancho */
+  }
+}
+
+/* --- Estilos para la nueva tarjeta de Contacto --- */
+.about-card.contact-card {
+  border-left: 5px solid var(--success-color);
+  background-color: var(--light-background);
+}
+
+.contact-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-lg);
+}
+
+.contact-button {
+  display: block; /* Hacemos que ocupe todo el ancho */
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+  text-decoration: none;
+  font-weight: 600;
+  text-align: center;
+  transition: var(--transition);
+  color: white; /* Color de texto blanco para ambos */
+}
+
+.contact-button.bug-report {
+  background-color: var(--warning-color); /* Color naranja/ámbar para reportes */
+}
+.contact-button.bug-report:hover {
+  background-color: #d97706; /* Un poco más oscuro */
+}
+
+.contact-button.feature-request {
+  background-color: var(--success-color); /* Verde para sugerencias */
+}
+.contact-button.feature-request:hover {
+  background-color: #0e9f74; /* Un poco más oscuro */
+}
+
+
+/* --- Actualización de Media Queries --- */
+
+@media (min-width: 600px) {
+  .features-list {
+    grid-template-columns: 1fr 1fr;
+  }
+  
+  /* Hacemos los botones de contacto 2 columnas */
+  .contact-buttons {
+    flex-direction: row;
+  }
+  .contact-button {
+    flex: 1; /* Hacemos que ambos botones compartan el espacio */
+  }
+}
+
+@media (min-width: 768px) {
+  .about-container {
+    grid-template-columns: 2fr 1fr;
+  }
+  
+  .about-card.features-card {
+    grid-column: 1 / -1; /* Ocupa todo el ancho */
+  }
+
+  /* Hacemos que la tarjeta de contacto también ocupe todo el ancho */
+  .about-card.contact-card {
+    grid-column: 1 / -1; 
+  }
+}
