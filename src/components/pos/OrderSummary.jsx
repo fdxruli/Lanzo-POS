@@ -44,53 +44,68 @@ export default function OrderSummary({onOpenPayment}) {
       ) : (
         <>
           <div className="order-list">
-            {order.map(item => (
-              <div key={item.id} className="order-item">
-                <div className="order-item-info">
-                  <div className="order-item-name">{item.name}</div>
-                  <div className="order-item-price">
-                    ${item.price.toFixed(2)} c/u
-                  </div>
-                </div>
+            {order.map(item => {
+              
+              // --- ¡AQUÍ ESTÁ LA CORRECCIÓN 1! ---
+              // Añadimos la clase 'exceeds-stock' dinámicamente
+              const itemClasses = `order-item ${item.exceedsStock ? 'exceeds-stock' : ''}`;
 
-                {item.saleType === 'unit' ? (
-                  <div className="order-item-controls">
-                    <button 
-                      className="quantity-btn" 
-                      onClick={() => handleQuantityChange(item.id, -1)}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8z"/>
-                      </svg>
-                    </button>
+              return (
+                <div key={item.id} className={itemClasses}>
+                  <div className="order-item-info">
+                    <div className="order-item-name">{item.name}</div>
+                    <div className="order-item-price">
+                      ${item.price.toFixed(2)} c/u
+                    </div>
                     
-                    <span className="quantity-display">{item.quantity}</span>
-                    
-                    <button 
-                      className="quantity-btn" 
-                      onClick={() => handleQuantityChange(item.id, 1)}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
-                      </svg>
-                    </button>
+                    {/* --- ¡AQUÍ ESTÁ LA CORRECCIÓN 2! --- */}
+                    {/* Mostramos un mensaje visual de advertencia */}
+                    {item.exceedsStock && (
+                      <div className="stock-warning exceeds-stock-warning">
+                        ¡Stock excedido! (Disponibles: {item.stock})
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="order-item-controls">
-                    <input
-                      type="number"
-                      className="bulk-input"
-                      value={item.quantity || ''}
-                      onChange={(e) => handleBulkInputChange(item.id, e.target.value)}
-                      placeholder="0.0"
-                      step="0.1"
-                      min="0"
-                    />
-                    <span className="unit-label">kg</span>
-                  </div>
-                )}
-              </div>
-            ))}
+
+                  {item.saleType === 'unit' ? (
+                    <div className="order-item-controls">
+                      <button 
+                        className="quantity-btn" 
+                        onClick={() => handleQuantityChange(item.id, -1)}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8z"/>
+                        </svg>
+                      </button>
+                      
+                      <span className="quantity-display">{item.quantity}</span>
+                      
+                      <button 
+                        className="quantity-btn" 
+                        onClick={() => handleQuantityChange(item.id, 1)}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="order-item-controls">
+                      <input
+                        type="number"
+                        className="bulk-input"
+                        value={item.quantity || ''}
+                        onChange={(e) => handleBulkInputChange(item.id, e.target.value)}
+                        placeholder="0.0"
+                        step="0.1"
+                        min="0"
+                      />
+                      <span className="unit-label">kg</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className="order-total">
