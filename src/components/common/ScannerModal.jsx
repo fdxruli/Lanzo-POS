@@ -28,14 +28,14 @@ export default function ScannerModal({ show, onClose }) {
       
       if (code === lastCode) return;
       setLastCode(code);
-      setTimeout(() => setLastCode(''), 1000); // Cooldown
+      setTimeout(() => setLastCode(''), 1000);
       
       setScanFeedback(`✓ Código: ${code}`);
       setTimeout(() => setScanFeedback(''), 3000);
       
       if (navigator.vibrate) navigator.vibrate(100);
       
-      processScannedCode(code); // Llama a la función con el código
+      processScannedCode(code);
     },
     onError(error) {
       console.error('Error de ZXing:', error);
@@ -47,7 +47,8 @@ export default function ScannerModal({ show, onClose }) {
         width: { ideal: 1280 },
         height: { ideal: 720 }
       }
-    }
+    },
+    timeBetweenDecodingAttempts: 300 // Tiempo entre intentos de escaneo
   });
 
   // Efecto para solicitar permisos de cámara

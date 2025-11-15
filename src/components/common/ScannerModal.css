@@ -63,13 +63,16 @@
 .scanner-video-container {
   flex: 1;
   min-width: 0;
-  position: relative; /* <-- ESTO ES LO MÁS IMPORTANTE */
-  overflow: hidden; /* <-- Evita desbordamientos */
-  border-radius: var(--border-radius-sm); /* <-- Consistencia visual */
-  background-color: #000; /* <-- Fondo mientras carga */
-  display: flex; /* <-- Para centrar el error */
-  align-items: center; /* <-- Para centrar el error */
-  justify-content: center; /* <-- Para centrar el error */
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--border-radius-sm);
+  background-color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Proporción para mantener estabilidad */
+  aspect-ratio: 16 / 9;
+  min-height: 300px; /* Altura mínima para escritorio */
 }
 
 /*
