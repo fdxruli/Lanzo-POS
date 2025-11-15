@@ -29,6 +29,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       // Sugerir el monto total si es en efectivo
       if (paymentMethod === 'efectivo') {
         setAmountPaid(total.toFixed(2));
+      } else {
+        setAmountPaid('');   
       }
     } else {
       // Limpiar al cerrar
@@ -39,7 +41,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       setPaymentMethod('efectivo');
       setSendReceipt(true);
     }
-  }, [show, total]); // Quitamos paymentMethod de las dependencias
+  }, [show, total, paymentMethod]); // Quitamos paymentMethod de las dependencias
 
   // Lógica de cálculo
   const paid = parseFloat(amountPaid) || 0;

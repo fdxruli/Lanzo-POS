@@ -21,8 +21,14 @@ export default function ScannerModal({ show, onClose }) {
   const [scanFeedback, setScanFeedback] = useState('');
 
   const { ref } = useZxing({
-    paused: !isScanning,
+    paused: !isScanning || !!isProcessing,
     onDecodeResult(result) {
+
+      if (isProcessing) return; // Evitar múltiples procesos simultáneos
+
+      setProcessing(true);
+      setIsScanning(false); // Pausar el escáner durante el procesamiento
+
       const code = result.getText();
       
       // ¡Nueva lógica!
@@ -40,6 +46,7 @@ export default function ScannerModal({ show, onClose }) {
       // 4. Establecer un "cooldown" antes de reactivar el escáner
       setTimeout(() => {
         setIsScanning(true); // Reactivar el escáner
+        setIsProcessing(false);
         setScanFeedback(''); // Limpiar el mensaje de feedback
       }, 1000); // <-- ¡Cooldown de 1.5 segundos! Puedes ajustar este valor
     },
