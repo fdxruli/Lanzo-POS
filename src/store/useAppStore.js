@@ -6,7 +6,7 @@ import { isLocalStorageEnabled, normalizeDate } from '../services/utils';
 // Importamos las funciones de Supabase
 // (Asegúrate de que supabase.js cargue FingerprintJS y Supabase en tu index.html)
 
-// --- Funciones Helper (tomadas de tu lógica en app.js) ---
+// --- Funciones Helper (SIN CAMBIOS) ---
 
 const getLicenseFromStorage = async () => {
   if (!isLocalStorageEnabled()) return null;
@@ -18,7 +18,6 @@ const getLicenseFromStorage = async () => {
       return null;
     }
   }
-  // (Aquí iría tu lógica de fallback a IndexedDB si la añades)
   return null;
 };
 
@@ -28,13 +27,11 @@ const saveLicenseToStorage = async (licenseData) => {
   // Añadimos una expiración local de 30 días
   dataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   localStorage.setItem('lanzo_license', JSON.stringify(dataToStore));
-  // (Aquí iría tu lógica de guardado en IndexedDB)
 };
 
 const clearLicenseFromStorage = () => {
   if (!isLocalStorageEnabled()) return;
   localStorage.removeItem('lanzo_license');
-  // (Aquí iría tu lógica de borrado de IndexedDB)
 };
 
 
@@ -43,7 +40,7 @@ const clearLicenseFromStorage = () => {
 export const useAppStore = create((set, get) => ({
   
   // ======================================================
-  // 1. EL ESTADO
+  // 1. EL ESTADO (SIN CAMBIOS)
   // ======================================================
   
   /**
@@ -57,47 +54,77 @@ export const useAppStore = create((set, get) => ({
   licenseDetails: null,
 
   // ======================================================
-  // 2. LAS ACCIONES (Lógica de app.js migrada)
+  // 2. LAS ACCIONES (¡MODIFICADAS!)
   // ======================================================
 
   /**
-   * Reemplaza a 'initializeLicense'.
-   * Se llamará 1 vez cuando la app se cargue.
+   * ¡MEJORA 1: "Heartbeat"!
+   * Revalida la licencia con el servidor CADA VEZ que la app carga.
    */
   initializeApp: async () => {
+    // 1. Obtenemos la licencia local
     const license = await getLicenseFromStorage();
 
-    // -- No hay licencia --
+    // 2. Si no hay licencia local, estamos desautenticados.
     if (!license || !license.valid) {
       set({ appStatus: 'unauthenticated' });
       return;
     }
 
-    // -- Hay licencia, verificar si expiró localmente --
-    if (license.localExpiry) {
-      const localExpiryDate = normalizeDate(license.localExpiry);
-      if (localExpiryDate <= new Date()) {
+    // --- INICIO DE LA MEJORA ---
+    try {
+      // 3. ¡EL CAMBIO! Revalidamos con el servidor.
+      // 'window.revalidateLicense' llama a tu 'verify_device_license'
+      const serverValidation = await window.revalidateLicense(); 
+      
+      if (serverValidation && serverValidation.valid) {
+        // ¡Éxito! El servidor dice que la licencia sigue activa.
+        // Guardamos los detalles frescos (por si cambiaron)
+        await saveLicenseToStorage(serverValidation); 
+        set({ licenseDetails: serverValidation });
+        
+        // Continuar con la carga del perfil
+        const companyData = await loadData(STORES.COMPANY, 'company');
+        if (companyData && companyData.name) {
+          set({ companyProfile: companyData, appStatus: 'ready' });
+        } else {
+          set({ appStatus: 'setup_required' });
+        }
+        
+      } else {
+        // ¡FALLO! El servidor dice que la licencia NO es válida
+        // (Expiró, fue suspendida, dispositivo eliminado, etc.)
         clearLicenseFromStorage();
         set({ appStatus: 'unauthenticated', licenseDetails: null });
-        return;
+      }
+    } catch (error) {
+      // Error de red (quizás no hay internet)
+      console.warn("No se pudo revalidar la licencia (¿sin red?). Confiando en caché local.");
+      
+      // Confiamos en la expiración local de 30 días
+      if (license.localExpiry) {
+        const localExpiryDate = normalizeDate(license.localExpiry);
+        if (localExpiryDate <= new Date()) {
+          clearLicenseFromStorage();
+          set({ appStatus: 'unauthenticated', licenseDetails: null });
+          return;
+        }
+      }
+      
+      // La caché local es válida, cargar perfil
+      set({ licenseDetails: license });
+      const companyData = await loadData(STORES.COMPANY, 'company');
+      if (companyData && companyData.name) {
+        set({ companyProfile: companyData, appStatus: 'ready' });
+      } else {
+        set({ appStatus: 'setup_required' });
       }
     }
-    
-    // -- Licencia válida, cargar perfil de empresa --
-    set({ licenseDetails: license });
-    const companyData = await loadData(STORES.COMPANY, 'company');
-    
-    if (companyData && companyData.name) {
-      // ¡Todo listo!
-      set({ companyProfile: companyData, appStatus: 'ready' });
-    } else {
-      // Hay licencia, pero falta configurar la empresa
-      set({ appStatus: 'setup_required' });
-    }
+    // --- FIN DE LA MEJORA ---
   },
 
   /**
-   * Reemplaza la lógica de envío del 'welcome-modal'
+   * Reemplaza la lógica de envío del 'welcome-modal' (SIN CAMBIOS)
    */
   handleLogin: async (licenseKey) => {
     try {
@@ -117,7 +144,7 @@ export const useAppStore = create((set, get) => ({
   },
 
   /**
-   * Reemplaza la lógica de guardado del 'business-setup-modal'
+   * Reemplaza la lógica de guardado del 'business-setup-modal' (SIN CAMBIOS)
    */
   handleSetup: async (setupData) => {
     try {
@@ -140,8 +167,7 @@ export const useAppStore = create((set, get) => ({
   },
 
   /**
-   * Reemplaza la lógica de 'saveCompanyData'
-   * Se usará en 'SettingsPage.jsx'
+   * Reemplaza la lógica de 'saveCompanyData' (SIN CAMBIOS)
    */
   updateCompanyProfile: async (companyData) => {
     await saveData(STORES.COMPANY, companyData);
@@ -149,9 +175,28 @@ export const useAppStore = create((set, get) => ({
   },
 
   /**
-   * Reemplaza la lógica del 'delete-license-btn'
+   * ¡MEJORA 2: Desactivación en Servidor!
+   * Llama a la BD antes de borrar la licencia local.
    */
-  logout: () => {
+  logout: async () => { // <--- Convertido en async
+    
+    // --- INICIO DE LA MEJORA ---
+    try {
+      // 1. Notificar al servidor que este dispositivo se va a desactivar
+      // Asumimos que la licencia está en 'licenseDetails'
+      const licenseKey = get().licenseDetails?.license_key;
+      if (licenseKey) {
+        // 'deactivateCurrentDevice' es tu 'deactivate_device'
+        await window.deactivateCurrentDevice(licenseKey); 
+        console.log("Dispositivo desactivado del servidor.");
+      }
+    } catch (error) {
+      // No importa si falla, procedemos a borrar localmente
+      console.error("Error al desactivar dispositivo en servidor:", error);
+    }
+    // --- FIN DE LA MEJORA ---
+
+    // 2. Borrar todo localmente
     clearLicenseFromStorage();
     set({
       appStatus: 'unauthenticated',

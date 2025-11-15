@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { loadData, saveData, STORES } from '../services/database';
 import { compressImage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore'; // 1. Importa el store
+import DeviceManager from '../components/common/DeviceManager';
 import './SettingsPage.css'; // Importa el CSS
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
@@ -116,27 +117,40 @@ export default function SettingsPage() {
     if (!licenseDetails || !licenseDetails.valid) {
       return <p>No hay una licencia activa.</p>;
     }
-    const { license_key, product_name, expires_at } = licenseDetails;
+    const { license_key, product_name, expires_at, max_devices } = licenseDetails;
     const statusText = 'Activa y Verificada';
 
     return (
-      <div className="license-info">
-        <div className="license-detail">
-          <span className="license-label">Clave:</span>
-          <span className="license-value">{license_key || 'N/A'}</span>
+      <div className="license-info-container"> 
+        <div className="license-info">
+          <div className="license-detail">
+            <span className="license-label">Clave:</span>
+            <span className="license-value">{license_key || 'N/A'}</span>
+          </div>
+          <div className="license-detail">
+            <span className="license-label">Producto:</span>
+            <span className="license-value">{product_name || 'N/A'}</span>
+          </div>
+          <div className="license-detail">
+            <span className="license-label">Expira:</span>
+            <span className="license-value">{expires_at ? new Date(expires_at).toLocaleDateString() : 'Nunca'}</span>
+          </div>
+          <div className="license-detail">
+            <span className="license-label">Estado:</span>
+            <span className="license-status-active">{statusText}</span>
+          </div>
+          {/* 4. MUESTRA EL LÍMITE DE DISPOSITIVOS */}
+          <div className="license-detail">
+            <span className="license-label">Límite de Dispositivos:</span>
+            <span className="license-value">{max_devices || 'N/A'}</span>
+          </div>
         </div>
-        <div className="license-detail">
-          <span className="license-label">Producto:</span>
-          <span className="license-value">{product_name || 'N/A'}</span>
-        </div>
-        <div className="license-detail">
-          <span className="license-label">Expira:</span>
-          <span className="license-value">{expires_at ? new Date(expires_at).toLocaleDateString() : 'Nunca'}</span>
-        </div>
-        <div className="license-detail">
-          <span className="license-label">Estado:</span>
-          <span className="license-status-active">{statusText}</span>
-        </div>
+
+        {/* 5. AÑADE EL GESTOR DE DISPOSITIVOS */}
+        <h4 className="device-manager-title">Dispositivos Activados</h4>
+        <DeviceManager licenseKey={license_key} />
+
+        {/* 6. MUEVE EL BOTÓN DE LOGOUT AQUÍ */}
         <button
           id="delete-license-btn"
           className="btn btn-cancel"

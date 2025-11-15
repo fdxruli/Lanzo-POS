@@ -1,3 +1,5 @@
+// src/services/supabase.js
+
 // --- SUPABASE CLIENT INITIALIZATION ---
 const supabaseUrl = 'https://jkuceingecbynyvntcxe.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprdWNlaW5nZWNieW55dm50Y3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMzcwMTMsImV4cCI6MjA3MTcxMzAxM30.UH5hoF12NyVzyENpySmK4i1pfELpRWgjAzBIhZaSals';
@@ -39,6 +41,9 @@ window.activateLicense = async function(licenseKey) {
         const result = await fp.get();
         const deviceFingerprint = result.visitorId;
 
+        // Guardamos la huella en localStorage para la autogestión
+        localStorage.setItem('fp', deviceFingerprint);
+
         const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
 
         const { data, error } = await supabaseClient.rpc(
@@ -76,9 +81,14 @@ window.revalidateLicense = async function() {
         const user = await getSupabaseUser();
         if (!user) return { valid: false, message: 'No user session.' };
 
-        const fp = await FingerprintJS.load();
-        const result = await fp.get();
-        const deviceFingerprint = result.visitorId;
+        // Re-obtenemos la huella (o la leemos del localStorage si la guardamos)
+        let deviceFingerprint = localStorage.getItem('fp');
+        if (!deviceFingerprint) {
+            const fp = await FingerprintJS.load();
+            const result = await fp.get();
+            deviceFingerprint = result.visitorId;
+            localStorage.setItem('fp', deviceFingerprint);
+        }
 
         const { data, error } = await supabaseClient.rpc(
             'verify_device_license', {
@@ -101,9 +111,12 @@ window.deactivateCurrentDevice = async function(licenseKey) {
         const user = await getSupabaseUser();
         if (!user) throw new Error('User session not found.');
 
-        const fp = await FingerprintJS.load();
-        const result = await fp.get();
-        const deviceFingerprint = result.visitorId;
+        let deviceFingerprint = localStorage.getItem('fp');
+        if (!deviceFingerprint) {
+             const fp = await FingerprintJS.load();
+            const result = await fp.get();
+            deviceFingerprint = result.visitorId;
+        }
 
         const { data, error } = await supabaseClient.rpc('deactivate_device', {
             license_key_param: licenseKey,
@@ -112,6 +125,9 @@ window.deactivateCurrentDevice = async function(licenseKey) {
         });
 
         if (error) throw error;
+
+        // Limpiamos la huella local al desactivar
+        localStorage.removeItem('fp');
         return data;
 
     } catch (error) {
@@ -222,5 +238,57 @@ window.getBusinessProfile = async function() {
     } catch (error) {
         console.error('Error getting business profile:', error);
         return { success: false, message: `Client-side error: ${error.message}` };
+    }
+};
+
+// --- (¡NUEVO!) DEVICE SELF-MANAGEMENT ---
+
+/**
+ * Obtiene la lista de dispositivos asociados a una licencia.
+ * Llama a la función SQL 'get_license_devices'.
+ * @param {string} licenseKey - La clave de licencia del usuario.
+ * @returns {Promise<object>} El resultado de la operación.
+ */
+window.getLicenseDevices = async function(licenseKey) {
+    try {
+        const user = await getSupabaseUser();
+        if (!user) return { success: false, message: 'Could not get a user session.' };
+
+        const { data, error } = await supabaseClient.rpc('get_license_devices', {
+            license_key_param: licenseKey
+        });
+
+        if (error) throw error;
+
+        return { success: true, data: data || [] }; // Devolver array vacío si es null
+
+    } catch (error) {
+        console.error('Error getting license devices:', error);
+        return { success: false, message: `Client-side error: ${error.message}` };
+    }
+};
+
+/**
+ * Desactiva un dispositivo específico usando su UUID.
+ * Llama a la NUEVA función SQL 'deactivate_device_by_id'.
+ * @param {string} deviceId - El UUID del dispositivo a desactivar.
+ * @returns {Promise<object>} El resultado de la operación.
+ */
+window.deactivateDeviceById = async function(deviceId) {
+    try {
+        const user = await getSupabaseUser();
+        if (!user) throw new Error('User session not found.');
+
+        const { data, error } = await supabaseClient.rpc('deactivate_device_by_id', {
+            device_id_param: deviceId,
+            user_id_param: user.id
+        });
+
+        if (error) throw error;
+        return data; // { success: true, message: ... }
+
+    } catch (error) {
+        console.error('Error during device deactivation by ID:', error);
+        return { success: false, message: error.message };
     }
 };
