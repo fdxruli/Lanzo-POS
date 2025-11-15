@@ -1,17 +1,11 @@
 // src/components/common/ScannerModal.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useZxing } from 'react-zxing';
-// 1. Importa el store REAL desde la ruta correcta
 import { useOrderStore } from '../../store/useOrderStore';
-// 2. Importa la base de datos REAL
 import { loadData, STORES } from '../../services/database';
-// 3. Importa los estilos REALES
 import './ScannerModal.css';
 
-// 4. (Se eliminaron las funciones simuladas de 'useOrderStore' y 'loadData')
-
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
-  // 5. Conectamos al store REAL
   const currentOrder = useOrderStore((state) => state.order);
   const setOrder = useOrderStore((state) => state.setOrder);
 
@@ -19,70 +13,101 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [scanFeedback, setScanFeedback] = useState('');
-  const mode = onScanSuccess ? 'single' : 'pos'; // Modo de escaneo
-  const [isProcessing, setIsProcessing] = useState(false);
+  const mode = onScanSuccess ? 'single' : 'pos';
+  
+  // ¡NUEVO! Guardamos el último código escaneado y su timestamp
+  const lastScannedRef = useRef({ code: null, time: 0 });
+  const processingRef = useRef(false);
 
   const { ref } = useZxing({
-    paused: !isScanning || !!isProcessing,
+    paused: !isScanning,
     onDecodeResult(result) {
       const code = result.getText();
-
-      // --- ¡NUEVA LÓGICA DE MODO! ---
-      // Si el modal se usa para un simple escaneo (como en el formulario de productos),
-      // solo devuelve el código y ciérrate.
-      if (onScanSuccess) {
-        if (navigator.vibrate) navigator.vibrate(50); // Vibración corta
-        onScanSuccess(code); // Devuelve el código
-        handleClose(true);   // Cierra el modal
-        return; // Detiene el procesamiento
+      const now = Date.now();
+      
+      // ¡MEJORA 1! Evitar procesar el mismo código múltiples veces
+      // Si es el mismo código que hace menos de 2 segundos, ignorarlo
+      if (
+        lastScannedRef.current.code === code && 
+        now - lastScannedRef.current.time < 2000
+      ) {
+        console.log('⏭️ Código duplicado ignorado:', code);
+        return;
       }
-      // --- FIN DE LA NUEVA LÓGICA ---
 
-      // Si onScanSuccess no existe, continúa con la lógica normal del POS:
-      if (isProcessing) return;
+      // ¡MEJORA 2! Lock de procesamiento para evitar race conditions
+      if (processingRef.current) {
+        console.log('⏳ Ya hay un código siendo procesado...');
+        return;
+      }
 
-      setProcessing(true);
-      setIsScanning(false); // Pausar el escáner durante el procesamiento
+      // Actualizar el último código escaneado
+      lastScannedRef.current = { code, time: now };
+      processingRef.current = true;
 
-      // ¡Nueva lógica! (Esto ya estaba en tu archivo)
+      // --- Modo Simple (Formulario de Productos) ---
+      if (onScanSuccess) {
+        if (navigator.vibrate) navigator.vibrate(50);
+        onScanSuccess(code);
+        handleClose(true);
+        return;
+      }
 
-      // 1. Pausar el escáner inmediatamente
+      // --- Modo POS ---
+      // Pausar el escáner durante el procesamiento
       setIsScanning(false);
 
-      // 2. Dar feedback visual y físico
+      // Feedback visual y táctil
       if (navigator.vibrate) navigator.vibrate(100);
       setScanFeedback(`✓ Escaneado: ${code}`);
 
-      // 3. Procesar el código (añadirlo a la lista)
+      // Procesar el código
       processScannedCode(code);
 
-      // 4. Establecer un "cooldown" antes de reactivar el escáner
+      // ¡MEJORA 3! Cooldown más corto pero efectivo
       setTimeout(() => {
-        setIsScanning(true); // Reactivar el escáner
-        setIsProcessing(false);
-        setScanFeedback(''); // Limpiar el mensaje de feedback
-      }, 1000); // <-- ¡Cooldown de 1.5 segundos! Puedes ajustar este valor
+        setIsScanning(true);
+        processingRef.current = false;
+        setScanFeedback('');
+      }, 800); // Reducido de 1500ms a 800ms
     },
     onError(error) {
       console.error('Error de ZXing:', error);
       setCameraError('Error al leer códigos. Verifica tu cámara.');
+      processingRef.current = false;
     },
     constraints: {
       video: {
         facingMode: 'environment',
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        focusMode: 'continuous'
+        // ¡MEJORA 4! Optimización de resolución
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
+        focusMode: 'continuous',
+        // ¡NUEVO! Mejoras para velocidad de escaneo
+        aspectRatio: { ideal: 16/9 },
+        frameRate: { ideal: 30, max: 60 }
       }
     },
-    timeBetweenDecodingAttempts: 300 // Tiempo entre intentos de escaneo
+    // ¡MEJORA 5! Tiempo entre intentos más agresivo
+    timeBetweenDecodingAttempts: 150 // Reducido de 300ms a 150ms
   });
+
+  // ¡MEJORA 6! Limpiar referencias al desmontar
+  useEffect(() => {
+    return () => {
+      lastScannedRef.current = { code: null, time: 0 };
+      processingRef.current = false;
+    };
+  }, []);
 
   // Efecto para solicitar permisos de cámara
   useEffect(() => {
     if (show) {
       setIsScanning(false);
       setCameraError(null);
+      // ¡MEJORA 7! Resetear el historial de escaneo al abrir
+      lastScannedRef.current = { code: null, time: 0 };
+      processingRef.current = false;
 
       const timer = setTimeout(async () => {
         try {
@@ -113,61 +138,63 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   }, [show]);
 
   /**
-   * Procesa el código usando la base de datos REAL
+   * Procesa el código usando la base de datos
    */
   const processScannedCode = async (code) => {
-    // 6. Usa la función 'loadData' REAL
-    const menu = await loadData(STORES.MENU);
-    const product = menu.find(p => p.barcode === code && p.isActive !== false);
+    try {
+      const menu = await loadData(STORES.MENU);
+      const product = menu.find(p => p.barcode === code && p.isActive !== false);
 
-    if (product) {
-      // Actualiza la lista local 'scannedItems'
-      setScannedItems(prevItems => {
-        const existing = prevItems.find(i => i.id === product.id);
-        if (existing) {
-          return prevItems.map(i =>
-            i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
-          );
-        }
-        return [...prevItems, { ...product, quantity: 1 }];
-      });
-    } else {
-      console.warn(`Producto con código ${code} no encontrado.`);
-      setScanFeedback(`⚠️ Producto no encontrado: ${code}`);
-      setTimeout(() => setScanFeedback(''), 3000);
+      if (product) {
+        setScannedItems(prevItems => {
+          const existing = prevItems.find(i => i.id === product.id);
+          if (existing) {
+            return prevItems.map(i =>
+              i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+            );
+          }
+          return [...prevItems, { ...product, quantity: 1 }];
+        });
+        
+        // Feedback de éxito
+        setScanFeedback(`✅ ${product.name} añadido`);
+      } else {
+        console.warn(`Producto con código ${code} no encontrado.`);
+        setScanFeedback(`⚠️ Producto no encontrado: ${code}`);
+        setTimeout(() => setScanFeedback(''), 2000);
+      }
+    } catch (error) {
+      console.error('Error al procesar código:', error);
+      setScanFeedback('❌ Error al buscar producto');
+      setTimeout(() => setScanFeedback(''), 2000);
     }
   };
 
   /**
-   * Confirma y añade los items al store REAL
+   * Confirma y añade los items al store
    */
-  const handleConfirmScan = () => {
-    const newOrder = [...currentOrder]; // Pedido actual REAL
+  const handleConfirmScan = useCallback(() => {
+    const newOrder = [...currentOrder];
 
     scannedItems.forEach(scannedItem => {
       const existingInOrder = newOrder.find(item => item.id === scannedItem.id);
       if (existingInOrder) {
-        // Asumimos que si es por unidad, sumamos. Si es a granel, lo reemplazamos
         if (existingInOrder.saleType === 'unit') {
           existingInOrder.quantity += scannedItem.quantity;
-        } else {
-          // Si ya existe un item a granel, el escáner no debería sumarlo,
-          // pero por seguridad, no hacemos nada.
         }
       } else {
         newOrder.push(scannedItem);
       }
     });
 
-    // 7. Llama a la acción 'setOrder' REAL
     setOrder(newOrder);
-    handleClose(true); // Cierra sin preguntar
-  };
+    handleClose(true);
+  }, [scannedItems, currentOrder, setOrder]);
 
   /**
    * Cierra el modal
    */
-  const handleClose = (force = false) => {
+  const handleClose = useCallback((force = false) => {
     if (!force && scannedItems.length > 0) {
       if (!window.confirm('¿Cerrar sin agregar los productos escaneados?')) {
         return;
@@ -178,8 +205,11 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     setIsScanning(false);
     setCameraError(null);
     setScanFeedback('');
+    // ¡MEJORA 8! Resetear referencias
+    lastScannedRef.current = { code: null, time: 0 };
+    processingRef.current = false;
     onClose();
-  };
+  }, [scannedItems, onClose]);
 
   const totalScaneado = scannedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
@@ -187,8 +217,6 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     return null;
   }
 
-  // 8. RENDER (JSX)
-  // Reemplazamos todos los 'style' por 'className' de tu archivo .css
   return (
     <div id="scanner-modal" className="modal" style={{ display: 'flex' }}>
       <div className={`modal-content scanner-modal-content ${mode === 'pos' ? 'pos-scan-mode' : 'simple-scan-mode'}`}>
@@ -213,11 +241,6 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
             ) : (
               <>
                 <video ref={ref} id="scanner-video" />
-
-                {/* --- ¡AQUÍ ESTABA EL ERROR! --- 
-                  La línea <div id="scanner-overlay" /> se ha eliminado.
-                  react-zxing maneja sus propios visuales.
-                */}
 
                 {scanFeedback && (
                   <div className="scan-feedback-overlay">

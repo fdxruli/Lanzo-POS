@@ -368,3 +368,45 @@
     justify-content: center;
   }
 }
+
+/* Overlay de feedback de escaneo */
+.scan-feedback-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  pointer-events: none;
+  animation: feedbackFadeIn 0.2s ease;
+}
+
+@keyframes feedbackFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.scan-feedback-message {
+  background-color: var(--success-color);
+  color: white;
+  padding: var(--spacing-lg) var(--spacing-xl);
+  border-radius: var(--border-radius);
+  font-size: 1.2rem;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Feedback de error */
+.scan-feedback-message:has(⚠️),
+.scan-feedback-message:has(❌) {
+  background-color: var(--error-color);
+}
