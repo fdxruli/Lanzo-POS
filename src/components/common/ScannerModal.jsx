@@ -186,7 +186,11 @@ export default function ScannerModal({ show, onClose }) {
             ) : (
               <>
                 <video ref={ref} id="scanner-video" />
-                <div id="scanner-overlay" />
+                
+                {/* --- ¡AQUÍ ESTABA EL ERROR! --- 
+                  La línea <div id="scanner-overlay" /> se ha eliminado.
+                  react-zxing maneja sus propios visuales.
+                */}
                 
                 {scanFeedback && (
                   <div className="scan-feedback-overlay">
