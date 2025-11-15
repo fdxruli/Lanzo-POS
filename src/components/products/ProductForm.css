@@ -107,3 +107,23 @@
 .btn-scan-inline:hover {
   background-color: var(--primary-color);
 }
+
+.btn-lookup {
+  flex-shrink: 0;
+  padding: var(--spacing-sm);
+  background-color: var(--primary-color);
+  color: white;
+  font-size: 1.2rem;
+  line-height: 1;
+  width: 52px; /* Ancho fijo para que no salte al cambiar '...' por '🔍' */
+  text-align: center;
+}
+
+.btn-lookup:hover {
+  background-color: var(--secondary-color);
+}
+
+.btn-lookup:disabled {
+  background-color: var(--text-light);
+  cursor: not-allowed;
+}

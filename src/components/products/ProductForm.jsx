@@ -1,5 +1,8 @@
+// src/components/products/ProductForm.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { compressImage } from '../../services/utils'; //
+// ¡MODIFICADO! Importamos la nueva función y el modal de mensajes
+import { compressImage, lookupBarcodeInAPI } from '../../services/utils'; 
+import { showMessageModal } from '../../services/utils'; // ¡NUEVO!
 import CostCalculatorModal from './CostCalculatorModal';
 import ScannerModal from '../common/ScannerModal';
 import './ProductForm.css'
@@ -13,33 +16,30 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
     const [barcode, setBarcode] = useState('');
     const [description, setDescription] = useState('');
     const [imagePreview, setImagePreview] = useState(defaultPlaceholder);
-    const [imageData, setImageData] = useState(null); // Guardamos la data comprimida
+    const [imageData, setImageData] = useState(null); 
     const [categoryId, setCategoryId] = useState('');
     const [expiryDate, setExpiryDate] = useState('');
     const [showCostCalculator, setShowCostCalculator] = useState(false);
-    const handleAssignCost = (totalCost) => {
-        setCost(totalCost.toFixed(2));
-    };
-
+    
     const [isScannerOpen, setIsScannerOpen] = useState(false);
+    const [isLookingUp, setIsLookingUp] = useState(false); // ¡NUEVO! Estado de carga
 
-    // Lógica de "Tipo de Venta"
-    const [saleType, setSaleType] = useState('unit'); // 'unit' o 'bulk'
-
-    // - Campos de "Unidad"
+    // ... (estados de saleType, cost, price, stock, bulk, etc. sin cambios) ...
+    const [saleType, setSaleType] = useState('unit');
     const [cost, setCost] = useState('');
     const [price, setPrice] = useState('');
     const [stock, setStock] = useState('0');
-
-    // - Campos de "A Granel"
     const [bulkQty, setBulkQty] = useState('');
     const [bulkUnit, setBulkUnit] = useState('kg');
     const [bulkCost, setBulkCost] = useState('');
     const [bulkSalePrice, setBulkSalePrice] = useState('');
 
+
     // 2. EFECTO PARA RELLENAR EL FORMULARIO (EDICIÓN)
+    // ... (useEffect de productToEdit no cambia) ...
     useEffect(() => {
         if (productToEdit) {
+            // ... (lógica de rellenar formulario) ...
             setName(productToEdit.name);
             setBarcode(productToEdit.barcode || '');
             setDescription(productToEdit.description || '');
@@ -53,25 +53,18 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                 setBulkQty(productToEdit.bulkData.purchase.quantity);
                 setBulkUnit(productToEdit.bulkData.purchase.unit);
                 setBulkCost(productToEdit.bulkData.purchase.cost);
-                setBulkSalePrice(productToEdit.price); // El precio de venta se guarda en 'price'
+                setBulkSalePrice(productToEdit.price); 
             } else {
                 setCost(productToEdit.cost || '');
                 setPrice(productToEdit.price || '');
                 setStock(productToEdit.stock || '0');
             }
         } else {
-            // Limpiar formulario si 'productToEdit' es null (ej. al cancelar)
             resetForm();
         }
     }, [productToEdit]);
-
-    const handleBarcodeScanned = (code) => {
-        setBarcode(code); // Actualiza el estado del formulario
-        setIsScannerOpen(false); // Cierra el modal
-    };
-
-    // 3. LÓGICA INTERNA Y HANDLERS
-
+    
+    // ... (resetForm, handleImageChange, márgenes de ganancia no cambian) ...
     const resetForm = () => {
         setName(''); setBarcode(''); setDescription('');
         setImagePreview(defaultPlaceholder); setImageData(null);
@@ -79,16 +72,12 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
         setCost(''); setPrice(''); setStock('0');
         setBulkQty(''); setBulkUnit('kg'); setBulkCost(''); setBulkSalePrice('');
     };
-
-    /**
-     * Lógica de compresión de imagen
-     * de 'productImageFileInput' en app.js
-     */
+    
     const handleImageChange = async (e) => {
         const file = e.target.files[0];
         if (file) {
             try {
-                const compressed = await compressImage(file); //
+                const compressed = await compressImage(file); 
                 setImagePreview(compressed);
                 setImageData(compressed);
             } catch (error) {
@@ -98,11 +87,7 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
             }
         }
     };
-
-    /**
-     * Lógica de márgenes de ganancia
-     * de 'updateUnitMessages' y 'profit-margin.js'
-     */
+    
     const unitProfitMargin = useMemo(() => {
         const c = parseFloat(cost);
         const p = parseFloat(price);
@@ -130,15 +115,59 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
     }, [bulkCostPerUnit, bulkSalePrice]);
 
 
+    // --- ¡NUEVAS FUNCIONES DE BÚSQUEDA! ---
+
     /**
-     * Prepara los datos y llama al padre (onSave)
+     * ¡NUEVO! Llama a la API y actualiza el estado del formulario
      */
+    const handleBarcodeLookup = async (codeToLookup) => {
+        if (!codeToLookup) {
+            showMessageModal('Por favor, ingresa un código de barras para buscar.');
+            return;
+        }
+
+        setIsLookingUp(true);
+        const result = await lookupBarcodeInAPI(codeToLookup);
+        setIsLookingUp(false);
+
+        if (result.success) {
+            // ¡Éxito! Rellenamos los campos
+            // (Mantenemos el valor existente si la API no devuelve nada para ese campo)
+            setName(result.product.name || name);
+            setDescription(prevDesc => 
+                result.product.brand ? `Marca: ${result.product.brand}` : (prevDesc || '')
+            );
+            
+            if (result.product.image) {
+                setImagePreview(result.product.image);
+                setImageData(result.product.image); // Guardamos la URL de la imagen
+            }
+            
+            showMessageModal('¡Producto encontrado! Revisa y completa la información.');
+        } else {
+            // Fracaso
+            showMessageModal(`No se encontró información para el código ${codeToLookup}.`);
+        }
+    };
+
+    /**
+     * ¡MODIFICADO! Ahora llama a la búsqueda automáticamente.
+     */
+    const handleBarcodeScanned = (code) => {
+        setBarcode(code); // Actualiza el estado del formulario
+        setIsScannerOpen(false); // Cierra el modal
+        handleBarcodeLookup(code); // ¡NUEVO! Llama a la búsqueda
+    };
+    
+    const handleAssignCost = (totalCost) => {
+        setCost(totalCost.toFixed(2));
+    };
+    
+    // ... (handleSubmit no cambia) ...
     const handleSubmit = (e) => {
         e.preventDefault();
-
-        let productData = {};
-
-        // Lógica de 'saveProduct' en app.js
+        // ... (lógica de productData no cambia) ...
+         let productData = {};
         if (saleType === 'unit') {
             const nStock = parseInt(stock, 10);
             productData = {
@@ -157,13 +186,13 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                 name, barcode, description, categoryId, expiryDate,
                 image: imageData,
                 saleType: 'bulk',
-                price: parseFloat(bulkSalePrice), // El precio de venta es por unidad de venta
-                cost: bulkCostPerUnit, // Costo calculado por unidad
-                stock: isNaN(nBulkQty) ? 0 : nBulkQty, // Stock es la cantidad total comprada
+                price: parseFloat(bulkSalePrice), 
+                cost: bulkCostPerUnit,
+                stock: isNaN(nBulkQty) ? 0 : nBulkQty,
                 trackStock: nBulkQty > 0,
                 bulkData: {
                     purchase: { quantity: nBulkQty, unit: bulkUnit, cost: parseFloat(bulkCost) },
-                    sale: { unit: bulkUnit } // Asumimos que se vende en la misma unidad
+                    sale: { unit: bulkUnit } 
                 }
             };
         }
@@ -172,17 +201,18 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
         resetForm();
     };
 
+
     // 4. VISTA (JSX)
-    // HTML de 'add-product-content'
     return (
         <>
             <div className="product-form-container">
+                {/* ... (título y form tag) ... */}
                 <h3 className="subtitle" id="product-form-title">
                     {productToEdit ? `Editar: ${productToEdit.name}` : 'Añadir Nuevo Producto'}
                 </h3>
                 <form id="product-form" onSubmit={handleSubmit}>
 
-                    {/* --- CAMPOS BÁSICOS --- */}
+                    {/* ... (Campo 'Nombre del Producto' sin cambios) ... */}
                     <div className="form-group">
                         <label className="form-label" htmlFor="product-name">Nombre del Producto</label>
                         <input
@@ -196,9 +226,10 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                         />
                     </div>
 
+                    {/* --- ¡CAMPO DE CÓDIGO DE BARRAS MODIFICADO! --- */}
                     <div className="form-group">
                         <label className="form-label" htmlFor="product-barcode">Código de Barras (Opcional)</label>
-                        <div className="input-with-button"> {/* <-- Nuevo Contenedor */}
+                        <div className="input-with-button">
                             <input
                                 className="form-input"
                                 id="product-barcode"
@@ -207,7 +238,6 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                                 value={barcode}
                                 onChange={(e) => setBarcode(e.target.value)}
                             />
-                            {/* --- ¡NUEVO BOTÓN DE ESCÁNER! --- */}
                             <button
                                 type="button"
                                 className="btn-scan-inline"
@@ -216,8 +246,20 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                             >
                                 📷
                             </button>
+                            {/* --- ¡NUEVO BOTÓN DE BÚSQUEDA! --- */}
+                            <button
+                                type="button"
+                                className="btn-lookup" // Añadiremos un estilo para esto
+                                onClick={() => handleBarcodeLookup(barcode)}
+                                title="Buscar información del producto"
+                                disabled={isLookingUp} // ¡NUEVO!
+                            >
+                                {isLookingUp ? '...' : '🔍'}
+                            </button>
                         </div>
                     </div>
+                    
+                    {/* ... (El resto del formulario: descripción, tipo de venta, etc. no cambia) ... */}
                     <div className="form-group">
                         <label className="form-label" htmlFor="product-description">Descripción (Opcional)</label>
                         <textarea
@@ -243,9 +285,6 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                         </select>
                     </div>
 
-                    {/* --- RENDERIZADO CONDICIONAL --- */}
-                    {/* Reemplaza la lógica de mostrar/ocultar de updateProductForm */}
-
                     {saleType === 'unit' ? (
                         <div id="unit-options">
                             <div className="form-group">
@@ -256,7 +295,7 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                                     type="button"
                                     id="cost-help-button"
                                     className="btn btn-help"
-                                    onClick={() => setShowCostCalculator(true)} // <-- CORREGIDO
+                                    onClick={() => setShowCostCalculator(true)}
                                 >
                                     Calcular Costo
                                 </button>
@@ -276,7 +315,7 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                             </div>
                         </div>
                     ) : (
-                        <div id="bulk-options">
+                         <div id="bulk-options">
                             <div className="form-group bulk-purchase-group">
                                 <label className="form-label">Info de Compra</label>
                                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 'var(--spacing-sm)' }}>
@@ -383,6 +422,8 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                     </button>
                 </form>
             </div>
+            
+            {/* ... (Modales de CostCalculator y Scanner sin cambios) ... */}
             <CostCalculatorModal
                 show={showCostCalculator}
                 onClose={() => setShowCostCalculator(false)}
