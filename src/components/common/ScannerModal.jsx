@@ -232,17 +232,17 @@ export default function ScannerModal({ show, onClose }) {
         {/* Botones */}
         <div className="scanner-actions">
           <button
-            className="btn btn-cancel"
-            onClick={() => handleClose(false)}
-          >
-            Cancelar
-          </button>
-          <button
             className="btn btn-process"
             onClick={handleConfirmScan}
             disabled={scannedItems.length === 0}
           >
             Confirmar y Agregar ({scannedItems.length})
+          </button>
+          <button
+            className="btn btn-cancel"
+            onClick={() => handleClose(false)}
+          >
+            Cancelar
           </button>
         </div>
       </div>

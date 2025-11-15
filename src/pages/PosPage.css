@@ -1,15 +1,18 @@
 /*
  * Estilos para PosPage.jsx
+ * Mobile-first approach
  */
 
+/* Estilos base para móvil (< 768px) */
 .pos-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--spacing-lg);
 }
 
-@media (max-width: 768px) {
+/* Estilos para tablets y escritorio (>= 768px) */
+@media (min-width: 768px) {
   .pos-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 2fr 1fr;
   }
 }

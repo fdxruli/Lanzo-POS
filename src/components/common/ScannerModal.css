@@ -9,7 +9,11 @@
   z-index: 2100;
 }
 
-/* * Estilos del visor de la cámara (Video y Overlay)
+/* * ======================================================
+ * ¡AQUÍ ESTÁ LA CORRECCIÓN PRINCIPAL!
+ * ======================================================
+ *
+ * Estilos del visor de la cámara (Video y Overlay)
  * (Estos estilos eran para el overlay manual, puede que los 
  * necesites o no con 'react-zxing', pero los muevo por si acaso).
  */
@@ -95,10 +99,45 @@
   margin-bottom: var(--spacing-lg);
 }
 
+/*
+ * ======================================================
+ * ¡AQUÍ ESTÁ LA CORRECCIÓN PRINCIPAL!
+ *
+ * Movimos 'position: relative', 'overflow', 'border-radius'
+ * y 'background-color' aquí (a la regla base) para que 
+ * apliquen en ESCRITORIO y no solo en móvil.
+ * ======================================================
+ */
 .scanner-video-container {
   flex: 1;
   min-width: 0;
+  position: relative; /* <-- ESTO ES LO MÁS IMPORTANTE */
+  overflow: hidden; /* <-- Evita desbordamientos */
+  border-radius: var(--border-radius-sm); /* <-- Consistencia visual */
+  background-color: #000; /* <-- Fondo mientras carga */
+  display: flex; /* <-- Para centrar el error */
+  align-items: center; /* <-- Para centrar el error */
+  justify-content: center; /* <-- Para centrar el error */
 }
+
+/*
+ * ======================================================
+ * ¡NUEVA REGLA AÑADIDA!
+ * Para estilizar el mensaje de error de la cámara.
+ * ======================================================
+ */
+.camera-error-feedback {
+  padding: var(--spacing-md);
+  text-align: center;
+  color: white;
+  background-color: #333;
+  width: 100%;
+}
+.camera-error-feedback p {
+  color: white;
+  margin-bottom: var(--spacing-md);
+}
+
 
 .scanner-results-container {
   flex: 1;
@@ -248,6 +287,13 @@
     gap: var(--spacing-md);
   }
 
+  /* * ======================================================
+   * REGLA MÓVIL SIMPLIFICADA
+   *
+   * Ya no necesita 'position', 'overflow', 'border-radius'
+   * o 'background-color' porque los heredará de la base.
+   * ======================================================
+   */
   .scanner-video-container {
     width: 100%;
     /* El video ocupa todo el ancho disponible */
@@ -256,10 +302,10 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow: hidden;
-    position: relative;
-    border-radius: var(--border-radius-sm);
-    background-color: black;
+    /* overflow: hidden; <-- Heredado */
+    /* position: relative; <-- Heredado */
+    /* border-radius: var(--border-radius-sm); <-- Heredado */
+    /* background-color: black; <-- Heredado */
   }
 
   /* * NOTA: Es posible que react-zxing ignore esto, 
@@ -281,7 +327,7 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: radial-gradient(circle, transparent 60%, rgba(0, 0, 0, 0.5) 75%);
+    /*background: radial-gradient(circle, transparent 60%, rgba(0, 0, 0, 0.5) 75%);*/
     pointer-events: none;
     /* Permite interactuar con el video debajo */
   }

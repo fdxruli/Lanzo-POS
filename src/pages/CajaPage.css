@@ -1,5 +1,6 @@
 /*
  * Estilos para CajaPage.jsx
+ * Mobile-first approach
  *
  * Contiene los estilos para:
  * - El layout de la página (.caja-grid)
@@ -7,6 +8,8 @@
  * - El historial de cajas (#caja-history-container)
  * - El componente .stat-card (usado en esta página y en el Dashboard)
  */
+
+/* ===== ESTILOS BASE PARA MÓVIL ===== */
 
 .caja-grid {
   display: grid;
@@ -26,7 +29,7 @@
   max-height: 400px;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: 1fr;
   gap: var(--spacing-md);
 }
 
@@ -76,4 +79,20 @@
 .profit {
   color: var(--success-color);
   font-weight: bold;
+}
+
+/* ===== MEDIA QUERIES PARA TABLETS Y ESCRITORIO ===== */
+
+/* Tablets pequeñas (>= 480px) */
+@media (min-width: 480px) {
+  #caja-history-container .history-list {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+}
+
+/* Tablets y escritorio (>= 768px) */
+@media (min-width: 768px) {
+  .stat-value {
+    font-size: 2rem;
+  }
 }

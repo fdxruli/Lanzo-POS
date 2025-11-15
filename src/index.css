@@ -1,11 +1,13 @@
 /* src/index.css */
-/* Este archivo contiene ÚNICAMENTE los estilos globales, 
-  variables y reseteos. 
-  Los estilos de componentes específicos (ej. Navbar, ProductList) 
-  deben ir en sus propios archivos CSS.
+
+/* Este archivo contiene ÚNICAMENTE los estilos globales,
+   variables y reseteos.
+   Los estilos de componentes específicos (ej. Navbar, ProductList)
+   deben ir en sus propios archivos CSS.
 */
 
 /* ===== VARIABLES GLOBALES (MODO CLARO POR DEFECTO) ===== */
+
 :root {
   /* Colores suaves y cálidos */
   --primary-color: #6366f1;
@@ -43,11 +45,12 @@
 }
 
 /* ======================================================
-  ¡AQUÍ COMIENZA LA MAGIA DEL MODO OSCURO!
-  Al cambiar <html data-theme="dark">, estas variables 
-  sobreescribirán a las de :root.
-  ======================================================
+   ¡AQUÍ COMIENZA LA MAGIA DEL MODO OSCURO!
+   Al cambiar <body data-theme="dark">, estas variables
+   sobreescribirán a las de :root.
+====================================================== 
 */
+
 [data-theme="dark"] {
   /* Colores invertidos */
   --primary-color: #8183f4;
@@ -58,28 +61,22 @@
   --error-color: #f87171;
 
   /* Fondos oscuros */
-  --background-color: #111827;
-  /* Fondo principal muy oscuro */
-  --card-background-color: #1f2937;
-  /* Fondo de tarjetas/modales oscuro */
-  --light-background: #374151;
-  /* Fondo de "hover" o secundario */
+  --background-color: #111827; /* Fondo principal muy oscuro */
+  --card-background-color: #1f2937; /* Fondo de tarjetas/modales oscuro */
+  --light-background: #374151; /* Fondo de "hover" o secundario */
 
   /* Textos claros */
-  --text-color: #d1d5db;
-  /* Texto principal claro */
-  --text-light: #9ca3af;
-  /* Texto secundario (más gris) */
-  --text-dark: #f9fafb;
-  /* Títulos y texto muy claro */
+  --text-color: #d1d5db; /* Texto principal claro */
+  --text-light: #9ca3af; /* Texto secundario (más gris) */
+  --text-dark: #f9fafb; /* Títulos y texto muy claro */
 
   /* Sombras y bordes para modo oscuro */
   --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
   --box-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
 }
 
-
 /* ===== ESTILOS GENERALES ===== */
+
 * {
   margin: 0;
   padding: 0;
@@ -104,16 +101,17 @@ h3 {
   margin-bottom: var(--spacing-md);
 }
 
+/* Tamaños base para móvil */
 h1 {
-  font-size: 1.875rem;
-}
-
-h2 {
   font-size: 1.5rem;
 }
 
-h3 {
+h2 {
   font-size: 1.25rem;
+}
+
+h3 {
+  font-size: 1.125rem;
 }
 
 p {
@@ -144,16 +142,13 @@ textarea,
 select {
   width: 100%;
   padding: var(--spacing-sm);
-  border: 1px solid #e5e7eb;
-  /* TODO: Usar una variable de CSS para el borde */
+  border: 1px solid #e5e7eb; /* TODO: Usar una variable de CSS para el borde */
   border-radius: var(--border-radius-sm);
   font-family: inherit;
   font-size: 1rem;
   transition: var(--transition);
-  background-color: var(--card-background-color);
-  /* Afectado por modo oscuro */
-  color: var(--text-color);
-  /* Afectado por modo oscuro */
+  background-color: var(--card-background-color); /* Afectado por modo oscuro */
+  color: var(--text-color); /* Afectado por modo oscuro */
 }
 
 input:focus,
@@ -170,22 +165,23 @@ textarea {
 }
 
 /* ===== CONTENEDOR PRINCIPAL ===== */
+
+/* Base para móvil */
 .main-container {
   max-width: 1400px;
   margin: 0 auto;
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
 }
 
 .section-title {
   margin-bottom: var(--spacing-lg);
   padding-bottom: var(--spacing-sm);
-  border-bottom: 2px solid rgba(99, 102, 241, 0.2);
-  /* TODO: Usar variable */
+  border-bottom: 2px solid rgba(99, 102, 241, 0.2); /* TODO: Usar variable */
   color: var(--primary-color);
 }
 
 .subtitle {
-  font-size: 1.125rem;
+  font-size: 1rem;
   color: var(--text-dark);
   margin-bottom: var(--spacing-md);
 }
@@ -193,6 +189,7 @@ textarea {
 /* ===== MODALES (BASE) ===== */
 /* Estilos específicos (pago, scanner, etc.) 
    deben ir en sus propios archivos CSS */
+
 .modal {
   position: fixed;
   top: 0;
@@ -209,7 +206,7 @@ textarea {
 .modal-content {
   background-color: var(--card-background-color);
   border-radius: var(--border-radius);
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
   max-width: 500px;
   width: 90%;
   box-shadow: var(--box-shadow-lg);
@@ -222,7 +219,6 @@ textarea {
     opacity: 0;
     transform: scale(0.9);
   }
-
   to {
     opacity: 1;
     transform: scale(1);
@@ -240,12 +236,14 @@ textarea {
 
 /* ===== ESTILOS DE PESTAÑAS (TABS) ===== */
 /* Componente compartido, usado en Dashboard, Products, Customers */
+
 .tabs-container {
   display: flex;
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-lg);
   border-bottom: 2px solid #e5e7eb;
-  /* TODO: Usar variable */
+  overflow-x: auto; /* Permite scroll horizontal en móvil si hay muchas tabs */
+  -webkit-overflow-scrolling: touch;
 }
 
 .tab-btn {
@@ -253,11 +251,12 @@ textarea {
   border: none;
   background-color: transparent;
   cursor: pointer;
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-light);
   border-bottom: 2px solid transparent;
   transition: var(--transition);
+  white-space: nowrap; /* Evita que el texto se rompa en móvil */
 }
 
 .tab-btn:hover {
@@ -270,18 +269,17 @@ textarea {
 }
 
 /* ===== ESTILOS PARA VALIDACIÓN (Global) ===== */
+
 .form-help-text.validation-message {
   font-size: 0.875rem;
   margin-top: var(--spacing-xs);
   font-weight: 500;
-  display: none;
-  /* Oculto por defecto */
+  display: none; /* Oculto por defecto */
 }
 
 .form-help-text.validation-message.error {
   color: var(--error-color);
-  display: block;
-  /* Se muestra cuando hay error */
+  display: block; /* Se muestra cuando hay error */
 }
 
 .form-input.invalid {
@@ -290,19 +288,19 @@ textarea {
 }
 
 /* ===== LOADER (Global) ===== */
+
 #app-loader {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(255, 255, 255, 0.9);
-  /* TODO: Usar variable */
+  background: rgba(255, 255, 255, 0.9); /* TODO: Usar variable */
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 10000;
-  font-size: 1.2rem;
+  font-size: 1rem;
 }
 
 [data-theme="dark"] #app-loader {
@@ -310,8 +308,7 @@ textarea {
 }
 
 .loader-spinner {
-  border: 4px solid #f3f3f3;
-  /* TODO: Usar variable */
+  border: 4px solid #f3f3f3; /* TODO: Usar variable */
   border-top: 4px solid var(--primary-color);
   border-radius: 50%;
   width: 40px;
@@ -324,23 +321,66 @@ textarea {
   0% {
     transform: rotate(0deg);
   }
-
   100% {
     transform: rotate(360deg);
   }
 }
 
 /* ===== UTILIDADES ===== */
+
 .hidden {
   display: none !important;
 }
 
-/* ===== RESPONSIVE DESIGN (Solo Global) ===== */
-/* Reglas de responsive para componentes (ej. Navbar) 
-   deben ir en sus propios archivos */
+/* ===== RESPONSIVE DESIGN - MOBILE FIRST ===== */
+/* Reglas de responsive para componentes (ej. Navbar) deben ir en sus propios archivos */
 
-@media (max-width: 480px) {
+/* Tablets pequeñas (>= 480px) */
+@media (min-width: 480px) {
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  h2 {
+    font-size: 1.375rem;
+  }
+
+  h3 {
+    font-size: 1.2rem;
+  }
+
   .main-container {
-    padding: var(--spacing-md);
+    padding: var(--spacing-lg);
+  }
+
+  .modal-content {
+    padding: var(--spacing-lg);
+  }
+
+  .tab-btn {
+    font-size: 1rem;
+  }
+
+  .subtitle {
+    font-size: 1.125rem;
+  }
+
+  #app-loader {
+    font-size: 1.2rem;
+  }
+}
+
+/* Tablets y escritorio (>= 768px) */
+@media (min-width: 768px) {
+  h1 {
+    font-size: 1.875rem;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+  }
+
+  h3 {
+    font-size: 1.25rem;
   }
 }

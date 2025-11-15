@@ -1,11 +1,14 @@
 /*
  * Estilos para DashboardPage.jsx
+ * Mobile-first approach
  */
 
-/* Layout principal de la página de dashboard (no usado en tu JSX actual, pero estaba en el CSS) */
+/* ===== ESTILOS BASE PARA MÓVIL ===== */
+
+/* Layout principal de la página de dashboard */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 3fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--spacing-lg);
 }
 
@@ -31,9 +34,11 @@
   gap: var(--spacing-md);
 }
 
-/* Media query para el responsive del layout */
-@media (max-width: 1024px) {
+/* ===== MEDIA QUERIES PARA TABLETS Y ESCRITORIO ===== */
+
+/* Tablets grandes y escritorio (>= 1024px) */
+@media (min-width: 1024px) {
   .dashboard-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 3fr 1fr;
   }
 }

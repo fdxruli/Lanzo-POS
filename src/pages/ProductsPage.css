@@ -1,16 +1,18 @@
 /*
  * Estilos para ProductsPage.jsx
+ * Mobile-first approach
  */
 
+/* Estilos base para móvil (< 1024px) */
 .product-management-grid {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  grid-template-columns: 1fr;
   gap: var(--spacing-lg);
 }
 
-/* Responsive para la cuadrícula de la página */
-@media (max-width: 1024px) {
+/* Estilos para tablets grandes y escritorio (>= 1024px) */
+@media (min-width: 1024px) {
   .product-management-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 2fr;
   }
 }

@@ -1,7 +1,11 @@
 // src/components/pos/OrderSummary.jsx
 import React from 'react';
+import { Minus, Plus } from 'lucide-react';
 import { useOrderStore } from '../../store/useOrderStore';
 import './OrderSummary.css'
+
+// ✅ PRUEBA DE DIAGNÓSTICO
+console.log('Componentes Lucide importados:', { Minus, Plus });
 
 export default function OrderSummary({onOpenPayment}) {
   // 1. Conectamos al store. ¡Esto es todo!
@@ -46,7 +50,6 @@ export default function OrderSummary({onOpenPayment}) {
           <div className="order-list">
             {order.map(item => {
               
-              // --- ¡AQUÍ ESTÁ LA CORRECCIÓN 1! ---
               // Añadimos la clase 'exceeds-stock' dinámicamente
               const itemClasses = `order-item ${item.exceedsStock ? 'exceeds-stock' : ''}`;
 
@@ -58,7 +61,6 @@ export default function OrderSummary({onOpenPayment}) {
                       ${item.price.toFixed(2)} c/u
                     </div>
                     
-                    {/* --- ¡AQUÍ ESTÁ LA CORRECCIÓN 2! --- */}
                     {/* Mostramos un mensaje visual de advertencia */}
                     {item.exceedsStock && (
                       <div className="stock-warning exceeds-stock-warning">
@@ -72,10 +74,9 @@ export default function OrderSummary({onOpenPayment}) {
                       <button 
                         className="quantity-btn" 
                         onClick={() => handleQuantityChange(item.id, -1)}
+                        aria-label="Disminuir cantidad"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8z"/>
-                        </svg>
+                        −
                       </button>
                       
                       <span className="quantity-display">{item.quantity}</span>
@@ -83,10 +84,9 @@ export default function OrderSummary({onOpenPayment}) {
                       <button 
                         className="quantity-btn" 
                         onClick={() => handleQuantityChange(item.id, 1)}
+                        aria-label="Aumentar cantidad"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
-                        </svg>
+                        +
                       </button>
                     </div>
                   ) : (

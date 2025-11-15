@@ -1,6 +1,9 @@
 /*
  * Estilos para SettingsPage.jsx
+ * Mobile-first approach
  */
+
+/* ===== ESTILOS BASE PARA MÓVIL ===== */
 
 .company-form-container {
   background-color: var(--card-background-color);
@@ -14,6 +17,7 @@
 }
 
 /* ===== ESTILOS PARA COPIA DE SEGURIDAD ===== */
+
 .backup-container {
   margin-top: var(--spacing-xl);
   padding: var(--spacing-lg);
@@ -44,14 +48,8 @@
   margin: var(--spacing-lg) 0;
 }
 
-@media (min-width: 768px) {
-  .backup-actions {
-    flex-direction: row;
-    align-items: center;
-  }
-}
-
 /* ===== ESTILOS DE LICENCIA ===== */
+
 .license-info-container {
   margin-top: 20px;
   padding: 15px;
@@ -98,6 +96,8 @@
   font-weight: bold;
 }
 
+/* ===== ESTILOS DEL SELECTOR DE TEMA ===== */
+
 .theme-toggle-container {
   display: flex;
   gap: var(--spacing-sm);
@@ -140,4 +140,14 @@
 /* Feedback visual en hover */
 .theme-radio-label input[type="radio"]:not(:checked) + .theme-radio-text:hover {
   color: var(--text-dark);
+}
+
+/* ===== MEDIA QUERIES PARA TABLETS Y ESCRITORIO ===== */
+
+/* Tablets y escritorio (>= 768px) */
+@media (min-width: 768px) {
+  .backup-actions {
+    flex-direction: row;
+    align-items: center;
+  }
 }
