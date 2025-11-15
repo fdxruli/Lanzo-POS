@@ -1,6 +1,5 @@
 // src/pages/CustomersPage.jsx
 import React, { useState, useEffect } from 'react';
-// 1. Añadimos 'loadData' y 'STORES'
 import { loadData, saveData, deleteData, STORES } from '../services/database'; 
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
@@ -11,7 +10,7 @@ import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 
 export default function CustomersPage() {
-  // ... (estados existentes) ...
+  // ... (estados existentes sin cambios) ...
   const [activeTab, setActiveTab] = useState('add-customer');
   const [customers, setCustomers] = useState([]);
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -19,14 +18,12 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
-  
-  // 2. NUEVO ESTADO: Para saber qué botón de WhatsApp está cargando
-  const [whatsAppLoading, setWhatsAppLoading] = useState(null); // Guardará el ID del cliente
+  const [whatsAppLoading, setWhatsAppLoading] = useState(null);
   
   const { registrarMovimiento, cajaActual } = useCaja();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
-  // ... (funciones loadCustomers, handleSaveCustomer, etc., sin cambios) ...
+  // ... (funciones loadCustomers, handleSaveCustomer, handleEditCustomer, handleDeleteCustomer, etc. SIN CAMBIOS) ...
   useEffect(() => {
     loadCustomers();
   }, []);
@@ -104,7 +101,6 @@ export default function CustomersPage() {
   const handleConfirmAbono = async (customer, amount, sendReceipt) => {
     // ... (esta función no cambia)
     try {
-      // 1. Registrar entrada en caja
       const concepto = `Abono de cliente: ${customer.name}`;
       const movimientoExitoso = await registrarMovimiento('entrada', amount, concepto);
       
@@ -113,7 +109,6 @@ export default function CustomersPage() {
         return;
       }
 
-      // 2. Actualizar deuda del cliente
       const customerData = await loadData(STORES.CUSTOMERS, customer.id);
       const deudaAnterior = customerData.debt || 0;
       const nuevaDeuda = deudaAnterior - amount;
@@ -123,11 +118,9 @@ export default function CustomersPage() {
       
       showMessageModal('¡Abono registrado exitosamente!');
       handleCloseModals();
-      loadCustomers(); // Recargar lista
+      loadCustomers(); 
 
-      // 5. ENVIAR WHATSAPP SI SE MARCÓ
       if (sendReceipt) {
-        // Formatear el mensaje del recibo
         const message = 
 `*--- Recibo de Abono ---*
 *Negocio:* ${companyName}
@@ -151,7 +144,7 @@ Deuda Anterior: $${deudaAnterior.toFixed(2)}
   };
 
   /**
-   * 3. FUNCIÓN DE WHATSAPP (¡MODIFICADA!)
+   * FUNCIÓN DE WHATSAPP (¡ACTUALIZADA!)
    */
   const handleWhatsApp = async (customer) => {
     if (!customer.phone) {
@@ -159,24 +152,21 @@ Deuda Anterior: $${deudaAnterior.toFixed(2)}
       return;
     }
 
-    setWhatsAppLoading(customer.id); // <- Activar loading
+    setWhatsAppLoading(customer.id);
     let message = '';
 
     try {
-      // Si el cliente SÍ tiene deuda, generamos el reporte
       if (customer.debt > 0) {
         const allSales = await loadData(STORES.SALES);
         
-        // Buscamos las ventas "fiadas" de este cliente que aún tengan saldo
         const fiadoSales = allSales
           .filter(sale => 
             sale.customerId === customer.id && 
             sale.paymentMethod === 'fiado' && 
             sale.saldoPendiente > 0
           )
-          .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)); // Más antiguas primero
+          .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-        // Construir el mensaje
         message = `*--- Recordatorio de Saldo Pendiente ---*
 *Negocio:* ${companyName}
 Hola *${customer.name}*,
@@ -192,11 +182,22 @@ Este es un resumen de tu estado de cuenta con nosotros.
 `;
           fiadoSales.forEach(sale => {
             const saleDate = new Date(sale.timestamp).toLocaleDateString();
+            
+            // --- INICIO DE LA MODIFICACIÓN ---
+            // 1. Crear el string de productos
+            let itemsString = "\n_Productos en esta venta:_\n";
+            sale.items.forEach(item => {
+              // Usamos formato _italico_ para los productos
+              itemsString += `_ - ${item.name} (x${item.quantity})_\n`;
+            });
+            // --- FIN DE LA MODIFICACIÓN ---
+
             message += `
 *Fecha:* ${saleDate}
 *Venta Total:* $${sale.total.toFixed(2)}
 *Abono Inicial:* $${sale.abono.toFixed(2)}
 *Saldo Pendiente (de esta venta): $${sale.saldoPendiente.toFixed(2)}*
+${itemsString} {/* <-- 2. Añadimos el string de productos aquí */}
 ---
 `;
           });
@@ -206,26 +207,23 @@ Este es un resumen de tu estado de cuenta con nosotros.
         message += `\n¡Esperamos tu visita!`;
       
       } else {
-        // Si no tiene deuda, solo mandamos un saludo
         message = `Hola ${customer.name}, te comunicas de ${companyName}. ¿En qué podemos ayudarte?`;
       }
       
-      // Enviar el mensaje generado
       sendWhatsAppMessage(customer.phone, message);
 
     } catch (error) {
       console.error("Error al generar mensaje de WhatsApp:", error);
       showMessageModal('Error al generar el mensaje. Abriendo chat simple.');
-      sendWhatsAppMessage(customer.phone, ''); // Fallback a chat vacío
+      sendWhatsAppMessage(customer.phone, '');
     } finally {
-      setWhatsAppLoading(null); // <- Quitar loading
+      setWhatsAppLoading(null);
     }
   };
 
-  // 4. RENDER (Pasamos el nuevo estado al CustomerList)
+  // RENDER (Sin cambios, solo pasamos los props)
   return (
     <>
-      {/* ... (título y tabs sin cambios) ... */}
       <h2 className="section-title">Administración de Clientes</h2>
       
       <div className="tabs-container" id="customers-tabs">
@@ -263,11 +261,10 @@ Este es un resumen de tu estado de cuenta con nosotros.
           onViewHistory={handleViewHistory}
           onAbonar={handleOpenAbono}
           onWhatsApp={handleWhatsApp}
-          onWhatsAppLoading={whatsAppLoading} // <-- 4. Pasar el nuevo prop
+          onWhatsAppLoading={whatsAppLoading}
         />
       )}
       
-      {/* ... (modales sin cambios) ... */}
       <PurchaseHistoryModal
         show={isHistoryModalOpen}
         onClose={handleCloseModals}
