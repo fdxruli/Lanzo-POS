@@ -176,3 +176,45 @@ export function sendWhatsAppMessage(phone, message) {
   // Abrir WhatsApp en una nueva pestaña
   window.open(url, '_blank');
 }
+
+/**
+ * Busca un código de barras en la API de OpenFoodFacts.
+ * @param {string} barcode El código de barras a buscar.
+ * @returns {Promise<object>} Un objeto con { success: true, product: {...} } o { success: false, error: "..." }
+ */
+export async function lookupBarcodeInAPI(barcode) {
+  console.log(`Buscando API para: ${barcode}`);
+  
+  // Usamos la v2 de la API, pidiendo solo los campos que necesitamos
+  const url = `https://world.openfoodfacts.org/api/v2/product/${barcode}?fields=product_name,image_front_url,brands`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error('Respuesta de red no fue exitosa');
+    }
+
+    const data = await response.json();
+
+    if (data.status === 1 && data.product) {
+      // ¡Producto encontrado!
+      const product = data.product;
+      const productData = {
+        name: product.product_name || '',
+        image: product.image_front_url || null,
+        brand: product.brands || '',
+      };
+      
+      console.log('Producto encontrado:', productData);
+      return { success: true, product: productData };
+
+    } else {
+      // Producto no encontrado en la base de datos
+      console.log('Producto no encontrado en OpenFoodFacts.');
+      return { success: false, error: 'Producto no encontrado' };
+    }
+  } catch (error) {
+    console.error('Error al llamar a la API de OpenFoodFacts:', error);
+    return { success: false, error: `Error de red: ${error.message}` };
+  }
+}
