@@ -45,7 +45,8 @@ export default function ScannerModal({ show, onClose }) {
       video: {
         facingMode: 'environment',
         width: { ideal: 1280 },
-        height: { ideal: 720 }
+        height: { ideal: 720 },
+        focusMode: 'continuous'
       }
     },
     timeBetweenDecodingAttempts: 300 // Tiempo entre intentos de escaneo
