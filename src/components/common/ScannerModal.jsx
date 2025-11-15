@@ -31,7 +31,7 @@ export default function ScannerModal({ show, onClose }) {
       setTimeout(() => setLastCode(''), 1000); // Cooldown
       
       setScanFeedback(`✓ Código: ${code}`);
-      setTimeout(() => setScanFeedback(''), 2000);
+      setTimeout(() => setScanFeedback(''), 3000);
       
       if (navigator.vibrate) navigator.vibrate(100);
       

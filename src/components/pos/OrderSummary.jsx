@@ -10,7 +10,7 @@ export default function OrderSummary({onOpenPayment}) {
   
   // 2. Traemos las acciones que necesitamos
   const { updateItemQuantity, removeItem, clearOrder, getTotalPrice } = useOrderStore.getState();
-
+  
   // 3. Calculamos el total
   const total = getTotalPrice(); // Usamos la función del store
 
@@ -37,77 +37,76 @@ export default function OrderSummary({onOpenPayment}) {
 
   return (
     <div className="pos-order-container">
-      <h3 className="subtitle">Resumen del Pedido</h3>
+      <h2>Resumen del Pedido</h2>
       
       {order.length === 0 ? (
-        <div id="empty-order-message" className="empty-message">
-          No hay elementos en el pedido.
-        </div>
+        <p className="empty-message">No hay productos en el pedido</p>
       ) : (
-        <div id="order-list" className="order-list" aria-label="Lista de pedidos">
-          {order.map((item) => {
-            
-            // 1. Añade clases dinámicas (de la corrección)
-            const itemClasses = [
-              'order-item',
-              item.exceedsStock ? 'exceeds-stock' : ''
-            ].filter(Boolean).join(' ');
-
-            return (
-              // 2. Usa las clases dinámicas
-              <div key={item.id} className={itemClasses}>
+        <>
+          <div className="order-list">
+            {order.map(item => (
+              <div key={item.id} className="order-item">
                 <div className="order-item-info">
-                  <span className="order-item-name">{item.name}</span>
-                  <span className="order-item-price">$${item.price.toFixed(2)} c/u</span>
-                  
-                  {/* 3. Añade el mensaje de advertencia visual (de la corrección) */}
-                  {item.exceedsStock && (
-                    <small className="stock-warning exceeds-stock-warning">
-                      Excedes stock (Disp: {item.stock})
-                    </small>
-                  )}
+                  <div className="order-item-name">{item.name}</div>
+                  <div className="order-item-price">
+                    ${item.price.toFixed(2)} c/u
+                  </div>
                 </div>
-                
-                {item.saleType === 'bulk' ? (
-                  <div className="order-item-controls bulk-controls">
-                    <input 
-                      type="number" 
-                      className="order-item-quantity-input" 
-                      placeholder="Cantidad"
-                      value={item.quantity === null ? '' : item.quantity}
-                      onChange={(e) => handleBulkInputChange(item.id, e.target.value)}
-                    />
-                    <span>{item.bulkData?.purchase?.unit || 'kg'}</span>
-                    <button className="remove-item-btn" onClick={() => removeItem(item.id)}>X</button>
+
+                {item.saleType === 'unit' ? (
+                  <div className="order-item-controls">
+                    <button 
+                      className="quantity-btn" 
+                      onClick={() => handleQuantityChange(item.id, -1)}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8z"/>
+                      </svg>
+                    </button>
+                    
+                    <span className="quantity-display">{item.quantity}</span>
+                    
+                    <button 
+                      className="quantity-btn" 
+                      onClick={() => handleQuantityChange(item.id, 1)}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                      </svg>
+                    </button>
                   </div>
                 ) : (
                   <div className="order-item-controls">
-                    <button className="quantity-btn decrease" onClick={() => handleQuantityChange(item.id, -1)}>-</button>
-                    <span className="quantity-value">{item.quantity}</span>
-                    <button className="quantity-btn increase" onClick={() => handleQuantityChange(item.id, 1)}>+</button>
-                    <button className="remove-item-btn" onClick={() => removeItem(item.id)}>X</button>
+                    <input
+                      type="number"
+                      className="bulk-input"
+                      value={item.quantity || ''}
+                      onChange={(e) => handleBulkInputChange(item.id, e.target.value)}
+                      placeholder="0.0"
+                      step="0.1"
+                      min="0"
+                    />
+                    <span className="unit-label">kg</span>
                   </div>
                 )}
               </div>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
 
-      <div className="order-total-container">
-        <div className="total-display">
-          <span className="total-label">Total:</span>
-          <span id="pos-total" className="total-amount">${total.toFixed(2)}</span>
-        </div>
-        <button id="process-order-btn" className="btn btn-process" onClick={onOpenPayment}>Procesar</button>
-        <button 
-          id="clear-order-btn" 
-          className="btn btn-clear" 
-          onClick={clearOrder} // ¡Acción directa!
-        >
-          Limpiar
-        </button>
-      </div>
+          <div className="order-total">
+            <span>Total:</span>
+            <span className="total-price">${total.toFixed(2)}</span>
+          </div>
+
+          <button className="process-btn" onClick={onOpenPayment}>
+            Procesar
+          </button>
+          
+          <button className="clear-btn" onClick={clearOrder}>
+            Limpiar
+          </button>
+        </>
+      )}
     </div>
   );
 }

@@ -54,42 +54,60 @@ export function useDashboard() {
     loadAllData();
   }, [loadAllData]); // Se carga 1 vez
 
-  // 3. CÁLCULO DE ESTADÍSTICAS (MEMOIZADO)
-  // Reemplaza la 1ra parte de 'renderDashboard'
-  // 'useMemo' recalcula esto solo si 'sales' o 'menu' cambian.
-  const stats = useMemo(() => {
-    const productMap = new Map(menu.map(p => [p.id, p]));
+  // ======================================================
+  // 3. CÁLCULO DE ESTADÍSTICAS (¡OPTIMIZADO!)
+  // ======================================================
+  
+  // 3.1. Crea un mapa de productos solo cuando 'menu' cambia
+  const productMap = useMemo(
+    () => new Map(menu.map(p => [p.id, p])),
+    [menu]
+  );
+
+  // 3.2. Calcula estadísticas de ventas solo cuando 'sales' o 'productMap' cambian
+  const salesStats = useMemo(() => {
     let totalRevenue = 0;
     let totalItemsSold = 0;
     let totalNetProfit = 0;
-
+    
     sales.forEach(sale => {
       totalRevenue += sale.total;
       sale.items.forEach(item => {
         totalItemsSold += item.quantity;
+        // Usamos el mapa pre-calculado
         const product = productMap.get(item.id) || { cost: item.price * 0.6 };
         const itemProfit = (item.price - (product.cost || 0)) * item.quantity;
         totalNetProfit += itemProfit;
       });
     });
+    
+    return { 
+      totalRevenue, 
+      totalItemsSold, 
+      totalNetProfit, 
+      totalOrders: sales.length 
+    };
+  }, [sales, productMap]);
 
-    const inventoryValue = menu.reduce((total, p) => {
+  // 3.3. Calcula el valor de inventario solo cuando 'menu' cambia
+  const inventoryValue = useMemo(() => {
+    return menu.reduce((total, p) => {
       if (p.trackStock && p.stock > 0) {
         return total + ((p.cost || 0) * p.stock);
       }
       return total;
     }, 0);
+  }, [menu]);
 
-    return {
-      totalRevenue,
-      totalOrders: sales.length,
-      totalItemsSold,
-      totalNetProfit,
-      inventoryValue
-    };
-  }, [sales, menu]);
+  // 3.4. Combina los resultados
+  const stats = useMemo(() => ({
+    ...salesStats,
+    inventoryValue
+  }), [salesStats, inventoryValue]);
 
+  // ======================================================
   // 4. ACCIONES (Eliminar / Restaurar)
+  // ======================================================
 
   /**
    * Elimina una venta (la mueve a la papelera)

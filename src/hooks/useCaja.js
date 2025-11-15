@@ -25,7 +25,7 @@ export function useCaja() {
       // 1. Validar caja abierta (lógica de 'validarCaja')
       const todasLasCajas = await loadData(STORES.CAJAS);
       let cajaAbierta = todasLasCajas.find(c => c.estado === 'abierta');
-      
+
       if (cajaAbierta) {
         // Lógica de pendiente de cierre
         const ahora = new Date();
@@ -37,7 +37,7 @@ export function useCaja() {
           await saveData(STORES.CAJAS, cajaAbierta);
           showMessageModal('La caja ha estado abierta por más de 16 horas. Debes cerrarla.');
         }
-        
+
         setCajaActual(cajaAbierta);
         // Cargar movimientos de la caja abierta
         await cargarMovimientos(cajaAbierta.id);
@@ -163,12 +163,12 @@ export function useCaja() {
       };
 
       await saveData(STORES.CAJAS, cajaCerrada);
-      
+
       // Actualizamos el estado
       setCajaActual(null);
       setMovimientosCaja([]);
       setHistorialCajas([cajaCerrada, ...historialCajas]); // Añadir al historial
-      
+
       showMessageModal(`Caja cerrada. Diferencia: $${diferencia.toFixed(2)}`);
       return true;
 
@@ -200,21 +200,19 @@ export function useCaja() {
 
     try {
       await saveData(STORES.MOVIMIENTOS_CAJA, movimiento);
-      
-      // Actualizamos el estado de la caja actual
+
       const cajaActualizada = { ...cajaActual };
       if (tipo === 'entrada') {
         cajaActualizada.entradas_efectivo += movimiento.monto;
       } else {
         cajaActualizada.salidas_efectivo += movimiento.monto;
       }
-      
+
       await saveData(STORES.CAJAS, cajaActualizada);
-      
-      // Actualizamos el estado en React
-      setCajaActual(cajaActualizada);
-      setMovimientosCaja([...movimientosCaja, movimiento]);
-      
+
+      // ✅ MEJOR: Recargar todo para estar sincronizados
+      await cargarEstadoCaja();
+
       showMessageModal(`Movimiento de ${tipo} registrado.`);
       return true;
     } catch (error) {

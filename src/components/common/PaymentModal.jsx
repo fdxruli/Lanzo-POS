@@ -9,6 +9,10 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const [customers, setCustomers] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
+  // --- NUEVOS ESTADOS PARA EL BUSCADOR DE CLIENTES ---
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [filteredCustomers, setFilteredCustomers] = useState([]);
+
   // Carga la lista de clientes cuando se abre el modal
   useEffect(() => {
     if (show) {
@@ -23,6 +27,9 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       // Limpiar al cerrar
       setAmountPaid('');
       setSelectedCustomerId(null);
+      // <-- NUEVO: Limpiar también los estados de búsqueda
+      setCustomerSearch('');
+      setFilteredCustomers([]);
     }
   }, [show, total]);
 
@@ -31,12 +38,45 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const change = paid - total;
   const canConfirm = change >= 0;
 
-  // Manejador del <datalist>
-  const handleCustomerSelect = (e) => {
-    const value = e.target.value;
-    const customer = customers.find(c => `${c.name} - ${c.phone}` === value);
-    setSelectedCustomerId(customer ? customer.id : null);
+  // --- INICIO: NUEVOS MANEJADORES ---
+
+  /**
+   * (NUEVO) Selecciona el texto del input de monto al hacer focus
+   */
+  const handleAmountFocus = (e) => {
+    e.target.select();
   };
+
+  /**
+   * (NUEVO) Maneja la búsqueda en vivo de clientes
+   */
+  const handleCustomerSearch = (e) => {
+    const query = e.target.value;
+    setCustomerSearch(query);
+    setSelectedCustomerId(null); // Deseleccionar si se está escribiendo
+
+    if (query.trim().length > 2) { // Buscar después de 2 caracteres
+      const filtered = customers.filter(c =>
+        c.name.toLowerCase().includes(query.toLowerCase()) ||
+        c.phone.includes(query)
+      );
+      setFilteredCustomers(filtered);
+    } else {
+      setFilteredCustomers([]);
+    }
+  };
+
+  /**
+   * (NUEVO) Maneja el clic en un resultado de búsqueda
+   */
+  const handleCustomerClick = (customer) => {
+    setSelectedCustomerId(customer.id);
+    setCustomerSearch(`${customer.name} - ${customer.phone}`); // Rellena el input
+    setFilteredCustomers([]); // Oculta los resultados
+  };
+
+  // --- FIN: NUEVOS MANEJADORES ---
+
 
   // Al confirmar, enviamos los datos al padre
   const handleSubmit = (e) => {
@@ -46,16 +86,10 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       return; // Salir si no se puede confirmar
     }
     
-    // IMPORTANTE: Primero llamamos a onConfirm con los datos
-    // onConfirm es una función async, pero NO esperamos su resultado
-    // porque eso causaría que el modal se quede abierto durante el procesamiento
     onConfirm({
       amountPaid: paid,
       customerId: selectedCustomerId,
     });
-    
-    // El modal se cerrará desde PosPage después de validaciones
-    // NO llamamos a onClose() aquí
   };
 
   if (!show) {
@@ -72,7 +106,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
             <p className="payment-label">Total a Pagar:</p>
             <p id="payment-total" className="payment-total">${total.toFixed(2)}</p>
             
-            <div className="form-group">
+            {/* --- INICIO: SECCIÓN DE CLIENTE MODIFICADA --- */}
+            <div className="form-group customer-search-wrapper">
               <label className="form-label" htmlFor="sale-customer-input">
                 Asignar a Cliente (Opcional):
               </label>
@@ -80,16 +115,28 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                 className="form-input"
                 id="sale-customer-input"
                 type="text"
-                placeholder="Buscar por nombre o teléfono..."
-                list="customer-list-datalist"
-                onChange={handleCustomerSelect}
+                placeholder="Buscar por nombre o teléfono (min. 3 letras)"
+                value={customerSearch} // <-- MODIFICADO
+                onChange={handleCustomerSearch} // <-- MODIFICADO
+                autoComplete="off" // <-- NUEVO
               />
-              <datalist id="customer-list-datalist">
-                {customers.map(c => (
-                  <option key={c.id} data-id={c.id} value={`${c.name} - ${c.phone}`} />
-                ))}
-              </datalist>
+              {/* --- NUEVO: Lista de resultados --- */}
+              {filteredCustomers.length > 0 && (
+                <div className="customer-search-results">
+                  {/* Mostramos solo los primeros 5 para no saturar */}
+                  {filteredCustomers.slice(0, 5).map(c => (
+                    <div
+                      key={c.id}
+                      className="customer-result-item"
+                      onClick={() => handleCustomerClick(c)}
+                    >
+                      {c.name} ({c.phone})
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+            {/* --- FIN: SECCIÓN DE CLIENTE MODIFICADA --- */}
             
             <label className="payment-input-label" htmlFor="payment-amount">
               Monto Recibido:
@@ -102,6 +149,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
               min="0"
               value={amountPaid}
               onChange={(e) => setAmountPaid(e.target.value)}
+              onFocus={handleAmountFocus} // <-- ¡ESTA ES LA MEJORA!
               required
             />
             <p className="payment-label">Cambio:</p>

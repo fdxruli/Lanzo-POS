@@ -53,13 +53,7 @@ export default function SettingsPage() {
       setLogoPreview(companyProfile.logo || logoPlaceholder);
       setLogoData(companyProfile.logo || null);
     }
-  }, [
-    companyProfile?.name,
-    companyProfile?.phone,
-    companyProfile?.address,
-    companyProfile?.business_type,
-    companyProfile?.logo
-  ]);
+  }, [companyProfile]);
 
   useEffect(() => {
     const systemThemeListener = (e) => {

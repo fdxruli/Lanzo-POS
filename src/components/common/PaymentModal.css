@@ -61,3 +61,36 @@
   color: var(--error-color);
   border-color: var(--error-color);
 }
+
+.form-group.customer-search-wrapper {
+  position: relative;
+}
+
+.customer-search-results {
+  position: absolute;
+  width: 100%;
+  background-color: var(--card-background-color);
+  border: 1px solid var(--primary-color);
+  border-top: none;
+  border-radius: 0 0 var(--border-radius-sm) var(--border-radius-sm);
+  box-shadow: var(--box-shadow);
+  max-height: 150px;
+  overflow-y: auto;
+  z-index: 10; /* Asegura que esté sobre el input de monto */
+}
+
+.customer-result-item {
+  padding: var(--spacing-sm);
+  cursor: pointer;
+  color: var(--text-color);
+  font-size: 0.9rem;
+}
+
+.customer-result-item:hover {
+  background-color: var(--light-background);
+  color: var(--primary-color);
+}
+
+.customer-result-item:not(:last-child) {
+  border-bottom: 1px solid var(--light-background);
+}

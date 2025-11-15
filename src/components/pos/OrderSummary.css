@@ -1,6 +1,6 @@
 /*
- * Estilos para OrderSummary.jsx
- */
+* Estilos para OrderSummary.jsx
+*/
 
 .pos-order-container {
   background-color: var(--card-background-color);
@@ -60,106 +60,126 @@
 }
 
 .quantity-btn {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background-color: var(--primary-color);
   color: white;
-  font-size: 0.875rem;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .quantity-btn:hover {
   background-color: var(--secondary-color);
+  transform: scale(1.1);
 }
 
-.remove-item-btn {
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--error-color);
-  background-color: #fff;
-  /* TODO: Usar variable */
-  color: var(--error-color);
-  border-radius: 4px;
-  cursor: pointer;
+.quantity-btn:active {
+  transform: scale(0.95);
 }
 
-.remove-item-btn:hover {
-  background-color: var(--error-color);
-  color: #fff;
+.quantity-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.quantity-display {
+  min-width: 30px;
+  text-align: center;
+  font-weight: 500;
+  font-size: 1rem;
 }
 
 /* Controles para "A Granel" */
-.order-item-controls.bulk-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-
-.order-item-quantity-input {
-  width: 100px;
-  padding: var(--spacing-xs);
-  text-align: right;
+.bulk-input {
+  width: 80px;
+  padding: 6px 8px;
+  text-align: center;
   font-size: 0.9rem;
+  border: 1px solid var(--light-background);
+  border-radius: 4px;
   -moz-appearance: textfield;
 }
 
-.order-item-quantity-input::-webkit-outer-spin-button,
-.order-item-quantity-input::-webkit-inner-spin-button {
+.bulk-input::-webkit-outer-spin-button,
+.bulk-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
-.bulk-controls .remove-item-btn {
-  background-color: transparent;
+.bulk-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
 }
 
-/* Total del Pedido */
-.order-total-container {
-  margin-top: auto;
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--light-background);
-}
-
-.total-display {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-md);
-}
-
-.total-label {
+.unit-label {
+  font-size: 0.875rem;
+  color: var(--text-light);
   font-weight: 500;
 }
 
-.total-amount {
-  font-size: 1.25rem;
+/* Total del Pedido */
+.order-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md) 0;
+  border-top: 2px solid var(--light-background);
+  margin-bottom: var(--spacing-md);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.total-price {
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--primary-color);
 }
 
-.btn-process {
+/* Botones de acción */
+.process-btn {
   background-color: var(--success-color);
   color: white;
   width: 100%;
+  padding: var(--spacing-md);
+  border: none;
+  border-radius: var(--border-radius);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
   margin-bottom: var(--spacing-sm);
+  transition: background-color 0.2s ease;
 }
 
-.btn-process:hover {
+.process-btn:hover {
   background-color: #059669;
 }
 
-.btn-clear {
+.process-btn:disabled {
+  background-color: var(--text-light);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.clear-btn {
   background-color: transparent;
   color: var(--text-light);
   border: 1px solid #e5e7eb;
-  /* TODO: Usar variable */
   width: 100%;
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.btn-clear:hover {
+.clear-btn:hover {
   background-color: rgba(239, 68, 68, 0.1);
   color: var(--error-color);
   border-color: var(--error-color);

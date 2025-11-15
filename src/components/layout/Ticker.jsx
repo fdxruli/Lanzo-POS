@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { useDashboard } from '../../hooks/useDashboard';
 // 1. Importamos el helper
-import { getProductAlerts } from '../../services/utils'; 
+import { getProductAlerts } from '../../services/utils';
 import './Ticker.css';
 
 const promotionalMessages = [
@@ -40,7 +40,7 @@ function generateAlertMessages(menu) {
       alerts.push(message);
     }
   });
-  
+
   return alerts;
 }
 
@@ -49,14 +49,17 @@ export default function Ticker() {
 
   const messages = useMemo(() => {
     if (isLoading || !menu) return promotionalMessages;
-    
-    // 4. Llamamos a la función renombrada
-    const alerts = generateAlertMessages(menu);
-    
-    if (alerts.length === 0) {
-      return promotionalMessages;
+
+    try {
+      const alerts = generateAlertMessages(menu);
+      if (alerts.length === 0) {
+        return promotionalMessages;
+      }
+      return alerts;
+    } catch (error) {
+      console.error('Error generando alertas:', error);
+      return promotionalMessages; // ✅ Fallback seguro
     }
-    return alerts;
   }, [menu, isLoading]);
 
   return (

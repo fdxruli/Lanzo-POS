@@ -260,16 +260,55 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                     ) : (
                         <div id="bulk-options">
                             <div className="form-group bulk-purchase-group">
-                                <label className="form-label">Info de Compra (Ej: 1 Saco)</label>
-                                {/* ... (Inputs de bulkQty, bulkUnit, bulkCost) ... */}
+                                <label className="form-label">Info de Compra</label>
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 'var(--spacing-sm)' }}>
+                                    <input
+                                        className="form-input"
+                                        type="number"
+                                        placeholder="Cantidad"
+                                        value={bulkQty}
+                                        onChange={(e) => setBulkQty(e.target.value)}
+                                        step="0.01"
+                                        min="0"
+                                    />
+                                    <select
+                                        className="form-input"
+                                        value={bulkUnit}
+                                        onChange={(e) => setBulkUnit(e.target.value)}
+                                    >
+                                        <option value="kg">kg</option>
+                                        <option value="lt">lt</option>
+                                        <option value="gr">gr</option>
+                                        <option value="ml">ml</option>
+                                    </select>
+                                    <input
+                                        className="form-input"
+                                        type="number"
+                                        placeholder="Costo Total ($)"
+                                        value={bulkCost}
+                                        onChange={(e) => setBulkCost(e.target.value)}
+                                        step="0.01"
+                                        min="0"
+                                    />
+                                </div>
                                 <small className="form-help-text" style={{ display: 'block' }}>
                                     {bulkCostPerUnit > 0 && `Costo por ${bulkUnit}: $${bulkCostPerUnit.toFixed(2)}`}
                                 </small>
                             </div>
+
                             <div className="form-group">
-                                <label className="form-label" htmlFor="bulk-sale-price">Precio de Venta (por {bulkUnit})</label>
-                                <input className="form-input" id="bulk-sale-price" type="number" step="0.01" min="0"
-                                    value={bulkSalePrice} onChange={(e) => setBulkSalePrice(e.target.value)} />
+                                <label className="form-label" htmlFor="bulk-sale-price">
+                                    Precio de Venta (por {bulkUnit})
+                                </label>
+                                <input
+                                    className="form-input"
+                                    id="bulk-sale-price"
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={bulkSalePrice}
+                                    onChange={(e) => setBulkSalePrice(e.target.value)}
+                                />
                                 <small className="form-help-text" style={{ display: 'block' }}>
                                     {bulkProfitMargin}
                                 </small>

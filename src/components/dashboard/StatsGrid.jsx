@@ -1,29 +1,45 @@
-import React from 'react';
-import './StatsGrid.css'
+import React, { memo } from 'react';
+import './StatsGrid.css';
 
-export default function StatsGrid({ stats }) {
+const StatCard = ({ title, value, className }) => (
+  <div className="stat-card">
+    <h3 className="stat-title">{title}</h3>
+    <p className={`stat-value ${className}`}>{value}</p>
+  </div>
+);
+
+const StatsGrid = memo(({ stats }) => {
+  const currencyFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+
   return (
     <div className="stats-grid">
-      <div className="stat-card">
-        <h3 className="stat-title">Ingresos Totales</h3>
-        <p className="stat-value revenue">${stats.totalRevenue.toFixed(2)}</p>
-      </div>
-      <div className="stat-card">
-        <h3 className="stat-title">Pedidos Totales</h3>
-        <p className="stat-value orders">{stats.totalOrders}</p>
-      </div>
-      <div className="stat-card">
-        <h3 className="stat-title">Productos Vendidos</h3>
-        <p className="stat-value items">{stats.totalItemsSold}</p>
-      </div>
-      <div className="stat-card">
-        <h3 className="stat-title">Utilidad Neta Estimada</h3>
-        <p className="stat-value profit">${stats.totalNetProfit.toFixed(2)}</p>
-      </div>
-      <div className="stat-card">
-        <h3 className="stat-title">Valor del Inventario</h3>
-        <p className="stat-value inventory">${stats.inventoryValue.toFixed(2)}</p>
-      </div>
+      <StatCard
+        title="Ingresos Totales"
+        value={currencyFormatter.format(stats.totalRevenue)}
+        className="revenue"
+      />
+      <StatCard
+        title="Pedidos Totales"
+        value={stats.totalOrders}
+        className="orders"
+      />
+      <StatCard
+        title="Productos Vendidos"
+        value={stats.totalItemsSold}
+        className="items"
+      />
+      <StatCard
+        title="Utilidad Neta Estimada"
+        value={currencyFormatter.format(stats.totalNetProfit)}
+        className="profit"
+      />
+      <StatCard
+        title="Valor del Inventario"
+        value={currencyFormatter.format(stats.inventoryValue)}
+        className="inventory"
+      />
     </div>
   );
-}
+});
+
+export default StatsGrid;

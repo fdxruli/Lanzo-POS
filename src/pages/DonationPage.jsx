@@ -7,10 +7,22 @@ import './DonationPage.css';
 export default function DonationPage() {
   
   const handleFormSubmit = (event) => {
-    event.preventDefault();
-    // (Aquí irá la lógica de 'donation-seccion.js')
-    console.log('Formulario enviado (lógica pendiente)');
-  };
+  event.preventDefault();
+  
+  const formData = new FormData(event.target);
+  const contact = formData.get('contact');
+  const message = formData.get('message');
+  
+  if (!contact || !message) {
+    alert('Por favor completa todos los campos.');
+    return;
+  }
+  
+  console.log('Enviando mensaje:', { contact, message });
+  // TODO: Integrar con tu backend
+  alert('¡Mensaje enviado! (Lógica de backend pendiente)');
+  event.target.reset(); // ✅ Limpiar formulario
+};
 
   return (
     // Reemplazamos <section> con un "Fragmento" <>
