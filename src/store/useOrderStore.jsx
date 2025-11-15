@@ -26,11 +26,9 @@ export const useOrderStore = create((set, get) => ({
       if (product.saleType === 'bulk') {
         const existingItem = order.find((item) => item.id === product.id);
         if (existingItem) {
-          // El producto a granel ya está, no hacemos nada más
-          // (el usuario editará la cantidad manualmente)
-          return { order };
+          return { order }; // Ya existe, no hacemos nada
         }
-        // Añadir item a granel con cantidad nula para que el usuario la ingrese
+        // Añadir item a granel (exceedsStock se validará al poner cantidad)
         const newItem = { ...product, quantity: null, exceedsStock: false };
         return { order: [...order, newItem] };
       }
@@ -39,14 +37,23 @@ export const useOrderStore = create((set, get) => ({
       const existingItem = order.find((item) => item.id === product.id);
       
       if (existingItem) {
-        // Si ya existe, solo incrementamos la cantidad
-        const updatedOrder = order.map((item) =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
+        // Si ya existe, incrementamos y validamos stock
+        const updatedOrder = order.map((item) => {
+          if (item.id === product.id) {
+            const newQuantity = item.quantity + 1;
+            // ¡VALIDACIÓN AÑADIDA!
+            const exceeds = item.trackStock && newQuantity > item.stock;
+            return { ...item, quantity: newQuantity, exceedsStock: exceeds };
+          }
+          return item;
+        });
         return { order: updatedOrder };
       } else {
-        // Si es nuevo, lo añadimos con cantidad 1
-        const newItem = { ...product, quantity: 1, exceedsStock: false };
+        // Si es nuevo, lo añadimos y validamos stock
+        const newQuantity = 1;
+        // ¡VALIDACIÓN AÑADIDA!
+        const exceeds = product.trackStock && newQuantity > product.stock;
+        const newItem = { ...product, quantity: newQuantity, exceedsStock: exceeds };
         return { order: [...order, newItem] };
       }
     });
@@ -54,13 +61,20 @@ export const useOrderStore = create((set, get) => ({
 
   /**
    * Actualiza la cantidad de un item (para +/- o input a granel).
-   * Reemplaza 'handleQuantityChange' y 'handleBulkQuantityInput'
+   * ¡CORREGIDO! Ahora comprueba el stock.
    */
   updateItemQuantity: (productId, newQuantity) => {
     set((state) => {
-      const updatedOrder = state.order.map((item) =>
-        item.id === productId ? { ...item, quantity: newQuantity } : item
-      );
+      const updatedOrder = state.order.map((item) => {
+        if (item.id === productId) {
+          // newQuantity puede ser un número o null (para bulk input)
+          const safeQuantity = newQuantity === null ? 0 : newQuantity;
+          // ¡VALIDACIÓN AÑADIDA!
+          const exceeds = item.trackStock && safeQuantity > item.stock;
+          return { ...item, quantity: newQuantity, exceedsStock: exceeds };
+        }
+        return item;
+      });
       return { order: updatedOrder };
     });
   },

@@ -32,7 +32,7 @@ export function useDashboard() {
 
       setSales(salesData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
       setMenu(menuData);
-      
+
       // Combinamos la papelera (lógica de 'renderMovementHistory')
       const allMovements = [
         ...deletedMenu.map(p => ({ ...p, type: 'Producto', uniqueId: p.id, name: p.name })),
@@ -41,7 +41,7 @@ export function useDashboard() {
       ];
       allMovements.sort((a, b) => new Date(b.deletedTimestamp) - new Date(a.deletedTimestamp));
       setDeletedItems(allMovements);
-      
+
     } catch (error) {
       console.error("Error cargando datos del dashboard:", error);
     } finally {
@@ -90,14 +90,14 @@ export function useDashboard() {
   }, [sales, menu]);
 
   // 4. ACCIONES (Eliminar / Restaurar)
-  
+
   /**
    * Elimina una venta (la mueve a la papelera)
    * Lógica de 'deleteOrder'
    */
   const deleteSale = async (timestamp) => {
     if (!window.confirm('¿Seguro? Se restaurará el stock y el pedido irá a la papelera.')) return;
-    
+
     try {
       const saleToDelete = sales.find(s => s.timestamp === timestamp);
       if (!saleToDelete) throw new Error('Venta no encontrada');
@@ -112,14 +112,14 @@ export function useDashboard() {
           }
         }
       }
-      
+
       // Mover a papelera
       saleToDelete.deletedTimestamp = new Date().toISOString();
       await saveData(STORES.DELETED_SALES, saleToDelete);
       await deleteData(STORES.SALES, timestamp);
-      
+
       // Recargar datos
-      loadAllData(); 
+      loadAllData();
     } catch (error) {
       console.error("Error al eliminar venta:", error);
     }
@@ -136,19 +136,39 @@ export function useDashboard() {
         await saveData(STORES.MENU, item);
         await deleteData(STORES.DELETED_MENU, item.id);
       }
-      if (item.type === 'Cliente') {
+      else if (item.type === 'Cliente') {
         delete item.deletedTimestamp;
         await saveData(STORES.CUSTOMERS, item);
         await deleteData(STORES.DELETED_CUSTOMERS, item.id);
       }
-      if (item.type === 'Pedido') {
-        // Lógica de 'restoreSale'
-        // (Omitimos la parte de descontar stock por simplicidad por ahora)
+      else if (item.type === 'Pedido') {
+
+        // --- ¡AQUÍ ESTÁ LA LÓGICA AÑADIDA! ---
+        // Volvemos a descontar el stock que fue devuelto al eliminar la venta
+        for (const saleItem of item.items) {
+
+          // Usamos la misma lógica que 'deleteSale' para saber cuánto ajustar
+          const stockToAdjust = saleItem.stockDeducted !== undefined
+            ? saleItem.stockDeducted
+            : saleItem.quantity;
+
+          // Verificamos si el item original seguía el stock
+          if (saleItem.trackStock && stockToAdjust > 0) {
+            const product = await loadData(STORES.MENU, saleItem.id);
+            if (product) {
+              // RESTAMOS el stock
+              product.stock = Math.max(0, product.stock - stockToAdjust);
+              await saveData(STORES.MENU, product);
+            }
+          }
+        }
+        // --- FIN DE LA CORRECCIÓN ---
+
         delete item.deletedTimestamp;
         await saveData(STORES.SALES, item);
         await deleteData(STORES.DELETED_SALES, item.timestamp);
       }
-      
+
       loadAllData(); // Recargar todo
     } catch (error) {
       console.error("Error al restaurar item:", error);
@@ -164,5 +184,6 @@ export function useDashboard() {
     menu, // Lo necesitamos para los Consejos
     deleteSale,
     restoreItem,
+    loadAllData, // ¡AÑADE ESTA LÍNEA!
   };
 }

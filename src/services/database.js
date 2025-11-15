@@ -1,7 +1,7 @@
 // database.js
 
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 10; // Asegúrate que esta versión coincida con la de tu app.js
+const DB_VERSION = 11; // Asegúrate que esta versión coincida con la de tu app.js
 export const STORES = { // Exportamos STORES para que todos los usen
     MENU: 'menu',
     SALES: 'sales',

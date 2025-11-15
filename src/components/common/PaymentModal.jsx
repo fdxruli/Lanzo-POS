@@ -10,7 +10,6 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
   // Carga la lista de clientes cuando se abre el modal
-  // (Lógica de 'openPaymentProcess' en app.js)
   useEffect(() => {
     if (show) {
       const fetchCustomers = async () => {
@@ -27,7 +26,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     }
   }, [show, total]);
 
-  // Lógica de cálculo de cambio (de app.js)
+  // Lógica de cálculo de cambio
   const paid = parseFloat(amountPaid) || 0;
   const change = paid - total;
   const canConfirm = change >= 0;
@@ -39,15 +38,24 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     setSelectedCustomerId(customer ? customer.id : null);
   };
 
-  // Al confirmar, solo enviamos los datos al padre (PosPage)
+  // Al confirmar, enviamos los datos al padre
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (canConfirm) {
-      onConfirm({
-        amountPaid: paid,
-        customerId: selectedCustomerId,
-      });
+    
+    if (!canConfirm) {
+      return; // Salir si no se puede confirmar
     }
+    
+    // IMPORTANTE: Primero llamamos a onConfirm con los datos
+    // onConfirm es una función async, pero NO esperamos su resultado
+    // porque eso causaría que el modal se quede abierto durante el procesamiento
+    onConfirm({
+      amountPaid: paid,
+      customerId: selectedCustomerId,
+    });
+    
+    // El modal se cerrará desde PosPage después de validaciones
+    // NO llamamos a onClose() aquí
   };
 
   if (!show) {
@@ -65,7 +73,9 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
             <p id="payment-total" className="payment-total">${total.toFixed(2)}</p>
             
             <div className="form-group">
-              <label className="form-label" htmlFor="sale-customer-input">Asignar a Cliente (Opcional):</label>
+              <label className="form-label" htmlFor="sale-customer-input">
+                Asignar a Cliente (Opcional):
+              </label>
               <input
                 className="form-input"
                 id="sale-customer-input"
@@ -81,7 +91,9 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
               </datalist>
             </div>
             
-            <label className="payment-input-label" htmlFor="payment-amount">Monto Recibido:</label>
+            <label className="payment-input-label" htmlFor="payment-amount">
+              Monto Recibido:
+            </label>
             <input
               className="payment-input"
               id="payment-amount"
@@ -93,7 +105,9 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
               required
             />
             <p className="payment-label">Cambio:</p>
-            <p id="payment-change" className="payment-change">${change >= 0 ? change.toFixed(2) : '0.00'}</p>
+            <p id="payment-change" className="payment-change">
+              ${change >= 0 ? change.toFixed(2) : '0.00'}
+            </p>
           </div>
           
           <button 
