@@ -1,0 +1,56 @@
+/* src/components/common/AbonoModal.css */
+
+.modal-content.abono-modal {
+  max-width: 450px;
+}
+
+.abono-summary {
+  background-color: var(--light-background);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+  margin-bottom: var(--spacing-lg);
+}
+
+.abono-summary p {
+  margin: 0;
+}
+
+.deuda-label {
+  margin-top: var(--spacing-sm);
+  font-weight: 500;
+  color: var(--text-dark);
+}
+
+.deuda-total {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--error-color);
+}
+
+.abono-modal .btn-secondary {
+  background-color: var(--secondary-color);
+  color: white;
+  width: 100%;
+  margin-bottom: var(--spacing-sm);
+}
+
+.abono-modal .btn-secondary:hover {
+  opacity: 0.9;
+}
+
+.form-group-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+.form-group-checkbox input[type="checkbox"] {
+  width: auto;
+  height: 20px;
+  width: 20px;
+}
+.form-group-checkbox label {
+  margin: 0;
+  font-weight: 500;
+  color: var(--text-dark);
+}

@@ -94,3 +94,49 @@
 .customer-result-item:not(:last-child) {
   border-bottom: 1px solid var(--light-background);
 }
+
+.payment-method-selector {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.btn-method {
+  flex: 1;
+  padding: var(--spacing-sm);
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  background-color: var(--card-background-color);
+  color: var(--text-light);
+}
+
+.btn-method:hover {
+  background-color: var(--light-background);
+  color: var(--primary-color);
+}
+
+.btn-method.active {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+/* --- Botón de añadir rápido --- */
+.btn-quick-add {
+  background-color: transparent;
+  color: var(--primary-color);
+  border: none;
+  padding: var(--spacing-xs) 0;
+  margin-top: var(--spacing-xs);
+  cursor: pointer;
+}
+.btn-quick-add:hover {
+  text-decoration: underline;
+}
+
+/* --- Saldo pendiente (fiado) --- */
+.payment-saldo {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--error-color); /* Lo marcamos como deuda */
+  text-align: center;
+}

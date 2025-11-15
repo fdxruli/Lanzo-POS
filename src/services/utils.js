@@ -150,3 +150,29 @@ export const getProductAlerts = (product) => {
 
   return { isLowStock, isNearingExpiry, isOutOfStock, expiryDays };
 };
+
+/**
+ * Prepara y abre un enlace de WhatsApp "Click to Chat".
+ * @param {string} phone - El número de teléfono del cliente (sin código de país).
+ * @param {string} message - El mensaje pre-escrito.
+ */
+export function sendWhatsAppMessage(phone, message) {
+  // --- ¡IMPORTANTE! ---
+  // Asumimos que todos los números son de México (código 52).
+  // Si tienes clientes internacionales, necesitarás un campo de "código de país"
+  // para el cliente.
+  const countryCode = '52';
+  
+  // Limpiar el teléfono de espacios, guiones, etc.
+  const cleanPhone = phone.replace(/[\s-()]/g, '');
+  const fullPhone = `${countryCode}${cleanPhone}`;
+
+  // Formatear el mensaje para la URL
+  const encodedMessage = encodeURIComponent(message);
+
+  // Crear la URL
+  const url = `https://wa.me/${fullPhone}?text=${encodedMessage}`;
+
+  // Abrir WhatsApp en una nueva pestaña
+  window.open(url, '_blank');
+}

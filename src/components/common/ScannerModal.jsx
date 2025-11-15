@@ -41,7 +41,7 @@ export default function ScannerModal({ show, onClose }) {
       setTimeout(() => {
         setIsScanning(true); // Reactivar el escáner
         setScanFeedback(''); // Limpiar el mensaje de feedback
-      }, 1500); // <-- ¡Cooldown de 1.5 segundos! Puedes ajustar este valor
+      }, 1000); // <-- ¡Cooldown de 1.5 segundos! Puedes ajustar este valor
     },
     onError(error) {
       console.error('Error de ZXing:', error);

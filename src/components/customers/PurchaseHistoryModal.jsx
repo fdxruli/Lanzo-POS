@@ -7,7 +7,6 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Carga el historial de ventas CADA VEZ que el 'customer' cambia
   useEffect(() => {
     if (show && customer) {
       const fetchHistory = async () => {
@@ -21,18 +20,20 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
       };
       fetchHistory();
     }
-  }, [show, customer]); // Depende de 'show' y 'customer'
+  }, [show, customer]);
 
   if (!show || !customer) {
     return null;
   }
 
-  // Cálculos para el resumen
   const totalPurchases = sales.length;
   const totalAmount = sales.reduce((sum, sale) => sum + sale.total, 0);
   const averagePurchase = totalPurchases > 0 ? totalAmount / totalPurchases : 0;
+  
+  // 1. Obtenemos la deuda actual (puede estar desactualizada si se abona
+  //    mientras el modal está abierto, pero es suficiente para visualización)
+  const currentDebt = customer.debt || 0;
 
-  // HTML de 'purchase-history-modal'
   return (
     <div id="purchase-history-modal" className="modal" style={{ display: 'flex' }}>
       <div className="modal-content" style={{ maxWidth: '600px' }}>
@@ -41,6 +42,14 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
           <h3 id="customer-history-name" className="subtitle">
             Historial de: <span>{customer.name}</span>
           </h3>
+
+          {/* 2. NUEVO: Resumen de Deuda */}
+          {currentDebt > 0 && (
+            <div className="debt-summary-box">
+              <p>Deuda Pendiente Actual:</p>
+              <span>${currentDebt.toFixed(2)}</span>
+            </div>
+          )}
           
           <div id="purchase-history-list" className="purchase-history-list">
             {loading ? (
@@ -48,33 +57,50 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
             ) : sales.length === 0 ? (
               <p className="empty-message">No hay compras registradas.</p>
             ) : (
-              sales.map(sale => (
-                <div key={sale.timestamp} className="purchase-history-item">
-                  <div className="purchase-history-item-header">
-                    <div className="purchase-date">{new Date(sale.timestamp).toLocaleString()}</div>
-                    <div className="purchase-total">${sale.total.toFixed(2)}</div>
+              sales.map(sale => {
+                // 3. Verificamos si la venta fue fiada
+                const isFiado = sale.paymentMethod === 'fiado';
+                const itemClasses = `purchase-history-item ${isFiado ? 'sale-fiado' : ''}`;
+
+                return (
+                  <div key={sale.timestamp} className={itemClasses}>
+                    <div className="purchase-history-item-header">
+                      <div className="purchase-date">
+                        {new Date(sale.timestamp).toLocaleString()}
+                        {/* 4. Etiqueta de "Fiado" */}
+                        {isFiado && <span className="fiado-tag">Venta Fiada</span>}
+                      </div>
+                      <div className="purchase-total">${sale.total.toFixed(2)}</div>
+                    </div>
+                    <ul className="purchase-items-container">
+                      {sale.items.map(item => (
+                        <li key={item.id} className="purchase-item">
+                          <span className="purchase-item-name">{item.name}</span>
+                          <span className="purchase-item-quantity">x{item.quantity}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {/* 5. Detalles del pago fiado */}
+                    {isFiado && (
+                      <div className="fiado-details">
+                        <p>Abono inicial: ${sale.abono.toFixed(2)}</p>
+                        <p>Deuda generada: ${sale.saldoPendiente.toFixed(2)}</p>
+                      </div>
+                    )}
                   </div>
-                  <ul className="purchase-items-container">
-                    {sale.items.map(item => (
-                      <li key={item.id} className="purchase-item">
-                        <span className="purchase-item-name">{item.name}</span>
-                        <span className="purchase-item-quantity">x{item.quantity}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
           
           <div className="purchase-summary">
-            <h4>Resumen</h4>
+            <h4>Resumen General</h4>
             <p>Total de compras: <span id="total-purchases">{totalPurchases}</span></p>
             <p>Monto total: <span id="total-amount">${totalAmount.toFixed(2)}</span></p>
             <p>Promedio por compra: <span id="average-purchase">${averagePurchase.toFixed(2)}</span></p>
           </div>
         </div>
-        <button id="close-history-modal-btn" className="btn btn-modal" onClick={onClose}>
+        <button id="close-history-modal-btn" className="btn btn-cancel" onClick={onClose}>
           Cerrar
         </button>
       </div>

@@ -94,3 +94,54 @@
   font-weight: 600;
   color: var(--primary-color);
 }
+
+/* 1. Estilos para el resumen de deuda */
+.debt-summary-box {
+  background-color: rgba(239, 68, 68, 0.05); /* Fondo rojo muy claro */
+  border: 1px solid var(--error-color);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.debt-summary-box p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+.debt-summary-box span {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--error-color);
+}
+
+/* 2. Estilos para resaltar ventas fiadas */
+.purchase-history-item.sale-fiado {
+  border-left: 4px solid var(--error-color);
+  padding-left: var(--spacing-sm);
+}
+
+.fiado-tag {
+  background-color: var(--error-color);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: var(--spacing-sm);
+}
+
+.fiado-details {
+  background-color: var(--light-background);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  border-radius: var(--border-radius-sm);
+}
+.fiado-details p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-light);
+  font-weight: 500;
+}

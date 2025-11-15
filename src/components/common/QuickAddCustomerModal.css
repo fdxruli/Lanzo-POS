@@ -1,0 +1,9 @@
+/* src/components/common/QuickAddCustomerModal.css */
+
+.modal-content.quick-add-modal {
+  max-width: 450px;
+}
+
+.quick-add-modal .form-help-text.error {
+  display: block; /* Asegurarnos que el error se vea */
+}

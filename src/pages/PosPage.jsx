@@ -5,37 +5,34 @@ import ProductMenu from '../components/pos/ProductMenu';
 import OrderSummary from '../components/pos/OrderSummary';
 import ScannerModal from '../components/common/ScannerModal';
 import PaymentModal from '../components/common/PaymentModal';
-// 1. IMPORTA EL NUEVO MODAL
 import QuickCajaModal from '../components/common/QuickCajaModal';
 import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
 import { useDashboard } from '../hooks/useDashboard';
 import { saveData, loadData, STORES } from '../services/database';
-import { showMessageModal } from '../services/utils';
+// --- LÍNEA CORREGIDA ---
+import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import './PosPage.css';
+import { useAppStore } from '../store/useAppStore';
 
 export default function PosPage() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  
-  // 2. AÑADE ESTADO PARA EL NUEVO MODAL
   const [isQuickCajaOpen, setIsQuickCajaOpen] = useState(false);
-  
+
   const [allProducts, setAllProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Hooks globales
   const navigate = useNavigate();
-  // 3. OBTÉN LA FUNCIÓN 'abrirCaja' DEL HOOK
   const { cajaActual, abrirCaja } = useCaja();
   const { order, clearOrder, getTotalPrice } = useOrderStore();
   const { loadAllData: refreshDashboardAndTicker } = useDashboard();
+  const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
   const total = getTotalPrice();
 
-  // ... (tu useEffect de loadPosData se queda igual) ...
   useEffect(() => {
     const loadPosData = async () => {
       try {
@@ -49,8 +46,7 @@ export default function PosPage() {
     };
     loadPosData();
   }, []);
-  
-  // ... (tu const filteredProducts se queda igual) ...
+
   const filteredProducts = useMemo(() => {
     let items = allProducts;
     if (selectedCategoryId) {
@@ -64,28 +60,23 @@ export default function PosPage() {
 
   /**
    * Lógica principal de procesamiento de orden
+   * ¡MODIFICADA PARA FIADO!
    */
   const handleProcessOrder = async (paymentData) => {
     console.log('🔄 Iniciando proceso de pago...', paymentData);
-    
-    // 4. ¡AQUÍ ESTÁ LA NUEVA LÓGICA!
-    // 1. Validar que la caja esté abierta
-    if (!cajaActual || cajaActual.estado !== 'abierta') {
-      console.log('❌ Validación de caja falló. Abriendo modal rápido.');
-      
-      // Cerramos el modal de pago
+
+    // ... (validaciones 1, 2, 3 sin cambios)
+    // 1. Validar caja
+    if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
+      console.log('❌ Validación de caja falló para pago en efectivo.');
       setIsPaymentModalOpen(false);
-      // Abrimos el modal de "Abrir Caja Rápido"
       setIsQuickCajaOpen(true);
-      
-      // Detenemos la ejecución de esta venta
       return;
     }
-    
-    console.log('✅ Caja validada correctamente');
 
-    // 2. Validar que el pedido no esté vacío
-    // ... (esta lógica sigue igual) ...
+    console.log('✅ Caja validada (o es fiado).');
+
+    // 2. Validar pedido vacío
     const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
     if (itemsToProcess.length === 0) {
       setIsPaymentModalOpen(false);
@@ -93,25 +84,20 @@ export default function PosPage() {
       return;
     }
 
-    // 3. Validación de stock excedido
-    // ... (esta lógica sigue igual) ...
+    // 3. Validación de stock
     const stockIssues = itemsToProcess.filter(item => item.exceedsStock);
     if (stockIssues.length > 0) {
       const userConfirmed = window.confirm(
         'Algunos productos exceden el stock disponible. ¿Deseas continuar de todos modos?'
       );
-
-      if (!userConfirmed) {
-        return;
-      }
+      if (!userConfirmed) return;
     }
 
-    // 4. Si todas las validaciones pasaron, cerramos el modal
+    // 4. Cerrar modal
     setIsPaymentModalOpen(false);
 
     try {
       // 5. Descontar stock
-      // ... (esta lógica sigue igual) ...
       const processedItems = [];
       for (const orderItem of itemsToProcess) {
         const product = await loadData(STORES.MENU, orderItem.id);
@@ -125,49 +111,94 @@ export default function PosPage() {
       }
 
       // 6. Crear el registro de Venta
-      // ... (esta lógica sigue igual) ...
       const sale = {
         timestamp: new Date().toISOString(),
         items: processedItems,
         total: total,
         customerId: paymentData.customerId,
+        paymentMethod: paymentData.paymentMethod,
+        abono: paymentData.amountPaid,
+        saldoPendiente: paymentData.saldoPendiente
       };
       await saveData(STORES.SALES, sale);
       console.log('💾 Venta guardada:', sale);
 
-      // 7. Limpiar y notificar
-      // ... (esta lógica sigue igual) ...
+      // 7. Actualizar deuda del cliente (si es fiado)
+      let customer = null; // 5. Variable para guardar el cliente
+      if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
+        customer = await loadData(STORES.CUSTOMERS, sale.customerId);
+        if (customer) {
+          const currentDebt = customer.debt || 0;
+          customer.debt = currentDebt + sale.saldoPendiente;
+          await saveData(STORES.CUSTOMERS, customer);
+          console.log(`Deuda de ${customer.name} actualizada a: $${customer.debt}`);
+        }
+      }
+
+      // 8. Limpiar y notificar
       clearOrder();
       showMessageModal('¡Pedido procesado exitosamente!');
       console.log('✅ Proceso completado');
 
-      // 8. Refrescar el dashboard y ticker
+      // 9. Refrescar dashboard
       refreshDashboardAndTicker();
+
+      // 10. NUEVO: Enviar Ticket por WhatsApp
+      if (paymentData.sendReceipt && paymentData.customerId) {
+        // Si no cargamos al cliente en el paso 7, lo cargamos ahora
+        if (!customer) {
+          customer = await loadData(STORES.CUSTOMERS, paymentData.customerId);
+        }
+
+        if (customer && customer.phone) {
+          // Crear el mensaje del ticket
+          let ticketMessage =
+            `*--- Ticket de Venta ---*
+*Negocio:* ${companyName}
+*Cliente:* ${customer.name}
+
+*Detalles:*
+`;
+          // Añadir items
+          sale.items.forEach(item => {
+            const itemTotal = (item.price * item.quantity).toFixed(2);
+            ticketMessage += `- ${item.name} (x${item.quantity}) ... $${itemTotal}\n`;
+          });
+
+          // Añadir totales
+          ticketMessage += `
+*Total:* *$${sale.total.toFixed(2)}*
+Método: ${sale.paymentMethod === 'fiado' ? 'Fiado' : 'Efectivo'}
+`;
+          // Añadir detalles de pago
+          if (sale.paymentMethod === 'fiado') {
+            ticketMessage += `Abono: $${sale.abono.toFixed(2)}\n`;
+            ticketMessage += `*Saldo Pendiente:* *$${sale.saldoPendiente.toFixed(2)}*\n`;
+            ticketMessage += `*Deuda Total Acumulada:* *$${customer.debt.toFixed(2)}*\n`;
+          } else {
+            ticketMessage += `Pagado: $${sale.abono.toFixed(2)}\n`;
+            ticketMessage += `Cambio: $${(sale.abono - sale.total).toFixed(2)}\n`;
+          }
+
+          ticketMessage += `
+¡Gracias por tu compra!`;
+
+          sendWhatsAppMessage(customer.phone, ticketMessage);
+        }
+      }
 
     } catch (error) {
       console.error('❌ Error al procesar el pedido:', error);
       showMessageModal(`Error al procesar el pedido: ${error.message}`);
     }
   };
-  
-  // 5. AÑADE ESTA NUEVA FUNCIÓN
-  /**
-   * Maneja la confirmación del modal "QuickCajaModal"
-   */
+
   const handleQuickCajaSubmit = async (monto) => {
-    // Llama a la función del hook 'useCaja'
-    const success = await abrirCaja(monto); //
-    
+    const success = await abrirCaja(monto);
     if (success) {
-      // Si se abrió con éxito...
-      setIsQuickCajaOpen(false); // 1. Cierra el modal rápido
-      setIsPaymentModalOpen(true); // 2. RE-ABRE el modal de pago
-      
-      // Ahora el usuario está de vuelta en el modal de pago,
-      // y la próxima vez que le dé "Confirmar", la caja SÍ estará abierta.
+      setIsQuickCajaOpen(false);
+      setIsPaymentModalOpen(true);
     } else {
-      // 'abrirCaja' ya muestra un modal de error si falla,
-      // así que solo cerramos el modal rápido.
       setIsQuickCajaOpen(false);
     }
   };
@@ -176,7 +207,6 @@ export default function PosPage() {
     <>
       <h2 className="section-title">Punto de Venta Rápido y Eficiente</h2>
       <div className="pos-grid">
-        {/* ... (ProductMenu y OrderSummary se quedan igual) ... */}
         <ProductMenu
           products={filteredProducts}
           categories={categories}
@@ -200,8 +230,7 @@ export default function PosPage() {
         onConfirm={handleProcessOrder}
         total={total}
       />
-      
-      {/* 6. RENDERIZA EL NUEVO MODAL */}
+
       <QuickCajaModal
         show={isQuickCajaOpen}
         onClose={() => setIsQuickCajaOpen(false)}
