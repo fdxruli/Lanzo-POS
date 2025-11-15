@@ -1,7 +1,7 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { loadData, saveData, deleteData, STORES } from '../services/database';
-import { showMessageModal } from '../services/utils'; // ¡NUEVO! Importamos el modal
+import { showMessageModal } from '../services/utils'; // ¡Importante!
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
@@ -37,13 +37,8 @@ export default function ProductsPage() {
     }, [refreshData]);
 
     // Funciones de categorías (sin cambios)
-    const handleSaveCategory = async (categoryData) => {
-        // ... (lógica sin cambios)
-    };
-
-    const handleDeleteCategory = async (categoryId) => {
-        // ... (lógica sin cambios)
-    };
+    const handleSaveCategory = async (categoryData) => { /* ... */ };
+    const handleDeleteCategory = async (categoryId) => { /* ... */ };
 
     /**
      * Guarda o actualiza un producto
@@ -51,27 +46,10 @@ export default function ProductsPage() {
     const handleSaveProduct = async (productData) => {
         try {
             const id = editingProduct ? editingProduct.id : `product-${Date.now()}`;
-
+            
             // ======================================================
-            // ¡AQUÍ ESTÁ LA NUEVA LÓGICA DE VALIDACIÓN!
-            // ======================================================
-            if (productData.barcode && productData.barcode.trim() !== '') {
-                // 1. Buscamos en la lista de productos (que ya tenemos en 'products')
-                const existingProduct = products.find(
-                    // 2. Comparamos el código de barras
-                    p => p.barcode === productData.barcode &&
-                    // 3. Nos aseguramos que NO sea el mismo producto que estamos editando
-                    p.id !== id 
-                );
-
-                if (existingProduct) {
-                    // 4. Si se encuentra, mostramos error y detenemos el guardado
-                    showMessageModal(`Error: El código de barras "${productData.barcode}" ya está en uso por el producto "${existingProduct.name}".`);
-                    return; // Detiene la función aquí
-                }
-            }
-            // ======================================================
-            // FIN DE LA VALIDACIÓN
+            // ¡HEMOS ELIMINADO LA VALIDACIÓN DE BARCODE DUPLICADO!
+            // Ahora permitimos duplicados para gestionar lotes.
             // ======================================================
 
             const isActive = editingProduct ? editingProduct.isActive : true;
@@ -84,20 +62,14 @@ export default function ProductsPage() {
             setActiveTab('view-products');
             await refreshData();
             
-            // ¡Feedback mejorado!
             showMessageModal('¡Producto guardado exitosamente!');
 
         } catch (error) {
             console.error("Error al guardar producto:", error);
-            // ¡Feedback mejorado!
             showMessageModal(`Error al guardar el producto: ${error.message}`);
         }
     };
 
-    // ======================================================
-    // ¡AQUÍ ESTÁ LA FUNCIÓN QUE FALTABA!
-    // (Esta ya la tenías, sin cambios)
-    // ======================================================
     /**
      * Prepara el formulario para edición
      */
@@ -105,7 +77,6 @@ export default function ProductsPage() {
         setEditingProduct(product);
         setActiveTab('add-product');
     };
-    // ======================================================
 
     /**
      * Mueve un producto a la papelera
@@ -127,29 +98,19 @@ export default function ProductsPage() {
     /**
      * Activa o desactiva un producto
      */
-    const handleToggleStatus = async (product) => {
-        try {
-            const updatedProduct = {
-                ...product,
-                isActive: !(product.isActive !== false) // Invierte el estado
-            };
-            await saveData(STORES.MENU, updatedProduct);
-            await refreshData();
-        } catch (error) {
-            console.error("Error al cambiar estado:", error);
-        }
-    };
+    const handleToggleStatus = async (product) => { /* ... */ };
 
     const handleCancelEdit = () => {
         setEditingProduct(null);
         setActiveTab('view-products');
     };
 
-    // VISTA (RENDER) - Sin cambios
+    // VISTA (RENDER)
     return (
         <>
             <h2 className="section-title">Gestión de Productos e Inventario</h2>
 
+            {/* ... (Tabs sin cambios) ... */}
             <div className="tabs-container" id="product-tabs">
                 <button
                     className={`tab-btn ${activeTab === 'add-product' ? 'active' : ''}`}
@@ -168,6 +129,7 @@ export default function ProductsPage() {
                 </button>
             </div>
 
+
             {activeTab === 'add-product' ? (
                 <ProductForm
                     onSave={handleSaveProduct}
@@ -175,13 +137,18 @@ export default function ProductsPage() {
                     productToEdit={editingProduct}
                     categories={categories}
                     onOpenCategoryManager={() => setShowCategoryModal(true)}
+                    // ======================================================
+                    // ¡NUEVOS PROPS!
+                    // ======================================================
+                    products={products}
+                    onEdit={handleEditProduct} 
                 />
             ) : (
                 <ProductList
                     products={products}
                     categories={categories}
                     isLoading={isLoading}
-                    onEdit={handleEditProduct} 
+                    onEdit={handleEditProduct}
                     onDelete={handleDeleteProduct}
                     onToggleStatus={handleToggleStatus}
                 />

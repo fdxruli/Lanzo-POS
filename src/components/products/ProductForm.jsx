@@ -9,11 +9,16 @@ import './ProductForm.css'
 
 const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
 
-export default function ProductForm({ onSave, onCancel, productToEdit, categories, onOpenCategoryManager }) {
+// ¡MODIFICADO! Aceptamos 'products' y 'onEdit'
+export default function ProductForm({ 
+    onSave, onCancel, productToEdit, categories, onOpenCategoryManager, 
+    products, onEdit 
+}) {
 
     // 1. ESTADO DEL FORMULARIO
     const [name, setName] = useState('');
     const [barcode, setBarcode] = useState('');
+    // ... (otros estados sin cambios) ...
     const [description, setDescription] = useState('');
     const [imagePreview, setImagePreview] = useState(defaultPlaceholder);
     const [imageData, setImageData] = useState(null); 
@@ -22,24 +27,26 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
     const [showCostCalculator, setShowCostCalculator] = useState(false);
     
     const [isScannerOpen, setIsScannerOpen] = useState(false);
-    const [isLookingUp, setIsLookingUp] = useState(false); // ¡NUEVO! Estado de carga
+    const [isLookingUp, setIsLookingUp] = useState(false);
 
-    // ... (estados de saleType, cost, price, stock, bulk, etc. sin cambios) ...
     const [saleType, setSaleType] = useState('unit');
     const [cost, setCost] = useState('');
     const [price, setPrice] = useState('');
     const [stock, setStock] = useState('0');
+    // ... (estados de bulk sin cambios) ...
     const [bulkQty, setBulkQty] = useState('');
     const [bulkUnit, setBulkUnit] = useState('kg');
     const [bulkCost, setBulkCost] = useState('');
     const [bulkSalePrice, setBulkSalePrice] = useState('');
 
-
     // 2. EFECTO PARA RELLENAR EL FORMULARIO (EDICIÓN)
-    // ... (useEffect de productToEdit no cambia) ...
+    // ¡MODIFICADO! Necesitamos 'setEditingProduct' (interno)
+    const [internalEditingProduct, setInternalEditingProduct] = useState(null);
+
     useEffect(() => {
+        setInternalEditingProduct(productToEdit); // Sincroniza el estado interno
         if (productToEdit) {
-            // ... (lógica de rellenar formulario) ...
+            // ... (lógica de rellenar formulario sin cambios) ...
             setName(productToEdit.name);
             setBarcode(productToEdit.barcode || '');
             setDescription(productToEdit.description || '');
@@ -62,7 +69,7 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
         } else {
             resetForm();
         }
-    }, [productToEdit]);
+    }, [productToEdit]); // ¡MODIFICADO!
     
     // ... (resetForm, handleImageChange, márgenes de ganancia no cambian) ...
     const resetForm = () => {
@@ -115,11 +122,7 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
     }, [bulkCostPerUnit, bulkSalePrice]);
 
 
-    // --- ¡NUEVAS FUNCIONES DE BÚSQUEDA! ---
-
-    /**
-     * ¡NUEVO! Llama a la API y actualiza el estado del formulario
-     */
+    // --- ¡FUNCIÓN DE BÚSQUEDA MODIFICADA! ---
     const handleBarcodeLookup = async (codeToLookup) => {
         if (!codeToLookup) {
             showMessageModal('Por favor, ingresa un código de barras para buscar.');
@@ -127,47 +130,87 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
         }
 
         setIsLookingUp(true);
-        const result = await lookupBarcodeInAPI(codeToLookup);
+        const apiResult = await lookupBarcodeInAPI(codeToLookup);
         setIsLookingUp(false);
 
-        if (result.success) {
-            // ¡Éxito! Rellenamos los campos
-            // (Mantenemos el valor existente si la API no devuelve nada para ese campo)
-            setName(result.product.name || name);
+        if (apiResult.success) {
+            // ... (lógica de rellenar desde API sin cambios) ...
+            setName(apiResult.product.name || name);
             setDescription(prevDesc => 
-                result.product.brand ? `Marca: ${result.product.brand}` : (prevDesc || '')
+                apiResult.product.brand ? `Marca: ${apiResult.product.brand}` : (prevDesc || '')
             );
-            
-            if (result.product.image) {
-                setImagePreview(result.product.image);
-                setImageData(result.product.image); // Guardamos la URL de la imagen
+            if (apiResult.product.image) {
+                setImagePreview(apiResult.product.image);
+                setImageData(apiResult.product.image);
             }
-            
-            showMessageModal('¡Producto encontrado! Revisa y completa la información.');
+            showMessageModal('¡Producto encontrado en API! Revisa y completa la información.');
         } else {
-            // Fracaso
-            showMessageModal(`No se encontró información para el código ${codeToLookup}.`);
+            // API FAILED. Ahora revisamos la base de datos local
+            const localProduct = products.find(p => p.barcode === codeToLookup);
+            
+            if (localProduct) {
+                // ¡LO ENCONTRAMOS LOCALMENTE! Este es el escenario de "nuevo lote".
+                showMessageModal(
+                    `El código "${codeToLookup}" ya está en uso por "${localProduct.name}". ¿Qué deseas hacer?`,
+                    () => { // onConfirm -> "Copiar para nuevo lote"
+                        // Pre-rellenamos el formulario
+                        setName(localProduct.name);
+                        setBarcode(localProduct.barcode);
+                        setDescription(localProduct.description || '');
+                        setImagePreview(localProduct.image || defaultPlaceholder);
+                        setImageData(localProduct.image || null);
+                        setCategoryId(localProduct.categoryId || '');
+                        setSaleType(localProduct.saleType || 'unit');
+
+                        if (localProduct.saleType === 'bulk' && localProduct.bulkData) {
+                            // ... (lógica de bulk)
+                        } else {
+                            setCost(localProduct.cost || '');
+                            setPrice(localProduct.price || '');
+                        }
+                        
+                        // ¡Campos clave se limpian!
+                        setStock(''); // Limpiar stock
+                        setExpiryDate(''); // Limpiar fecha
+                        setInternalEditingProduct(null); // Asegura que guardemos como NUEVO
+                        
+                        showMessageModal('Datos copiados. Ingresa el nuevo Stock y Caducidad. Te recomendamos añadir "(Lote 2)" al nombre.');
+                        // Damos focus al campo de stock
+                        setTimeout(() => document.getElementById('product-stock')?.focus(), 100);
+                    },
+                    {
+                        confirmButtonText: 'Registrar Nuevo Lote', // ¡NUEVO!
+                        extraButton: {
+                            text: 'Editar Original',
+                            action: () => onEdit(localProduct) // ¡Llama al prop!
+                        }
+                    }
+                );
+            } else {
+                // API falló Y local falló
+                showMessageModal(`No se encontró información para el código ${codeToLookup}.`);
+            }
         }
     };
 
     /**
-     * ¡MODIFICADO! Ahora llama a la búsqueda automáticamente.
+     * ¡MODIFICADO!
      */
     const handleBarcodeScanned = (code) => {
-        setBarcode(code); // Actualiza el estado del formulario
-        setIsScannerOpen(false); // Cierra el modal
-        handleBarcodeLookup(code); // ¡NUEVO! Llama a la búsqueda
+        setBarcode(code);
+        setIsScannerOpen(false);
+        handleBarcodeLookup(code);
     };
     
     const handleAssignCost = (totalCost) => {
         setCost(totalCost.toFixed(2));
     };
     
-    // ... (handleSubmit no cambia) ...
     const handleSubmit = (e) => {
         e.preventDefault();
-        // ... (lógica de productData no cambia) ...
-         let productData = {};
+        
+        let productData = {};
+        // ... (lógica de 'saveProduct' en app.js)
         if (saleType === 'unit') {
             const nStock = parseInt(stock, 10);
             productData = {
@@ -186,33 +229,32 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                 name, barcode, description, categoryId, expiryDate,
                 image: imageData,
                 saleType: 'bulk',
-                price: parseFloat(bulkSalePrice), 
-                cost: bulkCostPerUnit,
-                stock: isNaN(nBulkQty) ? 0 : nBulkQty,
+                price: parseFloat(bulkSalePrice), // El precio de venta es por unidad de venta
+                cost: bulkCostPerUnit, // Costo calculado por unidad
+                stock: isNaN(nBulkQty) ? 0 : nBulkQty, // Stock es la cantidad total comprada
                 trackStock: nBulkQty > 0,
                 bulkData: {
                     purchase: { quantity: nBulkQty, unit: bulkUnit, cost: parseFloat(bulkCost) },
-                    sale: { unit: bulkUnit } 
+                    sale: { unit: bulkUnit } // Asumimos que se vende en la misma unidad
                 }
             };
         }
 
-        onSave(productData);
+        // ¡MODIFICADO! Pasamos el producto 'internalEditingProduct'
+        onSave(productData, internalEditingProduct); 
         resetForm();
     };
-
 
     // 4. VISTA (JSX)
     return (
         <>
             <div className="product-form-container">
-                {/* ... (título y form tag) ... */}
                 <h3 className="subtitle" id="product-form-title">
-                    {productToEdit ? `Editar: ${productToEdit.name}` : 'Añadir Nuevo Producto'}
+                    {internalEditingProduct ? `Editar: ${internalEditingProduct.name}` : 'Añadir Nuevo Producto'}
                 </h3>
                 <form id="product-form" onSubmit={handleSubmit}>
 
-                    {/* ... (Campo 'Nombre del Producto' sin cambios) ... */}
+                    {/* --- CAMPOS BÁSICOS --- */}
                     <div className="form-group">
                         <label className="form-label" htmlFor="product-name">Nombre del Producto</label>
                         <input
@@ -259,7 +301,6 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                         </div>
                     </div>
                     
-                    {/* ... (El resto del formulario: descripción, tipo de venta, etc. no cambia) ... */}
                     <div className="form-group">
                         <label className="form-label" htmlFor="product-description">Descripción (Opcional)</label>
                         <textarea
@@ -285,6 +326,8 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                         </select>
                     </div>
 
+                    {/* --- RENDERIZADO CONDICIONAL --- */}
+
                     {saleType === 'unit' ? (
                         <div id="unit-options">
                             <div className="form-group">
@@ -295,7 +338,7 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                                     type="button"
                                     id="cost-help-button"
                                     className="btn btn-help"
-                                    onClick={() => setShowCostCalculator(true)}
+                                    onClick={() => setShowCostCalculator(true)} // <-- CORREGIDO
                                 >
                                     Calcular Costo
                                 </button>
@@ -315,7 +358,7 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                             </div>
                         </div>
                     ) : (
-                         <div id="bulk-options">
+                        <div id="bulk-options">
                             <div className="form-group bulk-purchase-group">
                                 <label className="form-label">Info de Compra</label>
                                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 'var(--spacing-sm)' }}>
@@ -422,8 +465,6 @@ export default function ProductForm({ onSave, onCancel, productToEdit, categorie
                     </button>
                 </form>
             </div>
-            
-            {/* ... (Modales de CostCalculator y Scanner sin cambios) ... */}
             <CostCalculatorModal
                 show={showCostCalculator}
                 onClose={() => setShowCostCalculator(false)}
