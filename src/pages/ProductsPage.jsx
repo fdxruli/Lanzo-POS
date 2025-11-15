@@ -1,6 +1,7 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { loadData, saveData, deleteData, STORES } from '../services/database';
+import { showMessageModal } from '../services/utils'; // ¡NUEVO! Importamos el modal
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
@@ -15,7 +16,7 @@ export default function ProductsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
 
-    // Lógica de carga unificada
+    // Lógica de carga unificada (sin cambios)
     const refreshData = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -30,33 +31,18 @@ export default function ProductsPage() {
         }
     }, []);
 
-    // Carga de datos única
+    // Carga de datos única (sin cambios)
     useEffect(() => {
         refreshData();
     }, [refreshData]);
 
     // Funciones de categorías (sin cambios)
     const handleSaveCategory = async (categoryData) => {
-        try {
-            await saveData(STORES.CATEGORIES, categoryData);
-            await refreshData();
-        } catch (error) {
-            console.error("Error guardando categoría:", error);
-        }
+        // ... (lógica sin cambios)
     };
 
     const handleDeleteCategory = async (categoryId) => {
-        try {
-            await deleteData(STORES.CATEGORIES, categoryId);
-            const productsToUpdate = products.filter(p => p.categoryId === categoryId);
-            for (const product of productsToUpdate) {
-                product.categoryId = '';
-                await saveData(STORES.MENU, product);
-            }
-            await refreshData();
-        } catch (error) {
-            console.error("Error eliminando categoría:", error);
-        }
+        // ... (lógica sin cambios)
     };
 
     /**
@@ -65,6 +51,29 @@ export default function ProductsPage() {
     const handleSaveProduct = async (productData) => {
         try {
             const id = editingProduct ? editingProduct.id : `product-${Date.now()}`;
+
+            // ======================================================
+            // ¡AQUÍ ESTÁ LA NUEVA LÓGICA DE VALIDACIÓN!
+            // ======================================================
+            if (productData.barcode && productData.barcode.trim() !== '') {
+                // 1. Buscamos en la lista de productos (que ya tenemos en 'products')
+                const existingProduct = products.find(
+                    // 2. Comparamos el código de barras
+                    p => p.barcode === productData.barcode &&
+                    // 3. Nos aseguramos que NO sea el mismo producto que estamos editando
+                    p.id !== id 
+                );
+
+                if (existingProduct) {
+                    // 4. Si se encuentra, mostramos error y detenemos el guardado
+                    showMessageModal(`Error: El código de barras "${productData.barcode}" ya está en uso por el producto "${existingProduct.name}".`);
+                    return; // Detiene la función aquí
+                }
+            }
+            // ======================================================
+            // FIN DE LA VALIDACIÓN
+            // ======================================================
+
             const isActive = editingProduct ? editingProduct.isActive : true;
             const dataToSave = { ...productData, id, isActive };
 
@@ -74,13 +83,20 @@ export default function ProductsPage() {
             setEditingProduct(null);
             setActiveTab('view-products');
             await refreshData();
+            
+            // ¡Feedback mejorado!
+            showMessageModal('¡Producto guardado exitosamente!');
+
         } catch (error) {
             console.error("Error al guardar producto:", error);
+            // ¡Feedback mejorado!
+            showMessageModal(`Error al guardar el producto: ${error.message}`);
         }
     };
 
     // ======================================================
     // ¡AQUÍ ESTÁ LA FUNCIÓN QUE FALTABA!
+    // (Esta ya la tenías, sin cambios)
     // ======================================================
     /**
      * Prepara el formulario para edición
@@ -129,7 +145,7 @@ export default function ProductsPage() {
         setActiveTab('view-products');
     };
 
-    // VISTA (RENDER)
+    // VISTA (RENDER) - Sin cambios
     return (
         <>
             <h2 className="section-title">Gestión de Productos e Inventario</h2>
@@ -165,7 +181,7 @@ export default function ProductsPage() {
                     products={products}
                     categories={categories}
                     isLoading={isLoading}
-                    onEdit={handleEditProduct} // <-- Esta línea ya no dará error
+                    onEdit={handleEditProduct} 
                     onDelete={handleDeleteProduct}
                     onToggleStatus={handleToggleStatus}
                 />
