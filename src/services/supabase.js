@@ -6,7 +6,7 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
 // --- USER MANAGEMENT ---
-// Signs in using the single, hardcoded system user.
+// (Esta función no cambia)
 async function getSupabaseUser() {
     const SYSTEM_USER_EMAIL = 'sistema@lanzo.local';
     const SYSTEM_USER_PASSWORD = 'LanzoDB1';
@@ -31,6 +31,36 @@ async function getSupabaseUser() {
     }
 }
 
+// --- (¡NUEVO!) HELPER DE NOMBRES AMIGABLES ---
+/**
+ * Intenta analizar el User Agent para un nombre más legible.
+ * @param {string} userAgent - El string de navigator.userAgent
+ * @returns {string} Un nombre amigable, ej: "Chrome en Windows"
+ */
+function getFriendlyDeviceName(userAgent) {
+    let os = 'Dispositivo';
+    let browser = 'Navegador';
+    const ua = userAgent.toLowerCase();
+
+    // Detectar OS
+    if (ua.includes('win')) os = 'Windows';
+    else if (ua.includes('mac')) os = 'Mac';
+    else if (ua.includes('android')) os = 'Android';
+    else if (ua.includes('linux')) os = 'Linux';
+    else if (ua.includes('iphone')) os = 'iPhone';
+    else if (ua.includes('ipad')) os = 'iPad';
+
+    // Detectar Navegador
+    if (ua.includes('edg/')) browser = 'Edge';
+    else if (ua.includes('opr/')) browser = 'Opera';
+    else if (ua.includes('chrome') && !ua.includes('chromium')) browser = 'Chrome';
+    else if (ua.includes('firefox')) browser = 'Firefox';
+    else if (ua.includes('safari') && !ua.includes('chrome') && !ua.includes('chromium')) browser = 'Safari';
+
+    return `${browser} en ${os}`;
+}
+
+
 // --- LICENSE ACTIVATION & VALIDATION ---
 window.activateLicense = async function(licenseKey) {
     try {
@@ -41,20 +71,24 @@ window.activateLicense = async function(licenseKey) {
         const result = await fp.get();
         const deviceFingerprint = result.visitorId;
 
-        // Guardamos la huella en localStorage para la autogestión
         localStorage.setItem('fp', deviceFingerprint);
 
         const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
+        
+        // --- ¡CAMBIO AQUÍ! ---
+        // Usamos el nuevo helper para el nombre
+        const friendlyName = getFriendlyDeviceName(navigator.userAgent);
 
         const { data, error } = await supabaseClient.rpc(
             'activate_license_on_device', {
                 license_key_param: licenseKey,
                 user_id_param: user.id,
                 device_fingerprint_param: deviceFingerprint,
-                device_name_param: `${navigator.platform} (${navigator.language})`,
+                device_name_param: friendlyName, // <-- Nombre amigable
                 device_info_param: deviceInfo
             }
         );
+        // --- FIN DEL CAMBIO ---
 
         if (error) throw error;
 
@@ -77,11 +111,11 @@ window.activateLicense = async function(licenseKey) {
 };
 
 window.revalidateLicense = async function() {
+    // (Esta función no cambia)
     try {
         const user = await getSupabaseUser();
         if (!user) return { valid: false, message: 'No user session.' };
 
-        // Re-obtenemos la huella (o la leemos del localStorage si la guardamos)
         let deviceFingerprint = localStorage.getItem('fp');
         if (!deviceFingerprint) {
             const fp = await FingerprintJS.load();
@@ -107,6 +141,7 @@ window.revalidateLicense = async function() {
 };
 
 window.deactivateCurrentDevice = async function(licenseKey) {
+    // (Esta función no cambia)
     try {
         const user = await getSupabaseUser();
         if (!user) throw new Error('User session not found.');
@@ -125,8 +160,6 @@ window.deactivateCurrentDevice = async function(licenseKey) {
         });
 
         if (error) throw error;
-
-        // Limpiamos la huella local al desactivar
         localStorage.removeItem('fp');
         return data;
 
@@ -137,52 +170,33 @@ window.deactivateCurrentDevice = async function(licenseKey) {
 };
 
 // --- BUSINESS PROFILE MANAGEMENT ---
+// (Estas funciones no cambian)
 
-/**
- * Retrieves the possible values for the 'business_category' ENUM type.
- * @returns {Promise<object>} The result of the operation.
- */
 window.getBusinessCategories = async function() {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
-
         const { data, error } = await supabaseClient.rpc('get_business_categories');
-
         if (error) throw error;
-
         return { success: true, data };
-
     } catch (error) {
         console.error('Error getting business categories:', error);
         return { success: false, message: `Client-side error: ${error.message}` };
     }
 };
 
-
-/**
- * Saves or updates the business profile linked to a license.
- * @param {string} licenseKey - The user's license key.
- * @param {object} profileData - The business profile data.
- * @returns {Promise<object>} The result of the operation.
- */
 window.saveBusinessProfile = async function(licenseKey, profileData) {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
-
-        // First, get the license ID from the license key
         const { data: license, error: licenseError } = await supabaseClient
             .from('licenses')
             .select('id')
             .eq('license_key', licenseKey)
             .single();
-
         if (licenseError || !license) {
             throw new Error('License not found.');
         }
-
-        // Prepare the data to be saved, linking it to the user and license
         const dataToUpsert = {
             license_id: license.id,
             user_id: user.id,
@@ -193,74 +207,66 @@ window.saveBusinessProfile = async function(licenseKey, profileData) {
             business_type: profileData.business_type,
             updated_at: new Date().toISOString()
         };
-
-        // Use upsert to either create a new profile or update an existing one
         const { data, error } = await supabaseClient
             .from('business_profiles')
             .upsert(dataToUpsert, { onConflict: 'license_id' })
             .select()
             .single();
-
         if (error) throw error;
-
         return { success: true, data };
-
     } catch (error) {
         console.error('Error saving business profile:', error);
         return { success: false, message: `Client-side error: ${error.message}` };
     }
 };
 
-/**
- * Retrieves the business profile for a given user.
- * @returns {Promise<object>} The business profile data.
- */
 window.getBusinessProfile = async function() {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
-
         const { data, error } = await supabaseClient
             .from('business_profiles')
             .select('*')
             .eq('user_id', user.id)
             .single();
-
         if (error) {
-            if (error.code === 'PGRST116') { // Code for "Not a single row"
-                return { success: true, data: null }; // No profile found is not an error
+            if (error.code === 'PGRST116') {
+                return { success: true, data: null };
             }
             throw error;
         }
-
         return { success: true, data };
-
     } catch (error) {
         console.error('Error getting business profile:', error);
         return { success: false, message: `Client-side error: ${error.message}` };
     }
 };
 
-// --- (¡NUEVO!) DEVICE SELF-MANAGEMENT ---
+// --- (¡MODIFICADO!) DEVICE SELF-MANAGEMENT ---
 
-/**
- * Obtiene la lista de dispositivos asociados a una licencia.
- * Llama a la función SQL 'get_license_devices'.
- * @param {string} licenseKey - La clave de licencia del usuario.
- * @returns {Promise<object>} El resultado de la operación.
- */
 window.getLicenseDevices = async function(licenseKey) {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
 
+        // --- ¡CAMBIO AQUÍ! ---
+        // Obtenemos la huella actual para pasarla a la función SQL
+        let deviceFingerprint = localStorage.getItem('fp');
+        if (!deviceFingerprint) {
+            const fp = await FingerprintJS.load();
+            const result = await fp.get();
+            deviceFingerprint = result.visitorId;
+            localStorage.setItem('fp', deviceFingerprint);
+        }
+        // --- FIN DEL CAMBIO ---
+
         const { data, error } = await supabaseClient.rpc('get_license_devices', {
-            license_key_param: licenseKey
+            license_key_param: licenseKey,
+            current_fingerprint_param: deviceFingerprint // <-- Pasamos el nuevo parámetro
         });
 
         if (error) throw error;
-
-        return { success: true, data: data || [] }; // Devolver array vacío si es null
+        return { success: true, data: data || [] }; 
 
     } catch (error) {
         console.error('Error getting license devices:', error);
@@ -268,27 +274,58 @@ window.getLicenseDevices = async function(licenseKey) {
     }
 };
 
-/**
- * Desactiva un dispositivo específico usando su UUID.
- * Llama a la NUEVA función SQL 'deactivate_device_by_id'.
- * @param {string} deviceId - El UUID del dispositivo a desactivar.
- * @returns {Promise<object>} El resultado de la operación.
- */
 window.deactivateDeviceById = async function(deviceId) {
+    // (Esta función no cambia)
     try {
         const user = await getSupabaseUser();
         if (!user) throw new Error('User session not found.');
-
         const { data, error } = await supabaseClient.rpc('deactivate_device_by_id', {
             device_id_param: deviceId,
             user_id_param: user.id
         });
-
         if (error) throw error;
-        return data; // { success: true, message: ... }
-
+        return data;
     } catch (error) {
         console.error('Error during device deactivation by ID:', error);
         return { success: false, message: error.message };
+    }
+};
+
+/**
+ * Llama a la función SQL para crear una licencia de prueba
+ * y registrar el dispositivo actual.
+ */
+window.createFreeTrial = async function() {
+    try {
+        const user = await getSupabaseUser();
+        if (!user) return { valid: false, message: 'No se pudo obtener la sesión del usuario.' };
+
+        const fp = await FingerprintJS.load();
+        const result = await fp.get();
+        const deviceFingerprint = result.visitorId;
+        
+        // (Guardamos la huella para futuras revalidaciones)
+        localStorage.setItem('fp', deviceFingerprint);
+
+        const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
+        const friendlyName = getFriendlyDeviceName(navigator.userAgent); // Usamos el helper que ya existe
+
+        const { data, error } = await supabaseClient.rpc(
+            'create_free_trial_license', {
+                user_id_param: user.id,
+                device_fingerprint_param: deviceFingerprint,
+                device_name_param: friendlyName,
+                device_info_param: deviceInfo
+            }
+        );
+
+        if (error) throw error;
+        
+        // La función SQL devuelve {success: true/false, details: {...}, error: "..."}
+        return data; 
+
+    } catch (error) {
+        console.error('Error al crear la prueba gratuita:', error);
+        return { success: false, error: `Error del cliente: ${error.message}` };
     }
 };

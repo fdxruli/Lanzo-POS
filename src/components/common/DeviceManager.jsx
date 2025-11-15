@@ -14,6 +14,7 @@ export default function DeviceManager({ licenseKey }) {
     setIsLoading(true);
     setError(null);
     try {
+      // Esta función (getLicenseDevices) ahora hace todo el trabajo
       const result = await window.getLicenseDevices(licenseKey);
       if (result.success) {
         setDevices(result.data);
@@ -63,8 +64,8 @@ export default function DeviceManager({ licenseKey }) {
     return <p>No hay dispositivos activados para esta licencia.</p>;
   }
 
-  // Obtenemos la huella del dispositivo actual para marcarlo
-  const currentFingerprint = localStorage.getItem('fp'); // Asumimos que guardas esto
+  // Ya no necesitamos 'localStorage' aquí
+  // const currentFingerprint = localStorage.getItem('fp'); 
 
   return (
     <div className="device-list-container">
@@ -74,12 +75,22 @@ export default function DeviceManager({ licenseKey }) {
             <div className="device-info">
               <strong>{device.device_name || 'Dispositivo Desconocido'}</strong>
               
-              {!device.is_active ? (
-                <span className="device-status-badge inactive">Desactivado</span>
-              ) : (
-                 <span className="device-status-badge active">Activo</span>
-              )}
-              
+              {/* --- ¡CAMBIO AQUÍ! --- */}
+              {/* Renderizamos las etiquetas en base a los datos */}
+              <div className="device-status-tags">
+                {!device.is_active ? (
+                  <span className="device-status-badge inactive">Desactivado</span>
+                ) : (
+                  <span className="device-status-badge active">Activo</span>
+                )}
+                
+                {/* Esta es la nueva etiqueta que querías */}
+                {device.is_current_device && (
+                   <span className="device-status-badge current">Este Dispositivo</span>
+                )}
+              </div>
+              {/* --- FIN DEL CAMBIO --- */}
+
               <small>
                 Último uso: {new Date(device.last_used_at).toLocaleString()}
               </small>
@@ -88,6 +99,9 @@ export default function DeviceManager({ licenseKey }) {
               <button
                 className="btn btn-cancel btn-deactivate-device"
                 onClick={() => handleDeactivate(device.device_id)}
+                // Deshabilitamos el botón si es el dispositivo actual
+                disabled={device.is_current_device}
+                title={device.is_current_device ? "No puedes desactivar el dispositivo que estás usando" : "Desactivar"}
               >
                 Desactivar
               </button>

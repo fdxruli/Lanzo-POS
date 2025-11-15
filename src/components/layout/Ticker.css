@@ -40,3 +40,34 @@
     transform: translateX(-100%);
   }
 }
+
+/* ... (tus estilos existentes .ticker-item, @keyframes, etc.) ... */
+/* */
+
+.ticker-item {
+  display: inline-block;
+  padding: 0 2rem;
+  font-size: 0.9rem;
+  color: var(--text-light);
+  /* ¡NUEVO! */
+  transition: all 0.3s ease;
+}
+
+/* El contenedor cambia a color de error */
+.notification-ticker-container.priority-warning {
+  background-color: var(--error-color); /* Rojo de error */
+  box-shadow: var(--box-shadow-lg);
+}
+
+/* La animación puede ser más lenta para facilitar la lectura */
+.notification-ticker-container.priority-warning .ticker-move {
+  animation-duration: 25s; 
+}
+
+/* El texto es más grande, blanco y llamativo */
+.notification-ticker-container.priority-warning .ticker-item {
+  color: white; /* Texto blanco */
+  font-size: 1.1rem; /* ¡Más grande! */
+  font-weight: 600;
+  text-transform: uppercase;
+}

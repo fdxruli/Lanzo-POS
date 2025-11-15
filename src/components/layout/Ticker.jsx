@@ -1,8 +1,7 @@
 // src/components/layout/Ticker.jsx
 import React, { useMemo } from 'react';
-// 1. Importa el store en lugar del hook
 import { useDashboardStore } from '../../store/useDashboardStore';
-// 2. Importamos el helper
+import { useAppStore } from '../../store/useAppStore'; // <-- 1. Importa el App Store
 import { getProductAlerts } from '../../services/utils';
 import './Ticker.css';
 
@@ -12,25 +11,14 @@ const promotionalMessages = [
   "✨ ¡Sigue creciendo tu negocio con nosotros!"
 ];
 
-// ... (función generateAlertMessages sin cambios) ...
 function generateAlertMessages(menu) {
   const alerts = [];
-
   menu.forEach(product => {
-    // No generar alertas para productos inactivos
-    if (product.isActive === false) {
-      return;
-    }
-
-    // 3. Usamos el helper
-    const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(product);
-
-    // Alerta de stock bajo
+    if (product.isActive === false) return;
+    const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(product); //
     if (isLowStock) {
       alerts.push(`¡Stock bajo! Quedan ${product.stock} unidades de ${product.name}.`);
     }
-
-    // Alerta de caducidad
     if (isNearingExpiry) {
       const message = expiryDays === 0 ?
         `¡Atención! ${product.name} caduca hoy.` :
@@ -38,34 +26,69 @@ function generateAlertMessages(menu) {
       alerts.push(message);
     }
   });
-
   return alerts;
 }
 
+// <-- 2. NUEVO Helper para calcular días restantes
+function getDaysRemaining(endDate) {
+  if (!endDate) return 0;
+  const now = new Date();
+  const end = new Date(endDate);
+  const diffTime = end - now;
+  if (diffTime <= 0) return 0;
+  // Usamos Math.ceil para redondear hacia arriba (si faltan 6.1 días, son 7 días)
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
 
 export default function Ticker() {
-  // 3. Lee los datos directamente del store centralizado
+  // <-- 3. Lee el estado de la licencia
+  const licenseStatus = useAppStore((state) => state.licenseStatus);
+  const gracePeriodEnds = useAppStore((state) => state.gracePeriodEnds);
+
+  // Lee el estado del dashboard (para los mensajes normales)
   const menu = useDashboardStore((state) => state.menu);
   const isLoading = useDashboardStore((state) => state.isLoading);
 
-  const messages = useMemo(() => {
-    if (isLoading || !menu) return promotionalMessages;
+  // <-- 4. Lógica de mensajes MODIFICADA
+  const { messages, isPriority } = useMemo(() => {
+    // ¡LÓGICA DE PRIORIDAD!
+    if (licenseStatus === 'grace_period' && gracePeriodEnds) {
+      const days = getDaysRemaining(gracePeriodEnds);
+      const dayText = days === 1 ? '1 día' : `${days} días`;
+      
+      // ¡Tu mensaje tipo copywriting!
+      const copy = `Tu licencia ha caducado. El sistema se bloqueará en ${dayText}. Renueva tu plan para evitar interrupciones.`;
+      
+      return {
+        messages: [copy, copy, copy], // Repetimos el mensaje para llenar el ticker
+        isPriority: true // Bandera para cambiar el estilo
+      };
+    }
 
+    // Lógica normal (existente)
+    if (isLoading || !menu) {
+      return { messages: promotionalMessages, isPriority: false };
+    }
     try {
-      const alerts = generateAlertMessages(menu);
+      const alerts = generateAlertMessages(menu); //
       if (alerts.length === 0) {
-        return promotionalMessages;
+        return { messages: promotionalMessages, isPriority: false };
       }
-      return alerts;
+      return { messages: alerts, isPriority: false };
     } catch (error) {
       console.error('Error generando alertas:', error);
-      return promotionalMessages; // ✅ Fallback seguro
+      return { messages: promotionalMessages, isPriority: false };
     }
-  }, [menu, isLoading]);
+  }, [licenseStatus, gracePeriodEnds, menu, isLoading]);
+  
+  // <-- 5. Aplicar clases CSS dinámicas
+  const containerClasses = [
+    'notification-ticker-container',
+    isPriority ? 'priority-warning' : ''
+  ].filter(Boolean).join(' ');
 
   return (
-    // ... (El JSX de retorno no cambia) ...
-    <div id="notification-ticker-container" className="notification-ticker-container">
+    <div id="notification-ticker-container" className={containerClasses}>
       <div className="ticker-wrap">
         <div className="ticker-move">
           {messages.map((msg, index) => (

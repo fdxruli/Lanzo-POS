@@ -33,3 +33,72 @@
 .welcome-summary li {
   margin-bottom: 8px;
 }
+
+/* Divisor "O" */
+.trial-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: var(--spacing-md) 0;
+  color: var(--text-light);
+}
+.trial-divider::before,
+.trial-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--light-background);
+}
+.trial-divider span {
+  padding: 0 var(--spacing-sm);
+}
+
+/* Botón de prueba */
+.btn-trial {
+  width: 100%;
+  background-color: var(--secondary-color); /* Color púrpura */
+  color: white;
+}
+.btn-trial:hover {
+  opacity: 0.9;
+}
+.btn-trial:disabled {
+  background-color: var(--text-light);
+}
+
+/* Mensaje de error */
+.welcome-error-message {
+  margin-top: 15px;
+  color: var(--error-color);
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Contenedor para el error y el botón de soporte */
+.welcome-footer {
+  margin-top: var(--spacing-lg);
+  text-align: center;
+}
+
+/* Mensaje de error (movido al footer) */
+.welcome-error-message {
+  margin-top: 0;
+  margin-bottom: var(--spacing-sm);
+  color: var(--error-color);
+  font-weight: 500;
+}
+
+/* Botón de soporte (estilo de enlace) */
+.btn-support-link {
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: var(--spacing-xs);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.btn-support-link:hover {
+  color: var(--secondary-color);
+}

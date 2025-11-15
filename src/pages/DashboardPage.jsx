@@ -1,6 +1,6 @@
 // src/pages/DashboardPage.jsx
-import React, { useState, useMemo } from 'react'; // 1. Importa useMemo
-// 2. Importa el store
+import React, { useState, useMemo } from 'react'; 
+// ¡YA NO SE IMPORTA useDashboardStore COMPLETO!
 import { useDashboardStore } from '../store/useDashboardStore';
 import StatsGrid from '../components/dashboard/StatsGrid';
 import SalesHistory from '../components/dashboard/SalesHistory';
@@ -11,27 +11,23 @@ import './DashboardPage.css';
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState('stats');
   
-  // 3. Obtén los datos crudos y las acciones del store
-  const { 
-    isLoading, 
-    sales, 
-    menu, 
-    deletedItems, 
-    deleteSale, 
-    restoreItem 
-  } = useDashboardStore(state => ({
-    isLoading: state.isLoading,
-    sales: state.sales,
-    menu: state.menu,
-    deletedItems: state.deletedItems,
-    deleteSale: state.deleteSale,
-    restoreItem: state.restoreItem,
-  }));
+  // ======================================================
+  // ¡AQUÍ ESTÁ LA CORRECCIÓN!
+  // Reemplazamos el selector de objeto por selectores individuales.
+  // ======================================================
+  const isLoading = useDashboardStore((state) => state.isLoading);
+  const sales = useDashboardStore((state) => state.sales);
+  const menu = useDashboardStore((state) => state.menu);
+  const deletedItems = useDashboardStore((state) => state.deletedItems);
+  const deleteSale = useDashboardStore((state) => state.deleteSale);
+  const restoreItem = useDashboardStore((state) => state.restoreItem);
+  // ======================================================
+  // FIN DE LA CORRECCIÓN
+  // ======================================================
 
-  // ======================================================
-  // 4. ¡NUEVO! Mueve la lógica de `useMemo` aquí
+  
+  // 4. Lógica de `useMemo` (Esta parte ya estaba perfecta)
   // (Copiada de tu antiguo `useDashboard.js`)
-  // ======================================================
   
   // 4.1. Crea un mapa de productos solo cuando 'menu' cambia
   const productMap = useMemo(
@@ -86,7 +82,7 @@ export default function DashboardPage() {
     return <div>Cargando estadísticas...</div>;
   }
 
-  // 5. El renderizado ahora usa el `stats` localmente calculado
+  // 5. El renderizado (sin cambios)
   return (
     <>
       <h2 className="section-title">Panel de Ventas y Estadísticas</h2>

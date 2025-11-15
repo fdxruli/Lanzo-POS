@@ -52,6 +52,14 @@
   color: var(--text-light);
 }
 
+/* --- ¡NUEVO! --- */
+/* Contenedor para las etiquetas "Activo" y "Este Dispositivo" */
+.device-status-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .device-status-badge {
   font-size: 0.75rem;
   font-weight: 600;
@@ -67,7 +75,23 @@
   background-color: var(--text-light);
 }
 
+/* --- ¡NUEVO! --- */
+/* Estilo para la nueva etiqueta */
+.device-status-badge.current {
+  background-color: var(--secondary-color); /* Color púrpura */
+}
+
+
 .btn-deactivate-device {
   width: auto; /* Anula el width: 100% de .btn-cancel */
   flex-shrink: 0;
+}
+
+/* --- ¡NUEVO! --- */
+/* Estilo para el botón deshabilitado */
+.btn-deactivate-device:disabled {
+  background-color: var(--light-background);
+  color: var(--text-light);
+  border-color: var(--light-background);
+  cursor: not-allowed;
 }
