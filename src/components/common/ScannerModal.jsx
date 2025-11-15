@@ -16,7 +16,6 @@ export default function ScannerModal({ show, onClose }) {
   const setOrder = useOrderStore((state) => state.setOrder);
 
   const [scannedItems, setScannedItems] = useState([]);
-  const [lastCode, setLastCode] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [scanFeedback, setScanFeedback] = useState('');
@@ -26,16 +25,23 @@ export default function ScannerModal({ show, onClose }) {
     onDecodeResult(result) {
       const code = result.getText();
       
-      if (code === lastCode) return;
-      setLastCode(code);
-      setTimeout(() => setLastCode(''), 1000);
+      // ¡Nueva lógica!
       
-      setScanFeedback(`✓ Código: ${code}`);
-      setTimeout(() => setScanFeedback(''), 3000);
+      // 1. Pausar el escáner inmediatamente
+      setIsScanning(false);
       
+      // 2. Dar feedback visual y físico
       if (navigator.vibrate) navigator.vibrate(100);
-      
+      setScanFeedback(`✓ Escaneado: ${code}`);
+
+      // 3. Procesar el código (añadirlo a la lista)
       processScannedCode(code);
+
+      // 4. Establecer un "cooldown" antes de reactivar el escáner
+      setTimeout(() => {
+        setIsScanning(true); // Reactivar el escáner
+        setScanFeedback(''); // Limpiar el mensaje de feedback
+      }, 1500); // <-- ¡Cooldown de 1.5 segundos! Puedes ajustar este valor
     },
     onError(error) {
       console.error('Error de ZXing:', error);
@@ -149,7 +155,6 @@ export default function ScannerModal({ show, onClose }) {
     }
     
     setScannedItems([]);
-    setLastCode('');
     setIsScanning(false);
     setCameraError(null);
     setScanFeedback('');
