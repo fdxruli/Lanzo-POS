@@ -1,0 +1,98 @@
+/* src/components/products/BatchManager.css */
+
+.batch-manager-container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+}
+
+.batch-details-container {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--light-background);
+}
+
+.batch-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.batch-strategy {
+  flex-grow: 1;
+  min-width: 250px;
+}
+
+.batch-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: var(--spacing-md);
+}
+
+.batch-list-table th,
+.batch-list-table td {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--light-background);
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.batch-list-table th {
+  background-color: var(--light-background);
+  color: var(--text-dark);
+}
+
+.batch-list-table .inactive-batch {
+  opacity: 0.6;
+  background-color: #f9fafb;
+}
+[data-theme="dark"] .batch-list-table .inactive-batch {
+  background-color: #374151;
+}
+
+
+.batch-badge {
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+}
+.batch-badge.activo { background-color: var(--success-color); }
+.batch-badge.bajo { background-color: var(--warning-color); }
+.batch-badge.agotado { background-color: var(--text-light); }
+
+.btn-action {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: var(--spacing-xs);
+}
+.btn-action:hover {
+  color: var(--primary-color);
+}
+
+.batch-summary {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--light-background);
+}
+.batch-summary p {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+/* Estilos para el modal BatchForm */
+.modal-content.batch-form-modal {
+  max-width: 500px;
+}
+
+.batch-form-modal textarea {
+  min-height: 80px;
+}

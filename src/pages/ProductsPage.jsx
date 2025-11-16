@@ -1,42 +1,48 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { loadData, saveData, deleteData, STORES } from '../services/database';
-import { showMessageModal } from '../services/utils'; // ¡Importante!
+import { showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
+import { useDashboardStore } from '../store/useDashboardStore';
+// ¡NUEVO! Importa el gestor de lotes
+import BatchManager from '../components/products/BatchManager'; 
 import './ProductsPage.css'
 
 export default function ProductsPage() {
-    // ESTADO (sin cambios)
     const [activeTab, setActiveTab] = useState('view-products');
-    const [products, setProducts] = useState([]);
     const [categories, setCategories] = useState([]);
     const [editingProduct, setEditingProduct] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
+    
+    // ¡NUEVO! Estado para el BatchManager
+    const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
 
-    // Lógica de carga unificada (sin cambios)
-    const refreshData = useCallback(async () => {
+    // Cargar datos desde el store central
+    const products = useDashboardStore((state) => state.menu);
+    const rawProducts = useDashboardStore((state) => state.rawProducts);
+    const rawBatches = useDashboardStore((state) => state.rawBatches); // Necesitamos pasarlo
+    const refreshData = useDashboardStore((state) => state.loadAllData);
+
+    const loadCategories = useCallback(async () => {
+        // ... (sin cambios)
         setIsLoading(true);
         try {
-            const productData = await loadData(STORES.MENU);
             const categoryData = await loadData(STORES.CATEGORIES);
-            setProducts(productData);
             setCategories(categoryData);
         } catch (error) {
-            console.error("Error al cargar datos:", error);
+            console.error("Error al cargar categorías:", error);
         } finally {
             setIsLoading(false);
         }
     }, []);
 
-    // Carga de datos única (sin cambios)
     useEffect(() => {
-        refreshData();
-    }, [refreshData]);
+        loadCategories();
+    }, [loadCategories]);
 
-    // Funciones de categorías (sin cambios)
     const handleSaveCategory = async (categoryData) => {
         try {
             await saveData(STORES.CATEGORIES, categoryData);
@@ -60,54 +66,41 @@ export default function ProductsPage() {
         }
     };
 
-    /**
-     * Guarda o actualiza un producto
-     */
-    const handleSaveProduct = async (productData, editingProduct) => { // ¡MODIFICADO!
+
+    const handleSaveProduct = async (productData, editingProduct) => {
+        // ... (sin cambios)
         try {
-            const id = editingProduct ? editingProduct.id : `product-${Date.now()}`;
+            if (editingProduct) {
+                if (productData.image && productData.image instanceof File) {
+                    const imageUrl = await window.uploadFile(productData.image, 'product');
+                    productData.image = imageUrl;
+                }
+                await saveData(STORES.MENU, productData);
+                showMessageModal('¡Producto actualizado exitosamente!');
             
-            // ======================================================
-            // ¡HEMOS ELIMINADO LA VALIDACIÓN DE BARCODE DUPLICADO!
-            // Ahora permitimos duplicados para gestionar lotes.
-            // ======================================================
-
-            // 1. Revisa si se está subiendo una *nueva* imagen
-            if (productData.image && productData.image instanceof File) {
-                console.log("Subiendo imagen de producto a Supabase Storage...");
-                const imageUrl = await window.uploadFile(productData.image, 'product');
-                productData.image = imageUrl; // Reemplaza el File por la URL
+            } else {
+                showMessageModal('¡Producto guardado exitosamente!');
             }
-
-            const isActive = editingProduct ? editingProduct.isActive : true;
-            const dataToSave = { ...productData, id, isActive };
-
-            await saveData(STORES.MENU, dataToSave);
-
-            console.log('Producto guardado');
-            setEditingProduct(null); // ¡MODIFICADO!
-            setActiveTab('view-products');
             await refreshData();
-            
-            showMessageModal('¡Producto guardado exitosamente!');
-
+            setEditingProduct(null);
+            setActiveTab('view-products');
         } catch (error) {
             console.error("Error al guardar producto:", error);
             showMessageModal(`Error al guardar el producto: ${error.message}`);
         }
     };
 
-    /**
-     * Prepara el formulario para edición
-     */
     const handleEditProduct = (product) => {
-        setEditingProduct(product);
-        setActiveTab('add-product');
+        // ... (sin cambios)
+        const productToEdit = rawProducts.find(p => p.id === product.id);
+        if (productToEdit) {
+            setEditingProduct(productToEdit);
+            setActiveTab('add-product');
+        } else {
+            console.error("No se pudo encontrar el producto original para editar");
+        }
     };
 
-    /**
-     * Mueve un producto a la papelera
-     */
     const handleDeleteProduct = async (product) => {
         if (window.confirm(`¿Seguro que quieres eliminar "${product.name}"?`)) {
             try {
@@ -137,10 +130,16 @@ export default function ProductsPage() {
             console.error("Error al cambiar estado:", error);
         }
     };
-
+    
     const handleCancelEdit = () => {
         setEditingProduct(null);
         setActiveTab('view-products');
+    };
+
+    // ¡NUEVO! Función para conectar el Form con el BatchManager
+    const handleManageBatches = (productId) => {
+        setSelectedBatchProductId(productId);
+        setActiveTab('batches');
     };
 
     // VISTA (RENDER)
@@ -156,7 +155,7 @@ export default function ProductsPage() {
                         setActiveTab('add-product');
                     }}
                 >
-                    Añadir Producto
+                    {editingProduct ? 'Editar Producto' : 'Añadir Producto'}
                 </button>
                 <button
                     className={`tab-btn ${activeTab === 'view-products' ? 'active' : ''}`}
@@ -164,22 +163,28 @@ export default function ProductsPage() {
                 >
                     Ver Productos
                 </button>
+                <button 
+                    className={`tab-btn ${activeTab === 'batches' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('batches')}
+                >
+                    Gestionar Lotes
+                </button>
             </div>
 
-            {activeTab === 'add-product' ? (
+            {activeTab === 'add-product' && (
                 <ProductForm
                     onSave={handleSaveProduct}
                     onCancel={handleCancelEdit}
                     productToEdit={editingProduct}
                     categories={categories}
                     onOpenCategoryManager={() => setShowCategoryModal(true)}
-                    // ======================================================
-                    // ¡NUEVOS PROPS!
-                    // ======================================================
                     products={products}
-                    onEdit={handleEditProduct} 
+                    onEdit={handleEditProduct}
+                    onManageBatches={handleManageBatches} // ¡Pasamos la nueva función!
                 />
-            ) : (
+            )}
+            
+            {activeTab === 'view-products' && (
                 <ProductList
                     products={products}
                     categories={categories}
@@ -189,6 +194,15 @@ export default function ProductsPage() {
                     onToggleStatus={handleToggleStatus}
                 />
             )}
+
+            {/* ¡NUEVO! Renderiza tu BatchManager aquí */}
+            {activeTab === 'batches' && (
+                 <BatchManager
+                    selectedProductId={selectedBatchProductId}
+                    onProductSelect={setSelectedBatchProductId}
+                 />
+            )}
+
             <CategoryManagerModal
                 show={showCategoryModal}
                 onClose={() => setShowCategoryModal(false)}
