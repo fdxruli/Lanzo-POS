@@ -1,19 +1,16 @@
 // src/components/products/ProductForm.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { compressImage, lookupBarcodeInAPI } from '../../services/utils';
-import { showMessageModal } from '../../services/utils';
+import { compressImage, lookupBarcodeInAPI } from '../../services/utils'; 
+import { showMessageModal } from '../../services/utils'; 
 import CostCalculatorModal from './CostCalculatorModal';
 import ScannerModal from '../common/ScannerModal';
 import './ProductForm.css'
-// ¡Importante! Necesitamos 'saveData' aquí
-import { saveData, STORES } from '../../services/database';
 
 const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
 
-export default function ProductForm({
-    onSave, onCancel, productToEdit, categories, onOpenCategoryManager,
-    products, onEdit,
-    onManageBatches // ¡ESTA ES LA NUEVA PROP PARA CONECTAR AL GESTOR!
+export default function ProductForm({ 
+    onSave, onCancel, productToEdit, categories, onOpenCategoryManager, 
+    products, onEdit 
 }) {
 
     // 1. ESTADO DEL FORMULARIO
@@ -23,72 +20,76 @@ export default function ProductForm({
     const [imagePreview, setImagePreview] = useState(defaultPlaceholder);
     const [imageData, setImageData] = useState(null);
     const [categoryId, setCategoryId] = useState('');
-    const [saleType, setSaleType] = useState('unit');
-    const [internalEditingProduct, setInternalEditingProduct] = useState(null);
-    const [showSpecificData, setShowSpecificData] = useState(false);
-    
-    // --- NUEVO: Estado solo para el PRIMER LOTE ---
-    const [cost, setCost] = useState('');
-    const [price, setPrice] = useState('');
-    const [stock, setStock] = useState('0');
     const [expiryDate, setExpiryDate] = useState('');
-    const [bulkQty, setBulkQty] = useState('');
-    const [bulkUnit, setBulkUnit] = useState('kg');
-    const [bulkCost, setBulkCost] = useState('');
-    
-    // ... (otros estados: showCostCalculator, isScannerOpen, etc. no cambian) ...
     const [showCostCalculator, setShowCostCalculator] = useState(false);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
     const [isLookingUp, setIsLookingUp] = useState(false);
-
+    const [saleType, setSaleType] = useState('unit');
+    const [cost, setCost] = useState('');
+    const [price, setPrice] = useState('');
+    const [stock, setStock] = useState('0');
+    const [bulkQty, setBulkQty] = useState('');
+    const [bulkUnit, setBulkUnit] = useState('kg');
+    const [bulkCost, setBulkCost] = useState('');
+    const [bulkSalePrice, setBulkSalePrice] = useState('');
+    const [internalEditingProduct, setInternalEditingProduct] = useState(null);
+    const [showSpecificData, setShowSpecificData] = useState(false); // Renombrado
 
     // 2. EFECTO PARA RELLENAR EL FORMULARIO (EDICIÓN)
     useEffect(() => {
         setInternalEditingProduct(productToEdit);
         if (productToEdit) {
-            // Rellenar datos del PRODUCTO
             setName(productToEdit.name);
             setBarcode(productToEdit.barcode || '');
             setDescription(productToEdit.description || '');
             setImagePreview(productToEdit.image || defaultPlaceholder);
             setImageData(productToEdit.image || null);
             setCategoryId(productToEdit.categoryId || '');
+            setExpiryDate(productToEdit.expiryDate || '');
             setSaleType(productToEdit.saleType || 'unit');
-            setShowSpecificData(true); // Mostrar siempre al editar
 
-            // Al editar, deshabilitamos la creación del lote
-            // (esto se hará en BatchManager)
-            setCost('');
-            setPrice('');
-            setStock('0');
-            setExpiryDate('');
-            setBulkQty('');
-            setBulkCost('');
+            if (productToEdit.saleType === 'bulk' && productToEdit.bulkData) {
+                setBulkQty(productToEdit.bulkData.purchase.quantity || '');
+                setBulkUnit(productToEdit.bulkData.purchase.unit || 'kg');
+                setBulkCost(productToEdit.bulkData.purchase.cost || '');
+                setBulkSalePrice(productToEdit.price || ''); 
+            } else {
+                setCost(productToEdit.cost || '');
+                setPrice(productToEdit.price || '');
+                setStock(productToEdit.stock || '0');
+            }
+            
+            // Si el producto que se edita tiene datos adicionales, muestra la sección
+            if (productToEdit.description || productToEdit.categoryId || productToEdit.expiryDate || productToEdit.image || (productToEdit.cost && productToEdit.cost > 0) || (productToEdit.stock && productToEdit.stock > 0)) {
+                setShowSpecificData(true);
+            } else {
+                setShowSpecificData(false);
+            }
 
         } else {
             resetForm();
         }
-    }, [productToEdit]);
-
+    }, [productToEdit]); 
+    
     // 3. RESET FORM
     const resetForm = () => {
         setName(''); setBarcode(''); setDescription('');
         setImagePreview(defaultPlaceholder); setImageData(null);
-        setCategoryId(''); setSaleType('unit');
-        setCost(''); setPrice(''); setStock('0'); setExpiryDate('');
-        setBulkQty(''); setBulkUnit('kg'); setBulkCost('');
+        setCategoryId(''); setExpiryDate(''); setSaleType('unit');
+        setCost(''); setPrice(''); setStock('0');
+        setBulkQty(''); setBulkUnit('kg'); setBulkCost(''); setBulkSalePrice('');
         setInternalEditingProduct(null);
         setShowSpecificData(false);
     };
-
-    // ... (handleImageChange, márgenes de ganancia, etc. NO CAMBIAN) ...
+    
+    // ... (handleImageChange, unitProfitMargin, bulkCostPerUnit, bulkProfitMargin NO CAMBIAN) ...
     const handleImageChange = async (e) => {
         const file = e.target.files[0];
         if (file) {
             try {
-                const compressedFile = await compressImage(file);
-                setImagePreview(URL.createObjectURL(compressedFile));
-                setImageData(compressedFile);
+                const compressedFile = await compressImage(file); 
+                setImagePreview(URL.createObjectURL(compressedFile)); 
+                setImageData(compressedFile); 
             } catch (error) {
                 console.error("Error al comprimir imagen:", error);
                 setImagePreview(defaultPlaceholder);
@@ -113,46 +114,69 @@ export default function ProductForm({
         if (qty > 0 && cost > 0) return cost / qty;
         return 0;
     }, [bulkQty, bulkCost]);
-    
+
     const bulkProfitMargin = useMemo(() => {
-        const p = parseFloat(price); // Usamos 'price' para el precio de venta por unidad
+        const p = parseFloat(bulkSalePrice);
         if (bulkCostPerUnit > 0 && p > bulkCostPerUnit) {
             const margin = ((p - bulkCostPerUnit) / p) * 100;
             return `Margen de ganancia: ${margin.toFixed(1)}%`;
         }
         return '';
-    }, [bulkCostPerUnit, price]);
-    
-    /**
-     * ¡LÓGICA DE BÚSQUEDA DE CÓDIGO CORREGIDA!
-     * Esta es la versión que te sugerí.
-     */
+    }, [bulkCostPerUnit, bulkSalePrice]);
+
+
+    // ... (handleBarcodeLookup, handleBarcodeScanned, handleAssignCost NO CAMBIAN) ...
+    // Esta es la versión que SÍ funciona para los lotes
     const handleBarcodeLookup = async (codeToLookup) => {
         if (!codeToLookup) {
             showMessageModal('Por favor, ingresa un código de barras para buscar.');
             return;
         }
-        
+
         const localProduct = products.find(p => p.barcode === codeToLookup);
 
         if (localProduct) {
-            // --- ¡AQUÍ ESTÁ LA CONEXIÓN! ---
             showMessageModal(
                 `El código "${codeToLookup}" ya está en uso por "${localProduct.name}". ¿Qué deseas hacer?`,
-                () => { // onConfirm -> "Registrar Nuevo Lote"
-                    // ¡Llamamos a la nueva función de ProductsPage!
-                    onManageBatches(localProduct.id);
+                () => { 
+                    setName(localProduct.name);
+                    setBarcode(localProduct.barcode);
+                    setDescription(localProduct.description || '');
+                    setImagePreview(localProduct.image || defaultPlaceholder);
+                    setImageData(localProduct.image || null);
+                    setCategoryId(localProduct.categoryId || '');
+                    setSaleType(localProduct.saleType || 'unit');
+
+                    if (localProduct.saleType === 'bulk' && localProduct.bulkData) {
+                        setBulkQty(localProduct.bulkData.purchase.quantity || '');
+                        setBulkUnit(localProduct.bulkData.purchase.unit || 'kg');
+                        setBulkCost(localProduct.bulkData.purchase.cost || '');
+                        setBulkSalePrice(localProduct.price || '');
+                    } else {
+                        setCost(localProduct.cost || '');
+                        setPrice(localProduct.price || '');
+                    }
+                    
+                    setStock(''); 
+                    setExpiryDate('');
+                    setInternalEditingProduct(null); 
+                    setShowSpecificData(true); 
+                    
+                    showMessageModal('Datos copiados. Ingresa el nuevo Stock y Caducidad. Te recomendamos añadir "(Lote 2)" al nombre.');
+                    setTimeout(() => {
+                        const stockInput = document.getElementById('product-stock');
+                        if (stockInput) stockInput.focus();
+                    }, 100);
                 },
                 {
-                    confirmButtonText: 'Registrar Nuevo Lote',
+                    confirmButtonText: 'Registrar Nuevo Lote', 
                     extraButton: {
                         text: 'Editar Original',
-                        action: () => onEdit(localProduct)
+                        action: () => onEdit(localProduct) 
                     }
                 }
             );
-            return;
-            // --- FIN DE LA CONEXIÓN ---
+            return; 
         }
 
         setIsLookingUp(true);
@@ -161,6 +185,9 @@ export default function ProductForm({
 
         if (apiResult.success) {
             setName(apiResult.product.name || name);
+            setDescription(prevDesc => 
+                apiResult.product.brand ? `Marca: ${apiResult.product.brand}` : (prevDesc || '')
+            );
             if (apiResult.product.image) {
                 setImagePreview(apiResult.product.image);
                 setImageData(apiResult.product.image);
@@ -177,126 +204,61 @@ export default function ProductForm({
         setIsScannerOpen(false);
         handleBarcodeLookup(code);
     };
-
+    
     const handleAssignCost = (totalCost) => {
         setCost(totalCost.toFixed(2));
     };
 
-
-    /**
-     * ¡LÓGICA DE GUARDADO MODIFICADA!
-     * Implementa tu "Escenario 1": Crea un Producto y un Lote.
-     */
-    const handleSubmit = async (e) => {
+    // ... (handleSubmit NO CAMBIA) ...
+    const handleSubmit = (e) => {
         e.preventDefault();
-
-        // Si estamos editando, solo guardamos el producto base
-        if (internalEditingProduct) {
-            const productData = {
-                ...internalEditingProduct,
-                name, barcode, description, categoryId, saleType,
-                image: imageData,
-                updatedAt: new Date().toISOString(),
-                batchManagement: internalEditingProduct.batchManagement || { enabled: false, selectionStrategy: 'fifo' }
-            };
-            // Llama al onSave original de ProductsPage.jsx
-            onSave(productData, internalEditingProduct);
-            resetForm();
-            return;
-        }
-
-        // --- Lógica de CREACIÓN (Producto + Lote) ---
-        const now = new Date().toISOString();
-        const productId = `product-${Date.now()}`;
         
-        // 1. Datos del PRODUCTO (info permanente)
-        const productData = {
-            id: productId,
-            name, barcode, description, categoryId, saleType,
-            image: imageData,
-            isActive: true,
-            createdAt: now,
-            updatedAt: now,
-            batchManagement: {
-                enabled: false, // Por defecto, se activa si se añaden más lotes
-                selectionStrategy: 'fifo'
-            },
-            // Estructura base para granel
-            bulkData: saleType === 'bulk' ? { sale: { unit: bulkUnit } } : null
-        };
-        
-        // 2. Datos del LOTE (info variable)
-        const nStock = parseInt(stock, 10);
-        const nCost = parseFloat(cost);
-        const nPrice = parseFloat(price);
-        const nBulkQty = parseFloat(bulkQty);
-        
-        let batchData = {
-            id: `batch-${productId}-${now}`,
-            productId: productId,
-            createdAt: now,
-            isActive: true,
-            notes: "Lote inicial creado con el producto",
-            expiryDate: expiryDate || null,
-        };
+        let productData = {};
 
         if (saleType === 'unit') {
-            batchData = {
-                ...batchData,
-                cost: isNaN(nCost) ? 0 : nCost,
-                price: isNaN(nPrice) ? 0 : nPrice,
+            const nStock = parseInt(stock, 10);
+            productData = {
+                name, barcode, description, categoryId, expiryDate,
+                image: imageData,
+                saleType: 'unit',
+                price: parseFloat(price),
+                cost: parseFloat(cost), 
                 stock: isNaN(nStock) ? 0 : nStock,
                 trackStock: nStock > 0,
+                bulkData: null,
             };
-        } else { // 'bulk'
-            batchData = {
-                ...batchData,
-                cost: bulkCostPerUnit, // Costo por unidad de venta (ej. por kg)
-                price: isNaN(nPrice) ? 0 : nPrice, // Precio por unidad de venta (ej. por kg)
-                stock: isNaN(nBulkQty) ? 0 : nBulkQty, // Stock total en (ej. kg)
+        } else {
+            const nBulkQty = parseFloat(bulkQty);
+            productData = {
+                name, barcode, description, categoryId, expiryDate,
+                image: imageData,
+                saleType: 'bulk',
+                price: parseFloat(bulkSalePrice), 
+                cost: bulkCostPerUnit,
+                stock: isNaN(nBulkQty) ? 0 : nBulkQty, 
                 trackStock: nBulkQty > 0,
                 bulkData: {
-                    purchase: { 
-                        quantity: nBulkQty, 
-                        unit: bulkUnit, 
-                        cost: parseFloat(bulkCost) || 0
-                    }
+                    purchase: { quantity: nBulkQty, unit: bulkUnit, cost: parseFloat(bulkCost) },
+                    sale: { unit: bulkUnit } 
                 }
             };
         }
 
-        try {
-            // 3. Guardar ambos
-            await saveData(STORES.MENU, productData);
-            
-            // Solo guardamos el lote si se ingresó stock
-            if (batchData.stock > 0) {
-                await saveData(STORES.PRODUCT_BATCHES, batchData);
-            }
-            
-            // Llamamos al onSave "falso" de ProductsPage para que refresque
-            onSave(productData, null); 
-            resetForm();
-
-        } catch (error) {
-             console.error("Error al guardar producto y lote:", error);
-             showMessageModal(`Error al guardar: ${error.message}`);
-        }
+        onSave(productData, internalEditingProduct);
+        resetForm();
     };
 
 
-    // 4. VISTA (JSX) - Modificada para reflejar Lote Inicial
-    const isEditing = !!internalEditingProduct;
-    
+    // 4. VISTA (JSX) - ¡ESTA ES LA PARTE RE-ESTRUCTURADA!
     return (
         <>
             <div className="product-form-container">
                 <h3 className="subtitle" id="product-form-title">
-                    {isEditing ? `Editar: ${internalEditingProduct.name}` : 'Añadir Nuevo Producto'}
+                    {internalEditingProduct ? `Editar: ${internalEditingProduct.name}` : 'Añadir Nuevo Producto'}
                 </h3>
                 <form id="product-form" onSubmit={handleSubmit}>
 
-                    {/* --- CAMPOS DEL PRODUCTO --- */}
+                    {/* --- CAMPOS ESENCIALES (Siempre visibles) --- */}
                     <div className="form-group">
                         <label className="form-label" htmlFor="product-name">Nombre del Producto *</label>
                         <input
@@ -309,9 +271,9 @@ export default function ProductForm({
                             onChange={(e) => setName(e.target.value)}
                         />
                     </div>
-                    
+
                     <div className="form-group">
-                        <label className="form-label" htmlFor="product-barcode">Código de Barras</label>
+                        <label className="form-label" htmlFor="product-barcode">Código de Barras (Opcional)</label>
                         <div className="input-with-button">
                             <input
                                 className="form-input"
@@ -331,10 +293,10 @@ export default function ProductForm({
                             </button>
                             <button
                                 type="button"
-                                className="btn-lookup"
+                                className="btn-lookup" 
                                 onClick={() => handleBarcodeLookup(barcode)}
                                 title="Buscar información del producto"
-                                disabled={isLookingUp}
+                                disabled={isLookingUp} 
                             >
                                 {isLookingUp ? '...' : '🔍'}
                             </button>
@@ -354,7 +316,44 @@ export default function ProductForm({
                         </select>
                     </div>
 
-                    {/* --- BOTÓN TOGGLE --- */}
+                    {/* --- CAMPOS DE PRECIO (Siempre visibles) --- */}
+                    {saleType === 'unit' ? (
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="product-price">Precio de Venta ($) *</label>
+                            <input className="form-input" id="product-price" type="number" step="0.01" min="0"
+                                value={price} onChange={(e) => setPrice(e.target.value)} required />
+                            {cost > 0 && (
+                                <small className="form-help-text" style={{ display: 'block' }}>
+                                    {unitProfitMargin}
+                                </small>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="bulk-sale-price">
+                                Precio de Venta (por {bulkUnit}) *
+                            </label>
+                            <input
+                                className="form-input"
+                                id="bulk-sale-price"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={bulkSalePrice}
+                                onChange={(e) => setBulkSalePrice(e.target.value)}
+                                required
+                            />
+                            {bulkCost > 0 && (
+                                <small className="form-help-text" style={{ display: 'block' }}>
+                                    {bulkProfitMargin}
+                                </small>
+                            )}
+                        </div>
+                    )}
+                    {/* --- FIN DE CAMPOS ESENCIALES --- */}
+
+
+                    {/* --- BOTÓN TOGGLE (Cambiado el texto) --- */}
                     <button
                         type="button"
                         className="btn-toggle-specific"
@@ -365,10 +364,103 @@ export default function ProductForm({
                         {showSpecificData ? ' 🔼' : ' 🔽'}
                     </button>
 
+
+                    {/* --- CAMPOS ADICIONALES (Ocultos por defecto) --- */}
                     {showSpecificData && (
                         <div className="specific-data-container">
+
+                            {/* --- Lote Inicial / Costo y Stock --- */}
+                            <h4 className="subtitle" style={{ fontSize: '1rem', color: 'var(--text-light)', marginBottom: 'var(--spacing-md)' }}>
+                                Lote Inicial (Opcional)
+                            </h4>
+                            
+                            {saleType === 'unit' ? (
+                                <>
+                                    <div className="form-group">
+                                        <label className="form-label" htmlFor="product-cost">Costo por Unidad ($)</label>
+                                        <input className="form-input" id="product-cost" type="number" step="0.01" min="0"
+                                            value={cost} onChange={(e) => setCost(e.target.value)} />
+                                        <button
+                                            type="button"
+                                            id="cost-help-button"
+                                            className="btn btn-help"
+                                            onClick={() => setShowCostCalculator(true)} 
+                                        >
+                                            Calcular Costo
+                                        </button>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label" htmlFor="product-stock">Stock (Unidades)</label>
+                                        <input className="form-input" id="product-stock" type="number" step="1" min="0"
+                                            value={stock} onChange={(e) => setStock(e.target.value)} />
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="form-group bulk-purchase-group">
+                                    <label className="form-label">Info de Compra (Stock)</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 'var(--spacing-sm)' }}>
+                                        <input
+                                            className="form-input"
+                                            type="number"
+                                            placeholder="Cantidad"
+                                            value={bulkQty}
+                                            onChange={(e) => setBulkQty(e.target.value)}
+                                            step="0.01"
+                                            min="0"
+                                        />
+                                        <select
+                                            className="form-input"
+                                            value={bulkUnit}
+                                            onChange={(e) => setBulkUnit(e.target.value)}
+                                        >
+                                            <option value="kg">kg</option>
+                                            <option value="lt">lt</option>
+                                            <option value="gr">gr</option>
+                                            <option value="ml">ml</option>
+                                        </select>
+                                        <input
+                                            className="form-input"
+                                            type="number"
+                                            placeholder="Costo Total ($)"
+                                            value={bulkCost}
+                                            onChange={(e) => setBulkCost(e.target.value)}
+                                            step="0.01"
+                                            min="0"
+                                        />
+                                    </div>
+                                    <small className="form-help-text" style={{ display: 'block' }}>
+                                        {bulkCostPerUnit > 0 && `Costo por ${bulkUnit}: $${bulkCostPerUnit.toFixed(2)}`}
+                                    </small>
+                                </div>
+                            )}
+
+                            {/* --- Fecha de Caducidad --- */}
                             <div className="form-group">
-                                <label className="form-label">Categoría</label>
+                                <label className="form-label" htmlFor="product-expiry">Fecha de Caducidad (Opcional)</label>
+                                <input
+                                    className="form-input"
+                                    id="product-expiry"
+                                    type="date"
+                                    value={expiryDate}
+                                    onChange={(e) => setExpiryDate(e.target.value)}
+                                />
+                            </div>
+
+                            {/* --- Descripción, Categoría, Imagen --- */}
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="product-description">Descripción (Opcional)</label>
+                                <textarea
+                                    className="form-textarea"
+                                    id="product-description"
+                                    rows="2"
+                                    placeholder="Una breve descripción del producto"
+                                    value={description}
+                                    onChange={(e) => setDescription(e.target.value)}
+                                ></textarea>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="product-category">Categoría</label>
                                 <select
                                     className="form-input"
                                     id="product-category"
@@ -389,19 +481,9 @@ export default function ProductForm({
                                     Administrar Categorías
                                 </button>
                             </div>
+
                             <div className="form-group">
-                                <label className="form-label">Descripción</label>
-                                <textarea
-                                    className="form-textarea"
-                                    id="product-description"
-                                    rows="2"
-                                    placeholder="Una breve descripción del producto"
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                ></textarea>
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Imagen</label>
+                                <label className="form-label" htmlFor="product-image-file">Imagen</label>
                                 <div className="image-upload-container">
                                     <img id="image-preview" className="image-preview" src={imagePreview} alt="Preview" />
                                     <input className="file-input" id="product-image-file" type="file" accept="image/*"
@@ -410,130 +492,16 @@ export default function ProductForm({
                             </div>
                         </div>
                     )}
-                    
-                    {/* --- SECCIÓN DEL LOTE INICIAL (Solo al crear) --- */}
-                    {!isEditing && (
-                        <div className="specific-data-container" style={{borderTop: '2px dashed var(--primary-color)', marginTop: '1rem'}}>
-                            <h4 className="subtitle" style={{color: 'var(--primary-color)'}}>
-                                Lote Inicial (Opcional)
-                            </h4>
-                            <small className="form-help-text" style={{display: 'block', marginTop: '-1rem', marginBottom: '1rem'}}>
-                                Ingresa el costo, precio y stock de tu primera compra.
-                            </small>
+                    {/* --- FIN DE CAMPOS ADICIONALES --- */}
 
-                            {saleType === 'unit' ? (
-                                <div id="unit-options">
-                                    <div className="form-group">
-                                        <label className="form-label" htmlFor="product-price">Precio de Venta ($) *</label>
-                                        <input className="form-input" id="product-price" type="number" step="0.01" min="0"
-                                            value={price} onChange={(e) => setPrice(e.target.value)} required={!isEditing} />
-                                        {cost > 0 && (
-                                            <small className="form-help-text" style={{ display: 'block' }}>
-                                                {unitProfitMargin}
-                                            </small>
-                                        )}
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label" htmlFor="product-cost">Costo por Unidad ($)</label>
-                                        <input className="form-input" id="product-cost" type="number" step="0.01" min="0"
-                                            value={cost} onChange={(e) => setCost(e.target.value)} />
-                                        <button
-                                            type="button"
-                                            id="cost-help-button"
-                                            className="btn btn-help"
-                                            onClick={() => setShowCostCalculator(true)}
-                                        >
-                                            Calcular Costo
-                                        </button>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label" htmlFor="product-stock">Stock (Unidades)</label>
-                                        <input className="form-input" id="product-stock" type="number" step="1" min="0"
-                                            value={stock} onChange={(e) => setStock(e.target.value)} />
-                                    </div>
-                                </div>
-                            ) : (
-                                <div id="bulk-options">
-                                    <div className="form-group">
-                                        <label className="form-label" htmlFor="bulk-sale-price">
-                                            Precio de Venta (por {bulkUnit}) *
-                                        </label>
-                                        <input
-                                            className="form-input"
-                                            id="bulk-sale-price"
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            value={price} // Usamos 'price' para el precio de venta por unidad
-                                            onChange={(e) => setPrice(e.target.value)}
-                                            required={!isEditing}
-                                        />
-                                        {bulkCost > 0 && (
-                                            <small className="form-help-text" style={{ display: 'block' }}>
-                                                {bulkProfitMargin}
-                                            </small>
-                                        )}
-                                    </div>
-                                    <div className="form-group bulk-purchase-group">
-                                        <label className="form-label">Info de Compra (Stock)</label>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 'var(--spacing-sm)' }}>
-                                            <input
-                                                className="form-input"
-                                                type="number"
-                                                placeholder="Cantidad"
-                                                value={bulkQty}
-                                                onChange={(e) => setBulkQty(e.target.value)}
-                                                step="0.01"
-                                                min="0"
-                                            />
-                                            <select
-                                                className="form-input"
-                                                value={bulkUnit}
-                                                onChange={(e) => setBulkUnit(e.target.value)}
-                                            >
-                                                <option value="kg">kg</option>
-                                                <option value="lt">lt</option>
-                                                <option value="gr">gr</option>
-                                                <option value="ml">ml</option>
-                                            </select>
-                                            <input
-                                                className="form-input"
-                                                type="number"
-                                                placeholder="Costo Total ($)"
-                                                value={bulkCost}
-                                                onChange={(e) => setBulkCost(e.target.value)}
-                                                step="0.01"
-                                                min="0"
-                                            />
-                                        </div>
-                                        <small className="form-help-text" style={{ display: 'block' }}>
-                                            {bulkCostPerUnit > 0 && `Costo por ${bulkUnit}: $${bulkCostPerUnit.toFixed(2)}`}
-                                        </small>
-                                    </div>
-                                </div>
-                            )}
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="product-expiry">Fecha de Caducidad (Opcional)</label>
-                                <input
-                                    className="form-input"
-                                    id="product-expiry"
-                                    type="date"
-                                    value={expiryDate}
-                                    onChange={(e) => setExpiryDate(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                    )}
-                    
-                    <button type="submit" className="btn btn-save">
-                        {isEditing ? 'Actualizar Producto' : 'Guardar Producto'}
-                    </button>
+                    <button type="submit" className="btn btn-save">Guardar Producto</button>
                     <button type="button" className="btn btn-cancel" onClick={onCancel}>
                         Cancelar
                     </button>
                 </form>
             </div>
-
+            
+            {/* --- MODALES --- */}
             <CostCalculatorModal
                 show={showCostCalculator}
                 onClose={() => setShowCostCalculator(false)}
