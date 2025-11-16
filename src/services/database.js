@@ -2,6 +2,7 @@
 
 const DB_NAME = 'LanzoDB1';
 const DB_VERSION = 12; // ¡Versión incrementada!
+
 export const STORES = {
     MENU: 'menu', // Este será tu almacén "PRODUCTS"
     SALES: 'sales',
@@ -26,12 +27,24 @@ let db = null;
 export function initDB() {
     return new Promise((resolve, reject) => {
         if (db) {
-            return resolve(db);
+            // ¡NUEVO! Verificar que la conexión sigue válida
+            try {
+                // Intenta acceder a la lista de stores como prueba rápida
+                db.objectStoreNames;
+                return resolve(db);
+            } catch (error) {
+                // Si falla, la conexión está rota
+                console.warn('Conexión de BD rota, recreando...', error);
+                db = null; // ¡RESETEAR!
+            }
         }
 
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-        request.onerror = (event) => reject('Error al abrir la base de datos: ' + event.target.errorCode);
+        request.onerror = (event) => {
+            db = null; // ¡RESETEAR EN ERROR!
+            reject('Error al abrir la base de datos: ' + event.target.errorCode);
+        };
 
         request.onsuccess = (event) => {
             db = event.target.result;
@@ -39,14 +52,11 @@ export function initDB() {
             resolve(db);
         };
 
-        // --- ¡ESTA ES LA FUNCIÓN QUE DEBES REEMPLAZAR! ---
         request.onupgradeneeded = (event) => {
             const tempDb = event.target.result;
             console.log('Actualizando la base de datos a la versión', DB_VERSION);
             
-            // --- INICIO DE LA CORRECCIÓN ---
             // Aseguramos que TODAS las tiendas existan
-
             if (!tempDb.objectStoreNames.contains(STORES.MENU)) {
                 tempDb.createObjectStore(STORES.MENU, { keyPath: 'id' });
             }
@@ -91,6 +101,7 @@ export function initDB() {
                 batchStore.createIndex('productId', 'productId', { unique: false });
                 console.log('Almacén PRODUCT_BATCHES creado.');
             }
+            
             if (event.oldVersion < 12) {
                 console.log('Detectada versión antigua, iniciando migración de productos a lotes...');
                 localStorage.setItem('run_batch_migration', 'true');
@@ -99,41 +110,101 @@ export function initDB() {
     });
 }
 
-// ... (saveData, loadData, deleteData no cambian) ...
+/**
+ * Guarda datos en un store específico.
+ * @param {string} storeName - Nombre del store (de STORES)
+ * @param {object|array} data - Datos a guardar (objeto o array de objetos)
+ */
 export function saveData(storeName, data) {
     return new Promise(async (resolve, reject) => {
-        const dbInstance = await initDB();
-        const transaction = dbInstance.transaction([storeName], 'readwrite');
-        const store = transaction.objectStore(storeName);
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = (event) => reject(event.target.error);
+        try {
+            const dbInstance = await initDB();
+            const transaction = dbInstance.transaction([storeName], 'readwrite');
+            const store = transaction.objectStore(storeName);
+            
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = (event) => {
+                // ¡RESETEAR SI HAY ERROR DE TRANSACCIÓN!
+                if (event.target.error.name === 'NotFoundError') {
+                    console.error('Store no encontrado, reseteando conexión...');
+                    db = null;
+                }
+                reject(event.target.error);
+            };
 
-        if (Array.isArray(data)) {
-            data.forEach(item => store.put(item));
-        } else {
-            store.put(data);
+            if (Array.isArray(data)) {
+                data.forEach(item => store.put(item));
+            } else {
+                store.put(data);
+            }
+        } catch (error) {
+            // ¡RESETEAR SI initDB falla!
+            console.error('Error en saveData, reseteando conexión...', error);
+            db = null;
+            reject(error);
         }
     });
 }
 
+/**
+ * Carga datos de un store.
+ * @param {string} storeName - Nombre del store
+ * @param {string|number} key - (Opcional) Clave específica del objeto a cargar
+ * @returns {Promise<object|array>} Los datos cargados
+ */
 export function loadData(storeName, key = null) {
     return new Promise(async (resolve, reject) => {
-        const dbInstance = await initDB();
-        const transaction = dbInstance.transaction([storeName], 'readonly');
-        const store = transaction.objectStore(storeName);
-        const request = key ? store.get(key) : store.getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = (event) => reject(event.target.error);
+        try {
+            const dbInstance = await initDB();
+            const transaction = dbInstance.transaction([storeName], 'readonly');
+            const store = transaction.objectStore(storeName);
+            const request = key ? store.get(key) : store.getAll();
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => {
+                // ¡RESETEAR SI HAY ERROR!
+                if (event.target.error.name === 'NotFoundError') {
+                    console.error('Store no encontrado, reseteando conexión...');
+                    db = null;
+                }
+                reject(event.target.error);
+            };
+        } catch (error) {
+            // ¡RESETEAR SI initDB falla!
+            console.error('Error en loadData, reseteando conexión...', error);
+            db = null;
+            reject(error);
+        }
     });
 }
 
+/**
+ * Elimina un dato específico de un store.
+ * @param {string} storeName - Nombre del store
+ * @param {string|number} key - Clave del objeto a eliminar
+ */
 export function deleteData(storeName, key) {
     return new Promise(async (resolve, reject) => {
-        const dbInstance = await initDB();
-        const transaction = dbInstance.transaction([storeName], 'readwrite');
-        const store = transaction.objectStore(storeName);
-        const request = store.delete(key);
-        request.onsuccess = () => resolve();
-        request.onerror = (event) => reject(event.target.error);
+        try {
+            const dbInstance = await initDB();
+            const transaction = dbInstance.transaction([storeName], 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.delete(key);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = (event) => {
+                // ¡RESETEAR SI HAY ERROR!
+                if (event.target.error.name === 'NotFoundError') {
+                    console.error('Store no encontrado, reseteando conexión...');
+                    db = null;
+                }
+                reject(event.target.error);
+            };
+        } catch (error) {
+            // ¡RESETEAR SI initDB falla!
+            console.error('Error en deleteData, reseteando conexión...', error);
+            db = null;
+            reject(error);
+        }
     });
 }
