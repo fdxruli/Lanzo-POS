@@ -37,13 +37,33 @@ export default function ProductsPage() {
     }, [refreshData]);
 
     // Funciones de categorías (sin cambios)
-    const handleSaveCategory = async (categoryData) => { /* ... */ };
-    const handleDeleteCategory = async (categoryId) => { /* ... */ };
+    const handleSaveCategory = async (categoryData) => {
+        try {
+            await saveData(STORES.CATEGORIES, categoryData);
+            await refreshData();
+        } catch (error) {
+            console.error("Error guardando categoría:", error);
+        }
+    };
+
+    const handleDeleteCategory = async (categoryId) => {
+        try {
+            await deleteData(STORES.CATEGORIES, categoryId);
+            const productsToUpdate = products.filter(p => p.categoryId === categoryId);
+            for (const product of productsToUpdate) {
+                product.categoryId = '';
+                await saveData(STORES.MENU, product);
+            }
+            await refreshData();
+        } catch (error) {
+            console.error("Error eliminando categoría:", error);
+        }
+    };
 
     /**
      * Guarda o actualiza un producto
      */
-    const handleSaveProduct = async (productData) => {
+    const handleSaveProduct = async (productData, editingProduct) => { // ¡MODIFICADO!
         try {
             const id = editingProduct ? editingProduct.id : `product-${Date.now()}`;
             
@@ -52,13 +72,20 @@ export default function ProductsPage() {
             // Ahora permitimos duplicados para gestionar lotes.
             // ======================================================
 
+            // 1. Revisa si se está subiendo una *nueva* imagen
+            if (productData.image && productData.image instanceof File) {
+                console.log("Subiendo imagen de producto a Supabase Storage...");
+                const imageUrl = await window.uploadFile(productData.image, 'product');
+                productData.image = imageUrl; // Reemplaza el File por la URL
+            }
+
             const isActive = editingProduct ? editingProduct.isActive : true;
             const dataToSave = { ...productData, id, isActive };
 
             await saveData(STORES.MENU, dataToSave);
 
             console.log('Producto guardado');
-            setEditingProduct(null);
+            setEditingProduct(null); // ¡MODIFICADO!
             setActiveTab('view-products');
             await refreshData();
             
@@ -98,7 +125,18 @@ export default function ProductsPage() {
     /**
      * Activa o desactiva un producto
      */
-    const handleToggleStatus = async (product) => { /* ... */ };
+    const handleToggleStatus = async (product) => {
+        try {
+            const updatedProduct = {
+                ...product,
+                isActive: !(product.isActive !== false) // Invierte el estado
+            };
+            await saveData(STORES.MENU, updatedProduct);
+            await refreshData();
+        } catch (error) {
+            console.error("Error al cambiar estado:", error);
+        }
+    };
 
     const handleCancelEdit = () => {
         setEditingProduct(null);
@@ -110,7 +148,6 @@ export default function ProductsPage() {
         <>
             <h2 className="section-title">Gestión de Productos e Inventario</h2>
 
-            {/* ... (Tabs sin cambios) ... */}
             <div className="tabs-container" id="product-tabs">
                 <button
                     className={`tab-btn ${activeTab === 'add-product' ? 'active' : ''}`}
@@ -128,7 +165,6 @@ export default function ProductsPage() {
                     Ver Productos
                 </button>
             </div>
-
 
             {activeTab === 'add-product' ? (
                 <ProductForm

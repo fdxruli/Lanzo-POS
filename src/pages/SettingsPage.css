@@ -158,3 +158,17 @@
     align-items: center;
   }
 }
+
+.form-help-text {
+  display: block;
+  margin-top: var(--spacing-xs);
+  font-size: 0.875rem;
+  color: var(--text-light);
+}
+
+/* Estilo para inputs deshabilitados */
+.form-input:disabled {
+  background-color: var(--light-background);
+  opacity: 0.7;
+  cursor: not-allowed;
+}

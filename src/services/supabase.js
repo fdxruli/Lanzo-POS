@@ -329,3 +329,53 @@ window.createFreeTrial = async function() {
         return { success: false, error: `Error del cliente: ${error.message}` };
     }
 };
+
+/**
+ * Sube un archivo (imagen) a Supabase Storage.
+ * @param {File} file El archivo a subir (idealmente el .webp comprimido).
+ * @param {'logo' | 'product'} type El tipo de imagen, para la carpeta.
+ * @returns {Promise<string>} La URL pública de la imagen subida.
+ */
+window.uploadFile = async function(file, type = 'product') {
+    if (!file) throw new Error("No se proporcionó ningún archivo.");
+
+    try {
+        const user = await getSupabaseUser();
+        if (!user) throw new Error("No se pudo obtener la sesión del usuario.");
+
+        // Creamos un nombre de archivo único
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${type}-${user.id}-${Date.now()}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`; // Ej: 'user-id-123/product-user-id-123-456789.webp'
+
+        // 1. Subir el archivo
+        let { error: uploadError } = await supabaseClient
+            .storage
+            .from('images') // El nombre de tu bucket
+            .upload(filePath, file, {
+                cacheControl: '3600',
+                upsert: false // No sobrescribir
+            });
+
+        if (uploadError) {
+            throw uploadError;
+        }
+
+        // 2. Obtener la URL pública
+        const { data } = supabaseClient
+            .storage
+            .from('images') // El nombre de tu bucket
+            .getPublicUrl(filePath);
+
+        if (!data || !data.publicUrl) {
+            throw new Error("No se pudo obtener la URL pública después de la subida.");
+        }
+
+        console.log('Imagen subida exitosamente:', data.publicUrl);
+        return data.publicUrl;
+
+    } catch (error) {
+        console.error('Error al subir el archivo:', error);
+        return null; // Devolvemos null en caso de error
+    }
+};

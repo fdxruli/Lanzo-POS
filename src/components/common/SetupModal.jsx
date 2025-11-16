@@ -15,7 +15,7 @@ export default function SetupModal() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
-  const [logoData, setLogoData] = useState(null);
+  const [logoData, setLogoData] = useState(null); // Esto ahora guardará el FILE
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [error, setError] = useState('');
 
@@ -33,17 +33,27 @@ export default function SetupModal() {
     });
   };
 
-  // Lógica de compresión de imagen
+  // ¡MODIFICADO! Lógica de compresión de imagen
   const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const compressed = await compressImage(file);
-      setLogoPreview(compressed);
-      setLogoData(compressed);
+      try {
+        const compressedFile = await compressImage(file); // 1. Llama a la nueva función
+        
+        // 2. Crea una URL local para la vista previa
+        setLogoPreview(URL.createObjectURL(compressedFile)); 
+        
+        // 3. Guarda el ARCHIVO (File object) en el estado
+        setLogoData(compressedFile); 
+      
+      } catch (error) {
+        console.error("Error al comprimir imagen:", error);
+      }
     }
   };
 
   // 3. Manejador de envío
+  // El store se encargará de la lógica de subida
   const handleSubmit = (e) => {
     e.preventDefault();
     if (selectedTypes.length === 0) {
@@ -56,7 +66,7 @@ export default function SetupModal() {
       name,
       phone,
       address,
-      logo: logoData,
+      logo: logoData, // Pasa el FILE object
       business_type: selectedTypes
     });
     // El store se encargará de cambiar el 'appStatus' a 'ready'

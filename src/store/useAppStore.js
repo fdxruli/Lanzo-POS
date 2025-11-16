@@ -177,7 +177,7 @@ export const useAppStore = create((set, get) => ({
 
   /**
    * ¡MODIFICADO!
-   * Ahora guarda en Supabase Y en IndexedDB.
+   * Ahora sube el logo a Storage ANTES de guardar en Supabase DB.
    */
   handleSetup: async (setupData) => {
     const licenseKey = get().licenseDetails?.license_key;
@@ -187,13 +187,26 @@ export const useAppStore = create((set, get) => ({
     }
 
     try {
-        // 1. Guardamos en Supabase
-        // (setupData tiene name, phone, etc., que 'saveBusinessProfile' ya sabe mapear)
-        await window.saveBusinessProfile(licenseKey, setupData); //
-        console.log("Perfil de negocio guardado en Supabase.");
+        let logoUrl = null;
 
-        // 2. Guardamos en IndexedDB (local)
-        const companyData = { id: 'company', ...setupData };
+        // 1. Revisa si el logo es un Archivo (File)
+        if (setupData.logo && setupData.logo instanceof File) {
+            console.log("Subiendo logo a Supabase Storage...");
+            logoUrl = await window.uploadFile(setupData.logo, 'logo');
+        }
+
+        // 2. Prepara los datos para la DB (mapeo de nombres)
+        const profileData = {
+            ...setupData,
+            logo: logoUrl // Usa la nueva URL (o null si no había)
+        };
+        
+        // 3. Guardamos en Supabase DB
+        await window.saveBusinessProfile(licenseKey, profileData);
+        console.log("Perfil de negocio guardado en Supabase DB.");
+
+        // 4. Guardamos en IndexedDB (local)
+        const companyData = { id: 'company', ...profileData };
         await saveData(STORES.COMPANY, companyData);
         
         set({ companyProfile: companyData, appStatus: 'ready' });
@@ -204,7 +217,7 @@ export const useAppStore = create((set, get) => ({
 
   /**
    * ¡MODIFICADO!
-   * Ahora guarda en Supabase Y en IndexedDB.
+   * Misma lógica que handleSetup.
    */
   updateCompanyProfile: async (companyData) => {
     const licenseKey = get().licenseDetails?.license_key;
@@ -214,12 +227,18 @@ export const useAppStore = create((set, get) => ({
     }
 
     try {
-        // 1. Guardamos en Supabase
-        // (companyData tiene id: 'company', name, phone... 'saveBusinessProfile' lo maneja)
-        await window.saveBusinessProfile(licenseKey, companyData); //
-        console.log("Perfil de negocio actualizado en Supabase.");
+        // 1. Revisa si se está subiendo un *nuevo* logo
+        if (companyData.logo && companyData.logo instanceof File) {
+            console.log("Subiendo nuevo logo a Supabase Storage...");
+            const logoUrl = await window.uploadFile(companyData.logo, 'logo');
+            companyData.logo = logoUrl; // Reemplaza el File por la URL
+        }
+        
+        // 2. Guardamos en Supabase DB
+        await window.saveBusinessProfile(licenseKey, companyData);
+        console.log("Perfil de negocio actualizado en Supabase DB.");
 
-        // 2. Guardamos en IndexedDB (local)
+        // 3. Guardamos en IndexedDB (local)
         await saveData(STORES.COMPANY, companyData);
         set({ companyProfile: companyData });
     } catch (error) {

@@ -127,3 +127,47 @@
   background-color: var(--text-light);
   cursor: not-allowed;
 }
+
+
+/* --- ¡NUEVOS ESTILOS AÑADIDOS! --- */
+
+/* Botón para mostrar/ocultar campos opcionales */
+.btn-toggle-specific {
+  background-color: transparent;
+  color: var(--primary-color);
+  border: none;
+  padding: var(--spacing-xs) 0;
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  text-decoration: none; /* Quitamos el subrayado por defecto */
+}
+
+.btn-toggle-specific:hover {
+  color: var(--secondary-color);
+  text-decoration: underline; /* Subrayado en hover */
+}
+
+/* Contenedor para los campos específicos/opcionales */
+.specific-data-container {
+  /* Animación suave de entrada */
+  animation: fadeIn 0.3s ease-in-out;
+  
+  /* Separador visual */
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
+  border-top: 2px dashed #e5e7eb; /* TODO: Usar variable */
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

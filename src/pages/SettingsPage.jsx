@@ -1,10 +1,10 @@
 // src/pages/SettingsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { loadData, saveData, STORES } from '../services/database';
-import { compressImage } from '../services/utils';
-import { useAppStore } from '../store/useAppStore'; // 1. Importa el store
+import { compressImage } from '../services/utils'; // ¡Importante!
+import { useAppStore } from '../store/useAppStore'; 
 import DeviceManager from '../components/common/DeviceManager';
-import './SettingsPage.css'; // Importa el CSS
+import './SettingsPage.css'; 
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -25,8 +25,7 @@ const getInitialTheme = () => {
 export default function SettingsPage() {
 
   // ======================================================
-  // ¡AQUÍ ESTÁ LA CORRECCIÓN!
-  // Seleccionamos cada valor del store de forma individual.
+  // Conexión al store (sin cambios)
   // ======================================================
   const companyProfile = useAppStore((state) => state.companyProfile);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -39,12 +38,11 @@ export default function SettingsPage() {
   const [address, setAddress] = useState('');
   const [businessType, setBusinessType] = useState('');
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
-  const [logoData, setLogoData] = useState(null);
+  const [logoData, setLogoData] = useState(null); // Esto será un File o una URL
 
   const [activeTheme, setActiveTheme] = useState(getInitialTheme);
 
-  // Este useEffect ahora es seguro, porque 'companyProfile'
-  // solo cambiará si de verdad cambia en el store.
+  // ... (useEffect para rellenar formulario, sin cambios) ...
   useEffect(() => {
     if (companyProfile) {
       setName(companyProfile.name || 'Lanzo Negocio');
@@ -52,10 +50,11 @@ export default function SettingsPage() {
       setAddress(companyProfile.address || '');
       setBusinessType(companyArrayToString(companyProfile.business_type) || '');
       setLogoPreview(companyProfile.logo || logoPlaceholder);
-      setLogoData(companyProfile.logo || null);
+      setLogoData(companyProfile.logo || null); // Guarda la URL existente
     }
   }, [companyProfile]);
 
+  // ... (useEffect para el tema, sin cambios) ...
   useEffect(() => {
     const systemThemeListener = (e) => {
       if (activeTheme === 'system') {
@@ -68,18 +67,32 @@ export default function SettingsPage() {
     };
   }, [activeTheme]);
 
+  
+  // ======================================================
+  // ¡AQUÍ ESTÁ LA CORRECCIÓN!
+  // ======================================================
   const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
       try {
-        const compressed = await compressImage(file);
-        setLogoPreview(compressed);
-        setLogoData(compressed);
+        // 1. Llama a la función de compresión
+        const compressedFile = await compressImage(file); 
+        
+        // 2. ¡CORREGIDO! Crea una URL local para la vista previa
+        setLogoPreview(URL.createObjectURL(compressedFile)); 
+        
+        // 3. Guarda el ARCHIVO (File object) en el estado para subirlo
+        setLogoData(compressedFile); 
+      
       } catch (error) {
         console.error("Error al comprimir imagen:", error);
       }
     }
   };
+  // ======================================================
+  // FIN DE LA CORRECCIÓN
+  // ======================================================
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -90,10 +103,11 @@ export default function SettingsPage() {
         phone: phone,
         address: address,
         business_type: stringToArray(businessType),
-        logo: logoData
+        logo: logoData // Pasa el File o la URL existente
       };
 
-      await updateCompanyProfile(companyData);
+      // updateCompanyProfile se encargará de subir el File si es nuevo
+      await updateCompanyProfile(companyData); 
 
       alert('¡Configuración guardada!');
 
@@ -102,6 +116,7 @@ export default function SettingsPage() {
     }
   };
 
+  // ... (handleThemeChange, renderLicenseInfo, y helpers string/array SIN CAMBIOS) ...
   const handleThemeChange = (e) => {
     const newTheme = e.target.value;
     setActiveTheme(newTheme);
@@ -139,18 +154,15 @@ export default function SettingsPage() {
             <span className="license-label">Estado:</span>
             <span className="license-status-active">{statusText}</span>
           </div>
-          {/* 4. MUESTRA EL LÍMITE DE DISPOSITIVOS */}
           <div className="license-detail">
             <span className="license-label">Límite de Dispositivos:</span>
             <span className="license-value">{max_devices || 'N/A'}</span>
           </div>
         </div>
 
-        {/* 5. AÑADE EL GESTOR DE DISPOSITIVOS */}
         <h4 className="device-manager-title">Dispositivos Activados</h4>
         <DeviceManager licenseKey={license_key} />
 
-        {/* 6. MUEVE EL BOTÓN DE LOGOUT AQUÍ */}
         <button
           id="delete-license-btn"
           className="btn btn-cancel"
@@ -166,6 +178,8 @@ export default function SettingsPage() {
   const stringToArray = (str) => (str ? str.split(',').map(s => s.trim()) : []);
   const companyArrayToString = (arr) => (Array.isArray(arr) ? arr.join(', ') : arr);
 
+
+  // ... (JSX de retorno SIN CAMBIOS) ...
   return (
     <>
       <h2 className="section-title">Configuración del Negocio</h2>
@@ -181,7 +195,11 @@ export default function SettingsPage() {
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
+              disabled
             />
+            <small className="form-help-text">
+              Para cambiar el nombre, contacta a soporte.
+            </small>
           </div>
           <div className="form-group">
             <label className="form-label" htmlFor="company-phone">Teléfono de Contacto</label>
@@ -191,7 +209,11 @@ export default function SettingsPage() {
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              disabled
             />
+            <small className="form-help-text">
+              Para cambiar el teléfono, contacta a soporte.
+            </small>
           </div>
           <div className="form-group">
             <label className="form-label" htmlFor="company-address">Dirección del Negocio</label>

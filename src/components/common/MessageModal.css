@@ -8,15 +8,25 @@
 
 .modal-buttons {
   display: flex;
-  justify-content: flex-end;
+  /* --- MODIFICACIÓN --- */
+  flex-direction: column; /* 1. Apilamos los botones verticalmente */
   gap: var(--spacing-sm);
   margin-top: var(--spacing-lg);
-  flex-wrap: wrap;
+  /* flex-wrap: wrap; <-- Ya no es necesario */
+  /* justify-content: flex-end; <-- Ya no es necesario */
+}
+
+/* --- ¡NUEVA REGLA! --- */
+/* 2. Hacemos que todos los botones hijos directos ocupen el 100% */
+.modal-buttons > button {
+  width: 100%;
 }
 
 .btn-secondary {
   background-color: var(--secondary-color);
   color: white;
+  /* ¡NUEVO! Le damos un orden para que aparezca primero */
+  order: -1; 
 }
 
 .btn-secondary:hover {

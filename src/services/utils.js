@@ -13,54 +13,70 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
 }
 
 /**
- * Comprime una imagen a un tamaño máximo y calidad específicos.
+ * Comprime, recorta a cuadrado y convierte una imagen a WebP.
  * @param {File} file El archivo de imagen a comprimir.
- * @param {number} maxWidth El ancho máximo de la imagen resultante.
- * @param {number} quality La calidad de la imagen resultante (0 a 1).
- * @returns {Promise<string>} Una promesa que resuelve con la URL en base64 de la imagen comprimida.
+ * @param {number} targetSize El tamaño (ancho y alto) de la imagen resultante.
+ * @param {number} quality La calidad de WebP (0 a 1). 0.7 es un buen balance.
+ * @returns {Promise<File>} Una promesa que resuelve con el nuevo archivo de imagen .webp.
  */
-// Dentro de utils.js
-
 export const compressImage = (
-    file,
-    targetSize = 300, // Un solo tamaño para ancho y alto
-    quality = 0.7
+  file,
+  targetSize = 300, // Un solo tamaño para ancho y alto
+  quality = 0.7 // Calidad de compresión para WebP
 ) => {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        const canvas = document.createElement('canvas'); // No necesitas un canvas en el HTML
-        const ctx = canvas.getContext("2d");
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext("2d");
 
-        img.onload = () => {
-            let sourceX = 0;
-            let sourceY = 0;
-            let sourceWidth = img.width;
-            let sourceHeight = img.height;
+    img.onload = () => {
+      let sourceX = 0;
+      let sourceY = 0;
+      let sourceWidth = img.width;
+      let sourceHeight = img.height;
 
-            // Lógica para el recorte cuadrado
-            if (sourceWidth > sourceHeight) { // Imagen horizontal
-                sourceX = (sourceWidth - sourceHeight) / 2;
-                sourceWidth = sourceHeight;
-            } else if (sourceHeight > sourceWidth) { // Imagen vertical
-                sourceY = (sourceHeight - sourceWidth) / 2;
-                sourceHeight = sourceWidth;
-            }
-            // Si ya es cuadrada, no hace nada
+      // Lógica para el recorte cuadrado (sin cambios)
+      if (sourceWidth > sourceHeight) {
+        sourceX = (sourceWidth - sourceHeight) / 2;
+        sourceWidth = sourceHeight;
+      } else if (sourceHeight > sourceWidth) {
+        sourceY = (sourceHeight - sourceWidth) / 2;
+        sourceHeight = sourceWidth;
+      }
 
-            canvas.width = targetSize;
-            canvas.height = targetSize;
+      canvas.width = targetSize;
+      canvas.height = targetSize;
 
-            // Dibuja la parte recortada de la imagen en el canvas
-            ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetSize, targetSize);
-            
-            // Convierte el canvas a una URL de datos base64
-            const dataUrl = canvas.toDataURL("image/jpeg", quality);
-            resolve(dataUrl); // Devolvemos la imagen como base64
-        };
-        
-        img.onerror = (err) => reject(new Error("Error al cargar la imagen."));
-        img.src = URL.createObjectURL(file);
-    });
+      ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetSize, targetSize);
+
+      // ======================================================
+      // ¡LA MAGIA OCURRE AQUÍ!
+      // ======================================================
+
+      // 1. Usamos 'toBlob' que es asíncrono y mejor que 'toDataURL'
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Error al crear el blob de la imagen."));
+            return;
+          }
+          // 2. Creamos un nuevo objeto File con el formato WebP
+          const newFileName = file.name.split('.')[0] + '.webp';
+          const webpFile = new File([blob], newFileName, {
+            type: 'image/webp', // 3. El tipo es WebP
+            lastModified: Date.now()
+          });
+          resolve(webpFile); // Devolvemos el ARCHIVO, no un Base64
+        },
+        'image/webp', // 4. Solicitamos el formato WebP
+        quality       // 5. Aplicamos la calidad
+      );
+      // ======================================================
+    };
+
+    img.onerror = (err) => reject(new Error("Error al cargar la imagen."));
+    img.src = URL.createObjectURL(file);
+  });
 };
 
 /**
@@ -70,11 +86,11 @@ export const compressImage = (
  * @returns {string} Retorna '#000000' (negro) o '#ffffff' (blanco).
  */
 export const getContrastColor = (hexColor) => {
-    const r = parseInt(hexColor.slice(1, 3), 16) / 255;
-    const g = parseInt(hexColor.slice(3, 5), 16) / 255;
-    const b = parseInt(hexColor.slice(5, 7), 16) / 255;
-    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    return luminance > 0.5 ? '#000000' : '#ffffff';
+  const r = parseInt(hexColor.slice(1, 3), 16) / 255;
+  const g = parseInt(hexColor.slice(3, 5), 16) / 255;
+  const b = parseInt(hexColor.slice(5, 7), 16) / 255;
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.5 ? '#000000' : '#ffffff';
 };
 
 /**
@@ -82,17 +98,17 @@ export const getContrastColor = (hexColor) => {
  * @returns {boolean} `true` si LocalStorage está disponible, de lo contrario `false`.
  */
 export const isLocalStorageEnabled = () => {
-    try {
-        const testKey = 'lanzo-test';
-        const testValue = 'test-value-' + Date.now();
-        localStorage.setItem(testKey, testValue);
-        const value = localStorage.getItem(testKey);
-        localStorage.removeItem(testKey);
-        return value === testValue;
-    } catch (e) {
-        console.error('LocalStorage error:', e);
-        return false;
-    }
+  try {
+    const testKey = 'lanzo-test';
+    const testValue = 'test-value-' + Date.now();
+    localStorage.setItem(testKey, testValue);
+    const value = localStorage.getItem(testKey);
+    localStorage.removeItem(testKey);
+    return value === testValue;
+  } catch (e) {
+    console.error('LocalStorage error:', e);
+    return false;
+  }
 };
 
 /**
@@ -101,8 +117,8 @@ export const isLocalStorageEnabled = () => {
  * @returns {Date} El objeto Date normalizado.
  */
 export const normalizeDate = (dateString) => {
-    const date = new Date(dateString);
-    return new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+  const date = new Date(dateString);
+  return new Date(date.getTime() + date.getTimezoneOffset() * 60000);
 };
 
 export const LOW_STOCK_THRESHOLD = 5;
@@ -117,7 +133,7 @@ export const getProductAlerts = (product) => {
   let isLowStock = false;
   let isNearingExpiry = false;
   let expiryDays = null;
-  
+
   // 1. Revisar si está agotado
   const isOutOfStock = product.trackStock && product.stock <= 0;
 
@@ -162,7 +178,7 @@ export function sendWhatsAppMessage(phone, message) {
   // Si tienes clientes internacionales, necesitarás un campo de "código de país"
   // para el cliente.
   const countryCode = '52';
-  
+
   // Limpiar el teléfono de espacios, guiones, etc.
   const cleanPhone = phone.replace(/[\s-()]/g, '');
   const fullPhone = `${countryCode}${cleanPhone}`;
@@ -184,15 +200,31 @@ export function sendWhatsAppMessage(phone, message) {
  */
 export async function lookupBarcodeInAPI(barcode) {
   console.log(`Buscando API para: ${barcode}`);
-  
+
   // Usamos la v2 de la API, pidiendo solo los campos que necesitamos
   const url = `https://world.openfoodfacts.org/api/v2/product/${barcode}?fields=product_name,image_front_url,brands`;
 
   try {
     const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error('Respuesta de red no fue exitosa');
+
+    // ======================================================
+    // ¡AQUÍ ESTÁ LA MEJORA!
+    // ======================================================
+    // Primero, revisamos si es un 404. Esto no es un error,
+    // es un resultado: "no encontrado".
+    if (response.status === 404) {
+      console.log('Producto no encontrado en OpenFoodFacts (404).');
+      return { success: false, error: 'Producto no encontrado' };
     }
+
+    // Si no es 404, pero sigue sin estar OK (ej. 500, 403),
+    // entonces SÍ es un error de red.
+    if (!response.ok) {
+      throw new Error(`Respuesta de red no fue exitosa: ${response.statusText}`);
+    }
+    // ======================================================
+    // FIN DE LA MEJORA
+    // ======================================================
 
     const data = await response.json();
 
@@ -204,16 +236,16 @@ export async function lookupBarcodeInAPI(barcode) {
         image: product.image_front_url || null,
         brand: product.brands || '',
       };
-      
+
       console.log('Producto encontrado:', productData);
       return { success: true, product: productData };
 
     } else {
-      // Producto no encontrado en la base de datos
-      console.log('Producto no encontrado en OpenFoodFacts.');
+      // La API respondió OK, pero el producto no estaba (status: 0)
+      console.log('Producto no encontrado en OpenFoodFacts (status 0).');
       return { success: false, error: 'Producto no encontrado' };
     }
-  } catch (error) {
+  } catch (error) { // Esto ahora solo captura errores REALES (ej. sin internet)
     console.error('Error al llamar a la API de OpenFoodFacts:', error);
     return { success: false, error: `Error de red: ${error.message}` };
   }

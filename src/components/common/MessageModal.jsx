@@ -41,7 +41,8 @@ export default function MessageModal() {
           {confirmMode ? (
             <>
               <button className="btn btn-confirm" onClick={handleConfirm}>
-                Sí, continuar
+                {/* --- ¡AQUÍ ESTÁ LA CORRECCIÓN! --- */}
+                {options.confirmButtonText || 'Sí, continuar'}
               </button>
               <button className="btn btn-cancel" onClick={hide}>
                 Cancelar
@@ -49,7 +50,8 @@ export default function MessageModal() {
             </>
           ) : (
             <button className="btn btn-modal" onClick={hide}>
-              Aceptar
+              {/* (Opcional) Corregir aquí también para consistencia */}
+              {options.confirmButtonText || 'Aceptar'}
             </button>
           )}
         </div>
