@@ -67,64 +67,56 @@ async function migrateExistingProductsToBatches() {
  * Combina productos y sus lotes para mostrar en las vistas.
  */
 async function aggregateProductsWithBatches(products, batches) {
-  const aggregatedProducts = [];
-
-  // Helper para ordenar (Tu propuesta B)
-  const sortBatchesByStrategy = (batches, strategy = 'fifo') => {
-    switch(strategy) {
-      case 'fifo':
-        return batches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      case 'lifo':
-        return batches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      case 'lowest_price':
-        return batches.sort((a, b) => a.price - b.price);
-      case 'highest_price':
-        return batches.sort((a, b) => b.price - a.price);
-      case 'nearest_expiry':
-        return batches
-          .filter(b => b.expiryDate)
-          .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
-      default:
-        return batches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-    }
-  };
-
-  for (const product of products) {
-    if (product.isActive === false) continue;
-
-    let totalStock = 0;
-    let displayPrice = 0;
-    let batchCount = 0;
-
-    // Obtener los lotes de este producto
-    const productBatches = batches.filter(b => b.productId === product.id);
-    const activeBatches = productBatches.filter(b => b.isActive && b.stock > 0);
-    batchCount = productBatches.length;
-
-    if (activeBatches.length > 0) {
-      // Stock total = suma de todos los lotes activos
-      totalStock = activeBatches.reduce((sum, b) => {
-        // Para 'unit' es b.stock, para 'bulk' es b.bulkData.purchase.quantity
-        return sum + (b.stock || 0);
-      }, 0);
-
-      // Precio = del primer lote según estrategia
-      const sorted = sortBatchesByStrategy(
-        activeBatches, 
-        product.batchManagement?.selectionStrategy
-      );
-      displayPrice = sorted[0].price;
-    }
-    
-    aggregatedProducts.push({
-      ...product,
-      stock: totalStock, // Stock agregado
-      price: displayPrice, // Precio de venta principal
-      trackStock: totalStock > 0, // Sigue seguimiento si hay stock
-      batchCount: batchCount, // Para la UI
+    const aggregatedProducts = [];
+        
+    // 🔧 OPTIMIZACIÓN: Indexar lotes por productId (en memoria, rápido)
+    const batchesByProduct = new Map();
+    batches.forEach(batch => {
+        if (!batchesByProduct.has(batch.productId)) {
+            batchesByProduct.set(batch.productId, []);
+        }
+        batchesByProduct.get(batch.productId).push(batch);
     });
-  }
-  return aggregatedProducts;
+        
+    // 🔧 OPTIMIZACIÓN: Procesar solo productos activos
+    const activeProducts = products.filter(p => p.isActive !== false);
+        
+    for (const product of activeProducts) {
+        const productBatches = batchesByProduct.get(product.id) || [];
+        const activeBatches = productBatches.filter(b => b.isActive && b.stock > 0);
+                
+        if (activeBatches.length === 0) {
+            // Sin stock, omitir del menú POS (pero mantener en gestión)
+            continue;
+        }
+                
+        // Calcular totales (sin ordenar, es más rápido)
+        const totalStock = activeBatches.reduce((sum, b) => sum + (b.stock || 0), 0);
+        
+        // ¡Importante! Toma el precio del primer lote activo encontrado.
+        // Esto es mucho más rápido que ordenar por estrategia (FIFO, etc.)
+        // lo cual solo es necesario al VENDER, no al MOSTRAR.
+        const displayPrice = activeBatches[0].price; 
+                
+        aggregatedProducts.push({
+            id: product.id,
+            name: product.name,
+            image: product.image,
+            description: product.description,
+            categoryId: product.categoryId,
+            barcode: product.barcode,
+            saleType: product.saleType,
+            isActive: product.isActive,
+            batchManagement: product.batchManagement,
+            // 🔧 Propiedades agregadas
+            stock: totalStock,
+            price: displayPrice,
+            trackStock: true,
+            batchCount: productBatches.length,
+        });
+    }
+        
+    return aggregatedProducts;
 }
 
 

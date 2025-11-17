@@ -55,7 +55,7 @@ export function initDB() {
         request.onupgradeneeded = (event) => {
             const tempDb = event.target.result;
             console.log('Actualizando la base de datos a la versión', DB_VERSION);
-            
+
             // Aseguramos que TODAS las tiendas existan
             if (!tempDb.objectStoreNames.contains(STORES.MENU)) {
                 tempDb.createObjectStore(STORES.MENU, { keyPath: 'id' });
@@ -95,13 +95,22 @@ export function initDB() {
                 const movStore = tempDb.createObjectStore(STORES.MOVIMIENTOS_CAJA, { keyPath: 'id' });
                 movStore.createIndex('caja_id', 'caja_id', { unique: false });
             }
-            
+
             if (!tempDb.objectStoreNames.contains(STORES.PRODUCT_BATCHES)) {
                 const batchStore = tempDb.createObjectStore(STORES.PRODUCT_BATCHES, { keyPath: 'id' });
                 batchStore.createIndex('productId', 'productId', { unique: false });
                 console.log('Almacén PRODUCT_BATCHES creado.');
+                batchStore.createIndex('productId_isActive', ['productId', 'isActive'], { unique: false });
+                batchStore.createIndex('expiryDate', 'expiryDate', { unique: false });
+                batchStore.createIndex('createdAt', 'createdAt', { unique: false });
             }
-            
+
+            if (!tempDb.objectStoreNames.contains(STORES.SALES)) {
+                const salesStore = tempDb.createObjectStore(STORES.SALES, { keyPath: 'timestamp' });
+                salesStore.createIndex('customerId', 'customerId', { unique: false });
+                salesStore.createIndex('timestamp', 'timestamp', { unique: false });
+            }
+
             if (event.oldVersion < 12) {
                 console.log('Detectada versión antigua, iniciando migración de productos a lotes...');
                 localStorage.setItem('run_batch_migration', 'true');
@@ -121,7 +130,7 @@ export function saveData(storeName, data) {
             const dbInstance = await initDB();
             const transaction = dbInstance.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
-            
+
             transaction.oncomplete = () => resolve();
             transaction.onerror = (event) => {
                 // ¡RESETEAR SI HAY ERROR DE TRANSACCIÓN!
@@ -159,7 +168,7 @@ export function loadData(storeName, key = null) {
             const transaction = dbInstance.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
             const request = key ? store.get(key) : store.getAll();
-            
+
             request.onsuccess = () => resolve(request.result);
             request.onerror = (event) => {
                 // ¡RESETEAR SI HAY ERROR!
@@ -190,7 +199,7 @@ export function deleteData(storeName, key) {
             const transaction = dbInstance.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             const request = store.delete(key);
-            
+
             request.onsuccess = () => resolve();
             request.onerror = (event) => {
                 // ¡RESETEAR SI HAY ERROR!
@@ -204,6 +213,68 @@ export function deleteData(storeName, key) {
             // ¡RESETEAR SI initDB falla!
             console.error('Error en deleteData, reseteando conexión...', error);
             db = null;
+            reject(error);
+        }
+    });
+}
+
+/**
+ * Guarda un array de objetos en el store en una sola transacción.
+ * (saveData ya hace esto, así que esto es un alias por claridad).
+ */
+export const saveBulk = saveData;
+
+/**
+ * Carga un array de objetos desde un store usando sus claves (IDs).
+ * @param {string} storeName - Nombre del store
+ * @param {Array<string|number>} keys - Array de IDs a cargar
+ * @returns {Promise<Array<object>>} Los objetos encontrados
+ */
+export function loadBulk(storeName, keys) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const dbInstance = await initDB();
+            const transaction = dbInstance.transaction([storeName], 'readonly');
+            const store = transaction.objectStore(storeName);
+            const results = [];
+            let requestCount = keys.length;
+
+            if (requestCount === 0) {
+                resolve([]);
+                return;
+            }
+
+            // Función para manejar el éxito o error de cada 'get'
+            const handleRequest = (event) => {
+                const result = event.target.result;
+                if (result) {
+                    results.push(result);
+                }
+                
+                requestCount--;
+                if (requestCount === 0) {
+                    // Se procesaron todas las solicitudes
+                    resolve(results);
+                }
+            };
+            
+            const handleError = (event) => {
+                // Si una falla, rechazamos todo
+                reject(event.target.error);
+                // Abortar la transacción podría ser necesario aquí
+                try { transaction.abort(); } catch (e) {}
+            };
+
+            // Itera y crea una solicitud 'get' por cada clave
+            keys.forEach(key => {
+                const request = store.get(key);
+                request.onsuccess = handleRequest;
+                request.onerror = handleError;
+            });
+
+        } catch (error) {
+            console.error('Error en loadBulk, reseteando conexión...', error);
+            db = null; // Resetea la conexión
             reject(error);
         }
     });

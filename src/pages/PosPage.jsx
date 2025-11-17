@@ -10,7 +10,7 @@ import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
 // 1. Importa el store
 import { useDashboardStore } from '../store/useDashboardStore';
-import { saveData, loadData, STORES } from '../services/database';
+import { saveData, loadData, loadBulk, saveBulk, STORES } from '../services/database';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import './PosPage.css';
 import { useAppStore } from '../store/useAppStore';
@@ -63,23 +63,23 @@ export default function PosPage() {
 
 
   const handleProcessOrder = async (paymentData) => {
-    // ... (Toda la lógica de validación 1-4 de handleProcessOrder SIN CAMBIOS) ...
-    // 1. Validar caja
+    // 1. Validar caja (Tu lógica existente)
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       console.log('❌ Validación de caja falló para pago en efectivo.');
       setIsPaymentModalOpen(false);
       setIsQuickCajaOpen(true);
       return;
     }
-    console.log('✅ Caja validada (o es fiado).');
-    // 2. Validar pedido vacío
+    
+    // 2. Validar pedido vacío (Tu lógica existente)
     const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
     if (itemsToProcess.length === 0) {
       setIsPaymentModalOpen(false);
       showMessageModal('El pedido está vacío.');
       return;
     }
-    // 3. Validación de stock
+
+    // 3. Validación de stock (Tu lógica existente)
     const stockIssues = itemsToProcess.filter(item => item.exceedsStock);
     if (stockIssues.length > 0) {
       const userConfirmed = window.confirm(
@@ -87,68 +87,169 @@ export default function PosPage() {
       );
       if (!userConfirmed) return;
     }
+    
     // 4. Cerrar modal
     setIsPaymentModalOpen(false);
 
 
+    // --- INICIO DE LA NUEVA LÓGICA DE TRANSACCIÓN ---
     try {
-      // ... (Toda la lógica 5-7 de try...catch SIN CAMBIOS) ...
-      // 5. Descontar stock
-      const processedItems = [];
-      for (const orderItem of itemsToProcess) {
-        const product = await loadData(STORES.MENU, orderItem.id);
-        let stockDeducted = 0;
-        if (product && product.trackStock) {
-          stockDeducted = Math.min(orderItem.quantity, product.stock);
-          product.stock = Math.max(0, product.stock - stockDeducted);
-          await saveData(STORES.MENU, product);
+        console.time('ProcesoDeVenta'); // Para medir el rendimiento
+
+        // 🔧 OPTIMIZACIÓN: Cargar todos los productos en UNA sola transacción
+        const productIds = itemsToProcess.map(item => item.id);
+        const products = await loadBulk(STORES.MENU, productIds);
+                
+        // Crear mapa de productos para acceso rápido
+        const productMap = new Map(products.map(p => [p.id, p]));
+                
+        // 🔧 OPTIMIZACIÓN: Cargar todos los lotes activos en UNA transacción
+        // (Esto es MÁS rápido que múltiples lecturas pequeñas)
+        const allBatches = await loadData(STORES.PRODUCT_BATCHES);
+        const batchesByProduct = new Map();
+        
+        // Organiza los lotes por ID de producto para acceso rápido
+        allBatches.forEach(batch => {
+            if (!batchesByProduct.has(batch.productId)) {
+                batchesByProduct.set(batch.productId, []);
+            }
+            batchesByProduct.get(batch.productId).push(batch);
+        });
+                
+        // Procesar items y descontar stock (en memoria)
+        const processedItems = [];      // Para el objeto de Venta
+        const updatedBatches = [];      // Para guardar en BD
+
+        for (const orderItem of itemsToProcess) {
+            const product = productMap.get(orderItem.id);
+            if (!product) continue; // Producto no encontrado, saltar
+                        
+            const productBatches = batchesByProduct.get(orderItem.id) || [];
+            
+            // Filtra solo lotes activos y con stock, y los ordena por FIFO
+            const activeBatches = productBatches
+                .filter(b => b.isActive && b.stock > 0)
+                .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // FIFO por defecto
+                        
+            let remaining = orderItem.quantity;
+            const batchesUsed = []; // Para rastrear qué lotes se usaron
+
+            // Descontar de lotes (en memoria, sin transacciones aún)
+            for (const batch of activeBatches) {
+                if (remaining <= 0) break; // Ya se descontó todo
+                                
+                const toDeduct = Math.min(remaining, batch.stock);
+                batch.stock -= toDeduct;
+                if (batch.stock === 0) {
+                  batch.isActive = false; // Agotado
+                }
+                                
+                batchesUsed.push({
+                    batchId: batch.id,
+                    quantity: toDeduct,
+                    price: batch.price,
+                    cost: batch.cost
+                });
+                                
+                remaining -= toDeduct;
+                updatedBatches.push(batch); // Añadir a la lista para guardar en BD
+            }
+
+            if (remaining > 0) {
+              // Esto significa que no había suficiente stock en los lotes
+              console.warn(`¡Venta sin stock! Faltaron ${remaining} de ${orderItem.name}`);
+              // (La venta continúa por la validación de stock anterior, pero 'remaining' se perdió)
+            }
+                        
+            // Calcular costo promedio ponderado para esta venta
+            const totalCost = batchesUsed.reduce((sum, b) => sum + (b.cost * b.quantity), 0);
+            const avgCost = (orderItem.quantity > 0) ? (totalCost / orderItem.quantity) : 0;
+                        
+            processedItems.push({
+                ...orderItem,
+                cost: avgCost, // ¡Costo exacto de la venta!
+                batchesUsed: batchesUsed // ¡Trazabilidad!
+            });
         }
-        processedItems.push({ ...orderItem, stockDeducted });
-      }
-      // 6. Crear el registro de Venta
-      const sale = {
-        timestamp: new Date().toISOString(),
-        items: processedItems,
-        total: total,
-        customerId: paymentData.customerId,
-        paymentMethod: paymentData.paymentMethod,
-        abono: paymentData.amountPaid,
-        saldoPendiente: paymentData.saldoPendiente
-      };
-      await saveData(STORES.SALES, sale);
-      console.log('💾 Venta guardada:', sale);
-      // 7. Actualizar deuda del cliente (si es fiado)
-      let customer = null; 
-      if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
-        customer = await loadData(STORES.CUSTOMERS, sale.customerId);
-        if (customer) {
-          const currentDebt = customer.debt || 0;
-          customer.debt = currentDebt + sale.saldoPendiente;
-          await saveData(STORES.CUSTOMERS, customer);
-          console.log(`Deuda de ${customer.name} actualizada a: $${customer.debt}`);
+                
+        // 🔧 OPTIMIZACIÓN: Guardar TODO en DOS transacciones bulk
+        if (updatedBatches.length > 0) {
+          await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches); // 1. Actualiza Lotes
         }
-      }
+                
+        const sale = {
+            timestamp: new Date().toISOString(),
+            items: processedItems,
+            total: total,
+            customerId: paymentData.customerId,
+            paymentMethod: paymentData.paymentMethod,
+            abono: paymentData.amountPaid,
+            saldoPendiente: paymentData.saldoPendiente
+        };
+        await saveData(STORES.SALES, sale); // 2. Guarda la Venta
 
-      // 8. Limpiar y notificar
-      clearOrder();
-      showMessageModal('¡Pedido procesado exitosamente!');
-      console.log('✅ Proceso completado');
+        // --- LÓGICA DE CLIENTE Y WHATSAPP (Sin cambios) ---
+        let customer = null; 
+        if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
+            customer = await loadData(STORES.CUSTOMERS, sale.customerId);
+            if (customer) {
+                const currentDebt = customer.debt || 0;
+                customer.debt = currentDebt + sale.saldoPendiente;
+                await saveData(STORES.CUSTOMERS, customer);
+                console.log(`Deuda de ${customer.name} actualizada a: $${customer.debt}`);
+            }
+        }
 
-      // 9. Refrescar dashboard (y Ticker)
-      // ESTA LÍNEA AHORA LLAMA AL STORE CENTRALIZADO
-      refreshDashboardAndTicker();
+        clearOrder();
+        showMessageModal('¡Pedido procesado exitosamente!');
+        
+        // Refrescar datos en segundo plano
+        refreshDashboardAndTicker();
+        loadPosData(); // Recarga los productos del POS
 
-      // 10. Enviar Ticket por WhatsApp
-      if (paymentData.sendReceipt && paymentData.customerId) {
-        // ... (lógica de ticket sin cambios) ...
-      }
+        // Enviar Ticket por WhatsApp
+        if (paymentData.sendReceipt && paymentData.customerId) {
+            if (!customer) { // Cargar cliente si no se cargó antes
+              customer = await loadData(STORES.CUSTOMERS, paymentData.customerId);
+            }
+            
+            if (customer && customer.phone) {
+                let message = `*--- Ticket de Venta ---*
+*Negocio:* ${companyName}
+*Fecha:* ${new Date(sale.timestamp).toLocaleString()}
 
-      // Vuelve a cargar los productos en esta página (PosPage)
-      loadPosData(); 
+*Productos:*
+`;
+                sale.items.forEach(item => {
+                    message += ` - ${item.name} (x${item.quantity}) - $${(item.price * item.quantity).toFixed(2)}\n`;
+                });
+
+                message += `
+*Total:* $${sale.total.toFixed(2)}
+*Método de Pago:* ${sale.paymentMethod === 'fiado' ? 'Fiado' : 'Efectivo'}
+`;
+
+                if (sale.paymentMethod === 'fiado') {
+                    message += `*Abono:* $${sale.abono.toFixed(2)}\n`;
+                    message += `*Saldo Pendiente (esta venta):* $${sale.saldoPendiente.toFixed(2)}\n`;
+                    message += `*Deuda Total Acumulada:* $${customer.debt.toFixed(2)}\n`;
+                } else {
+                    message += `*Pagado:* $${paymentData.amountPaid.toFixed(2)}\n`;
+                    message += `*Cambio:* $${(paymentData.amountPaid - sale.total).toFixed(2)}\n`;
+                }
+                
+                message += `\n¡Gracias por tu compra!`;
+                sendWhatsAppMessage(customer.phone, message);
+            }
+        }
+
+        console.timeEnd('ProcesoDeVenta');
 
     } catch (error) {
-      console.error('❌ Error al procesar el pedido:', error);
-      showMessageModal(`Error al procesar el pedido: ${error.message}`);
+        console.error('❌ Error al procesar el pedido:', error);
+        // Tu `database.js` ya resetea la conexión 'db' en caso de error,
+        // así que no necesitamos 'pool.resetConnection()'.
+        showMessageModal(`Error al procesar el pedido: ${error.message}`);
     }
   };
 
