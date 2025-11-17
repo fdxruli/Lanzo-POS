@@ -9,41 +9,34 @@
 /* ===== VARIABLES GLOBALES (MODO CLARO POR DEFECTO) ===== */
 
 :root {
-  /* Colores suaves y cálidos */
-  --primary-color: #6366f1;
-  --secondary-color: #8b5cf6;
-  --accent-color: #ec4899;
-  --success-color: #10b981;
-  --warning-color: #f59e0b;
-  --error-color: #ef4444;
+  /* Colores principales estilo pastel vibrante */
+  --primary-color: #7c8cf8; /* Azul violeta suave */
+  --secondary-color: #a48ef6; 
+  --accent-color: #f48fb1; /* Rosa pastel */
 
-  /* Colores de fondo */
-  --background-color: #f9fafb;
-  --card-background-color: #ffffff;
-  --light-background: #f3f4f6;
+  --success-color: #4cd4b0; /* Verde mint suave */
+  --warning-color: #f7c272;
+  --error-color: #f37a7a;
 
-  /* Colores de texto */
-  --text-color: #4b5563;
-  --text-light: #6b7280;
-  --text-dark: #1f2937;
+  /* Fondos suaves (NO blanco puro) */
+  --background-color: #f2f3f5; /* Gris clarito neutro */
+  --card-background-color: #ffffff; /* Blanco pero no puro */
+  --light-background: #e8e9ed; /* Gris claro suave */
 
-  /* Espaciado */
-  --spacing-xs: 0.5rem;
-  --spacing-sm: 0.75rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --spacing-xl: 2rem;
+  /* Texto */
+  --text-color: #3d434c;  /* Gris oscuro suave */
+  --text-light: #6b7280; 
+  --text-dark: #1d1f23;   /* Para títulos */
 
-  /* Bordes y sombras */
+  /* Otros */
   --border-radius: 0.75rem;
   --border-radius-sm: 0.5rem;
-  --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --box-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 
-  /* Transiciones */
-  --transition: all 0.3s ease;
+  --box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+  --box-shadow-lg: 0 12px 23px rgba(0, 0, 0, 0.08);
+
+  --transition: all 0.25s ease-out;
 }
-
 /* ======================================================
    ¡AQUÍ COMIENZA LA MAGIA DEL MODO OSCURO!
    Al cambiar <body data-theme="dark">, estas variables
