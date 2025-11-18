@@ -6,6 +6,19 @@ import './SetupModal.css';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
+// --- ¡NUEVO! ---
+// 1. Definimos los nuevos rubros agrupados
+const BUSINESS_RUBROS = [
+  { id: 'food_service', label: 'Restaurante / Cocina' },
+  { id: 'abarrotes', label: 'Abarrotes' },
+  { id: 'farmacia', label: 'Farmacia' },
+  { id: 'verduleria/fruteria', label: 'Frutería / Verdulería' },
+  { id: 'apparel', label: 'Ropa / Calzado' },
+  { id: 'hardware', label: 'Ferretería' },
+  { id: 'otro', label: 'Otro' },
+];
+// --- Fin de la Modificación ---
+
 export default function SetupModal() {
   // 1. Conectamos al store
   const handleSetup = useAppStore((state) => state.handleSetup);
@@ -113,17 +126,22 @@ export default function SetupModal() {
           
           <div className="form-group">
             <label className="form-label">¿A qué se dedica tu negocio? *</label>
+            
+            {/* --- ¡NUEVO! --- */}
+            {/* 2. Mapeamos sobre el nuevo array de objetos */}
             <div id="business-type-selection" className="business-type-container">
-              {['farmacia', 'abarrotes', 'verduleria/fruteria', 'antojitos', 'darkitchen', 'restaurante', 'otro'].map(type => (
+              {BUSINESS_RUBROS.map(rubro => (
                 <div 
-                  key={type}
-                  className={`type-box ${selectedTypes.includes(type) ? 'selected' : ''}`}
-                  onClick={() => handleTypeClick(type)}
+                  key={rubro.id}
+                  className={`type-box ${selectedTypes.includes(rubro.id) ? 'selected' : ''}`}
+                  onClick={() => handleTypeClick(rubro.id)}
                 >
-                  {type}
+                  {rubro.label} {/* Usamos la etiqueta legible */}
                 </div>
               ))}
             </div>
+            {/* --- Fin de la Modificación --- */}
+
             {error && <p className="form-help-text validation-message error" style={{ display: 'block' }}>{error}</p>}
             <small className="form-help-text" style={{ display: 'block', marginTop: 'var(--spacing-xs)' }}>
               Selecciona al menos uno (máximo 4)

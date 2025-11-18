@@ -1,12 +1,23 @@
 // src/pages/SettingsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, STORES } from '../services/database';
-import { compressImage } from '../services/utils'; // ¡Importante!
+import { saveData, STORES } from '../services/database';
+import { compressImage } from '../services/utils'; 
 import { useAppStore } from '../store/useAppStore'; 
 import DeviceManager from '../components/common/DeviceManager';
 import './SettingsPage.css'; 
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
+
+// 1. Definimos los rubros disponibles (Igual que en SetupModal)
+const BUSINESS_RUBROS = [
+  { id: 'food_service', label: 'Restaurante / Cocina' },
+  { id: 'abarrotes', label: 'Abarrotes' },
+  { id: 'farmacia', label: 'Farmacia' },
+  { id: 'verduleria/fruteria', label: 'Frutería / Verdulería' },
+  { id: 'apparel', label: 'Ropa / Calzado' },
+  { id: 'hardware', label: 'Ferretería' },
+  { id: 'otro', label: 'Otro' },
+];
 
 const MQL = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -23,38 +34,41 @@ const getInitialTheme = () => {
 };
 
 export default function SettingsPage() {
-
-  // ======================================================
-  // Conexión al store (sin cambios)
-  // ======================================================
   const companyProfile = useAppStore((state) => state.companyProfile);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
   const logout = useAppStore((state) => state.logout);
 
-  // Estado local del formulario
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
-  const [businessType, setBusinessType] = useState('');
+  
+  // 2. CAMBIO: businessType ahora se inicializa como un array vacío []
+  const [businessType, setBusinessType] = useState([]); 
+  
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
-  const [logoData, setLogoData] = useState(null); // Esto será un File o una URL
-
+  const [logoData, setLogoData] = useState(null);
   const [activeTheme, setActiveTheme] = useState(getInitialTheme);
 
-  // ... (useEffect para rellenar formulario, sin cambios) ...
   useEffect(() => {
     if (companyProfile) {
       setName(companyProfile.name || 'Lanzo Negocio');
       setPhone(companyProfile.phone || '');
       setAddress(companyProfile.address || '');
-      setBusinessType(companyArrayToString(companyProfile.business_type) || '');
+      
+      // 3. LÓGICA DE CARGA: Aseguramos que sea un array
+      let types = companyProfile.business_type || [];
+      // Si viene como string (legado), lo convertimos a array
+      if (typeof types === 'string') {
+        types = types.split(',').map(s => s.trim());
+      }
+      setBusinessType(types);
+
       setLogoPreview(companyProfile.logo || logoPlaceholder);
-      setLogoData(companyProfile.logo || null); // Guarda la URL existente
+      setLogoData(companyProfile.logo || null);
     }
   }, [companyProfile]);
 
-  // ... (useEffect para el tema, sin cambios) ...
   useEffect(() => {
     const systemThemeListener = (e) => {
       if (activeTheme === 'system') {
@@ -67,32 +81,29 @@ export default function SettingsPage() {
     };
   }, [activeTheme]);
 
-  
-  // ======================================================
-  // ¡AQUÍ ESTÁ LA CORRECCIÓN!
-  // ======================================================
+  // 4. NUEVO HANDLER: Para seleccionar/deseleccionar rubros
+  const handleRubroToggle = (rubroId) => {
+    setBusinessType(prev => {
+      if (prev.includes(rubroId)) {
+        return prev.filter(id => id !== rubroId); // Quitar
+      } else {
+        return [...prev, rubroId]; // Añadir
+      }
+    });
+  };
+
   const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
       try {
-        // 1. Llama a la función de compresión
         const compressedFile = await compressImage(file); 
-        
-        // 2. ¡CORREGIDO! Crea una URL local para la vista previa
         setLogoPreview(URL.createObjectURL(compressedFile)); 
-        
-        // 3. Guarda el ARCHIVO (File object) en el estado para subirlo
         setLogoData(compressedFile); 
-      
       } catch (error) {
         console.error("Error al comprimir imagen:", error);
       }
     }
   };
-  // ======================================================
-  // FIN DE LA CORRECCIÓN
-  // ======================================================
-
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -102,21 +113,18 @@ export default function SettingsPage() {
         name: name,
         phone: phone,
         address: address,
-        business_type: stringToArray(businessType),
-        logo: logoData // Pasa el File o la URL existente
+        business_type: businessType, // 5. Enviamos el array directamente
+        logo: logoData
       };
 
-      // updateCompanyProfile se encargará de subir el File si es nuevo
       await updateCompanyProfile(companyData); 
-
-      alert('¡Configuración guardada!');
+      alert('¡Configuración guardada! Los formularios se han actualizado.');
 
     } catch (error) {
       console.error("Error al guardar configuración:", error);
     }
   };
 
-  // ... (handleThemeChange, renderLicenseInfo, y helpers string/array SIN CAMBIOS) ...
   const handleThemeChange = (e) => {
     const newTheme = e.target.value;
     setActiveTheme(newTheme);
@@ -175,11 +183,6 @@ export default function SettingsPage() {
     );
   };
 
-  const stringToArray = (str) => (str ? str.split(',').map(s => s.trim()) : []);
-  const companyArrayToString = (arr) => (Array.isArray(arr) ? arr.join(', ') : arr);
-
-
-  // ... (JSX de retorno SIN CAMBIOS) ...
   return (
     <>
       <h2 className="section-title">Configuración del Negocio</h2>
@@ -201,6 +204,8 @@ export default function SettingsPage() {
               Para cambiar el nombre, contacta a soporte.
             </small>
           </div>
+          
+          {/* ... (Teléfono y Dirección sin cambios) ... */}
           <div className="form-group">
             <label className="form-label" htmlFor="company-phone">Teléfono de Contacto</label>
             <input
@@ -211,9 +216,6 @@ export default function SettingsPage() {
               onChange={(e) => setPhone(e.target.value)}
               disabled
             />
-            <small className="form-help-text">
-              Para cambiar el teléfono, contacta a soporte.
-            </small>
           </div>
           <div className="form-group">
             <label className="form-label" htmlFor="company-address">Dirección del Negocio</label>
@@ -225,23 +227,23 @@ export default function SettingsPage() {
             ></textarea>
           </div>
 
+          {/* 6. NUEVA UI: Selector de Rubros (Grid) */}
           <div className="form-group">
-            <label className="form-label" htmlFor="business-type">Rubro del Negocio</label>
-            <select
-              className="form-input"
-              id="business-type"
-              value={businessType}
-              onChange={(e) => setBusinessType(e.target.value)}
-            >
-              <option value="" disabled>Selecciona un rubro</option>
-              <option value="farmacia">Farmacia</option>
-              <option value="abarrotes">Abarrotes</option>
-              <option value="verduleria/fruteria">Verdulería/Frutería</option>
-              <option value="antojitos">Antojitos</option>
-              <option value="darkitchen">Dark Kitchen</option>
-              <option value="restaurante">Restaurante</option>
-              <option value="otro">Otro</option>
-            </select>
+            <label className="form-label">Rubros del Negocio (Selecciona múltiples)</label>
+            <div className="rubro-selector-grid">
+              {BUSINESS_RUBROS.map(rubro => (
+                <div 
+                  key={rubro.id}
+                  className={`rubro-box ${businessType.includes(rubro.id) ? 'selected' : ''}`}
+                  onClick={() => handleRubroToggle(rubro.id)}
+                >
+                  {rubro.label}
+                </div>
+              ))}
+            </div>
+            <small className="form-help-text">
+              Esto adaptará los formularios de productos a tus necesidades.
+            </small>
           </div>
 
           <div className="form-group">
@@ -267,34 +269,17 @@ export default function SettingsPage() {
 
         <h3 className="subtitle">Tema de la Aplicación</h3>
         <div className="theme-toggle-container" role="radiogroup" aria-label="Seleccionar tema">
+          {/* ... (Selector de tema sin cambios) ... */}
           <label className="theme-radio-label">
-            <input
-              type="radio"
-              name="theme"
-              value="light"
-              checked={activeTheme === 'light'}
-              onChange={handleThemeChange}
-            />
+            <input type="radio" name="theme" value="light" checked={activeTheme === 'light'} onChange={handleThemeChange} />
             <span className="theme-radio-text">Claro</span>
           </label>
           <label className="theme-radio-label">
-            <input
-              type="radio"
-              name="theme"
-              value="dark"
-              checked={activeTheme === 'dark'}
-              onChange={handleThemeChange}
-            />
+            <input type="radio" name="theme" value="dark" checked={activeTheme === 'dark'} onChange={handleThemeChange} />
             <span className="theme-radio-text">Oscuro</span>
           </label>
           <label className="theme-radio-label">
-            <input
-              type="radio"
-              name="theme"
-              value="system"
-              checked={activeTheme === 'system'}
-              onChange={handleThemeChange}
-            />
+            <input type="radio" name="theme" value="system" checked={activeTheme === 'system'} onChange={handleThemeChange} />
             <span className="theme-radio-text">Por Defecto</span>
           </label>
         </div>

@@ -171,3 +171,50 @@
     transform: translateY(0);
   }
 }
+
+/* Añadir al final de src/components/products/ProductForm.css */
+
+/* Estilo para el botón secundario (Gestionar Lotes/Variantes) */
+.btn-secondary {
+  background-color: var(--secondary-color);
+  color: white;
+  width: 100%;
+  margin-bottom: var(--spacing-sm);
+}
+
+.btn-secondary:hover {
+  opacity: 0.9;
+}
+
+/* Estilos para las features "Bloqueadas" */
+.form-group-locked {
+  background-color: var(--light-background);
+  border-left: 4px solid var(--primary-color);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+}
+
+.form-group-locked .form-label {
+  color: var(--text-dark);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.form-group-locked p {
+  color: var(--text-light);
+  margin-top: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  font-size: 0.9rem;
+}
+
+.btn-upgrade {
+  background: var(--primary-color);
+  color: white;
+  padding: var(--spacing-sm);
+  font-weight: 600;
+}
+
+.btn-upgrade:hover {
+  background-color: var(--secondary-color);
+}

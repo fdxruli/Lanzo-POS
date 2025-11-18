@@ -1,14 +1,9 @@
 // src/components/pos/ProductMenu.jsx
 import React from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
-// 1. Importamos el nuevo helper
 import { getProductAlerts } from '../../services/utils'; 
 import './ProductMenu.css';
 
-/**
- * Este es el componente "tonto" (de vista).
- * Recibe toda la información y las funciones desde PosPage.jsx.
- */
 export default function ProductMenu({
   products,
   categories,
@@ -26,14 +21,10 @@ export default function ProductMenu({
     addItemToOrder(product);
   };
 
-  /**
-   * Helper para renderizar la información de stock
-   */
   const renderStockInfo = (item) => {
     if (!item.trackStock) {
       return <div className="stock-info no-stock-label">Sin seguimiento</div>;
     }
-    
     const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
     
     if (item.stock > 0) {
@@ -47,7 +38,6 @@ export default function ProductMenu({
     <div className="pos-menu-container">
       <h3 className="subtitle">Menú de Productos</h3>
 
-      {/* Renderizado de Filtros de Categoría */}
       <div id="category-filters" className="category-filters">
         <button
           className={`category-filter-btn ${selectedCategoryId === null ? 'active' : ''}`}
@@ -66,7 +56,6 @@ export default function ProductMenu({
         ))}
       </div>
 
-      {/* Controles de Búsqueda y Escáner */}
       <div className="pos-controls">
         <input
           type="text"
@@ -86,17 +75,16 @@ export default function ProductMenu({
         </button>
       </div>
 
-      {/* Renderizado de la Cuadrícula de Productos */}
       <div id="menu-items" className="menu-items-grid" aria-label="Elementos del menú">
         {products.length === 0 ? (
           <p className="empty-message">No hay productos que coincidan.</p>
         ) : (
           products.map((item) => {
-            
-            // 2. Usamos el helper. ¡Toda la lógica duplicada desaparece!
             const { isLowStock, isNearingExpiry, isOutOfStock } = getProductAlerts(item);
             
-            // 3. Construimos las clases (esto ya estaba, pero ahora usa los datos del helper)
+            // 1. NUEVO: Detectar si tiene mayoreo
+            const hasWholesale = item.wholesaleTiers && item.wholesaleTiers.length > 0;
+
             const itemClasses = [
               'menu-item',
               isLowStock ? 'low-stock-warning' : '',
@@ -113,6 +101,12 @@ export default function ProductMenu({
                 {isOutOfStock && (
                   <div className="stock-overlay">Agotado</div>
                 )}
+                
+                {/* 2. NUEVO: Badge de Mayoreo */}
+                {hasWholesale && !isOutOfStock && (
+                   <div className="wholesale-badge">Mayoreo</div>
+                )}
+
                 <img
                   className="menu-item-image"
                   src={item.image || 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir'}

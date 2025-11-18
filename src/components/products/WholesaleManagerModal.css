@@ -1,0 +1,149 @@
+/* src/components/products/WholesaleManagerModal.css */
+
+/* Ajustes específicos para el contenido de este modal */
+.modal-content {
+  /* Reutilizamos estilos base, pero aseguramos el ancho máximo */
+  max-width: 550px;
+}
+
+.modal-subtitle {
+  font-size: 0.95rem;
+  color: var(--text-light);
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--light-background);
+}
+
+/* Fila del formulario de ingreso (Input Cantidad + Input Precio + Botón) */
+.wholesale-form-row {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-end;
+  margin-bottom: var(--spacing-lg);
+  background-color: var(--light-background);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+}
+
+.wholesale-form-row .form-group {
+  margin-bottom: 0; /* Quitamos el margen inferior default */
+  flex: 1;
+}
+
+.wholesale-form-row label {
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+  display: block;
+  font-weight: 600;
+}
+
+/* Botón de agregar (+) */
+.wholesale-form-row .btn-save {
+  width: 42px; /* Cuadrado */
+  height: 42px; /* Altura igual a los inputs estándar */
+  margin-bottom: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Contenedor de la lista de reglas */
+.tiers-list {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid var(--light-background);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--card-background-color);
+}
+
+.tiers-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tiers-table th {
+  background-color: var(--light-background);
+  color: var(--text-light);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: var(--spacing-sm);
+  text-align: left;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tiers-table td {
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid var(--light-background);
+  color: var(--text-dark);
+  font-size: 0.95rem;
+}
+
+.tiers-table tr:last-child td {
+  border-bottom: none;
+}
+
+.tiers-table .price-cell {
+  font-weight: 700;
+  color: var(--success-color);
+}
+
+.btn-delete-tier {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-light);
+  padding: 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  font-size: 1.1rem;
+}
+
+.btn-delete-tier:hover {
+  background-color: rgba(239, 68, 68, 0.1); /* Rojo muy suave */
+  color: var(--error-color);
+}
+
+/* Mensaje vacío */
+.empty-tiers-message {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--text-light);
+  font-style: italic;
+}
+
+/* Footer de acciones */
+.modal-actions {
+  margin-top: var(--spacing-lg);
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+  border-top: 1px solid var(--light-background);
+  padding-top: var(--spacing-md);
+}
+
+.modal-actions .btn {
+  width: auto; /* Botones con ancho automático */
+  min-width: 100px;
+  margin-bottom: 0;
+}
+
+/* --- Ajustes para Modo Oscuro --- */
+[data-theme="dark"] .wholesale-form-row {
+  background-color: #1f2937; /* Un poco más claro que el fondo negro */
+}
+
+[data-theme="dark"] .tiers-table th {
+  background-color: #1f2937;
+  color: var(--text-light);
+}
+
+[data-theme="dark"] .tiers-table td {
+  border-bottom-color: #374151;
+}

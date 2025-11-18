@@ -172,3 +172,46 @@
   opacity: 0.7;
   cursor: not-allowed;
 }
+
+/* Grid de Rubros */
+.rubro-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+
+.rubro-box {
+  padding: var(--spacing-md);
+  border: 2px solid #e5e7eb; /* Variable de borde */
+  border-radius: var(--border-radius-sm);
+  text-align: center;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  background-color: var(--card-background-color);
+  color: var(--text-color);
+  user-select: none; /* Evita que se seleccione el texto al hacer clic rápido */
+}
+
+.rubro-box:hover {
+  border-color: var(--secondary-color);
+  color: var(--secondary-color);
+}
+
+.rubro-box.selected {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Ajustes para modo oscuro (si usas variables, esto es automático, 
+   pero por si acaso el borde hardcoded necesita ajuste) */
+[data-theme="dark"] .rubro-box {
+  border-color: #374151;
+}
+[data-theme="dark"] .rubro-box:hover {
+  border-color: var(--secondary-color);
+}

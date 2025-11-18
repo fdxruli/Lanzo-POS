@@ -186,3 +186,18 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Badge de Mayoreo en la tarjeta del producto */
+.wholesale-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  background-color: var(--secondary-color); /* Morado */
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  z-index: 2;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}

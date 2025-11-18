@@ -1,7 +1,7 @@
 // src/services/database.js
 
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 12; // ¡Versión incrementada!
+const DB_VERSION = 13; // ¡Versión incrementada para las variantes!
 
 export const STORES = {
     MENU: 'menu', // Este será tu almacén "PRODUCTS"
@@ -60,9 +60,6 @@ export function initDB() {
             if (!tempDb.objectStoreNames.contains(STORES.MENU)) {
                 tempDb.createObjectStore(STORES.MENU, { keyPath: 'id' });
             }
-            if (!tempDb.objectStoreNames.contains(STORES.SALES)) {
-                tempDb.createObjectStore(STORES.SALES, { keyPath: 'timestamp' });
-            }
             if (!tempDb.objectStoreNames.contains(STORES.COMPANY)) {
                 tempDb.createObjectStore(STORES.COMPANY, { keyPath: 'id' });
             }
@@ -96,14 +93,35 @@ export function initDB() {
                 movStore.createIndex('caja_id', 'caja_id', { unique: false });
             }
 
+            // ======================================================
+            // ¡INICIO DE LA MODIFICACIÓN PARA VARIANTES (v13)!
+            // ======================================================
             if (!tempDb.objectStoreNames.contains(STORES.PRODUCT_BATCHES)) {
+                // Creando el store por primera vez (nuevo usuario)
                 const batchStore = tempDb.createObjectStore(STORES.PRODUCT_BATCHES, { keyPath: 'id' });
                 batchStore.createIndex('productId', 'productId', { unique: false });
                 console.log('Almacén PRODUCT_BATCHES creado.');
                 batchStore.createIndex('productId_isActive', ['productId', 'isActive'], { unique: false });
                 batchStore.createIndex('expiryDate', 'expiryDate', { unique: false });
                 batchStore.createIndex('createdAt', 'createdAt', { unique: false });
+                
+                // Añadido en v13 para Variantes (Ropa/Ferretería)
+                batchStore.createIndex('sku', 'sku', { unique: false });
+
+            } else if (event.oldVersion < 13) {
+                // El store ya existe, pero actualizamos desde una v < 13 (usuario existente)
+                console.log('Actualizando almacén PRODUCT_BATCHES a v13...');
+                const batchStore = event.target.transaction.objectStore(STORES.PRODUCT_BATCHES);
+                
+                // Añadimos el nuevo índice 'sku' si no existe
+                if (!batchStore.indexNames.contains('sku')) {
+                    batchStore.createIndex('sku', 'sku', { unique: false });
+                    console.log('Índice "sku" añadido a PRODUCT_BATCHES.');
+                }
             }
+            // ======================================================
+            // ¡FIN DE LA MODIFICACIÓN PARA VARIANTES (v13)!
+            // ======================================================
 
             if (!tempDb.objectStoreNames.contains(STORES.SALES)) {
                 const salesStore = tempDb.createObjectStore(STORES.SALES, { keyPath: 'timestamp' });

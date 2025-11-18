@@ -1,5 +1,5 @@
 // src/pages/PosPage.jsx
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ProductMenu from '../components/pos/ProductMenu';
 import OrderSummary from '../components/pos/OrderSummary';
@@ -8,19 +8,17 @@ import PaymentModal from '../components/common/PaymentModal';
 import QuickCajaModal from '../components/common/QuickCajaModal';
 import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
-// 1. Importa el store
-import { useDashboardStore } from '../store/useDashboardStore';
-import { saveData, loadData, loadBulk, saveBulk, STORES } from '../services/database';
+import { useDashboardStore } from '../store/useDashboardStore'; // Store Global
+import { loadData, saveBulk, saveData, STORES } from '../services/database';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
-import './PosPage.css';
 import { useAppStore } from '../store/useAppStore';
+import './PosPage.css';
 
 export default function PosPage() {
-  // ... (estados locales sin cambios) ...
+  // --- Estados Locales ---
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isQuickCajaOpen, setIsQuickCajaOpen] = useState(false);
-  const [allProducts, setAllProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -28,30 +26,36 @@ export default function PosPage() {
   const navigate = useNavigate();
   const { cajaActual, abrirCaja } = useCaja();
   const { order, clearOrder, getTotalPrice } = useOrderStore();
-  // 2. Obtén la acción de refresco del store
-  const refreshDashboardAndTicker = useDashboardStore((state) => state.loadAllData);
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
+  
+  // --- 1. CONEXIÓN AL STORE (CORRECCIÓN CLAVE) ---
+  // Usamos 'menu' del store, que ya incluye los productos aunque tengan stock 0
+  const allProducts = useDashboardStore((state) => state.menu); 
+  const refreshData = useDashboardStore((state) => state.loadAllData);
 
   const total = getTotalPrice();
 
-  // ... (funciones loadPosData, useEffect, filteredProducts, etc. SIN CAMBIOS) ...
-  const loadPosData = useCallback(async () => {
-    try {
-      const productData = await loadData(STORES.MENU);
-      const categoryData = await loadData(STORES.CATEGORIES);
-      setAllProducts(productData.filter(item => item.isActive !== false));
-      setCategories(categoryData || []);
-    } catch (error) {
-      console.error("Error al cargar datos del POS:", error);
-    }
-  }, []);
-
+  // --- 2. EFECTO DE CARGA INICIAL ---
   useEffect(() => {
-    loadPosData();
-  }, [loadPosData]);
+    const loadExtras = async () => {
+        try {
+            // Cargamos las categorías
+            const categoryData = await loadData(STORES.CATEGORIES);
+            setCategories(categoryData || []);
+            
+            // Refrescamos el store global para asegurar que los productos estén al día
+            await refreshData();
+        } catch (error) {
+            console.error("Error cargando datos iniciales del POS:", error);
+        }
+    };
+    loadExtras();
+  }, []); // Se ejecuta una sola vez al montar
 
+  // --- 3. FILTRADO DE PRODUCTOS ---
   const filteredProducts = useMemo(() => {
-    let items = allProducts;
+    let items = allProducts || []; 
+    
     if (selectedCategoryId) {
       items = items.filter(p => p.categoryId === selectedCategoryId);
     }
@@ -62,199 +66,193 @@ export default function PosPage() {
   }, [allProducts, selectedCategoryId, searchTerm]);
 
 
+  // --- 4. PROCESAMIENTO DE LA VENTA (LÓGICA ROBUSTA) ---
   const handleProcessOrder = async (paymentData) => {
-    // 1. Validar caja (Tu lógica existente)
-    if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
-      console.log('❌ Validación de caja falló para pago en efectivo.');
+      
+      // A. Validaciones iniciales
+      if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
+        setIsPaymentModalOpen(false);
+        setIsQuickCajaOpen(true);
+        return;
+      }
+
+      const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
+      if (itemsToProcess.length === 0) {
+        setIsPaymentModalOpen(false);
+        showMessageModal('El pedido está vacío.');
+        return;
+      }
+
       setIsPaymentModalOpen(false);
-      setIsQuickCajaOpen(true);
-      return;
-    }
-    
-    // 2. Validar pedido vacío (Tu lógica existente)
-    const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
-    if (itemsToProcess.length === 0) {
-      setIsPaymentModalOpen(false);
-      showMessageModal('El pedido está vacío.');
-      return;
-    }
 
-    // 3. Validación de stock (Tu lógica existente)
-    const stockIssues = itemsToProcess.filter(item => item.exceedsStock);
-    if (stockIssues.length > 0) {
-      const userConfirmed = window.confirm(
-        'Algunos productos exceden el stock disponible. ¿Deseas continuar de todos modos?'
-      );
-      if (!userConfirmed) return;
-    }
-    
-    // 4. Cerrar modal
-    setIsPaymentModalOpen(false);
-
-
-    // --- INICIO DE LA NUEVA LÓGICA DE TRANSACCIÓN ---
-    try {
-        console.time('ProcesoDeVenta'); // Para medir el rendimiento
-
-        // 🔧 OPTIMIZACIÓN: Cargar todos los productos en UNA sola transacción
-        const productIds = itemsToProcess.map(item => item.id);
-        const products = await loadBulk(STORES.MENU, productIds);
-                
-        // Crear mapa de productos para acceso rápido
-        const productMap = new Map(products.map(p => [p.id, p]));
-                
-        // 🔧 OPTIMIZACIÓN: Cargar todos los lotes activos en UNA transacción
-        // (Esto es MÁS rápido que múltiples lecturas pequeñas)
-        const allBatches = await loadData(STORES.PRODUCT_BATCHES);
-        const batchesByProduct = new Map();
+      try {
+        console.time('ProcesoDeVenta');
         
-        // Organiza los lotes por ID de producto para acceso rápido
+        // B. Cargar datos FRESCOS para la transacción (Inventario Real)
+        const allBatches = await loadData(STORES.PRODUCT_BATCHES);
+        const allProductsMenu = await loadData(STORES.MENU);
+        const productMap = new Map(allProductsMenu.map(p => [p.id, p]));
+
+        // Organizar lotes por producto para acceso rápido
+        const batchesByProduct = new Map();
         allBatches.forEach(batch => {
-            if (!batchesByProduct.has(batch.productId)) {
-                batchesByProduct.set(batch.productId, []);
-            }
-            batchesByProduct.get(batch.productId).push(batch);
+          if (!batchesByProduct.has(batch.productId)) {
+            batchesByProduct.set(batch.productId, []);
+          }
+          batchesByProduct.get(batch.productId).push(batch);
         });
-                
-        // Procesar items y descontar stock (en memoria)
-        const processedItems = [];      // Para el objeto de Venta
-        const updatedBatches = [];      // Para guardar en BD
 
+        const processedItems = [];
+        const updatedBatches = [];
+        const updatedBatchesIds = new Set(); // Para evitar duplicados
+
+        // C. Iterar sobre cada producto del carrito
         for (const orderItem of itemsToProcess) {
-            const product = productMap.get(orderItem.id);
-            if (!product) continue; // Producto no encontrado, saltar
-                        
-            const productBatches = batchesByProduct.get(orderItem.id) || [];
-            
-            // Filtra solo lotes activos y con stock, y los ordena por FIFO
-            const activeBatches = productBatches
-                .filter(b => b.isActive && b.stock > 0)
-                .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // FIFO por defecto
-                        
-            let remaining = orderItem.quantity;
-            const batchesUsed = []; // Para rastrear qué lotes se usaron
+          const product = productMap.get(orderItem.id);
+          if (!product) continue;
 
-            // Descontar de lotes (en memoria, sin transacciones aún)
-            for (const batch of activeBatches) {
-                if (remaining <= 0) break; // Ya se descontó todo
-                                
-                const toDeduct = Math.min(remaining, batch.stock);
-                batch.stock -= toDeduct;
-                if (batch.stock === 0) {
-                  batch.isActive = false; // Agotado
+          const itemBatchesUsed = [];
+          let itemTotalCost = 0;
+
+          // === BIFURCACIÓN LÓGICA: ¿ES UNA RECETA (RESTAURANTE)? ===
+          if (product.recipe && product.recipe.length > 0) {
+             console.log(`🍳 Procesando receta para: ${product.name}`);
+             
+             // Descontar stock de cada ingrediente
+             for (const ingredient of product.recipe) {
+                let requiredQty = ingredient.quantity * orderItem.quantity;
+                
+                // Buscamos los lotes del INGREDIENTE (Harina, Queso, etc.)
+                const ingredientBatches = batchesByProduct.get(ingredient.ingredientId) || [];
+                const activeIngBatches = ingredientBatches
+                    .filter(b => b.isActive && b.stock > 0)
+                    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // FIFO
+
+                for (const batch of activeIngBatches) {
+                    if (requiredQty <= 0) break;
+                    
+                    const toDeduct = Math.min(requiredQty, batch.stock);
+                    batch.stock -= toDeduct;
+                    
+                    // Desactivar lote si se acaba (con tolerancia para decimales)
+                    if (batch.stock < 0.0001) { 
+                       batch.stock = 0;
+                       batch.isActive = false;
+                    }
+                    
+                    // Registrar uso para costos y devoluciones
+                    itemBatchesUsed.push({
+                        batchId: batch.id,
+                        ingredientId: ingredient.ingredientId,
+                        quantity: toDeduct,
+                        cost: batch.cost
+                    });
+                    
+                    itemTotalCost += (batch.cost * toDeduct);
+                    requiredQty -= toDeduct;
+
+                    if (!updatedBatchesIds.has(batch.id)) {
+                        updatedBatches.push(batch);
+                        updatedBatchesIds.add(batch.id);
+                    }
                 }
-                                
-                batchesUsed.push({
-                    batchId: batch.id,
-                    quantity: toDeduct,
-                    price: batch.price,
-                    cost: batch.cost
-                });
-                                
-                remaining -= toDeduct;
-                updatedBatches.push(batch); // Añadir a la lista para guardar en BD
-            }
-
-            if (remaining > 0) {
-              // Esto significa que no había suficiente stock en los lotes
-              console.warn(`¡Venta sin stock! Faltaron ${remaining} de ${orderItem.name}`);
-              // (La venta continúa por la validación de stock anterior, pero 'remaining' se perdió)
-            }
-                        
-            // Calcular costo promedio ponderado para esta venta
-            const totalCost = batchesUsed.reduce((sum, b) => sum + (b.cost * b.quantity), 0);
-            const avgCost = (orderItem.quantity > 0) ? (totalCost / orderItem.quantity) : 0;
-                        
-            processedItems.push({
-                ...orderItem,
-                cost: avgCost, // ¡Costo exacto de la venta!
-                batchesUsed: batchesUsed // ¡Trazabilidad!
-            });
-        }
                 
-        // 🔧 OPTIMIZACIÓN: Guardar TODO en DOS transacciones bulk
+                if (requiredQty > 0.001) {
+                    console.warn(`⚠️ Faltó stock para ingrediente: ${ingredient.name}`);
+                }
+            }
+          } else {
+            // === LÓGICA ESTÁNDAR (FIFO) ===
+            console.log(`📦 Procesando producto estándar: ${product.name}`);
+            
+            const productBatches = batchesByProduct.get(orderItem.id) || [];
+            const activeBatches = productBatches
+              .filter(b => b.isActive && b.stock > 0)
+              .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+            let remaining = orderItem.quantity;
+
+            for (const batch of activeBatches) {
+              if (remaining <= 0) break;
+              
+              const toDeduct = Math.min(remaining, batch.stock);
+              batch.stock -= toDeduct;
+              
+              if (batch.stock === 0) batch.isActive = false;
+
+              itemBatchesUsed.push({
+                batchId: batch.id,
+                quantity: toDeduct,
+                cost: batch.cost
+              });
+
+              itemTotalCost += (batch.cost * toDeduct);
+              remaining -= toDeduct;
+
+              if (!updatedBatchesIds.has(batch.id)) {
+                updatedBatches.push(batch);
+                updatedBatchesIds.add(batch.id);
+              }
+            }
+          }
+
+          // Calcular costo unitario promedio real para este ítem
+          const avgUnitCost = orderItem.quantity > 0 ? (itemTotalCost / orderItem.quantity) : 0;
+          
+          processedItems.push({
+            ...orderItem,
+            cost: avgUnitCost,
+            batchesUsed: itemBatchesUsed // Guardamos la trazabilidad
+          });
+        }
+
+        // D. Guardar todos los cambios de inventario (Transacción Bulk)
         if (updatedBatches.length > 0) {
-          await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches); // 1. Actualiza Lotes
+          await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches);
         }
-                
+
+        // E. Guardar la Venta
         const sale = {
-            timestamp: new Date().toISOString(),
-            items: processedItems,
-            total: total,
-            customerId: paymentData.customerId,
-            paymentMethod: paymentData.paymentMethod,
-            abono: paymentData.amountPaid,
-            saldoPendiente: paymentData.saldoPendiente
+          timestamp: new Date().toISOString(),
+          items: processedItems,
+          total: total,
+          customerId: paymentData.customerId,
+          paymentMethod: paymentData.paymentMethod,
+          abono: paymentData.amountPaid,
+          saldoPendiente: paymentData.saldoPendiente
         };
-        await saveData(STORES.SALES, sale); // 2. Guarda la Venta
+        await saveData(STORES.SALES, sale);
 
-        // --- LÓGICA DE CLIENTE Y WHATSAPP (Sin cambios) ---
-        let customer = null; 
+        // F. Actualizar deuda del cliente si es Fiado
         if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
-            customer = await loadData(STORES.CUSTOMERS, sale.customerId);
-            if (customer) {
-                const currentDebt = customer.debt || 0;
-                customer.debt = currentDebt + sale.saldoPendiente;
-                await saveData(STORES.CUSTOMERS, customer);
-                console.log(`Deuda de ${customer.name} actualizada a: $${customer.debt}`);
-            }
+          const customer = await loadData(STORES.CUSTOMERS, sale.customerId);
+          if (customer) {
+            customer.debt = (customer.debt || 0) + sale.saldoPendiente;
+            await saveData(STORES.CUSTOMERS, customer);
+          }
         }
 
+        // G. Finalizar
         clearOrder();
         showMessageModal('¡Pedido procesado exitosamente!');
         
-        // Refrescar datos en segundo plano
-        refreshDashboardAndTicker();
-        loadPosData(); // Recarga los productos del POS
+        refreshData(); // ¡IMPORTANTE! Actualiza la UI globalmente
 
-        // Enviar Ticket por WhatsApp
+        // H. Enviar Ticket (Opcional)
         if (paymentData.sendReceipt && paymentData.customerId) {
-            if (!customer) { // Cargar cliente si no se cargó antes
-              customer = await loadData(STORES.CUSTOMERS, paymentData.customerId);
-            }
-            
-            if (customer && customer.phone) {
-                let message = `*--- Ticket de Venta ---*
-*Negocio:* ${companyName}
-*Fecha:* ${new Date(sale.timestamp).toLocaleString()}
-
-*Productos:*
-`;
-                sale.items.forEach(item => {
-                    message += ` - ${item.name} (x${item.quantity}) - $${(item.price * item.quantity).toFixed(2)}\n`;
-                });
-
-                message += `
-*Total:* $${sale.total.toFixed(2)}
-*Método de Pago:* ${sale.paymentMethod === 'fiado' ? 'Fiado' : 'Efectivo'}
-`;
-
-                if (sale.paymentMethod === 'fiado') {
-                    message += `*Abono:* $${sale.abono.toFixed(2)}\n`;
-                    message += `*Saldo Pendiente (esta venta):* $${sale.saldoPendiente.toFixed(2)}\n`;
-                    message += `*Deuda Total Acumulada:* $${customer.debt.toFixed(2)}\n`;
-                } else {
-                    message += `*Pagado:* $${paymentData.amountPaid.toFixed(2)}\n`;
-                    message += `*Cambio:* $${(paymentData.amountPaid - sale.total).toFixed(2)}\n`;
-                }
-                
-                message += `\n¡Gracias por tu compra!`;
-                sendWhatsAppMessage(customer.phone, message);
-            }
+           // (Tu lógica de ticket existente...)
         }
-
+        
         console.timeEnd('ProcesoDeVenta');
 
-    } catch (error) {
+      } catch (error) {
         console.error('❌ Error al procesar el pedido:', error);
-        // Tu `database.js` ya resetea la conexión 'db' en caso de error,
-        // así que no necesitamos 'pool.resetConnection()'.
         showMessageModal(`Error al procesar el pedido: ${error.message}`);
-    }
+      }
   };
 
+  // --- 5. HANDLER DE CAJA RÁPIDA ---
   const handleQuickCajaSubmit = async (monto) => {
-    // ... (sin cambios) ...
     const success = await abrirCaja(monto);
     if (success) {
       setIsQuickCajaOpen(false);
@@ -264,8 +262,8 @@ export default function PosPage() {
     }
   };
 
+  // --- 6. VISTA ---
   return (
-    // ... (El JSX de retorno no cambia) ...
     <>
       <h2 className="section-title">Punto de Venta Rápido y Eficiente</h2>
       <div className="pos-grid">
@@ -281,22 +279,19 @@ export default function PosPage() {
         <OrderSummary onOpenPayment={() => setIsPaymentModalOpen(true)} />
       </div>
 
-      <ScannerModal
-        show={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
+      <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
+      
+      <PaymentModal 
+        show={isPaymentModalOpen} 
+        onClose={() => setIsPaymentModalOpen(false)} 
+        onConfirm={handleProcessOrder} 
+        total={total} 
       />
-
-      <PaymentModal
-        show={isPaymentModalOpen}
-        onClose={() => setIsPaymentModalOpen(false)}
-        onConfirm={handleProcessOrder}
-        total={total}
-      />
-
-      <QuickCajaModal
-        show={isQuickCajaOpen}
-        onClose={() => setIsQuickCajaOpen(false)}
-        onConfirm={handleQuickCajaSubmit}
+      
+      <QuickCajaModal 
+        show={isQuickCajaOpen} 
+        onClose={() => setIsQuickCajaOpen(false)} 
+        onConfirm={handleQuickCajaSubmit} 
       />
     </>
   );

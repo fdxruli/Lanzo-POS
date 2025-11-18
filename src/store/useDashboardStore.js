@@ -2,11 +2,7 @@
 import { create } from 'zustand';
 import { loadData, saveData, deleteData, STORES } from '../services/database';
 
-/**
- * Lógica de Migración (Propuesta 4.4)
- * Mueve los datos de stock/costo de productos existentes a sus
- * primeros lotes.
- */
+// --- FUNCIÓN DE MIGRACIÓN (Sin cambios) ---
 async function migrateExistingProductsToBatches() {
   console.log('Ejecutando migración de lotes...');
   try {
@@ -14,13 +10,9 @@ async function migrateExistingProductsToBatches() {
     let migratedCount = 0;
 
     for (const product of products) {
-      // Si el producto ya tiene gestión de lotes, o no tiene 'price', 
-      // probablemente ya fue migrado o es una estructura nueva.
       if (product.batchManagement || product.price === undefined) {
         continue;
       }
-
-      // 1. Crear el lote automático
       const autoBatch = {
         id: `batch-${product.id}-migration`,
         productId: product.id,
@@ -34,27 +26,17 @@ async function migrateExistingProductsToBatches() {
         bulkData: product.bulkData || null,
         notes: "Migrado automáticamente del sistema anterior"
       };
-      
-      // 2. Guardar el nuevo lote
       await saveData(STORES.PRODUCT_BATCHES, autoBatch);
-
-      // 3. Actualizar el producto (eliminar campos movidos)
       delete product.cost;
       delete product.price;
       delete product.stock;
       delete product.expiryDate;
       delete product.trackStock;
-      
-      product.batchManagement = {
-        enabled: false, // Por defecto desactivado
-        selectionStrategy: 'fifo'
-      };
+      product.batchManagement = { enabled: false, selectionStrategy: 'fifo' };
       product.updatedAt = new Date().toISOString();
-      
       await saveData(STORES.MENU, product);
       migratedCount++;
     }
-    console.log(`✅ Migración completada. ${migratedCount} productos actualizados.`);
     return true;
   } catch (error) {
     console.error("Error crítico durante la migración de lotes:", error);
@@ -63,13 +45,13 @@ async function migrateExistingProductsToBatches() {
 }
 
 /**
- * Lógica de Agregación (Propuesta C. VISTA DEL POS)
- * Combina productos y sus lotes para mostrar en las vistas.
+ * Lógica de Agregación (CORREGIDA)
+ * Combina productos con sus lotes para mostrar totales y precios/costos actuales.
  */
 async function aggregateProductsWithBatches(products, batches) {
     const aggregatedProducts = [];
         
-    // 🔧 OPTIMIZACIÓN: Indexar lotes por productId (en memoria, rápido)
+    // Agrupar lotes por producto
     const batchesByProduct = new Map();
     batches.forEach(batch => {
         if (!batchesByProduct.has(batch.productId)) {
@@ -78,27 +60,36 @@ async function aggregateProductsWithBatches(products, batches) {
         batchesByProduct.get(batch.productId).push(batch);
     });
         
-    // 🔧 OPTIMIZACIÓN: Procesar solo productos activos
     const activeProducts = products.filter(p => p.isActive !== false);
         
     for (const product of activeProducts) {
+        // Obtenemos todos los lotes de este producto (ordenados por fecha en el store)
         const productBatches = batchesByProduct.get(product.id) || [];
+        
+        // Filtramos solo lotes ACTIVOS y con STOCK para el cálculo de disponibilidad
         const activeBatches = productBatches.filter(b => b.isActive && b.stock > 0);
-                
-        if (activeBatches.length === 0) {
-            // Sin stock, omitir del menú POS (pero mantener en gestión)
-            continue;
-        }
-                
-        // Calcular totales (sin ordenar, es más rápido)
+        
         const totalStock = activeBatches.reduce((sum, b) => sum + (b.stock || 0), 0);
         
-        // ¡Importante! Toma el precio del primer lote activo encontrado.
-        // Esto es mucho más rápido que ordenar por estrategia (FIFO, etc.)
-        // lo cual solo es necesario al VENDER, no al MOSTRAR.
-        const displayPrice = activeBatches[0].price; 
+        // PRECIO: Si hay lotes activos, tomamos el precio del primero (FIFO/LIFO según orden)
+        // Si no, tomamos el precio base del producto (o 0)
+        const displayPrice = activeBatches.length > 0 ? activeBatches[0].price : (product.price || 0);
+        
+        // COSTO (¡CORREGIDO!): 
+        // Si hay lotes activos, mostramos el costo del lote que se está vendiendo actualmente.
+        // Si no hay stock, intentamos mostrar el costo del último lote histórico para referencia.
+        let displayCost = 0;
+        if (activeBatches.length > 0) {
+             displayCost = activeBatches[0].cost;
+        } else {
+             // productBatches[0] debería ser el más reciente si vienen ordenados del store
+             // Si no hay lotes históricos, usamos el costo base del producto legado
+             const lastBatch = productBatches[0]; 
+             displayCost = lastBatch ? lastBatch.cost : (product.cost || 0);
+        }
                 
         aggregatedProducts.push({
+            // Copiamos datos base del producto
             id: product.id,
             name: product.name,
             image: product.image,
@@ -108,11 +99,22 @@ async function aggregateProductsWithBatches(products, batches) {
             saleType: product.saleType,
             isActive: product.isActive,
             batchManagement: product.batchManagement,
-            // 🔧 Propiedades agregadas
+            wholesaleTiers: product.wholesaleTiers,
+            
+            // Campos específicos (Farmacia/Restaurante) que deben persistir
+            sustancia: product.sustancia,
+            laboratorio: product.laboratorio,
+            productType: product.productType,
+            recipe: product.recipe,
+            
+            // Propiedades calculadas (Dinámicas)
             stock: totalStock,
             price: displayPrice,
-            trackStock: true,
+            cost: displayCost, // <--- ¡CAMPO AGREGADO!
+            
+            trackStock: true, // Con sistema de lotes, siempre trackeamos
             batchCount: productBatches.length,
+            hasBatches: productBatches.length > 0
         });
     }
         
@@ -124,25 +126,21 @@ export const useDashboardStore = create((set, get) => ({
   // 1. ESTADO
   isLoading: true,
   sales: [],
-  menu: [], // Este será el menú AGREGADO
+  menu: [], 
   deletedItems: [],
-  rawProducts: [], // Productos sin procesar
-  rawBatches: [], // Lotes sin procesar
+  rawProducts: [], 
+  rawBatches: [], 
 
   // 2. ACCIONES
   loadAllData: async () => {
     set({ isLoading: true });
     try {
-      // Revisar si la migración debe correr
       const needsMigration = localStorage.getItem('run_batch_migration');
       if (needsMigration === 'true') {
-        const success = await migrateExistingProductsToBatches();
-        if (success) {
-          localStorage.removeItem('run_batch_migration');
-        }
+        await migrateExistingProductsToBatches();
+        localStorage.removeItem('run_batch_migration');
       }
 
-      // Cargamos todo en paralelo
       const [salesData, productData, batchData, deletedMenu, deletedCustomers, deletedSales] = await Promise.all([
         loadData(STORES.SALES),
         loadData(STORES.MENU),
@@ -152,7 +150,6 @@ export const useDashboardStore = create((set, get) => ({
         loadData(STORES.DELETED_SALES)
       ]);
 
-      // Combinamos la papelera
       const allMovements = [
         ...deletedMenu.map(p => ({ ...p, type: 'Producto', uniqueId: p.id, name: p.name })),
         ...deletedCustomers.map(c => ({ ...c, type: 'Cliente', uniqueId: c.id, name: c.name })),
@@ -160,15 +157,17 @@ export const useDashboardStore = create((set, get) => ({
       ];
       allMovements.sort((a, b) => new Date(b.deletedTimestamp) - new Date(a.deletedTimestamp));
 
-      // AGREGAR productos y lotes
-      const aggregatedMenu = await aggregateProductsWithBatches(productData, batchData);
+      // Ordenar lotes: Más recientes primero (importante para la lógica de costos)
+      const sortedBatches = batchData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-      // Actualizamos el estado centralizado
+      // Usamos la función corregida
+      const aggregatedMenu = await aggregateProductsWithBatches(productData, sortedBatches);
+
       set({
         sales: salesData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
-        menu: aggregatedMenu,
+        menu: aggregatedMenu, // Aquí ahora vendrán TODOS los productos con su costo
         rawProducts: productData,
-        rawBatches: batchData,
+        rawBatches: sortedBatches,
         deletedItems: allMovements,
         isLoading: false
       });
@@ -186,47 +185,33 @@ export const useDashboardStore = create((set, get) => ({
       const saleToDelete = get().sales.find(s => s.timestamp === timestamp);
       if (!saleToDelete) throw new Error('Venta no encontrada');
 
-      // --- INICIO DE CORRECCIÓN ---
-      // Restaurar stock A LOS LOTES
       for (const item of saleToDelete.items) {
-        // Solo procesamos items que usaron el sistema de lotes
         if (item.batchesUsed && item.batchesUsed.length > 0) {
           for (const batchInfo of item.batchesUsed) {
             try {
               const batch = await loadData(STORES.PRODUCT_BATCHES, batchInfo.batchId);
               if (batch) {
-                batch.stock += batchInfo.quantity; // Restaurar la cantidad
-                batch.isActive = true; // Asegurar que el lote esté activo de nuevo
+                batch.stock += batchInfo.quantity; 
+                batch.isActive = true; // Reactivamos el lote si estaba agotado
                 await saveData(STORES.PRODUCT_BATCHES, batch);
-              } else {
-                console.warn(`Lote ${batchInfo.batchId} no encontrado, no se pudo restaurar stock.`);
               }
             } catch (batchError) {
-              console.error(`Error restaurando stock para el lote ${batchInfo.batchId}:`, batchError);
+              console.error(`Error restaurando stock lote ${batchInfo.batchId}:`, batchError);
             }
           }
-        } else {
-            console.warn(`La venta ${saleToDelete.timestamp} no tiene datos de lote (batchesUsed) para el item ${item.name}. No se restaurará stock.`);
         }
       }
-      // --- FIN DE CORRECCIÓN ---
 
-      // Mover a papelera
       saleToDelete.deletedTimestamp = new Date().toISOString();
       await saveData(STORES.DELETED_SALES, saleToDelete);
       await deleteData(STORES.SALES, timestamp);
 
-      // Recargar datos en el store
       get().loadAllData();
     } catch (error) {
       console.error("Error al eliminar venta:", error);
     }
   },
 
-  /**
-   * ¡CORREGIDO!
-   * Ahora descuenta el stock de los lotes correctos al restaurar.
-   */
   restoreItem: async (item) => {
     try {
       if (item.type === 'Producto') {
@@ -239,9 +224,8 @@ export const useDashboardStore = create((set, get) => ({
         await saveData(STORES.CUSTOMERS, item);
         await deleteData(STORES.DELETED_CUSTOMERS, item.id);
       }
-      // --- INICIO DE CORRECCIÓN ---
       else if (item.type === 'Pedido') {
-        // Descontar stock de los lotes (lógica inversa de deleteSale)
+        // Al restaurar un pedido eliminado, hay que volver a descontar el stock
         for (const saleItem of item.items) {
           if (saleItem.batchesUsed && saleItem.batchesUsed.length > 0) {
             for (const batchInfo of saleItem.batchesUsed) {
@@ -251,25 +235,17 @@ export const useDashboardStore = create((set, get) => ({
                   batch.stock = Math.max(0, batch.stock - batchInfo.quantity);
                   if (batch.stock === 0) batch.isActive = false;
                   await saveData(STORES.PRODUCT_BATCHES, batch);
-                } else {
-                    console.warn(`Lote ${batchInfo.batchId} no encontrado, no se pudo descontar stock.`);
                 }
-              } catch (batchError) {
-                console.error(`Error descontando stock para el lote ${batchInfo.batchId}:`, batchError);
-              }
+              } catch (batchError) { console.error(batchError); }
             }
-          } else {
-            console.warn(`La venta ${item.timestamp} no tiene datos de lote (batchesUsed) para el item ${saleItem.name}. No se descontará stock.`);
           }
         }
-        
         delete item.deletedTimestamp;
         await saveData(STORES.SALES, item);
         await deleteData(STORES.DELETED_SALES, item.timestamp);
       }
-      // --- FIN DE CORRECCIÓN ---
 
-      get().loadAllData(); // Recargar todo
+      get().loadAllData(); 
     } catch (error) {
       console.error("Error al restaurar item:", error);
     }
