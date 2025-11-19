@@ -1,8 +1,8 @@
 // src/services/supabase.js
 
 // --- SUPABASE CLIENT INITIALIZATION ---
-const supabaseUrl = 'https://jkuceingecbynyvntcxe.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprdWNlaW5nZWNieW55dm50Y3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMzcwMTMsImV4cCI6MjA3MTcxMzAxM30.UH5hoF12NyVzyENpySmK4i1pfELpRWgjAzBIhZaSals';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
 // --- USER MANAGEMENT ---

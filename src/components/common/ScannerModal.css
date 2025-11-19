@@ -72,7 +72,8 @@
   justify-content: center;
   /* Proporción para mantener estabilidad */
   aspect-ratio: 16 / 9;
-  min-height: 300px; /* Altura mínima para escritorio */
+  min-height: 300px;
+  /* Altura mínima para escritorio */
 }
 
 /*
@@ -88,6 +89,7 @@
   background-color: #333;
   width: 100%;
 }
+
 .camera-error-feedback p {
   color: white;
   margin-bottom: var(--spacing-md);
@@ -389,6 +391,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }

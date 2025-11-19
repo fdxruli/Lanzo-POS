@@ -1,94 +1,162 @@
-/*
- * Estilos para CustomerList.jsx
- */
+/* src/components/customers/CustomerList.css */
 
+/* Contenedor de la Grid */
 .customer-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: var(--spacing-md);
+  /* Tarjetas responsivas: mínimo 300px, si cabe más se estiran */
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing-lg);
+  padding-bottom: var(--spacing-xl);
 }
 
+/* Diseño de la Tarjeta */
 .customer-card {
-  background-color: var(--light-background);
-  border-radius: var(--border-radius-sm);
-  padding: var(--spacing-md);
-  transition: var(--transition);
+  background-color: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  transition: all 0.3s ease;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-}
-
-.customer-card:hover {
-  transform: translateY(-3px);
+  position: relative;
+  overflow: hidden;
   box-shadow: var(--box-shadow);
 }
 
+.customer-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--box-shadow-lg);
+  border-color: var(--secondary-color);
+  /* Brillo violeta al pasar el mouse */
+}
+
+/* Indicador visual lateral para clientes con deuda */
+.customer-card.has-debt {
+  border-left: 4px solid var(--error-color);
+}
+
+/* Información del Cliente */
+.customer-info {
+  margin-bottom: var(--spacing-md);
+}
+
 .customer-info h4 {
+  font-size: 1.2rem;
   color: var(--text-dark);
   margin-bottom: var(--spacing-xs);
+  font-weight: 700;
 }
 
 .customer-info p {
-  margin-bottom: var(--spacing-xs);
   color: var(--text-light);
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
+/* Estilo destacado para la Deuda */
+.customer-debt {
+  margin-top: var(--spacing-md) !important;
+  background-color: rgba(255, 59, 92, 0.1);
+  /* Fondo rojo muy suave */
+  color: var(--error-color) !important;
+  padding: 10px;
+  border-radius: var(--border-radius-sm);
+  text-align: center;
+  font-weight: 800;
+  font-size: 1.1rem;
+  border: 1px dashed rgba(255, 59, 92, 0.3);
+}
+
+/* --- BOTONES Y ACCIONES --- */
 .customer-actions {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
 }
 
-/* Botón específico de esta lista */
-.btn-history {
-  background-color: var(--primary-color);
-  color: white;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 0.875rem;
+/* Botones que ocupan todo el ancho (Principales) */
+.btn-abono,
+.btn-whatsapp {
+  flex: 1 1 45%;
+  /* Ocupan casi la mitad cada uno */
+  justify-content: center;
 }
 
-.btn-history:hover {
-  background-color: var(--secondary-color);
-}
-
-.customer-card.has-debt {
-  border-left: 5px solid var(--error-color);
-  background-color: rgba(239, 68, 68, 0.05);
-}
-
-.customer-debt {
-  margin-top: var(--spacing-sm) !important;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--error-color) !important;
-}
-
+/* Estilo específico para el botón de Abono */
 .btn-abono {
   background-color: var(--success-color);
+  /* Verde para dinero */
   color: white;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 0.875rem;
-  width: 100%; /* Que ocupe todo el ancho disponible en la fila de acciones */
-  order: -1; /* Lo pone primero */
-  margin-bottom: var(--spacing-sm);
+  font-weight: 700;
+  order: 1;
+  /* Asegura que salga primero */
 }
 
 .btn-abono:hover {
   background-color: #059669;
+  box-shadow: 0 4px 12px rgba(0, 196, 140, 0.3);
 }
 
-.customer-actions {
-  /* ... (estilos existentes) ... */
-  flex-wrap: wrap; /* Permitimos que los botones se envuelvan */
-}
-
+/* Estilo específico para WhatsApp */
 .btn-whatsapp {
-  background-color: #25D366; /* Color de WhatsApp */
-  color: white;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 0.875rem;
+  background-color: var(--card-background-color);
+  border: 1px solid var(--success-color);
+  color: var(--success-color);
+  order: 2;
 }
+
 .btn-whatsapp:hover {
-  background-color: #1DAE55;
+  background-color: var(--success-color);
+  color: white;
+}
+
+/* Grupo de botones secundarios (Historial, Editar, Eliminar) */
+/* Hacemos que sean más pequeños o sutiles */
+
+.btn-history,
+.btn-edit,
+.btn-delete {
+  flex: 1;
+  padding: 8px;
+  font-size: 0.85rem;
+  order: 3;
+  margin-top: 5px;
+}
+
+.btn-history {
+  background-color: var(--light-background);
+  color: var(--text-dark);
+  border: 1px solid transparent;
+}
+
+.btn-history:hover {
+  border-color: var(--secondary-color);
+  color: var(--secondary-color);
+}
+
+.btn-edit {
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-light);
+}
+
+.btn-edit:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.btn-delete {
+  background-color: transparent;
+  color: var(--text-light);
+  border: 1px solid transparent;
+}
+
+.btn-delete:hover {
+  background-color: rgba(255, 59, 92, 0.1);
+  color: var(--error-color);
 }

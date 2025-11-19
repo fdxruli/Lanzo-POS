@@ -27,10 +27,10 @@ export default function PosPage() {
   const { cajaActual, abrirCaja } = useCaja();
   const { order, clearOrder, getTotalPrice } = useOrderStore();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
-  
+
   // --- 1. CONEXIÓN AL STORE (CORRECCIÓN CLAVE) ---
   // Usamos 'menu' del store, que ya incluye los productos aunque tengan stock 0
-  const allProducts = useDashboardStore((state) => state.menu); 
+  const allProducts = useDashboardStore((state) => state.menu);
   const refreshData = useDashboardStore((state) => state.loadAllData);
 
   const total = getTotalPrice();
@@ -38,16 +38,16 @@ export default function PosPage() {
   // --- 2. EFECTO DE CARGA INICIAL ---
   useEffect(() => {
     const loadExtras = async () => {
-        try {
-            // Cargamos las categorías
-            const categoryData = await loadData(STORES.CATEGORIES);
-            setCategories(categoryData || []);
-            
-            // Refrescamos el store global para asegurar que los productos estén al día
-            await refreshData();
-        } catch (error) {
-            console.error("Error cargando datos iniciales del POS:", error);
-        }
+      try {
+        // Cargamos las categorías
+        const categoryData = await loadData(STORES.CATEGORIES);
+        setCategories(categoryData || []);
+
+        // Refrescamos el store global para asegurar que los productos estén al día
+        await refreshData();
+      } catch (error) {
+        console.error("Error cargando datos iniciales del POS:", error);
+      }
     };
     loadExtras();
   }, []); // Se ejecuta una sola vez al montar
@@ -55,7 +55,7 @@ export default function PosPage() {
   // --- 3. FILTRADO DE PRODUCTOS ---
   const filteredProducts = useMemo(() => {
     // CORRECCIÓN: Filtramos primero para excluir ingredientes
-    let items = (allProducts || []).filter(p => p.productType === 'sellable' || !p.productType); 
+    let items = (allProducts || []).filter(p => p.productType === 'sellable' || !p.productType);
     // (Nota: !p.productType es para compatibilidad con productos antiguos que no tengan ese campo)
 
     if (selectedCategoryId) {
@@ -69,190 +69,228 @@ export default function PosPage() {
 
   // --- 4. PROCESAMIENTO DE LA VENTA (LÓGICA ROBUSTA) ---
   const handleProcessOrder = async (paymentData) => {
-      
-      // A. Validaciones iniciales
-      if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
-        setIsPaymentModalOpen(false);
-        setIsQuickCajaOpen(true);
-        return;
-      }
 
-      const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
-      if (itemsToProcess.length === 0) {
-        setIsPaymentModalOpen(false);
-        showMessageModal('El pedido está vacío.');
-        return;
-      }
-
+    // A. Validaciones iniciales
+    if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       setIsPaymentModalOpen(false);
+      setIsQuickCajaOpen(true);
+      return;
+    }
 
-      try {
-        console.time('ProcesoDeVenta');
-        
-        // B. Cargar datos FRESCOS para la transacción (Inventario Real)
-        const allBatches = await loadData(STORES.PRODUCT_BATCHES);
-        const allProductsMenu = await loadData(STORES.MENU);
-        const productMap = new Map(allProductsMenu.map(p => [p.id, p]));
+    const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
+    if (itemsToProcess.length === 0) {
+      setIsPaymentModalOpen(false);
+      showMessageModal('El pedido está vacío.');
+      return;
+    }
 
-        // Organizar lotes por producto para acceso rápido
-        const batchesByProduct = new Map();
-        allBatches.forEach(batch => {
-          if (!batchesByProduct.has(batch.productId)) {
-            batchesByProduct.set(batch.productId, []);
-          }
-          batchesByProduct.get(batch.productId).push(batch);
-        });
+    setIsPaymentModalOpen(false);
 
-        const processedItems = [];
-        const updatedBatches = [];
-        const updatedBatchesIds = new Set(); // Para evitar duplicados
+    try {
+      console.time('ProcesoDeVenta');
 
-        // C. Iterar sobre cada producto del carrito
-        for (const orderItem of itemsToProcess) {
-          const product = productMap.get(orderItem.id);
-          if (!product) continue;
+      // B. Cargar datos FRESCOS para la transacción (Inventario Real)
+      const allBatches = await loadData(STORES.PRODUCT_BATCHES);
+      const allProductsMenu = await loadData(STORES.MENU);
+      const productMap = new Map(allProductsMenu.map(p => [p.id, p]));
 
-          const itemBatchesUsed = [];
-          let itemTotalCost = 0;
+      // Organizar lotes por producto para acceso rápido
+      const batchesByProduct = new Map();
+      allBatches.forEach(batch => {
+        if (!batchesByProduct.has(batch.productId)) {
+          batchesByProduct.set(batch.productId, []);
+        }
+        batchesByProduct.get(batch.productId).push(batch);
+      });
 
-          // === BIFURCACIÓN LÓGICA: ¿ES UNA RECETA (RESTAURANTE)? ===
-          if (product.recipe && product.recipe.length > 0) {
-             console.log(`🍳 Procesando receta para: ${product.name}`);
-             
-             // Descontar stock de cada ingrediente
-             for (const ingredient of product.recipe) {
-                let requiredQty = ingredient.quantity * orderItem.quantity;
-                
-                // Buscamos los lotes del INGREDIENTE (Harina, Queso, etc.)
-                const ingredientBatches = batchesByProduct.get(ingredient.ingredientId) || [];
-                const activeIngBatches = ingredientBatches
-                    .filter(b => b.isActive && b.stock > 0)
-                    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // FIFO
+      const processedItems = [];
+      const updatedBatches = [];
+      const updatedBatchesIds = new Set(); // Para evitar duplicados
 
-                for (const batch of activeIngBatches) {
-                    if (requiredQty <= 0) break;
-                    
-                    const toDeduct = Math.min(requiredQty, batch.stock);
-                    batch.stock -= toDeduct;
-                    
-                    // Desactivar lote si se acaba (con tolerancia para decimales)
-                    if (batch.stock < 0.0001) { 
-                       batch.stock = 0;
-                       batch.isActive = false;
-                    }
-                    
-                    // Registrar uso para costos y devoluciones
-                    itemBatchesUsed.push({
-                        batchId: batch.id,
-                        ingredientId: ingredient.ingredientId,
-                        quantity: toDeduct,
-                        cost: batch.cost
-                    });
-                    
-                    itemTotalCost += (batch.cost * toDeduct);
-                    requiredQty -= toDeduct;
+      // C. Iterar sobre cada producto del carrito
+      for (const orderItem of itemsToProcess) {
+        const product = productMap.get(orderItem.id);
+        if (!product) continue;
 
-                    if (!updatedBatchesIds.has(batch.id)) {
-                        updatedBatches.push(batch);
-                        updatedBatchesIds.add(batch.id);
-                    }
-                }
-                
-                if (requiredQty > 0.001) {
-                    console.warn(`⚠️ Faltó stock para ingrediente: ${ingredient.name}`);
-                }
-            }
-          } else {
-            // === LÓGICA ESTÁNDAR (FIFO) ===
-            console.log(`📦 Procesando producto estándar: ${product.name}`);
-            
-            const productBatches = batchesByProduct.get(orderItem.id) || [];
-            const activeBatches = productBatches
+        const itemBatchesUsed = [];
+        let itemTotalCost = 0;
+
+        // === BIFURCACIÓN LÓGICA: ¿ES UNA RECETA (RESTAURANTE)? ===
+        if (product.recipe && product.recipe.length > 0) {
+          console.log(`🍳 Procesando receta para: ${product.name}`);
+
+          // Descontar stock de cada ingrediente
+          for (const ingredient of product.recipe) {
+            let requiredQty = ingredient.quantity * orderItem.quantity;
+
+            // Buscamos los lotes del INGREDIENTE (Harina, Queso, etc.)
+            const ingredientBatches = batchesByProduct.get(ingredient.ingredientId) || [];
+            const activeIngBatches = ingredientBatches
               .filter(b => b.isActive && b.stock > 0)
-              .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+              .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // FIFO
 
-            let remaining = orderItem.quantity;
+            for (const batch of activeIngBatches) {
+              if (requiredQty <= 0) break;
 
-            for (const batch of activeBatches) {
-              if (remaining <= 0) break;
-              
-              const toDeduct = Math.min(remaining, batch.stock);
+              const toDeduct = Math.min(requiredQty, batch.stock);
               batch.stock -= toDeduct;
-              
-              if (batch.stock === 0) batch.isActive = false;
 
+              // Desactivar lote si se acaba (con tolerancia para decimales)
+              if (batch.stock < 0.0001) {
+                batch.stock = 0;
+                batch.isActive = false;
+              }
+
+              // Registrar uso para costos y devoluciones
               itemBatchesUsed.push({
                 batchId: batch.id,
+                ingredientId: ingredient.ingredientId,
                 quantity: toDeduct,
                 cost: batch.cost
               });
 
               itemTotalCost += (batch.cost * toDeduct);
-              remaining -= toDeduct;
+              requiredQty -= toDeduct;
 
               if (!updatedBatchesIds.has(batch.id)) {
                 updatedBatches.push(batch);
                 updatedBatchesIds.add(batch.id);
               }
             }
+
+            if (requiredQty > 0.001) {
+              console.warn(`⚠️ Faltó stock para ingrediente: ${ingredient.name}`);
+            }
           }
+        } else {
+          // === LÓGICA ESTÁNDAR (FIFO) ===
+          console.log(`📦 Procesando producto estándar: ${product.name}`);
 
-          // Calcular costo unitario promedio real para este ítem
-          const avgUnitCost = orderItem.quantity > 0 ? (itemTotalCost / orderItem.quantity) : 0;
-          
-          processedItems.push({
-            ...orderItem,
-            cost: avgUnitCost,
-            price: orderItem.price,
-            originalPrice: orderItem.originalPrice,
-            batchesUsed: itemBatchesUsed,
-            stockDeducted: orderItem.quantity 
-          });
-        }
+          const productBatches = batchesByProduct.get(orderItem.id) || [];
+          const activeBatches = productBatches
+            .filter(b => b.isActive && b.stock > 0)
+            .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
-        // D. Guardar todos los cambios de inventario (Transacción Bulk)
-        if (updatedBatches.length > 0) {
-          await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches);
-        }
+          let remaining = orderItem.quantity;
 
-        // E. Guardar la Venta
-        const sale = {
-          timestamp: new Date().toISOString(),
-          items: processedItems,
-          total: total,
-          customerId: paymentData.customerId,
-          paymentMethod: paymentData.paymentMethod,
-          abono: paymentData.amountPaid,
-          saldoPendiente: paymentData.saldoPendiente
-        };
-        await saveData(STORES.SALES, sale);
+          for (const batch of activeBatches) {
+            if (remaining <= 0) break;
 
-        // F. Actualizar deuda del cliente si es Fiado
-        if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
-          const customer = await loadData(STORES.CUSTOMERS, sale.customerId);
-          if (customer) {
-            customer.debt = (customer.debt || 0) + sale.saldoPendiente;
-            await saveData(STORES.CUSTOMERS, customer);
+            const toDeduct = Math.min(remaining, batch.stock);
+            batch.stock -= toDeduct;
+
+            if (batch.stock === 0) batch.isActive = false;
+
+            itemBatchesUsed.push({
+              batchId: batch.id,
+              quantity: toDeduct,
+              cost: batch.cost
+            });
+
+            itemTotalCost += (batch.cost * toDeduct);
+            remaining -= toDeduct;
+
+            if (!updatedBatchesIds.has(batch.id)) {
+              updatedBatches.push(batch);
+              updatedBatchesIds.add(batch.id);
+            }
           }
         }
 
-        // G. Finalizar
-        clearOrder();
-        showMessageModal('¡Pedido procesado exitosamente!');
-        
-        refreshData(); // ¡IMPORTANTE! Actualiza la UI globalmente
+        // Calcular costo unitario promedio real para este ítem
+        const avgUnitCost = orderItem.quantity > 0 ? (itemTotalCost / orderItem.quantity) : 0;
 
-        // H. Enviar Ticket (Opcional)
-        if (paymentData.sendReceipt && paymentData.customerId) {
-           // (Tu lógica de ticket existente...)
-        }
-        
-        console.timeEnd('ProcesoDeVenta');
-
-      } catch (error) {
-        console.error('❌ Error al procesar el pedido:', error);
-        showMessageModal(`Error al procesar el pedido: ${error.message}`);
+        processedItems.push({
+          ...orderItem,
+          cost: avgUnitCost,
+          price: orderItem.price,
+          originalPrice: orderItem.originalPrice,
+          batchesUsed: itemBatchesUsed,
+          stockDeducted: orderItem.quantity
+        });
       }
+
+      // D. Guardar todos los cambios de inventario (Transacción Bulk)
+      if (updatedBatches.length > 0) {
+        await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches);
+      }
+
+      // E. Guardar la Venta
+      const sale = {
+        timestamp: new Date().toISOString(),
+        items: processedItems,
+        total: total,
+        customerId: paymentData.customerId,
+        paymentMethod: paymentData.paymentMethod,
+        abono: paymentData.amountPaid,
+        saldoPendiente: paymentData.saldoPendiente
+      };
+      await saveData(STORES.SALES, sale);
+
+      // F. Actualizar deuda del cliente si es Fiado
+      if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
+        const customer = await loadData(STORES.CUSTOMERS, sale.customerId);
+        if (customer) {
+          customer.debt = (customer.debt || 0) + sale.saldoPendiente;
+          await saveData(STORES.CUSTOMERS, customer);
+        }
+      }
+
+      // G. Finalizar
+      clearOrder();
+      showMessageModal('¡Pedido procesado exitosamente!');
+
+      refreshData(); // ¡IMPORTANTE! Actualiza la UI globalmente
+
+      // H. Enviar Ticket (Opcional)
+      if (paymentData.sendReceipt && paymentData.customerId) {
+        try {
+          // 1. Cargamos al cliente para obtener su teléfono
+          const customer = await loadData(STORES.CUSTOMERS, paymentData.customerId);
+
+          if (customer && customer.phone) {
+            // 2. Construimos el mensaje del ticket
+            let receiptText = `*--- TICKET DE VENTA ---*\n`;
+            receiptText += `*Negocio:* ${companyName}\n`;
+            receiptText += `*Fecha:* ${new Date().toLocaleString()}\n\n`;
+            receiptText += `*Productos:*\n`;
+
+            processedItems.forEach(item => {
+              receiptText += `• ${item.name} (x${item.quantity}) - $${(item.price * item.quantity).toFixed(2)}\n`;
+            });
+
+            receiptText += `\n*TOTAL: $${total.toFixed(2)}*\n`;
+
+            if (paymentData.paymentMethod === 'efectivo') {
+              receiptText += `Pago con: $${parseFloat(paymentData.amountPaid).toFixed(2)}\n`;
+              const cambio = parseFloat(paymentData.amountPaid) - total;
+              receiptText += `Cambio: $${cambio.toFixed(2)}\n`;
+            } else if (paymentData.paymentMethod === 'fiado') {
+              receiptText += `Método: Fiado / Crédito\n`;
+              receiptText += `Abono Inicial: $${parseFloat(paymentData.amountPaid).toFixed(2)}\n`;
+              receiptText += `Saldo Restante de esta venta: $${parseFloat(paymentData.saldoPendiente).toFixed(2)}\n`;
+              // Opcional: Mostrar deuda total acumulada si la tienes disponible
+              const nuevaDeudaTotal = (customer.debt || 0) + sale.saldoPendiente;
+              receiptText += `\n*Deuda Total Acumulada: $${nuevaDeudaTotal.toFixed(2)}*\n`;
+            }
+
+            receiptText += `\n¡Gracias por su preferencia!`;
+
+            // 3. Enviamos el mensaje
+            sendWhatsAppMessage(customer.phone, receiptText);
+          }
+        } catch (error) {
+          console.error("Error al generar ticket de WhatsApp:", error);
+          // No detenemos el flujo si falla el mensaje, ya que la venta ya se guardó
+        }
+      }
+
+      console.timeEnd('ProcesoDeVenta');
+
+    } catch (error) {
+      console.error('❌ Error al procesar el pedido:', error);
+      showMessageModal(`Error al procesar el pedido: ${error.message}`);
+    }
   };
 
   // --- 5. HANDLER DE CAJA RÁPIDA ---
@@ -284,18 +322,18 @@ export default function PosPage() {
       </div>
 
       <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
-      
-      <PaymentModal 
-        show={isPaymentModalOpen} 
-        onClose={() => setIsPaymentModalOpen(false)} 
-        onConfirm={handleProcessOrder} 
-        total={total} 
+
+      <PaymentModal
+        show={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        onConfirm={handleProcessOrder}
+        total={total}
       />
-      
-      <QuickCajaModal 
-        show={isQuickCajaOpen} 
-        onClose={() => setIsQuickCajaOpen(false)} 
-        onConfirm={handleQuickCajaSubmit} 
+
+      <QuickCajaModal
+        show={isQuickCajaOpen}
+        onClose={() => setIsQuickCajaOpen(false)}
+        onConfirm={handleQuickCajaSubmit}
       />
     </>
   );

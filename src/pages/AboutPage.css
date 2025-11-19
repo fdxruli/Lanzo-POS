@@ -1,183 +1,285 @@
 /* src/pages/AboutPage.css */
 
+/* 1. TÍTULO PRINCIPAL */
+.section-title {
+  color: var(--primary-color);
+  font-size: 2rem;
+  font-weight: 800;
+  margin-top: 2rem;
+  /* Espacio arriba (separar del Ticker) */
+  margin-bottom: 2rem;
+  /* Espacio abajo (separar de las tarjetas) */
+  padding: 0 1rem;
+  /* Espacio de seguridad a los lados (izq/der) */
+  border-bottom: 2px solid rgba(99, 102, 241, 0.1);
+  padding-bottom: var(--spacing-sm);
+}
+
+/* CONTENEDOR GRID PRINCIPAL */
 .about-container {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--spacing-lg);
-  max-width: 900px;
+  gap: 2rem;
+  max-width: 1200px;
   margin: 0 auto;
+  padding: 0 1rem 40px 1rem;
 }
 
+/* === ESTILOS DE TARJETAS === */
 .about-card {
   background-color: var(--card-background-color);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-lg);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 16px;
+  padding: 2rem;
+  /* AUMENTADO: Más padding interno para elegancia */
   box-shadow: var(--box-shadow);
-  transition: var(--transition);
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: fit-content;
+  /* Importante para que no se estiren feo */
 }
 
 .about-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--box-shadow-lg);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+  /* Sombra más suave al hover */
 }
 
+/* TÍTULOS DENTRO DE LAS TARJETAS */
 .about-heading {
   color: var(--primary-color);
-  border-bottom: 2px solid var(--light-background);
-  padding-bottom: var(--spacing-sm);
-  margin-bottom: var(--spacing-md);
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px dashed var(--border-color);
+  line-height: 1.3;
 }
 
 .about-text {
   color: var(--text-color);
-  font-size: 1.1rem;
+  font-size: 1rem;
   line-height: 1.7;
+  /* Mejor lectura */
+  margin-bottom: var(--spacing-sm);
 }
 
 .about-text strong {
   color: var(--text-dark);
+  font-weight: 700;
 }
 
+/* === TARJETA PATROCINADOR (ENTRE ALAS) === */
 .sponsored-by {
+  /* Fondo sutil con gradiente muy suave */
+  background: linear-gradient(180deg, var(--card-background-color) 0%, rgba(123, 97, 255, 0.04) 100%);
   border-left: 5px solid var(--secondary-color);
-  background-color: var(--light-background);
+  /* Borde morado más grueso */
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  border-right: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .sponsor-name {
   color: var(--secondary-color);
-  font-size: 1.5rem;
-  margin-bottom: var(--spacing-md);
+  font-size: 1.6rem;
+  font-weight: 900;
+  margin-bottom: var(--spacing-xs);
 }
 
+/* ENLACES SOCIALES (MEJORADOS) */
 .social-links {
   display: flex;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-lg);
+  gap: 15px;
+  margin-top: auto;
+  padding-top: var(--spacing-md);
 }
 
 .social-link {
-  background-color: var(--primary-color);
-  color: white;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--border-radius-sm);
+  background-color: #fff;
+  /* Fondo blanco limpio */
+  color: var(--secondary-color);
+  /* Texto color marca */
+  padding: 12px 20px;
+  border-radius: 12px;
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 700;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  border: 2px solid rgba(123, 97, 255, 0.2);
+  /* Borde sutil coloreado */
+  text-align: center;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
 .social-link:hover {
   background-color: var(--secondary-color);
+  color: white;
+  border-color: var(--secondary-color);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 10px rgba(123, 97, 255, 0.3);
 }
 
-@media (min-width: 768px) {
-  .about-container {
-    grid-template-columns: 2fr 1fr;
-  }
-}
-
-/* Estilos para la lista de funcionalidades */
+/* === LISTA DE CARACTERÍSTICAS === */
 .features-list {
-  list-style-type: '✓'; /* Un 'check' simple */
-  padding-left: 2rem;
-  margin-top: var(--spacing-md);
+  list-style: none;
+  padding: 0;
+  margin: 0;
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--spacing-sm);
+  gap: 15px;
 }
 
 .features-list li {
-  padding-left: var(--spacing-sm);
+  position: relative;
+  padding-left: 35px;
+  /* Más espacio para el check */
   color: var(--text-color);
-  font-size: 1.05rem; /* Ligeramente más grande */
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
 }
 
-/* --- Modificaciones al Media Query --- */
-@media (min-width: 600px) {
-  /* Hace que la lista se ponga en 2 columnas en pantallas medianas */
-  .features-list {
-    grid-template-columns: 1fr 1fr;
-  }
+.features-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  height: 24px;
+  width: 24px;
+  background-color: rgba(0, 196, 140, 0.15);
+  color: var(--success-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 900;
 }
 
-@media (min-width: 768px) {
-  .about-container {
-    grid-template-columns: 2fr 1fr;
-  }
-
-  /* * ¡Esta es la regla clave! 
-   * Hace que la tarjeta de "features" ocupe las 2 columnas 
-   * de la cuadrícula en escritorio, colocándose debajo.
-  */
-  .about-card.features-card {
-    grid-column: 1 / -1; /* Ocupa todo el ancho */
-  }
-}
-
-/* --- Estilos para la nueva tarjeta de Contacto --- */
+/* === TARJETA DE CONTACTO === */
 .about-card.contact-card {
   border-left: 5px solid var(--success-color);
-  background-color: var(--light-background);
+  /* Borde verde más grueso */
 }
 
 .contact-buttons {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-lg);
+  gap: 15px;
+  margin-top: var(--spacing-md);
 }
 
 .contact-button {
-  display: block; /* Hacemos que ocupe todo el ancho */
-  padding: var(--spacing-md);
-  border-radius: var(--border-radius-sm);
+  display: block;
+  padding: 14px;
+  border-radius: 12px;
   text-decoration: none;
-  font-weight: 600;
+  font-weight: 700;
   text-align: center;
-  transition: var(--transition);
-  color: white; /* Color de texto blanco para ambos */
+  transition: all 0.2s;
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .contact-button.bug-report {
-  background-color: var(--warning-color); /* Color naranja/ámbar para reportes */
-}
-.contact-button.bug-report:hover {
-  background-color: #d97706; /* Un poco más oscuro */
+  background-color: var(--warning-color);
 }
 
 .contact-button.feature-request {
-  background-color: var(--success-color); /* Verde para sugerencias */
-}
-.contact-button.feature-request:hover {
-  background-color: #0e9f74; /* Un poco más oscuro */
+  background-color: var(--success-color);
 }
 
+.contact-button:hover {
+  filter: brightness(1.05);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
 
-/* --- Actualización de Media Queries --- */
+/* ============================================================
+   MEDIA QUERY PARA ESCRITORIO (EL CAMBIO CLAVE)
+   ============================================================ */
+@media (min-width: 1024px) {
+  .about-container {
+    /* Usamos 2 columnas asimétricas:
+       - Columna Izquierda (Más ancha): Para texto largo y lista de features.
+       - Columna Derecha (Más estrecha): Para la info lateral (patrocinador/contacto).
+    */
+    grid-template-columns: 1.6fr 1fr;
+    align-items: start;
+    /* Alinea las cajas arriba para que no floten raro */
+    gap: 2.5rem;
+  }
 
-@media (min-width: 600px) {
+  /* --- COLUMNA IZQUIERDA --- */
+
+  /* Intro */
+  .about-card:not(.features-card):not(.sponsored-by):not(.contact-card) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  /* Features (Debajo de Intro) */
+  .about-card.features-card {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
   .features-list {
     grid-template-columns: 1fr 1fr;
+    /* 2 columnas internas para la lista */
+    column-gap: 2rem;
   }
-  
-  /* Hacemos los botones de contacto 2 columnas */
+
+  /* --- COLUMNA DERECHA --- */
+
+  /* Patrocinador (Arriba Derecha) */
+  .about-card.sponsored-by {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  /* Contacto (Debajo de Patrocinador) */
+  .about-card.contact-card {
+    grid-column: 2;
+    grid-row: 2;
+    /* Truco visual: Si la columna izq es muy larga, esto se pega arriba */
+    margin-top: -1rem;
+  }
+
   .contact-buttons {
     flex-direction: row;
   }
+
   .contact-button {
-    flex: 1; /* Hacemos que ambos botones compartan el espacio */
+    flex: 1;
   }
 }
 
-@media (min-width: 768px) {
-  .about-container {
-    grid-template-columns: 2fr 1fr;
-  }
-  
-  .about-card.features-card {
-    grid-column: 1 / -1; /* Ocupa todo el ancho */
-  }
+/* MODO OSCURO */
+[data-theme="dark"] .about-card {
+  background-color: #1e1e24;
+  border-color: #333;
+}
 
-  /* Hacemos que la tarjeta de contacto también ocupe todo el ancho */
-  .about-card.contact-card {
-    grid-column: 1 / -1; 
-  }
+[data-theme="dark"] .sponsored-by {
+  background: linear-gradient(180deg, #1e1e24 0%, rgba(123, 97, 255, 0.1) 100%);
+}
+
+[data-theme="dark"] .social-link {
+  background-color: #2d2d35;
+  border-color: #444;
+}
+
+[data-theme="dark"] .social-link:hover {
+  background-color: var(--secondary-color);
+  border-color: var(--secondary-color);
 }

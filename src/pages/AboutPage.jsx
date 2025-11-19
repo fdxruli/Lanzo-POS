@@ -18,20 +18,20 @@ const getWhatsAppLink = (type, data) => {
     // Usamos los datos del formulario 'data'
     message = `¡Hola! Tengo una sugerencia para Lanzo POS:\n\n*Mi idea es:*\n${data.idea}\n\n*¿Por qué sería útil?*\n${data.benefit}\n`;
   }
-  
+
   const encodedMessage = encodeURIComponent(message);
   return `https://wa.me/${YOUR_WHATSAPP_NUMBER}?text=${encodedMessage}`;
 };
 
 
 export default function AboutPage() {
-  
+
   // 4. Añadimos estado para controlar el modal
-  const [modalInfo, setModalInfo] = useState({ 
-    show: false, 
-    type: '', 
-    title: '', 
-    fields: [] 
+  const [modalInfo, setModalInfo] = useState({
+    show: false,
+    type: '',
+    title: '',
+    fields: []
   });
 
   // 5. Función para ABRIR el modal con la info correcta
@@ -75,52 +75,28 @@ export default function AboutPage() {
   return (
     <>
       <h2 className="section-title">Acerca de Lanzo POS</h2>
-      
+
       <div className="about-container">
-        
-        {/* --- TARJETA 1 (Sin cambios) --- */}
+
         <div className="about-card">
           <h3 className="about-heading">Software Libre para Emprendedores</h3>
           <p className="about-text">
-            <strong>Lanzo POS</strong> es un sistema de punto de venta diseñado 
-            con la misión de apoyar a pequeños negocios y emprendedores. 
-            Creemos en el poder de las herramientas accesibles, por lo que 
+            <strong>Lanzo POS</strong> es un sistema de punto de venta diseñado
+            con la misión de apoyar a pequeños negocios y emprendedores.
+            Creemos en el poder de las herramientas accesibles, por lo que
             este software se distribuye de forma libre y gratuita.
           </p>
           <p className="about-text">
-            Nuestro objetivo es proporcionarte una solución robusta para gestionar 
-            tus ventas, inventario y clientes sin el alto costo de las licencias 
+            Nuestro objetivo es proporcionarte una solución robusta para gestionar
+            tus ventas, inventario y clientes sin el alto costo de las licencias
             tradicionales.
           </p>
         </div>
 
-        {/* --- TARJETA 2 (Sin cambios) --- */}
-        <div className="about-card sponsored-by">
-          <h3 className="about-heading">Realizado gracias a:</h3>
-          <h4 className="sponsor-name">Darkitchen "Entre Alas"</h4>
-          <p className="about-text">
-            El desarrollo y financiamiento de Lanzo POS es posible gracias 
-            a <strong>"Entre Alas"</strong>, una dark kitchen apasionada por 
-            la comida y la tecnología.
-          </p>
-          <p className="about-text">
-            Puedes conocer más sobre su menú y concepto visitando sus redes.
-          </p>
-          <div className="social-links">
-            <a href="https://www.facebook.com/profile.php?id=1000866462611018" className="social-link" target="_blank" rel="noopener noreferrer">
-              Facebook
-            </a>
-            <a href="https://ea-panel.vercel.app" className="social-link" target="_blank" rel="noopener noreferrer">
-            Pagina web
-            </a>
-          </div>
-        </div>
-
-        {/* --- TARJETA 3 (Sin cambios) --- */}
         <div className="about-card features-card">
           <h3 className="about-heading">¿Qué puedes hacer con Lanzo POS?</h3>
           <p className="about-text">
-            Lanzo POS es un sistema completo diseñado para ser tu aliado en el 
+            Lanzo POS es un sistema completo diseñado para ser tu aliado en el
             crecimiento de tu negocio. Esto es lo que puedes gestionar:
           </p>
           <ul className="features-list">
@@ -135,28 +111,48 @@ export default function AboutPage() {
           </ul>
         </div>
 
-        {/* --- TARJETA DE CONTACTO (MODIFICADA) --- */}
+        <div className="about-card sponsored-by">
+          <h3 className="about-heading">Realizado gracias a:</h3>
+          <h4 className="sponsor-name">Darkitchen "Entre Alas"</h4>
+          <p className="about-text">
+            El desarrollo y financiamiento de Lanzo POS es posible gracias
+            a <strong>"Entre Alas"</strong>, una dark kitchen apasionada por
+            la comida y la tecnología.
+          </p>
+          <p className="about-text">
+            Puedes conocer más sobre su menú y concepto visitando su red social y su pagina web.
+          </p>
+          <div className="social-links">
+            <a href="https://www.facebook.com/profile.php?id=1000866462611018" className="social-link" target="_blank" rel="noopener noreferrer">
+              Facebook
+            </a>
+            <a href="https://ea-panel.vercel.app" className="social-link" target="_blank" rel="noopener noreferrer">
+              Pagina web
+            </a>
+          </div>
+        </div>
+
         <div className="about-card contact-card">
           <h3 className="about-heading">Contacto y Soporte</h3>
           <p className="about-text">
-            ¿Encontraste un error? ¿Tienes una idea para una nueva función? 
+            ¿Encontraste un error? ¿Tienes una idea para una nueva función?
             ¡Tu opinión es vital para mejorar Lanzo POS!
           </p>
           <p className="about-text">
-            Completa un breve formulario y te ayudaremos a generar el mensaje 
+            Completa un breve formulario y te ayudaremos a generar el mensaje
             para enviar por WhatsApp:
           </p>
           <div className="contact-buttons">
             {/* 8. Cambiamos <a> por <button> */}
             <button
-              onClick={() => handleOpenModal('bug')} 
-              className="contact-button bug-report" 
+              onClick={() => handleOpenModal('bug')}
+              className="contact-button bug-report"
             >
               Reportar un Problema
             </button>
             <button
-              onClick={() => handleOpenModal('feature')} 
-              className="contact-button feature-request" 
+              onClick={() => handleOpenModal('feature')}
+              className="contact-button feature-request"
             >
               Sugerir una Función
             </button>

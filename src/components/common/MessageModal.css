@@ -1,34 +1,62 @@
-/*
- * Estilos para MessageModal.jsx
- */
+/* src/components/common/MessageModal.css */
 
 #message-modal {
-  z-index: 2000 !important;
+  z-index: var(--z-toast) !important;
+  /* El más alto */
+}
+
+.modal-message {
+  font-size: 1.1rem;
+  color: var(--text-color);
+  margin: var(--spacing-lg) 0;
+  text-align: center;
 }
 
 .modal-buttons {
   display: flex;
-  /* --- MODIFICACIÓN --- */
-  flex-direction: column; /* 1. Apilamos los botones verticalmente */
+  flex-direction: column;
   gap: var(--spacing-sm);
-  margin-top: var(--spacing-lg);
-  /* flex-wrap: wrap; <-- Ya no es necesario */
-  /* justify-content: flex-end; <-- Ya no es necesario */
-}
-
-/* --- ¡NUEVA REGLA! --- */
-/* 2. Hacemos que todos los botones hijos directos ocupen el 100% */
-.modal-buttons > button {
   width: 100%;
 }
 
-.btn-secondary {
-  background-color: var(--secondary-color);
-  color: white;
-  /* ¡NUEVO! Le damos un orden para que aparezca primero */
-  order: -1; 
+.modal-buttons button {
+  width: 100%;
+  padding: 12px;
+  font-size: 1rem;
 }
 
-.btn-secondary:hover {
-  opacity: 0.9;
+/* Orden visual: Acción principal arriba */
+.btn-confirm,
+.btn-modal {
+  order: 1;
+}
+
+.btn-cancel {
+  order: 2;
+}
+
+/* Botón extra (ej: "Descartar") */
+.btn-secondary {
+  order: 3;
+  margin-top: var(--spacing-xs);
+}
+
+@media (min-width: 600px) {
+  .modal-buttons {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .modal-buttons button {
+    width: auto;
+    min-width: 120px;
+  }
+
+  .btn-confirm {
+    order: 2;
+  }
+
+  .btn-cancel {
+    order: 1;
+  }
 }

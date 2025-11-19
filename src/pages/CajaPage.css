@@ -1,60 +1,92 @@
 /* src/pages/CajaPage.css */
 
-/* ===== LAYOUT GENERAL ===== */
+/* 1. TÍTULO DE LA SECCIÓN */
+.section-title {
+  color: var(--primary-color);
+  font-size: 2rem;
+  font-weight: 800;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  padding: 0 1rem;
+  border-bottom: 2px solid rgba(99, 102, 241, 0.1);
+  padding-bottom: var(--spacing-sm);
+}
+
+/* 2. LAYOUT GRID PRINCIPAL */
 .caja-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--spacing-lg);
+  /* Móvil: 1 columna vertical */
+  gap: 1.5rem;
   max-width: 1200px;
   margin: 0 auto;
+  padding: 0 1rem 40px 1rem;
 }
 
-/* ===== ESTILOS DE TARJETAS (MOBILE BASE) ===== */
+/* 3. ESTILOS BASE DE TARJETAS */
 .caja-card {
-  background-color: var(--card-background-color); /* Color de fondo según tema */
-  border-radius: 16px; /* Bordes más redondeados estilo iOS/Android moderno */
-  padding: 20px;
+  background-color: var(--card-background-color);
+  border-radius: 16px;
+  padding: 2rem;
   box-shadow: var(--box-shadow);
-  border: 1px solid rgba(0,0,0,0.05);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  height: 100%;
+  /* Para que se estiren y tengan la misma altura en fila */
 }
 
-/* --- TARJETA DE ESTADO --- */
+.caja-card:hover {
+  box-shadow: var(--box-shadow-lg);
+}
+
+.caja-card h3,
+.subtitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 1.5rem;
+  border-bottom: 1px dashed var(--border-color);
+  padding-bottom: 0.5rem;
+}
+
+/* === TARJETA DE ESTADO (Izquierda Arriba) === */
+.status-card {
+  border-left: 5px solid var(--text-light);
+}
+
 .status-header {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  gap: 5px;
+  margin-bottom: 1.5rem;
 }
 
 .status-badge {
-  background-color: rgba(95, 211, 181, 0.15); /* Verde suave transparente */
-  color: var(--success-color);
-  padding: 6px 16px;
+  padding: 6px 12px;
   border-radius: 20px;
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
-.status-header small {
-  color: var(--text-light);
-  font-size: 0.85rem;
+.status-badge.open {
+  background-color: rgba(0, 196, 140, 0.15);
+  color: var(--success-color);
 }
 
 .status-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 1rem;
 }
 
 .info-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px dashed var(--light-background);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--light-background);
 }
 
 .info-row:last-child {
@@ -69,15 +101,22 @@
 .amount {
   font-size: 1.1rem;
   font-weight: 700;
-  font-family: monospace; /* Para que los números alineen mejor */
+  font-family: 'Inter', monospace;
 }
 
-.amount.neutral { color: var(--text-dark); }
-.amount.positive { color: var(--success-color); }
-.amount.negative { color: var(--error-color); }
+.amount.neutral {
+  color: var(--text-dark);
+}
 
+.amount.positive {
+  color: var(--success-color);
+}
 
-/* --- TARJETA DE ACCIONES --- */
+.amount.negative {
+  color: var(--error-color);
+}
+
+/* === TARJETA DE ACCIONES (Derecha Arriba) === */
 .actions-title {
   font-size: 1rem;
   color: var(--text-light);
@@ -89,132 +128,165 @@
 
 .actions-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr; /* Dos columnas */
-  gap: 15px;
-  grid-template-areas: 
-    "audit audit"   /* Auditoría ocupa todo el ancho arriba */
-    "entry exit";   /* Entrada y Salida abajo */
+  gap: 1rem;
+  /* En móvil 1 columna, en escritorio se ajusta */
+  grid-template-columns: 1fr;
+  height: 100%;
+  align-content: center;
+  /* Centrar botones verticalmente */
 }
 
-/* Botones Personalizados */
-.btn.full-width {
-  grid-area: audit;
-  width: 100%;
-}
-
-.btn.half-width {
-  width: 100%;
-}
-
+/* Botón Auditar (Principal) */
 .btn-audit {
-  background-color: var(--card-background-color);
-  color: var(--text-dark);
-  border: 2px solid var(--text-light);
-  padding: 15px;
-  font-size: 1rem;
+  background-color: var(--text-dark);
+  color: white;
+  border: none;
+  padding: 1.2rem;
+  font-size: 1.1rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: 700;
 }
 
 .btn-audit:hover {
-  background-color: var(--text-dark);
-  color: var(--card-background-color);
-  border-color: var(--text-dark);
+  background-color: black;
+  transform: translateY(-2px);
 }
 
-.btn-entry {
-  background-color: var(--primary-color); /* Azul/Morado */
-  color: white;
-  grid-area: entry;
-  padding: 15px;
-  font-size: 1rem;
-}
-
-.btn-entry:hover {
-  filter: brightness(1.1);
-}
-
+/* Botones Entrada/Salida */
+.btn-entry,
 .btn-exit {
-  background-color: var(--card-background-color);
-  color: var(--error-color);
-  border: 2px solid var(--error-color);
-  grid-area: exit;
-  padding: 15px;
+  padding: 1rem;
   font-size: 1rem;
+  border-radius: 12px;
+  font-weight: 600;
+  width: 100%;
 }
 
-.btn-exit:hover {
-  background-color: var(--error-color);
-  color: white;
+/* === HISTORIAL (Abajo) === */
+.history-list,
+#caja-movements-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-/* ===== ESTILOS ESPECÍFICOS PARA MODO OSCURO ===== */
-[data-theme="dark"] .caja-card {
-  border: 1px solid #333;
-  background-color: #1e1e24; /* Un tono ligeramente más claro que el fondo negro */
+.history-item,
+.movement-item {
+  background-color: var(--light-background);
+  padding: 12px 16px;
+  border-radius: 10px;
+  transition: background-color 0.2s;
 }
 
-[data-theme="dark"] .btn-audit {
-  border-color: #555;
-  color: #eee;
+.history-item:hover,
+.movement-item:hover {
+  background-color: #e2e8f0;
 }
-[data-theme="dark"] .btn-audit:hover {
-  background-color: #eee;
-  color: #111;
+
+.history-item .status-badge {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+}
+
+.status-badge.success {
+  background-color: #d1fae5;
+  color: #047857;
+}
+
+.status-badge.error {
+  background-color: #fee2e2;
+  color: #b91c1c;
 }
 
 
-/* ===== RESPONSIVE PARA TABLET Y ESCRITORIO (DESKTOP) ===== */
-@media (min-width: 768px) {
+/* ============================================================
+   MEDIA QUERY ESCRITORIO (>= 900px)
+   Organización: Arriba (Estado + Acciones), Abajo (Historial)
+   ============================================================ */
+@media (min-width: 900px) {
   .caja-grid {
-    /* Mantenemos dos columnas, pero balanceadas */
-    grid-template-columns: 1fr 1fr; 
-    align-items: stretch; /* Hacemos que ambas tarjetas tengan la misma altura */
+    /* Dos columnas iguales arriba */
+    grid-template-columns: 1fr 1fr;
+    /* Filas automáticas */
+    grid-template-rows: auto auto auto;
+    /* MAPA DE ÁREAS: La magia ocurre aquí */
+    grid-template-areas:
+      "status actions"
+      /* Fila 1: Estado | Acciones */
+      "movements movements"
+      /* Fila 2: Movimientos (Ancho completo) */
+      "history history";
+    /* Fila 3: Historial (Ancho completo) */
+
+    align-items: stretch;
+    /* Para que las cajas de arriba tengan misma altura */
   }
 
-  .caja-card {
-    padding: 30px; /* Más espacio interno para que respire */
-    display: flex;
-    flex-direction: column;
-    justify-content: center; /* Centrar contenido verticalmente */
+  /* Asignamos cada tarjeta a su área en el mapa */
+  #caja-status-container {
+    grid-area: status;
   }
 
-  .status-header {
-    flex-direction: row;
-    justify-content: space-between;
-    margin-bottom: 30px;
+  #caja-actions-container {
+    grid-area: actions;
   }
 
-  .amount {
-    font-size: 1.4rem; /* Números más grandes en PC */
+  #caja-movements-container {
+    grid-area: movements;
   }
 
-  /* --- REORGANIZACIÓN DE BOTONES EN ESCRITORIO --- */
+  #caja-history-container {
+    grid-area: history;
+  }
+
+  /* Ajuste específico para la tarjeta de acciones en escritorio */
   .actions-grid {
-    /* Volvemos a la estructura de 2 columnas del móvil para controlar la posición */
-    grid-template-columns: 1fr 1fr; 
-    gap: 20px;
-    
-    /* AQUÍ ESTÁ LA CLAVE: Definimos áreas para mover los botones */
-    grid-template-areas: 
-      "audit audit"   /* Fila 1: Auditar ocupa todo el ancho (arriba) */
-      "entry exit";   /* Fila 2: Entrada y Salida comparten (abajo) */
+    /* Rejilla interna de los botones */
+    grid-template-columns: 1fr 1fr;
+    /* Auditar a la izq, Ent/Sal a la der? O todo apilado? */
+    grid-template-areas:
+      "audit audit"
+      "entry exit";
   }
 
-  /* Asignamos los botones a sus áreas */
-  .btn-audit { 
-    grid-area: audit; 
-    font-size: 1.1rem; 
-    padding: 18px; /* Hacemos el botón principal más alto/gordo */
-    font-weight: 700;
-    letter-spacing: 0.5px;
-  }
-
-  .btn-entry { 
-    grid-area: entry; 
-    height: 100%; /* Para que llenen la altura disponible si sobra espacio */
-  }
-  
-  .btn-exit { 
-    grid-area: exit; 
+  .btn-audit {
+    grid-area: audit;
     height: 100%;
   }
+
+  .btn-entry {
+    grid-area: entry;
+  }
+
+  .btn-exit {
+    grid-area: exit;
+  }
+
+  /* Si la caja está cerrada, centramos el aviso */
+  #caja-status-container:only-child {
+    grid-column: 1 / -1;
+    /* Ocupa todo el ancho */
+    max-width: 600px;
+    margin: 0 auto;
+  }
+}
+
+/* MODO OSCURO */
+[data-theme="dark"] .caja-card {
+  background-color: #1e1e24;
+  border-color: #333;
+}
+
+[data-theme="dark"] .history-item,
+[data-theme="dark"] .movement-item {
+  background-color: #2d2d35;
+}
+
+[data-theme="dark"] .history-item:hover {
+  background-color: #383842;
 }

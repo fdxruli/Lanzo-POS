@@ -9,10 +9,10 @@ import './CajaPage.css';
 
 // 1. UI para Caja Cerrada
 const CajaCerradaUI = ({ onAbrirClick }) => (
-  <div id="caja-status-container" className="caja-card status-card" style={{textAlign: 'center', display: 'block'}}>
+  <div id="caja-status-container" className="caja-card status-card" style={{ textAlign: 'center', display: 'block' }}>
     <h3>Caja Cerrada</h3>
-    <p style={{marginBottom: '20px', color: 'var(--text-light)'}}>Abre una caja para comenzar a vender.</p>
-    <button id="open-caja-btn" className="btn btn-save" onClick={onAbrirClick} style={{width: '100%', maxWidth: '300px'}}>
+    <p style={{ marginBottom: '20px', color: 'var(--text-light)' }}>Abre una caja para comenzar a vender.</p>
+    <button id="open-caja-btn" className="btn btn-save" onClick={onAbrirClick} style={{ width: '100%', maxWidth: '300px' }}>
       Abrir Caja
     </button>
   </div>
@@ -20,15 +20,15 @@ const CajaCerradaUI = ({ onAbrirClick }) => (
 
 // 2. UI para Caja Abierta (ACTUALIZADA)
 const CajaAbiertaUI = ({ caja, totales, onEntradaClick, onSalidaClick, onAuditarClick }) => {
-  
+
   // Calculamos el total físico esperado sumando:
   // Inicial + Ventas en Efectivo + Abonos de Crédito + Entradas Manuales - Salidas
   const totalEnCaja = (
-      caja.monto_inicial + 
-      totales.ventasContado + 
-      totales.abonosFiado + 
-      caja.entradas_efectivo - 
-      caja.salidas_efectivo
+    caja.monto_inicial +
+    totales.ventasContado +
+    totales.abonosFiado +
+    caja.entradas_efectivo -
+    caja.salidas_efectivo
   );
 
   return (
@@ -37,43 +37,43 @@ const CajaAbiertaUI = ({ caja, totales, onEntradaClick, onSalidaClick, onAuditar
       <div id="caja-status-container" className="caja-card status-card">
         <div className="status-header">
           <span className="status-badge open">Caja Abierta</span>
-          <small>{new Date(caja.fecha_apertura).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
+          <small>{new Date(caja.fecha_apertura).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
         </div>
-        
+
         <div className="status-body">
           <div className="info-row">
             <span>Monto Inicial</span>
             <span className="amount neutral">${caja.monto_inicial.toFixed(2)}</span>
           </div>
-          
+
           {/* Fila de Ventas Contado */}
           <div className="info-row">
             <span>Ventas (Efectivo)</span>
-            <span className="amount success" style={{color: 'var(--success-color)'}}>+ ${totales.ventasContado.toFixed(2)}</span>
+            <span className="amount success" style={{ color: 'var(--success-color)' }}>+ ${totales.ventasContado.toFixed(2)}</span>
           </div>
 
           {/* Fila de Abonos Fiado (Solo si hay) */}
           {totales.abonosFiado > 0 && (
             <div className="info-row">
-                <span>Anticipos de Crédito</span>
-                <span className="amount warning" style={{color: 'var(--warning-color)'}}>+ ${totales.abonosFiado.toFixed(2)}</span>
+              <span>Anticipos de Crédito</span>
+              <span className="amount warning" style={{ color: 'var(--warning-color)' }}>+ ${totales.abonosFiado.toFixed(2)}</span>
             </div>
           )}
 
           <div className="info-row">
             <span>Entradas (Extras)</span>
-            <span className="amount positive" style={{fontSize: '0.9rem'}}>+ ${caja.entradas_efectivo.toFixed(2)}</span>
+            <span className="amount positive" style={{ fontSize: '0.9rem' }}>+ ${caja.entradas_efectivo.toFixed(2)}</span>
           </div>
           <div className="info-row">
             <span>Salidas (Gastos)</span>
-            <span className="amount negative" style={{fontSize: '0.9rem'}}>- ${caja.salidas_efectivo.toFixed(2)}</span>
+            <span className="amount negative" style={{ fontSize: '0.9rem' }}>- ${caja.salidas_efectivo.toFixed(2)}</span>
           </div>
 
           {/* Total Destacado */}
-          <div className="info-row" style={{borderTop: '2px solid #eee', marginTop: '10px', paddingTop: '10px', borderBottom: 'none'}}>
-            <span style={{fontWeight: 'bold', fontSize: '1.1rem'}}>Total en Caja</span>
-            <span className="amount" style={{fontSize: '1.4rem', color: 'var(--primary-color)'}}>
-                ${totalEnCaja.toFixed(2)}
+          <div className="info-row" style={{ borderTop: '2px solid #eee', marginTop: '10px', paddingTop: '10px', borderBottom: 'none' }}>
+            <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Total en Caja</span>
+            <span className="amount" style={{ fontSize: '1.4rem', color: 'var(--primary-color)' }}>
+              ${totalEnCaja.toFixed(2)}
             </span>
           </div>
         </div>
@@ -84,7 +84,7 @@ const CajaAbiertaUI = ({ caja, totales, onEntradaClick, onSalidaClick, onAuditar
         <h3 className="actions-title">Acciones Rápidas</h3>
         <div className="actions-grid">
           <button id="audit-caja-btn" className="btn btn-audit full-width" onClick={onAuditarClick}>
-              🛡️ Auditar y Cerrar Turno
+            🛡️ Auditar y Cerrar Turno
           </button>
           <button id="add-entrada-btn" className="btn btn-entry half-width" onClick={onEntradaClick}>
             + Entrada
@@ -101,21 +101,21 @@ const CajaAbiertaUI = ({ caja, totales, onEntradaClick, onSalidaClick, onAuditar
 // 3. UI para Movimientos Manuales
 const MovimientosCajaUI = ({ movimientos }) => {
   if (!movimientos || movimientos.length === 0) return null;
-  
+
   return (
     <div id="caja-movements-container" className="caja-card">
       <h3 className="subtitle">Movimientos Manuales (Hoy)</h3>
       <div id="caja-movements-list">
         {movimientos.map(mov => (
-          <div key={mov.id} className="movement-item" style={{ 
-              borderLeft: `4px solid ${mov.tipo === 'entrada' ? 'var(--success-color)' : 'var(--error-color)'}`,
-              marginBottom: '8px', padding: '8px', backgroundColor: 'var(--light-background)', borderRadius: '4px'
+          <div key={mov.id} className="movement-item" style={{
+            borderLeft: `4px solid ${mov.tipo === 'entrada' ? 'var(--success-color)' : 'var(--error-color)'}`,
+            marginBottom: '8px', padding: '8px', backgroundColor: 'var(--light-background)', borderRadius: '4px'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: 500 }}>{mov.concepto}</span>
-                <span style={{ fontWeight: 'bold', color: mov.tipo === 'entrada' ? 'var(--success-color)' : 'var(--error-color)' }}>
-                    {mov.tipo === 'entrada' ? '+' : '-'}${mov.monto.toFixed(2)}
-                </span>
+              <span style={{ fontWeight: 500 }}>{mov.concepto}</span>
+              <span style={{ fontWeight: 'bold', color: mov.tipo === 'entrada' ? 'var(--success-color)' : 'var(--error-color)' }}>
+                {mov.tipo === 'entrada' ? '+' : '-'}${mov.monto.toFixed(2)}
+              </span>
             </div>
             <small style={{ color: 'var(--text-light)' }}>{new Date(mov.fecha).toLocaleTimeString()}</small>
           </div>
@@ -132,24 +132,24 @@ const HistorialCajaUI = ({ historial }) => (
     {historial.length === 0 ? (
       <p className="empty-message">No hay historial de cajas.</p>
     ) : (
-      <div className="history-list" style={{maxHeight: '300px', overflowY: 'auto'}}>
+      <div className="history-list" style={{ maxHeight: '300px', overflowY: 'auto' }}>
         {historial.map(c => (
-          <div key={c.id} className="history-item" style={{padding: '10px', borderBottom: '1px solid #eee'}}>
+          <div key={c.id} className="history-item" style={{ padding: '10px', borderBottom: '1px solid #eee' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                <strong>{new Date(c.fecha_apertura).toLocaleDateString()}</strong>
-                <span className={`status-badge ${!c.diferencia || Math.abs(c.diferencia) < 1 ? 'success' : 'error'}`} 
-                      style={{fontSize: '0.7rem', padding: '2px 6px'}}>
-                    {Math.abs(c.diferencia || 0) < 1 ? 'Cuadrada' : 'Descuadre'}
-                </span>
+              <strong>{new Date(c.fecha_apertura).toLocaleDateString()}</strong>
+              <span className={`status-badge ${!c.diferencia || Math.abs(c.diferencia) < 1 ? 'success' : 'error'}`}
+                style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
+                {Math.abs(c.diferencia || 0) < 1 ? 'Cuadrada' : 'Descuadre'}
+              </span>
             </div>
             <p style={{ fontSize: '0.85rem', color: '#666', margin: 0 }}>
-                Cierre: {c.monto_cierre ? `$${c.monto_cierre.toFixed(2)}` : 'N/A'}
+              Cierre: {c.monto_cierre ? `$${c.monto_cierre.toFixed(2)}` : 'N/A'}
             </p>
             {/* Mostrar detalles si hubo diferencia */}
             {c.diferencia && Math.abs(c.diferencia) > 0 && (
-                <small style={{color: c.diferencia > 0 ? 'var(--success-color)' : 'var(--error-color)'}}>
-                    Dif: {c.diferencia > 0 ? '+' : ''}${c.diferencia.toFixed(2)}
-                </small>
+              <small style={{ color: c.diferencia > 0 ? 'var(--success-color)' : 'var(--error-color)' }}>
+                Dif: {c.diferencia > 0 ? '+' : ''}${c.diferencia.toFixed(2)}
+              </small>
             )}
           </div>
         ))}
@@ -161,14 +161,14 @@ const HistorialCajaUI = ({ historial }) => (
 // --- Componente PRINCIPAL ---
 
 export default function CajaPage() {
-  const { 
-    cajaActual, 
-    historialCajas, 
-    movimientosCaja, 
-    isLoading, 
+  const {
+    cajaActual,
+    historialCajas,
+    movimientosCaja,
+    isLoading,
     montoSugerido,
     totalesTurno, // IMPORTANTE: Aquí vienen las ventas desglosadas
-    abrirCaja, 
+    abrirCaja,
     realizarAuditoriaYCerrar,
     registrarMovimiento,
     calcularTotalTeorico
@@ -180,9 +180,9 @@ export default function CajaPage() {
 
   // Pre-rellenar monto sugerido al abrir el modal
   useEffect(() => {
-      if (modalVisible === 'open' && montoSugerido) {
-          setMontoApertura(montoSugerido.toString());
-      }
+    if (modalVisible === 'open' && montoSugerido) {
+      setMontoApertura(montoSugerido.toString());
+    }
   }, [modalVisible, montoSugerido]);
 
   // --- Handlers ---
@@ -219,7 +219,7 @@ export default function CajaPage() {
       setIsAuditOpen(false);
       let msg = `Caja cerrada exitosamente.`;
       if (Math.abs(result.diferencia) > 0.5) {
-          msg += ` Diferencia registrada: $${result.diferencia.toFixed(2)}`;
+        msg += ` Diferencia registrada: $${result.diferencia.toFixed(2)}`;
       }
       showMessageModal(msg);
     } else {
@@ -235,7 +235,7 @@ export default function CajaPage() {
     <>
       <h2 className="section-title">Gestión de Caja</h2>
       <div className="caja-grid">
-        
+
         {/* Panel Superior: Estado de Caja */}
         {cajaActual && cajaActual.estado === 'abierta' ? (
           <CajaAbiertaUI
@@ -248,7 +248,7 @@ export default function CajaPage() {
         ) : (
           <CajaCerradaUI onAbrirClick={() => setModalVisible('open')} />
         )}
-        
+
         {/* Panel Central: Movimientos Manuales */}
         <MovimientosCajaUI movimientos={movimientosCaja} />
 
@@ -263,23 +263,23 @@ export default function CajaPage() {
         <div className="modal" style={{ display: 'flex' }}>
           <div className="modal-content">
             <h2 className="modal-title">Abrir Caja</h2>
-            <p style={{marginBottom: '15px', color: 'var(--text-light)'}}>
-               {montoSugerido > 0 
-                 ? `Sugerencia basada en cierre anterior: $${montoSugerido.toFixed(2)}`
-                 : 'Ingresa el fondo inicial para comenzar el turno.'}
+            <p style={{ marginBottom: '15px', color: 'var(--text-light)' }}>
+              {montoSugerido > 0
+                ? `Sugerencia basada en cierre anterior: $${montoSugerido.toFixed(2)}`
+                : 'Ingresa el fondo inicial para comenzar el turno.'}
             </p>
             <form onSubmit={handleOpenSubmit}>
               <div className="form-group">
                 <label className="form-label">Monto inicial:</label>
-                <input 
-                    type="number" 
-                    className="form-input" 
-                    step="0.01" 
-                    min="0" 
-                    required 
-                    value={montoApertura} 
-                    onChange={(e) => setMontoApertura(e.target.value)} 
-                    autoFocus 
+                <input
+                  type="number"
+                  className="form-input"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={montoApertura}
+                  onChange={(e) => setMontoApertura(e.target.value)}
+                  autoFocus
                 />
               </div>
               <button type="submit" className="btn btn-save">Confirmar Apertura</button>
@@ -296,12 +296,12 @@ export default function CajaPage() {
             <h2 className="modal-title">Entrada de Efectivo</h2>
             <form onSubmit={handleEntradaSubmit}>
               <div className="form-group">
-                  <label className="form-label">Monto:</label>
-                  <input name="entrada-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus />
+                <label className="form-label">Monto:</label>
+                <input name="entrada-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus />
               </div>
               <div className="form-group">
-                  <label className="form-label">Concepto:</label>
-                  <input name="entrada-concepto-input" type="text" className="form-input" placeholder="Ej: Cambio, Aporte extra" required />
+                <label className="form-label">Concepto:</label>
+                <input name="entrada-concepto-input" type="text" className="form-input" placeholder="Ej: Cambio, Aporte extra" required />
               </div>
               <button type="submit" className="btn btn-save">Guardar</button>
               <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)}>Cancelar</button>
@@ -317,12 +317,12 @@ export default function CajaPage() {
             <h2 className="modal-title">Salida de Efectivo</h2>
             <form onSubmit={handleSalidaSubmit}>
               <div className="form-group">
-                  <label className="form-label">Monto:</label>
-                  <input name="salida-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus />
+                <label className="form-label">Monto:</label>
+                <input name="salida-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus />
               </div>
               <div className="form-group">
-                  <label className="form-label">Concepto:</label>
-                  <input name="salida-concepto-input" type="text" className="form-input" placeholder="Ej: Pago proveedor, Compra insumos" required />
+                <label className="form-label">Concepto:</label>
+                <input name="salida-concepto-input" type="text" className="form-input" placeholder="Ej: Pago proveedor, Compra insumos" required />
               </div>
               <button type="submit" className="btn btn-delete">Guardar</button>
               <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)}>Cancelar</button>
@@ -332,7 +332,7 @@ export default function CajaPage() {
       )}
 
       {/* 4. Modal Auditoría (Cierre Inteligente) */}
-      <AuditModal 
+      <AuditModal
         show={isAuditOpen}
         onClose={() => setIsAuditOpen(false)}
         onConfirmAudit={handleAuditConfirm}
