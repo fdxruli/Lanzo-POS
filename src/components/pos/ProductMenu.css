@@ -201,3 +201,25 @@
   z-index: 2;
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
+
+.prescription-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px; /* Puede compartir posición con mayoreo o apilarse */
+  background-color: var(--error-color); /* Rojo para alerta */
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  z-index: 3; /* Encima de todo */
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Si hay badge de mayoreo, movemos este un poco abajo o a la derecha */
+.wholesale-badge + .prescription-badge {
+  top: 30px; /* Lo bajamos para que no se encimen */
+}

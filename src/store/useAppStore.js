@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
 // Importamos las utilidades de tu proyecto original
-import { isLocalStorageEnabled, normalizeDate } from '../services/utils'; 
+import { isLocalStorageEnabled, normalizeDate } from '../services/utils';
 // Importamos las funciones de Supabase
 // (Asegúrate de que supabase.js cargue FingerprintJS y Supabase en tu index.html)
 
@@ -35,7 +35,7 @@ const clearLicenseFromStorage = () => {
 // --- Creamos el Store ---
 
 export const useAppStore = create((set, get) => ({
-  
+
   // ======================================================
   // 1. EL ESTADO (SIN CAMBIOS)
   // ======================================================
@@ -62,65 +62,69 @@ export const useAppStore = create((set, get) => ({
     }
 
     try {
-      const serverValidation = await window.revalidateLicense(); 
-      
+      const serverValidation = await window.revalidateLicense();
+
       if (serverValidation && serverValidation.valid) {
-        await saveLicenseToStorage(serverValidation); 
-        set({ 
+        await saveLicenseToStorage(serverValidation);
+        set({
           licenseDetails: serverValidation,
           licenseStatus: serverValidation.reason || 'active',
           gracePeriodEnds: serverValidation.grace_period_ends || null
         });
-        
+
         // --- ¡NUEVA LÓGICA DE PERFIL DE NEGOCIO! ---
         // 1. Intentamos cargar el perfil desde Supabase
         const profileResult = await window.getBusinessProfile();
         let companyData = null;
 
         if (profileResult.success && profileResult.data) {
-            // 2. Éxito: Sincronizamos Supabase -> Local
-            console.log("Perfil de negocio cargado desde Supabase.");
-            // Mapeamos los nombres (ej: business_name a name)
-            const mappedData = {
-                id: 'company',
-                name: profileResult.data.business_name,
-                phone: profileResult.data.phone_number,
-                address: profileResult.data.address,
-                logo: profileResult.data.logo_url,
-                business_type: profileResult.data.business_type
-            };
-            await saveData(STORES.COMPANY, mappedData); // Guardamos en IndexedDB
-            companyData = mappedData;
+          // 2. Éxito: Sincronizamos Supabase -> Local
+          console.log("Perfil de negocio cargado desde Supabase.");
+          // Mapeamos los nombres (ej: business_name a name)
+          const mappedData = {
+            id: 'company',
+            // Prioridad: Si viene de Supabase es 'business_name'. Si viene de local es 'name'.
+            name: profileResult.data.business_name || profileResult.data.name,
+
+            // Mapeo similar para teléfono si la BD usa snake_case
+            phone: profileResult.data.phone_number || profileResult.data.phone,
+
+            address: profileResult.data.address,
+            logo: profileResult.data.logo_url || profileResult.data.logo, // Normalizamos logo_url a logo
+            business_type: profileResult.data.business_type
+          };
+          await saveData(STORES.COMPANY, mappedData); // Guardamos en IndexedDB
+          companyData = mappedData;
         } else {
-            // 3. Fallo (o no hay perfil): Cargamos desde IndexedDB (local)
-            console.log("No hay perfil en Supabase, cargando desde local.");
-            companyData = await loadData(STORES.COMPANY, 'company');
+          // 3. Fallo (o no hay perfil): Cargamos desde IndexedDB (local)
+          console.log("No hay perfil en Supabase, cargando desde local.");
+          companyData = await loadData(STORES.COMPANY, 'company');
         }
-        
+
         set({ companyProfile: companyData });
-        
+
         // 4. Decidimos el estado de la app
         if (companyData && (companyData.name || companyData.business_name)) {
-            set({ appStatus: 'ready' });
+          set({ appStatus: 'ready' });
         } else {
-            // Hay licencia, pero no perfil ni local ni en Supabase
-            set({ appStatus: 'setup_required' });
+          // Hay licencia, pero no perfil ni local ni en Supabase
+          set({ appStatus: 'setup_required' });
         }
         // --- FIN DE LA NUEVA LÓGICA ---
 
       } else {
         // ... (lógica de 'unauthenticated') ...
         clearLicenseFromStorage();
-        set({ 
-          appStatus: 'unauthenticated', 
-          licenseDetails: null, 
+        set({
+          appStatus: 'unauthenticated',
+          licenseDetails: null,
           licenseStatus: serverValidation.reason || 'expired'
         });
       }
     } catch (error) {
       // ... (Lógica de caché/sin red existente) ...
       console.warn("No se pudo revalidar la licencia (¿sin red?). Confiando en caché local.");
-      
+
       if (license.localExpiry) {
         const localExpiryDate = normalizeDate(license.localExpiry);
         if (localExpiryDate <= new Date()) {
@@ -129,8 +133,8 @@ export const useAppStore = create((set, get) => ({
           return;
         }
       }
-      
-      set({ 
+
+      set({
         licenseDetails: license,
         licenseStatus: license.reason || 'active',
         gracePeriodEnds: license.grace_period_ends || null
@@ -148,7 +152,7 @@ export const useAppStore = create((set, get) => ({
   // ... (handleLogin y handleFreeTrial SIN CAMBIOS) ...
   handleLogin: async (licenseKey) => {
     try {
-      const result = await window.activateLicense(licenseKey); 
+      const result = await window.activateLicense(licenseKey);
       if (result.valid) {
         await saveLicenseToStorage(result.details);
         set({ licenseDetails: result.details, appStatus: 'setup_required' });
@@ -162,7 +166,7 @@ export const useAppStore = create((set, get) => ({
   },
   handleFreeTrial: async () => {
     try {
-      const result = await window.createFreeTrial(); 
+      const result = await window.createFreeTrial();
       if (result.success && result.details) {
         await saveLicenseToStorage(result.details);
         set({ licenseDetails: result.details, appStatus: 'setup_required' });
@@ -182,36 +186,36 @@ export const useAppStore = create((set, get) => ({
   handleSetup: async (setupData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) {
-        console.error("No hay clave de licencia para guardar el perfil");
-        return;
+      console.error("No hay clave de licencia para guardar el perfil");
+      return;
     }
 
     try {
-        let logoUrl = null;
+      let logoUrl = null;
 
-        // 1. Revisa si el logo es un Archivo (File)
-        if (setupData.logo && setupData.logo instanceof File) {
-            console.log("Subiendo logo a Supabase Storage...");
-            logoUrl = await window.uploadFile(setupData.logo, 'logo');
-        }
+      // 1. Revisa si el logo es un Archivo (File)
+      if (setupData.logo && setupData.logo instanceof File) {
+        console.log("Subiendo logo a Supabase Storage...");
+        logoUrl = await window.uploadFile(setupData.logo, 'logo');
+      }
 
-        // 2. Prepara los datos para la DB (mapeo de nombres)
-        const profileData = {
-            ...setupData,
-            logo: logoUrl // Usa la nueva URL (o null si no había)
-        };
-        
-        // 3. Guardamos en Supabase DB
-        await window.saveBusinessProfile(licenseKey, profileData);
-        console.log("Perfil de negocio guardado en Supabase DB.");
+      // 2. Prepara los datos para la DB (mapeo de nombres)
+      const profileData = {
+        ...setupData,
+        logo: logoUrl // Usa la nueva URL (o null si no había)
+      };
 
-        // 4. Guardamos en IndexedDB (local)
-        const companyData = { id: 'company', ...profileData };
-        await saveData(STORES.COMPANY, companyData);
-        
-        set({ companyProfile: companyData, appStatus: 'ready' });
+      // 3. Guardamos en Supabase DB
+      await window.saveBusinessProfile(licenseKey, profileData);
+      console.log("Perfil de negocio guardado en Supabase DB.");
+
+      // 4. Guardamos en IndexedDB (local)
+      const companyData = { id: 'company', ...profileData };
+      await saveData(STORES.COMPANY, companyData);
+
+      set({ companyProfile: companyData, appStatus: 'ready' });
     } catch (error) {
-        console.error("Error al guardar setup:", error);
+      console.error("Error al guardar setup:", error);
     }
   },
 
@@ -222,27 +226,27 @@ export const useAppStore = create((set, get) => ({
   updateCompanyProfile: async (companyData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) {
-        console.error("No hay clave de licencia para actualizar el perfil");
-        return;
+      console.error("No hay clave de licencia para actualizar el perfil");
+      return;
     }
 
     try {
-        // 1. Revisa si se está subiendo un *nuevo* logo
-        if (companyData.logo && companyData.logo instanceof File) {
-            console.log("Subiendo nuevo logo a Supabase Storage...");
-            const logoUrl = await window.uploadFile(companyData.logo, 'logo');
-            companyData.logo = logoUrl; // Reemplaza el File por la URL
-        }
-        
-        // 2. Guardamos en Supabase DB
-        await window.saveBusinessProfile(licenseKey, companyData);
-        console.log("Perfil de negocio actualizado en Supabase DB.");
+      // 1. Revisa si se está subiendo un *nuevo* logo
+      if (companyData.logo && companyData.logo instanceof File) {
+        console.log("Subiendo nuevo logo a Supabase Storage...");
+        const logoUrl = await window.uploadFile(companyData.logo, 'logo');
+        companyData.logo = logoUrl; // Reemplaza el File por la URL
+      }
 
-        // 3. Guardamos en IndexedDB (local)
-        await saveData(STORES.COMPANY, companyData);
-        set({ companyProfile: companyData });
+      // 2. Guardamos en Supabase DB
+      await window.saveBusinessProfile(licenseKey, companyData);
+      console.log("Perfil de negocio actualizado en Supabase DB.");
+
+      // 3. Guardamos en IndexedDB (local)
+      await saveData(STORES.COMPANY, companyData);
+      set({ companyProfile: companyData });
     } catch (error) {
-        console.error("Error al actualizar perfil:", error);
+      console.error("Error al actualizar perfil:", error);
     }
   },
 
@@ -251,13 +255,13 @@ export const useAppStore = create((set, get) => ({
     try {
       const licenseKey = get().licenseDetails?.license_key;
       if (licenseKey) {
-        await window.deactivateCurrentDevice(licenseKey); 
+        await window.deactivateCurrentDevice(licenseKey);
         console.log("Dispositivo desactivado del servidor.");
       }
     } catch (error) {
       console.error("Error al desactivar dispositivo en servidor:", error);
     }
-    
+
     clearLicenseFromStorage();
     set({
       appStatus: 'unauthenticated',

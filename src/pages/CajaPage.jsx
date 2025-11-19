@@ -1,60 +1,123 @@
-import React, { useState } from 'react';
-import { useCaja } from '../hooks/useCaja'; // Importamos nuestro hook
+// src/pages/CajaPage.jsx
+import React, { useState, useEffect } from 'react';
+import { useCaja } from '../hooks/useCaja';
+import AuditModal from '../components/common/AuditModal';
+import { showMessageModal } from '../services/utils';
 import './CajaPage.css';
 
-// --- Componentes de UI (definidos aquí mismo para simplicidad) ---
+// --- Componentes de UI ---
 
-// UI para cuando la caja está CERRADA
+// 1. UI para Caja Cerrada
 const CajaCerradaUI = ({ onAbrirClick }) => (
-  <div id="caja-status-container" className="stat-card">
+  <div id="caja-status-container" className="caja-card status-card" style={{textAlign: 'center', display: 'block'}}>
     <h3>Caja Cerrada</h3>
-    <p>Abre una caja para comenzar a vender.</p>
-    <div id="caja-actions-container">
-      <button id="open-caja-btn" className="btn btn-save" onClick={onAbrirClick}>
-        Abrir Caja
-      </button>
-    </div>
+    <p style={{marginBottom: '20px', color: 'var(--text-light)'}}>Abre una caja para comenzar a vender.</p>
+    <button id="open-caja-btn" className="btn btn-save" onClick={onAbrirClick} style={{width: '100%', maxWidth: '300px'}}>
+      Abrir Caja
+    </button>
   </div>
 );
 
-// UI para cuando la caja está ABIERTA
-const CajaAbiertaUI = ({ caja, onCerrarClick, onEntradaClick, onSalidaClick }) => (
-  <>
-    <div id="caja-status-container" className="stat-card">
-      <h3>Caja Abierta</h3>
-      <p><strong>Apertura:</strong> {new Date(caja.fecha_apertura).toLocaleString()}</p>
-      <p><strong>Monto Inicial:</strong> ${caja.monto_inicial.toFixed(2)}</p>
-      <p style={{ color: 'green' }}><strong>Entradas:</strong> ${caja.entradas_efectivo.toFixed(2)}</p>
-      <p style={{ color: 'red' }}><strong>Salidas:</strong> ${caja.salidas_efectivo.toFixed(2)}</p>
-    </div>
-    <div id="caja-actions-container" className="stat-card">
-      <button id="close-caja-btn" className="btn btn-process" onClick={onCerrarClick}>
-        Cerrar Caja
-      </button>
-      <button id="add-entrada-btn" className="btn btn-save" style={{ marginTop: '10px' }} onClick={onEntradaClick}>
-        + Registrar Entrada
-      </button>
-      <button id="add-salida-btn" className="btn btn-delete" style={{ marginTop: '10px' }} onClick={onSalidaClick}>
-        - Registrar Salida
-      </button>
-    </div>
-  </>
-);
+// 2. UI para Caja Abierta (ACTUALIZADA)
+const CajaAbiertaUI = ({ caja, totales, onEntradaClick, onSalidaClick, onAuditarClick }) => {
+  
+  // Calculamos el total físico esperado sumando:
+  // Inicial + Ventas en Efectivo + Abonos de Crédito + Entradas Manuales - Salidas
+  const totalEnCaja = (
+      caja.monto_inicial + 
+      totales.ventasContado + 
+      totales.abonosFiado + 
+      caja.entradas_efectivo - 
+      caja.salidas_efectivo
+  );
 
-// UI para MOVIMIENTOS (la lógica estaba en useCaja pero faltaba la UI)
+  return (
+    <>
+      {/* TARJETA DE ESTADO */}
+      <div id="caja-status-container" className="caja-card status-card">
+        <div className="status-header">
+          <span className="status-badge open">Caja Abierta</span>
+          <small>{new Date(caja.fecha_apertura).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
+        </div>
+        
+        <div className="status-body">
+          <div className="info-row">
+            <span>Monto Inicial</span>
+            <span className="amount neutral">${caja.monto_inicial.toFixed(2)}</span>
+          </div>
+          
+          {/* Fila de Ventas Contado */}
+          <div className="info-row">
+            <span>Ventas (Efectivo)</span>
+            <span className="amount success" style={{color: 'var(--success-color)'}}>+ ${totales.ventasContado.toFixed(2)}</span>
+          </div>
+
+          {/* Fila de Abonos Fiado (Solo si hay) */}
+          {totales.abonosFiado > 0 && (
+            <div className="info-row">
+                <span>Anticipos de Crédito</span>
+                <span className="amount warning" style={{color: 'var(--warning-color)'}}>+ ${totales.abonosFiado.toFixed(2)}</span>
+            </div>
+          )}
+
+          <div className="info-row">
+            <span>Entradas (Extras)</span>
+            <span className="amount positive" style={{fontSize: '0.9rem'}}>+ ${caja.entradas_efectivo.toFixed(2)}</span>
+          </div>
+          <div className="info-row">
+            <span>Salidas (Gastos)</span>
+            <span className="amount negative" style={{fontSize: '0.9rem'}}>- ${caja.salidas_efectivo.toFixed(2)}</span>
+          </div>
+
+          {/* Total Destacado */}
+          <div className="info-row" style={{borderTop: '2px solid #eee', marginTop: '10px', paddingTop: '10px', borderBottom: 'none'}}>
+            <span style={{fontWeight: 'bold', fontSize: '1.1rem'}}>Total en Caja</span>
+            <span className="amount" style={{fontSize: '1.4rem', color: 'var(--primary-color)'}}>
+                ${totalEnCaja.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* TARJETA DE ACCIONES */}
+      <div id="caja-actions-container" className="caja-card actions-card">
+        <h3 className="actions-title">Acciones Rápidas</h3>
+        <div className="actions-grid">
+          <button id="audit-caja-btn" className="btn btn-audit full-width" onClick={onAuditarClick}>
+              🛡️ Auditar y Cerrar Turno
+          </button>
+          <button id="add-entrada-btn" className="btn btn-entry half-width" onClick={onEntradaClick}>
+            + Entrada
+          </button>
+          <button id="add-salida-btn" className="btn btn-exit half-width" onClick={onSalidaClick}>
+            - Salida
+          </button>
+        </div>
+      </div>
+    </>
+  );
+};
+
+// 3. UI para Movimientos Manuales
 const MovimientosCajaUI = ({ movimientos }) => {
-  if (movimientos.length === 0) {
-    return null; // No mostrar nada si no hay movimientos
-  }
+  if (!movimientos || movimientos.length === 0) return null;
   
   return (
-    <div id="caja-movements-container" className="stat-card">
-      <h3>Movimientos de Caja (Hoy)</h3>
+    <div id="caja-movements-container" className="caja-card">
+      <h3 className="subtitle">Movimientos Manuales (Hoy)</h3>
       <div id="caja-movements-list">
         {movimientos.map(mov => (
-          <div key={mov.id} className="movement-item" style={{ color: mov.tipo === 'entrada' ? 'green' : 'red' }}>
-            <span>{new Date(mov.fecha).toLocaleTimeString()}: {mov.concepto}</span>
-            <span>$${mov.monto.toFixed(2)}</span>
+          <div key={mov.id} className="movement-item" style={{ 
+              borderLeft: `4px solid ${mov.tipo === 'entrada' ? 'var(--success-color)' : 'var(--error-color)'}`,
+              marginBottom: '8px', padding: '8px', backgroundColor: 'var(--light-background)', borderRadius: '4px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 500 }}>{mov.concepto}</span>
+                <span style={{ fontWeight: 'bold', color: mov.tipo === 'entrada' ? 'var(--success-color)' : 'var(--error-color)' }}>
+                    {mov.tipo === 'entrada' ? '+' : '-'}${mov.monto.toFixed(2)}
+                </span>
+            </div>
+            <small style={{ color: 'var(--text-light)' }}>{new Date(mov.fecha).toLocaleTimeString()}</small>
           </div>
         ))}
       </div>
@@ -62,26 +125,32 @@ const MovimientosCajaUI = ({ movimientos }) => {
   );
 };
 
-
-// UI para el HISTORIAL
+// 4. UI para Historial de Cierres
 const HistorialCajaUI = ({ historial }) => (
-  <div id="caja-history-container" className="sales-history-container">
+  <div id="caja-history-container" className="caja-card sales-history-container">
     <h3 className="subtitle">Historial de Cajas</h3>
     {historial.length === 0 ? (
-      <p>No hay historial de cajas.</p>
+      <p className="empty-message">No hay historial de cajas.</p>
     ) : (
-      <div className="history-list">
+      <div className="history-list" style={{maxHeight: '300px', overflowY: 'auto'}}>
         {historial.map(c => (
-          <div key={c.id} className="history-item">
-            <p><strong>Apertura:</strong> {new Date(c.fecha_apertura).toLocaleString()}</p>
-            <p><strong>Cierre:</strong> {new Date(c.fecha_cierre).toLocaleString()}</p>
-            <p><strong>Monto Inicial:</strong> ${c.monto_inicial.toFixed(2)}</p>
-            <p><strong>Ventas Efectivo:</strong> ${c.ventas_efectivo.toFixed(2)}</p>
-            <p><strong>Diferencia:</strong> 
-              <span className={c.diferencia >= 0 ? 'profit' : 'error-message'}>
-                ${c.diferencia.toFixed(2)}
-              </span>
+          <div key={c.id} className="history-item" style={{padding: '10px', borderBottom: '1px solid #eee'}}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                <strong>{new Date(c.fecha_apertura).toLocaleDateString()}</strong>
+                <span className={`status-badge ${!c.diferencia || Math.abs(c.diferencia) < 1 ? 'success' : 'error'}`} 
+                      style={{fontSize: '0.7rem', padding: '2px 6px'}}>
+                    {Math.abs(c.diferencia || 0) < 1 ? 'Cuadrada' : 'Descuadre'}
+                </span>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: '#666', margin: 0 }}>
+                Cierre: {c.monto_cierre ? `$${c.monto_cierre.toFixed(2)}` : 'N/A'}
             </p>
+            {/* Mostrar detalles si hubo diferencia */}
+            {c.diferencia && Math.abs(c.diferencia) > 0 && (
+                <small style={{color: c.diferencia > 0 ? 'var(--success-color)' : 'var(--error-color)'}}>
+                    Dif: {c.diferencia > 0 ? '+' : ''}${c.diferencia.toFixed(2)}
+                </small>
+            )}
           </div>
         ))}
       </div>
@@ -89,42 +158,43 @@ const HistorialCajaUI = ({ historial }) => (
   </div>
 );
 
-// --- Componente PRINCIPAL de la Página ---
+// --- Componente PRINCIPAL ---
 
 export default function CajaPage() {
-  // 1. Usamos el hook. ¡Toda la lógica vive aquí!
   const { 
     cajaActual, 
     historialCajas, 
-    movimientosCaja, // Ya lo estamos recibiendo del hook
+    movimientosCaja, 
     isLoading, 
+    montoSugerido,
+    totalesTurno, // IMPORTANTE: Aquí vienen las ventas desglosadas
     abrirCaja, 
-    cerrarCaja, 
-    registrarMovimiento 
+    realizarAuditoriaYCerrar,
+    registrarMovimiento,
+    calcularTotalTeorico
   } = useCaja();
 
-  // 2. Estado local para manejar qué modal está visible
-  const [modalVisible, setModalVisible] = useState(null); // 'open', 'close', 'entrada', 'salida'
+  const [modalVisible, setModalVisible] = useState(null); // 'open', 'entrada', 'salida'
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [montoApertura, setMontoApertura] = useState('');
 
-  // 3. Lógica para los formularios de los modales (¡COMPLETADA!)
+  // Pre-rellenar monto sugerido al abrir el modal
+  useEffect(() => {
+      if (modalVisible === 'open' && montoSugerido) {
+          setMontoApertura(montoSugerido.toString());
+      }
+  }, [modalVisible, montoSugerido]);
+
+  // --- Handlers ---
+
   const handleOpenSubmit = async (event) => {
     event.preventDefault();
-    const monto = event.target.elements['monto-inicial-input'].value;
-    if (await abrirCaja(parseFloat(monto))) {
-      setModalVisible(null);
-    }
-  };
-  
-  // (Función que faltaba)
-  const handleCloseSubmit = async (event) => {
-    event.preventDefault();
-    const monto = event.target.elements['monto-cierre-input'].value;
-    if (await cerrarCaja(parseFloat(monto))) {
+    const monto = parseFloat(montoApertura);
+    if (await abrirCaja(monto)) {
       setModalVisible(null);
     }
   };
 
-  // (Función que faltaba)
   const handleEntradaSubmit = async (event) => {
     event.preventDefault();
     const monto = event.target.elements['entrada-monto-input'].value;
@@ -134,7 +204,6 @@ export default function CajaPage() {
     }
   };
 
-  // (Función que faltaba)
   const handleSalidaSubmit = async (event) => {
     event.preventDefault();
     const monto = event.target.elements['salida-monto-input'].value;
@@ -144,19 +213,35 @@ export default function CajaPage() {
     }
   };
 
+  const handleAuditConfirm = async (montoFisico, comentarios) => {
+    const result = await realizarAuditoriaYCerrar(montoFisico, comentarios);
+    if (result.success) {
+      setIsAuditOpen(false);
+      let msg = `Caja cerrada exitosamente.`;
+      if (Math.abs(result.diferencia) > 0.5) {
+          msg += ` Diferencia registrada: $${result.diferencia.toFixed(2)}`;
+      }
+      showMessageModal(msg);
+    } else {
+      showMessageModal(`Error al cerrar caja: ${result.error}`);
+    }
+  };
+
   if (isLoading) {
-    return <div>Cargando estado de la caja...</div>;
+    return <div style={{ padding: '20px', textAlign: 'center' }}>Cargando estado de la caja...</div>;
   }
 
-  // 4. Renderizamos la UI basada en el estado del hook
   return (
     <>
       <h2 className="section-title">Gestión de Caja</h2>
       <div className="caja-grid">
-        {cajaActual && (cajaActual.estado === 'abierta' || cajaActual.estado === 'pendiente_cierre') ? (
+        
+        {/* Panel Superior: Estado de Caja */}
+        {cajaActual && cajaActual.estado === 'abierta' ? (
           <CajaAbiertaUI
             caja={cajaActual}
-            onCerrarClick={() => setModalVisible('close')}
+            totales={totalesTurno} // Pasamos el objeto completo con el desglose
+            onAuditarClick={() => setIsAuditOpen(true)}
             onEntradaClick={() => setModalVisible('entrada')}
             onSalidaClick={() => setModalVisible('salida')}
           />
@@ -164,22 +249,38 @@ export default function CajaPage() {
           <CajaCerradaUI onAbrirClick={() => setModalVisible('open')} />
         )}
         
-        {/* Añadimos el componente de Movimientos */}
+        {/* Panel Central: Movimientos Manuales */}
         <MovimientosCajaUI movimientos={movimientosCaja} />
 
+        {/* Panel Inferior: Historial */}
         <HistorialCajaUI historial={historialCajas} />
       </div>
 
-      {/* --- MODALES (¡AHORA COMPLETOS!) --- */}
+      {/* --- MODALES --- */}
 
+      {/* 1. Modal Apertura */}
       {modalVisible === 'open' && (
-        <div id="open-caja-modal" className="modal" style={{ display: 'flex' }}>
+        <div className="modal" style={{ display: 'flex' }}>
           <div className="modal-content">
             <h2 className="modal-title">Abrir Caja</h2>
+            <p style={{marginBottom: '15px', color: 'var(--text-light)'}}>
+               {montoSugerido > 0 
+                 ? `Sugerencia basada en cierre anterior: $${montoSugerido.toFixed(2)}`
+                 : 'Ingresa el fondo inicial para comenzar el turno.'}
+            </p>
             <form onSubmit={handleOpenSubmit}>
               <div className="form-group">
-                <label htmlFor="monto-inicial-input" className="form-label">Monto inicial:</label>
-                <input type="number" id="monto-inicial-input" className="form-input" step="0.01" min="0" required />
+                <label className="form-label">Monto inicial:</label>
+                <input 
+                    type="number" 
+                    className="form-input" 
+                    step="0.01" 
+                    min="0" 
+                    required 
+                    value={montoApertura} 
+                    onChange={(e) => setMontoApertura(e.target.value)} 
+                    autoFocus 
+                />
               </div>
               <button type="submit" className="btn btn-save">Confirmar Apertura</button>
               <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)}>Cancelar</button>
@@ -188,63 +289,56 @@ export default function CajaPage() {
         </div>
       )}
 
-      {/* --- MODALES QUE FALTABAN --- */}
-      
-      {modalVisible === 'close' && (
-        <div id="close-caja-modal" className="modal" style={{ display: 'flex' }}>
-          <div className="modal-content">
-            <h2 className="modal-title">Cerrar Caja</h2>
-            <form onSubmit={handleCloseSubmit}>
-              <div className="form-group">
-                <label htmlFor="monto-cierre-input" className="form-label">Monto final en efectivo (conteo manual):</label>
-                <input type="number" id="monto-cierre-input" className="form-input" step="0.01" min="0" required />
-              </div>
-              <button type="submit" className="btn btn-process">Confirmar Cierre</button>
-              <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)}>Cancelar</button>
-            </form>
-          </div>
-        </div>
-      )}
-      
+      {/* 2. Modal Entrada */}
       {modalVisible === 'entrada' && (
-        <div id="entrada-caja-modal" className="modal" style={{ display: 'flex' }}>
+        <div className="modal" style={{ display: 'flex' }}>
           <div className="modal-content">
-            <h2 className="modal-title">Registrar Entrada de Efectivo</h2>
+            <h2 className="modal-title">Entrada de Efectivo</h2>
             <form onSubmit={handleEntradaSubmit}>
               <div className="form-group">
-                <label htmlFor="entrada-monto-input" className="form-label">Monto:</label>
-                <input type="number" id="entrada-monto-input" className="form-input" step="0.01" min="0" required />
+                  <label className="form-label">Monto:</label>
+                  <input name="entrada-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus />
               </div>
               <div className="form-group">
-                <label htmlFor="entrada-concepto-input" className="form-label">Concepto:</label>
-                <input type="text" id="entrada-concepto-input" className="form-input" placeholder="Ej: Aportación" required />
+                  <label className="form-label">Concepto:</label>
+                  <input name="entrada-concepto-input" type="text" className="form-input" placeholder="Ej: Cambio, Aporte extra" required />
               </div>
-              <button type="submit" className="btn btn-save">Confirmar Entrada</button>
+              <button type="submit" className="btn btn-save">Guardar</button>
               <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)}>Cancelar</button>
             </form>
           </div>
         </div>
       )}
-      
+
+      {/* 3. Modal Salida */}
       {modalVisible === 'salida' && (
-        <div id="salida-caja-modal" className="modal" style={{ display: 'flex' }}>
+        <div className="modal" style={{ display: 'flex' }}>
           <div className="modal-content">
-            <h2 className="modal-title">Registrar Salida de Efectivo</h2>
+            <h2 className="modal-title">Salida de Efectivo</h2>
             <form onSubmit={handleSalidaSubmit}>
               <div className="form-group">
-                <label htmlFor="salida-monto-input" className="form-label">Monto:</label>
-                <input type="number" id="salida-monto-input" className="form-input" step="0.01" min="0" required />
+                  <label className="form-label">Monto:</label>
+                  <input name="salida-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus />
               </div>
               <div className="form-group">
-                <label htmlFor="salida-concepto-input" className="form-label">Concepto:</label>
-                <input type="text" id="salida-concepto-input" className="form-input" placeholder="Ej: Compra de azúcar" required />
+                  <label className="form-label">Concepto:</label>
+                  <input name="salida-concepto-input" type="text" className="form-input" placeholder="Ej: Pago proveedor, Compra insumos" required />
               </div>
-              <button type="submit" className="btn btn-process">Confirmar Salida</button>
+              <button type="submit" className="btn btn-delete">Guardar</button>
               <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)}>Cancelar</button>
             </form>
           </div>
         </div>
       )}
+
+      {/* 4. Modal Auditoría (Cierre Inteligente) */}
+      <AuditModal 
+        show={isAuditOpen}
+        onClose={() => setIsAuditOpen(false)}
+        onConfirmAudit={handleAuditConfirm}
+        caja={cajaActual}
+        calcularTeorico={calcularTotalTeorico}
+      />
     </>
   );
 }

@@ -8,7 +8,7 @@ import './ProductForm.css';
 // --- IMPORTACIÓN DE LOS MINI-FORMULARIOS (FIELDSETS) ---
 import RestauranteFields from './fieldsets/RestauranteFields';
 import AbarrotesFields from './fieldsets/AbarrotesFields';
-import FarmaciaFields from './fieldsets/FarmaciaFIelds';
+import FarmaciaFields from './fieldsets/FarmaciaFIelds'; // Nota: Mantenemos el nombre del import como está en tu archivo original
 
 // --- IMPORTACIÓN DE LOS MODALES DE GESTIÓN ---
 import RecipeBuilderModal from './RecipeBuilderModal';
@@ -39,15 +39,23 @@ export default function ProductForm({
     const [productType, setProductType] = useState('sellable'); // 'sellable' o 'ingredient'
     const [recipe, setRecipe] = useState([]); 
     const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
+    // NUEVO: Estación de impresión (Cocina/Barra)
+    const [printStation, setPrintStation] = useState('kitchen'); 
 
-    // Abarrotes / Granel
+    // Abarrotes / Granel / Ferretería
     const [saleType, setSaleType] = useState('unit');
     const [wholesaleTiers, setWholesaleTiers] = useState([]);
     const [isWholesaleModalOpen, setIsWholesaleModalOpen] = useState(false);
+    // NUEVO: Puntos de reorden (Stock Mínimo/Máximo)
+    const [minStock, setMinStock] = useState('');
+    const [maxStock, setMaxStock] = useState('');
     
     // Farmacia
     const [sustancia, setSustancia] = useState('');
     const [laboratorio, setLaboratorio] = useState('');
+    // NUEVO: Control de antibióticos y presentación
+    const [requiresPrescription, setRequiresPrescription] = useState(false);
+    const [presentation, setPresentation] = useState('');
     
     // --- ESTADOS DE UI ---
     const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -68,16 +76,31 @@ export default function ProductForm({
             setImageData(productToEdit.image || null);
             setCategoryId(productToEdit.categoryId || '');
             
-            // Datos Específicos
+            // Datos Específicos - Restaurante
             setProductType(productToEdit.productType || 'sellable');
             setRecipe(productToEdit.recipe || []);
+            setPrintStation(productToEdit.printStation || 'kitchen');
+
+            // Datos Específicos - Abarrotes/Ferretería
             setSaleType(productToEdit.saleType || 'unit');
             setWholesaleTiers(productToEdit.wholesaleTiers || []);
+            setMinStock(productToEdit.minStock || '');
+            setMaxStock(productToEdit.maxStock || '');
+
+            // Datos Específicos - Farmacia
             setSustancia(productToEdit.sustancia || '');
             setLaboratorio(productToEdit.laboratorio || '');
+            setRequiresPrescription(productToEdit.requiresPrescription || false);
+            setPresentation(productToEdit.presentation || '');
             
             // Mostrar sección extra si hay datos relevantes
-            if (productToEdit.description || productToEdit.categoryId || productToEdit.image || productToEdit.sustancia) {
+            if (
+                productToEdit.description || 
+                productToEdit.categoryId || 
+                productToEdit.image || 
+                productToEdit.sustancia ||
+                productToEdit.minStock
+            ) {
                 setShowSpecificData(true);
             } else {
                 setShowSpecificData(false);
@@ -93,12 +116,19 @@ export default function ProductForm({
         setImagePreview(defaultPlaceholder); setImageData(null);
         setCategoryId(''); 
         
-        // Reset Específico
+        // Reset Restaurante
         setProductType('sellable');
         setRecipe([]);
+        setPrintStation('kitchen');
+
+        // Reset Abarrotes
         setSaleType('unit');
         setWholesaleTiers([]);
+        setMinStock(''); setMaxStock('');
+        
+        // Reset Farmacia
         setSustancia(''); setLaboratorio('');
+        setRequiresPrescription(false); setPresentation('');
         
         // Reset UI
         setInternalEditingProduct(null);
@@ -126,7 +156,6 @@ export default function ProductForm({
             showMessageModal('Por favor, ingresa un código de barras para buscar.');
             return;
         }
-        // (Lógica de búsqueda existente...)
         setIsLookingUp(true);
         const apiResult = await lookupBarcodeInAPI(codeToLookup);
         setIsLookingUp(false);
@@ -160,15 +189,22 @@ export default function ProductForm({
             name, barcode, description, categoryId,
             image: imageData,
 
-            // Específicos (Solo guardamos si la feature está activa para ahorrar espacio)
+            // Restaurante
             productType: features.hasRecipes ? productType : 'sellable',
             recipe: (features.hasRecipes && productType === 'sellable') ? recipe : [],
+            printStation: features.hasRecipes ? printStation : null,
             
+            // Abarrotes / Ferretería
             saleType: features.hasBulk ? saleType : 'unit',
             wholesaleTiers: features.hasWholesale ? wholesaleTiers : [],
+            minStock: features.hasMinMax ? parseFloat(minStock) : null,
+            maxStock: features.hasMinMax ? parseFloat(maxStock) : null,
             
+            // Farmacia
             sustancia: features.hasLabFields ? sustancia : null,
             laboratorio: features.hasLabFields ? laboratorio : null,
+            requiresPrescription: features.hasLabFields ? requiresPrescription : false,
+            presentation: features.hasLabFields ? presentation : null,
         };
 
         onSave(productData, internalEditingProduct);
@@ -238,15 +274,22 @@ export default function ProductForm({
                             productType={productType}
                             setProductType={setProductType}
                             onManageRecipe={() => setIsRecipeModalOpen(true)}
+                            printStation={printStation}
+                            setPrintStation={setPrintStation}
                         />
                     )}
                     
-                    {/* Módulo Abarrotes */}
-                    {features.hasBulk && (
+                    {/* Módulo Abarrotes / Ferretería / Verdulería */}
+                    {(features.hasBulk || features.hasMinMax) && (
                         <AbarrotesFields
                             saleType={saleType}
                             setSaleType={setSaleType}
                             onManageWholesale={() => setIsWholesaleModalOpen(true)}
+                            minStock={minStock}
+                            setMinStock={setMinStock}
+                            maxStock={maxStock}
+                            setMaxStock={setMaxStock}
+                            features={features}
                         />
                     )}
 
@@ -270,6 +313,10 @@ export default function ProductForm({
                                     setSustancia={setSustancia}
                                     laboratorio={laboratorio}
                                     setLaboratorio={setLaboratorio}
+                                    requiresPrescription={requiresPrescription}
+                                    setRequiresPrescription={setRequiresPrescription}
+                                    presentation={presentation}
+                                    setPresentation={setPresentation}
                                 />
                             )}
                             

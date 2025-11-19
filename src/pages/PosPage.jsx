@@ -54,8 +54,10 @@ export default function PosPage() {
 
   // --- 3. FILTRADO DE PRODUCTOS ---
   const filteredProducts = useMemo(() => {
-    let items = allProducts || []; 
-    
+    // CORRECCIÓN: Filtramos primero para excluir ingredientes
+    let items = (allProducts || []).filter(p => p.productType === 'sellable' || !p.productType); 
+    // (Nota: !p.productType es para compatibilidad con productos antiguos que no tengan ese campo)
+
     if (selectedCategoryId) {
       items = items.filter(p => p.categoryId === selectedCategoryId);
     }
@@ -64,7 +66,6 @@ export default function PosPage() {
     }
     return items;
   }, [allProducts, selectedCategoryId, searchTerm]);
-
 
   // --- 4. PROCESAMIENTO DE LA VENTA (LÓGICA ROBUSTA) ---
   const handleProcessOrder = async (paymentData) => {
@@ -202,7 +203,10 @@ export default function PosPage() {
           processedItems.push({
             ...orderItem,
             cost: avgUnitCost,
-            batchesUsed: itemBatchesUsed // Guardamos la trazabilidad
+            price: orderItem.price,
+            originalPrice: orderItem.originalPrice,
+            batchesUsed: itemBatchesUsed,
+            stockDeducted: orderItem.quantity 
           });
         }
 

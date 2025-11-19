@@ -1,0 +1,237 @@
+/* src/components/products/CategoryManager.css */
+
+/* =========================================
+   1. ESTRUCTURA BASE (MOBILE FIRST)
+   Diseño predeterminado para pantallas pequeñas
+   ========================================= */
+
+.category-manager-container {
+  display: flex;
+  flex-direction: column; /* Apilamos verticalmente en móvil */
+  gap: var(--spacing-lg);
+  width: 100%;
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* --- SECCIÓN DEL FORMULARIO (TOP) --- */
+.category-form-section {
+  background-color: var(--light-background);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius);
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.category-inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+/* Inputs más grandes y táctiles en móvil */
+.category-inline-form .form-input {
+  padding: 12px;
+  font-size: 1rem;
+  background-color: var(--card-background-color);
+}
+
+.form-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.form-actions .btn {
+  padding: 12px; /* Botones más altos para dedos */
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- SECCIÓN DE LA LISTA (BOTTOM) --- */
+.category-list-section {
+  flex-grow: 1;
+}
+
+.category-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.category-count-badge {
+  background-color: var(--primary-color);
+  color: white;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: bold;
+}
+
+/* Grid responsivo para las tarjetas */
+.category-list-grid {
+  display: grid;
+  /* En móvil muy pequeño: 1 columna. 
+     En móvil ancho: 2 columnas automáticamente */
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); 
+  gap: var(--spacing-md);
+  max-height: 60vh; /* Altura máxima en móvil para scrollear */
+  overflow-y: auto;
+  padding: 2px; /* Espacio para la sombra */
+}
+
+/* --- TARJETA DE CATEGORÍA --- */
+.category-card-item {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  box-shadow: var(--box-shadow);
+  border-left: 4px solid var(--primary-color);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.category-card-item:active {
+  transform: scale(0.98); /* Feedback táctil */
+}
+
+.category-name {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text-dark);
+  word-break: break-word; /* Evita desbordes si el nombre es largo */
+  line-height: 1.3;
+}
+
+/* Controles (Botones de editar/eliminar) */
+.category-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+  border-top: 1px solid var(--light-background); /* Separador sutil */
+  padding-top: var(--spacing-xs);
+  margin-top: auto; /* Empuja los botones al final */
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+  font-size: 1rem;
+}
+
+.btn-icon.edit {
+  color: var(--text-light);
+}
+
+.btn-icon.delete {
+  color: var(--error-color);
+  opacity: 0.7;
+}
+
+.btn-icon:hover {
+  background-color: var(--light-background);
+  border-color: rgba(0,0,0,0.1);
+}
+
+.btn-icon.edit:hover { color: var(--primary-color); }
+.btn-icon.delete:hover { color: var(--error-color); opacity: 1; }
+
+
+/* =========================================
+   2. ESTILOS PARA TABLET Y ESCRITORIO (Desktop First Overrides)
+   @media (min-width: 768px)
+   ========================================= */
+
+@media (min-width: 768px) {
+  
+  .category-manager-container {
+    display: grid;
+    grid-template-columns: 300px 1fr; /* Panel lateral fijo, lista flexible */
+    gap: var(--spacing-xl);
+    align-items: start; /* Alineación superior */
+    height: calc(100vh - 200px); /* Altura fija para permitir scroll interno */
+    min-height: 500px;
+  }
+
+  /* --- Panel Izquierdo (Formulario Sticky) --- */
+  .category-form-section {
+    position: sticky; /* Se queda fijo al hacer scroll */
+    top: 20px;
+    background-color: var(--card-background-color);
+    padding: var(--spacing-lg);
+    box-shadow: var(--box-shadow);
+    height: fit-content;
+  }
+
+  .category-inline-form {
+    gap: var(--spacing-md);
+  }
+
+  /* --- Panel Derecho (Lista Scrollable) --- */
+  .category-list-section {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .category-list-grid {
+    /* Grid más denso en escritorio */
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--spacing-md);
+    max-height: 100%; /* Usa toda la altura disponible del contenedor */
+    padding-right: 10px; /* Espacio para el scrollbar */
+    overflow-y: auto;
+    
+    /* Scrollbar personalizado sutil */
+    scrollbar-width: thin;
+    scrollbar-color: var(--text-light) transparent;
+  }
+
+  .category-card-item {
+    flex-direction: row; /* Horizontal en tarjetas anchas */
+    align-items: center;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+  
+  .category-card-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--box-shadow-lg);
+  }
+
+  .category-actions {
+    border-top: none; /* Quitamos el separador en layout horizontal */
+    padding-top: 0;
+    margin-top: 0;
+  }
+}
+
+/* =========================================
+   3. ESTILOS PARA MODO OSCURO
+   Ajustes específicos de contraste
+   ========================================= */
+
+[data-theme="dark"] .category-form-section {
+  border-color: #374151;
+  background-color: #1f2937; /* Un gris un poco más claro que el fondo negro */
+}
+
+[data-theme="dark"] .btn-icon:hover {
+  background-color: #374151;
+  border-color: #4b5563;
+}
+
+[data-theme="dark"] .category-card-item {
+  background-color: #1f2937;
+}

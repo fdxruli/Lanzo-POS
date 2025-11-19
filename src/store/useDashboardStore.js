@@ -104,6 +104,8 @@ async function aggregateProductsWithBatches(products, batches) {
             // Campos específicos (Farmacia/Restaurante) que deben persistir
             sustancia: product.sustancia,
             laboratorio: product.laboratorio,
+            requiresPrescription: product.requiresPrescription, 
+            presentation: product.presentation,
             productType: product.productType,
             recipe: product.recipe,
             
@@ -130,6 +132,7 @@ export const useDashboardStore = create((set, get) => ({
   deletedItems: [],
   rawProducts: [], 
   rawBatches: [], 
+  categories: [],
 
   // 2. ACCIONES
   loadAllData: async () => {
@@ -141,10 +144,11 @@ export const useDashboardStore = create((set, get) => ({
         localStorage.removeItem('run_batch_migration');
       }
 
-      const [salesData, productData, batchData, deletedMenu, deletedCustomers, deletedSales] = await Promise.all([
+      const [salesData, productData, batchData, categoryData, deletedMenu, deletedCustomers, deletedSales] = await Promise.all([
         loadData(STORES.SALES),
         loadData(STORES.MENU),
         loadData(STORES.PRODUCT_BATCHES),
+        loadData(STORES.CATEGORIES),
         loadData(STORES.DELETED_MENU),
         loadData(STORES.DELETED_CUSTOMERS),
         loadData(STORES.DELETED_SALES)
@@ -168,6 +172,7 @@ export const useDashboardStore = create((set, get) => ({
         menu: aggregatedMenu, // Aquí ahora vendrán TODOS los productos con su costo
         rawProducts: productData,
         rawBatches: sortedBatches,
+        categories: categoryData || [],
         deletedItems: allMovements,
         isLoading: false
       });

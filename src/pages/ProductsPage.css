@@ -16,3 +16,72 @@
     grid-template-columns: 1fr 2fr;
   }
 }
+
+/* ================================================
+   ESTILOS DEL ENCABEZADO (CORREGIDOS Y DEFINITIVOS)
+   ================================================ */
+
+.products-header {
+  display: flex;
+  flex-direction: column; /* MÓVIL: Apila los elementos verticalmente */
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  width: 100%;
+  
+  /* Línea decorativa */
+  border-bottom: 2px solid rgba(99, 102, 241, 0.2); 
+  padding-bottom: var(--spacing-sm);
+}
+
+/* --- TÍTULO --- */
+.products-header .section-title {
+  order: 1; /* FUERZA al título a ir PRIMERO (Arriba) */
+  
+  font-size: 1.8rem; /* Grande en móvil */
+  font-weight: 800;
+  color: var(--text-dark);
+  margin: 0;
+  padding: 0;
+  border: none;
+  line-height: 1.2;
+  text-align: left; /* Alineado a la izquierda en móvil */
+}
+
+/* --- BOTÓN --- */
+.btn-action-header {
+  order: 2; /* FUERZA al botón a ir SEGUNDO (Abajo) */
+  
+  width: 100%; /* En móvil ocupa todo el ancho */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 600;
+  padding: 12px 20px;
+  margin-top: 5px; /* Un poco de aire extra arriba del botón */
+}
+
+
+/* ================================================
+   MEDIA QUERY PARA ESCRITORIO (>= 768px)
+   ================================================ */
+@media (min-width: 768px) {
+  .products-header {
+    flex-direction: row; /* ESCRITORIO: Uno al lado del otro */
+    align-items: center; /* Centrados verticalmente */
+    justify-content: space-between; /* Separa los elementos a los extremos opuestos */
+  }
+
+  .products-header .section-title {
+    font-size: 2.5rem; /* Título MUY GRANDE en escritorio */
+    flex-grow: 1; /* Ocupa el espacio vacío para empujar el botón */
+    margin-bottom: 0;
+  }
+
+  .btn-action-header {
+    width: auto; /* El botón se ajusta a su texto */
+    min-width: 220px; /* Ancho mínimo elegante */
+    margin-top: 0;
+    flex-shrink: 0; /* Evita que se aplaste */
+  }
+}

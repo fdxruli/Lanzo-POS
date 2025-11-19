@@ -1,56 +1,69 @@
 // src/hooks/useCaja.js
 import { useState, useEffect, useCallback } from 'react';
-// Importamos toda la lógica pura de la base de datos
 import { loadData, saveData, STORES, initDB } from '../services/database';
-// Importamos tu modal de mensajes
 import { showMessageModal } from '../services/utils';
 
-/**
- * Este es tu nuevo 'caja.js', pero en formato de Hook.
- * Manejará todo el estado y la lógica de la caja.
- */
 export function useCaja() {
-  // 1. ESTADO (Tus antiguas variables globales)
   const [cajaActual, setCajaActual] = useState(null);
   const [historialCajas, setHistorialCajas] = useState([]);
   const [movimientosCaja, setMovimientosCaja] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [montoSugerido, setMontoSugerido] = useState(0);
+  
+  // NUEVO: Estado desglosado para el turno
+  const [totalesTurno, setTotalesTurno] = useState({
+    ventasContado: 0, // Dinero de ventas pagadas al 100% en efectivo
+    abonosFiado: 0    // Dinero recibido como anticipo en ventas a crédito
+  });
 
-  // 2. LÓGICA DE CARGA (Tu antiguo 'validarCaja' y 'renderCajaStatus')
-  // 'useCallback' evita que esta función se cree en cada render
   const cargarEstadoCaja = useCallback(async () => {
     setIsLoading(true);
-
     try {
-      // 1. Validar caja abierta (lógica de 'validarCaja')
       const todasLasCajas = await loadData(STORES.CAJAS);
+      
+      // 1. Buscar caja abierta
       let cajaAbierta = todasLasCajas.find(c => c.estado === 'abierta');
+      
+      // 2. Lógica inteligente: Buscar el último cierre para sugerir monto
+      const cajasCerradas = todasLasCajas
+        .filter(c => c.estado === 'cerrada')
+        .sort((a, b) => new Date(b.fecha_cierre) - new Date(a.fecha_cierre)); // La más reciente primero
+
+      if (cajasCerradas.length > 0) {
+        setMontoSugerido(cajasCerradas[0].monto_cierre);
+      }
 
       if (cajaAbierta) {
-        // Lógica de pendiente de cierre
-        const ahora = new Date();
-        const fechaApertura = new Date(cajaAbierta.fecha_apertura);
-        const horasAbierta = (ahora - fechaApertura) / (1000 * 60 * 60);
-
-        if (horasAbierta > 16) {
-          cajaAbierta.estado = 'pendiente_cierre';
-          await saveData(STORES.CAJAS, cajaAbierta);
-          showMessageModal('La caja ha estado abierta por más de 16 horas. Debes cerrarla.');
-        }
-
         setCajaActual(cajaAbierta);
-        // Cargar movimientos de la caja abierta
         await cargarMovimientos(cajaAbierta.id);
+
+        // --- LÓGICA DE CÁLCULO DE VENTAS (CONTADO vs FIADO) ---
+        const todasVentas = await loadData(STORES.SALES);
+        const ventasSesion = todasVentas.filter(v => 
+            new Date(v.timestamp) >= new Date(cajaAbierta.fecha_apertura)
+        );
+        
+        let contado = 0;
+        let abonos = 0;
+
+        ventasSesion.forEach(v => {
+            if (v.paymentMethod === 'efectivo') {
+                contado += (v.total || 0);
+            } else if (v.paymentMethod === 'fiado') {
+                // Solo sumamos lo que realmente entró a la caja (el abono inicial)
+                abonos += (v.abono || 0);
+            }
+        });
+
+        setTotalesTurno({ ventasContado: contado, abonosFiado: abonos });
+        // ------------------------------------------------------
 
       } else {
         setCajaActual(null);
         setMovimientosCaja([]);
+        setTotalesTurno({ ventasContado: 0, abonosFiado: 0 });
       }
 
-      // 2. Cargar historial
-      const cajasCerradas = todasLasCajas
-        .filter(c => c.estado === 'cerrada')
-        .sort((a, b) => new Date(b.fecha_apertura) - new Date(a.fecha_apertura));
       setHistorialCajas(cajasCerradas);
 
     } catch (error) {
@@ -58,19 +71,13 @@ export function useCaja() {
     } finally {
       setIsLoading(false);
     }
-  }, []); // useCallback con [] significa que la función nunca cambia.
+  }, []);
 
-  // 3. EFECTO INICIAL (Tu antiguo 'initCajaModule')
-  // Se ejecuta una sola vez cuando el hook se usa por primera vez.
   useEffect(() => {
     cargarEstadoCaja();
-  }, [cargarEstadoCaja]); // Se ejecuta cuando 'cargarEstadoCaja' se define
+  }, [cargarEstadoCaja]);
 
-  /**
-   * Carga los movimientos de la caja actual
-   */
   const cargarMovimientos = async (cajaId) => {
-    // Esta lógica estaba en tu 'renderCajaStatus'
     try {
       const db = await initDB();
       const transaction = db.transaction(STORES.MOVIMIENTOS_CAJA, 'readonly');
@@ -88,30 +95,23 @@ export function useCaja() {
     }
   };
 
-  // 4. ACCIONES (Las funciones que tu página llamará)
-
-  /**
-   * Abre una nueva caja
-   * Lógica de 'abrirCaja'
-   */
   const abrirCaja = async (monto_inicial) => {
-    if (isNaN(monto_inicial) || monto_inicial < 0) {
-      showMessageModal('El monto inicial no es válido.');
-      return false;
-    }
     if (cajaActual) {
       showMessageModal('Ya existe una caja abierta.');
       return false;
     }
+    const montoFinal = (monto_inicial !== undefined && monto_inicial !== null) 
+      ? parseFloat(monto_inicial) 
+      : montoSugerido;
 
     const nuevaCaja = {
       id: `caja-${Date.now()}`,
       fecha_apertura: new Date().toISOString(),
-      monto_inicial: parseFloat(monto_inicial),
+      monto_inicial: montoFinal,
       estado: 'abierta',
       fecha_cierre: null,
       monto_cierre: null,
-      ventas_efectivo: 0,
+      ventas_efectivo: 0, // Se actualizará al cerrar
       entradas_efectivo: 0,
       salidas_efectivo: 0,
       diferencia: null
@@ -119,9 +119,13 @@ export function useCaja() {
 
     try {
       await saveData(STORES.CAJAS, nuevaCaja);
-      setCajaActual(nuevaCaja); // Actualiza el estado
-      setMovimientosCaja([]); // Limpia movimientos
-      showMessageModal(`Caja abierta con $${monto_inicial.toFixed(2)}`);
+      
+      // Actualizamos estado local manualmente para respuesta rápida
+      setCajaActual(nuevaCaja);
+      setMovimientosCaja([]);
+      setTotalesTurno({ ventasContado: 0, abonosFiado: 0 });
+      
+      showMessageModal(`Caja abierta con $${montoFinal.toFixed(2)}`);
       return true;
     } catch (error) {
       console.error('Error al abrir la caja:', error);
@@ -129,65 +133,93 @@ export function useCaja() {
     }
   };
 
+  // --- CÁLCULO DEL TOTAL ESPERADO EN CAJA ---
+  const calcularTotalTeorico = async () => {
+      if (!cajaActual) return 0;
+      
+      // Recalcular ventas de esta sesión directamente desde la DB por seguridad
+      const todasVentas = await loadData(STORES.SALES);
+      const ventasSesion = todasVentas.filter(v => 
+          new Date(v.timestamp) >= new Date(cajaActual.fecha_apertura)
+      );
+      
+      let ingresoPorVentas = 0;
+      ventasSesion.forEach(v => {
+          if (v.paymentMethod === 'efectivo') {
+              ingresoPorVentas += (v.total || 0);
+          } else if (v.paymentMethod === 'fiado') {
+              ingresoPorVentas += (v.abono || 0);
+          }
+      });
+      
+      // Fórmula: Inicial + (Ventas + Abonos) + EntradasManuales - SalidasManuales
+      return cajaActual.monto_inicial + ingresoPorVentas + cajaActual.entradas_efectivo - cajaActual.salidas_efectivo;
+  }
+
   /**
-   * Cierra la caja actual
-   * Lógica de 'cerrarCaja'
+   * Cerrar Caja con Auditoría
+   * @param {number} montoFisico - Lo que el usuario cuenta en billetes/monedas
+   * @param {string} comentarios - Justificación si no cuadra
    */
-  const cerrarCaja = async (monto_cierre) => {
-    if (!cajaActual) {
-      showMessageModal('No hay una caja abierta para cerrar.');
-      return false;
-    }
-    if (isNaN(monto_cierre) || monto_cierre < 0) {
-      showMessageModal('El monto de cierre no es válido.');
-      return false;
-    }
+  const realizarAuditoriaYCerrar = async (montoFisico, comentarios = '') => {
+    if (!cajaActual) return false;
 
     try {
-      // (Aquí iría la lógica de calcular ventas, etc.)
-      // Por ahora, solo cerramos
-      const ventas = await loadData(STORES.SALES); // Cargar ventas
-      const ventasDeSesion = ventas.filter(v => new Date(v.timestamp) >= new Date(cajaActual.fecha_apertura));
-      const ventas_efectivo = ventasDeSesion.reduce((sum, v) => sum + v.total, 0); // Asumimos todo efectivo
+      const totalTeorico = await calcularTotalTeorico();
+      const diferencia = montoFisico - totalTeorico;
+      
+      // Calculamos los totales finales para guardarlos en el registro histórico
+      // (Aunque ya tenemos totalTeorico, es bueno guardar el desglose)
+      const todasVentas = await loadData(STORES.SALES);
+      const ventasSesion = todasVentas.filter(v => 
+        new Date(v.timestamp) >= new Date(cajaActual.fecha_apertura)
+      );
 
-      const total_teorico = cajaActual.monto_inicial + ventas_efectivo + cajaActual.entradas_efectivo - cajaActual.salidas_efectivo;
-      const diferencia = monto_cierre - total_teorico;
+      let ventasEfectivoFinal = 0;
+      let abonosFiadoFinal = 0;
+
+      ventasSesion.forEach(v => {
+          if (v.paymentMethod === 'efectivo') ventasEfectivoFinal += v.total;
+          else if (v.paymentMethod === 'fiado') abonosFiadoFinal += (v.abono || 0);
+      });
 
       const cajaCerrada = {
         ...cajaActual,
         fecha_cierre: new Date().toISOString(),
-        monto_cierre: parseFloat(monto_cierre),
-        ventas_efectivo: ventas_efectivo,
+        monto_cierre: parseFloat(montoFisico),
+        ventas_efectivo: ventasEfectivoFinal + abonosFiadoFinal, // Total ingresos por ventas
         diferencia: diferencia,
+        comentarios_auditoria: comentarios,
         estado: 'cerrada',
+        // Guardamos detalle extra para futuros reportes
+        detalle_cierre: {
+            ventas_contado: ventasEfectivoFinal,
+            abonos_fiado: abonosFiadoFinal,
+            total_teorico: totalTeorico
+        }
       };
 
       await saveData(STORES.CAJAS, cajaCerrada);
-
-      // Actualizamos el estado
+      
+      // Limpiamos el estado
       setCajaActual(null);
       setMovimientosCaja([]);
-      setHistorialCajas([cajaCerrada, ...historialCajas]); // Añadir al historial
-
-      showMessageModal(`Caja cerrada. Diferencia: $${diferencia.toFixed(2)}`);
-      return true;
+      setHistorialCajas([cajaCerrada, ...historialCajas]);
+      setTotalesTurno({ ventasContado: 0, abonosFiado: 0 });
+      
+      return { success: true, diferencia };
 
     } catch (error) {
-      console.error('Error al cerrar la caja:', error);
-      return false;
+      console.error('Error en auditoría:', error);
+      return { success: false, error };
     }
   };
 
-  /**
-   * Registra una entrada o salida
-   * Lógica de 'registrarMovimientoCaja'
-   */
   const registrarMovimiento = async (tipo, monto, concepto) => {
     if (!cajaActual) {
-      showMessageModal('No hay una caja abierta.');
-      return false;
+        showMessageModal('No hay una caja abierta para registrar movimientos.');
+        return false; 
     }
-    // ... (validaciones de monto y concepto)
 
     const movimiento = {
       id: `mov-${Date.now()}`,
@@ -200,36 +232,35 @@ export function useCaja() {
 
     try {
       await saveData(STORES.MOVIMIENTOS_CAJA, movimiento);
-
+      
+      // Actualizamos la caja en DB
       const cajaActualizada = { ...cajaActual };
-      if (tipo === 'entrada') {
-        cajaActualizada.entradas_efectivo += movimiento.monto;
-      } else {
-        cajaActualizada.salidas_efectivo += movimiento.monto;
-      }
-
+      if (tipo === 'entrada') cajaActualizada.entradas_efectivo += movimiento.monto;
+      else cajaActualizada.salidas_efectivo += movimiento.monto;
+      
       await saveData(STORES.CAJAS, cajaActualizada);
-
-      // ✅ MEJOR: Recargar todo para estar sincronizados
-      await cargarEstadoCaja();
-
-      showMessageModal(`Movimiento de ${tipo} registrado.`);
+      
+      // Actualizamos estado local
+      setCajaActual(cajaActualizada);
+      setMovimientosCaja(prev => [...prev, movimiento]);
+      
       return true;
     } catch (error) {
-      console.error(`Error al registrar ${tipo}:`, error);
+      console.error(error);
       return false;
     }
   };
 
-  // 5. RETORNO
-  // Exponemos el estado y las funciones que la página necesita
   return {
     cajaActual,
     historialCajas,
     movimientosCaja,
     isLoading,
+    montoSugerido, 
+    totalesTurno, // ¡IMPORTANTE! Exponemos el desglose (contado vs fiado)
     abrirCaja,
-    cerrarCaja,
+    realizarAuditoriaYCerrar, 
     registrarMovimiento,
+    calcularTotalTeorico 
   };
 }

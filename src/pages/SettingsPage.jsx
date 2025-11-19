@@ -1,10 +1,10 @@
 // src/pages/SettingsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { saveData, STORES } from '../services/database';
-import { compressImage } from '../services/utils'; 
-import { useAppStore } from '../store/useAppStore'; 
+import { compressImage } from '../services/utils';
+import { useAppStore } from '../store/useAppStore';
 import DeviceManager from '../components/common/DeviceManager';
-import './SettingsPage.css'; 
+import './SettingsPage.css';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -42,10 +42,10 @@ export default function SettingsPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
-  
+
   // 2. CAMBIO: businessType ahora se inicializa como un array vacío []
-  const [businessType, setBusinessType] = useState([]); 
-  
+  const [businessType, setBusinessType] = useState([]);
+
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
   const [logoData, setLogoData] = useState(null);
   const [activeTheme, setActiveTheme] = useState(getInitialTheme);
@@ -55,7 +55,7 @@ export default function SettingsPage() {
       setName(companyProfile.name || 'Lanzo Negocio');
       setPhone(companyProfile.phone || '');
       setAddress(companyProfile.address || '');
-      
+
       // 3. LÓGICA DE CARGA: Aseguramos que sea un array
       let types = companyProfile.business_type || [];
       // Si viene como string (legado), lo convertimos a array
@@ -96,9 +96,9 @@ export default function SettingsPage() {
     const file = e.target.files[0];
     if (file) {
       try {
-        const compressedFile = await compressImage(file); 
-        setLogoPreview(URL.createObjectURL(compressedFile)); 
-        setLogoData(compressedFile); 
+        const compressedFile = await compressImage(file);
+        setLogoPreview(URL.createObjectURL(compressedFile));
+        setLogoData(compressedFile);
       } catch (error) {
         console.error("Error al comprimir imagen:", error);
       }
@@ -108,20 +108,24 @@ export default function SettingsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // ESTANDARIZACIÓN: Aquí construimos el objeto con el formato interno de la App ('name')
       const companyData = {
         id: 'company',
-        name: name,
-        phone: phone,
-        address: address,
-        business_type: businessType, // 5. Enviamos el array directamente
-        logo: logoData
+        name: name,           // Usamos la variable de estado del input
+        phone: phone,         // Usamos la variable de estado del input
+        address: address,     // Usamos la variable de estado del input
+        logo: logoData,       // El archivo o URL
+        business_type: businessType // Array de rubros
       };
 
-      await updateCompanyProfile(companyData); 
+      // Enviamos 'name'. El Store o el Servicio se encargarán de traducirlo si es necesario.
+      await updateCompanyProfile(companyData);
+
       alert('¡Configuración guardada! Los formularios se han actualizado.');
 
     } catch (error) {
       console.error("Error al guardar configuración:", error);
+      alert('Hubo un error al guardar.'); // Feedback visual simple
     }
   };
 
@@ -144,7 +148,7 @@ export default function SettingsPage() {
     const statusText = 'Activa y Verificada';
 
     return (
-      <div className="license-info-container"> 
+      <div className="license-info-container">
         <div className="license-info">
           <div className="license-detail">
             <span className="license-label">Clave:</span>
@@ -204,7 +208,7 @@ export default function SettingsPage() {
               Para cambiar el nombre, contacta a soporte.
             </small>
           </div>
-          
+
           {/* ... (Teléfono y Dirección sin cambios) ... */}
           <div className="form-group">
             <label className="form-label" htmlFor="company-phone">Teléfono de Contacto</label>
@@ -232,7 +236,7 @@ export default function SettingsPage() {
             <label className="form-label">Rubros del Negocio (Selecciona múltiples)</label>
             <div className="rubro-selector-grid">
               {BUSINESS_RUBROS.map(rubro => (
-                <div 
+                <div
                   key={rubro.id}
                   className={`rubro-box ${businessType.includes(rubro.id) ? 'selected' : ''}`}
                   onClick={() => handleRubroToggle(rubro.id)}

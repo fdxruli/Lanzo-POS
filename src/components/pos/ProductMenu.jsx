@@ -1,7 +1,7 @@
 // src/components/pos/ProductMenu.jsx
 import React from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
-import { getProductAlerts } from '../../services/utils'; 
+import { getProductAlerts } from '../../services/utils';
 import './ProductMenu.css';
 
 export default function ProductMenu({
@@ -13,7 +13,7 @@ export default function ProductMenu({
   onSearchChange,
   onOpenScanner
 }) {
-  
+
   const addItemToOrder = useOrderStore((state) => state.addItem);
 
   const handleProductClick = (product, isOutOfStock) => {
@@ -26,7 +26,7 @@ export default function ProductMenu({
       return <div className="stock-info no-stock-label">Sin seguimiento</div>;
     }
     const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
-    
+
     if (item.stock > 0) {
       return <div className="stock-info">Stock: {item.stock}{unit}</div>;
     } else {
@@ -81,9 +81,10 @@ export default function ProductMenu({
         ) : (
           products.map((item) => {
             const { isLowStock, isNearingExpiry, isOutOfStock } = getProductAlerts(item);
-            
+
             // 1. NUEVO: Detectar si tiene mayoreo
             const hasWholesale = item.wholesaleTiers && item.wholesaleTiers.length > 0;
+            const requiresRx = item.requiresPrescription;
 
             const itemClasses = [
               'menu-item',
@@ -101,10 +102,16 @@ export default function ProductMenu({
                 {isOutOfStock && (
                   <div className="stock-overlay">Agotado</div>
                 )}
-                
+
                 {/* 2. NUEVO: Badge de Mayoreo */}
                 {hasWholesale && !isOutOfStock && (
-                   <div className="wholesale-badge">Mayoreo</div>
+                  <div className="wholesale-badge">Mayoreo</div>
+                )}
+
+                {requiresRx && (
+                  <div className="prescription-badge">
+                    💊 Receta
+                  </div>
                 )}
 
                 <img

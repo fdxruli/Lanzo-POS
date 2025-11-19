@@ -61,6 +61,21 @@ export function useFeatureConfig() {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
 
   const features = useMemo(() => {
+
+    let types = businessTypes;
+    
+    if (!Array.isArray(types)) {
+        if (typeof types === 'string'){
+            types = types.split(',').map(s => s.trim()).filter(Boolean)
+        }else{
+            types = [];
+        }
+    }
+
+    if (types.length === 0) {
+        console.warn('No hay rubros configurados, usando configuración básica');
+        types = ['otro'];
+    }
     
     // Usamos un Set para que las 'features' no se repitan
     const enabledFeatures = new Set();

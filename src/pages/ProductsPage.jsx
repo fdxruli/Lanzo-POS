@@ -1,46 +1,46 @@
 // src/pages/ProductsPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
-// 1. CORRECCIÓN: Agregamos 'saveBulk' a las importaciones
+import React, { useState, useEffect } from 'react';
 import { loadData, saveData, deleteData, saveBulk, STORES } from '../services/database';
 import { showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
+import CategoryManager from '../components/products/CategoryManager';
+import IngredientManager from '../components/products/IngredientManager';
+
 import { useDashboardStore } from '../store/useDashboardStore';
 import BatchManager from '../components/products/BatchManager';
+import DataTransferModal from '../components/products/DataTransferModal';
+// 1. IMPORTAR EL HOOK DE CONFIGURACIÓN
+import { useFeatureConfig } from '../hooks/useFeatureConfig'; 
 import './ProductsPage.css';
 
 export default function ProductsPage() {
     const [activeTab, setActiveTab] = useState('view-products');
-    const [categories, setCategories] = useState([]);
-    const [editingProduct, setEditingProduct] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [showCategoryModal, setShowCategoryModal] = useState(false);
 
-    // Estado para el BatchManager
-    const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
+    // 2. OBTENER LAS CARACTERÍSTICAS ACTIVAS
+    const features = useFeatureConfig();
 
-    // Cargar datos desde el store central
+    // Store Global
+    const categories = useDashboardStore((state) => state.categories);
     const products = useDashboardStore((state) => state.menu);
     const rawProducts = useDashboardStore((state) => state.rawProducts);
     const rawBatches = useDashboardStore((state) => state.rawBatches);
     const refreshData = useDashboardStore((state) => state.loadAllData);
 
-    const loadCategories = useCallback(async () => {
-        setIsLoading(true);
-        try {
-            const categoryData = await loadData(STORES.CATEGORIES);
-            setCategories(categoryData || []);
-        } catch (error) {
-            console.error("Error al cargar categorías:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
+    const [editingProduct, setEditingProduct] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [showCategoryModal, setShowCategoryModal] = useState(false);
+    const [showDataTransfer, setShowDataTransfer] = useState(false);
+    const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
 
     useEffect(() => {
-        loadCategories();
-    }, [loadCategories]);
+        refreshData();
+    }, [refreshData]);
+
+    // --- FILTROS PARA PESTAÑAS ---
+    const productsForSale = products.filter(p => p.productType === 'sellable' || !p.productType);
+    const ingredientsOnly = products.filter(p => p.productType === 'ingredient');
 
     const handleSaveCategory = async (categoryData) => {
         try {
@@ -54,7 +54,6 @@ export default function ProductsPage() {
     const handleDeleteCategory = async (categoryId) => {
         try {
             await deleteData(STORES.CATEGORIES, categoryId);
-            // Actualizar productos que tenían esta categoría
             const productsToUpdate = products.filter(p => p.categoryId === categoryId);
             for (const product of productsToUpdate) {
                 product.categoryId = '';
@@ -66,132 +65,124 @@ export default function ProductsPage() {
         }
     };
 
-    // 2. CORRECCIÓN: Lógica completa de guardado (Crear y Editar)
     const handleSaveProduct = async (productData, editingProduct) => {
         setIsLoading(true);
         try {
-            // A. Manejo de IMAGEN (común para crear o editar)
             let finalImage = productData.image;
             if (productData.image && productData.image instanceof File) {
-                // Subir imagen si es un archivo nuevo
                 finalImage = await window.uploadFile(productData.image, 'product');
+                if (!finalImage) finalImage = null;
             }
 
-            if (editingProduct) {
-                // --- CASO: EDITAR PRODUCTO EXISTENTE ---
+            if (editingProduct && editingProduct.id) {
                 const updatedProduct = {
-                    ...editingProduct, // Mantenemos datos viejos (ID, stock, etc.)
-                    ...productData,    // Sobreescribimos con los nuevos
-                    image: finalImage, // Usamos la URL (o null)
+                    ...editingProduct,
+                    ...productData,
+                    image: finalImage || editingProduct.image,
                     updatedAt: new Date().toISOString()
                 };
-
                 await saveData(STORES.MENU, updatedProduct);
-                showMessageModal('¡Producto actualizado exitosamente!');
+                showMessageModal('¡Actualizado exitosamente!');
 
             } else {
-                // --- CASO: CREAR NUEVO PRODUCTO ---
-                
-                // 1. Generamos un ID único
                 const newId = `product-${Date.now()}`;
-
                 const newProduct = {
                     id: newId,
                     ...productData,
                     image: finalImage,
-                    isActive: true,     // Por defecto activo
+                    isActive: true,
                     createdAt: new Date().toISOString(),
-                    // Inicializamos batchManagement para evitar errores futuros
-                    batchManagement: { enabled: false, selectionStrategy: 'fifo' },
-                    stock: 0, // Stock inicial 0 (se llena con lotes)
-                    price: 0  // Precio inicial 0 (se llena con lotes o lógica agregada)
+                    batchManagement: { enabled: true, selectionStrategy: 'fifo' },
                 };
 
-                // 2. ¡GUARDAMOS EN LA BASE DE DATOS!
                 await saveData(STORES.MENU, newProduct);
 
-                showMessageModal('¡Producto guardado exitosamente!');
+                const initialCost = productData.cost ? parseFloat(productData.cost) : 0;
+                const initialStock = productData.stock ? parseFloat(productData.stock) : 0;
+
+                const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
+
+                if (!isRecipeProduct) {
+                    const initialBatch = {
+                        id: `batch-${newId}-initial`,
+                        productId: newId,
+                        cost: initialCost,
+                        price: 0,
+                        stock: initialStock,
+                        createdAt: new Date().toISOString(),
+                        trackStock: true,
+                        isActive: initialStock > 0,
+                        notes: "Stock Inicial (Registro Rápido)",
+                        sku: null, attributes: null
+                    };
+                    await saveData(STORES.PRODUCT_BATCHES, initialBatch);
+                }
+
+                if (productData.productType === 'ingredient' && initialStock > 0) {
+                    showMessageModal(`¡Insumo creado con ${initialStock} ${productData.bulkData?.purchase?.unit || 'unidades'} de stock!`);
+                } else {
+                    showMessageModal('¡Producto creado exitosamente!');
+                }
             }
 
-            // 3. Actualizamos la vista global
             await refreshData();
-
-            // 4. Limpiamos el formulario y volvemos a la lista
             setEditingProduct(null);
-            setActiveTab('view-products');
+
+            if (productData.productType === 'ingredient') {
+                setActiveTab('ingredients');
+            } else {
+                setActiveTab('view-products');
+            }
 
         } catch (error) {
-            console.error("Error al guardar producto:", error);
-            showMessageModal(`Error al guardar el producto: ${error.message}`);
+            console.error("Error:", error);
+            showMessageModal(`Error: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
     };
 
     const handleEditProduct = (product) => {
-        // Buscamos el producto "crudo" (sin agregaciones) para editar
         const productToEdit = rawProducts.find(p => p.id === product.id);
         if (productToEdit) {
             setEditingProduct(productToEdit);
             setActiveTab('add-product');
-        } else {
-            console.error("No se pudo encontrar el producto original para editar");
         }
     };
 
-    // 3. CORRECCIÓN: Eliminación profunda (Producto + Lotes)
+    const handleCreateIngredient = () => {
+        setEditingProduct({
+            name: '',
+            productType: 'ingredient',
+        });
+        setActiveTab('add-product');
+    };
+
     const handleDeleteProduct = async (product) => {
-        if (window.confirm(`¿Seguro que quieres eliminar "${product.name}"?`)) {
+        if (window.confirm(`¿Eliminar "${product.name}"?`)) {
             try {
-                // 1. Mover producto a papelera
                 product.deletedTimestamp = new Date().toISOString();
                 await saveData(STORES.DELETED_MENU, product);
                 await deleteData(STORES.MENU, product.id);
 
-                // 2. Desactivar/Eliminar lotes asociados para evitar huérfanos
-                // Buscamos los lotes de este producto en el store global
                 const productBatches = rawBatches.filter(b => b.productId === product.id);
-                
                 if (productBatches.length > 0) {
-                    // Los marcamos como inactivos y con stock 0
-                    const updatedBatches = productBatches.map(b => ({
-                        ...b,
-                        isActive: false,
-                        stock: 0,
-                        notes: (b.notes || '') + ' [Producto Eliminado]'
-                    }));
-                    // Guardamos todos los lotes actualizados de una vez
+                    const updatedBatches = productBatches.map(b => ({ ...b, isActive: false, stock: 0, notes: b.notes + ' [Eliminado]' }));
                     await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches);
                 }
-
-                console.log('Producto y sus lotes movidos a la papelera');
-                
                 await refreshData();
-                showMessageModal('Producto eliminado correctamente.');
-
             } catch (error) {
-                console.error("Error al eliminar producto:", error);
-                showMessageModal(`Error al eliminar: ${error.message}`);
+                console.error(error);
             }
         }
     };
 
     const handleToggleStatus = async (product) => {
         try {
-            const updatedProduct = {
-                ...product,
-                isActive: !(product.isActive !== false) // Invierte el estado
-            };
+            const updatedProduct = { ...product, isActive: !(product.isActive !== false) };
             await saveData(STORES.MENU, updatedProduct);
             await refreshData();
-        } catch (error) {
-            console.error("Error al cambiar estado:", error);
-        }
-    };
-
-    const handleCancelEdit = () => {
-        setEditingProduct(null);
-        setActiveTab('view-products');
+        } catch (error) { console.error(error); }
     };
 
     const handleManageBatches = (productId) => {
@@ -199,40 +190,66 @@ export default function ProductsPage() {
         setActiveTab('batches');
     };
 
-    // VISTA (RENDER)
     return (
         <>
-            <h2 className="section-title">Gestión de Productos e Inventario</h2>
+            <div className="products-header">
+                <h2 className="section-title">Gestión de Inventario</h2>
+                
+                <button 
+                    className="btn btn-secondary btn-action-header" 
+                    onClick={() => setShowDataTransfer(true)}
+                >
+                    📥 / 📤 Importar y Exportar
+                </button>
+            </div>
 
-            <div className="tabs-container" id="product-tabs">
+            <div className="tabs-container" id="product-tabs" style={{ overflowX: 'auto' }}>
                 <button
                     className={`tab-btn ${activeTab === 'add-product' ? 'active' : ''}`}
-                    onClick={() => {
-                        setEditingProduct(null);
-                        setActiveTab('add-product');
-                    }}
+                    onClick={() => { setEditingProduct(null); setActiveTab('add-product'); }}
                 >
-                    {editingProduct ? 'Editar Producto' : 'Añadir Producto'}
+                    {editingProduct && !editingProduct.id ? 'Nuevo Insumo' : (editingProduct ? 'Editar Item' : 'Añadir Producto')}
                 </button>
+
                 <button
                     className={`tab-btn ${activeTab === 'view-products' ? 'active' : ''}`}
                     onClick={() => setActiveTab('view-products')}
                 >
-                    Ver Productos
+                    Productos (Venta)
                 </button>
+
                 <button
                     className={`tab-btn ${activeTab === 'batches' ? 'active' : ''}`}
                     onClick={() => setActiveTab('batches')}
                 >
                     Gestionar Lotes
                 </button>
+
+                {/* 3. CONDICIONAL: Solo mostrar pestaña Ingredientes si el negocio usa recetas */}
+                {features.hasRecipes && (
+                    <button
+                        className={`tab-btn ${activeTab === 'ingredients' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('ingredients')}
+                    >
+                        Ingredientes/Insumos
+                    </button>
+                )}
+
+                <button
+                    className={`tab-btn ${activeTab === 'categories' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('categories')}
+                >
+                    Categorías
+                </button>
             </div>
+
+            {/* CONTENIDO DE PESTAÑAS */}
 
             {activeTab === 'add-product' && (
                 <ProductForm
                     onSave={handleSaveProduct}
-                    onCancel={handleCancelEdit}
-                    productToEdit={editingProduct}
+                    onCancel={() => setActiveTab('view-products')}
+                    productToEdit={editingProduct} 
                     categories={categories}
                     onOpenCategoryManager={() => setShowCategoryModal(true)}
                     products={products}
@@ -243,12 +260,29 @@ export default function ProductsPage() {
 
             {activeTab === 'view-products' && (
                 <ProductList
-                    products={products}
+                    products={productsForSale}
                     categories={categories}
                     isLoading={isLoading}
                     onEdit={handleEditProduct}
                     onDelete={handleDeleteProduct}
                     onToggleStatus={handleToggleStatus}
+                />
+            )}
+
+            {/* 4. CONDICIONAL: Solo renderizar el contenido si está habilitado y activo */}
+            {activeTab === 'ingredients' && features.hasRecipes && (
+                <IngredientManager
+                    ingredients={ingredientsOnly}
+                    onSave={handleSaveProduct} 
+                    onDelete={handleDeleteProduct} 
+                />
+            )}
+
+            {activeTab === 'categories' && (
+                <CategoryManager
+                    categories={categories}
+                    onSave={handleSaveCategory}
+                    onDelete={handleDeleteCategory}
                 />
             )}
 
@@ -259,12 +293,19 @@ export default function ProductsPage() {
                 />
             )}
 
+            {/* Modales Auxiliares */}
             <CategoryManagerModal
                 show={showCategoryModal}
                 onClose={() => setShowCategoryModal(false)}
                 categories={categories}
                 onSave={handleSaveCategory}
                 onDelete={handleDeleteCategory}
+            />
+
+            <DataTransferModal
+                show={showDataTransfer}
+                onClose={() => setShowDataTransfer(false)}
+                onRefresh={refreshData}
             />
         </>
     );
