@@ -120,7 +120,7 @@ export default function AboutPage() {
             la comida y la tecnología.
           </p>
           <p className="about-text">
-            Puedes conocer más sobre su menú y concepto visitando su red social y su pagina web.
+            Puedes conocer más sobre su menú y concepto visitando su red social y pagina web.
           </p>
           <div className="social-links">
             <a href="https://www.facebook.com/profile.php?id=1000866462611018" className="social-link" target="_blank" rel="noopener noreferrer">

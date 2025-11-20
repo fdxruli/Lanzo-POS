@@ -1,28 +1,44 @@
 // src/components/customers/CustomerList.jsx
-import React from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import './CustomerList.css';
 
-// 1. Recibir 'onWhatsAppLoading'
 export default function CustomerList({ customers, isLoading, onEdit, onDelete, onViewHistory, onAbonar, onWhatsApp, onWhatsAppLoading }) {
+    // 1. Estado para controlar cuántos se muestran
+    const [displayLimit, setDisplayLimit] = useState(20);
+
+    // Si cambia la lista de clientes (filtro o recarga), reseteamos el límite
+    useEffect(() => {
+        setDisplayLimit(20);
+    }, [customers]);
+
+    // 2. Ordenar clientes (Memoria)
+    // Usamos useMemo para no reordenar cada vez que damos clic en "ver más"
+    const sortedCustomers = useMemo(() => {
+        return [...customers].sort((a, b) => (b.debt || 0) - (a.debt || 0));
+    }, [customers]);
+
+    // 3. Cortar la lista para el renderizado (DOM)
+    const visibleCustomers = sortedCustomers.slice(0, displayLimit);
+    const hasMore = displayLimit < sortedCustomers.length;
+
+    const handleLoadMore = () => {
+        setDisplayLimit(prev => prev + 20);
+    };
 
     if (isLoading) {
-        return <div>Cargando clientes...</div>;
+        return <div style={{ padding: '20px', textAlign: 'center' }}>Cargando clientes...</div>;
     }
     
     if (customers.length === 0) {
         return <div className="empty-message">No hay clientes registrados.</div>;
     }
     
-    const sortedCustomers = [...customers].sort((a, b) => (b.debt || 0) - (a.debt || 0));
-
     return (
         <div className="customer-list-container">
+            {/* Renderizamos SOLO los visibles */}
             <div id="customer-list" className="customer-list" aria-label="Lista de clientes">
-                
-                {sortedCustomers.map((customer) => {
+                {visibleCustomers.map((customer) => {
                     const hasDebt = customer.debt && customer.debt > 0;
-                    
-                    // 2. Verificar si ESTE botón está cargando
                     const isWhatsAppLoading = onWhatsAppLoading === customer.id;
                     
                     return (
@@ -40,7 +56,6 @@ export default function CustomerList({ customers, isLoading, onEdit, onDelete, o
                             </div>
 
                             <div className="customer-actions">
-                                
                                 {hasDebt && (
                                     <button 
                                         className="btn btn-abono" 
@@ -50,19 +65,14 @@ export default function CustomerList({ customers, isLoading, onEdit, onDelete, o
                                     </button>
                                 )}
                                 
-                                {/* 3. BOTÓN DE WHATSAPP MODIFICADO */}
                                 {customer.phone && (
                                   <button
                                     className="btn btn-whatsapp"
-                                    title={hasDebt ? "Enviar recordatorio de deuda" : "Enviar WhatsApp"}
+                                    title={hasDebt ? "Enviar recordatorio" : "Chat"}
                                     onClick={() => onWhatsApp(customer)}
-                                    disabled={isWhatsAppLoading} // Deshabilitar si está cargando
+                                    disabled={isWhatsAppLoading}
                                   >
-                                    {/* Cambiar texto según el estado */}
-                                    {isWhatsAppLoading 
-                                      ? 'Generando...' 
-                                      : (hasDebt ? 'Recordatorio' : 'Chat')
-                                    }
+                                    {isWhatsAppLoading ? '...' : (hasDebt ? 'Cobrar' : 'Chat')}
                                   </button>
                                 )}
 
@@ -73,15 +83,32 @@ export default function CustomerList({ customers, isLoading, onEdit, onDelete, o
                                     Historial
                                 </button>
                                 <button className="btn btn-edit" onClick={() => onEdit(customer)}>
-                                    Editar
+                                    ✏️
                                 </button>
                                 <button className="btn btn-delete" onClick={() => onDelete(customer.id)}>
-                                    Eliminar
+                                    🗑️
                                 </button>
                             </div>
                         </div>
                     )
                 })}
+            </div>
+
+            {/* 4. Botón "Cargar Más" si hay más elementos */}
+            {hasMore && (
+                <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <button 
+                        onClick={handleLoadMore}
+                        className="btn btn-secondary"
+                        style={{ minWidth: '200px' }}
+                    >
+                        Mostrar más clientes ({sortedCustomers.length - displayLimit} restantes)
+                    </button>
+                </div>
+            )}
+
+            <div style={{ textAlign: 'center', color: '#999', fontSize: '0.8rem', marginTop: '10px' }}>
+                Mostrando {visibleCustomers.length} de {sortedCustomers.length} clientes
             </div>
         </div>
     );

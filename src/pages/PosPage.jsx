@@ -9,9 +9,10 @@ import QuickCajaModal from '../components/common/QuickCajaModal';
 import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
 import { useDashboardStore } from '../store/useDashboardStore'; // Store Global
-import { loadData, saveBulk, saveData, STORES } from '../services/database';
+import { loadData, saveBulk, saveData, queryByIndex, STORES } from '../services/database';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
+import { useDebounce } from '../hooks/useDebounce';
 import './PosPage.css';
 
 export default function PosPage() {
@@ -22,6 +23,13 @@ export default function PosPage() {
   const [categories, setCategories] = useState([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  const searchProducts = useDashboardStore((state) => state.searchProducts);
+
+  useEffect(() => {
+    searchProducts(debouncedSearchTerm);
+  }, [debouncedSearchTerm, searchProducts]);
 
   const navigate = useNavigate();
   const { cajaActual, abrirCaja } = useCaja();
@@ -69,8 +77,7 @@ export default function PosPage() {
 
   // --- 4. PROCESAMIENTO DE LA VENTA (LÓGICA ROBUSTA) ---
   const handleProcessOrder = async (paymentData) => {
-
-    // A. Validaciones iniciales
+    // A. Validaciones iniciales (Igual que antes)
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       setIsPaymentModalOpen(false);
       setIsQuickCajaOpen(true);
@@ -87,117 +94,86 @@ export default function PosPage() {
     setIsPaymentModalOpen(false);
 
     try {
-      console.time('ProcesoDeVenta');
-
-      // B. Cargar datos FRESCOS para la transacción (Inventario Real)
-      const allBatches = await loadData(STORES.PRODUCT_BATCHES);
-      const allProductsMenu = await loadData(STORES.MENU);
-      const productMap = new Map(allProductsMenu.map(p => [p.id, p]));
-
-      // Organizar lotes por producto para acceso rápido
-      const batchesByProduct = new Map();
-      allBatches.forEach(batch => {
-        if (!batchesByProduct.has(batch.productId)) {
-          batchesByProduct.set(batch.productId, []);
-        }
-        batchesByProduct.get(batch.productId).push(batch);
-      });
+      console.time('ProcesoDeVentaOptimo');
 
       const processedItems = [];
-      const updatedBatches = [];
-      const updatedBatchesIds = new Set(); // Para evitar duplicados
+      const batchUpdates = new Map(); // Map para evitar duplicados si un lote se usa varias veces
 
-      // C. Iterar sobre cada producto del carrito
+      // B. Iterar sobre el carrito (SOLO cargamos lo necesario)
       for (const orderItem of itemsToProcess) {
-        const product = productMap.get(orderItem.id);
+
+        // 1. Cargar SOLO el producto actual
+        const product = await loadData(STORES.MENU, orderItem.id);
         if (!product) continue;
 
         const itemBatchesUsed = [];
         let itemTotalCost = 0;
 
-        // === BIFURCACIÓN LÓGICA: ¿ES UNA RECETA (RESTAURANTE)? ===
-        if (product.recipe && product.recipe.length > 0) {
-          console.log(`🍳 Procesando receta para: ${product.name}`);
+        // Definir qué ingredientes/productos necesitamos buscar
+        // Si es receta, buscamos sus ingredientes. Si no, el producto mismo.
+        const itemsToDeduct = (product.recipe && product.recipe.length > 0)
+          ? product.recipe
+          : [{ ingredientId: product.id, quantity: 1 }]; // Normalizamos estructura
 
-          // Descontar stock de cada ingrediente
-          for (const ingredient of product.recipe) {
-            let requiredQty = ingredient.quantity * orderItem.quantity;
+        for (const component of itemsToDeduct) {
+          // Cantidad total requerida de este componente
+          let requiredQty = component.quantity * orderItem.quantity;
+          const targetId = component.ingredientId;
 
-            // Buscamos los lotes del INGREDIENTE (Harina, Queso, etc.)
-            const ingredientBatches = batchesByProduct.get(ingredient.ingredientId) || [];
-            const activeIngBatches = ingredientBatches
-              .filter(b => b.isActive && b.stock > 0)
-              .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // FIFO
+          // 2. Cargar SOLO lotes activos de este componente
+          // Usamos el índice compuesto que YA TIENES en database.js
+          let batches = await queryByIndex(
+            STORES.PRODUCT_BATCHES,
+            'productId_isActive',
+            [targetId, 1] // 1 = true en IndexedDB para booleans
+          );
 
-            for (const batch of activeIngBatches) {
-              if (requiredQty <= 0) break;
-
-              const toDeduct = Math.min(requiredQty, batch.stock);
-              batch.stock -= toDeduct;
-
-              // Desactivar lote si se acaba (con tolerancia para decimales)
-              if (batch.stock < 0.0001) {
-                batch.stock = 0;
-                batch.isActive = false;
-              }
-
-              // Registrar uso para costos y devoluciones
-              itemBatchesUsed.push({
-                batchId: batch.id,
-                ingredientId: ingredient.ingredientId,
-                quantity: toDeduct,
-                cost: batch.cost
-              });
-
-              itemTotalCost += (batch.cost * toDeduct);
-              requiredQty -= toDeduct;
-
-              if (!updatedBatchesIds.has(batch.id)) {
-                updatedBatches.push(batch);
-                updatedBatchesIds.add(batch.id);
-              }
-            }
-
-            if (requiredQty > 0.001) {
-              console.warn(`⚠️ Faltó stock para ingrediente: ${ingredient.name}`);
-            }
+          // Si queryByIndex falla o retorna vacío, intentamos solo por productId
+          if (!batches || batches.length === 0) {
+            batches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', targetId);
           }
-        } else {
-          // === LÓGICA ESTÁNDAR (FIFO) ===
-          console.log(`📦 Procesando producto estándar: ${product.name}`);
 
-          const productBatches = batchesByProduct.get(orderItem.id) || [];
-          const activeBatches = productBatches
+          // 3. Filtrar stock > 0 y Ordenar FIFO en memoria (rápido porque son pocos registros)
+          const activeBatches = batches
             .filter(b => b.isActive && b.stock > 0)
             .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
-          let remaining = orderItem.quantity;
-
+          // 4. Algoritmo de descuento (Igual que tenías, pero optimizado)
           for (const batch of activeBatches) {
-            if (remaining <= 0) break;
+            if (requiredQty <= 0) break;
 
-            const toDeduct = Math.min(remaining, batch.stock);
-            batch.stock -= toDeduct;
+            // Si ya modificamos este lote en una iteración anterior del bucle (mismo pedido), usar la versión de memoria
+            const currentBatch = batchUpdates.get(batch.id) || batch;
 
-            if (batch.stock === 0) batch.isActive = false;
+            const toDeduct = Math.min(requiredQty, currentBatch.stock);
+
+            // Modificamos el objeto
+            currentBatch.stock -= toDeduct;
+            if (currentBatch.stock < 0.0001) {
+              currentBatch.stock = 0;
+              currentBatch.isActive = false;
+            }
 
             itemBatchesUsed.push({
-              batchId: batch.id,
+              batchId: currentBatch.id,
+              ingredientId: targetId, // Guardamos qué ID descontó (útil para recetas)
               quantity: toDeduct,
-              cost: batch.cost
+              cost: currentBatch.cost
             });
 
-            itemTotalCost += (batch.cost * toDeduct);
-            remaining -= toDeduct;
+            itemTotalCost += (currentBatch.cost * toDeduct);
+            requiredQty -= toDeduct;
 
-            if (!updatedBatchesIds.has(batch.id)) {
-              updatedBatches.push(batch);
-              updatedBatchesIds.add(batch.id);
-            }
+            // Guardamos en el Map para actualizar al final
+            batchUpdates.set(currentBatch.id, currentBatch);
+          }
+
+          if (requiredQty > 0.001) {
+            console.warn(`⚠️ Faltó stock para ID: ${targetId}`);
           }
         }
 
-        // Calcular costo unitario promedio real para este ítem
+        // Calcular costo unitario promedio
         const avgUnitCost = orderItem.quantity > 0 ? (itemTotalCost / orderItem.quantity) : 0;
 
         processedItems.push({
@@ -210,12 +186,12 @@ export default function PosPage() {
         });
       }
 
-      // D. Guardar todos los cambios de inventario (Transacción Bulk)
-      if (updatedBatches.length > 0) {
-        await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches);
+      // C. Guardar ACTUALIZACIONES de lotes en una sola transacción
+      if (batchUpdates.size > 0) {
+        await saveBulk(STORES.PRODUCT_BATCHES, Array.from(batchUpdates.values()));
       }
 
-      // E. Guardar la Venta
+      // D. Guardar la Venta (Igual que antes)
       const sale = {
         timestamp: new Date().toISOString(),
         items: processedItems,
@@ -227,7 +203,7 @@ export default function PosPage() {
       };
       await saveData(STORES.SALES, sale);
 
-      // F. Actualizar deuda del cliente si es Fiado
+      // E. Actualizar deuda cliente (Igual que antes)
       if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
         const customer = await loadData(STORES.CUSTOMERS, sale.customerId);
         if (customer) {
@@ -236,13 +212,11 @@ export default function PosPage() {
         }
       }
 
-      // G. Finalizar
+      // F. Finalizar UI
       clearOrder();
       showMessageModal('¡Pedido procesado exitosamente!');
+      refreshData(); // Recargar UI global
 
-      refreshData(); // ¡IMPORTANTE! Actualiza la UI globalmente
-
-      // H. Enviar Ticket (Opcional)
       if (paymentData.sendReceipt && paymentData.customerId) {
         try {
           // 1. Cargamos al cliente para obtener su teléfono
@@ -285,7 +259,7 @@ export default function PosPage() {
         }
       }
 
-      console.timeEnd('ProcesoDeVenta');
+      console.timeEnd('ProcesoDeVentaOptimo');
 
     } catch (error) {
       console.error('❌ Error al procesar el pedido:', error);
