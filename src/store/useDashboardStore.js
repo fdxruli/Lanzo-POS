@@ -1,4 +1,4 @@
-// src/store/useDashboardStore.js
+// src/store/useDashboardStore.js - ✅ VERSIÓN CORREGIDA
 import { create } from 'zustand';
 import {
   loadData,
@@ -10,11 +10,13 @@ import {
   initDB
 } from '../services/database';
 
+// ✅ AÑADIDO: Import de la función que faltaba
+import { searchProductsInDB } from '../services/database';
+
 // Duración del caché para evitar recargas innecesarias (5 minutos)
 const CACHE_DURATION = 5 * 60 * 1000;
 
 // --- HELPER 1: Calcular estadísticas globales "al vuelo" ---
-// Recorre la BD con un cursor (sin cargar objetos en RAM) para sumar totales.
 async function calculateStatsOnTheFly() {
   const db = await initDB();
 
@@ -39,7 +41,6 @@ async function calculateStatsOnTheFly() {
         if (sale.items && Array.isArray(sale.items)) {
           sale.items.forEach(item => {
             totalItemsSold += (item.quantity || 0);
-            // Calculamos utilidad estimada basada en el costo guardado en la venta
             const itemCost = item.cost || 0;
             const itemProfit = (item.price - itemCost) * item.quantity;
             totalNetProfit += itemProfit;
@@ -74,44 +75,33 @@ async function calculateStatsOnTheFly() {
   return { totalRevenue, totalNetProfit, totalOrders, totalItemsSold, inventoryValue };
 }
 
-// --- HELPER 2: Agregación Optimizada (SOLUCIÓN CRÍTICA) ---
-// Consulta a la BD solo los lotes necesarios para los productos visibles.
-// Evita la iteración O(n*m) masiva.
+// --- HELPER 2: Agregación Optimizada ---
 async function aggregateProductsWithBatchesOptimized(products) {
-  // Usamos Promise.all para consultar los lotes de los productos en paralelo.
   const aggregated = await Promise.all(products.map(async (product) => {
-
-    // 1. Consultamos solo los lotes de ESTE producto usando el índice 'productId'
-    // Esto es muy rápido gracias a IndexedDB
     const batches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', product.id);
 
-    // 2. Filtramos en memoria (muy rápido porque son pocos lotes por producto)
     const activeBatches = batches
       .filter(b => b.isActive && b.stock > 0)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // Ordenar por fecha (para FIFO/LIFO visual)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    // 3. Calcular totales
     const totalStock = activeBatches.reduce((sum, b) => sum + (b.stock || 0), 0);
 
-    // 4. Determinar precio y costo a mostrar
     const displayPrice = activeBatches.length > 0 ? activeBatches[0].price : (product.price || 0);
 
     let displayCost = 0;
     if (activeBatches.length > 0) {
       displayCost = activeBatches[0].cost;
     } else {
-      // Si no hay activos, buscamos el último lote histórico para referencia
       const lastBatch = batches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
       displayCost = lastBatch ? lastBatch.cost : (product.cost || 0);
     }
 
-    // 5. Retornar producto enriquecido
     return {
       ...product,
       stock: totalStock,
       price: displayPrice,
       cost: displayCost,
-      trackStock: true, // Asumimos true si usa sistema de lotes
+      trackStock: true,
       batchCount: batches.length,
       hasBatches: activeBatches.length > 0
     };
@@ -124,16 +114,19 @@ export const useDashboardStore = create((set, get) => ({
   // --- ESTADO ---
   isLoading: false,
 
-  // Datos Paginados (Lo que se ve en pantalla)
+  // Datos Paginados
   sales: [],
   menu: [],
-  rawProducts: [], // Copia "cruda" de los productos cargados (para edición)
+  rawProducts: [],
+  
+  // ✅ AÑADIDO: rawBatches que faltaba
+  rawBatches: [],
 
   // Datos Globales
   categories: [],
-  deletedItems: [], // Papelera (se carga bajo demanda)
+  deletedItems: [],
 
-  // Estadísticas (Calculadas globalmente)
+  // Estadísticas
   stats: {
     totalRevenue: 0,
     totalItemsSold: 0,
@@ -155,7 +148,6 @@ export const useDashboardStore = create((set, get) => ({
     const { lastFullLoad, isLoading } = get();
     const now = Date.now();
 
-    // Cache check: Si los datos son recientes, no recargar
     if (!forceRefresh && lastFullLoad && (now - lastFullLoad) < CACHE_DURATION) {
       console.log('⏳ Dashboard: Usando datos en caché.');
       return;
@@ -167,31 +159,26 @@ export const useDashboardStore = create((set, get) => ({
     try {
       console.time('CargaDashboardOptimizado');
 
-      // A. Cargar Estadísticas Globales (Escaneo ligero)
       const stats = await calculateStatsOnTheFly();
 
-      // B. Cargar Listas Paginadas (Solo lo visible)
-      const [recentSales, firstPageProducts, categories] = await Promise.all([
-        // Últimas 50 ventas
+      // ✅ MODIFICADO: Ahora también cargamos rawBatches
+      const [recentSales, firstPageProducts, categories, allBatches] = await Promise.all([
         loadDataPaginated(STORES.SALES, { limit: 50, direction: 'prev' }),
-
-        // Primera página de productos (50)
         loadDataPaginated(STORES.MENU, { limit: 50, offset: 0 }),
-
-        loadData(STORES.CATEGORIES)
+        loadData(STORES.CATEGORIES),
+        loadData(STORES.PRODUCT_BATCHES) // ✅ CARGAMOS LOTES
       ]);
 
-      // C. Procesar Productos (Unir con lotes bajo demanda)
       const aggregatedMenu = await aggregateProductsWithBatchesOptimized(firstPageProducts);
 
       set({
-        sales: recentSales, // Solo las recientes para la lista visual
-        stats: stats,       // Totales reales de toda la BD
+        sales: recentSales,
+        stats: stats,
         menu: aggregatedMenu,
         rawProducts: firstPageProducts,
+        rawBatches: allBatches || [], // ✅ GUARDAMOS EN EL ESTADO
         categories: categories || [],
 
-        // Reset paginación
         menuPage: 1,
         hasMoreProducts: firstPageProducts.length === 50,
 
@@ -207,14 +194,13 @@ export const useDashboardStore = create((set, get) => ({
     }
   },
 
-  // 2. Cargar más productos (Scroll Infinito)
+  // 2. Cargar más productos
   loadMoreProducts: async () => {
     const { menuPage, menuPageSize, hasMoreProducts, menu, rawProducts } = get();
 
     if (!hasMoreProducts) return;
 
     try {
-      // Cargar siguiente página cruda
       const nextPage = await loadDataPaginated(STORES.MENU, {
         limit: menuPageSize,
         offset: menuPage * menuPageSize
@@ -225,7 +211,6 @@ export const useDashboardStore = create((set, get) => ({
         return;
       }
 
-      // Enriquecer solo la nueva página con sus lotes
       const aggregatedNextPage = await aggregateProductsWithBatchesOptimized(nextPage);
 
       set({
@@ -239,38 +224,33 @@ export const useDashboardStore = create((set, get) => ({
     }
   },
 
+  // ✅ CORREGIDO: Ahora usa la función importada correctamente
   searchProducts: async (query) => {
     if (!query || query.trim().length < 2) {
-      // Si está vacío, volvemos a la carga paginada normal
       get().loadAllData(true);
       return;
     }
 
     set({ isLoading: true });
     try {
-      // 1. Búsqueda por CÓDIGO DE BARRAS (Exacta y rápida)
-      // Intentamos buscar directo por código primero
-      const allMenu = await loadData(STORES.MENU); // Esto sigue cargando todo, idealmente usar index 'barcode'
+      // Búsqueda por código de barras
+      const allMenu = await loadData(STORES.MENU);
       const byCode = allMenu.find(p => p.barcode === query);
 
       if (byCode) {
-        // Si encontramos por código, mostramos ese único resultado
-        // (Aquí deberías llamar a aggregateProductsWithBatchesOptimized para obtener stock real)
-        set({ menu: [byCode], isLoading: false });
+        const enriched = await aggregateProductsWithBatchesOptimized([byCode]);
+        set({ menu: enriched, isLoading: false });
         return;
       }
 
-      // 2. Búsqueda por NOMBRE (Usando el índice optimizado)
+      // ✅ AHORA SÍ FUNCIONA (está importada arriba)
       const results = await searchProductsInDB(query);
-
-      // 3. Enriquecer con lotes (para mostrar stock real)
-      // (Reutilizamos la función optimizada que creamos en el paso anterior)
       const aggregatedResults = await aggregateProductsWithBatchesOptimized(results);
 
       set({
         menu: aggregatedResults,
         isLoading: false,
-        hasMoreProducts: false // En búsqueda no paginamos igual
+        hasMoreProducts: false
       });
 
     } catch (error) {
@@ -279,7 +259,7 @@ export const useDashboardStore = create((set, get) => ({
     }
   },
 
-  // 4. Cargar Papelera (Bajo demanda)
+  // 4. Cargar Papelera
   loadRecycleBin: async () => {
     set({ isLoading: true });
     try {
@@ -310,7 +290,6 @@ export const useDashboardStore = create((set, get) => ({
     if (!window.confirm('¿Restaurar stock y eliminar venta?')) return;
 
     try {
-      // Buscar venta (en memoria o en BD)
       let saleToDelete = get().sales.find(s => s.timestamp === timestamp);
       if (!saleToDelete) {
         const allSales = await loadData(STORES.SALES);
@@ -319,11 +298,9 @@ export const useDashboardStore = create((set, get) => ({
 
       if (!saleToDelete) return;
 
-      // 1. Restaurar Stock
       for (const item of saleToDelete.items) {
         if (item.batchesUsed) {
           for (const batchInfo of item.batchesUsed) {
-            // Cargar lote específico directamente de BD
             const batch = await loadData(STORES.PRODUCT_BATCHES, batchInfo.batchId);
             if (batch) {
               batch.stock += batchInfo.quantity;
@@ -334,12 +311,10 @@ export const useDashboardStore = create((set, get) => ({
         }
       }
 
-      // 2. Mover a papelera
       saleToDelete.deletedTimestamp = new Date().toISOString();
       await saveData(STORES.DELETED_SALES, saleToDelete);
       await deleteData(STORES.SALES, timestamp);
 
-      // 3. Recargar datos (para actualizar stats e inventario)
       get().loadAllData(true);
 
     } catch (error) {
@@ -358,8 +333,6 @@ export const useDashboardStore = create((set, get) => ({
         await saveData(STORES.CUSTOMERS, item);
         await deleteData(STORES.DELETED_CUSTOMERS, item.id);
       } else if (item.type === 'Pedido') {
-        // Al restaurar pedido, solo lo movemos, NO volvemos a descontar stock automáticamente
-        // (es complejo saber de qué lote sacar). Se restaura como registro histórico.
         delete item.deletedTimestamp;
         await saveData(STORES.SALES, item);
         await deleteData(STORES.DELETED_SALES, item.timestamp);
