@@ -1,6 +1,6 @@
 // src/pages/CustomersPage.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, deleteData, STORES } from '../services/database'; 
+import { loadData, saveData, deleteData, STORES } from '../services/database';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
@@ -19,7 +19,7 @@ export default function CustomersPage() {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
   const [whatsAppLoading, setWhatsAppLoading] = useState(null);
-  
+
   const { registrarMovimiento, cajaActual } = useCaja();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
@@ -40,13 +40,13 @@ export default function CustomersPage() {
       const id = editingCustomer ? editingCustomer.id : `customer-${Date.now()}`;
       const existingDebt = editingCustomer ? editingCustomer.debt : 0;
       const dataToSave = { ...customerData, id, debt: existingDebt };
-      
+
       await saveData(STORES.CUSTOMERS, dataToSave);
-      
+
       setEditingCustomer(null);
       setActiveTab('view-customers');
       loadCustomers();
-      
+
       showMessageModal('¡Cliente guardado con éxito!');
 
     } catch (error) {
@@ -67,17 +67,17 @@ export default function CustomersPage() {
         showMessageModal('No se puede eliminar un cliente con deuda pendiente.');
         return;
       }
-      
+
       await deleteData(STORES.CUSTOMERS, customerId);
       loadCustomers();
       showMessageModal('Cliente eliminado.');
     }
   };
-  
+
   const handleCancelEdit = () => {
     setEditingCustomer(null);
   };
-  
+
   const handleViewHistory = (customer) => {
     setSelectedCustomer(customer);
     setIsHistoryModalOpen(true);
@@ -97,13 +97,13 @@ export default function CustomersPage() {
     setIsHistoryModalOpen(false);
     setIsAbonoModalOpen(false);
   };
-  
+
   const handleConfirmAbono = async (customer, amount, sendReceipt) => {
     // ... (esta función no cambia)
     try {
       const concepto = `Abono de cliente: ${customer.name}`;
       const movimientoExitoso = await registrarMovimiento('entrada', amount, concepto);
-      
+
       if (!movimientoExitoso) {
         showMessageModal('Error al registrar la entrada en caja. Intenta de nuevo.');
         return;
@@ -113,16 +113,16 @@ export default function CustomersPage() {
       const deudaAnterior = customerData.debt || 0;
       const nuevaDeuda = deudaAnterior - amount;
       customerData.debt = nuevaDeuda < 0 ? 0 : nuevaDeuda;
-      
+
       await saveData(STORES.CUSTOMERS, customerData);
-      
+
       showMessageModal('¡Abono registrado exitosamente!');
       handleCloseModals();
-      loadCustomers(); 
+      loadCustomers();
 
       if (sendReceipt) {
-        const message = 
-`*--- Recibo de Abono ---*
+        const message =
+          `*--- Recibo de Abono ---*
 *Negocio:* ${companyName}
 
 Hola *${customer.name}*,
@@ -133,7 +133,7 @@ Deuda Anterior: $${deudaAnterior.toFixed(2)}
 *Saldo Restante: $${customerData.debt.toFixed(2)}*
 
 ¡Gracias por tu pago!`;
-        
+
         sendWhatsAppMessage(customer.phone, message);
       }
 
@@ -158,58 +158,89 @@ Deuda Anterior: $${deudaAnterior.toFixed(2)}
     try {
       if (customer.debt > 0) {
         const allSales = await loadData(STORES.SALES);
-        
+
+        // 1. Obtener ventas a crédito históricas (ordenadas de la más reciente a la más antigua)
         const fiadoSales = allSales
-          .filter(sale => 
-            sale.customerId === customer.id && 
-            sale.paymentMethod === 'fiado' && 
+          .filter(sale =>
+            sale.customerId === customer.id &&
+            sale.paymentMethod === 'fiado' &&
             sale.saldoPendiente > 0
           )
-          .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-        message = `*--- Recordatorio de Saldo Pendiente ---*
+        // 2. Distribuir la deuda actual entre las notas más recientes (Lógica LIFO inversa)
+        let remainingDebtToAllocate = customer.debt;
+        const salesToReport = [];
+
+        for (const sale of fiadoSales) {
+          if (remainingDebtToAllocate <= 0.01) break;
+
+          const amountOwedForThisSale = Math.min(sale.saldoPendiente, remainingDebtToAllocate);
+
+          salesToReport.push({
+            ...sale,
+            currentOwed: amountOwedForThisSale
+          });
+
+          remainingDebtToAllocate -= amountOwedForThisSale;
+        }
+
+        // Reordenar cronológicamente para el reporte (opcional, pero se lee mejor)
+        salesToReport.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        // 3. Construir el mensaje detallado
+        message = `*--- Estado de Cuenta ---*
 *Negocio:* ${companyName}
 Hola *${customer.name}*,
 
-Este es un resumen de tu estado de cuenta con nosotros.
+A continuación el detalle de su saldo pendiente con nosotros.
 
-*Deuda Total Actual: $${customer.debt.toFixed(2)}*
+*DEUDA TOTAL A LA FECHA: $${customer.debt.toFixed(2)}*
+--------------------------------
+*Detalle de notas pendientes:*
 `;
 
-        if (fiadoSales.length > 0) {
-          message += `
-*Detalle de adeudos pendientes:*
-`;
-          fiadoSales.forEach(sale => {
+        if (salesToReport.length > 0) {
+          salesToReport.forEach(sale => {
             const saleDate = new Date(sale.timestamp).toLocaleDateString();
-            
-            // --- INICIO DE LA MODIFICACIÓN ---
-            // 1. Crear el string de productos
-            let itemsString = "\n_Productos en esta venta:_\n";
+
+            // Lista de productos limpia
+            let itemsString = "";
             sale.items.forEach(item => {
-              // Usamos formato _italico_ para los productos
-              itemsString += `_ - ${item.name} (x${item.quantity})_\n`;
+              itemsString += `  • ${item.name} (x${item.quantity})\n`;
             });
-            // --- FIN DE LA MODIFICACIÓN ---
+
+            // Lógica para mostrar si hubo abono inicial
+            const abonoInicial = sale.abono || 0;
+            let detallesPago = "";
+
+            if (abonoInicial > 0) {
+              detallesPago = `*Total Nota:* $${sale.total.toFixed(2)}\n*Abono inicial:* -$${abonoInicial.toFixed(2)}\n*Saldo Original:* $${sale.saldoPendiente.toFixed(2)}`;
+            } else {
+              detallesPago = `*Total Nota:* $${sale.total.toFixed(2)} (Sin abono inicial)`;
+            }
 
             message += `
-*Fecha:* ${saleDate}
-*Venta Total:* $${sale.total.toFixed(2)}
-*Abono Inicial:* $${sale.abono.toFixed(2)}
-*Saldo Pendiente (de esta venta): $${sale.saldoPendiente.toFixed(2)}*
-${itemsString} {/* <-- 2. Añadimos el string de productos aquí */}
----
+📅 *Fecha:* ${saleDate}
+${detallesPago}
+
+🔴 *Resta por pagar de esta nota:* $${sale.currentOwed.toFixed(2)}
+
+_Productos:_
+${itemsString}
+--------------------------------
 `;
           });
         } else {
-          message += `\nGracias por tu preferencia. ¡Pasa a saldar tu cuenta cuando gustes!`;
+          message += `\nFavor de pasar a realizar su abono para regularizar su cuenta.`;
         }
-        message += `\n¡Esperamos tu visita!`;
-      
+
+        message += `\n¡Gracias por su preferencia!`;
+
       } else {
         message = `Hola ${customer.name}, te comunicas de ${companyName}. ¿En qué podemos ayudarte?`;
       }
-      
+
       sendWhatsAppMessage(customer.phone, message);
 
     } catch (error) {
@@ -225,7 +256,7 @@ ${itemsString} {/* <-- 2. Añadimos el string de productos aquí */}
   return (
     <>
       <h2 className="section-title">Administración de Clientes</h2>
-      
+
       <div className="tabs-container" id="customers-tabs">
         <button
           className={`tab-btn ${activeTab === 'add-customer' ? 'active' : ''}`}
@@ -246,14 +277,14 @@ ${itemsString} {/* <-- 2. Añadimos el string de productos aquí */}
 
 
       {activeTab === 'add-customer' ? (
-        <CustomerForm 
+        <CustomerForm
           onSave={handleSaveCustomer}
           onCancel={handleCancelEdit}
           customerToEdit={editingCustomer}
           allCustomers={customers}
         />
       ) : (
-        <CustomerList 
+        <CustomerList
           customers={customers}
           isLoading={loading}
           onEdit={handleEditCustomer}
@@ -264,13 +295,13 @@ ${itemsString} {/* <-- 2. Añadimos el string de productos aquí */}
           onWhatsAppLoading={whatsAppLoading}
         />
       )}
-      
+
       <PurchaseHistoryModal
         show={isHistoryModalOpen}
         onClose={handleCloseModals}
         customer={selectedCustomer}
       />
-      
+
       <AbonoModal
         show={isAbonoModalOpen}
         onClose={handleCloseModals}

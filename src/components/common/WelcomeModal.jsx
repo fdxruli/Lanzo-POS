@@ -1,33 +1,53 @@
 // src/components/common/WelcomeModal.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Agregamos useEffect
 import { useAppStore } from '../../store/useAppStore';
-import ContactModal from './ContactModal'; // <-- 1. Importa el ContactModal
-import { sendWhatsAppMessage } from '../../services/utils'; // <-- 2. Importa el sender
+import ContactModal from './ContactModal';
+import { sendWhatsAppMessage } from '../../services/utils';
 import './WelcomeModal.css';
 
-// 3. Define los campos para el modal de soporte
 const supportFields = [
   { id: 'name', label: 'Tu Nombre', type: 'input' },
-  { id: 'problem', label: 'Describe tu problema (Ej: "Mi dispositivo ya está registrado")', type: 'textarea' }
+  { id: 'problem', label: 'Describe tu problema', type: 'textarea' }
 ];
 
-// 4. (Opcional pero recomendado) Pon tu número de soporte aquí
-const SUPPORT_PHONE_NUMBER = '521122334455'; // <--- ¡CAMBIA ESTE NÚMERO!
+const SUPPORT_PHONE_NUMBER = '521122334455'; 
 
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-
-  // 5. Añade estado para el modal de contacto
   const [isContactOpen, setIsContactOpen] = useState(false);
+  
+  // --- NUEVO ESTADO: Detección de Internet ---
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+  // -------------------------------------------
 
   const handleLogin = useAppStore((state) => state.handleLogin);
   const handleFreeTrial = useAppStore((state) => state.handleFreeTrial);
 
   const handleSubmit = async (e) => {
-    // ... (esta función no cambia)
     e.preventDefault();
+    
+    // --- VALIDACIÓN DE INTERNET ---
+    if (!isOnline) {
+      setErrorMessage('⚠️ Para introducir una licencia es necesario estar conectado a internet.');
+      return;
+    }
+    // ------------------------------
+
     if (!licenseKey) {
       setErrorMessage('Por favor, ingresa una clave de licencia.');
       return;
@@ -42,7 +62,13 @@ export default function WelcomeModal() {
   };
 
   const handleTrialClick = async () => {
-    // ... (esta función no cambia)
+    // --- VALIDACIÓN DE INTERNET TAMBIÉN AQUÍ ---
+    if (!isOnline) {
+       setErrorMessage('⚠️ Para activar la prueba gratis es necesario estar conectado a internet.');
+       return;
+    }
+    // -------------------------------------------
+
     setIsLoading(true);
     setErrorMessage('');
     const result = await handleFreeTrial();
@@ -52,33 +78,47 @@ export default function WelcomeModal() {
     }
   };
 
-  // 6. Añade el handler para el envío del formulario de contacto
   const handleSubmitSupport = (formData) => {
-    const message = `¡Hola! Necesito soporte para Lanzo POS.\n\n*Nombre:* ${formData.name}\n*Problema:* ${formData.problem}`;
-    
-    // Usamos la utilidad que ya existe
+    // ... (igual que antes)
+    const message = `¡Hola! Necesito soporte...`;
     sendWhatsAppMessage(SUPPORT_PHONE_NUMBER, message);
-    setIsContactOpen(false); // Cierra el modal de contacto
+    setIsContactOpen(false);
   };
 
-
   return (
-    <> {/* 7. Envuelve todo en un Fragment (<>) */}
+    <>
       <div className="modal" style={{ display: 'flex' }}>
         <div className="welcome-modal-content">
           <h2>Bienvenido a Lanzo POS</h2>
+          
+          {/* ... (welcome-summary igual) ... */}
           <div className="welcome-summary">
-            {/* ... (contenido del summary sin cambios) ... */}
-            <p><strong>Lanzo</strong> es un sistema completo de punto de venta y gestión para pequeños negocios.</p>
-            <ul>
-              <li>Gestiona tu Punto de Venta</li>
-              <li>Controla tu inventario y productos</li>
-              <li>Administra tus Clientes y Ventas</li>
-            </ul>
+             {/* ... contenido ... */}
+             <p><strong>Lanzo</strong> es un sistema completo...</p>
+             <ul>
+               <li>Gestiona tu Punto de Venta</li>
+               <li>Controla tu inventario</li>
+               <li>Administra Clientes</li>
+             </ul>
           </div>
 
+          {/* MENSAJE DE ADVERTENCIA VISUAL SI NO HAY INTERNET */}
+          {!isOnline && (
+            <div style={{ 
+              backgroundColor: '#fee2e2', 
+              color: '#b91c1c', 
+              padding: '10px', 
+              borderRadius: '8px', 
+              marginBottom: '15px',
+              fontSize: '0.9rem',
+              textAlign: 'center',
+              border: '1px solid #fca5a5'
+            }}>
+              📡 <strong>Sin conexión:</strong> No podrás activar licencias hasta que te conectes.
+            </div>
+          )}
+
           <form id="license-form" onSubmit={handleSubmit}>
-            {/* ... (formulario de licencia sin cambios) ... */}
             <div className="form-group">
               <label className="form-label" htmlFor="license-key">
                 Ingresa tu clave de licencia para activar:
@@ -91,10 +131,15 @@ export default function WelcomeModal() {
                 placeholder="Ej: LANZO-XXXX-XXXX-XXXX"
                 value={licenseKey}
                 onChange={(e) => setLicenseKey(e.target.value)}
-                disabled={isLoading}
+                disabled={isLoading || !isOnline} /* Deshabilitamos si no hay red */
               />
             </div>
-            <button type="submit" className="btn btn-save" disabled={isLoading}>
+            <button 
+              type="submit" 
+              className="btn btn-save" 
+              disabled={isLoading || !isOnline} /* Deshabilitamos botón */
+              style={!isOnline ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
+            >
               {isLoading ? 'Validando...' : 'Validar Licencia'}
             </button>
           </form>
@@ -106,13 +151,12 @@ export default function WelcomeModal() {
             type="button" 
             className="btn btn-secondary btn-trial"
             onClick={handleTrialClick}
-            disabled={isLoading}
+            disabled={isLoading || !isOnline} /* Deshabilitamos botón */
+            style={!isOnline ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
           >
             {isLoading ? 'Generando...' : 'Probar Gratis por 3 Meses'}
           </button>
           
-
-          {/* 8. Mueve el mensaje de error Y añade el botón de soporte */}
           <div className="welcome-footer">
             {errorMessage && (
               <p className="welcome-error-message">
@@ -120,7 +164,6 @@ export default function WelcomeModal() {
               </p>
             )}
             
-            {/* ¡EL NUEVO BOTÓN! */}
             <button 
               type="button" 
               className="btn-support-link"
@@ -133,7 +176,6 @@ export default function WelcomeModal() {
         </div>
       </div>
 
-      {/* 9. Renderiza el ContactModal (estará oculto por defecto) */}
       <ContactModal
         show={isContactOpen}
         onClose={() => setIsContactOpen(false)}

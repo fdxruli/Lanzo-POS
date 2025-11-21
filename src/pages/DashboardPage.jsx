@@ -1,5 +1,5 @@
 // src/pages/DashboardPage.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useDashboardStore } from '../store/useDashboardStore';
 import StatsGrid from '../components/dashboard/StatsGrid';
 import SalesHistory from '../components/dashboard/SalesHistory';
@@ -10,86 +10,31 @@ import './DashboardPage.css';
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState('stats');
 
-  // --- INICIO DE CORRECCIONES ---
+  // 1. Obtenemos los datos del store
   const isLoading = useDashboardStore((state) => state.isLoading);
-  const sales = useDashboardStore((state) => state.sales);
+  const sales = useDashboardStore((state) => state.sales); // Solo las ventas recientes (paginadas)
   const menu = useDashboardStore((state) => state.menu);
-  // 1. Necesitamos los lotes puros para el valor de inventario
-  const rawBatches = useDashboardStore((state) => state.rawBatches);
   const deletedItems = useDashboardStore((state) => state.deletedItems);
+  
+  // 2. OBTENEMOS LAS ESTADÍSTICAS YA CALCULADAS POR EL STORE
+  // En lugar de calcularlas aquí, usamos las que 'calculateStatsOnTheFly' generó.
+  const stats = useDashboardStore((state) => state.stats); 
+
   const deleteSale = useDashboardStore((state) => state.deleteSale);
   const restoreItem = useDashboardStore((state) => state.restoreItem);
-  // --- FIN DE CORRECCIONES ---
+  const loadRecycleBin = useDashboardStore((state) => state.loadRecycleBin);
 
-
-  // 4. Lógica de `useMemo` (¡Corregida!)
-
-  // 4.1. Este mapa ya no es necesario para la utilidad,
-  // pero podemos mantenerlo por si BusinessTips lo usa.
-  const productMap = useMemo(
-    () => new Map(menu.map(p => [p.id, p])),
-    [menu]
-  );
-
-  // 4.2. Calcula estadísticas de ventas (¡CORREGIDO!)
-  const salesStats = useMemo(() => {
-    let totalRevenue = 0;
-    let totalItemsSold = 0;
-    let totalNetProfit = 0;
-
-    sales.forEach(sale => {
-      totalRevenue += sale.total;
-      sale.items.forEach(item => {
-        totalItemsSold += item.quantity;
-
-        // --- INICIO DE CORRECCIÓN (Utilidad) ---
-        // El 'item' de la venta (sale.items) ya tiene el costo promedio
-        // ponderado con el que se vendió ('item.cost'), gracias
-        // a la nueva lógica de PosPage.jsx.
-        const itemCost = item.cost || 0;
-        const itemProfit = (item.price - itemCost) * item.quantity;
-        totalNetProfit += itemProfit;
-        // --- FIN DE CORRECCIÓN (Utilidad) ---
-      });
-    });
-
-    return {
-      totalRevenue,
-      totalItemsSold,
-      totalNetProfit,
-      totalOrders: sales.length
-    };
-  }, [sales]); // Ya no depende de productMap
-
-  // 4.3. Calcula el valor de inventario (¡CORREGIDO!)
-  const inventoryValue = useMemo(() => {
-    // --- INICIO DE CORRECCIÓN (Inventario) ---
-    // No podemos usar 'menu' (agregado).
-    // Debemos usar 'rawBatches' que tiene el costo y stock real.
-    return rawBatches.reduce((total, batch) => {
-      if (batch.isActive && batch.trackStock && batch.stock > 0) {
-        // Sumamos el valor real de cada lote
-        return total + ((batch.cost || 0) * batch.stock);
-      }
-      return total;
-    }, 0);
-  }, [rawBatches]); // La dependencia ahora es rawBatches
-  // --- FIN DE CORRECCIÓN (Inventario) ---
-
-  // 4.4. Combina los resultados
-  const stats = useMemo(() => ({
-    ...salesStats,
-    inventoryValue
-  }), [salesStats, inventoryValue]);
-  // ======================================================
-  // FIN DE LA LÓGICA DE useMemo
-  // ======================================================
+  // Cargar papelera solo si entramos a esa pestaña
+  React.useEffect(() => {
+    if (activeTab === 'history') {
+      loadRecycleBin();
+    }
+  }, [activeTab, loadRecycleBin]);
 
   if (isLoading) {
-    return <div>Cargando estadísticas...</div>;
+    return <div style={{ padding: '2rem', textAlign: 'center' }}>Calculando estadísticas globales...</div>;
   }
 
-  // 5. El renderizado (sin cambios)
   return (
     <>
       <h2 className="section-title">Panel de Ventas y Estadísticas</h2>
@@ -115,6 +60,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
+      {/* 3. Pasamos el objeto 'stats' directo del store */}
       {activeTab === 'stats' && (
         <StatsGrid stats={stats} />
       )}

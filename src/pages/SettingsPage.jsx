@@ -49,6 +49,7 @@ export default function SettingsPage() {
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
   const [logoData, setLogoData] = useState(null);
   const [activeTheme, setActiveTheme] = useState(getInitialTheme);
+  const [logoObjectURL, setLogoObjectURL] = useState(null);
 
   useEffect(() => {
     if (companyProfile) {
@@ -68,6 +69,15 @@ export default function SettingsPage() {
       setLogoData(companyProfile.logo || null);
     }
   }, [companyProfile]);
+
+  // Cleanup: Revocar Object URLs al desmontar o cambiar
+  useEffect(() => {
+    return () => {
+      if (logoObjectURL) {
+        URL.revokeObjectURL(logoObjectURL);
+      }
+    };
+  }, [logoObjectURL]);
 
   useEffect(() => {
     const systemThemeListener = (e) => {
@@ -96,8 +106,15 @@ export default function SettingsPage() {
     const file = e.target.files[0];
     if (file) {
       try {
+        // Revocar el URL anterior si existe
+        if (logoObjectURL) {
+          URL.revokeObjectURL(logoObjectURL);
+        }
+
         const compressedFile = await compressImage(file);
-        setLogoPreview(URL.createObjectURL(compressedFile));
+        const objectURL = URL.createObjectURL(compressedFile);
+        setLogoObjectURL(objectURL);
+        setLogoPreview(objectURL);
         setLogoData(compressedFile);
       } catch (error) {
         console.error("Error al comprimir imagen:", error);

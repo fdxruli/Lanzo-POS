@@ -6,26 +6,82 @@ import { isLocalStorageEnabled, normalizeDate } from '../services/utils';
 // Importamos las funciones de Supabase
 // (Asegúrate de que supabase.js cargue FingerprintJS y Supabase en tu index.html)
 
-// --- Funciones Helper (tomadas de tu lógica en app.js) ---
-// ... (getLicenseFromStorage, saveLicenseToStorage, clearLicenseFromStorage SIN CAMBIOS) ...
-const getLicenseFromStorage = async () => {
-  if (!isLocalStorageEnabled()) return null;
-  let savedLicenseJSON = localStorage.getItem('lanzo_license');
-  if (savedLicenseJSON) {
-    try {
-      return JSON.parse(savedLicenseJSON);
-    } catch (e) {
-      return null;
-    }
+// src/store/useAppStore.js
+
+// --- 🔒 ZONA DE SEGURIDAD OFUSCADA ---
+
+// CAMBIO: Nombre aburrido para despistar. Parece una config de renderizado.
+// Mantenemos tu clave segura aquí.
+const _ui_render_config_v2 = "LANZO_SECURE_KEY_v1_X9Z";
+
+// Función auxiliar para generar una firma simple
+const generateSignature = (data) => {
+  const stringData = JSON.stringify(data);
+  let hash = 0;
+  if (stringData.length === 0) return hash;
+
+  // CAMBIO: Usamos la variable con nombre "aburrido"
+  const mixedString = stringData + _ui_render_config_v2;
+
+  for (let i = 0; i < mixedString.length; i++) {
+    const char = mixedString.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convertir a 32bit integer
   }
-  return null;
+  return hash.toString(16); // Retornar como hex
 };
+
+// --- GUARDADO SEGURO ---
 const saveLicenseToStorage = async (licenseData) => {
   if (!isLocalStorageEnabled()) return;
+
   const dataToStore = { ...licenseData };
   dataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  localStorage.setItem('lanzo_license', JSON.stringify(dataToStore));
+
+  // Generamos la firma (usando la clave oculta)
+  const signature = generateSignature(dataToStore);
+
+  const packageToStore = {
+    data: dataToStore,
+    signature: signature
+  };
+
+  localStorage.setItem('lanzo_license', JSON.stringify(packageToStore));
 };
+
+// --- LECTURA SEGURA ---
+const getLicenseFromStorage = async () => {
+  if (!isLocalStorageEnabled()) return null;
+
+  const storedString = localStorage.getItem('lanzo_license');
+  if (!storedString) return null;
+
+  try {
+    const parsedPackage = JSON.parse(storedString);
+
+    if (!parsedPackage.data || !parsedPackage.signature) {
+      // Silencioso para no dar pistas en consola de producción
+      localStorage.removeItem('lanzo_license');
+      return null;
+    }
+
+    const expectedSignature = generateSignature(parsedPackage.data);
+
+    if (parsedPackage.signature !== expectedSignature) {
+      console.warn("Error de integridad en datos locales. Reiniciando sesión.");
+      // Eliminamos el mensaje de "ALERTA DE SEGURIDAD" para no alertar al hacker de que fue descubierto
+      localStorage.removeItem('lanzo_license');
+      return null;
+    }
+
+    return parsedPackage.data;
+
+  } catch (e) {
+    localStorage.removeItem('lanzo_license');
+    return null;
+  }
+};
+
 const clearLicenseFromStorage = () => {
   if (!isLocalStorageEnabled()) return;
   localStorage.removeItem('lanzo_license');

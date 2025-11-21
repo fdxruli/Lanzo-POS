@@ -9,7 +9,7 @@ import QuickCajaModal from '../components/common/QuickCajaModal';
 import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
 import { useDashboardStore } from '../store/useDashboardStore'; // Store Global
-import { loadData, saveBulk, saveData, queryByIndex, STORES } from '../services/database';
+import { loadData, saveBulk, saveData, queryByIndex, queryBatchesByProductIdAndActive, STORES } from '../services/database';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useDebounce } from '../hooks/useDebounce';
@@ -77,6 +77,20 @@ export default function PosPage() {
 
   // --- 4. PROCESAMIENTO DE LA VENTA (LÓGICA ROBUSTA) ---
   const handleProcessOrder = async (paymentData) => {
+    const licenseDetails = useAppStore.getState().licenseDetails;
+    const appStatus = useAppStore.getState().appStatus;
+
+    // Si no hay detalles de licencia o no es válida
+    if (!licenseDetails || !licenseDetails.valid) {
+      showMessageModal('⚠️ Error de Seguridad: No se detectó una licencia activa válida. El sistema se reiniciará.');
+
+      // Opcional: Forzar cierre de sesión o recarga tras unos segundos
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+      return; // DETIENE LA VENTA AQUÍ
+    }
+
     // A. Validaciones iniciales (Igual que antes)
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       setIsPaymentModalOpen(false);
@@ -93,6 +107,63 @@ export default function PosPage() {
 
     setIsPaymentModalOpen(false);
 
+    // A.1. Validación previa de stock (antes de procesar)
+    try {
+      const stockValidationErrors = [];
+      for (const orderItem of itemsToProcess) {
+        const product = await loadData(STORES.MENU, orderItem.id);
+        if (!product) {
+          stockValidationErrors.push(`${orderItem.name || orderItem.id}: Producto no encontrado`);
+          continue;
+        }
+
+        // Si el producto NO rastrea stock, saltamos la validación
+        if (product.trackStock === false) continue;
+
+        const itemsToDeduct = (product.recipe && product.recipe.length > 0)
+          ? product.recipe
+          : [{ ingredientId: product.id, quantity: 1 }];
+
+        for (const component of itemsToDeduct) {
+          const requiredQty = component.quantity * orderItem.quantity;
+          const targetId = component.ingredientId;
+
+          // --- CORRECCIÓN: Lógica de carga de stock mejorada ---
+          let batches = await queryBatchesByProductIdAndActive(targetId, true);
+
+          // Fallback de seguridad: Si no encuentra lotes por el método rápido,
+          // busca TODOS los del producto y filtra manual (igual que en el Dashboard)
+          if (!batches || batches.length === 0) {
+            batches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', targetId);
+            batches = batches.filter(b => b.isActive && b.stock > 0);
+          }
+          // ----------------------------------------------------
+
+          const totalStock = batches
+            .filter(b => b.stock > 0)
+            .reduce((sum, b) => sum + (b.stock || 0), 0);
+
+          // Tolerancia pequeña para errores de punto flotante (0.001)
+          if (totalStock < (requiredQty - 0.001)) {
+            const ingredientName = allProducts.find(p => p.id === targetId)?.name || targetId;
+            stockValidationErrors.push(
+              `${orderItem.name}: Faltan ${(requiredQty - totalStock).toFixed(2)} unidades de ${ingredientName}`
+            );
+          }
+        }
+      }
+
+      if (stockValidationErrors.length > 0) {
+        setIsPaymentModalOpen(false); // Cierra el modal de pago si hay error
+        showMessageModal(`Error de stock:\n${stockValidationErrors.join('\n')}`);
+        return;
+      }
+    } catch (error) {
+      console.error('Error validando stock:', error);
+      showMessageModal('Error al validar stock. Por favor, intente nuevamente.');
+      return;
+    }
+
     try {
       console.time('ProcesoDeVentaOptimo');
 
@@ -103,8 +174,19 @@ export default function PosPage() {
       for (const orderItem of itemsToProcess) {
 
         // 1. Cargar SOLO el producto actual
-        const product = await loadData(STORES.MENU, orderItem.id);
-        if (!product) continue;
+        let product;
+        try {
+          product = await loadData(STORES.MENU, orderItem.id);
+          if (!product) {
+            console.warn(`Producto no encontrado: ${orderItem.id}`);
+            showMessageModal(`Error: Producto "${orderItem.name || orderItem.id}" no encontrado en la base de datos.`);
+            continue;
+          }
+        } catch (error) {
+          console.error(`Error cargando producto ${orderItem.id}:`, error);
+          showMessageModal(`Error al cargar producto "${orderItem.name || orderItem.id}".`);
+          continue;
+        }
 
         const itemBatchesUsed = [];
         let itemTotalCost = 0;
@@ -121,16 +203,14 @@ export default function PosPage() {
           const targetId = component.ingredientId;
 
           // 2. Cargar SOLO lotes activos de este componente
-          // Usamos el índice compuesto que YA TIENES en database.js
-          let batches = await queryByIndex(
-            STORES.PRODUCT_BATCHES,
-            'productId_isActive',
-            [targetId, 1] // 1 = true en IndexedDB para booleans
-          );
+          // Usamos función especializada que maneja correctamente el índice compuesto
+          let batches = await queryBatchesByProductIdAndActive(targetId, true);
 
-          // Si queryByIndex falla o retorna vacío, intentamos solo por productId
+          // Si no hay resultados, intentamos solo por productId como fallback
           if (!batches || batches.length === 0) {
             batches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', targetId);
+            // Filtrar solo activos con stock > 0
+            batches = batches.filter(b => b.isActive && b.stock > 0);
           }
 
           // 3. Filtrar stock > 0 y Ordenar FIFO en memoria (rápido porque son pocos registros)
@@ -169,7 +249,9 @@ export default function PosPage() {
           }
 
           if (requiredQty > 0.001) {
-            console.warn(`⚠️ Faltó stock para ID: ${targetId}`);
+            const ingredientName = allProducts.find(p => p.id === targetId)?.name || targetId;
+            console.warn(`⚠️ Faltó stock para ID: ${targetId} (${ingredientName}). Requerido: ${requiredQty.toFixed(2)}`);
+            // Esto no debería pasar si la validación previa funcionó, pero es una verificación adicional
           }
         }
 
@@ -188,7 +270,12 @@ export default function PosPage() {
 
       // C. Guardar ACTUALIZACIONES de lotes en una sola transacción
       if (batchUpdates.size > 0) {
-        await saveBulk(STORES.PRODUCT_BATCHES, Array.from(batchUpdates.values()));
+        try {
+          await saveBulk(STORES.PRODUCT_BATCHES, Array.from(batchUpdates.values()));
+        } catch (error) {
+          console.error('Error guardando actualizaciones de lotes:', error);
+          throw new Error('Error al actualizar el inventario. La venta no se procesó.');
+        }
       }
 
       // D. Guardar la Venta (Igual que antes)

@@ -1,4 +1,5 @@
-// src/services/supabase.js
+import { createClient } from "@supabase/supabase-js";
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
 // --- SUPABASE CLIENT INITIALIZATION ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -62,7 +63,7 @@ function getFriendlyDeviceName(userAgent) {
 
 
 // --- LICENSE ACTIVATION & VALIDATION ---
-window.activateLicense = async function(licenseKey) {
+window.activateLicense = async function (licenseKey) {
     try {
         const user = await getSupabaseUser();
         if (!user) return { valid: false, message: 'Could not get a user session.' };
@@ -74,19 +75,19 @@ window.activateLicense = async function(licenseKey) {
         localStorage.setItem('fp', deviceFingerprint);
 
         const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
-        
+
         // --- ¡CAMBIO AQUÍ! ---
         // Usamos el nuevo helper para el nombre
         const friendlyName = getFriendlyDeviceName(navigator.userAgent);
 
         const { data, error } = await supabaseClient.rpc(
             'activate_license_on_device', {
-                license_key_param: licenseKey,
-                user_id_param: user.id,
-                device_fingerprint_param: deviceFingerprint,
-                device_name_param: friendlyName, // <-- Nombre amigable
-                device_info_param: deviceInfo
-            }
+            license_key_param: licenseKey,
+            user_id_param: user.id,
+            device_fingerprint_param: deviceFingerprint,
+            device_name_param: friendlyName, // <-- Nombre amigable
+            device_info_param: deviceInfo
+        }
         );
         // --- FIN DEL CAMBIO ---
 
@@ -95,9 +96,9 @@ window.activateLicense = async function(licenseKey) {
         if (data && data.success) {
             const { data: licenseDetails, error: verifyError } = await supabaseClient.rpc(
                 'verify_device_license', {
-                    user_id_param: user.id,
-                    device_fingerprint_param: deviceFingerprint
-                }
+                user_id_param: user.id,
+                device_fingerprint_param: deviceFingerprint
+            }
             );
             if (verifyError) throw verifyError;
             return { valid: true, message: data.message, details: licenseDetails };
@@ -110,8 +111,7 @@ window.activateLicense = async function(licenseKey) {
     }
 };
 
-window.revalidateLicense = async function() {
-    // (Esta función no cambia)
+window.revalidateLicense = async function () {
     try {
         const user = await getSupabaseUser();
         if (!user) return { valid: false, message: 'No user session.' };
@@ -126,9 +126,9 @@ window.revalidateLicense = async function() {
 
         const { data, error } = await supabaseClient.rpc(
             'verify_device_license', {
-                user_id_param: user.id,
-                device_fingerprint_param: deviceFingerprint
-            }
+            user_id_param: user.id,
+            device_fingerprint_param: deviceFingerprint
+        }
         );
 
         if (error) throw error;
@@ -136,11 +136,29 @@ window.revalidateLicense = async function() {
 
     } catch (error) {
         console.error('Error during license revalidation:', error);
+
+        // --- CORRECCIÓN CRÍTICA PARA MODO OFFLINE ---
+        // Si el error es por falta de internet, lanzamos el error hacia arriba (throw).
+        // Esto permite que 'useAppStore.js' capture el error en su bloque catch
+        // y active el modo "Confiando en caché local".
+        const errorMsg = error.message ? error.message.toLowerCase() : '';
+
+        if (
+            errorMsg.includes('failed to fetch') ||
+            errorMsg.includes('network error') ||
+            errorMsg.includes('connection') ||
+            !navigator.onLine // Doble verificación
+        ) {
+            // Al lanzar el error aquí, evitamos el return { valid: false } de abajo
+            throw new Error('OFFLINE_MODE_TRIGGER');
+        }
+        // ---------------------------------------------
+
         return { valid: false, message: error.message };
     }
 };
 
-window.deactivateCurrentDevice = async function(licenseKey) {
+window.deactivateCurrentDevice = async function (licenseKey) {
     // (Esta función no cambia)
     try {
         const user = await getSupabaseUser();
@@ -148,7 +166,7 @@ window.deactivateCurrentDevice = async function(licenseKey) {
 
         let deviceFingerprint = localStorage.getItem('fp');
         if (!deviceFingerprint) {
-             const fp = await FingerprintJS.load();
+            const fp = await FingerprintJS.load();
             const result = await fp.get();
             deviceFingerprint = result.visitorId;
         }
@@ -172,7 +190,7 @@ window.deactivateCurrentDevice = async function(licenseKey) {
 // --- BUSINESS PROFILE MANAGEMENT ---
 // (Estas funciones no cambian)
 
-window.getBusinessCategories = async function() {
+window.getBusinessCategories = async function () {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
@@ -185,7 +203,7 @@ window.getBusinessCategories = async function() {
     }
 };
 
-window.saveBusinessProfile = async function(licenseKey, profileData) {
+window.saveBusinessProfile = async function (licenseKey, profileData) {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
@@ -220,7 +238,7 @@ window.saveBusinessProfile = async function(licenseKey, profileData) {
     }
 };
 
-window.getBusinessProfile = async function() {
+window.getBusinessProfile = async function () {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
@@ -244,7 +262,7 @@ window.getBusinessProfile = async function() {
 
 // --- (¡MODIFICADO!) DEVICE SELF-MANAGEMENT ---
 
-window.getLicenseDevices = async function(licenseKey) {
+window.getLicenseDevices = async function (licenseKey) {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
@@ -266,7 +284,7 @@ window.getLicenseDevices = async function(licenseKey) {
         });
 
         if (error) throw error;
-        return { success: true, data: data || [] }; 
+        return { success: true, data: data || [] };
 
     } catch (error) {
         console.error('Error getting license devices:', error);
@@ -274,7 +292,7 @@ window.getLicenseDevices = async function(licenseKey) {
     }
 };
 
-window.deactivateDeviceById = async function(deviceId) {
+window.deactivateDeviceById = async function (deviceId) {
     // (Esta función no cambia)
     try {
         const user = await getSupabaseUser();
@@ -295,7 +313,7 @@ window.deactivateDeviceById = async function(deviceId) {
  * Llama a la función SQL para crear una licencia de prueba
  * y registrar el dispositivo actual.
  */
-window.createFreeTrial = async function() {
+window.createFreeTrial = async function () {
     try {
         const user = await getSupabaseUser();
         if (!user) return { valid: false, message: 'No se pudo obtener la sesión del usuario.' };
@@ -303,7 +321,7 @@ window.createFreeTrial = async function() {
         const fp = await FingerprintJS.load();
         const result = await fp.get();
         const deviceFingerprint = result.visitorId;
-        
+
         // (Guardamos la huella para futuras revalidaciones)
         localStorage.setItem('fp', deviceFingerprint);
 
@@ -312,17 +330,17 @@ window.createFreeTrial = async function() {
 
         const { data, error } = await supabaseClient.rpc(
             'create_free_trial_license', {
-                user_id_param: user.id,
-                device_fingerprint_param: deviceFingerprint,
-                device_name_param: friendlyName,
-                device_info_param: deviceInfo
-            }
+            user_id_param: user.id,
+            device_fingerprint_param: deviceFingerprint,
+            device_name_param: friendlyName,
+            device_info_param: deviceInfo
+        }
         );
 
         if (error) throw error;
-        
+
         // La función SQL devuelve {success: true/false, details: {...}, error: "..."}
-        return data; 
+        return data;
 
     } catch (error) {
         console.error('Error al crear la prueba gratuita:', error);
@@ -336,7 +354,7 @@ window.createFreeTrial = async function() {
  * @param {'logo' | 'product'} type El tipo de imagen, para la carpeta.
  * @returns {Promise<string>} La URL pública de la imagen subida.
  */
-window.uploadFile = async function(file, type = 'product') {
+window.uploadFile = async function (file, type = 'product') {
     if (!file) throw new Error("No se proporcionó ningún archivo.");
 
     try {

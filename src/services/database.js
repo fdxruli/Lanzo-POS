@@ -254,9 +254,10 @@ export function loadDataPaginated(storeName, { limit = 50, offset = 0, indexName
 /**
  * Búsqueda rápida usando índices.
  * Mucho más eficiente que filtrar arrays en memoria con .filter().
- * * @param {string} storeName - Nombre del almacén.
- * @param {string} indexName - Nombre del índice (ej: 'productId').
- * @param {any} value - Valor a buscar.
+ * Soporta valores simples y arrays compuestos (para índices compuestos).
+ * @param {string} storeName - Nombre del almacén.
+ * @param {string} indexName - Nombre del índice (ej: 'productId' o 'productId_isActive').
+ * @param {any} value - Valor a buscar. Puede ser un valor simple o un array [productId, isActive].
  * @param {number} limit - Límite opcional (default 100).
  */
 export function queryByIndex(storeName, indexName, value, limit = 100) {
@@ -273,7 +274,16 @@ export function queryByIndex(storeName, indexName, value, limit = 100) {
       }
 
       const index = objectStore.index(indexName);
-      const range = IDBKeyRange.only(value);
+
+      // Si value es un array (índice compuesto), usar IDBKeyRange.only con el array
+      // Si es un valor simple, usar IDBKeyRange.only normal
+      let range;
+      if (Array.isArray(value)) {
+        // Para índices compuestos, necesitamos usar el array completo
+        range = IDBKeyRange.only(value);
+      } else {
+        range = IDBKeyRange.only(value);
+      }
 
       // getAll es muy rápido para búsquedas exactas
       const request = index.getAll(range, limit);
@@ -283,6 +293,40 @@ export function queryByIndex(storeName, indexName, value, limit = 100) {
         console.error(`Error consultando índice ${indexName}:`, event.target.error);
         reject(event.target.error);
       };
+    });
+  });
+}
+
+/**
+ * Query por índice compuesto específicamente para productId + isActive
+ * Esto maneja correctamente el caso donde isActive es un booleano en JavaScript
+ * pero se guarda como 1/0 en IndexedDB
+ */
+export function queryBatchesByProductIdAndActive(productId, isActive = true) {
+  return executeWithRetry(async () => {
+    const dbInstance = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = dbInstance.transaction([STORES.PRODUCT_BATCHES], 'readonly');
+      const objectStore = transaction.objectStore(STORES.PRODUCT_BATCHES);
+
+      // Usamos el índice 'productId' que es seguro (string/texto)
+      // y filtramos por 'isActive' en memoria. Esto es rápido y evita el crash.
+      const index = objectStore.index('productId');
+      const range = IDBKeyRange.only(productId);
+      const request = index.getAll(range);
+
+      request.onsuccess = () => {
+        const batches = request.result || [];
+        // Filtrar manual en JavaScript (soporta true, 1, "true", etc.)
+        const filtered = batches.filter(b => {
+          // Convertimos ambos a booleano para asegurar la comparación
+          return Boolean(b.isActive) === Boolean(isActive);
+        });
+        resolve(filtered);
+      };
+
+      request.onerror = (event) => reject(event.target.error);
     });
   });
 }
@@ -313,6 +357,43 @@ export function saveData(storeName, data) {
 
       transaction.oncomplete = () => resolve();
       transaction.onerror = (e) => reject(e.target.error);
+    });
+  });
+}
+
+/**
+ * Busca un producto por código de barras usando el índice 'barcode'
+ * Mucho más eficiente que cargar toda la BD
+ */
+export function searchProductByBarcode(barcode) {
+  return executeWithRetry(async () => {
+    const db = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORES.MENU], 'readonly');
+      const store = tx.objectStore(STORES.MENU);
+
+      // Verificar que el índice existe
+      if (!store.indexNames.contains('barcode')) {
+        // Fallback: retornar null si no hay índice
+        resolve(null);
+        return;
+      }
+
+      const index = store.index('barcode');
+      const request = index.get(barcode);
+
+      request.onsuccess = () => {
+        const product = request.result;
+        // Solo retornar si está activo
+        if (product && product.isActive !== false) {
+          resolve(product);
+        } else {
+          resolve(null);
+        }
+      };
+
+      request.onerror = (e) => reject(e.target.error);
     });
   });
 }

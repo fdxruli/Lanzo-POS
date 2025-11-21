@@ -11,14 +11,12 @@ import IngredientManager from '../components/products/IngredientManager';
 import { useDashboardStore } from '../store/useDashboardStore';
 import BatchManager from '../components/products/BatchManager';
 import DataTransferModal from '../components/products/DataTransferModal';
-// 1. IMPORTAR EL HOOK DE CONFIGURACIÓN
 import { useFeatureConfig } from '../hooks/useFeatureConfig'; 
 import './ProductsPage.css';
 
 export default function ProductsPage() {
     const [activeTab, setActiveTab] = useState('view-products');
 
-    // 2. OBTENER LAS CARACTERÍSTICAS ACTIVAS
     const features = useFeatureConfig();
 
     // Store Global
@@ -34,9 +32,12 @@ export default function ProductsPage() {
     const [showDataTransfer, setShowDataTransfer] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
 
+    // --- CORRECCIÓN DEL ERROR DE CONSOLA ---
+    // Dejamos el array vacío []. Esto asegura que se ejecute solo al montar 
+    // y evita el error "changed size between renders" causado por el Hot Reload.
     useEffect(() => {
         refreshData();
-    }, [refreshData]);
+    }, []); 
 
     // --- FILTROS PARA PESTAÑAS ---
     const productsForSale = products.filter(p => p.productType === 'sellable' || !p.productType);
@@ -45,7 +46,7 @@ export default function ProductsPage() {
     const handleSaveCategory = async (categoryData) => {
         try {
             await saveData(STORES.CATEGORIES, categoryData);
-            await refreshData();
+            await refreshData(true); // Forzamos recarga
         } catch (error) {
             console.error("Error guardando categoría:", error);
         }
@@ -59,7 +60,7 @@ export default function ProductsPage() {
                 product.categoryId = '';
                 await saveData(STORES.MENU, product);
             }
-            await refreshData();
+            await refreshData(true);
         } catch (error) {
             console.error("Error eliminando categoría:", error);
         }
@@ -125,7 +126,7 @@ export default function ProductsPage() {
                 }
             }
 
-            await refreshData();
+            await refreshData(true);
             setEditingProduct(null);
 
             if (productData.productType === 'ingredient') {
@@ -170,19 +171,38 @@ export default function ProductsPage() {
                     const updatedBatches = productBatches.map(b => ({ ...b, isActive: false, stock: 0, notes: b.notes + ' [Eliminado]' }));
                     await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches);
                 }
-                await refreshData();
+                await refreshData(true);
             } catch (error) {
                 console.error(error);
             }
         }
     };
 
+    // --- CORRECCIÓN DE ACTIVAR/DESACTIVAR ---
     const handleToggleStatus = async (product) => {
+        // 1. Activamos el loading para dar feedback visual inmediato
+        setIsLoading(true);
         try {
-            const updatedProduct = { ...product, isActive: !(product.isActive !== false) };
+            const currentStatus = product.isActive !== false;
+            
+            const updatedProduct = { 
+                ...product, 
+                isActive: !currentStatus,
+                updatedAt: new Date().toISOString() 
+            };
+
             await saveData(STORES.MENU, updatedProduct);
-            await refreshData();
-        } catch (error) { console.error(error); }
+            
+            // 2. Forzamos la recarga ignorando el caché
+            await refreshData(true); 
+            
+        } catch (error) { 
+            console.error(error); 
+            showMessageModal("Error al cambiar el estado del producto");
+        } finally {
+            // 3. Desactivamos loading al terminar
+            setIsLoading(false);
+        }
     };
 
     const handleManageBatches = (productId) => {
@@ -225,7 +245,6 @@ export default function ProductsPage() {
                     Gestionar Lotes
                 </button>
 
-                {/* 3. CONDICIONAL: Solo mostrar pestaña Ingredientes si el negocio usa recetas */}
                 {features.hasRecipes && (
                     <button
                         className={`tab-btn ${activeTab === 'ingredients' ? 'active' : ''}`}
@@ -269,7 +288,6 @@ export default function ProductsPage() {
                 />
             )}
 
-            {/* 4. CONDICIONAL: Solo renderizar el contenido si está habilitado y activo */}
             {activeTab === 'ingredients' && features.hasRecipes && (
                 <IngredientManager
                     ingredients={ingredientsOnly}
@@ -293,7 +311,6 @@ export default function ProductsPage() {
                 />
             )}
 
-            {/* Modales Auxiliares */}
             <CategoryManagerModal
                 show={showCategoryModal}
                 onClose={() => setShowCategoryModal(false)}
