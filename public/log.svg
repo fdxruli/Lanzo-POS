@@ -1,0 +1,12 @@
+<svg width="320" height="80" viewBox="0 0 320 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="320" height="80" rx="40" fill="#0F172A"/>
+  
+  <path d="M25 20H38L32 60H19L25 20Z" fill="#60A5FA"/>
+  <path d="M30 60H60L52 46H34L30 60Z" fill="#3B82F6"/>
+  
+  <text x="80" y="56" font-family="sans-serif" font-weight="700" font-size="40" fill="#FFFFFF" letter-spacing="1">
+    LANZO
+  </text>
+  
+  <circle cx="280" cy="40" r="6" fill="#10B981"/>
+</svg>

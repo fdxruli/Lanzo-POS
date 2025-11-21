@@ -4,8 +4,7 @@ import { useAppStore } from '../../store/useAppStore';
 import './Navbar.css';
 
 // Importamos el logo desde la carpeta public
-// (Asegúrate de que tus íconos estén en /public/)
-const logoPlaceholder = '/icono.png'; 
+const logoPlaceholder = '/log.svg';
 
 function Navbar() {
   // 1. Lógica del menú móvil (de app.js) movida a React
@@ -32,8 +31,8 @@ function Navbar() {
             <img
               id="nav-company-logo"
               className="nav-logo"
-              src={companyLogo}
-              alt="Logo de Lanzo POS"
+              src="/log.svg"  /* <--- Asegúrate de que la ruta coincida donde guardaste el SVG */
+              alt="Lanzo POS"
             />
             <h1 id="nav-company-name" className="nav-title">
               {companyName}
@@ -93,7 +92,7 @@ function Navbar() {
             </button>
           </div>
         </div>
-        
+
         {/* El fondo oscuro también usa el estado de React */}
         <div
           id="backdrop"

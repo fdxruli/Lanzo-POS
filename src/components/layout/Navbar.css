@@ -25,20 +25,35 @@
   gap: var(--spacing-sm);
   cursor: pointer;
   text-decoration: none;
+  /* Quitamos opacidad o efectos raros si los hubiera */
 }
 
 .nav-logo {
-  height: 40px;
-  width: 40px;
-  border-radius: 50%;
-  object-fit: cover;
+  /* 1. Altura un poco mayor para que se lea bien */
+  height: 48px;
+
+  /* 2. Ancho AUTOMÁTICO para no aplastar el rectángulo */
+  width: auto;
+
+  /* 3. Quitamos el borde redondo forzado, el SVG ya trae sus curvas */
+  border-radius: 0;
+
+  /* 4. Aseguramos que se vea nítido */
+  object-fit: contain;
+
+  /* Sombra suave para darle elevación sobre la navbar blanca */
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+  transition: transform 0.2s ease;
 }
 
+.nav-logo:hover {
+  transform: scale(1.02);
+  /* Efecto sutil al pasar el mouse */
+}
+
+/* Ocultamos el título de texto porque el logo ya lo trae */
 .nav-title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--primary-color);
-  margin: 0;
+  display: none;
 }
 
 /* Enlaces */
