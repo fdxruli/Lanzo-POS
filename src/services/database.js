@@ -462,33 +462,84 @@ export function deleteData(storeName, key) {
   });
 }
 
-export const saveBulk = saveData;
+export const saveBulk = saveBulkOptimized;
 
-export function loadBulk(storeName, keys) {
+export function saveBulkOptimized(storeName, data, chunkSize = 100) {
   return executeWithRetry(async () => {
     const dbInstance = await initDB();
-    return new Promise((resolve, reject) => {
-      const transaction = dbInstance.transaction([storeName], 'readonly');
-      const store = transaction.objectStore(storeName);
-      const results = [];
-      let pending = keys.length;
-      if (pending === 0) { resolve([]); return; }
-      let hasError = false;
 
-      keys.forEach(key => {
-        if (hasError) return;
-        const request = store.get(key);
-        request.onsuccess = () => {
-          if (request.result) results.push(request.result);
-          pending--;
-          if (pending === 0) resolve(results);
-        };
-        request.onerror = (e) => {
-          hasError = true;
-          reject(e.target.error);
-        };
+    if (!Array.isArray(data) || data.length === 0) {
+      return;
+    }
+
+    // Helper interno para mantener la lógica de búsqueda
+    const normalizeItem = (item) => {
+      if (storeName === STORES.MENU && item.name) {
+        return { ...item, name_lower: item.name.toLowerCase() };
+      }
+      return item;
+    };
+
+    // Procesar en chunks para no bloquear el thread principal
+    for (let i = 0; i < data.length; i += chunkSize) {
+      const chunk = data.slice(i, i + chunkSize);
+
+      await new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = (e) => reject(e.target.error);
+        transaction.onabort = (e) => reject(new Error('Transacción abortada'));
+
+        chunk.forEach(item => {
+          const normalized = normalizeItem(item);
+          // Usamos put para crear o actualizar
+          const request = store.put(normalized);
+
+          request.onerror = (e) => {
+            // Logueamos pero no rechazamos toda la transacción por un item fallido individual
+            // a menos que sea error crítico de estructura
+            console.error('Error guardando item en bulk:', normalized.id, e.target.error);
+          };
+        });
       });
-    });
+
+      // "Yield" al event loop para que la UI no se congele
+      if (i + chunkSize < data.length) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+  });
+}
+
+export function deleteBulk(storeName, keys, chunkSize = 100) {
+  return executeWithRetry(async () => {
+    const dbInstance = await initDB();
+
+    if (!Array.isArray(keys) || keys.length === 0) {
+      return;
+    }
+
+    for (let i = 0; i < keys.length; i += chunkSize) {
+      const chunk = keys.slice(i, i + chunkSize);
+
+      await new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = (e) => reject(e.target.error);
+
+        chunk.forEach(key => {
+          store.delete(key);
+        });
+      });
+
+      if (i + chunkSize < keys.length) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
   });
 }
 

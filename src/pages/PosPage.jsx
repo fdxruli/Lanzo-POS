@@ -36,8 +36,7 @@ export default function PosPage() {
   const { order, clearOrder, getTotalPrice } = useOrderStore();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
-  // --- 1. CONEXIÓN AL STORE (CORRECCIÓN CLAVE) ---
-  // Usamos 'menu' del store, que ya incluye los productos aunque tengan stock 0
+  // --- 1. CONEXIÓN AL STORE ---
   const allProducts = useDashboardStore((state) => state.menu);
   const refreshData = useDashboardStore((state) => state.loadAllData);
 
@@ -47,24 +46,19 @@ export default function PosPage() {
   useEffect(() => {
     const loadExtras = async () => {
       try {
-        // Cargamos las categorías
         const categoryData = await loadData(STORES.CATEGORIES);
         setCategories(categoryData || []);
-
-        // Refrescamos el store global para asegurar que los productos estén al día
         await refreshData();
       } catch (error) {
         console.error("Error cargando datos iniciales del POS:", error);
       }
     };
     loadExtras();
-  }, []); // Se ejecuta una sola vez al montar
+  }, []);
 
   // --- 3. FILTRADO DE PRODUCTOS ---
   const filteredProducts = useMemo(() => {
-    // CORRECCIÓN: Filtramos primero para excluir ingredientes
     let items = (allProducts || []).filter(p => p.productType === 'sellable' || !p.productType);
-    // (Nota: !p.productType es para compatibilidad con productos antiguos que no tengan ese campo)
 
     if (selectedCategoryId) {
       items = items.filter(p => p.categoryId === selectedCategoryId);
@@ -75,23 +69,18 @@ export default function PosPage() {
     return items;
   }, [allProducts, selectedCategoryId, searchTerm]);
 
-  // --- 4. PROCESAMIENTO DE LA VENTA (LÓGICA ROBUSTA) ---
+  // --- 4. PROCESAMIENTO DE LA VENTA (OPTIMIZADO) ---
   const handleProcessOrder = async (paymentData) => {
     const licenseDetails = useAppStore.getState().licenseDetails;
-    const appStatus = useAppStore.getState().appStatus;
 
-    // Si no hay detalles de licencia o no es válida
+    // Validación de Licencia
     if (!licenseDetails || !licenseDetails.valid) {
-      showMessageModal('⚠️ Error de Seguridad: No se detectó una licencia activa válida. El sistema se reiniciará.');
-
-      // Opcional: Forzar cierre de sesión o recarga tras unos segundos
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
-      return; // DETIENE LA VENTA AQUÍ
+      showMessageModal('⚠️ Error de Seguridad: Licencia no válida. El sistema se reiniciará.');
+      setTimeout(() => window.location.reload(), 2000);
+      return;
     }
 
-    // A. Validaciones iniciales (Igual que antes)
+    // Validación de Caja
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       setIsPaymentModalOpen(false);
       setIsQuickCajaOpen(true);
@@ -105,138 +94,143 @@ export default function PosPage() {
       return;
     }
 
+    // Cerramos modal antes de procesar para dar feedback visual
     setIsPaymentModalOpen(false);
 
-    // A.1. Validación previa de stock (antes de procesar)
     try {
-      const stockValidationErrors = [];
-      for (const orderItem of itemsToProcess) {
-        const product = await loadData(STORES.MENU, orderItem.id);
-        if (!product) {
-          stockValidationErrors.push(`${orderItem.name || orderItem.id}: Producto no encontrado`);
-          continue;
-        }
+      console.time('ProcesoVentaOptimizado'); // Para depuración
 
-        // Si el producto NO rastrea stock, saltamos la validación
-        if (product.trackStock === false) continue;
+      // ============================================================
+      // PASO 1: Pre-cargar TODOS los lotes necesarios en UNA consulta
+      // ============================================================
+      const uniqueProductIds = new Set();
+
+      // Identificar todos los IDs de ingredientes/productos involucrados
+      for (const orderItem of itemsToProcess) {
+        const product = allProducts.find(p => p.id === orderItem.id);
+        if (!product) continue;
+
+        // Determinar si usa receta o es directo
+        const itemsToDeduct = (product.recipe && product.recipe.length > 0)
+          ? product.recipe
+          : [{ ingredientId: product.id, quantity: 1 }];
+
+        itemsToDeduct.forEach(component => {
+          uniqueProductIds.add(component.ingredientId);
+        });
+      }
+
+      // Cargar lotes en paralelo
+      const batchesMap = new Map();
+      await Promise.all(
+        Array.from(uniqueProductIds).map(async (productId) => {
+          let batches = await queryBatchesByProductIdAndActive(productId, true);
+
+          // Fallback si la query optimizada falla (red de seguridad)
+          if (!batches || batches.length === 0) {
+            const allBatches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', productId);
+            batches = allBatches.filter(b => b.isActive && b.stock > 0);
+          }
+
+          if (batches && batches.length > 0) {
+            // Ordenar FIFO (Primero que entra, primero que sale)
+            batches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+            batchesMap.set(productId, batches);
+          }
+        })
+      );
+
+      // ============================================================
+      // PASO 2: Validación de stock (En memoria, ultrarrápida)
+      // ============================================================
+      const stockValidationErrors = [];
+
+      // Mapa temporal para simular descuento y validar stock compartido
+      // (Ej: 2 productos usan Harina, hay que sumar el consumo total)
+      const tempStockCheck = new Map();
+
+      for (const orderItem of itemsToProcess) {
+        const product = allProducts.find(p => p.id === orderItem.id);
+        // Si no rastrea stock, saltar
+        if (!product || product.trackStock === false) continue;
 
         const itemsToDeduct = (product.recipe && product.recipe.length > 0)
           ? product.recipe
           : [{ ingredientId: product.id, quantity: 1 }];
 
         for (const component of itemsToDeduct) {
-          const requiredQty = component.quantity * orderItem.quantity;
           const targetId = component.ingredientId;
+          const requiredQty = component.quantity * orderItem.quantity;
 
-          // --- CORRECCIÓN: Lógica de carga de stock mejorada ---
-          let batches = await queryBatchesByProductIdAndActive(targetId, true);
+          // Obtener stock disponible real (de los lotes cargados)
+          const batches = batchesMap.get(targetId) || [];
+          const totalRealStock = batches.reduce((sum, b) => sum + (b.stock || 0), 0);
 
-          // Fallback de seguridad: Si no encuentra lotes por el método rápido,
-          // busca TODOS los del producto y filtra manual (igual que en el Dashboard)
-          if (!batches || batches.length === 0) {
-            batches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', targetId);
-            batches = batches.filter(b => b.isActive && b.stock > 0);
-          }
-          // ----------------------------------------------------
+          // Verificar consumo acumulado en esta orden
+          const currentUsage = tempStockCheck.get(targetId) || 0;
+          const newUsage = currentUsage + requiredQty;
 
-          const totalStock = batches
-            .filter(b => b.stock > 0)
-            .reduce((sum, b) => sum + (b.stock || 0), 0);
-
-          // Tolerancia pequeña para errores de punto flotante (0.001)
-          if (totalStock < (requiredQty - 0.001)) {
+          if (totalRealStock < (newUsage - 0.001)) { // Tolerancia decimal
             const ingredientName = allProducts.find(p => p.id === targetId)?.name || targetId;
             stockValidationErrors.push(
-              `${orderItem.name}: Faltan ${(requiredQty - totalStock).toFixed(2)} unidades de ${ingredientName}`
+              `${orderItem.name}: Faltan ${(newUsage - totalRealStock).toFixed(2)} de ${ingredientName}`
             );
           }
+
+          tempStockCheck.set(targetId, newUsage);
         }
       }
 
       if (stockValidationErrors.length > 0) {
-        setIsPaymentModalOpen(false); // Cierra el modal de pago si hay error
-        showMessageModal(`Error de stock:\n${stockValidationErrors.join('\n')}`);
-        return;
+        showMessageModal(`❌ Stock Insuficiente:\n\n${stockValidationErrors.join('\n')}`);
+        return; // DETENER VENTA
       }
-    } catch (error) {
-      console.error('Error validando stock:', error);
-      showMessageModal('Error al validar stock. Por favor, intente nuevamente.');
-      return;
-    }
 
-    try {
-      console.time('ProcesoDeVentaOptimo');
-
+      // ============================================================
+      // PASO 3: Procesamiento y Descuento (En memoria)
+      // ============================================================
       const processedItems = [];
-      const batchUpdates = new Map(); // Map para evitar duplicados si un lote se usa varias veces
+      const batchUpdates = new Map(); // Mapa para guardar lotes modificados y evitar duplicados
 
-      // B. Iterar sobre el carrito (SOLO cargamos lo necesario)
       for (const orderItem of itemsToProcess) {
+        const product = allProducts.find(p => p.id === orderItem.id);
+        // Nota: Ya validamos existencia arriba, pero por seguridad:
+        if (!product) continue;
 
-        // 1. Cargar SOLO el producto actual
-        let product;
-        try {
-          product = await loadData(STORES.MENU, orderItem.id);
-          if (!product) {
-            console.warn(`Producto no encontrado: ${orderItem.id}`);
-            showMessageModal(`Error: Producto "${orderItem.name || orderItem.id}" no encontrado en la base de datos.`);
-            continue;
-          }
-        } catch (error) {
-          console.error(`Error cargando producto ${orderItem.id}:`, error);
-          showMessageModal(`Error al cargar producto "${orderItem.name || orderItem.id}".`);
-          continue;
-        }
-
-        const itemBatchesUsed = [];
-        let itemTotalCost = 0;
-
-        // Definir qué ingredientes/productos necesitamos buscar
-        // Si es receta, buscamos sus ingredientes. Si no, el producto mismo.
         const itemsToDeduct = (product.recipe && product.recipe.length > 0)
           ? product.recipe
-          : [{ ingredientId: product.id, quantity: 1 }]; // Normalizamos estructura
+          : [{ ingredientId: product.id, quantity: 1 }];
+
+        let itemTotalCost = 0;
+        const itemBatchesUsed = [];
 
         for (const component of itemsToDeduct) {
-          // Cantidad total requerida de este componente
           let requiredQty = component.quantity * orderItem.quantity;
           const targetId = component.ingredientId;
 
-          // 2. Cargar SOLO lotes activos de este componente
-          // Usamos función especializada que maneja correctamente el índice compuesto
-          let batches = await queryBatchesByProductIdAndActive(targetId, true);
+          // Obtenemos los lotes del mapa pre-cargado
+          const batches = batchesMap.get(targetId) || [];
 
-          // Si no hay resultados, intentamos solo por productId como fallback
-          if (!batches || batches.length === 0) {
-            batches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', targetId);
-            // Filtrar solo activos con stock > 0
-            batches = batches.filter(b => b.isActive && b.stock > 0);
-          }
+          for (const batch of batches) {
+            if (requiredQty <= 0.0001) break;
 
-          // 3. Filtrar stock > 0 y Ordenar FIFO en memoria (rápido porque son pocos registros)
-          const activeBatches = batches
-            .filter(b => b.isActive && b.stock > 0)
-            .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
-          // 4. Algoritmo de descuento (Igual que tenías, pero optimizado)
-          for (const batch of activeBatches) {
-            if (requiredQty <= 0) break;
-
-            // Si ya modificamos este lote en una iteración anterior del bucle (mismo pedido), usar la versión de memoria
+            // IMPORTANTE: Usar la versión del lote que está en `batchUpdates` si ya fue tocado
+            // por otro producto en este mismo bucle.
             const currentBatch = batchUpdates.get(batch.id) || batch;
 
             const toDeduct = Math.min(requiredQty, currentBatch.stock);
 
-            // Modificamos el objeto
+            // Modificamos el objeto (en memoria)
             currentBatch.stock -= toDeduct;
             if (currentBatch.stock < 0.0001) {
               currentBatch.stock = 0;
               currentBatch.isActive = false;
             }
 
+            // Registramos el uso para historial
             itemBatchesUsed.push({
               batchId: currentBatch.id,
-              ingredientId: targetId, // Guardamos qué ID descontó (útil para recetas)
+              ingredientId: targetId,
               quantity: toDeduct,
               cost: currentBatch.cost
             });
@@ -244,41 +238,30 @@ export default function PosPage() {
             itemTotalCost += (currentBatch.cost * toDeduct);
             requiredQty -= toDeduct;
 
-            // Guardamos en el Map para actualizar al final
+            // Guardamos el lote modificado en el mapa de actualizaciones
             batchUpdates.set(currentBatch.id, currentBatch);
-          }
-
-          if (requiredQty > 0.001) {
-            const ingredientName = allProducts.find(p => p.id === targetId)?.name || targetId;
-            console.warn(`⚠️ Faltó stock para ID: ${targetId} (${ingredientName}). Requerido: ${requiredQty.toFixed(2)}`);
-            // Esto no debería pasar si la validación previa funcionó, pero es una verificación adicional
           }
         }
 
-        // Calcular costo unitario promedio
+        // Calcular costo promedio ponderado
         const avgUnitCost = orderItem.quantity > 0 ? (itemTotalCost / orderItem.quantity) : 0;
 
         processedItems.push({
           ...orderItem,
           cost: avgUnitCost,
-          price: orderItem.price,
-          originalPrice: orderItem.originalPrice,
           batchesUsed: itemBatchesUsed,
           stockDeducted: orderItem.quantity
         });
       }
 
-      // C. Guardar ACTUALIZACIONES de lotes en una sola transacción
+      // ============================================================
+      // PASO 4: Guardado masivo en una sola transacción (Atomicidad)
+      // ============================================================
       if (batchUpdates.size > 0) {
-        try {
-          await saveBulk(STORES.PRODUCT_BATCHES, Array.from(batchUpdates.values()));
-        } catch (error) {
-          console.error('Error guardando actualizaciones de lotes:', error);
-          throw new Error('Error al actualizar el inventario. La venta no se procesó.');
-        }
+        await saveBulk(STORES.PRODUCT_BATCHES, Array.from(batchUpdates.values()));
       }
 
-      // D. Guardar la Venta (Igual que antes)
+      // Guardar la venta
       const sale = {
         timestamp: new Date().toISOString(),
         items: processedItems,
@@ -290,7 +273,7 @@ export default function PosPage() {
       };
       await saveData(STORES.SALES, sale);
 
-      // E. Actualizar deuda cliente (Igual que antes)
+      // Actualizar deuda cliente si aplica (Fiado)
       if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
         const customer = await loadData(STORES.CUSTOMERS, sale.customerId);
         if (customer) {
@@ -299,18 +282,18 @@ export default function PosPage() {
         }
       }
 
-      // F. Finalizar UI
+      // ============================================================
+      // PASO 5: Finalización y UI
+      // ============================================================
       clearOrder();
-      showMessageModal('¡Pedido procesado exitosamente!');
-      refreshData(); // Recargar UI global
+      showMessageModal('✅ ¡Pedido procesado exitosamente!');
+      refreshData(); // Actualizar dashboard y stock visual
 
+      // Generar Ticket WhatsApp
       if (paymentData.sendReceipt && paymentData.customerId) {
         try {
-          // 1. Cargamos al cliente para obtener su teléfono
           const customer = await loadData(STORES.CUSTOMERS, paymentData.customerId);
-
           if (customer && customer.phone) {
-            // 2. Construimos el mensaje del ticket
             let receiptText = `*--- TICKET DE VENTA ---*\n`;
             receiptText += `*Negocio:* ${companyName}\n`;
             receiptText += `*Fecha:* ${new Date().toLocaleString()}\n\n`;
@@ -329,28 +312,22 @@ export default function PosPage() {
             } else if (paymentData.paymentMethod === 'fiado') {
               receiptText += `Método: Fiado / Crédito\n`;
               receiptText += `Abono Inicial: $${parseFloat(paymentData.amountPaid).toFixed(2)}\n`;
-              receiptText += `Saldo Restante de esta venta: $${parseFloat(paymentData.saldoPendiente).toFixed(2)}\n`;
-              // Opcional: Mostrar deuda total acumulada si la tienes disponible
-              const nuevaDeudaTotal = (customer.debt || 0) + sale.saldoPendiente;
-              receiptText += `\n*Deuda Total Acumulada: $${nuevaDeudaTotal.toFixed(2)}*\n`;
+              receiptText += `Saldo Restante: $${parseFloat(paymentData.saldoPendiente).toFixed(2)}\n`;
             }
-
             receiptText += `\n¡Gracias por su preferencia!`;
 
-            // 3. Enviamos el mensaje
             sendWhatsAppMessage(customer.phone, receiptText);
           }
         } catch (error) {
-          console.error("Error al generar ticket de WhatsApp:", error);
-          // No detenemos el flujo si falla el mensaje, ya que la venta ya se guardó
+          console.error("Error ticket WhatsApp:", error);
         }
       }
 
-      console.timeEnd('ProcesoDeVentaOptimo');
+      console.timeEnd('ProcesoVentaOptimizado');
 
     } catch (error) {
       console.error('❌ Error al procesar el pedido:', error);
-      showMessageModal(`Error al procesar el pedido: ${error.message}`);
+      showMessageModal(`Error crítico: ${error.message}`);
     }
   };
 
@@ -365,7 +342,7 @@ export default function PosPage() {
     }
   };
 
-  // --- 6. VISTA ---
+  // --- 6. VISTA (JSX) ---
   return (
     <>
       <h2 className="section-title">Punto de Venta Rápido y Eficiente</h2>
