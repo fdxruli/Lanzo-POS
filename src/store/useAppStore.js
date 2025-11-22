@@ -1,28 +1,15 @@
 // src/store/useAppStore.js
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
-// Importamos las utilidades de tu proyecto original
 import { isLocalStorageEnabled, normalizeDate } from '../services/utils';
-// Importamos las funciones de Supabase
-// (Asegúrate de que supabase.js cargue FingerprintJS y Supabase en tu index.html)
 
-// src/store/useAppStore.js
-
-// --- 🔒 ZONA DE SEGURIDAD OFUSCADA ---
-
-// CAMBIO: Nombre aburrido para despistar. Parece una config de renderizado.
-// Mantenemos tu clave segura aquí.
 const _ui_render_config_v2 = "LANZO_SECURE_KEY_v1_X9Z";
 
-// Función auxiliar para generar una firma simple
 const generateSignature = (data) => {
   const stringData = JSON.stringify(data);
   let hash = 0;
   if (stringData.length === 0) return hash;
-
-  // CAMBIO: Usamos la variable con nombre "aburrido"
   const mixedString = stringData + _ui_render_config_v2;
-
   for (let i = 0; i < mixedString.length; i++) {
     const char = mixedString.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
@@ -31,14 +18,12 @@ const generateSignature = (data) => {
   return hash.toString(16); // Retornar como hex
 };
 
-// --- GUARDADO SEGURO ---
 const saveLicenseToStorage = async (licenseData) => {
   if (!isLocalStorageEnabled()) return;
 
   const dataToStore = { ...licenseData };
   dataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Generamos la firma (usando la clave oculta)
   const signature = generateSignature(dataToStore);
 
   const packageToStore = {
@@ -49,7 +34,6 @@ const saveLicenseToStorage = async (licenseData) => {
   localStorage.setItem('lanzo_license', JSON.stringify(packageToStore));
 };
 
-// --- LECTURA SEGURA ---
 const getLicenseFromStorage = async () => {
   if (!isLocalStorageEnabled()) return null;
 
@@ -60,7 +44,6 @@ const getLicenseFromStorage = async () => {
     const parsedPackage = JSON.parse(storedString);
 
     if (!parsedPackage.data || !parsedPackage.signature) {
-      // Silencioso para no dar pistas en consola de producción
       localStorage.removeItem('lanzo_license');
       return null;
     }
@@ -69,7 +52,6 @@ const getLicenseFromStorage = async () => {
 
     if (parsedPackage.signature !== expectedSignature) {
       console.warn("Error de integridad en datos locales. Reiniciando sesión.");
-      // Eliminamos el mensaje de "ALERTA DE SEGURIDAD" para no alertar al hacker de que fue descubierto
       localStorage.removeItem('lanzo_license');
       return null;
     }
@@ -87,28 +69,16 @@ const clearLicenseFromStorage = () => {
   localStorage.removeItem('lanzo_license');
 };
 
-
-// --- Creamos el Store ---
-
 export const useAppStore = create((set, get) => ({
 
-  // ======================================================
-  // 1. EL ESTADO (SIN CAMBIOS)
-  // ======================================================
+  realtimeSubscription: null,
+
   appStatus: 'loading',
   licenseStatus: 'active',
   gracePeriodEnds: null,
   companyProfile: null,
   licenseDetails: null,
 
-  // ======================================================
-  // 2. LAS ACCIONES (¡MODIFICADAS!)
-  // ======================================================
-
-  /**
-   * ¡MODIFICADO!
-   * Ahora también intenta descargar el perfil de negocio de Supabase.
-   */
   initializeApp: async () => {
     const license = await getLicenseFromStorage();
 
@@ -128,48 +98,38 @@ export const useAppStore = create((set, get) => ({
           gracePeriodEnds: serverValidation.grace_period_ends || null
         });
 
-        // --- ¡NUEVA LÓGICA DE PERFIL DE NEGOCIO! ---
-        // 1. Intentamos cargar el perfil desde Supabase
-        const profileResult = await window.getBusinessProfile();
+        const currentLicenseKey = serverValidation.license_key || license.license_key;
+
+        const profileResult = await window.getBusinessProfile(currentLicenseKey);
+
         let companyData = null;
 
         if (profileResult.success && profileResult.data) {
-          // 2. Éxito: Sincronizamos Supabase -> Local
           console.log("Perfil de negocio cargado desde Supabase.");
-          // Mapeamos los nombres (ej: business_name a name)
           const mappedData = {
             id: 'company',
-            // Prioridad: Si viene de Supabase es 'business_name'. Si viene de local es 'name'.
             name: profileResult.data.business_name || profileResult.data.name,
-
-            // Mapeo similar para teléfono si la BD usa snake_case
             phone: profileResult.data.phone_number || profileResult.data.phone,
-
             address: profileResult.data.address,
-            logo: profileResult.data.logo_url || profileResult.data.logo, // Normalizamos logo_url a logo
+            logo: profileResult.data.logo_url || profileResult.data.logo,
             business_type: profileResult.data.business_type
           };
-          await saveData(STORES.COMPANY, mappedData); // Guardamos en IndexedDB
+          await saveData(STORES.COMPANY, mappedData);
           companyData = mappedData;
         } else {
-          // 3. Fallo (o no hay perfil): Cargamos desde IndexedDB (local)
           console.log("No hay perfil en Supabase, cargando desde local.");
           companyData = await loadData(STORES.COMPANY, 'company');
         }
 
         set({ companyProfile: companyData });
 
-        // 4. Decidimos el estado de la app
         if (companyData && (companyData.name || companyData.business_name)) {
           set({ appStatus: 'ready' });
         } else {
-          // Hay licencia, pero no perfil ni local ni en Supabase
           set({ appStatus: 'setup_required' });
         }
-        // --- FIN DE LA NUEVA LÓGICA ---
 
       } else {
-        // ... (lógica de 'unauthenticated') ...
         clearLicenseFromStorage();
         set({
           appStatus: 'unauthenticated',
@@ -178,7 +138,6 @@ export const useAppStore = create((set, get) => ({
         });
       }
     } catch (error) {
-      // ... (Lógica de caché/sin red existente) ...
       console.warn("No se pudo revalidar la licencia (¿sin red?). Confiando en caché local.");
 
       if (license.localExpiry) {
@@ -195,7 +154,6 @@ export const useAppStore = create((set, get) => ({
         licenseStatus: license.reason || 'active',
         gracePeriodEnds: license.grace_period_ends || null
       });
-      // Cargamos el perfil local si no hay red
       const companyData = await loadData(STORES.COMPANY, 'company');
       if (companyData && companyData.name) {
         set({ companyProfile: companyData, appStatus: 'ready' });
@@ -205,13 +163,90 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  // ... (handleLogin y handleFreeTrial SIN CAMBIOS) ...
+  startRealtimeSecurity: async () => {
+    const { licenseDetails, realtimeSubscription } = get();
+
+    if (realtimeSubscription || !licenseDetails?.license_key) return;
+
+    const sub = await window.subscribeToSecurityChanges(
+      licenseDetails.license_key,
+
+      (newLicenseData) => {
+        if (newLicenseData.status !== 'active') {
+          showMessageModal(
+            `⚠️ ALERTA DE SEGURIDAD: Tu licencia ha sido marcada como "${newLicenseData.status}". La sesión se cerrará.`,
+            () => {
+              get().logout();
+              window.location.reload(); // Recarga para limpiar todo
+            }
+          );
+          get().logout();
+        } else {
+          set((state) => ({
+            licenseDetails: { ...state.licenseDetails, ...newLicenseData }
+          }));
+          console.log("Licencia actualizada en tiempo real (sigue activa).");
+        }
+      },
+
+      (newDeviceData, eventType) => {
+        if (eventType === 'DELETE' || (newDeviceData && !newDeviceData.is_active)) {
+          showMessageModal(
+            `⚠️ ACCESO REVOCADO: Este dispositivo ha sido desactivado por el administrador.`,
+            () => {
+              get().logout();
+              window.location.reload();
+            }
+          );
+          get().logout();
+        }
+      }
+    );
+
+    set({ realtimeSubscription: sub });
+  },
+
   handleLogin: async (licenseKey) => {
     try {
       const result = await window.activateLicense(licenseKey);
+
       if (result.valid) {
         await saveLicenseToStorage(result.details);
-        set({ licenseDetails: result.details, appStatus: 'setup_required' });
+        try {
+          const profileResult = await window.getBusinessProfile(licenseKey);
+
+          if (profileResult.success && profileResult.data) {
+            console.log("¡Perfil encontrado al iniciar sesión! Sincronizando...");
+
+            const mappedData = {
+              id: 'company',
+              name: profileResult.data.business_name || profileResult.data.name,
+              phone: profileResult.data.phone_number || profileResult.data.phone,
+              address: profileResult.data.address,
+              logo: profileResult.data.logo_url || profileResult.data.logo,
+              business_type: profileResult.data.business_type
+            };
+
+            await saveData(STORES.COMPANY, mappedData);
+
+            set({
+              licenseDetails: result.details,
+              companyProfile: mappedData,
+              appStatus: 'ready' // <--- ¡Aquí está la clave! Entra directo.
+            });
+
+          } else {
+            console.log("Licencia nueva sin perfil. Requiere configuración.");
+            set({
+              licenseDetails: result.details,
+              appStatus: 'setup_required' // <--- Solo aquí mostramos el modal
+            });
+          }
+        } catch (profileError) {
+          console.error("Error al intentar recuperar perfil tras login:", profileError);
+          set({ licenseDetails: result.details, appStatus: 'setup_required' });
+        }
+
         return { success: true };
       } else {
         return { success: false, message: result.message || 'Licencia no válida' };
@@ -235,10 +270,6 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  /**
-   * ¡MODIFICADO!
-   * Ahora sube el logo a Storage ANTES de guardar en Supabase DB.
-   */
   handleSetup: async (setupData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) {
@@ -249,23 +280,19 @@ export const useAppStore = create((set, get) => ({
     try {
       let logoUrl = null;
 
-      // 1. Revisa si el logo es un Archivo (File)
       if (setupData.logo && setupData.logo instanceof File) {
         console.log("Subiendo logo a Supabase Storage...");
         logoUrl = await window.uploadFile(setupData.logo, 'logo');
       }
 
-      // 2. Prepara los datos para la DB (mapeo de nombres)
       const profileData = {
         ...setupData,
         logo: logoUrl // Usa la nueva URL (o null si no había)
       };
 
-      // 3. Guardamos en Supabase DB
       await window.saveBusinessProfile(licenseKey, profileData);
       console.log("Perfil de negocio guardado en Supabase DB.");
 
-      // 4. Guardamos en IndexedDB (local)
       const companyData = { id: 'company', ...profileData };
       await saveData(STORES.COMPANY, companyData);
 
@@ -275,10 +302,6 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  /**
-   * ¡MODIFICADO!
-   * Misma lógica que handleSetup.
-   */
   updateCompanyProfile: async (companyData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) {
@@ -287,18 +310,15 @@ export const useAppStore = create((set, get) => ({
     }
 
     try {
-      // 1. Revisa si se está subiendo un *nuevo* logo
       if (companyData.logo && companyData.logo instanceof File) {
         console.log("Subiendo nuevo logo a Supabase Storage...");
         const logoUrl = await window.uploadFile(companyData.logo, 'logo');
         companyData.logo = logoUrl; // Reemplaza el File por la URL
       }
 
-      // 2. Guardamos en Supabase DB
       await window.saveBusinessProfile(licenseKey, companyData);
       console.log("Perfil de negocio actualizado en Supabase DB.");
 
-      // 3. Guardamos en IndexedDB (local)
       await saveData(STORES.COMPANY, companyData);
       set({ companyProfile: companyData });
     } catch (error) {
@@ -307,24 +327,40 @@ export const useAppStore = create((set, get) => ({
   },
 
   logout: async () => {
-    // ... (logout SIN CAMBIOS) ...
+    const { realtimeSubscription, licenseDetails } = get();
+
+    if (realtimeSubscription) {
+      console.log("Desconectando vigilancia en tiempo real...");
+      try {
+        if (typeof window.removeRealtimeChannel === 'function') {
+          await window.removeRealtimeChannel(realtimeSubscription);
+        }
+      } catch (err) {
+        console.warn("No se pudo desconectar el canal realtime (no es crítico):", err);
+      }
+    }
+
     try {
-      const licenseKey = get().licenseDetails?.license_key;
+      const licenseKey = licenseDetails?.license_key;
       if (licenseKey) {
         await window.deactivateCurrentDevice(licenseKey);
         console.log("Dispositivo desactivado del servidor.");
       }
     } catch (error) {
-      console.error("Error al desactivar dispositivo en servidor:", error);
+      console.error("Error al desactivar dispositivo en servidor (continuando logout local):", error);
     }
 
     clearLicenseFromStorage();
+
     set({
       appStatus: 'unauthenticated',
       licenseDetails: null,
       companyProfile: null,
       licenseStatus: 'active',
-      gracePeriodEnds: null
+      gracePeriodEnds: null,
+      realtimeSubscription: null // ¡Importante! Limpiamos la referencia a la suscripción
     });
+
+    console.log("Sesión cerrada correctamente.");
   }
 }));

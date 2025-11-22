@@ -4,7 +4,9 @@ import FingerprintJS from '@fingerprintjs/fingerprintjs';
 // --- SUPABASE CLIENT INITIALIZATION ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+
+// CORRECCIÓN: Usar createClient directamente
+const supabaseClient = createClient(supabaseUrl, supabaseKey);
 
 // --- USER MANAGEMENT ---
 // (Esta función no cambia)
@@ -238,29 +240,48 @@ window.saveBusinessProfile = async function (licenseKey, profileData) {
     }
 };
 
-window.getBusinessProfile = async function () {
+window.getBusinessProfile = async function (licenseKey) {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
+
+        if (!licenseKey) {
+            return { success: false, message: 'License key is required to fetch profile.' };
+        }
+
+        // 1. Primero obtenemos el ID de la licencia usando la Key
+        const { data: license, error: licenseError } = await supabaseClient
+            .from('licenses')
+            .select('id')
+            .eq('license_key', licenseKey)
+            .single();
+
+        if (licenseError || !license) {
+            // Si no encuentra la licencia, no puede haber perfil
+            return { success: true, data: null };
+        }
+
+        // 2. Ahora buscamos el perfil asociado a ESE license_id (único por negocio)
         const { data, error } = await supabaseClient
             .from('business_profiles')
             .select('*')
-            .eq('user_id', user.id)
+            .eq('license_id', license.id) // <--- CAMBIO CRÍTICO: Usamos license_id, no user_id
             .single();
+
         if (error) {
+            // Código PGRST116 significa que no encontró filas (aún no hay perfil creado)
             if (error.code === 'PGRST116') {
                 return { success: true, data: null };
             }
             throw error;
         }
+
         return { success: true, data };
     } catch (error) {
         console.error('Error getting business profile:', error);
         return { success: false, message: `Client-side error: ${error.message}` };
     }
 };
-
-// --- (¡MODIFICADO!) DEVICE SELF-MANAGEMENT ---
 
 window.getLicenseDevices = async function (licenseKey) {
     try {
@@ -396,4 +417,64 @@ window.uploadFile = async function (file, type = 'product') {
         console.error('Error al subir el archivo:', error);
         return null; // Devolvemos null en caso de error
     }
+};
+
+/**
+ * Suscribe la app a cambios en la licencia y el dispositivo en tiempo real.
+ * @param {string} licenseKey - La clave de licencia actual.
+ * @param {function} onLicenseChange - Callback cuando cambia la tabla 'licenses'.
+ * @param {function} onDeviceChange - Callback cuando cambia la tabla 'license_devices'.
+ * @returns {object} La suscripción para poder desuscribirse luego.
+ */
+window.subscribeToSecurityChanges = async function (licenseKey, onLicenseChange, onDeviceChange) {
+    if (!licenseKey) return null;
+
+    // Obtenemos el fingerprint actual
+    const fp = await FingerprintJS.load();
+    const result = await fp.get();
+    const currentFingerprint = result.visitorId;
+
+    console.log("🔌 Conectando a Realtime Security para:", licenseKey);
+
+    const channel = supabaseClient.channel('security-monitoring')
+        // 1. Escuchar cambios en la LICENCIA (Bloqueos, Expiración)
+        .on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'licenses',
+                filter: `license_key=eq.${licenseKey}`
+            },
+            (payload) => {
+                console.log('⚠️ Cambio crítico en Licencia detectado:', payload);
+                onLicenseChange(payload.new);
+            }
+        )
+        // 2. Escuchar cambios en EL DISPOSITIVO (Si el admin te desactiva o elimina)
+        .on(
+            'postgres_changes',
+            {
+                event: '*', // UPDATE o DELETE
+                schema: 'public',
+                table: 'license_devices',
+                filter: `device_fingerprint=eq.${currentFingerprint}`
+            },
+            (payload) => {
+                console.log('⚠️ Cambio crítico en Dispositivo detectado:', payload);
+                // Si es DELETE, payload.new es null, usamos payload.old
+                onDeviceChange(payload.new || null, payload.eventType);
+            }
+        )
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                console.log('✅ Escuchando cambios de seguridad en tiempo real.');
+            }
+        });
+
+    return channel;
+};
+
+window.removeRealtimeChannel = async (channel) => {
+    if (channel) await supabaseClient.removeChannel(channel);
 };

@@ -1,4 +1,3 @@
-// src/pages/SettingsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { saveData, STORES } from '../services/database';
 import { compressImage } from '../services/utils';
@@ -8,7 +7,6 @@ import './SettingsPage.css';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
-// 1. Definimos los rubros disponibles (Igual que en SetupModal)
 const BUSINESS_RUBROS = [
   { id: 'food_service', label: 'Restaurante / Cocina' },
   { id: 'abarrotes', label: 'Abarrotes' },
@@ -43,8 +41,10 @@ export default function SettingsPage() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
 
-  // 2. CAMBIO: businessType ahora se inicializa como un array vacío []
   const [businessType, setBusinessType] = useState([]);
+
+  const isTrial = licenseDetails?.license_type === 'trial';
+  const MAX_SELECTION = isTrial ? 1 : 4;
 
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
   const [logoData, setLogoData] = useState(null);
@@ -57,9 +57,7 @@ export default function SettingsPage() {
       setPhone(companyProfile.phone || '');
       setAddress(companyProfile.address || '');
 
-      // 3. LÓGICA DE CARGA: Aseguramos que sea un array
       let types = companyProfile.business_type || [];
-      // Si viene como string (legado), lo convertimos a array
       if (typeof types === 'string') {
         types = types.split(',').map(s => s.trim());
       }
@@ -70,7 +68,6 @@ export default function SettingsPage() {
     }
   }, [companyProfile]);
 
-  // Cleanup: Revocar Object URLs al desmontar o cambiar
   useEffect(() => {
     return () => {
       if (logoObjectURL) {
@@ -91,12 +88,17 @@ export default function SettingsPage() {
     };
   }, [activeTheme]);
 
-  // 4. NUEVO HANDLER: Para seleccionar/deseleccionar rubros
   const handleRubroToggle = (rubroId) => {
     setBusinessType(prev => {
       if (prev.includes(rubroId)) {
-        return prev.filter(id => id !== rubroId); // Quitar
+        return prev.filter(id => id !== rubroId); // Quitar siempre se puede
       } else {
+        if (prev.length >= MAX_SELECTION) {
+          alert(isTrial
+            ? "Tu licencia de prueba solo permite 1 rubro activo."
+            : "Has alcanzado el límite de rubros.");
+          return prev;
+        }
         return [...prev, rubroId]; // Añadir
       }
     });
@@ -106,7 +108,6 @@ export default function SettingsPage() {
     const file = e.target.files[0];
     if (file) {
       try {
-        // Revocar el URL anterior si existe
         if (logoObjectURL) {
           URL.revokeObjectURL(logoObjectURL);
         }
@@ -125,7 +126,6 @@ export default function SettingsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // ESTANDARIZACIÓN: Aquí construimos el objeto con el formato interno de la App ('name')
       const companyData = {
         id: 'company',
         name: name,           // Usamos la variable de estado del input
@@ -135,7 +135,6 @@ export default function SettingsPage() {
         business_type: businessType // Array de rubros
       };
 
-      // Enviamos 'name'. El Store o el Servicio se encargarán de traducirlo si es necesario.
       await updateCompanyProfile(companyData);
 
       alert('¡Configuración guardada! Los formularios se han actualizado.');
@@ -226,7 +225,6 @@ export default function SettingsPage() {
             </small>
           </div>
 
-          {/* ... (Teléfono y Dirección sin cambios) ... */}
           <div className="form-group">
             <label className="form-label" htmlFor="company-phone">Teléfono de Contacto</label>
             <input
@@ -248,15 +246,22 @@ export default function SettingsPage() {
             ></textarea>
           </div>
 
-          {/* 6. NUEVA UI: Selector de Rubros (Grid) */}
           <div className="form-group">
             <label className="form-label">Rubros del Negocio (Selecciona múltiples)</label>
+            {isTrial && (
+              <p style={{ fontSize: '0.9rem', color: 'var(--warning-color)', marginBottom: '10px' }}>
+                🔒 Licencia Trial: Límite de 1 rubro. <button className="btn-link" style={{ border: 'none', background: 'none', color: 'blue', cursor: 'pointer', textDecoration: 'underline' }}>Mejorar Plan</button>
+              </p>
+            )}
             <div className="rubro-selector-grid">
               {BUSINESS_RUBROS.map(rubro => (
                 <div
                   key={rubro.id}
                   className={`rubro-box ${businessType.includes(rubro.id) ? 'selected' : ''}`}
                   onClick={() => handleRubroToggle(rubro.id)}
+                  style={{
+                    opacity: (!businessType.includes(rubro.id) && businessType.length >= MAX_SELECTION) ? 0.5 : 1
+                  }}
                 >
                   {rubro.label}
                 </div>
@@ -290,7 +295,6 @@ export default function SettingsPage() {
 
         <h3 className="subtitle">Tema de la Aplicación</h3>
         <div className="theme-toggle-container" role="radiogroup" aria-label="Seleccionar tema">
-          {/* ... (Selector de tema sin cambios) ... */}
           <label className="theme-radio-label">
             <input type="radio" name="theme" value="light" checked={activeTheme === 'light'} onChange={handleThemeChange} />
             <span className="theme-radio-text">Claro</span>
