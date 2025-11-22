@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useZxing } from 'react-zxing';
 import { useOrderStore } from '../../store/useOrderStore';
-import { loadData, STORES } from '../../services/database';
+import { loadData, STORES, queryBatchesByProductIdAndActive } from '../../services/database';
 import './ScannerModal.css';
 
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
@@ -18,7 +18,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   // Referencias para control de escaneo
   const lastScannedRef = useRef({ code: null, time: 0 });
   const processingRef = useRef(false);
-  const scanCountRef = useRef(0); 
+  const scanCountRef = useRef(0);
 
   // Configuración de la cámara y escaneo
   const { ref } = useZxing({
@@ -32,7 +32,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         lastScannedRef.current.code === code &&
         now - lastScannedRef.current.time < 1500
       ) {
-        return; 
+        return;
       }
 
       if (processingRef.current) return;
@@ -50,9 +50,9 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
       }
 
       // MODO 2: Punto de Venta (Carrito temporal)
-      setIsScanning(false); 
+      setIsScanning(false);
 
-      if (navigator.vibrate) navigator.vibrate([50, 30, 50]); 
+      if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
       setScanFeedback(`✓ ${code}`);
 
       processScannedCode(code);
@@ -78,7 +78,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         aspectRatio: { ideal: 16 / 9 },
         frameRate: { ideal: 30, max: 30 }
       },
-      audio: false 
+      audio: false
     },
     hints: new Map([
       [2, ['EAN_13', 'EAN_8', 'UPC_A', 'UPC_E', 'CODE_128', 'CODE_39', 'ITF', 'CODABAR', 'QR_CODE']]
@@ -133,42 +133,70 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     }
   }, [show]);
 
-  // ============================================================
-  // 📦 AQUÍ ESTÁ LA CORRECCIÓN DEL PRECIO $0.00
-  // ============================================================
   const processScannedCode = async (code) => {
     try {
       const menu = await loadData(STORES.MENU);
-      // Buscamos producto activo
       const product = menu.find(p => p.barcode === code && p.isActive !== false);
 
       if (product) {
-        
-        // 1. CORRECCIÓN: Convertir a Float explícitamente para evitar error de tipos
-        const rawPrice = parseFloat(product.price);
-        const finalPrice = (!isNaN(rawPrice) && rawPrice >= 0) ? rawPrice : 0;
 
-        const rawCost = parseFloat(product.cost);
-        const finalCost = (!isNaN(rawCost) && rawCost >= 0) ? rawCost : 0;
+        // ============================================================
+        // ✅ CORRECCIÓN CRÍTICA: Cargar precio desde lotes si aplica
+        // ============================================================
+        let finalPrice = 0;
+        let finalCost = 0;
+
+        // Si el producto usa gestión de lotes, obtener precio/costo del lote activo
+        if (product.batchManagement?.enabled) {
+          try {
+            // Importa esta función al inicio del archivo si no está
+            const { queryBatchesByProductIdAndActive } = await import('../../services/database');
+
+            const activeBatches = await queryBatchesByProductIdAndActive(product.id, true);
+
+            if (activeBatches && activeBatches.length > 0) {
+              // Ordenar FIFO (el más antiguo primero)
+              activeBatches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+              const currentBatch = activeBatches[0];
+
+              finalPrice = parseFloat(currentBatch.price) || 0;
+              finalCost = parseFloat(currentBatch.cost) || 0;
+            } else {
+              // No hay lotes activos, usar valores del producto base
+              finalPrice = parseFloat(product.price) || 0;
+              finalCost = parseFloat(product.cost) || 0;
+            }
+          } catch (batchError) {
+            console.warn("Error cargando lotes, usando precio base:", batchError);
+            finalPrice = parseFloat(product.price) || 0;
+            finalCost = parseFloat(product.cost) || 0;
+          }
+        } else {
+          // Producto sin lotes, usar precio directo
+          finalPrice = parseFloat(product.price) || 0;
+          finalCost = parseFloat(product.cost) || 0;
+        }
+
+        // Validación final de seguridad
+        if (isNaN(finalPrice) || finalPrice < 0) finalPrice = 0;
+        if (isNaN(finalCost) || finalCost < 0) finalCost = 0;
+        // ============================================================
 
         const safeProduct = {
           ...product,
           price: finalPrice,
           cost: finalCost,
-          // 2. CORRECCIÓN: Agregar 'originalPrice' para que el Store calcule bien el total
-          originalPrice: finalPrice, 
+          originalPrice: finalPrice, // ✅ Crucial para el cálculo en OrderStore
           stock: (typeof product.stock === 'number' && !isNaN(product.stock)) ? product.stock : 0
         };
 
         setScannedItems(prevItems => {
           const existing = prevItems.find(i => i.id === safeProduct.id);
           if (existing) {
-            // Si ya existe en la lista temporal, sumamos 1
             return prevItems.map(i =>
               i.id === safeProduct.id ? { ...i, quantity: i.quantity + 1 } : i
             );
           }
-          // Si es nuevo en la lista temporal
           return [...prevItems, { ...safeProduct, quantity: 1 }];
         });
 
