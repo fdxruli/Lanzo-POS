@@ -10,24 +10,24 @@ import { useAppStore } from '../store/useAppStore';
 const RUBRO_FEATURES = {
   // --- GRUPOS NUEVOS ---
   // Servicio de Comida (Restaurante, Dark Kitchen, Antojitos/Postres)
-  'food_service': ['recipes', 'modifiers', 'waste'],
-  
+  'food_service': ['recipes', 'modifiers', 'waste', 'kds'],
+
   // Ropa y Calzado
   'apparel': ['variants', 'sku', 'suppliers'],
-  
+
   // Ferretería y Similares
   'hardware': ['variants', 'sku', 'suppliers', 'minmax'],
 
   // --- RUBROS ORIGINALES ---
   // Abarrotes
   'abarrotes': ['bulk', 'wholesale', 'suppliers', 'minmax', 'expiry'],
-  
+
   // Farmacia
   'farmacia': ['lots', 'expiry', 'lab_fields'],
-  
+
   // Verdulería
   'verduleria/fruteria': ['bulk', 'expiry', 'waste', 'daily_pricing'],
-  
+
   // Otro (un comodín con las funciones más comunes)
   'otro': ['bulk', 'expiry', 'lots', 'suppliers']
 };
@@ -56,33 +56,33 @@ const FEATURE_TIERS = {
 export function useFeatureConfig() {
   // 1. Obtiene los rubros seleccionados por el usuario
   const businessTypes = useAppStore((state) => state.companyProfile?.business_type) || [];
-  
+
   // 2. Obtiene los detalles de la licencia del usuario
   const licenseDetails = useAppStore((state) => state.licenseDetails);
 
   const features = useMemo(() => {
 
     let types = businessTypes;
-    
+
     if (!Array.isArray(types)) {
-        if (typeof types === 'string'){
-            types = types.split(',').map(s => s.trim()).filter(Boolean)
-        }else{
-            types = [];
-        }
+      if (typeof types === 'string') {
+        types = types.split(',').map(s => s.trim()).filter(Boolean)
+      } else {
+        types = [];
+      }
     }
 
     if (types.length === 0) {
-        console.warn('No hay rubros configurados, usando configuración básica');
-        types = ['otro'];
+      console.warn('No hay rubros configurados, usando configuración básica');
+      types = ['otro'];
     }
-    
+
     // Usamos un Set para que las 'features' no se repitan
     const enabledFeatures = new Set();
-    
+
     // Un Set para rastrear las features bloqueadas por licencia
     const lockedFeatures = new Set();
-    
+
     // Asumimos 'free' si no hay licencia, o 'pro' si la licencia es válida
     // (A futuro, tu `licenseDetails` podría traer un campo `tier: 'pro'`)
     const licenseTier = (licenseDetails && licenseDetails.valid) ? 'pro' : 'free';
@@ -90,11 +90,11 @@ export function useFeatureConfig() {
     // 3. Itera sobre cada rubro que el usuario seleccionó
     businessTypes.forEach(rubro => {
       const featuresForRubro = RUBRO_FEATURES[rubro];
-      
+
       if (featuresForRubro) {
         // 4. Itera sobre las características de ESE rubro
         featuresForRubro.forEach(feature => {
-          
+
           // 5. DOBLE VALIDACIÓN: ¿Qué tier se necesita?
           const requiredTier = FEATURE_TIERS[feature] || 'free';
 
@@ -118,7 +118,7 @@ export function useFeatureConfig() {
       hasExpiry: enabledFeatures.has('expiry'),       // Caducidad
       hasMinMax: enabledFeatures.has('minmax'),     // Stock Mín/Máx
       hasWaste: enabledFeatures.has('waste'),         // Merma
-      
+
       // --- Rubros Específicos (Gratuitos) ---
       hasLots: enabledFeatures.has('lots'),           // Lotes (costo/precio múltiple)
       hasSKU: enabledFeatures.has('sku'),             // SKU (como campo gratuito)
@@ -129,6 +129,7 @@ export function useFeatureConfig() {
       hasVariants: enabledFeatures.has('variants'),   // Variantes (Talla, Color, Modelo)
       hasRecipes: enabledFeatures.has('recipes'),     // Recetas
       hasModifiers: enabledFeatures.has('modifiers'), // Modificadores (extra queso)
+      hasKDS: enabledFeatures.has('kds'),
       hasWholesale: enabledFeatures.has('wholesale'), // Mayoreo
       hasDailyPricing: enabledFeatures.has('daily_pricing'), // Precios diarios
 

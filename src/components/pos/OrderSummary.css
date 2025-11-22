@@ -1,6 +1,4 @@
-/*
-* Estilos para OrderSummary.jsx
-*/
+/* src/components/pos/OrderSummary.css */
 
 .pos-order-container {
   background-color: var(--card-background-color);
@@ -9,8 +7,19 @@
   box-shadow: var(--box-shadow);
   display: flex;
   flex-direction: column;
-  height: fit-content;
-  /* Evita que se estire con la cuadrícula */
+  height: calc(100vh - 100px);
+  /* Altura ajustada para escritorio */
+  min-height: 500px;
+  position: sticky;
+  top: 20px;
+}
+
+.pos-order-container h2 {
+  font-size: 1.2rem;
+  color: var(--text-dark);
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .empty-message {
@@ -18,22 +27,28 @@
   color: var(--text-light);
   padding: var(--spacing-lg);
   font-style: italic;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .order-list {
   flex-grow: 1;
-  margin-bottom: var(--spacing-md);
-  max-height: 400px;
-  /* Límite para que no crezca indefinidamente */
   overflow-y: auto;
+  margin-bottom: var(--spacing-md);
+  padding-right: 5px;
+  /* Espacio para scrollbar */
 }
 
 .order-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  /* Alineación superior para items con detalles */
   padding: var(--spacing-sm) 0;
   border-bottom: 1px solid var(--light-background);
+  animation: fadeIn 0.2s ease-out;
 }
 
 .order-item:last-child {
@@ -42,171 +57,222 @@
 
 .order-item-info {
   flex-grow: 1;
+  padding-right: 10px;
+}
+
+.order-item-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .order-item-name {
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--text-dark);
+  font-size: 0.95rem;
 }
 
-.order-item-price {
+.stock-alert-icon {
+  font-size: 0.8rem;
+  cursor: help;
+}
+
+/* --- ESTILOS NUEVOS PARA MODIFICADORES --- */
+.order-item-modifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.modifier-tag {
+  font-size: 0.75rem;
   color: var(--text-light);
-  font-size: 0.875rem;
+  background-color: var(--light-background);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.order-item-notes {
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  /* Nota destacada */
+  margin-top: 2px;
+  font-style: italic;
+}
+
+/* ----------------------------------------- */
+
+.order-item-price {
+  color: var(--secondary-color);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 2px;
 }
 
 .order-item-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
+  flex-shrink: 0;
+  /* Evita que se aplasten */
 }
 
 .quantity-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  /* Cuadrados redondeados modernos */
+  background-color: var(--light-background);
+  color: var(--text-dark);
+  border: 1px solid transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.1s ease;
+  font-weight: bold;
 }
 
 .quantity-btn:hover {
-  background-color: var(--secondary-color);
-  transform: scale(1.1);
+  background-color: var(--border-color);
 }
 
 .quantity-btn:active {
-  transform: scale(0.95);
-}
-
-.quantity-btn svg {
-  width: 16px;
-  height: 16px;
-  stroke: currentColor;
+  background-color: var(--secondary-color);
+  color: white;
 }
 
 .quantity-display {
-  min-width: 30px;
+  min-width: 24px;
   text-align: center;
-  font-weight: 500;
-  font-size: 1rem;
+  font-weight: 600;
+  font-size: 0.95rem;
 }
 
-/* Controles para "A Granel" */
+/* Inputs Bulk */
 .bulk-input {
-  width: 80px;
-  padding: 6px 8px;
+  width: 60px;
+  padding: 4px;
   text-align: center;
-  font-size: 0.9rem;
-  border: 1px solid var(--light-background);
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
 }
 
-.bulk-input::-webkit-outer-spin-button,
-.bulk-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.bulk-input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-}
-
 .unit-label {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   color: var(--text-light);
-  font-weight: 500;
 }
 
-/* Total del Pedido */
+/* Footer de Totales */
 .order-total {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--spacing-md) 0;
-  border-top: 2px solid var(--light-background);
-  margin-bottom: var(--spacing-md);
-  font-size: 1.1rem;
-  font-weight: 600;
+  padding: 15px 0;
+  border-top: 2px dashed var(--border-color);
+  margin-top: auto;
+  /* Empuja al fondo si hay espacio */
+}
+
+.order-total span {
+  font-size: 1.2rem;
+  font-weight: 700;
 }
 
 .total-price {
-  font-size: 1.5rem;
-  font-weight: 700;
   color: var(--primary-color);
+  font-size: 1.6rem !important;
 }
 
-/* Botones de acción */
+.order-actions {
+  display: grid;
+  grid-template-columns: 3fr 1fr;
+  /* Botón cobrar grande, cancelar pequeño */
+  gap: 10px;
+}
+
 .process-btn {
   background-color: var(--success-color);
   color: white;
-  width: 100%;
-  padding: var(--spacing-md);
+  padding: 14px;
   border: none;
   border-radius: var(--border-radius);
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 1.1rem;
+  font-weight: 700;
   cursor: pointer;
-  margin-bottom: var(--spacing-sm);
-  transition: background-color 0.2s ease;
+  transition: transform 0.1s;
+  box-shadow: 0 4px 6px rgba(0, 196, 140, 0.2);
 }
 
 .process-btn:hover {
   background-color: #059669;
+  transform: translateY(-1px);
 }
 
-.process-btn:disabled {
-  background-color: var(--text-light);
-  cursor: not-allowed;
-  opacity: 0.6;
+.process-btn:active {
+  transform: scale(0.98);
 }
 
 .clear-btn {
   background-color: transparent;
-  color: var(--text-light);
-  border: 1px solid #e5e7eb;
-  width: 100%;
-  padding: var(--spacing-md);
+  color: var(--error-color);
+  border: 1px solid var(--error-color);
+  padding: 10px;
   border-radius: var(--border-radius);
-  font-size: 1rem;
-  font-weight: 500;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
 }
 
 .clear-btn:hover {
-  background-color: rgba(239, 68, 68, 0.1);
-  color: var(--error-color);
-  border-color: var(--error-color);
+  background-color: #fee2e2;
 }
 
-/* Alertas de Stock en el Carrito */
-.stock-warning {
-  margin-top: 5px;
-  padding: 3px 6px;
-  border-radius: 3px;
-  font-size: 0.8rem;
-  font-weight: bold;
-}
-
+/* Alertas visuales en item */
 .order-item.exceeds-stock {
-  border-left: 4px solid var(--error-color);
-  background-color: rgba(220, 53, 69, 0.05);
+  background-color: #fef2f2;
+  /* Rojo muy suave */
+  border-radius: 4px;
 }
 
-.exceeds-stock-warning {
-  color: var(--error-color);
+@media (max-width: 768px) {
+  .pos-order-container {
+    height: auto;
+    /* Altura automática en móvil */
+    min-height: auto;
+    position: static;
+  }
+
+  .order-list {
+    max-height: 300px;
+    /* Límite de scroll en móvil */
+  }
 }
 
-.order-item.low-stock {
-  border-left: 4px solid var(--warning-color);
-  background-color: rgba(255, 193, 7, 0.05);
+/* --- ESTILOS NUEVOS PARA MODIFICADORES --- */
+.order-item-modifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
 }
 
-.low-stock-warning {
-  color: var(--warning-color);
+.modifier-tag {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  background-color: var(--light-background);
+  padding: 1px 5px;
+  border-radius: 4px;
 }
+
+.order-item-notes {
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  /* Nota destacada */
+  margin-top: 2px;
+  font-style: italic;
+}
+
+/* ----------------------------------------- */

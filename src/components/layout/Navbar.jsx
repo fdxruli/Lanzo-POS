@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
+import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import LazyImage from '../common/LazyImage';
 import './Navbar.css';
 
@@ -12,6 +13,8 @@ function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const companyProfile = useAppStore((state) => state.companyProfile);
+
+  const features = useFeatureConfig();
 
   const toggleMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -57,6 +60,11 @@ function Navbar() {
             <NavLink to="/caja" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
               Caja
             </NavLink>
+            {features.hasKDS && (
+              <NavLink to="/pedidos" className={({ isActive }) => `nav-link ${isActive ? ' active' : ''}`}>
+                Pedidos
+              </NavLink>
+            )}
             <NavLink to="/productos" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
               Productos
             </NavLink>

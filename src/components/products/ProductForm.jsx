@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
-import { compressImage, lookupBarcodeInAPI, showMessageModal } from '../../services/utils'; 
+import { compressImage, lookupBarcodeInAPI, showMessageModal } from '../../services/utils';
 import ScannerModal from '../common/ScannerModal';
 import './ProductForm.css';
 
@@ -16,11 +16,11 @@ import WholesaleManagerModal from './WholesaleManagerModal';
 
 const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
 
-export default function ProductForm({ 
-    onSave, onCancel, productToEdit, categories, onOpenCategoryManager, 
-    products, onEdit, onManageBatches 
+export default function ProductForm({
+    onSave, onCancel, productToEdit, categories, onOpenCategoryManager,
+    products, onEdit, onManageBatches
 }) {
-    
+
     // 1. Hook de Configuración (El cerebro)
     const features = useFeatureConfig();
     const navigate = useNavigate();
@@ -32,15 +32,17 @@ export default function ProductForm({
     const [imagePreview, setImagePreview] = useState(defaultPlaceholder);
     const [imageData, setImageData] = useState(null);
     const [categoryId, setCategoryId] = useState('');
-    
+
     // --- ESTADOS ESPECÍFICOS (Dependen del Rubro) ---
-    
+
     // Restaurante / Cocina
     const [productType, setProductType] = useState('sellable'); // 'sellable' o 'ingredient'
-    const [recipe, setRecipe] = useState([]); 
+    const [recipe, setRecipe] = useState([]);
     const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
     // NUEVO: Estación de impresión (Cocina/Barra)
-    const [printStation, setPrintStation] = useState('kitchen'); 
+    const [printStation, setPrintStation] = useState('kitchen');
+    const [prepTime, setPrepTime] = useState('');
+    const [modifiers, setModifiers] = useState([]);
 
     // Abarrotes / Granel / Ferretería
     const [saleType, setSaleType] = useState('unit');
@@ -49,14 +51,14 @@ export default function ProductForm({
     // NUEVO: Puntos de reorden (Stock Mínimo/Máximo)
     const [minStock, setMinStock] = useState('');
     const [maxStock, setMaxStock] = useState('');
-    
+
     // Farmacia
     const [sustancia, setSustancia] = useState('');
     const [laboratorio, setLaboratorio] = useState('');
     // NUEVO: Control de antibióticos y presentación
     const [requiresPrescription, setRequiresPrescription] = useState(false);
     const [presentation, setPresentation] = useState('');
-    
+
     // --- ESTADOS DE UI ---
     const [isScannerOpen, setIsScannerOpen] = useState(false);
     const [isLookingUp, setIsLookingUp] = useState(false);
@@ -75,11 +77,13 @@ export default function ProductForm({
             setImagePreview(productToEdit.image || defaultPlaceholder);
             setImageData(productToEdit.image || null);
             setCategoryId(productToEdit.categoryId || '');
-            
+
             // Datos Específicos - Restaurante
             setProductType(productToEdit.productType || 'sellable');
             setRecipe(productToEdit.recipe || []);
             setPrintStation(productToEdit.printStation || 'kitchen');
+            setPrepTime(productToEdit.prepTime || '');
+            setModifiers(productToEdit.modifiers || []);
 
             // Datos Específicos - Abarrotes/Ferretería
             setSaleType(productToEdit.saleType || 'unit');
@@ -92,12 +96,12 @@ export default function ProductForm({
             setLaboratorio(productToEdit.laboratorio || '');
             setRequiresPrescription(productToEdit.requiresPrescription || false);
             setPresentation(productToEdit.presentation || '');
-            
+
             // Mostrar sección extra si hay datos relevantes
             if (
-                productToEdit.description || 
-                productToEdit.categoryId || 
-                productToEdit.image || 
+                productToEdit.description ||
+                productToEdit.categoryId ||
+                productToEdit.image ||
                 productToEdit.sustancia ||
                 productToEdit.minStock
             ) {
@@ -108,41 +112,43 @@ export default function ProductForm({
         } else {
             resetForm();
         }
-    }, [productToEdit]); 
-    
+    }, [productToEdit]);
+
     const resetForm = () => {
         // Reset Común
         setName(''); setBarcode(''); setDescription('');
         setImagePreview(defaultPlaceholder); setImageData(null);
-        setCategoryId(''); 
-        
+        setCategoryId('');
+
         // Reset Restaurante
         setProductType('sellable');
         setRecipe([]);
         setPrintStation('kitchen');
+        setPrepTime('');
+        setModifiers([]);
 
         // Reset Abarrotes
         setSaleType('unit');
         setWholesaleTiers([]);
         setMinStock(''); setMaxStock('');
-        
+
         // Reset Farmacia
         setSustancia(''); setLaboratorio('');
         setRequiresPrescription(false); setPresentation('');
-        
+
         // Reset UI
         setInternalEditingProduct(null);
         setShowSpecificData(false);
     };
-    
+
     // --- HANDLERS (Imagen, Scanner, API) ---
     const handleImageChange = async (e) => {
         const file = e.target.files[0];
         if (file) {
             try {
-                const compressedFile = await compressImage(file); 
-                setImagePreview(URL.createObjectURL(compressedFile)); 
-                setImageData(compressedFile); 
+                const compressedFile = await compressImage(file);
+                setImagePreview(URL.createObjectURL(compressedFile));
+                setImageData(compressedFile);
             } catch (error) {
                 console.error("Error al comprimir imagen:", error);
                 setImagePreview(defaultPlaceholder);
@@ -150,7 +156,7 @@ export default function ProductForm({
             }
         }
     };
-    
+
     const handleBarcodeLookup = async (codeToLookup) => {
         if (!codeToLookup) {
             showMessageModal('Por favor, ingresa un código de barras para buscar.');
@@ -179,11 +185,11 @@ export default function ProductForm({
         setIsScannerOpen(false);
         handleBarcodeLookup(code);
     };
-    
+
     // 3. HANDLESUBMIT: Recolecta todo y guarda
     const handleSubmit = (e) => {
         e.preventDefault();
-        
+
         let productData = {
             // Comunes
             name, barcode, description, categoryId,
@@ -193,13 +199,15 @@ export default function ProductForm({
             productType: features.hasRecipes ? productType : 'sellable',
             recipe: (features.hasRecipes && productType === 'sellable') ? recipe : [],
             printStation: features.hasRecipes ? printStation : null,
-            
+            prepTime: features.hasRecipes ? prepTime : null,
+            modifiers: features.hasRecipes ? modifiers : [],
+
             // Abarrotes / Ferretería
             saleType: features.hasBulk ? saleType : 'unit',
             wholesaleTiers: features.hasWholesale ? wholesaleTiers : [],
             minStock: features.hasMinMax ? parseFloat(minStock) : null,
             maxStock: features.hasMinMax ? parseFloat(maxStock) : null,
-            
+
             // Farmacia
             sustancia: features.hasLabFields ? sustancia : null,
             laboratorio: features.hasLabFields ? laboratorio : null,
@@ -219,7 +227,7 @@ export default function ProductForm({
                 <h3 className="subtitle" id="product-form-title">
                     {internalEditingProduct ? `Editar: ${internalEditingProduct.name}` : 'Añadir Nuevo Producto'}
                 </h3>
-                
+
                 <form id="product-form" onSubmit={handleSubmit}>
 
                     {/* --- A. CAMPOS ESENCIALES --- */}
@@ -254,20 +262,20 @@ export default function ProductForm({
 
                     {/* --- B. BOTÓN GESTIÓN DE INVENTARIO (Si editamos) --- */}
                     {internalEditingProduct && (features.hasLots || features.hasVariants) && (
-                      <div className="form-group">
-                        <label className="form-label">Inventario, Costos y Precios</label>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => onManageBatches(internalEditingProduct.id)}
-                        >
-                          Gestionar {features.hasVariants ? 'Variantes (Tallas/Colores)' : 'Lotes (Stock/Costos)'}
-                        </button>
-                      </div>
+                        <div className="form-group">
+                            <label className="form-label">Inventario, Costos y Precios</label>
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => onManageBatches(internalEditingProduct.id)}
+                            >
+                                Gestionar {features.hasVariants ? 'Variantes (Tallas/Colores)' : 'Lotes (Stock/Costos)'}
+                            </button>
+                        </div>
                     )}
 
                     {/* --- C. FIELDSETS DINÁMICOS (Módulos) --- */}
-                    
+
                     {/* Módulo Restaurante */}
                     {features.hasRecipes && (
                         <RestauranteFields
@@ -276,9 +284,13 @@ export default function ProductForm({
                             onManageRecipe={() => setIsRecipeModalOpen(true)}
                             printStation={printStation}
                             setPrintStation={setPrintStation}
+                            prepTime={prepTime}
+                            setPrepTime={setPrepTime}
+                            modifiers={modifiers}
+                            setModifiers={setModifiers}
                         />
                     )}
-                    
+
                     {/* Módulo Abarrotes / Ferretería / Verdulería */}
                     {(features.hasBulk || features.hasMinMax) && (
                         <AbarrotesFields
@@ -305,7 +317,7 @@ export default function ProductForm({
 
                     {showSpecificData && (
                         <div className="specific-data-container">
-                            
+
                             {/* Módulo Farmacia (Dentro del desplegable) */}
                             {features.hasLabFields && (
                                 <FarmaciaFields
@@ -319,7 +331,7 @@ export default function ProductForm({
                                     setPresentation={setPresentation}
                                 />
                             )}
-                            
+
                             {/* Funciones Bloqueadas (Upsell) */}
                             {features.isVariantsLocked && (
                                 <div className="form-group-locked">
@@ -336,7 +348,7 @@ export default function ProductForm({
 
                             <div className="form-group">
                                 <label className="form-label">Categoría</label>
-                                <div style={{display: 'flex', gap: '10px'}}>
+                                <div style={{ display: 'flex', gap: '10px' }}>
                                     <select className="form-input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
                                         <option value="">Sin categoría</option>
                                         {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
@@ -360,16 +372,16 @@ export default function ProductForm({
                     <button type="button" className="btn btn-cancel" onClick={onCancel}>Cancelar</button>
                 </form>
             </div>
-            
+
             {/* --- MODALES AUXILIARES --- */}
             <ScannerModal
                 show={isScannerOpen}
                 onClose={() => setIsScannerOpen(false)}
                 onScanSuccess={handleBarcodeScanned}
             />
-            
+
             {/* Modal de Recetas (Restaurante) */}
-            <RecipeBuilderModal 
+            <RecipeBuilderModal
                 show={isRecipeModalOpen}
                 onClose={() => setIsRecipeModalOpen(false)}
                 existingRecipe={recipe}
@@ -378,7 +390,7 @@ export default function ProductForm({
             />
 
             {/* Modal de Mayoreo (Abarrotes) */}
-            <WholesaleManagerModal 
+            <WholesaleManagerModal
                 show={isWholesaleModalOpen}
                 onClose={() => setIsWholesaleModalOpen(false)}
                 tiers={wholesaleTiers}

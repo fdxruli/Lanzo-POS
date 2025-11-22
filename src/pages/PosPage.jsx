@@ -69,18 +69,14 @@ export default function PosPage() {
     return items;
   }, [allProducts, selectedCategoryId, searchTerm]);
 
-  // --- 4. PROCESAMIENTO DE LA VENTA (OPTIMIZADO) ---
   const handleProcessOrder = async (paymentData) => {
     const licenseDetails = useAppStore.getState().licenseDetails;
 
-    // Validación de Licencia
     if (!licenseDetails || !licenseDetails.valid) {
-      showMessageModal('⚠️ Error de Seguridad: Licencia no válida. El sistema se reiniciará.');
-      setTimeout(() => window.location.reload(), 2000);
+      showMessageModal('⚠️ Error de Seguridad: Licencia no válida.');
       return;
     }
 
-    // Validación de Caja
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       setIsPaymentModalOpen(false);
       setIsQuickCajaOpen(true);
@@ -94,46 +90,41 @@ export default function PosPage() {
       return;
     }
 
-    // Cerramos modal antes de procesar para dar feedback visual
     setIsPaymentModalOpen(false);
 
     try {
-      console.time('ProcesoVentaOptimizado'); // Para depuración
+      console.time('ProcesoVentaOptimizado');
 
       // ============================================================
-      // PASO 1: Pre-cargar TODOS los lotes necesarios en UNA consulta
+      // PASO 1: Pre-cargar TODOS los lotes necesarios
       // ============================================================
       const uniqueProductIds = new Set();
 
-      // Identificar todos los IDs de ingredientes/productos involucrados
       for (const orderItem of itemsToProcess) {
-        const product = allProducts.find(p => p.id === orderItem.id);
+        // --- CORRECCIÓN: Usar parentId si existe (es un modificador), sino el id normal ---
+        const realProductId = orderItem.parentId || orderItem.id;
+        const product = allProducts.find(p => p.id === realProductId);
+
         if (!product) continue;
 
-        // Determinar si usa receta o es directo
         const itemsToDeduct = (product.recipe && product.recipe.length > 0)
           ? product.recipe
-          : [{ ingredientId: product.id, quantity: 1 }];
+          : [{ ingredientId: realProductId, quantity: 1 }];
 
         itemsToDeduct.forEach(component => {
           uniqueProductIds.add(component.ingredientId);
         });
       }
 
-      // Cargar lotes en paralelo
       const batchesMap = new Map();
       await Promise.all(
         Array.from(uniqueProductIds).map(async (productId) => {
           let batches = await queryBatchesByProductIdAndActive(productId, true);
-
-          // Fallback si la query optimizada falla (red de seguridad)
           if (!batches || batches.length === 0) {
             const allBatches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', productId);
             batches = allBatches.filter(b => b.isActive && b.stock > 0);
           }
-
           if (batches && batches.length > 0) {
-            // Ordenar FIFO (Primero que entra, primero que sale)
             batches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
             batchesMap.set(productId, batches);
           }
@@ -141,65 +132,63 @@ export default function PosPage() {
       );
 
       // ============================================================
-      // PASO 2: Validación de stock (En memoria, ultrarrápida)
+      // PASO 2: Validación de stock
       // ============================================================
       const stockValidationErrors = [];
-
-      // Mapa temporal para simular descuento y validar stock compartido
-      // (Ej: 2 productos usan Harina, hay que sumar el consumo total)
       const tempStockCheck = new Map();
 
       for (const orderItem of itemsToProcess) {
-        const product = allProducts.find(p => p.id === orderItem.id);
-        // Si no rastrea stock, saltar
+        // --- CORRECCIÓN DE ID ---
+        const realProductId = orderItem.parentId || orderItem.id;
+        const product = allProducts.find(p => p.id === realProductId);
+
         if (!product || product.trackStock === false) continue;
 
         const itemsToDeduct = (product.recipe && product.recipe.length > 0)
           ? product.recipe
-          : [{ ingredientId: product.id, quantity: 1 }];
+          : [{ ingredientId: realProductId, quantity: 1 }];
 
         for (const component of itemsToDeduct) {
           const targetId = component.ingredientId;
           const requiredQty = component.quantity * orderItem.quantity;
 
-          // Obtener stock disponible real (de los lotes cargados)
           const batches = batchesMap.get(targetId) || [];
           const totalRealStock = batches.reduce((sum, b) => sum + (b.stock || 0), 0);
 
-          // Verificar consumo acumulado en esta orden
           const currentUsage = tempStockCheck.get(targetId) || 0;
           const newUsage = currentUsage + requiredQty;
 
-          if (totalRealStock < (newUsage - 0.001)) { // Tolerancia decimal
+          if (totalRealStock < (newUsage - 0.001)) {
             const ingredientName = allProducts.find(p => p.id === targetId)?.name || targetId;
             stockValidationErrors.push(
               `${orderItem.name}: Faltan ${(newUsage - totalRealStock).toFixed(2)} de ${ingredientName}`
             );
           }
-
           tempStockCheck.set(targetId, newUsage);
         }
       }
 
       if (stockValidationErrors.length > 0) {
         showMessageModal(`❌ Stock Insuficiente:\n\n${stockValidationErrors.join('\n')}`);
-        return; // DETENER VENTA
+        return;
       }
 
       // ============================================================
-      // PASO 3: Procesamiento y Descuento (En memoria)
+      // PASO 3: Procesamiento y Descuento
       // ============================================================
       const processedItems = [];
-      const batchUpdates = new Map(); // Mapa para guardar lotes modificados y evitar duplicados
+      const batchUpdates = new Map();
 
       for (const orderItem of itemsToProcess) {
-        const product = allProducts.find(p => p.id === orderItem.id);
-        // Nota: Ya validamos existencia arriba, pero por seguridad:
+        // --- CORRECCIÓN DE ID ---
+        const realProductId = orderItem.parentId || orderItem.id;
+        const product = allProducts.find(p => p.id === realProductId);
+
         if (!product) continue;
 
         const itemsToDeduct = (product.recipe && product.recipe.length > 0)
           ? product.recipe
-          : [{ ingredientId: product.id, quantity: 1 }];
+          : [{ ingredientId: realProductId, quantity: 1 }];
 
         let itemTotalCost = 0;
         const itemBatchesUsed = [];
@@ -207,27 +196,20 @@ export default function PosPage() {
         for (const component of itemsToDeduct) {
           let requiredQty = component.quantity * orderItem.quantity;
           const targetId = component.ingredientId;
-
-          // Obtenemos los lotes del mapa pre-cargado
           const batches = batchesMap.get(targetId) || [];
 
           for (const batch of batches) {
             if (requiredQty <= 0.0001) break;
 
-            // IMPORTANTE: Usar la versión del lote que está en `batchUpdates` si ya fue tocado
-            // por otro producto en este mismo bucle.
             const currentBatch = batchUpdates.get(batch.id) || batch;
-
             const toDeduct = Math.min(requiredQty, currentBatch.stock);
 
-            // Modificamos el objeto (en memoria)
             currentBatch.stock -= toDeduct;
             if (currentBatch.stock < 0.0001) {
               currentBatch.stock = 0;
               currentBatch.isActive = false;
             }
 
-            // Registramos el uso para historial
             itemBatchesUsed.push({
               batchId: currentBatch.id,
               ingredientId: targetId,
@@ -237,13 +219,10 @@ export default function PosPage() {
 
             itemTotalCost += (currentBatch.cost * toDeduct);
             requiredQty -= toDeduct;
-
-            // Guardamos el lote modificado en el mapa de actualizaciones
             batchUpdates.set(currentBatch.id, currentBatch);
           }
         }
 
-        // Calcular costo promedio ponderado
         const avgUnitCost = orderItem.quantity > 0 ? (itemTotalCost / orderItem.quantity) : 0;
 
         processedItems.push({
@@ -255,13 +234,12 @@ export default function PosPage() {
       }
 
       // ============================================================
-      // PASO 4: Guardado masivo en una sola transacción (Atomicidad)
+      // PASO 4: Guardado masivo
       // ============================================================
       if (batchUpdates.size > 0) {
         await saveBulk(STORES.PRODUCT_BATCHES, Array.from(batchUpdates.values()));
       }
 
-      // Guardar la venta
       const sale = {
         timestamp: new Date().toISOString(),
         items: processedItems,
@@ -269,11 +247,12 @@ export default function PosPage() {
         customerId: paymentData.customerId,
         paymentMethod: paymentData.paymentMethod,
         abono: paymentData.amountPaid,
-        saldoPendiente: paymentData.saldoPendiente
+        saldoPendiente: paymentData.saldoPendiente,
+
+        fulfillmentStatus: 'pending'
       };
       await saveData(STORES.SALES, sale);
 
-      // Actualizar deuda cliente si aplica (Fiado)
       if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
         const customer = await loadData(STORES.CUSTOMERS, sale.customerId);
         if (customer) {
@@ -282,12 +261,9 @@ export default function PosPage() {
         }
       }
 
-      // ============================================================
-      // PASO 5: Finalización y UI
-      // ============================================================
       clearOrder();
       showMessageModal('✅ ¡Pedido procesado exitosamente!');
-      refreshData(); // Actualizar dashboard y stock visual
+      refreshData();
 
       // Generar Ticket WhatsApp
       if (paymentData.sendReceipt && paymentData.customerId) {
@@ -300,27 +276,28 @@ export default function PosPage() {
             receiptText += `*Productos:*\n`;
 
             processedItems.forEach(item => {
+              // --- MODIFICADORES EN TICKET ---
               receiptText += `• ${item.name} (x${item.quantity}) - $${(item.price * item.quantity).toFixed(2)}\n`;
+              if (item.selectedModifiers && item.selectedModifiers.length > 0) {
+                const mods = item.selectedModifiers.map(m => m.name).join(', ');
+                receiptText += `  _(${mods})_\n`;
+              }
+              if (item.notes) {
+                receiptText += `  _Nota: ${item.notes}_\n`;
+              }
             });
 
             receiptText += `\n*TOTAL: $${total.toFixed(2)}*\n`;
 
             if (paymentData.paymentMethod === 'efectivo') {
-              receiptText += `Pago con: $${parseFloat(paymentData.amountPaid).toFixed(2)}\n`;
               const cambio = parseFloat(paymentData.amountPaid) - total;
               receiptText += `Cambio: $${cambio.toFixed(2)}\n`;
-            } else if (paymentData.paymentMethod === 'fiado') {
-              receiptText += `Método: Fiado / Crédito\n`;
-              receiptText += `Abono Inicial: $${parseFloat(paymentData.amountPaid).toFixed(2)}\n`;
-              receiptText += `Saldo Restante: $${parseFloat(paymentData.saldoPendiente).toFixed(2)}\n`;
             }
-            receiptText += `\n¡Gracias por su preferencia!`;
 
+            receiptText += `\n¡Gracias por su preferencia!`;
             sendWhatsAppMessage(customer.phone, receiptText);
           }
-        } catch (error) {
-          console.error("Error ticket WhatsApp:", error);
-        }
+        } catch (error) { console.error("Error ticket WhatsApp:", error); }
       }
 
       console.timeEnd('ProcesoVentaOptimizado');

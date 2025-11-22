@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
 import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
+import ProductModifiersModal from './ProductModifiersModal';
+import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import './ProductMenu.css';
 
 export default function ProductMenu({
@@ -15,6 +17,11 @@ export default function ProductMenu({
   onOpenScanner
 }) {
   const addItemToOrder = useOrderStore((state) => state.addItem);
+
+  const features = useFeatureConfig();
+
+  const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedProductFormMod, setSelectedProductForMod] = useState(null);
 
   // --- OPTIMIZACIÓN DE RENDERIZADO (INFINITE SCROLL) ---
   // Empezamos mostrando solo 50 productos para carga instantánea
@@ -57,8 +64,20 @@ export default function ProductMenu({
   // --- HANDLERS EXISTENTES ---
   const handleProductClick = (product, isOutOfStock) => {
     if (isOutOfStock) return;
-    addItemToOrder(product);
+
+    if (features.hasModifiers && product.modifiers && product.modifiers.length > 0) {
+      setSelectedProductForMod(product);
+      setModModalOpen(true);
+    } else {
+      addItemToOrder(product);
+    }
   };
+
+  const handleConfirmModifiers = (customizedProduct) => {
+    addItemToOrder(customizedProduct);
+    setModModalOpen(false);
+    setSelectedProductForMod(null);
+  }
 
   const renderStockInfo = (item) => {
     if (!item.trackStock) {
@@ -134,54 +153,35 @@ export default function ProductMenu({
           ) : (
             visibleProducts.map((item) => {
               const { isLowStock, isNearingExpiry, isOutOfStock } = getProductAlerts(item);
-              const hasWholesale = item.wholesaleTiers && item.wholesaleTiers.length > 0;
-              const requiresRx = item.requiresPrescription;
 
-              const itemClasses = [
-                'menu-item',
-                isLowStock ? 'low-stock-warning' : '',
-                isNearingExpiry ? 'nearing-expiry-warning' : '',
-                isOutOfStock ? 'out-of-stock' : ''
-              ].filter(Boolean).join(' ');
+              // 4. VALIDACIÓN VISUAL:
+              // Solo mostramos que tiene modificadores si el negocio lo permite
+              const hasModifiers = features.hasModifiers && item.modifiers && item.modifiers.length > 0;
+
+              const itemClasses = ['menu-item', isLowStock ? 'low-stock-warning' : '', isNearingExpiry ? 'nearing-expiry-warning' : '', isOutOfStock ? 'out-of-stock' : ''].filter(Boolean).join(' ');
 
               return (
-                <div
-                  key={item.id}
-                  className={itemClasses}
-                  onClick={() => handleProductClick(item, isOutOfStock)}
-                >
-                  {isOutOfStock && (
-                    <div className="stock-overlay">Agotado</div>
-                  )}
+                <div key={item.id} className={itemClasses} onClick={() => handleProductClick(item, isOutOfStock)}>
+                  {isOutOfStock && <div className="stock-overlay">Agotado</div>}
 
-                  {hasWholesale && !isOutOfStock && (
-                    <div className="wholesale-badge">Mayoreo</div>
-                  )}
-
-                  {requiresRx && (
-                    <div className="prescription-badge">
-                      💊 Receta
+                  {/* Solo mostramos la etiqueta si features.hasModifiers es true */}
+                  {hasModifiers && !isOutOfStock && (
+                    <div className="modifier-badge" style={{ position: 'absolute', top: '5px', left: '5px', background: 'var(--primary-color)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', zIndex: 2 }}>
+                      ✨ Opciones
                     </div>
                   )}
 
-                  <LazyImage
-                    className="menu-item-image"
-                    src={item.image}
-                    alt={item.name}
-                  />
+                  <LazyImage className="menu-item-image" src={item.image} alt={item.name} />
                   <h3 className="menu-item-name">{item.name}</h3>
                   <p className="menu-item-price">
                     ${item.price.toFixed(2)}
-                    {item.saleType === 'bulk' && (
-                      <span className="menu-item-unit"> / {item.bulkData?.purchase?.unit || 'kg'}</span>
-                    )}
+                    {item.saleType === 'bulk' && <span className="menu-item-unit"> / {item.bulkData?.purchase?.unit || 'kg'}</span>}
                   </p>
                   {renderStockInfo(item)}
                 </div>
               );
             })
           )}
-
           {/* Spinner invisible al final para dar espacio */}
           {visibleProducts.length < products.length && (
             <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '20px', color: '#999' }}>
@@ -190,6 +190,12 @@ export default function ProductMenu({
           )}
         </div>
       </div>
+      <ProductModifiersModal
+        show={modModalOpen}
+        onClose={() => { setModModalOpen(false); setSelectedProductForMod(null); }}
+        product={selectedProductFormMod}
+        onConfirm={handleConfirmModifiers}
+      />
     </div>
   );
 }
