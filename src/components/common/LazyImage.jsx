@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export default function LazyImage({
     src,
@@ -7,23 +7,34 @@ export default function LazyImage({
     style = {},
     ...props
 }) {
-    // LÓGICA 1: Si no hay src, no cargamos nada (estado 'error' inmediato)
+    // Estados para controlar la carga
     const [hasError, setHasError] = useState(!src);
     const [isLoaded, setIsLoaded] = useState(false);
 
+    // Ref para rastrear la URL actual y detectar cambios reales
+    const currentSrcRef = useRef(src);
+
+    // ===================================================
+    // CORRECCIÓN CRÍTICA: Reiniciar estados correctamente
+    // ===================================================
     useEffect(() => {
-        // Si cambia el src, reiniciamos estados
-        if (src) {
-            setHasError(false);
-            setIsLoaded(false);
-        } else {
-            setHasError(true);
-            setIsLoaded(true); // "Cargado" (como error) para quitar spinner
+        // Solo reiniciar si el src REALMENTE cambió
+        if (currentSrcRef.current !== src) {
+            currentSrcRef.current = src;
+
+            if (src) {
+                setHasError(false);
+                setIsLoaded(false);
+            } else {
+                setHasError(true);
+                setIsLoaded(true);
+            }
         }
     }, [src]);
 
     const handleLoad = () => {
         setIsLoaded(true);
+        setHasError(false);
     };
 
     const handleError = () => {
@@ -37,7 +48,7 @@ export default function LazyImage({
             style={{
                 width: '100%',
                 height: '100%',
-                background: '#f0f0f0', // Color gris suave
+                background: '#f0f0f0',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -49,7 +60,6 @@ export default function LazyImage({
                 left: 0
             }}
         >
-            {/* Puedes poner un icono SVG aquí si quieres */}
             <span>{alt || 'Sin imagen'}</span>
         </div>
     );
@@ -57,7 +67,7 @@ export default function LazyImage({
     return (
         <div style={{ position: 'relative', overflow: 'hidden', ...style }} className={className}>
 
-            {/* 1. SPINNER: Solo se muestra si hay SRC, no hay error y aún no carga */}
+            {/* 1. SPINNER: Solo si hay SRC, no hay error y aún no carga */}
             {src && !isLoaded && !hasError && (
                 <div
                     style={{
@@ -86,14 +96,14 @@ export default function LazyImage({
                         width: '100%',
                         height: '100%',
                         objectFit: 'cover',
-                        opacity: isLoaded ? 1 : 0, // Efecto fade-in suave
+                        opacity: isLoaded ? 1 : 0,
                         transition: 'opacity 0.2s ease-in-out'
                     }}
                     {...props}
                 />
             )}
 
-            {/* 3. PLACEHOLDER: Si hubo error o no había SRC desde el principio */}
+            {/* 3. PLACEHOLDER: Si hubo error o no había SRC */}
             {hasError && renderPlaceholder()}
         </div>
     );
