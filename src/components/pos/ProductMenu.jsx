@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
 import { getProductAlerts } from '../../services/utils';
+import LazyImage from '../common/LazyImage';
 import './ProductMenu.css';
 
 export default function ProductMenu({
@@ -163,13 +164,10 @@ export default function ProductMenu({
                     </div>
                   )}
 
-                  <img
+                  <LazyImage
                     className="menu-item-image"
-                    // Optimizamos la carga de imágenes también
-                    loading="lazy"
-                    src={item.image || 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir'}
+                    src={item.image}
                     alt={item.name}
-                    onError={(e) => e.target.src = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir'}
                   />
                   <h3 className="menu-item-name">{item.name}</h3>
                   <p className="menu-item-price">

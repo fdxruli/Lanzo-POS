@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 // 1. Importamos el helper
 import { getProductAlerts } from '../../services/utils';
+import LazyImage from '../common/LazyImage';
 import './ProductList.css'
 
 const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
 
 export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus }) {
-  
+
   const [searchTerm, setSearchTerm] = useState('');
 
   const categoryMap = useMemo(() => {
@@ -22,16 +23,16 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
   if (isLoading) {
     return <div>Cargando productos...</div>;
   }
-  
+
   return (
     <div className="product-list-container">
       <h3 className="subtitle">Lista de Productos</h3>
       <div className="search-container">
-        <input 
-          type="text" 
-          id="product-search-input" 
-          className="form-input" 
-          placeholder="Buscar por nombre..." 
+        <input
+          type="text"
+          id="product-search-input"
+          className="form-input"
+          placeholder="Buscar por nombre..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -44,7 +45,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
           {filteredProducts.map(item => {
             const categoryName = categoryMap.get(item.categoryId) || 'Sin categoría';
             const isActive = item.isActive !== false;
-            
+
             // 2. Usamos el helper
             const { isLowStock, isNearingExpiry } = getProductAlerts(item);
 
@@ -54,21 +55,23 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
               isLowStock ? 'low-stock-warning' : '',
               isNearingExpiry ? 'nearing-expiry-warning' : ''
             ].filter(Boolean).join(' ');
-            
+
             return (
               <div key={item.id} className={itemClasses}>
                 <div className={`product-status-badge ${isActive ? 'active' : 'inactive'}`}>
                   {isActive ? 'Activo' : 'Inactivo'}
                 </div>
                 <div className="product-item-info">
-                  <img src={item.image || defaultPlaceholder} alt={item.name} />
+                  <LazyImage
+                    src={item.image}
+                    alt={item.name} />
                   <div className="product-item-details">
                     <span>{item.name}</span>
                     <p><strong>Categoría:</strong> {categoryName}</p>
                     <p><strong>Precio:</strong> ${item.price?.toFixed(2)}</p>
                     <p><strong>Costo:</strong> ${item.cost?.toFixed(2)}</p>
                     <p><strong>Stock:</strong> {item.trackStock ? item.stock : 'N/A'}</p>
-                    
+
                     {/* 4. (Opcional pero recomendado) Añadimos los indicadores visuales
                         que tu CSS 'ProductList.css' ya soporta */}
                     {isLowStock && (
@@ -84,7 +87,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                   </div>
                 </div>
                 <div className="product-item-controls">
-                  <button 
+                  <button
                     className={`btn-toggle-status ${isActive ? 'btn-deactivate' : 'btn-activate'}`}
                     onClick={() => onToggleStatus(item)}
                   >

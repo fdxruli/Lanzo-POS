@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
+import LazyImage from '../common/LazyImage';
 import './Navbar.css';
 
 // Importamos el logo desde la carpeta public
@@ -28,7 +29,7 @@ function Navbar() {
             que te lleva a la página principal.
           */}
           <Link to="/" className="nav-logo-container">
-            <img
+            <LazyImage
               id="nav-company-logo"
               className="nav-logo"
               src="/log.svg"  /* <--- Asegúrate de que la ruta coincida donde guardaste el SVG */

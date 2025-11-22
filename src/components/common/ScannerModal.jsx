@@ -316,7 +316,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
         <div className="scanner-actions">
           <button className="btn btn-process" onClick={handleConfirmScan} disabled={scannedItems.length === 0}>
-            ✅ Confirmar ({scannedItems.length})
+            Confirmar ({scannedItems.length})
           </button>
           <button className="btn btn-cancel" onClick={() => handleClose(false)}>
             Cancelar

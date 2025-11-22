@@ -70,7 +70,7 @@ async function calculateStatsOnTheFly() {
   return { totalRevenue, totalNetProfit, totalOrders, totalItemsSold, inventoryValue };
 }
 
-// --- HELPER 2: Agregación "Lazy" (OPTIMIZADO Y SEGURO) ---
+// --- HELPER 2: Agregación "Lazy" (OPTIMIZADO) ---
 async function aggregateProductsLazy(products) {
   if (!products || products.length === 0) return [];
 
@@ -81,18 +81,13 @@ async function aggregateProductsLazy(products) {
     const chunk = products.slice(i, i + CHUNK_SIZE);
 
     const chunkResults = await Promise.all(chunk.map(async (product) => {
-      // ✅ FALLBACKS DE SEGURIDAD: Aseguramos valores válidos por defecto
-      const safeProduct = {
-        ...product,
-        price: (typeof product.price === 'number' && !isNaN(product.price)) ? product.price : 0,
-        cost: (typeof product.cost === 'number' && !isNaN(product.cost)) ? product.cost : 0,
-        stock: (typeof product.stock === 'number' && !isNaN(product.stock)) ? product.stock : 0,
-      };
-
-      // Si no usa lotes, retornar directo con valores seguros
+      // Si no usa lotes, retornar directo
       if (!product.batchManagement?.enabled) {
         return {
-          ...safeProduct,
+          ...product,
+          stock: product.stock || 0,
+          cost: product.cost || 0,
+          price: product.price || 0,
           trackStock: product.trackStock !== false
         };
       }
@@ -102,7 +97,10 @@ async function aggregateProductsLazy(products) {
 
       if (!batches || batches.length === 0) {
         return {
-          ...safeProduct,
+          ...product,
+          stock: 0,
+          cost: product.cost || 0, // Fallback al costo base
+          price: product.price || 0,
           trackStock: true,
           hasBatches: false
         };
@@ -114,20 +112,11 @@ async function aggregateProductsLazy(products) {
       const totalStock = batches.reduce((sum, b) => sum + (b.stock || 0), 0);
       const currentBatch = batches[0];
 
-      // ✅ PROTECCIÓN: Validar que el lote tenga precio y costo válidos
-      const batchPrice = (typeof currentBatch.price === 'number' && !isNaN(currentBatch.price))
-        ? currentBatch.price
-        : safeProduct.price; // Fallback al precio base del producto
-
-      const batchCost = (typeof currentBatch.cost === 'number' && !isNaN(currentBatch.cost))
-        ? currentBatch.cost
-        : safeProduct.cost; // Fallback al costo base
-
       return {
-        ...safeProduct,
+        ...product,
         stock: totalStock,
-        cost: batchCost,
-        price: batchPrice,
+        cost: currentBatch.cost, // Costo del lote actual
+        price: currentBatch.price, // Precio del lote actual
         trackStock: true,
         hasBatches: true
       };
@@ -359,5 +348,4 @@ export const useDashboardStore = create((set, get) => ({
       get().loadAllData(true);
     } catch (error) { console.error("Error restaurar:", error); }
   }
-
 }));

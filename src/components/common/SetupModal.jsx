@@ -1,7 +1,8 @@
 // src/components/common/SetupModal.jsx
 import React, { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { compressImage } from '../../services/utils'; // Importamos el compresor
+import { compressImage } from '../../services/utils';
+import LazyImage from './LazyImage';
 import './SetupModal.css';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
@@ -117,7 +118,7 @@ export default function SetupModal() {
           <div className="form-group">
             <label className="form-label" htmlFor="setup-company-logo-file">Logo (Opcional)</label>
             <div className="image-upload-container">
-              <img id="setup-company-logo-preview" className="image-preview" src={logoPreview} alt="Preview" />
+              <LazyImage id="setup-company-logo-preview" className="image-preview" src={logoPreview} alt="Preview" />
               <input className="file-input" id="setup-company-logo-file" type="file" accept="image/*"
                 onChange={handleImageChange} />
             </div>
