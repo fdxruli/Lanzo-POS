@@ -20,14 +20,14 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const processingRef = useRef(false);
   const scanCountRef = useRef(0); 
 
-  // ... (Toda la configuración de useZxing se mantiene IGUAL hasta processScannedCode) ...
-  
+  // Configuración de la cámara y escaneo
   const { ref } = useZxing({
     paused: !isScanning,
     onDecodeResult(result) {
       const code = result.getText();
       const now = Date.now();
 
+      // Evitar lecturas duplicadas muy rápidas (1.5 segundos)
       if (
         lastScannedRef.current.code === code &&
         now - lastScannedRef.current.time < 1500
@@ -41,6 +41,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
       processingRef.current = true;
       scanCountRef.current++;
 
+      // MODO 1: Escaneo simple (solo devolver código)
       if (onScanSuccess) {
         if (navigator.vibrate) navigator.vibrate(50);
         onScanSuccess(code);
@@ -48,6 +49,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         return;
       }
 
+      // MODO 2: Punto de Venta (Carrito temporal)
       setIsScanning(false); 
 
       if (navigator.vibrate) navigator.vibrate([50, 30, 50]); 
@@ -55,6 +57,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
       processScannedCode(code);
 
+      // Pequeña pausa antes de permitir escanear otro
       setTimeout(() => {
         setIsScanning(true);
         processingRef.current = false;
@@ -83,6 +86,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     timeBetweenDecodingAttempts: 100,
   });
 
+  // Limpieza al desmontar
   useEffect(() => {
     return () => {
       lastScannedRef.current = { code: null, time: 0 };
@@ -91,6 +95,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     };
   }, []);
 
+  // Gestión de encendido/apagado de cámara al abrir/cerrar modal
   useEffect(() => {
     if (show) {
       setIsScanning(false);
@@ -129,20 +134,20 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   }, [show]);
 
   // ============================================================
-  // 📦 AQUÍ ESTÁ LA CORRECCIÓN PRINCIPAL
+  // 📦 AQUÍ ESTÁ LA CORRECCIÓN DEL PRECIO $0.00
   // ============================================================
   const processScannedCode = async (code) => {
     try {
       const menu = await loadData(STORES.MENU);
+      // Buscamos producto activo
       const product = menu.find(p => p.barcode === code && p.isActive !== false);
 
       if (product) {
         
-        // 1. Aseguramos que el precio sea un número válido (parseando strings)
+        // 1. CORRECCIÓN: Convertir a Float explícitamente para evitar error de tipos
         const rawPrice = parseFloat(product.price);
         const finalPrice = (!isNaN(rawPrice) && rawPrice >= 0) ? rawPrice : 0;
 
-        // 2. Aseguramos que el costo sea un número válido
         const rawCost = parseFloat(product.cost);
         const finalCost = (!isNaN(rawCost) && rawCost >= 0) ? rawCost : 0;
 
@@ -150,8 +155,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           ...product,
           price: finalPrice,
           cost: finalCost,
-          // 3. ¡IMPORTANTE! Agregamos originalPrice. 
-          // El useOrderStore lo necesita para calcular descuentos si cambias la cantidad luego.
+          // 2. CORRECCIÓN: Agregar 'originalPrice' para que el Store calcule bien el total
           originalPrice: finalPrice, 
           stock: (typeof product.stock === 'number' && !isNaN(product.stock)) ? product.stock : 0
         };
@@ -159,10 +163,12 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         setScannedItems(prevItems => {
           const existing = prevItems.find(i => i.id === safeProduct.id);
           if (existing) {
+            // Si ya existe en la lista temporal, sumamos 1
             return prevItems.map(i =>
               i.id === safeProduct.id ? { ...i, quantity: i.quantity + 1 } : i
             );
           }
+          // Si es nuevo en la lista temporal
           return [...prevItems, { ...safeProduct, quantity: 1 }];
         });
 
@@ -189,7 +195,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           existingInOrder.quantity += scannedItem.quantity;
         }
       } else {
-        // Al confirmar, ya llevamos el objeto corregido con precio y originalPrice
+        // Al confirmar, pasamos el objeto YA CORREGIDO
         newOrder.push(scannedItem);
       }
     });
@@ -267,6 +273,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                   <div key={item.id} className="scanned-item">
                     <span className="scanned-item-name">{item.name}</span>
                     <span className="scanned-item-controls">x{item.quantity}</span>
+                    {/* Mostramos el precio corregido aquí también */}
                     <span className="scanned-item-price">${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 ))
