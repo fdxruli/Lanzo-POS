@@ -199,8 +199,8 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     }
   }, [show]);
 
-  // ============================================================
-  // 📦 PROCESAMIENTO DE CÓDIGO ESCANEADO
+// ============================================================
+  // 📦 PROCESAMIENTO DE CÓDIGO ESCANEADO (CORRECCIÓN CRÍTICA)
   // ============================================================
   const processScannedCode = async (code) => {
     try {
@@ -208,17 +208,34 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
       const product = menu.find(p => p.barcode === code && p.isActive !== false);
 
       if (product) {
+        // ✅ CORRECCIÓN: Aseguramos que siempre haya un precio válido
+        const safeProduct = {
+          ...product,
+          // Si price es NaN o undefined, usamos 0 como fallback
+          price: (typeof product.price === 'number' && !isNaN(product.price)) 
+            ? product.price 
+            : 0,
+          // También aseguramos que cost sea válido (evita NaN en cálculos posteriores)
+          cost: (typeof product.cost === 'number' && !isNaN(product.cost))
+            ? product.cost
+            : 0,
+          // Aseguramos stock válido
+          stock: (typeof product.stock === 'number' && !isNaN(product.stock))
+            ? product.stock
+            : 0
+        };
+
         setScannedItems(prevItems => {
-          const existing = prevItems.find(i => i.id === product.id);
+          const existing = prevItems.find(i => i.id === safeProduct.id);
           if (existing) {
             return prevItems.map(i =>
-              i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+              i.id === safeProduct.id ? { ...i, quantity: i.quantity + 1 } : i
             );
           }
-          return [...prevItems, { ...product, quantity: 1 }];
+          return [...prevItems, { ...safeProduct, quantity: 1 }];
         });
         
-        setScanFeedback(`✅ ${product.name}`);
+        setScanFeedback(`✅ ${safeProduct.name}`);
       } else {
         console.warn(`Código ${code} no encontrado en inventario.`);
         setScanFeedback(`⚠️ No encontrado: ${code}`);
@@ -412,3 +429,4 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     </div>
   );
 }
+
