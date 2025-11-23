@@ -83,35 +83,6 @@ Autenticación/Licencias: Supabase (RPC y Auth)
 
 Escáner: react-zxing
 
-📂 Estructura del Proyecto
-La estructura del código está organizada para separar las responsabilidades:
-
-src/
-├── components/   # Componentes de UI reutilizables
-│   ├── common/   # Modales, botones, etc.
-│   ├── customers/
-│   ├── dashboard/
-│   ├── layout/   # Navbar, Ticker, Layout principal
-│   ├── pos/
-│   └── products/
-├── hooks/        # Hooks personalizados con lógica de negocio
-│   ├── useCaja.js
-├── pages/        # Componentes de página (rutas principales)
-│   ├── PosPage.jsx
-│   ├── CustomersPage.jsx
-│   ├── ProductsPage.jsx
-│   └── ...
-├── services/     # Lógica central y comunicación externa
-│   ├── database.js     # Wrapper de IndexedDB (El corazón de los datos)
-│   ├── supabase.js     # Funciones de licenciamiento
-│   └── utils.js        # Funciones helper (compresión de imagen, WhatsApp)
-├── store/        # Stores globales de Zustand
-│   ├── useAppStore.js      # Estado de la app (licencia, perfil)
-│   ├── useDashboardStore.js # Estado del dashboard (ventas, stock global)
-│   ├── useOrderStore.jsx   # Estado del carrito de compras
-│   └── useMessageStore.js  # Estado del modal de mensajes
-├── App.jsx       # Guardia de rutas (licencia, setup, app)
-└── main.jsx      # Punto de entrada de la aplicación
 🧠 Lógica Central
 1. Gestión de Estado (Zustand)
 La aplicación se apoya fuertemente en Zustand para el manejo del estado global, eliminando la necesidad de Context y facilitando la comunicación entre componentes no relacionados:
