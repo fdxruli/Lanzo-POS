@@ -171,6 +171,24 @@ export default function ProductMenu({
                     </div>
                   )}
 
+                  {item.requiresPrescription && !isOutOfStock && (
+                    <div className="prescription-badge" style={{
+                      position: 'absolute',
+                      top: hasModifiers ? '30px' : '5px', // Si ya hay badge de opciones, lo bajamos
+                      left: '5px',
+                      background: '#FF3B5C', // Rojo alerta
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.7rem',
+                      fontWeight: 'bold',
+                      zIndex: 2,
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    }}>
+                      ⚕️ Receta
+                    </div>
+                  )}
+
                   <LazyImage className="menu-item-image" src={item.image} alt={item.name} />
                   <h3 className="menu-item-name">{item.name}</h3>
                   <p className="menu-item-price">

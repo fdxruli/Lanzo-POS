@@ -6,11 +6,12 @@ import { showMessageModal } from '../../services/utils';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useCaja } from '../../hooks/useCaja';
 import './BatchManager.css';
+import { Menu } from 'lucide-react';
 
 /**
  * Formulario para añadir o editar un lote O variante (Modal)
  */
-const BatchForm = ({ product, batchToEdit, onClose, onSave, features }) => {
+const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) => {
   // --- Estados Comunes ---
   const [cost, setCost] = useState('');
   const [price, setPrice] = useState('');
@@ -50,8 +51,23 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features }) => {
         setAttribute2(attrs.color || attrs.marca || '');
       }
     } else {
-      setCost('');
-      setPrice('');
+      let calculatedCost = '';
+
+      if (product.recipe && product.recipe.length > 0) {
+        const totalRecipeCost = product.recipe.reduce((sum, item) => {
+          const ingredient = menu.find(p => p.id === item.ingredientId);
+          const unitCost = ingredient?.cost || 0;
+          return sum + (item.quantity * unitCost);
+        }, 0);
+
+        if (totalRecipeCost > 0) {
+          calculatedCost = totalRecipeCost.toFixed(2);
+        }
+      }
+
+      setCost(calculatedCost);
+      setPrice(product.price || '');
+
       setStock('');
       setNotes('');
       setPagadoDeCaja(false);
@@ -63,7 +79,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features }) => {
         setAttribute2('');
       }
     }
-  }, [batchToEdit, isEditing, features]);
+  }, [batchToEdit, isEditing, features, product, menu]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -79,6 +95,15 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features }) => {
 
     // Lógica de pago desde caja
     if (pagadoDeCaja && !isEditing) {
+      if (product.BatchManager?.enabled) {
+        if (product.shelfLife && product.shelfLife > 0) {
+          const today = new Date();
+          today.setDate(today.getDate() + parseInt(product.shelfLife));
+          setExpiryDate(today.toISOString().split('T')[0]);
+        } else {
+          setExpiryDate('');
+        }
+      }
       if (!cajaActual || cajaActual.estado !== 'abierta') {
         showMessageModal("⚠️ La caja está cerrada. Abre la caja para registrar el pago.");
         return;
@@ -197,6 +222,8 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   const features = useFeatureConfig();
   const rawProducts = useDashboardStore((state) => state.rawProducts);
   const refreshData = useDashboardStore((state) => state.loadAllData);
+
+  const menu = useDashboardStore((state) => state.menu);
 
   const loadBatchesForProduct = useDashboardStore((state) => state.loadBatchesForProduct);
 
@@ -326,7 +353,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
       setLocalBatches(updatedBatches);
 
       // Actualizar vista global en segundo plano
-      refreshData();
+      await refreshData(true);
       showMessageModal('Guardado exitosamente.');
     } catch (error) {
       console.error(error);
@@ -349,7 +376,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
         await deleteData(STORES.PRODUCT_BATCHES, batch.id);
         const updatedBatches = await loadBatchesForProduct(selectedProductId);
         setLocalBatches(updatedBatches);
-        refreshData();
+        refreshData(true);
         showMessageModal('Eliminado.');
       } catch (error) {
         console.error(error);
@@ -484,6 +511,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
           onClose={() => setIsModalOpen(false)}
           onSave={handleSaveBatch}
           features={features}
+          menu={menu}
         />
       )}
     </div>

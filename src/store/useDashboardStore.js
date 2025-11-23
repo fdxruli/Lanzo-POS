@@ -136,8 +136,7 @@ export const useDashboardStore = create((set, get) => ({
   sales: [],
   menu: [],
   rawProducts: [],
-  // ¡OJO! Hemos eliminado rawBatches para ahorrar memoria
-
+  wasteLogs: [],
   categories: [],
   deletedItems: [],
   stats: {
@@ -178,17 +177,21 @@ export const useDashboardStore = create((set, get) => ({
       const stats = await calculateStatsOnTheFly();
 
       // 2. Cargar datos paginados
-      const [recentSales, firstPageProducts, categories] = await Promise.all([
+      const [recentSales, firstPageProducts, categories, wasteData] = await Promise.all([
         loadDataPaginated(STORES.SALES, { limit: 50, direction: 'prev' }),
         loadDataPaginated(STORES.MENU, { limit: 50, offset: 0 }),
-        loadData(STORES.CATEGORIES)
+        loadData(STORES.CATEGORIES),
+        loadData(STORES.WASTE)
       ]);
+
+      const sortedWaste = (wasteData || []).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
       // 3. Enriquecer productos (Lazy load)
       const aggregatedMenu = await aggregateProductsLazy(firstPageProducts);
 
       set({
         sales: recentSales,
+        wasteLogs: sortedWaste,
         stats: stats,
         menu: aggregatedMenu,
         rawProducts: firstPageProducts,

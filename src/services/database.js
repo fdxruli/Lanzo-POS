@@ -1,7 +1,7 @@
 // src/services/database.js - VERSIÓN OPTIMIZADA PARA PAGINACIÓN
 
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 14;
+const DB_VERSION = 15;
 
 // Objeto de conexión
 const dbConnection = {
@@ -24,6 +24,7 @@ export const STORES = {
   DELETED_SALES: 'deleted_sales',
   MOVIMIENTOS_CAJA: 'movimientos_caja',
   PRODUCT_BATCHES: 'product_batches',
+  WASTE: 'waste_logs',
 };
 
 /**
@@ -145,7 +146,12 @@ export function initDB() {
           salesStore.createIndex('timestamp', 'timestamp', { unique: false });
         }
 
-        if (event.oldVersion < 14) {
+        if (!tempDb.objectStoreNames.contains(STORES.WASTE)) {
+          const wasteStore = tempDb.createObjectStore(STORES.WASTE, { keyPath: 'id' });
+          wasteStore.createIndex('timestamp', 'timestamp', { unique: false });
+        }
+
+        if (event.oldVersion < 15) {
           // CORRECCIÓN: Usamos la transacción activa del evento
           const txn = event.target.transaction;
           const menuStore = txn.objectStore(STORES.MENU);

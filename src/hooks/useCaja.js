@@ -9,7 +9,7 @@ export function useCaja() {
   const [movimientosCaja, setMovimientosCaja] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [montoSugerido, setMontoSugerido] = useState(0);
-  
+
   // NUEVO: Estado desglosado para el turno
   const [totalesTurno, setTotalesTurno] = useState({
     ventasContado: 0, // Dinero de ventas pagadas al 100% en efectivo
@@ -20,10 +20,10 @@ export function useCaja() {
     setIsLoading(true);
     try {
       const todasLasCajas = await loadData(STORES.CAJAS);
-      
+
       // 1. Buscar caja abierta
       let cajaAbierta = todasLasCajas.find(c => c.estado === 'abierta');
-      
+
       // 2. Lógica inteligente: Buscar el último cierre para sugerir monto
       const cajasCerradas = todasLasCajas
         .filter(c => c.estado === 'cerrada')
@@ -39,20 +39,18 @@ export function useCaja() {
 
         // --- LÓGICA DE CÁLCULO DE VENTAS (CONTADO vs FIADO) ---
         const todasVentas = await loadData(STORES.SALES);
-        const ventasSesion = todasVentas.filter(v => 
-            new Date(v.timestamp) >= new Date(cajaAbierta.fecha_apertura)
-        );
-        
+        const ventasSesion = await cargarVentasDeSesion(cajaAbierta.fecha_apertura);
+
         let contado = 0;
         let abonos = 0;
 
         ventasSesion.forEach(v => {
-            if (v.paymentMethod === 'efectivo') {
-                contado += (v.total || 0);
-            } else if (v.paymentMethod === 'fiado') {
-                // Solo sumamos lo que realmente entró a la caja (el abono inicial)
-                abonos += (v.abono || 0);
-            }
+          if (v.paymentMethod === 'efectivo') {
+            contado += (v.total || 0);
+          } else if (v.paymentMethod === 'fiado') {
+            // Solo sumamos lo que realmente entró a la caja (el abono inicial)
+            abonos += (v.abono || 0);
+          }
         });
 
         setTotalesTurno({ ventasContado: contado, abonosFiado: abonos });
@@ -95,13 +93,29 @@ export function useCaja() {
     }
   };
 
+  const cargarVentasDeSesion = async (fechaApertura) => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORES.SALES], 'readonly');
+      const store = tx.objectStore(STORES.SALES);
+      const index = store.index('timestamp'); // Asegúrate de que este índice existe en database.js
+
+      // RANGO: Desde fechaApertura hasta el futuro
+      const range = IDBKeyRange.lowerBound(fechaApertura);
+      const request = index.getAll(range);
+
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = (e) => reject(e.target.error);
+    });
+  };
+
   const abrirCaja = async (monto_inicial) => {
     if (cajaActual) {
       showMessageModal('Ya existe una caja abierta.');
       return false;
     }
-    const montoFinal = (monto_inicial !== undefined && monto_inicial !== null) 
-      ? parseFloat(monto_inicial) 
+    const montoFinal = (monto_inicial !== undefined && monto_inicial !== null)
+      ? parseFloat(monto_inicial)
       : montoSugerido;
 
     const nuevaCaja = {
@@ -119,12 +133,12 @@ export function useCaja() {
 
     try {
       await saveData(STORES.CAJAS, nuevaCaja);
-      
+
       // Actualizamos estado local manualmente para respuesta rápida
       setCajaActual(nuevaCaja);
       setMovimientosCaja([]);
       setTotalesTurno({ ventasContado: 0, abonosFiado: 0 });
-      
+
       showMessageModal(`Caja abierta con $${montoFinal.toFixed(2)}`);
       return true;
     } catch (error) {
@@ -135,25 +149,23 @@ export function useCaja() {
 
   // --- CÁLCULO DEL TOTAL ESPERADO EN CAJA ---
   const calcularTotalTeorico = async () => {
-      if (!cajaActual) return 0;
-      
-      // Recalcular ventas de esta sesión directamente desde la DB por seguridad
-      const todasVentas = await loadData(STORES.SALES);
-      const ventasSesion = todasVentas.filter(v => 
-          new Date(v.timestamp) >= new Date(cajaActual.fecha_apertura)
-      );
-      
-      let ingresoPorVentas = 0;
-      ventasSesion.forEach(v => {
-          if (v.paymentMethod === 'efectivo') {
-              ingresoPorVentas += (v.total || 0);
-          } else if (v.paymentMethod === 'fiado') {
-              ingresoPorVentas += (v.abono || 0);
-          }
-      });
-      
-      // Fórmula: Inicial + (Ventas + Abonos) + EntradasManuales - SalidasManuales
-      return cajaActual.monto_inicial + ingresoPorVentas + cajaActual.entradas_efectivo - cajaActual.salidas_efectivo;
+    if (!cajaActual) return 0;
+
+    // Recalcular ventas de esta sesión directamente desde la DB por seguridad
+    const todasVentas = await loadData(STORES.SALES);
+    const ventasSesion = await cargarVentasDeSesion(cajaAbierta.fecha_apertura);
+
+    let ingresoPorVentas = 0;
+    ventasSesion.forEach(v => {
+      if (v.paymentMethod === 'efectivo') {
+        ingresoPorVentas += (v.total || 0);
+      } else if (v.paymentMethod === 'fiado') {
+        ingresoPorVentas += (v.abono || 0);
+      }
+    });
+
+    // Fórmula: Inicial + (Ventas + Abonos) + EntradasManuales - SalidasManuales
+    return cajaActual.monto_inicial + ingresoPorVentas + cajaActual.entradas_efectivo - cajaActual.salidas_efectivo;
   }
 
   /**
@@ -167,11 +179,11 @@ export function useCaja() {
     try {
       const totalTeorico = await calcularTotalTeorico();
       const diferencia = montoFisico - totalTeorico;
-      
+
       // Calculamos los totales finales para guardarlos en el registro histórico
       // (Aunque ya tenemos totalTeorico, es bueno guardar el desglose)
       const todasVentas = await loadData(STORES.SALES);
-      const ventasSesion = todasVentas.filter(v => 
+      const ventasSesion = todasVentas.filter(v =>
         new Date(v.timestamp) >= new Date(cajaActual.fecha_apertura)
       );
 
@@ -179,8 +191,8 @@ export function useCaja() {
       let abonosFiadoFinal = 0;
 
       ventasSesion.forEach(v => {
-          if (v.paymentMethod === 'efectivo') ventasEfectivoFinal += v.total;
-          else if (v.paymentMethod === 'fiado') abonosFiadoFinal += (v.abono || 0);
+        if (v.paymentMethod === 'efectivo') ventasEfectivoFinal += v.total;
+        else if (v.paymentMethod === 'fiado') abonosFiadoFinal += (v.abono || 0);
       });
 
       const cajaCerrada = {
@@ -193,20 +205,20 @@ export function useCaja() {
         estado: 'cerrada',
         // Guardamos detalle extra para futuros reportes
         detalle_cierre: {
-            ventas_contado: ventasEfectivoFinal,
-            abonos_fiado: abonosFiadoFinal,
-            total_teorico: totalTeorico
+          ventas_contado: ventasEfectivoFinal,
+          abonos_fiado: abonosFiadoFinal,
+          total_teorico: totalTeorico
         }
       };
 
       await saveData(STORES.CAJAS, cajaCerrada);
-      
+
       // Limpiamos el estado
       setCajaActual(null);
       setMovimientosCaja([]);
       setHistorialCajas([cajaCerrada, ...historialCajas]);
       setTotalesTurno({ ventasContado: 0, abonosFiado: 0 });
-      
+
       return { success: true, diferencia };
 
     } catch (error) {
@@ -217,8 +229,8 @@ export function useCaja() {
 
   const registrarMovimiento = async (tipo, monto, concepto) => {
     if (!cajaActual) {
-        showMessageModal('No hay una caja abierta para registrar movimientos.');
-        return false; 
+      showMessageModal('No hay una caja abierta para registrar movimientos.');
+      return false;
     }
 
     const movimiento = {
@@ -232,18 +244,18 @@ export function useCaja() {
 
     try {
       await saveData(STORES.MOVIMIENTOS_CAJA, movimiento);
-      
+
       // Actualizamos la caja en DB
       const cajaActualizada = { ...cajaActual };
       if (tipo === 'entrada') cajaActualizada.entradas_efectivo += movimiento.monto;
       else cajaActualizada.salidas_efectivo += movimiento.monto;
-      
+
       await saveData(STORES.CAJAS, cajaActualizada);
-      
+
       // Actualizamos estado local
       setCajaActual(cajaActualizada);
       setMovimientosCaja(prev => [...prev, movimiento]);
-      
+
       return true;
     } catch (error) {
       console.error(error);
@@ -256,11 +268,11 @@ export function useCaja() {
     historialCajas,
     movimientosCaja,
     isLoading,
-    montoSugerido, 
+    montoSugerido,
     totalesTurno, // ¡IMPORTANTE! Exponemos el desglose (contado vs fiado)
     abrirCaja,
-    realizarAuditoriaYCerrar, 
+    realizarAuditoriaYCerrar,
     registrarMovimiento,
-    calcularTotalTeorico 
+    calcularTotalTeorico
   };
 }

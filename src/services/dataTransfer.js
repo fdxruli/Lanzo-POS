@@ -3,9 +3,9 @@ import { saveData, saveBulk, loadData, STORES } from './database';
 
 // Definimos las columnas que tendrá nuestro Excel/CSV
 const CSV_HEADERS = [
-  'id', 'name', 'barcode', 'description', 'price', 'cost', 'stock', 
-  'category', 'saleType', 'productType', 
-  'minStock', 'maxStock', 
+  'id', 'name', 'barcode', 'description', 'price', 'cost', 'stock',
+  'category', 'saleType', 'productType',
+  'minStock', 'maxStock',
   'sustancia', 'laboratorio', 'requiresPrescription', 'presentation'
 ];
 
@@ -26,14 +26,14 @@ export const generateCSV = (products, batches, categories) => {
     const current = batchMap.get(b.productId);
     current.stock += b.stock;
     // Usamos el costo del último lote (o promedio) para la exportación
-    current.cost = b.cost; 
+    current.cost = b.cost;
   });
 
   // Construimos las filas
   const rows = products.map(p => {
     const batchInfo = batchMap.get(p.id) || { stock: 0, cost: p.cost || 0 };
     const catName = catMap.get(p.categoryId) || '';
-    
+
     return [
       p.id,
       `"${(p.name || '').replace(/"/g, '""')}"`, // Escapar comillas en nombres
@@ -63,7 +63,7 @@ export const generateCSV = (products, batches, categories) => {
 export const processImport = async (csvContent) => {
   const lines = csvContent.split(/\r?\n/).filter(line => line.trim() !== '');
   const headers = lines[0].split(',');
-  
+
   // Validar headers mínimos
   if (!headers.includes('name') || !headers.includes('price')) {
     throw new Error('El archivo no tiene las columnas obligatorias: name, price');
@@ -72,7 +72,7 @@ export const processImport = async (csvContent) => {
   const productsToSave = [];
   const batchesToSave = [];
   const errors = [];
-  
+
   // Cargamos categorías existentes para intentar vincularlas por nombre
   const existingCats = await loadData(STORES.CATEGORIES);
   const catNameMap = new Map(existingCats.map(c => [c.name.toLowerCase(), c.id]));
@@ -80,7 +80,7 @@ export const processImport = async (csvContent) => {
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     // Regex para separar por comas pero ignorar las que están entre comillas
-    const regex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/; 
+    const regex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
     const values = line.split(regex).map(val => val.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
 
     if (values.length < 2) continue; // Línea vacía
@@ -99,7 +99,7 @@ export const processImport = async (csvContent) => {
 
     try {
       const newId = row.id && row.id.length > 5 ? row.id : `prod-imp-${Date.now()}-${i}`;
-      
+
       // Resolver Categoría
       let catId = '';
       if (row.category) {
@@ -128,14 +128,14 @@ export const processImport = async (csvContent) => {
         laboratorio: row.laboratorio || null,
         requiresPrescription: (row.requiresPrescription || '').toUpperCase() === 'SI',
         presentation: row.presentation || null,
-        
+
         isActive: true,
         createdAt: new Date().toISOString(),
         batchManagement: { enabled: true, selectionStrategy: 'fifo' },
         // Campos de imagen (no se importan por CSV, se dejan null)
-        image: null 
+        image: null
       };
-      
+
       productsToSave.push(product);
 
       // 2. OBJETO LOTE (Si trae stock o costo)
@@ -170,10 +170,10 @@ export const processImport = async (csvContent) => {
     await saveBulk(STORES.PRODUCT_BATCHES, batchesToSave);
   }
 
-  return { 
-    success: true, 
-    importedCount: productsToSave.length, 
-    errors 
+  return {
+    success: true,
+    importedCount: productsToSave.length,
+    errors
   };
 };
 
@@ -190,4 +190,50 @@ export const downloadFile = (content, filename) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+/**
+ * Genera un reporte CSV específico para Farmacia (Libro de Control)
+ */
+export const generatePharmacyReport = (sales) => {
+  const HEADERS = [
+    'Fecha', 'Hora', 'Folio Venta',
+    'Producto', 'Sustancia Activa', 'Cantidad',
+    'Medico Prescriptor', 'Cedula Profesional', 'Notas'
+  ];
+
+  const rows = [];
+
+  sales.forEach(sale => {
+    // Solo nos interesan las ventas que tienen datos de receta
+    if (sale.prescriptionDetails) {
+      const dateObj = new Date(sale.timestamp);
+      const fecha = dateObj.toLocaleDateString();
+      const hora = dateObj.toLocaleTimeString();
+      const folio = sale.timestamp.slice(-6); // Últimos 6 dígitos como folio simple
+
+      const doctor = sale.prescriptionDetails.doctorName || 'N/A';
+      const cedula = sale.prescriptionDetails.licenseNumber || 'N/A';
+      const notas = sale.prescriptionDetails.notes || '';
+
+      // Buscamos dentro de los items cuáles eran los controlados
+      sale.items.forEach(item => {
+        if (item.requiresPrescription) {
+          rows.push([
+            fecha,
+            hora,
+            `#${folio}`,
+            `"${item.name.replace(/"/g, '""')}"`,
+            `"${(item.sustancia || '').replace(/"/g, '""')}"`,
+            item.quantity,
+            `"${doctor}"`,
+            `"${cedula}"`,
+            `"${notas.replace(/"/g, '""')}"`
+          ].join(','));
+        }
+      });
+    }
+  });
+
+  return [HEADERS.join(','), ...rows].join('\n');
 };

@@ -1,18 +1,24 @@
 // src/components/products/DataTransferModal.jsx
 import React, { useState } from 'react';
 import { useDashboardStore } from '../../store/useDashboardStore';
-import { generateCSV, processImport, downloadFile } from '../../services/dataTransfer';
+// Asegúrate de que generatePharmacyReport esté importado
+import { generateCSV, processImport, downloadFile, generatePharmacyReport } from '../../services/dataTransfer';
 import { showMessageModal } from '../../services/utils';
 import { loadData, STORES } from '../../services/database';
+// 1. IMPORTAMOS EL HOOK DE CONFIGURACIÓN
+import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 
 export default function DataTransferModal({ show, onClose, onRefresh }) {
   const [activeTab, setActiveTab] = useState('export');
   const [isLoading, setIsLoading] = useState(false);
   const [importLog, setImportLog] = useState(null);
 
+  // 2. USAMOS EL HOOK PARA SABER EL RUBRO
+  const features = useFeatureConfig();
+
   // Datos del store
   const products = useDashboardStore(state => state.menu);
-  const batches = useDashboardStore(state => state.rawBatches);
+  const batches = useDashboardStore(state => state.rawBatches); // Nota: Verifica si rawBatches se usa o se eliminó en versiones previas
   const categories = useDashboardStore(state => state.categories);
 
   // --- MANEJADORES ---
@@ -20,11 +26,14 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
   const handleExport = async () => {
     setIsLoading(true);
     try {
+      // Para exportar todo, usamos los datos en memoria del store si están completos,
+      // o cargamos de DB para asegurar. Aquí cargamos de DB por seguridad.
       const [allProducts, allBatches] = await Promise.all([
         loadData(STORES.MENU),
         loadData(STORES.PRODUCT_BATCHES)
       ]);
-      const csvContent = generateCSV(products, batches, categories);
+      // Usamos allProducts/allBatches frescos en lugar de los del store
+      const csvContent = generateCSV(allProducts, allBatches || [], categories);
       const date = new Date().toISOString().split('T')[0];
       downloadFile(csvContent, `inventario_lanzo_${date}.csv`);
       showMessageModal('Archivo generado y descargado correctamente.');
@@ -36,12 +45,34 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
     }
   };
 
+  // Manejador del reporte de Farmacia (Libro de Control)
+  const handleExportPharmacy = async () => {
+    setIsLoading(true);
+    try {
+      const allSales = await loadData(STORES.SALES);
+      const csvContent = generatePharmacyReport(allSales);
+
+      if (csvContent.split('\n').length <= 1) {
+        showMessageModal('No se encontraron ventas de medicamentos controlados para exportar.');
+      } else {
+        const date = new Date().toISOString().split('T')[0];
+        downloadFile(csvContent, `libro_control_farmacia_${date}.csv`);
+        showMessageModal('✅ Libro de Control generado correctamente.');
+      }
+    } catch (error) {
+      console.error(error);
+      showMessageModal('Error al generar reporte: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleFileSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     if (!window.confirm('IMPORTANTE: Esta acción agregará nuevos productos o actualizará los existentes si coinciden los IDs. ¿Deseas continuar?')) {
-      e.target.value = ''; // Limpiar input
+      e.target.value = '';
       return;
     }
 
@@ -57,7 +88,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
         setImportLog(result);
 
         if (result.success && result.importedCount > 0) {
-          await onRefresh(); // Recargar datos en la app
+          await onRefresh();
           showMessageModal(`¡Éxito! Se importaron ${result.importedCount} productos.`);
         } else if (result.importedCount === 0) {
           showMessageModal('No se encontraron productos válidos en el archivo.');
@@ -67,7 +98,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
         showMessageModal(`Error crítico al importar: ${error.message}`);
       } finally {
         setIsLoading(false);
-        e.target.value = ''; // Limpiar input para permitir subir el mismo archivo de nuevo
+        e.target.value = '';
       }
     };
 
@@ -103,10 +134,25 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
               <p style={{ fontSize: '0.9rem', color: '#666' }}>
                 Incluye: Productos, Códigos, Precios, Costos, Stock actual y Configuraciones avanzadas.
               </p>
-              <div style={{ marginTop: '2rem' }}>
+
+              <div style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <button className="btn btn-save" onClick={handleExport} disabled={isLoading}>
                   {isLoading ? 'Generando...' : '⬇️ Descargar Inventario Completo'}
                 </button>
+
+                {/* 3. CONDICIONAL: SOLO VISIBLE SI ES FARMACIA 
+                    (features.hasLabFields es true solo para Farmacia)
+                */}
+                {features.hasLabFields && (
+                  <button
+                    className="btn btn-secondary"
+                    onClick={handleExportPharmacy}
+                    disabled={isLoading}
+                    style={{ backgroundColor: '#0ea5e9' }}
+                  >
+                    💊 Descargar Libro de Control (COFEPRIS)
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -135,11 +181,11 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
                 <p><strong>Nota:</strong> Puedes usar el archivo de exportación como plantilla. Las columnas obligatorias son <code>name</code> y <code>price</code>.</p>
               </div>
 
-              {/* Log de errores si los hubo */}
+              {/* Log de errores */}
               {importLog && importLog.errors.length > 0 && (
                 <div style={{
                   marginTop: '1rem', maxHeight: '150px', overflowY: 'auto',
-                  backgroundColor: 'var(--primary-color)', padding: '10px', borderRadius: '5px',
+                  backgroundColor: '#fee2e2', padding: '10px', borderRadius: '5px',
                   border: '1px solid #ef4444'
                 }}>
                   <h4 style={{ color: '#b91c1c', margin: '0 0 5px 0' }}>⚠️ Advertencias de importación:</h4>

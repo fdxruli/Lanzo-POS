@@ -4,23 +4,23 @@ import { useDashboardStore } from '../../store/useDashboardStore';
 import './RecipeBuilderModal.css';
 
 export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSave, productName }) {
-  
-  // 1. Conectamos al store para obtener los INGREDIENTES reales
-  const rawProducts = useDashboardStore((state) => state.rawProducts);
-  
-  // 2. Filtramos solo los que son 'insumos/ingredientes'
-  // (Estos son los que creaste en ProductForm con el tipo 'ingredient')
+
+  // 1. CAMBIO IMPORTANTE: Usamos 'menu' en lugar de 'rawProducts'
+  // 'menu' contiene los productos con el Stock y Costo ya calculados desde los lotes.
+  const menu = useDashboardStore((state) => state.menu);
+
+  // 2. Filtramos sobre 'menu' (que tiene los datos enriquecidos)
   const availableIngredients = useMemo(() => {
-    return rawProducts.filter(p => p.productType === 'ingredient' && p.isActive !== false);
-  }, [rawProducts]);
+    return menu.filter(p => p.productType === 'ingredient' && p.isActive !== false);
+  }, [menu]); // Dependencia cambiada a 'menu'
 
   // Estado local de la receta
   const [recipeItems, setRecipeItems] = useState([]);
-  
+
   // Estado del formulario de ingreso
   const [selectedIngredientId, setSelectedIngredientId] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [unit, setUnit] = useState(''); // Ej: kg, gr, ml, pza
+  const [unit, setUnit] = useState('');
 
   // Cargar receta existente al abrir
   useEffect(() => {
@@ -36,18 +36,15 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     setUnit('');
   };
 
-  // Seleccionar un ingrediente rellena la unidad por defecto si existe
   const handleIngredientSelect = (e) => {
     const id = e.target.value;
     setSelectedIngredientId(id);
-    
+
     const ingredient = availableIngredients.find(i => i.id === id);
     if (ingredient && ingredient.saleType === 'bulk') {
-       // Intentamos adivinar la unidad basada en el ingrediente
-       // (Si guardaste 'unit' en bulkData, úsalo. Si no, default 'kg')
-       setUnit(ingredient.bulkData?.purchase?.unit || 'kg');
+      setUnit(ingredient.bulkData?.purchase?.unit || 'kg');
     } else {
-       setUnit('pza');
+      setUnit('pza');
     }
   };
 
@@ -60,21 +57,21 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     const ingredient = availableIngredients.find(i => i.id === selectedIngredientId);
     if (!ingredient) return;
 
-    // Verificar si ya está en la receta
     if (recipeItems.some(item => item.ingredientId === selectedIngredientId)) {
       alert('Este ingrediente ya está en la receta. Elimínalo para editarlo.');
       return;
     }
 
-    // Añadir a la lista
+    // 3. CAMBIO IMPORTANTE: Usamos 'ingredient.cost' directo
+    // Ya no buscamos en 'batchManagement' porque 'menu' ya nos da el costo actual del lote activo
+    const currentCost = ingredient.cost || 0;
+
     const newItem = {
       ingredientId: ingredient.id,
       name: ingredient.name,
       quantity: parseFloat(quantity),
       unit: unit,
-      // Guardamos un "costo estimado" solo como referencia visual
-      // El costo real se calculará al momento de la venta (FIFO)
-      estimatedCost: (ingredient.batchManagement?.lastCost || 0) * parseFloat(quantity)
+      estimatedCost: currentCost * parseFloat(quantity)
     };
 
     setRecipeItems([...recipeItems, newItem]);
@@ -90,13 +87,11 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     onClose();
   };
 
-  // Calcular costo teórico total
+  // Calcular costo teórico total visual
   const totalEstimatedCost = recipeItems.reduce((sum, item) => {
-    // Buscamos el costo más actual del ingrediente
-    const ing = rawProducts.find(p => p.id === item.ingredientId);
-    // Nota: Esto asume que tienes un campo 'cost' o usas el de batchManagement
-    // Si usas el sistema de lotes puro, podrías necesitar una lógica para obtener el "costo promedio"
-    const unitCost = ing?.cost || 0; 
+    // Buscamos en 'menu' para tener el costo actualizado
+    const ing = menu.find(p => p.id === item.ingredientId);
+    const unitCost = ing?.cost || 0;
     return sum + (unitCost * item.quantity);
   }, 0);
 
@@ -107,36 +102,37 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
       <div className="modal-content recipe-modal">
         <h2 className="modal-title">Construir Receta</h2>
         <p className="modal-subtitle">Producto: <strong>{productName || 'Nuevo Producto'}</strong></p>
-        
+
         {availableIngredients.length === 0 ? (
           <div className="warning-box">
-            ⚠️ No tienes productos marcados como "Ingrediente". <br/>
-            Ve a "Añadir Producto", crea uno (ej. Harina) y selecciona "Ingrediente (Insumo)".
+            ⚠️ No tienes productos marcados como "Ingrediente" o no se han cargado los lotes. <br />
+            Asegúrate de haber creado Insumos y haber registrado su stock inicial.
           </div>
         ) : (
           <div className="recipe-input-group">
             <div className="form-group" style={{ flex: 2 }}>
               <label>Ingrediente</label>
-              <select 
-                className="form-input" 
-                value={selectedIngredientId} 
+              <select
+                className="form-input"
+                value={selectedIngredientId}
                 onChange={handleIngredientSelect}
               >
                 <option value="">-- Seleccionar --</option>
                 {availableIngredients.map(ing => (
                   <option key={ing.id} value={ing.id}>
-                    {ing.name} (Stock: {ing.stock || 0})
+                    {/* Ahora ing.stock y ing.cost tendrán valores reales */}
+                    {ing.name} (Stock: {ing.stock || 0} | ${ing.cost?.toFixed(2)})
                   </option>
                 ))}
               </select>
             </div>
-            
+
             <div className="form-group" style={{ flex: 1 }}>
               <label>Cantidad</label>
-              <input 
-                type="number" 
-                className="form-input" 
-                placeholder="0.00" 
+              <input
+                type="number"
+                className="form-input"
+                placeholder="0.00"
                 step="0.01"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
@@ -145,22 +141,16 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
 
             <div className="form-group" style={{ flex: 0.8 }}>
               <label>Unidad</label>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="kg/lt" 
+              <input
+                type="text"
+                className="form-input"
+                placeholder="kg/lt"
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
               />
             </div>
 
-            <button 
-              type="button" 
-              className="btn btn-add-ing" 
-              onClick={handleAdd}
-            >
-              +
-            </button>
+            <button type="button" className="btn btn-add-ing" onClick={handleAdd}>+</button>
           </div>
         )}
 
@@ -177,7 +167,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
             <tbody>
               {recipeItems.length === 0 ? (
                 <tr>
-                  <td colSpan="4" style={{textAlign: 'center', color: '#999'}}>
+                  <td colSpan="4" style={{ textAlign: 'center', color: '#999' }}>
                     Sin ingredientes asignados
                   </td>
                 </tr>
@@ -188,9 +178,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
                     <td>{item.quantity} {item.unit}</td>
                     <td>${(item.estimatedCost || 0).toFixed(2)}</td>
                     <td>
-                      <button className="btn-icon-remove" onClick={() => handleRemove(item.ingredientId)}>
-                        🗑️
-                      </button>
+                      <button className="btn-icon-remove" onClick={() => handleRemove(item.ingredientId)}>🗑️</button>
                     </td>
                   </tr>
                 ))

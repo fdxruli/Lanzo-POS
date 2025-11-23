@@ -16,7 +16,8 @@
 
 .product-list {
   display: grid;
-  grid-template-columns: 1fr; /* Una columna por defecto */
+  grid-template-columns: 1fr;
+  /* Una columna por defecto */
   gap: var(--spacing-md);
 }
 
@@ -30,7 +31,8 @@
   transition: var(--transition);
   display: flex;
   flex-direction: column;
-  border-left: 5px solid transparent; /* Para alertas de stock/caducidad */
+  border-left: 5px solid transparent;
+  /* Para alertas de stock/caducidad */
 }
 
 .product-item:hover {
@@ -92,7 +94,8 @@
 .product-item-controls {
   display: flex;
   gap: var(--spacing-sm);
-  margin-top: auto; /* Empuja los controles al final */
+  margin-top: auto;
+  /* Empuja los controles al final */
 }
 
 .product-item-controls .btn-toggle-status,
@@ -176,4 +179,36 @@
   .product-list {
     grid-template-columns: 1fr;
   }
+}
+
+/* Nuevo botón de Merma */
+.btn-waste {
+  background-color: #f59e0b;
+  /* Ámbar / Naranja */
+  color: white;
+  font-size: 1.2rem;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-sm);
+  transition: background-color 0.2s;
+}
+
+.btn-waste:hover {
+  background-color: #d97706;
+  /* Naranja más oscuro */
+}
+
+/* Ajuste para que los botones se distribuyan bien */
+.product-item-controls {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: auto;
+}
+
+.product-item-controls button {
+  flex: 1;
+  /* Todos los botones ocupan el mismo ancho */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

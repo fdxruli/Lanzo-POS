@@ -1,6 +1,6 @@
 // src/pages/PosPage.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Await, useNavigate } from 'react-router-dom';
 import ProductMenu from '../components/pos/ProductMenu';
 import OrderSummary from '../components/pos/OrderSummary';
 import ScannerModal from '../components/common/ScannerModal';
@@ -13,10 +13,13 @@ import { loadData, saveBulk, saveData, queryByIndex, queryBatchesByProductIdAndA
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useDebounce } from '../hooks/useDebounce';
+import PrescriptionModal from '../components/pos/PrescriptionModal';
+import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './PosPage.css';
 
 export default function PosPage() {
   // --- Estados Locales ---
+  const features = useFeatureConfig();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isQuickCajaOpen, setIsQuickCajaOpen] = useState(false);
@@ -42,6 +45,11 @@ export default function PosPage() {
 
   const total = getTotalPrice();
 
+  // modal de llenado de receta...
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [prescriptionItems, setPrescriptionItems] = useState([]);
+  const [tempPrescriptionData, setTempPrescriptionData] = useState(null);
+
   // --- 2. EFECTO DE CARGA INICIAL ---
   useEffect(() => {
     const loadExtras = async () => {
@@ -64,56 +72,85 @@ export default function PosPage() {
       items = items.filter(p => p.categoryId === selectedCategoryId);
     }
     if (searchTerm) {
-      items = items.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+      const lowerTerm = searchTerm.toLowerCase();
+      items = items.filter(p => {
+        const matchName = p.name.toLowerCase().includes(lowerTerm);
+        const matchBarcode = p.barcode && p.barcode.includes(lowerTerm);
+
+        // --- LÓGICA FARMACIA: Buscar por Sustancia Activa ---
+        let matchSustancia = false;
+        // features viene de un hook, asegúrate de importarlo o checar si p.sustancia existe
+        if (p.sustancia) {
+          matchSustancia = p.sustancia.toLowerCase().includes(lowerTerm);
+        }
+
+        return matchName || matchBarcode || matchSustancia;
+      });
     }
     return items;
   }, [allProducts, selectedCategoryId, searchTerm]);
 
-  const handleProcessOrder = async (paymentData) => {
+  const handleInitiateCheckout = () => {
     const licenseDetails = useAppStore.getState().licenseDetails;
-
     if (!licenseDetails || !licenseDetails.valid) {
       showMessageModal('⚠️ Error de Seguridad: Licencia no válida.');
       return;
     }
 
+    // Validar pedido vacío
+    const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
+    if (itemsToProcess.length === 0) {
+      showMessageModal('El pedido está vacío.');
+      return;
+    }
+
+    // LÓGICA FARMACIA: Detectar si requiere receta ANTES de pagar
+    const itemsRequiring = itemsToProcess.filter(item => item.requiresPrescription);
+
+    if (itemsRequiring.length > 0) {
+      // Si hay controlados, abrimos modal de receta PRIMERO
+      setPrescriptionItems(itemsRequiring);
+      setTempPrescriptionData(null); // Limpiamos datos previos
+      setIsPrescriptionModalOpen(true);
+    } else {
+      // Si no, vamos directo al pago
+      setTempPrescriptionData(null);
+      setIsPaymentModalOpen(true);
+    }
+  };
+
+  // 2. El usuario confirma los datos del médico
+  const handlePrescriptionConfirm = (data) => {
+    setTempPrescriptionData(data); // Guardamos temporalmente
+    setIsPrescriptionModalOpen(false); // Cerramos receta
+    setIsPaymentModalOpen(true); // Abrimos pago
+  };
+
+  // 3. El usuario confirma el pago (Finalizar Venta)
+  const handleProcessOrder = async (paymentData) => {
+    // Validar Caja
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       setIsPaymentModalOpen(false);
       setIsQuickCajaOpen(true);
       return;
     }
 
-    const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
-    if (itemsToProcess.length === 0) {
-      setIsPaymentModalOpen(false);
-      showMessageModal('El pedido está vacío.');
-      return;
-    }
-
-    setIsPaymentModalOpen(false);
-
     try {
-      console.time('ProcesoVentaOptimizado');
+      setIsPaymentModalOpen(false); // Cerramos modal de pago
+      console.time('ProcesoVenta');
 
-      // ============================================================
-      // PASO 1: Pre-cargar TODOS los lotes necesarios
-      // ============================================================
+      const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
+
+      // A. Pre-carga de Lotes
       const uniqueProductIds = new Set();
-
       for (const orderItem of itemsToProcess) {
-        // --- CORRECCIÓN: Usar parentId si existe (es un modificador), sino el id normal ---
         const realProductId = orderItem.parentId || orderItem.id;
         const product = allProducts.find(p => p.id === realProductId);
-
         if (!product) continue;
-
         const itemsToDeduct = (product.recipe && product.recipe.length > 0)
           ? product.recipe
           : [{ ingredientId: realProductId, quantity: 1 }];
-
-        itemsToDeduct.forEach(component => {
-          uniqueProductIds.add(component.ingredientId);
-        });
+        itemsToDeduct.forEach(component => uniqueProductIds.add(component.ingredientId));
       }
 
       const batchesMap = new Map();
@@ -131,59 +168,13 @@ export default function PosPage() {
         })
       );
 
-      // ============================================================
-      // PASO 2: Validación de stock
-      // ============================================================
-      const stockValidationErrors = [];
-      const tempStockCheck = new Map();
-
-      for (const orderItem of itemsToProcess) {
-        // --- CORRECCIÓN DE ID ---
-        const realProductId = orderItem.parentId || orderItem.id;
-        const product = allProducts.find(p => p.id === realProductId);
-
-        if (!product || product.trackStock === false) continue;
-
-        const itemsToDeduct = (product.recipe && product.recipe.length > 0)
-          ? product.recipe
-          : [{ ingredientId: realProductId, quantity: 1 }];
-
-        for (const component of itemsToDeduct) {
-          const targetId = component.ingredientId;
-          const requiredQty = component.quantity * orderItem.quantity;
-
-          const batches = batchesMap.get(targetId) || [];
-          const totalRealStock = batches.reduce((sum, b) => sum + (b.stock || 0), 0);
-
-          const currentUsage = tempStockCheck.get(targetId) || 0;
-          const newUsage = currentUsage + requiredQty;
-
-          if (totalRealStock < (newUsage - 0.001)) {
-            const ingredientName = allProducts.find(p => p.id === targetId)?.name || targetId;
-            stockValidationErrors.push(
-              `${orderItem.name}: Faltan ${(newUsage - totalRealStock).toFixed(2)} de ${ingredientName}`
-            );
-          }
-          tempStockCheck.set(targetId, newUsage);
-        }
-      }
-
-      if (stockValidationErrors.length > 0) {
-        showMessageModal(`❌ Stock Insuficiente:\n\n${stockValidationErrors.join('\n')}`);
-        return;
-      }
-
-      // ============================================================
-      // PASO 3: Procesamiento y Descuento
-      // ============================================================
+      // B. Descuento de Stock
       const processedItems = [];
       const batchUpdates = new Map();
 
       for (const orderItem of itemsToProcess) {
-        // --- CORRECCIÓN DE ID ---
         const realProductId = orderItem.parentId || orderItem.id;
         const product = allProducts.find(p => p.id === realProductId);
-
         if (!product) continue;
 
         const itemsToDeduct = (product.recipe && product.recipe.length > 0)
@@ -200,7 +191,6 @@ export default function PosPage() {
 
           for (const batch of batches) {
             if (requiredQty <= 0.0001) break;
-
             const currentBatch = batchUpdates.get(batch.id) || batch;
             const toDeduct = Math.min(requiredQty, currentBatch.stock);
 
@@ -233,9 +223,7 @@ export default function PosPage() {
         });
       }
 
-      // ============================================================
-      // PASO 4: Guardado masivo
-      // ============================================================
+      // C. Guardar cambios
       if (batchUpdates.size > 0) {
         await saveBulk(STORES.PRODUCT_BATCHES, Array.from(batchUpdates.values()));
       }
@@ -248,9 +236,10 @@ export default function PosPage() {
         paymentMethod: paymentData.paymentMethod,
         abono: paymentData.amountPaid,
         saldoPendiente: paymentData.saldoPendiente,
-
-        fulfillmentStatus: 'pending'
+        fulfillmentStatus: features.hasKDS ? 'pending' : 'completed',
+        prescriptionDetails: tempPrescriptionData || null
       };
+
       await saveData(STORES.SALES, sale);
 
       if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
@@ -262,10 +251,11 @@ export default function PosPage() {
       }
 
       clearOrder();
-      showMessageModal('✅ ¡Pedido procesado exitosamente!');
-      refreshData();
+      setTempPrescriptionData(null); // Limpiar datos temporales
+      showMessageModal('✅ ¡Venta registrada correctamente!');
+      refreshData(true);
 
-      // Generar Ticket WhatsApp
+      // D. Ticket WhatsApp
       if (paymentData.sendReceipt && paymentData.customerId) {
         try {
           const customer = await loadData(STORES.CUSTOMERS, paymentData.customerId);
@@ -273,17 +263,21 @@ export default function PosPage() {
             let receiptText = `*--- TICKET DE VENTA ---*\n`;
             receiptText += `*Negocio:* ${companyName}\n`;
             receiptText += `*Fecha:* ${new Date().toLocaleString()}\n\n`;
-            receiptText += `*Productos:*\n`;
 
+            // INFO MÉDICA EN EL TICKET
+            if (sale.prescriptionDetails) {
+              receiptText += `*--- DATOS DE DISPENSACIÓN ---*\n`;
+              receiptText += `Dr(a): ${sale.prescriptionDetails.doctorName}\n`;
+              receiptText += `Cédula: ${sale.prescriptionDetails.licenseNumber}\n`;
+              if (sale.prescriptionDetails.notes) receiptText += `Notas: ${sale.prescriptionDetails.notes}\n`;
+              receiptText += `\n`;
+            }
+
+            receiptText += `*Productos:*\n`;
             processedItems.forEach(item => {
-              // --- MODIFICADORES EN TICKET ---
               receiptText += `• ${item.name} (x${item.quantity}) - $${(item.price * item.quantity).toFixed(2)}\n`;
-              if (item.selectedModifiers && item.selectedModifiers.length > 0) {
-                const mods = item.selectedModifiers.map(m => m.name).join(', ');
-                receiptText += `  _(${mods})_\n`;
-              }
-              if (item.notes) {
-                receiptText += `  _Nota: ${item.notes}_\n`;
+              if (item.requiresPrescription) {
+                receiptText += `  _(Antibiótico/Controlado)_\n`;
               }
             });
 
@@ -299,16 +293,14 @@ export default function PosPage() {
           }
         } catch (error) { console.error("Error ticket WhatsApp:", error); }
       }
-
-      console.timeEnd('ProcesoVentaOptimizado');
+      console.timeEnd('ProcesoVenta');
 
     } catch (error) {
-      console.error('❌ Error al procesar el pedido:', error);
-      showMessageModal(`Error crítico: ${error.message}`);
+      console.error('Error al procesar:', error);
+      showMessageModal(`Error: ${error.message}`);
     }
   };
 
-  // --- 5. HANDLER DE CAJA RÁPIDA ---
   const handleQuickCajaSubmit = async (monto) => {
     const success = await abrirCaja(monto);
     if (success) {
@@ -333,7 +325,7 @@ export default function PosPage() {
           onSearchChange={setSearchTerm}
           onOpenScanner={() => setIsScannerOpen(true)}
         />
-        <OrderSummary onOpenPayment={() => setIsPaymentModalOpen(true)} />
+        <OrderSummary onOpenPayment={handleInitiateCheckout} />
       </div>
 
       <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
@@ -349,6 +341,13 @@ export default function PosPage() {
         show={isQuickCajaOpen}
         onClose={() => setIsQuickCajaOpen(false)}
         onConfirm={handleQuickCajaSubmit}
+      />
+
+      <PrescriptionModal
+        show={isPrescriptionModalOpen}
+        onClose={() => setIsPrescriptionModalOpen(false)}
+        onConfirm={handlePrescriptionConfirm}
+        itemsRequiringPrescription={prescriptionItems}
       />
     </>
   );

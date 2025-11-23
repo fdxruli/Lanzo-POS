@@ -1,0 +1,99 @@
+import React, { useState } from 'react';
+import { saveData, STORES } from '../../services/database';
+import { showMessageModal } from '../../services/utils';
+
+export default function WasteModal({ show, onClose, product, onConfirm }) {
+    const [quantity, setQuantity] = useState('');
+    const [reason, setReason] = useState('caducado'); // caducado, dañado, etc.
+    const [notes, setNotes] = useState('');
+
+    if (!show || !product) return null;
+
+    const handleSave = async (e) => {
+        e.preventDefault();
+        const qty = parseFloat(quantity);
+
+        if (!qty || qty <= 0) {
+            alert("Ingresa una cantidad válida.");
+            return;
+        }
+
+        if (qty > product.stock) {
+            alert("No puedes mermar más de lo que tienes en stock.");
+            return;
+        }
+
+        // 1. Descontar del inventario directamente (Stock global)
+        // Nota: Si usas lotes estrictos, lo ideal sería descontar del lote más viejo,
+        // pero para frutería rápida, descontar del global es aceptable.
+        const updatedProduct = {
+            ...product,
+            stock: product.stock - qty,
+            updatedAt: new Date().toISOString()
+        };
+
+        await saveData(STORES.MENU, updatedProduct);
+
+        const wasteRecord = {
+            id: `waste-${Date.now()}`,
+            productId: product.id,
+            productName: product.name,
+            quantity: qty,
+            unit: product.bulkData?.purchase?.unit || 'u',
+            costAtTime: product.cost || 0,
+            lossAmount: (product.cost || 0) * qty, // Dinero perdido
+            reason: reason,
+            notes: notes,
+            timestamp: new Date().toISOString()
+        };
+
+        await saveData(STORES.WASTE, wasteRecord);
+
+        const lossAmount = (product.cost || 0) * qty;
+        showMessageModal(`✅ Merma registrada. Stock actualizado.\nPérdida estimada: $${lossAmount.toFixed(2)}`);
+
+        onConfirm();
+        onClose();
+        setQuantity(''); setNotes('');
+    };
+
+    return (
+        <div className="modal" style={{ display: 'flex', zIndex: 2200 }}>
+            <div className="modal-content" style={{ maxWidth: '400px' }}>
+                <h2 className="modal-title" style={{ color: 'var(--error-color)' }}>🗑️ Registrar Merma</h2>
+                <p>Producto: <strong>{product.name}</strong></p>
+                <p style={{ fontSize: '0.9rem' }}>Stock actual: {product.stock}</p>
+
+                <form onSubmit={handleSave}>
+                    <div className="form-group">
+                        <label className="form-label">Cantidad a desechar ({product.bulkData?.purchase?.unit || 'unidades'})</label>
+                        <input
+                            type="number" className="form-input" step="0.01" autoFocus
+                            value={quantity} onChange={e => setQuantity(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Motivo</label>
+                        <select className="form-input" value={reason} onChange={e => setReason(e.target.value)}>
+                            <option value="caducado">🤢 Se pudrió / Caducó</option>
+                            <option value="dañado">🤕 Se aplastó / Dañado</option>
+                            <option value="robo">🕵️ Robo / Faltante</option>
+                            <option value="degustacion">😋 Degustación / Regalo</option>
+                        </select>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Notas</label>
+                        <textarea className="form-textarea" value={notes} onChange={e => setNotes(e.target.value)} rows="2"></textarea>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                        <button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button>
+                        <button type="submit" className="btn btn-delete">Confirmar Pérdida</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}

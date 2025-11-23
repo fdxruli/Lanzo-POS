@@ -11,10 +11,12 @@ import IngredientManager from '../components/products/IngredientManager';
 import { useDashboardStore } from '../store/useDashboardStore';
 import BatchManager from '../components/products/BatchManager';
 import DataTransferModal from '../components/products/DataTransferModal';
-import { useFeatureConfig } from '../hooks/useFeatureConfig'; 
+import { useFeatureConfig } from '../hooks/useFeatureConfig';
+import DailyPriceModal from '../components/products/DailyPriceModal';
 import './ProductsPage.css';
 
 export default function ProductsPage() {
+    const [showDailyPrice, setShowDailyPrice] = useState(false);
     const [activeTab, setActiveTab] = useState('view-products');
 
     const features = useFeatureConfig();
@@ -37,7 +39,7 @@ export default function ProductsPage() {
     // y evita el error "changed size between renders" causado por el Hot Reload.
     useEffect(() => {
         refreshData();
-    }, []); 
+    }, []);
 
     // --- FILTROS PARA PESTAÑAS ---
     const productsForSale = products.filter(p => p.productType === 'sellable' || !p.productType);
@@ -108,7 +110,7 @@ export default function ProductsPage() {
                         id: `batch-${newId}-initial`,
                         productId: newId,
                         cost: initialCost,
-                        price: 0,
+                        price: parseFloat(productData.price) || 0,
                         stock: initialStock,
                         createdAt: new Date().toISOString(),
                         trackStock: true,
@@ -184,20 +186,20 @@ export default function ProductsPage() {
         setIsLoading(true);
         try {
             const currentStatus = product.isActive !== false;
-            
-            const updatedProduct = { 
-                ...product, 
+
+            const updatedProduct = {
+                ...product,
                 isActive: !currentStatus,
-                updatedAt: new Date().toISOString() 
+                updatedAt: new Date().toISOString()
             };
 
             await saveData(STORES.MENU, updatedProduct);
-            
+
             // 2. Forzamos la recarga ignorando el caché
-            await refreshData(true); 
-            
-        } catch (error) { 
-            console.error(error); 
+            await refreshData(true);
+
+        } catch (error) {
+            console.error(error);
             showMessageModal("Error al cambiar el estado del producto");
         } finally {
             // 3. Desactivamos loading al terminar
@@ -214,14 +216,27 @@ export default function ProductsPage() {
         <>
             <div className="products-header">
                 <h2 className="section-title">Gestión de Inventario</h2>
-                
-                <button 
-                    className="btn btn-secondary btn-action-header" 
-                    onClick={() => setShowDataTransfer(true)}
-                >
-                    📥 / 📤 Importar y Exportar
-                </button>
-            </div>
+                <div style={{ display: 'flex', gap: '10px', flexDirection: 'column', width: '100%' }}>
+                    {/* BOTÓN NUEVO PARA FRUTERÍA */}
+                    {features.hasDailyPricing && (
+                        <button
+                            className="btn btn-primary btn-action-header"
+                            style={{ backgroundColor: '#f97316' }} // Naranja distintivo
+                            onClick={() => setShowDailyPrice(true)}
+                        >
+                            📝 Actualizar Precios del Día
+                        </button>
+                    )}
+
+                    <button
+                        className="btn btn-secondary btn-action-header"
+                        onClick={() => setShowDataTransfer(true)}
+                    >
+                        📥 / 📤 Importar y Exportar
+                    </button>
+                </div>
+
+            </div >
 
             <div className="tabs-container" id="product-tabs" style={{ overflowX: 'auto' }}>
                 <button
@@ -264,52 +279,62 @@ export default function ProductsPage() {
 
             {/* CONTENIDO DE PESTAÑAS */}
 
-            {activeTab === 'add-product' && (
-                <ProductForm
-                    onSave={handleSaveProduct}
-                    onCancel={() => setActiveTab('view-products')}
-                    productToEdit={editingProduct} 
-                    categories={categories}
-                    onOpenCategoryManager={() => setShowCategoryModal(true)}
-                    products={products}
-                    onEdit={handleEditProduct}
-                    onManageBatches={handleManageBatches}
-                />
-            )}
+            {
+                activeTab === 'add-product' && (
+                    <ProductForm
+                        onSave={handleSaveProduct}
+                        onCancel={() => setActiveTab('view-products')}
+                        productToEdit={editingProduct}
+                        categories={categories}
+                        onOpenCategoryManager={() => setShowCategoryModal(true)}
+                        products={products}
+                        onEdit={handleEditProduct}
+                        onManageBatches={handleManageBatches}
+                    />
+                )
+            }
 
-            {activeTab === 'view-products' && (
-                <ProductList
-                    products={productsForSale}
-                    categories={categories}
-                    isLoading={isLoading}
-                    onEdit={handleEditProduct}
-                    onDelete={handleDeleteProduct}
-                    onToggleStatus={handleToggleStatus}
-                />
-            )}
+            {
+                activeTab === 'view-products' && (
+                    <ProductList
+                        products={productsForSale}
+                        categories={categories}
+                        isLoading={isLoading}
+                        onEdit={handleEditProduct}
+                        onDelete={handleDeleteProduct}
+                        onToggleStatus={handleToggleStatus}
+                    />
+                )
+            }
 
-            {activeTab === 'ingredients' && features.hasRecipes && (
-                <IngredientManager
-                    ingredients={ingredientsOnly}
-                    onSave={handleSaveProduct} 
-                    onDelete={handleDeleteProduct} 
-                />
-            )}
+            {
+                activeTab === 'ingredients' && features.hasRecipes && (
+                    <IngredientManager
+                        ingredients={ingredientsOnly}
+                        onSave={handleSaveProduct}
+                        onDelete={handleDeleteProduct}
+                    />
+                )
+            }
 
-            {activeTab === 'categories' && (
-                <CategoryManager
-                    categories={categories}
-                    onSave={handleSaveCategory}
-                    onDelete={handleDeleteCategory}
-                />
-            )}
+            {
+                activeTab === 'categories' && (
+                    <CategoryManager
+                        categories={categories}
+                        onSave={handleSaveCategory}
+                        onDelete={handleDeleteCategory}
+                    />
+                )
+            }
 
-            {activeTab === 'batches' && (
-                <BatchManager
-                    selectedProductId={selectedBatchProductId}
-                    onProductSelect={setSelectedBatchProductId}
-                />
-            )}
+            {
+                activeTab === 'batches' && (
+                    <BatchManager
+                        selectedProductId={selectedBatchProductId}
+                        onProductSelect={setSelectedBatchProductId}
+                    />
+                )
+            }
 
             <CategoryManagerModal
                 show={showCategoryModal}
@@ -323,6 +348,12 @@ export default function ProductsPage() {
                 show={showDataTransfer}
                 onClose={() => setShowDataTransfer(false)}
                 onRefresh={refreshData}
+            />
+            <DailyPriceModal
+                show={showDailyPrice}
+                onClose={() => setShowDailyPrice(false)}
+                products={products} // Pasamos el menú completo
+                onRefresh={() => refreshData(true)}
             />
         </>
     );

@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { compressImage, lookupBarcodeInAPI, showMessageModal } from '../../services/utils';
 import ScannerModal from '../common/ScannerModal';
+import FruteriaFields from './fieldsets/FruteriaFields';
 import './ProductForm.css';
 
-// --- IMPORTACIÓN DE LOS MINI-FORMULARIOS (FIELDSETS) ---
+// -- IMPORTACIÓN DE LOS MINI-FORMULARIOS (FIELDSETS) ---
 import RestauranteFields from './fieldsets/RestauranteFields';
 import AbarrotesFields from './fieldsets/AbarrotesFields';
 import FarmaciaFields from './fieldsets/FarmaciaFIelds'; // Nota: Mantenemos el nombre del import como está en tu archivo original
@@ -51,6 +52,9 @@ export default function ProductForm({
     // NUEVO: Puntos de reorden (Stock Mínimo/Máximo)
     const [minStock, setMinStock] = useState('');
     const [maxStock, setMaxStock] = useState('');
+    const [cost, setCost] = useState('');
+    const [price, setPrice] = useState('');
+    const [supplier, setSupplier] = useState('');
 
     // Farmacia
     const [sustancia, setSustancia] = useState('');
@@ -58,6 +62,10 @@ export default function ProductForm({
     // NUEVO: Control de antibióticos y presentación
     const [requiresPrescription, setRequiresPrescription] = useState(false);
     const [presentation, setPresentation] = useState('');
+
+    //Fruteria/verduleria
+    const [shelfLife, setShelfLife] = useState('');
+    const [unit, setUnit] = useState('kg');
 
     // --- ESTADOS DE UI ---
     const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -90,12 +98,18 @@ export default function ProductForm({
             setWholesaleTiers(productToEdit.wholesaleTiers || []);
             setMinStock(productToEdit.minStock || '');
             setMaxStock(productToEdit.maxStock || '');
+            setCost(productToEdit.cost || '');
+            setSupplier(productToEdit.supplier || '');
 
             // Datos Específicos - Farmacia
             setSustancia(productToEdit.sustancia || '');
             setLaboratorio(productToEdit.laboratorio || '');
             setRequiresPrescription(productToEdit.requiresPrescription || false);
             setPresentation(productToEdit.presentation || '');
+
+            //Datos Especificos - Fruteria
+            setShelfLife(productToEdit.shelfLife || '');
+            setUnit(productToEdit.bulkData?.purchase?.unit || 'kg');
 
             // Mostrar sección extra si hay datos relevantes
             if (
@@ -131,10 +145,17 @@ export default function ProductForm({
         setSaleType('unit');
         setWholesaleTiers([]);
         setMinStock(''); setMaxStock('');
+        setCost('');
+        setPrice('');
+        setSupplier('');
 
         // Reset Farmacia
         setSustancia(''); setLaboratorio('');
         setRequiresPrescription(false); setPresentation('');
+
+        // reset Fruteria
+        setShelfLife('');
+        setUnit('kg');
 
         // Reset UI
         setInternalEditingProduct(null);
@@ -207,12 +228,20 @@ export default function ProductForm({
             wholesaleTiers: features.hasWholesale ? wholesaleTiers : [],
             minStock: features.hasMinMax ? parseFloat(minStock) : null,
             maxStock: features.hasMinMax ? parseFloat(maxStock) : null,
+            price: parseFloat(price) || 0,
+            cost: parseFloat(cost) || 0,
+            supplier: features.hasSuppliers ? supplier : null,
 
             // Farmacia
             sustancia: features.hasLabFields ? sustancia : null,
             laboratorio: features.hasLabFields ? laboratorio : null,
             requiresPrescription: features.hasLabFields ? requiresPrescription : false,
             presentation: features.hasLabFields ? presentation : null,
+
+            //Fruteria
+            shelfLife: features.hasDailyPricing ? shelfLife : null,
+            bulkData: (features.hasBulk) ? { purchase: { unit: unit } } : null,
+            saleType: (features.hasBulk && unit !== 'pza') ? 'bulk' : 'unit,'
         };
 
         onSave(productData, internalEditingProduct);
@@ -260,6 +289,26 @@ export default function ProductForm({
                         </div>
                     </div>
 
+                    {!features.hasMinMax && (
+                        <div style={{ display: 'flex', gap: '15px' }}>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Precio Venta *</label>
+                                <input
+                                    type="number" className="form-input"
+                                    value={price} onChange={e => setPrice(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Costo (Opcional)</label>
+                                <input
+                                    type="number" className="form-input"
+                                    value={cost} onChange={e => setCost(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    )}
+
                     {/* --- B. BOTÓN GESTIÓN DE INVENTARIO (Si editamos) --- */}
                     {internalEditingProduct && (features.hasLots || features.hasVariants) && (
                         <div className="form-group">
@@ -291,8 +340,16 @@ export default function ProductForm({
                         />
                     )}
 
-                    {/* Módulo Abarrotes / Ferretería / Verdulería */}
-                    {(features.hasBulk || features.hasMinMax) && (
+                    {features.hasDailyPricing ? (
+                        /* SI ES FRUTERÍA (usamos daily_pricing como indicador) */
+                        <FruteriaFields
+                            saleType={saleType} setSaleType={setSaleType}
+                            price={price} setPrice={setPrice}
+                            cost={cost} setCost={setCost}
+                            shelfLife={shelfLife} setShelfLife={setShelfLife}
+                            unit={unit} setUnit={setUnit}
+                        />
+                    ) : (features.hasBulk || features.hasMinMax) && (
                         <AbarrotesFields
                             saleType={saleType}
                             setSaleType={setSaleType}
@@ -302,6 +359,12 @@ export default function ProductForm({
                             maxStock={maxStock}
                             setMaxStock={setMaxStock}
                             features={features}
+                            supplier={supplier}
+                            setSupplier={setSupplier}
+                            cost={cost}
+                            setCost={setCost}
+                            price={price}
+                            setPrice={setPrice}
                         />
                     )}
 

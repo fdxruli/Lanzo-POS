@@ -5,20 +5,25 @@ import StatsGrid from '../components/dashboard/StatsGrid';
 import SalesHistory from '../components/dashboard/SalesHistory';
 import RecycleBin from '../components/dashboard/RecycleBin';
 import BusinessTips from '../components/dashboard/BusinessTips';
+import WasteHistory from '../components/dashboard/WasteHistory';
+import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState('stats');
+
+  const features = useFeatureConfig();
 
   // 1. Obtenemos los datos del store
   const isLoading = useDashboardStore((state) => state.isLoading);
   const sales = useDashboardStore((state) => state.sales); // Solo las ventas recientes (paginadas)
   const menu = useDashboardStore((state) => state.menu);
   const deletedItems = useDashboardStore((state) => state.deletedItems);
-  
+  const wasteLogs = useDashboardStore((state) => state.wasteLogs);
+
   // 2. OBTENEMOS LAS ESTADÍSTICAS YA CALCULADAS POR EL STORE
   // En lugar de calcularlas aquí, usamos las que 'calculateStatsOnTheFly' generó.
-  const stats = useDashboardStore((state) => state.stats); 
+  const stats = useDashboardStore((state) => state.stats);
 
   const deleteSale = useDashboardStore((state) => state.deleteSale);
   const restoreItem = useDashboardStore((state) => state.restoreItem);
@@ -58,6 +63,15 @@ export default function DashboardPage() {
         >
           Consejos para tu Negocio
         </button>
+        {features.hasWaste && (
+          <button
+            className={`tab-btn ${activeTab === 'waste' ? 'active' : ''}`}
+            onClick={() => setActiveTab('waste')}
+            style={{ color: activeTab === 'waste' ? 'var(--error-color)' : '' }}
+          >
+            Mermas 🗑️
+          </button>
+        )}
       </div>
 
       {/* 3. Pasamos el objeto 'stats' directo del store */}
@@ -74,6 +88,11 @@ export default function DashboardPage() {
 
       {activeTab === 'tips' && (
         <BusinessTips sales={sales} menu={menu} />
+      )}
+
+      {/* RENDERIZAR COMPONENTE DE MERMAS */}
+      {activeTab === 'waste' && features.hasWaste && (
+        <WasteHistory logs={wasteLogs} />
       )}
     </>
   );
