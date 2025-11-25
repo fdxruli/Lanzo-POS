@@ -1,5 +1,6 @@
 /* src/components/pos/OrderSummary.css */
 
+/* === CONTENEDOR PRINCIPAL === */
 .pos-order-container {
   background-color: var(--card-background-color);
   border-radius: var(--border-radius);
@@ -7,8 +8,8 @@
   box-shadow: var(--box-shadow);
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 100px);
   /* Altura ajustada para escritorio */
+  height: calc(100vh - 100px);
   min-height: 500px;
   position: sticky;
   top: 20px;
@@ -20,6 +21,8 @@
   margin-bottom: var(--spacing-md);
   padding-bottom: var(--spacing-xs);
   border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  /* Evita que el título se aplaste */
 }
 
 .empty-message {
@@ -33,22 +36,32 @@
   justify-content: center;
 }
 
+/* === LISTA DE PRODUCTOS === */
 .order-list {
   flex-grow: 1;
+  /* Ocupa todo el espacio disponible */
   overflow-y: auto;
+  /* Scroll interno */
   margin-bottom: var(--spacing-md);
   padding-right: 5px;
   /* Espacio para scrollbar */
+
+  /* Sombra sutil interna arriba para indicar scroll */
+  mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent 100%);
 }
 
+/* === ITEM INDIVIDUAL (CORREGIDO PARA EVITAR SOLAPAMIENTO) === */
 .order-item {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  /* Alineación superior para items con detalles */
-  padding: var(--spacing-sm) 0;
+  align-items: center;
+  /* Centrado verticalmente */
+  padding: 12px 0;
+  /* Más espacio vertical */
   border-bottom: 1px solid var(--light-background);
   animation: fadeIn 0.2s ease-out;
+  gap: 12px;
+  /* ¡CLAVE! Separación obligatoria entre texto y botones */
 }
 
 .order-item:last-child {
@@ -56,116 +69,127 @@
 }
 
 .order-item-info {
-  flex-grow: 1;
-  padding-right: 10px;
+  flex: 1;
+  /* Ocupa el espacio restante */
+  min-width: 0;
+  /* Permite que el texto se corte si es muy largo */
+  padding-right: 5px;
 }
 
 .order-item-header {
   display: flex;
   align-items: center;
   gap: 5px;
+  flex-wrap: wrap;
+  /* Permite que los badges bajen si no caben */
 }
 
 .order-item-name {
   font-weight: 600;
   color: var(--text-dark);
   font-size: 0.95rem;
+  line-height: 1.3;
+  /* Evita que una palabra larga rompa el layout */
+  word-wrap: break-word;
 }
 
-.stock-alert-icon {
-  font-size: 0.8rem;
-  cursor: help;
-}
-
-/* --- ESTILOS NUEVOS PARA MODIFICADORES --- */
+/* Detalles extra (Modificadores y Notas) */
 .order-item-modifiers {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .modifier-tag {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-light);
   background-color: var(--light-background);
-  padding: 1px 5px;
+  padding: 2px 6px;
   border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .order-item-notes {
   font-size: 0.75rem;
   color: var(--primary-color);
-  /* Nota destacada */
-  margin-top: 2px;
+  margin-top: 3px;
   font-style: italic;
+  background-color: rgba(255, 59, 92, 0.05);
+  padding: 2px 5px;
+  border-radius: 4px;
+  display: inline-block;
 }
-
-/* ----------------------------------------- */
 
 .order-item-price {
   color: var(--secondary-color);
   font-size: 0.85rem;
-  font-weight: 600;
-  margin-top: 2px;
+  font-weight: 700;
+  margin-top: 4px;
 }
 
+/* === CONTROLES DE CANTIDAD (+ -) === */
 .order-item-controls {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
+  /* Espacio entre botones */
   flex-shrink: 0;
-  /* Evita que se aplasten */
+  /* ¡CLAVE! Evita que los botones se aplasten */
+  background-color: var(--light-background);
+  padding: 4px;
+  border-radius: 8px;
 }
 
 .quantity-btn {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  /* Botones más grandes para el dedo */
+  height: 32px;
   border-radius: 6px;
-  /* Cuadrados redondeados modernos */
-  background-color: var(--light-background);
+  background-color: var(--card-background-color);
   color: var(--text-dark);
-  border: 1px solid transparent;
+  border: 1px solid rgba(0, 0, 0, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.1s ease;
   font-weight: bold;
-}
-
-.quantity-btn:hover {
-  background-color: var(--border-color);
+  font-size: 1.1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: all 0.1s ease;
 }
 
 .quantity-btn:active {
   background-color: var(--secondary-color);
   color: white;
+  transform: scale(0.95);
 }
 
 .quantity-display {
   min-width: 24px;
   text-align: center;
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-dark);
 }
 
-/* Inputs Bulk */
+/* Inputs Bulk (Granel) */
 .bulk-input {
-  width: 60px;
-  padding: 4px;
+  width: 65px;
+  padding: 6px;
   text-align: center;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .unit-label {
   font-size: 0.75rem;
   color: var(--text-light);
+  font-weight: 600;
 }
 
-/* Footer de Totales */
+/* === FOOTER (TOTALES Y BOTONES) === */
 .order-total {
   display: flex;
   justify-content: space-between;
@@ -173,42 +197,34 @@
   padding: 15px 0;
   border-top: 2px dashed var(--border-color);
   margin-top: auto;
-  /* Empuja al fondo si hay espacio */
-}
-
-.order-total span {
-  font-size: 1.2rem;
-  font-weight: 700;
+  /* Empuja al fondo */
+  flex-shrink: 0;
 }
 
 .total-price {
   color: var(--primary-color);
   font-size: 1.6rem !important;
+  font-weight: 800;
 }
 
 .order-actions {
   display: grid;
   grid-template-columns: 3fr 1fr;
-  /* Botón cobrar grande, cancelar pequeño */
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .process-btn {
   background-color: var(--success-color);
   color: white;
-  padding: 14px;
+  padding: 16px;
+  /* Botón más alto para móvil */
   border: none;
   border-radius: var(--border-radius);
   font-size: 1.1rem;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 0.1s;
-  box-shadow: 0 4px 6px rgba(0, 196, 140, 0.2);
-}
-
-.process-btn:hover {
-  background-color: #059669;
-  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 196, 140, 0.3);
 }
 
 .process-btn:active {
@@ -218,61 +234,69 @@
 .clear-btn {
   background-color: transparent;
   color: var(--error-color);
-  border: 1px solid var(--error-color);
-  padding: 10px;
+  border: 2px solid rgba(255, 59, 92, 0.2);
   border-radius: var(--border-radius);
   font-size: 0.9rem;
   font-weight: 600;
-  cursor: pointer;
-}
-
-.clear-btn:hover {
-  background-color: #fee2e2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Alertas visuales en item */
 .order-item.exceeds-stock {
   background-color: #fef2f2;
-  /* Rojo muy suave */
   border-radius: 4px;
+  border: 1px solid #fecaca;
 }
 
+.stock-alert-icon {
+  font-size: 1rem;
+  margin-left: 5px;
+}
+
+/* ============================================================
+   ESTILOS RESPONSIVOS (MÓVIL)
+   Se aplican cuando está dentro del Modal en pantallas pequeñas
+   ============================================================ */
 @media (max-width: 768px) {
+
+  /* Asegura que el contenedor llene el espacio del modal */
   .pos-order-container {
-    height: auto;
-    /* Altura automática en móvil */
-    min-height: auto;
-    position: static;
+    height: 100% !important;
+    box-shadow: none;
+    border: none;
+    padding: 0 15px;
+    /* Un poco de margen lateral */
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mobile-summary-header {
+    padding: 15px 5px;
+    flex-shrink: 0;
+    /* El encabezado no se aplasta */
   }
 
   .order-list {
-    max-height: 300px;
-    /* Límite de scroll en móvil */
+    flex-grow: 1;
+    /* La lista ocupa todo el espacio libre */
+    overflow-y: auto;
+    padding-bottom: 20px;
+  }
+
+  /* SECCIÓN DE BOTONES EN EL FONDO */
+  .order-total,
+  .order-actions {
+    flex-shrink: 0;
+    /* No se aplastan */
+    background-color: var(--card-background-color);
+    /* Fondo sólido por si la lista pasa por debajo */
+  }
+
+  .order-actions {
+    /* Padding extra abajo para separar del borde de la pantalla */
+    padding-bottom: 25px;
+    padding-top: 10px;
   }
 }
-
-/* --- ESTILOS NUEVOS PARA MODIFICADORES --- */
-.order-item-modifiers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.modifier-tag {
-  font-size: 0.75rem;
-  color: var(--text-light);
-  background-color: var(--light-background);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-
-.order-item-notes {
-  font-size: 0.75rem;
-  color: var(--primary-color);
-  /* Nota destacada */
-  margin-top: 2px;
-  font-style: italic;
-}
-
-/* ----------------------------------------- */

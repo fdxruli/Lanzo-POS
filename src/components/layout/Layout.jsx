@@ -1,33 +1,33 @@
 // src/components/layout/Layout.jsx
-import React, { useEffect } from 'react'; // 1. Importa useEffect
+// (Solo verifica que tengas la clase correcta en el main, si no, actualízalo)
+import React, { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
-// 2. Importa el nuevo store
-import { useDashboardStore } from '../../store/useDashboardStore'; 
+import { useDashboardStore } from '../../store/useDashboardStore';
+import './Layout.css'; // Asegúrate de importar el CSS actualizado
 
 function Layout() {
-  // 3. Obtén la acción de carga
   const loadAllData = useDashboardStore((state) => state.loadAllData);
 
-  // 4. Llama a la acción UNA VEZ cuando el Layout se monte
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
 
   return (
-    <>
+    <div className="app-layout"> {/* Clase añadida para flex container */}
       <Navbar />
-    
-      <Ticker /> 
 
-      <main className="main-container">
-        <Outlet />
-      </main>
+      <div className="content-wrapper">
+        <Ticker />
+        <main className="main-content"> {/* Clase corregida para coincidir con CSS */}
+          <Outlet />
+        </main>
+      </div>
 
       <MessageModal />
-    </>
+    </div>
   );
 }
 

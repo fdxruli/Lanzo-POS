@@ -69,7 +69,7 @@ export default function DashboardPage() {
             onClick={() => setActiveTab('waste')}
             style={{ color: activeTab === 'waste' ? 'var(--error-color)' : '' }}
           >
-            Mermas 🗑️
+            Mermas
           </button>
         )}
       </div>
