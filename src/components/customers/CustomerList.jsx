@@ -80,7 +80,7 @@ export default function CustomerList({
     }
 
     if (customers.length === 0) {
-        return <div className="empty-message">No hay clientes registrados.</div>;
+        return <div className="customer-empty-message">No hay clientes registrados.</div>;
     }
 
     return (

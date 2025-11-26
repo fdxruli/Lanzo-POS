@@ -2,14 +2,33 @@
 
 // 1. Importa la nueva función 'show' de tu store
 import { showMessage } from '../store/useMessageStore';
+import toast from 'react-hot-toast';
 
 /**
- * Muestra un modal con un mensaje.
- * ¡YA NO MANIPULA EL DOM! Ahora llama al store de React.
+ * Muestra un mensaje al usuario.
+ * - Si hay 'onConfirm', usa el MODAL (porque requiere interacción).
+ * - Si NO hay 'onConfirm', usa un TOAST (rápido y no intrusivo).
  */
 export function showMessageModal(message, onConfirm = null, options = {}) {
-  // 2. Reemplaza TODO el cuerpo de la función con esta línea:
-  showMessage(message, onConfirm, options);
+  
+  // CASO A: Es una Confirmación (Ej: "¿Eliminar cliente?") -> USAR MODAL
+  if (typeof onConfirm === 'function') {
+    showMessage(message, onConfirm, options);
+    return; 
+  }
+
+  // CASO B: Es solo información -> USAR TOAST
+  // Detectamos si es error buscando palabras clave o si pasas options.type
+  const isError = options.type === 'error' || 
+                  message.toLowerCase().includes('error') || 
+                  message.toLowerCase().includes('falló') ||
+                  message.startsWith('⚠️');
+
+  if (isError) {
+    toast.error(message, { duration: 4000 });
+  } else {
+    toast.success(message, { duration: 3000 });
+  }
 }
 
 /**

@@ -1,12 +1,13 @@
 // src/components/layout/Layout.jsx
-// (Solo verifica que tengas la clase correcta en el main, si no, actualízalo)
 import React, { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
 import { useDashboardStore } from '../../store/useDashboardStore';
-import './Layout.css'; // Asegúrate de importar el CSS actualizado
+// 1. IMPORTAR TOASTER
+import { Toaster } from 'react-hot-toast'; 
+import './Layout.css';
 
 function Layout() {
   const loadAllData = useDashboardStore((state) => state.loadAllData);
@@ -16,12 +17,33 @@ function Layout() {
   }, [loadAllData]);
 
   return (
-    <div className="app-layout"> {/* Clase añadida para flex container */}
+    <div className="app-layout">
+      {/* 2. AGREGAR EL COMPONENTE TOASTER AQUÍ */}
+      <Toaster 
+        position="top-center"
+        toastOptions={{
+          style: {
+            background: '#333',
+            color: '#fff',
+            borderRadius: '8px',
+            fontSize: '1rem',
+          },
+          success: {
+            style: { background: 'var(--success-color)', color: 'white' },
+            iconTheme: { primary: 'white', secondary: 'var(--success-color)' },
+          },
+          error: {
+            style: { background: 'var(--error-color)', color: 'white' },
+            iconTheme: { primary: 'white', secondary: 'var(--error-color)' },
+          },
+        }}
+      />
+      
       <Navbar />
 
       <div className="content-wrapper">
         <Ticker />
-        <main className="main-content"> {/* Clase corregida para coincidir con CSS */}
+        <main className="main-content">
           <Outlet />
         </main>
       </div>

@@ -79,17 +79,26 @@
 /* --- ESCRITORIO: MOSTRAR GRID NORMAL --- */
 @media (min-width: 1024px) {
   .pos-grid {
-    grid-template-columns: 2fr 1fr;
-    padding-bottom: 0;
+    grid-template-columns: 1fr 400px;
+    gap: var(--spacing-xl);
+    align-items: stretch; /* CAMBIO: stretch para que ambos paneles tengan la misma altura */
+    height: calc(100vh - 200px); 
+    
+    /* Quitamos overflow hidden global para evitar cortes bruscos, 
+       el scroll debe ser interno en los paneles */
+    overflow: visible; 
   }
 
-  /* En escritorio ocultamos la barra flotante porque ya se ve el resumen */
+  /* Ocultamos barra flotante */
   .floating-cart-bar {
     display: none;
   }
 
-  /* En escritorio aseguramos que se vea el resumen estático */
   .pos-grid .pos-order-container {
     display: flex;
+    height: 100%; /* Se adapta a la altura del grid */
+    position: sticky; /* CAMBIO: Usamos sticky para que se quede fijo si scrolleas */
+    top: 0;
+    min-height: 0;
   }
 }

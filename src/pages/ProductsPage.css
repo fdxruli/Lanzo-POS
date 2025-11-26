@@ -34,7 +34,7 @@
 }
 
 /* --- TÍTULO --- */
-.products-header .section-title {
+.products-header {
   order: 1; /* FUERZA al título a ir PRIMERO (Arriba) */
   
   font-size: 1.8rem; /* Grande en móvil */

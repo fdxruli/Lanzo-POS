@@ -1,73 +1,111 @@
-/*
- * Estilos para Ticker.jsx
- */
+/* src/components/layout/Ticker.css */
 
+/* === CONTENEDOR PRINCIPAL === */
 .notification-ticker-container {
+  /* Estilos visuales base */
   background-color: var(--card-background-color);
+  border: 1px solid var(--border-color);
   box-shadow: var(--box-shadow);
-  padding: var(--spacing-sm) 0;
-  max-width: 1400px;
-  margin: 4px auto 0;
+  
+  /* DIMENSIONES Y POSICIÓN - CRÍTICO */
+  width: 100%;
+  height: 55px;
+  min-height: 55px; /* Evita que se aplaste a 0 */
+  margin-bottom: 20px;
   border-radius: var(--border-radius-sm);
+  
+  /* LAYOUT */
+  display: flex;
+  align-items: center;
   overflow: hidden;
+  position: relative;
+  
+  /* CAPAS - ASEGURA QUE SE VEA ENCIMA DE OTROS PANELES */
+  z-index: 50; 
+  flex-shrink: 0; /* Prohíbe que el flexbox lo encoja */
 }
 
+/* === EL RIEL (Wrapper) === */
 .ticker-wrap {
   width: 100%;
+  height: 100%;
   overflow: hidden;
-  box-sizing: border-box;
+  position: relative; /* Necesario para posición absoluta interna */
 }
 
+/* === EL TREN (Elemento animado) === */
 .ticker-move {
   display: inline-block;
   white-space: nowrap;
-  animation: ticker 30s linear infinite;
+  position: absolute; /* Lo sacamos del flujo para evitar conflictos de ancho */
+  top: 0;
+  height: 100%;
+  
+  /* Centrado vertical del texto */
+  display: flex;
+  align-items: center;
+  
+  /* Animación */
+  animation: ticker 35s linear infinite;
+  /* Inicia fuera de la pantalla a la derecha */
+  transform: translateX(100vw); 
+  
+  /* Aseguramos que tenga ancho suficiente para contener el texto */
+  width: max-content; 
+  min-width: 100%;
 }
 
+/* === ÍTEM INDIVIDUAL === */
 .ticker-item {
   display: inline-block;
-  padding: 0 2rem;
-  font-size: 0.9rem;
-  color: var(--text-light);
+  padding: 0 3rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-dark);
 }
 
+/* === ANIMACIÓN === */
 @keyframes ticker {
   0% {
-    transform: translateX(100%);
+    /* Empieza al borde derecho de la pantalla */
+    transform: translateX(100%); 
   }
-
   100% {
-    transform: translateX(-100%);
+    /* Termina cuando todo el texto ha salido por la izquierda */
+    transform: translateX(-100%); 
   }
 }
 
-/* ... (tus estilos existentes .ticker-item, @keyframes, etc.) ... */
-/* */
+/* ============================================================
+   ESTILOS DE PRIORIDAD (LICENCIA VENCIDA)
+   ============================================================ */
 
-.ticker-item {
-  display: inline-block;
-  padding: 0 2rem;
-  font-size: 0.9rem;
-  color: var(--text-light);
-  /* ¡NUEVO! */
-  transition: all 0.3s ease;
-}
-
-/* El contenedor cambia a color de error */
 .notification-ticker-container.priority-warning {
-  background-color: var(--error-color); /* Rojo de error */
-  box-shadow: var(--box-shadow-lg);
+  background-color: var(--error-color);
+  border-color: var(--error-color);
+  box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4);
+  height: 65px;
+  min-height: 65px;
 }
 
-/* La animación puede ser más lenta para facilitar la lectura */
+.notification-ticker-container.priority-warning .ticker-item {
+  color: white;
+  font-size: 1.3rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
 .notification-ticker-container.priority-warning .ticker-move {
   animation-duration: 25s; 
 }
 
-/* El texto es más grande, blanco y llamativo */
-.notification-ticker-container.priority-warning .ticker-item {
-  color: white; /* Texto blanco */
-  font-size: 1.1rem; /* ¡Más grande! */
-  font-weight: 600;
-  text-transform: uppercase;
+/* ============================================================
+   AJUSTES ESCRITORIO
+   ============================================================ */
+@media (min-width: 1024px) {
+  .notification-ticker-container {
+    margin-bottom: 30px;
+    border-radius: var(--border-radius);
+  }
 }
