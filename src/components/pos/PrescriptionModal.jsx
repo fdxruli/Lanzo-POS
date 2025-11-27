@@ -17,7 +17,7 @@ export default function PrescriptionModal({ show, onClose, onConfirm, itemsRequi
     };
 
     return (
-        <div className="modal" style={{ display: 'flex', zIndex: 10002 }}>
+        <div className="modal" style={{ display: 'flex', zIndex: 2300 }}>
             <div className="modal-content" style={{ maxWidth: '500px', borderLeft: '5px solid var(--warning-color)' }}>
                 <h2 className="modal-title">⚠️ Medicamento Controlado</h2>
                 <p style={{ marginBottom: '15px', fontSize: '0.9rem', color: 'var(--text-light)' }}>

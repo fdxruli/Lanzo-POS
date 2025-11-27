@@ -2,10 +2,10 @@
 
 /* ============================================================
    1. ESTILOS MÓVIL Y TABLET (0px - 1023px)
-   "App Bar" Inferior
+   Forzamos la visualización de la barra inferior en este rango
    ============================================================ */
 
-/* BARRA SUPERIOR (Solo marca, sin botones) */
+/* BARRA SUPERIOR (Branding) */
 .mobile-top-bar {
   background-color: var(--card-background-color);
   padding: 10px 20px;
@@ -16,7 +16,7 @@
   align-items: center;
   justify-content: center;
   border-bottom: 1px solid var(--border-color);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .mobile-brand {
@@ -31,85 +31,109 @@
   font-size: 1.2rem;
 }
 
-/* BARRA INFERIOR FLOTANTE */
+/* BARRA INFERIOR (APP BAR) - ¡Estilos Críticos! */
 .mobile-bottom-nav {
   display: flex !important;
+  /* Forzar visibilidad */
   position: fixed;
   bottom: 0;
   left: 0;
   width: 100%;
-  height: 65px;
-  /* Un poco más bajo para ser más compacto */
+  height: 80px;
+  /* Altura fija segura */
+
+  /* Fondo sólido para asegurar que tape el contenido al hacer scroll */
   background-color: var(--card-background-color);
-  /* Sombra suave arriba */
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+
+  /* Sombra fuerte hacia arriba */
+  box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.15);
+
   justify-content: space-between;
-  /* Distribución uniforme */
   align-items: center;
-  padding: 0;
-  /* Sin padding lateral para aprovechar el ancho */
-  z-index: 9999;
-  border-top: 1px solid var(--border-color);
+  padding: 0 10px;
+
+  /* Z-Index Extremo para flotar sobre todo */
+  z-index: 99999;
+
+  /* Bordes redondeados */
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
 }
 
-/* Ítems normales */
+/* Ítems de Navegación */
 .bottom-nav-item {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   color: var(--text-light);
-  font-size: 0.7rem;
-  /* Texto pequeño */
-  font-weight: 500;
-  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  gap: 6px;
   background: none;
   border: none;
   flex: 1;
-  /* Ocupan todos el mismo ancho (20% cada uno) */
+  /* Distribuir espacio equitativamente */
   height: 100%;
   cursor: pointer;
   text-decoration: none;
-  transition: all 0.2s ease;
-  position: relative;
-  /* Para efectos futuros si quieres */
 }
 
 .bottom-nav-item.active {
   color: var(--primary-color);
-  background-color: rgba(0, 0, 0, 0.02);
 }
 
 .bottom-nav-item.active svg {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   stroke-width: 2.5px;
+}
+
+/* BOTÓN CENTRAL FLOTANTE (POS / TIENDA) */
+.bottom-nav-center {
+  position: relative;
+  width: 80px;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  /* Sin flex: 1 para que no se estire */
 }
 
 .fab-pos-button {
   position: absolute;
-  top: -30px;
-  /* Flota hacia arriba */
-  width: 65px;
-  height: 65px;
-  /* Gradiente usando tus variables */
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+  top: -35px;
+  /* Flotar hacia arriba */
+  width: 70px;
+  height: 70px;
+
+  /* Gradiente Rojo Principal */
+  background: linear-gradient(135deg, #FF3B5C 0%, #FF6B8B 100%);
+
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  box-shadow: 0 8px 20px rgba(255, 59, 92, 0.4);
-  /* Borde del color de fondo para simular recorte */
-  border: 5px solid var(--background-color);
+
+  /* Sombra Brillante */
+  box-shadow: 0 10px 25px rgba(255, 59, 92, 0.5);
+
+  /* Borde sólido del color del fondo de la barra para recortar */
+  border: 6px solid var(--card-background-color);
+
   transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  z-index: 10000;
+  z-index: 100000;
 }
 
 .fab-pos-button:active {
-  transform: scale(0.95);
+  transform: scale(0.9);
 }
 
-/* MENÚ DESPLEGABLE (DRAWER) */
+.fab-pos-button svg {
+  width: 32px;
+  height: 32px;
+}
+
+/* MENU DRAWER (Panel "Más") */
 .mobile-drawer {
   position: fixed;
   bottom: 0;
@@ -119,10 +143,11 @@
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
   padding: 20px;
-  padding-bottom: 90px;
-  /* Espacio para que la navbar no lo tape */
+  padding-bottom: 100px;
+  /* Espacio para la barra */
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.2);
-  z-index: 9990;
+  z-index: 99990;
+  /* Justo debajo de la barra */
   transform: translateY(120%);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   max-height: 85vh;
@@ -137,11 +162,11 @@
   position: fixed;
   inset: 0;
   background-color: rgba(0, 0, 0, 0.6);
-  z-index: 9980;
+  z-index: 99980;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.3s;
-  backdrop-filter: blur(3px);
+  backdrop-filter: blur(4px);
 }
 
 .mobile-drawer-overlay.open {
@@ -158,23 +183,10 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.btn-close-drawer {
-  background: var(--light-background);
-  border: none;
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-dark);
-}
-
 .drawer-links {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  /* Dos columnas */
-  gap: 12px;
+  gap: 15px;
 }
 
 .drawer-link {
@@ -182,111 +194,114 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   padding: 15px;
   background-color: var(--light-background);
   border-radius: 12px;
   color: var(--text-dark);
   font-weight: 600;
-  text-decoration: none;
   text-align: center;
+  text-decoration: none;
 }
 
 .drawer-link.active {
   background-color: rgba(123, 97, 255, 0.15);
   color: var(--secondary-color);
-  border: 1px solid var(--secondary-color);
 }
 
-/* SIDEBAR DE ESCRITORIO (Oculto en móvil) */
+/* SIDEBAR ESCRITORIO (Oculto por defecto) */
 .desktop-sidebar {
   display: none;
 }
 
-/* AJUSTE MODO OSCURO */
+/* ============================================================
+   2. AJUSTES PARA MODO OSCURO (Corrección de visibilidad)
+   ============================================================ */
 [data-theme="dark"] .mobile-bottom-nav {
+  background-color: #1E293B;
+  /* Gris azulado oscuro */
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  /* Línea sutil para separar */
 }
 
 [data-theme="dark"] .fab-pos-button {
-  /* En modo oscuro, el borde debe coincidir con el fondo oscuro de la app */
-  border-color: var(--background-color);
+  border-color: #1E293B;
+  /* El borde debe coincidir con el fondo de la barra */
 }
 
 /* ============================================================
-   2. MEDIA QUERIES: ESCRITORIO (>= 1024px)
-   Solo aquí aparece el Sidebar y se oculta lo móvil
+   3. MEDIA QUERIES: ESCRITORIO (>= 1024px)
+   Solo en pantallas GRANDES ocultamos la barra
    ============================================================ */
+/* src/components/layout/Navbar.css */
+
+/* --- MÓVIL Y TABLET (Hasta 1023px) --- */
+@media (max-width: 1023px) {
+
+  /* Forzar que la barra se muestre */
+  .mobile-bottom-nav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 70px;
+    background-color: var(--card-background-color);
+    /* Color de fondo sólido */
+    border-top: 1px solid var(--border-color);
+    /* Borde para contraste */
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
+    /* Sombra fuerte */
+    z-index: 99999;
+    /* Encima de todo */
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 15px;
+  }
+
+  /* Estilos del botón flotante central */
+  .fab-pos-button {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 65px;
+    height: 65px;
+    background-color: var(--primary-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    border: 5px solid var(--background-color);
+    /* Borde para efecto flotante */
+  }
+
+  .desktop-sidebar {
+    display: none !important;
+  }
+}
+
+/* --- ESCRITORIO (Desde 1024px en adelante) --- */
 @media (min-width: 1024px) {
 
   .mobile-top-bar,
   .mobile-bottom-nav,
-  .mobile-drawer,
-  .mobile-drawer-overlay {
+  .mobile-drawer {
     display: none !important;
   }
 
   .desktop-sidebar {
-    display: flex;
-    flex-direction: column;
+    display: flex !important;
+    /* ... tus estilos de sidebar ... */
     width: 260px;
     height: 100vh;
     position: sticky;
     top: 0;
     background-color: var(--card-background-color);
-    border-right: 1px solid var(--border-color);
-    padding: 2rem 1.5rem;
-    overflow-y: auto;
-    z-index: 100;
-  }
-
-  .sidebar-header {
-    margin-bottom: 2rem;
-    padding-left: 0.5rem;
-    text-align: center;
-  }
-
-  .nav-title {
-    margin-top: 10px;
-    font-size: 1.2rem;
-    font-weight: 800;
-    color: var(--text-dark);
-  }
-
-  .sidebar-links {
-    display: flex;
     flex-direction: column;
-    gap: 8px;
-  }
-
-  .nav-link {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    color: var(--text-light);
-    font-weight: 600;
-    border-radius: 10px;
-    transition: all 0.2s;
-    text-decoration: none;
-  }
-
-  .nav-link:hover {
-    background-color: var(--light-background);
-    color: var(--text-dark);
-    transform: translateX(5px);
-  }
-
-  .nav-link.active {
-    background: linear-gradient(90deg, var(--primary-color) 0%, var(--primary-hover) 100%);
-    color: white;
-    box-shadow: 0 4px 12px rgba(255, 59, 92, 0.2);
-  }
-
-  .sidebar-divider {
-    height: 1px;
-    background-color: var(--border-color);
-    margin: 10px 0;
-    opacity: 0.5;
+    padding: 20px;
+    border-right: 1px solid var(--border-color);
   }
 }

@@ -5,8 +5,7 @@ import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
-import VariantSelectorModal from './VariantSelectorModal';
-import './ProductMenu.css';
+import './ProductMenu.module.css';
 
 export default function ProductMenu({
   products,
@@ -18,75 +17,62 @@ export default function ProductMenu({
   onOpenScanner
 }) {
   const addItemToOrder = useOrderStore((state) => state.addItem);
+
   const features = useFeatureConfig();
 
-  // --- ESTADOS PARA MODIFICADORES (Restaurantes) ---
   const [modModalOpen, setModModalOpen] = useState(false);
   const [selectedProductFormMod, setSelectedProductForMod] = useState(null);
 
-  // --- ESTADOS PARA VARIANTES (Ropa/Zapatos) - ¡AQUÍ FALTABA ESTO! ---
-  const [variantModalOpen, setVariantModalOpen] = useState(false);
-  const [selectedProductForVariant, setSelectedProductForVariant] = useState(null);
-
-  // --- INFINITE SCROLL ---
+  // --- OPTIMIZACIÓN DE RENDERIZADO (INFINITE SCROLL) ---
+  // Empezamos mostrando solo 50 productos para carga instantánea
   const [displayLimit, setDisplayLimit] = useState(50);
   const scrollContainerRef = useRef(null);
 
+  // 1. Resetear el límite cuando cambian los filtros (búsqueda o categoría)
   useEffect(() => {
     setDisplayLimit(50);
+    // Opcional: Scrollear arriba al cambiar filtros
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
   }, [selectedCategoryId, searchTerm, products]);
 
+  // 2. Detectar Scroll para cargar más items suavemente
   const handleScroll = () => {
     const container = scrollContainerRef.current;
     if (!container) return;
+
     const { scrollTop, scrollHeight, clientHeight } = container;
+
+    // Si el usuario está cerca del final (a 300px), cargamos más
     if (scrollTop + clientHeight >= scrollHeight - 300) {
+      // Usamos un callback para asegurar que leemos el valor actual
       setDisplayLimit(prev => {
+        // Si ya mostramos todos, no hacemos nada
         if (prev >= products.length) return prev;
-        return prev + 50;
+        return prev + 50; // Cargar lote siguiente
       });
     }
   };
 
+  // 3. Filtrar visualmente solo los necesarios (Slice)
+  // Esto es super rápido porque solo renderizamos 'displayLimit' elementos en el DOM
   const visibleProducts = useMemo(() => {
     return products.slice(0, displayLimit);
   }, [products, displayLimit]);
 
-  // --- HANDLERS ---
+  // --- HANDLERS EXISTENTES ---
   const handleProductClick = (product, isOutOfStock) => {
     if (isOutOfStock) return;
 
-    // 1. Lógica de Variantes (Prioridad alta)
-    const useVariants = features.hasVariants && product.batchManagement?.enabled;
-    
-    if (useVariants) {
-      setSelectedProductForVariant(product); // Usamos el estado de variantes
-      setVariantModalOpen(true);             // Abrimos el modal de variantes
-      return;
-    }
-
-    // 2. Lógica de Modificadores (Extras/Receta)
     if (features.hasModifiers && product.modifiers && product.modifiers.length > 0) {
-      setSelectedProductForMod(product);     // Usamos el estado de modificadores
-      setModModalOpen(true);                 // Abrimos el modal de modificadores
-      return;
-    } 
-    
-    // 3. Producto Normal
-    addItemToOrder(product);
+      setSelectedProductForMod(product);
+      setModModalOpen(true);
+    } else {
+      addItemToOrder(product);
+    }
   };
 
-  // Confirmar variante seleccionada (desde VariantSelectorModal)
-  const handleConfirmVariants = (variantItem) => {
-    addItemToOrder(variantItem);
-    setVariantModalOpen(false);
-    setSelectedProductForVariant(null);
-  }
-
-  // Confirmar modificadores seleccionados (desde ProductModifiersModal)
   const handleConfirmModifiers = (customizedProduct) => {
     addItemToOrder(customizedProduct);
     setModModalOpen(false);
@@ -94,20 +80,25 @@ export default function ProductMenu({
   }
 
   const renderStockInfo = (item) => {
-    if (!item.trackStock) return <div className="stock-info no-stock-label">Sin seguimiento</div>;
+    if (!item.trackStock) {
+      return <div className="stock-info no-stock-label">Sin seguimiento</div>;
+    }
     const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
-    return item.stock > 0
-      ? <div className="stock-info">Stock: {item.stock}{unit}</div>
-      : <div className="stock-info out-of-stock-label">AGOTADO</div>;
+
+    if (item.stock > 0) {
+      return <div className="stock-info">Stock: {item.stock}{unit}</div>;
+    } else {
+      return <div className="stock-info out-of-stock-label">AGOTADO</div>;
+    }
   };
 
   return (
-    <div className="pos-menu-container">
+    <div className="container">
       <h3 className="subtitle">Menú de Productos</h3>
 
-      <div id="category-filters" className="category-filters">
+      <div id="category-filters" className="filters">
         <button
-          className={`category-filter-btn ${selectedCategoryId === null ? 'active' : ''}`}
+          className={`filter-btn ${selectedCategoryId === null ? 'active' : ''}`}
           onClick={() => onSelectCategory(null)}
         >
           Todos
@@ -115,7 +106,7 @@ export default function ProductMenu({
         {categories.map(cat => (
           <button
             key={cat.id}
-            className={`category-filter-btn ${selectedCategoryId === cat.id ? 'active' : ''}`}
+            className={`filter-btn ${selectedCategoryId === cat.id ? 'active' : ''}`}
             onClick={() => onSelectCategory(cat.id)}
           >
             {cat.name}
@@ -123,7 +114,7 @@ export default function ProductMenu({
         ))}
       </div>
 
-      <div className="pos-controls">
+      <div className="controls">
         <input
           type="text"
           id="pos-product-search"
@@ -132,66 +123,68 @@ export default function ProductMenu({
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
         />
-        <button id="scan-barcode-btn" className="btn btn-scan" title="Escanear" onClick={onOpenScanner}>
+        <button
+          id="scan-barcode-btn"
+          className="btn btn-scan"
+          title="Escanear"
+          onClick={onOpenScanner}
+        >
           📷
         </button>
       </div>
 
+      {/* 4. CONTENEDOR SCROLLABLE 
+          Definimos una altura fija (o dinámica con calc) y overflow-y auto.
+          Esto activa el scroll dentro de la tarjeta en lugar de scrollear toda la página.
+      */}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        style={{ height: '100%', flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '5px' }}
+        style={{
+          height: 'calc(100vh - 350px)', // Altura dinámica: Pantalla menos cabeceras
+          minHeight: '400px',            // Altura mínima de seguridad
+          overflowY: 'auto',
+          paddingRight: '5px'            // Espacio para el scrollbar
+        }}
       >
         <div id="menu-items" className="menu-items-grid" aria-label="Elementos del menú">
-
-          {/* CASO 1: NO HAY PRODUCTOS EN LA LISTA FILTRADA */}
           {visibleProducts.length === 0 ? (
-
-            /* Verificamos si es porque NO hay inventario o porque NO hay coincidencias */
-            (products.length === 0 && !searchTerm && !selectedCategoryId) ? (
-              <div className="menu-empty-state">
-                <div className="empty-icon">📦</div>
-                <p>No hay productos registrados.</p>
-                <small>Ve a la sección <strong>Productos</strong> para crear tu inventario.</small>
-              </div>
-            ) : (
-              <div className="menu-empty-state">
-                <div className="empty-icon">🔍</div>
-                <p>No hay coincidencias.</p>
-                <small>Intenta con otro nombre o escanea el código.</small>
-              </div>
-            )
-
+            <p className="empty-message">No hay productos que coincidan.</p>
           ) : (
-            /* CASO 2: SI HAY PRODUCTOS */
             visibleProducts.map((item) => {
               const { isLowStock, isNearingExpiry, isOutOfStock } = getProductAlerts(item);
+
+              // 4. VALIDACIÓN VISUAL:
+              // Solo mostramos que tiene modificadores si el negocio lo permite
               const hasModifiers = features.hasModifiers && item.modifiers && item.modifiers.length > 0;
-              // Comprobamos si tiene variantes para mostrar badge (Opcional)
-              const hasVariants = features.hasVariants && item.batchManagement?.enabled;
-              
+
               const itemClasses = ['menu-item', isLowStock ? 'low-stock-warning' : '', isNearingExpiry ? 'nearing-expiry-warning' : '', isOutOfStock ? 'out-of-stock' : ''].filter(Boolean).join(' ');
 
               return (
                 <div key={item.id} className={itemClasses} onClick={() => handleProductClick(item, isOutOfStock)}>
                   {isOutOfStock && <div className="stock-overlay">Agotado</div>}
 
-                  {/* Badge para Modificadores (Restaurante) */}
+                  {/* Solo mostramos la etiqueta si features.hasModifiers es true */}
                   {hasModifiers && !isOutOfStock && (
                     <div className="modifier-badge" style={{ position: 'absolute', top: '5px', left: '5px', background: 'var(--primary-color)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', zIndex: 2 }}>
-                      ✨ Extras
-                    </div>
-                  )}
-
-                  {/* Badge para Variantes (Ropa) */}
-                  {hasVariants && !isOutOfStock && (
-                    <div className="modifier-badge" style={{ position: 'absolute', top: '5px', left: '5px', background: 'var(--secondary-color)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', zIndex: 2 }}>
-                      🎨 Opciones
+                      ✨ Opciones
                     </div>
                   )}
 
                   {item.requiresPrescription && !isOutOfStock && (
-                    <div className="prescription-badge" style={{ position: 'absolute', top: (hasModifiers || hasVariants) ? '30px' : '5px', left: '5px', background: '#FF3B5C', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', zIndex: 2, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                    <div className="prescription-badge" style={{
+                      position: 'absolute',
+                      top: hasModifiers ? '30px' : '5px', // Si ya hay badge de opciones, lo bajamos
+                      left: '5px',
+                      background: '#FF3B5C', // Rojo alerta
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.7rem',
+                      fontWeight: 'bold',
+                      zIndex: 2,
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    }}>
                       ⚕️ Receta
                     </div>
                   )}
@@ -207,29 +200,19 @@ export default function ProductMenu({
               );
             })
           )}
-
-          {visibleProducts.length < products.length && visibleProducts.length > 0 && (
+          {/* Spinner invisible al final para dar espacio */}
+          {visibleProducts.length < products.length && (
             <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '20px', color: '#999' }}>
               Cargando más productos...
             </div>
           )}
         </div>
       </div>
-
-      {/* Modal para Modificadores (Restaurantes) */}
       <ProductModifiersModal
         show={modModalOpen}
         onClose={() => { setModModalOpen(false); setSelectedProductForMod(null); }}
         product={selectedProductFormMod}
         onConfirm={handleConfirmModifiers}
-      />
-
-      {/* Modal para Variantes (Ropa/Zapatos) - ¡AHORA SÍ FUNCIONARÁ! */}
-      <VariantSelectorModal
-        show={variantModalOpen}
-        onClose={() => { setVariantModalOpen(false); setSelectedProductForVariant(null); }}
-        product={selectedProductForVariant}
-        onConfirm={handleConfirmVariants}
       />
     </div>
   );

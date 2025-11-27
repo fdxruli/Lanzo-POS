@@ -1,0 +1,225 @@
+/*
+ * Estilos para ProductList.jsx
+ */
+
+.container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+}
+
+.searchWrapper {
+  margin-bottom: var(---spacing-lg);
+  width: 100%;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-lg);
+}
+
+.search-container {
+  margin-bottom: var(--spacing-lg);
+  max-width: 400px;
+}
+
+.product-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  /* Una columna por defecto */
+  gap: var(--spacing-md);
+}
+
+/* Tarjeta de producto individual */
+.product-item {
+  position: relative;
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-md);
+  box-shadow: var(--box-shadow);
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+  border-left: 5px solid transparent;
+  /* Para alertas de stock/caducidad */
+}
+
+.product-item:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--box-shadow-lg);
+}
+
+.product-status-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+  z-index: 2;
+}
+
+.product-status-badge.active {
+  background-color: var(--success-color);
+}
+
+.product-status-badge.inactive {
+  background-color: var(--text-light);
+}
+
+.product-item-info {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.product-item-info img {
+  width: 80px;
+  height: 80px;
+  border-radius: var(--border-radius-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.product-item-details {
+  flex-grow: 1;
+}
+
+.product-item-details span {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.product-item-details p {
+  font-size: 0.875rem;
+  color: var(--text-light);
+  margin: 4px 0 0;
+}
+
+.product-item-controls {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: auto;
+  /* Empuja los controles al final */
+}
+
+.product-item-controls .btn-toggle-status,
+.product-item-controls .edit-product-btn,
+.product-item-controls .delete-product-btn {
+  flex-grow: 1;
+  padding: var(--spacing-sm);
+  font-size: 0.875rem;
+  border: none;
+  border-radius: var(--border-radius-sm);
+}
+
+.btn-toggle-status.btn-activate {
+  background-color: var(--success-color);
+  color: white;
+}
+
+.btn-toggle-status.btn-activate:hover {
+  background-color: #059669;
+}
+
+.btn-toggle-status.btn-deactivate {
+  background-color: var(--warning-color);
+  color: white;
+}
+
+.btn-toggle-status.btn-deactivate:hover {
+  background-color: #d97706;
+}
+
+.edit-product-btn,
+.delete-product-btn {
+  background-color: var(--light-background);
+  color: var(--text-dark);
+  font-size: 1.2rem;
+}
+
+.edit-product-btn:hover,
+.delete-product-btn:hover {
+  background-color: #e5e7eb;
+}
+
+/* Mensaje de lista vacía */
+.empty-message {
+  text-align: center;
+  color: var(--text-light);
+  padding: var(--spacing-lg);
+  font-style: italic;
+}
+
+/* Alertas de Stock y Caducidad */
+.product-item.low-stock-warning {
+  border-left-color: var(--warning-color);
+}
+
+.product-item.nearing-expiry-warning {
+  border-left-color: var(--error-color);
+}
+
+.product-item-details .alert-indicator {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: white;
+  text-align: center;
+}
+
+.product-item-details .low-stock-indicator {
+  background-color: var(--warning-color);
+}
+
+.product-item-details .nearing-expiry-indicator {
+  background-color: var(--error-color);
+}
+
+/* Responsive de la lista */
+@media (max-width: 480px) {
+  .product-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Nuevo botón de Merma */
+.btn-waste {
+  background-color: #f59e0b;
+  /* Ámbar / Naranja */
+  color: white;
+  font-size: 1.2rem;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-sm);
+  transition: background-color 0.2s;
+}
+
+.btn-waste:hover {
+  background-color: #d97706;
+  /* Naranja más oscuro */
+}
+
+/* Ajuste para que los botones se distribuyan bien */
+.product-item-controls {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: auto;
+}
+
+.product-item-controls button {
+  flex: 1;
+  /* Todos los botones ocupan el mismo ancho */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

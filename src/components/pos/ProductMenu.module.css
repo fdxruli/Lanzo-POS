@@ -1,0 +1,231 @@
+/*
+ * Estilos para ProductMenu.jsx
+ */
+
+.container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+  min-width: 0;
+  /* Fix for flexbox overflow */
+}
+
+/* Controles (Buscador y botón de scan) */
+.controls {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  align-items: center;
+}
+
+#pos-product-search {
+  flex-grow: 1;
+  /* El buscador ocupa el espacio disponible */
+}
+
+.controls .btn-scan {
+  flex-shrink: 0;
+  /* Evita que el botón se encoja */
+  padding: var(--spacing-sm);
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.controls .btn-scan:hover {
+  opacity: 0.9;
+}
+
+/* Filtros de Categoría */
+.filters {
+  background-color: var(--light-background);
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  gap: var(--spacing-sm);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.filters::-webkit-scrollbar {
+  display: none;
+}
+
+.filters {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.filter-btn {
+  flex-shrink: 0;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--card-background-color);
+  color: var(--text-color);
+  font-weight: 500;
+  transition: var(--transition);
+  border: 1px solid #e5e7eb;
+  /* TODO: Usar variable */
+}
+
+.filter-btn:hover {
+  background-color: rgba(99, 102, 241, 0.1);
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.filter-btn.active {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+/* Cuadrícula de Productos */
+.menu-items-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-md);
+}
+
+.menu-item {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  text-align: center;
+  cursor: pointer;
+  transition: var(--transition);
+  border-left: 5px solid transparent;
+}
+
+.menu-item:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--box-shadow);
+}
+
+.menu-item-image {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: var(--border-radius-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.menu-item-name {
+  font-weight: 500;
+  margin-bottom: var(--spacing-xs);
+}
+
+.menu-item-price {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.menu-item-unit {
+  font-size: 0.85em;
+  color: var(--text-light);
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+/* Indicadores de Stock */
+.stock-indicator {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.menu-item.out-of-stock {
+  cursor: not-allowed;
+  filter: grayscale(100%);
+  opacity: 0.6;
+}
+
+.menu-item.out-of-stock:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.stock-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.7);
+  /* TODO: Usar variable */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--error-color);
+  text-transform: uppercase;
+}
+
+/* Alertas de Stock/Caducidad */
+.menu-item.low-stock-warning {
+  border-left-color: var(--warning-color);
+}
+
+.menu-item.nearing-expiry-warning {
+  border-left-color: var(--error-color);
+}
+
+@media (min-width: 768px) {
+  .menu-items-grid {
+    /* Tablet/Desktop: Grid adaptativo */
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--spacing-md);
+  }
+}
+
+/* Badge de Mayoreo en la tarjeta del producto */
+.wholesale-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  background-color: var(--secondary-color);
+  /* Morado */
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  z-index: 2;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.prescription-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  /* Puede compartir posición con mayoreo o apilarse */
+  background-color: var(--error-color);
+  /* Rojo para alerta */
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  z-index: 3;
+  /* Encima de todo */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Si hay badge de mayoreo, movemos este un poco abajo o a la derecha */
+.wholesale-badge+.prescription-badge {
+  top: 30px;
+  /* Lo bajamos para que no se encimen */
+}
