@@ -400,15 +400,17 @@ export const useDashboardStore = create((set, get) => ({
     // ... código existente ...
     set({ isLoading: true });
     try {
-      const [delMenu, delCust, delSales] = await Promise.all([
+      const [delMenu, delCust, delSales, delCats] = await Promise.all([
         loadData(STORES.DELETED_MENU),
         loadData(STORES.DELETED_CUSTOMERS),
-        loadData(STORES.DELETED_SALES)
+        loadData(STORES.DELETED_SALES),
+        loadData(STORES.DELETED_CATEGORIES)
       ]);
       const allMovements = [
         ...delMenu.map(p => ({ ...p, type: 'Producto', uniqueId: p.id, name: p.name })),
         ...delCust.map(c => ({ ...c, type: 'Cliente', uniqueId: c.id, name: c.name })),
-        ...delSales.map(s => ({ ...s, type: 'Pedido', uniqueId: s.timestamp, name: `Pedido $${s.total}` }))
+        ...delSales.map(s => ({ ...s, type: 'Pedido', uniqueId: s.timestamp, name: `Pedido $${s.total}` })),
+        ...(delCats || []).map(c => ({ ...c, type: 'Categoría', uniqueId: c.id, mainLabel: c.name, subLabel: 'Organización' }))
       ];
       allMovements.sort((a, b) => new Date(b.deletedTimestamp) - new Date(a.deletedTimestamp));
       set({ deletedItems: allMovements, isLoading: false });
@@ -446,21 +448,39 @@ export const useDashboardStore = create((set, get) => ({
 
   restoreItem: async (item) => {
     try {
+      // 2. LÓGICA DE RESTAURACIÓN ACTUALIZADA
       if (item.type === 'Producto') {
         delete item.deletedTimestamp;
-        await saveData(STORES.MENU, item);
+        // Borramos propiedades visuales extra antes de guardar
+        const { type, uniqueId, mainLabel, subLabel, ...cleanItem } = item;
+        await saveData(STORES.MENU, cleanItem);
         await deleteData(STORES.DELETED_MENU, item.id);
+
       } else if (item.type === 'Cliente') {
         delete item.deletedTimestamp;
-        await saveData(STORES.CUSTOMERS, item);
+        const { type, uniqueId, mainLabel, subLabel, ...cleanItem } = item;
+        await saveData(STORES.CUSTOMERS, cleanItem);
         await deleteData(STORES.DELETED_CUSTOMERS, item.id);
+
       } else if (item.type === 'Pedido') {
         delete item.deletedTimestamp;
-        await saveData(STORES.SALES, item);
+        const { type, uniqueId, mainLabel, subLabel, ...cleanItem } = item;
+        await saveData(STORES.SALES, cleanItem);
         await deleteData(STORES.DELETED_SALES, item.timestamp);
+        // Nota: Restaurar un pedido NO restaura el stock automáticamente (sería muy complejo),
+        // solo lo devuelve al historial.
+
+      } else if (item.type === 'Categoría') { // <--- NUEVA LÓGICA
+        delete item.deletedTimestamp;
+        const { type, uniqueId, mainLabel, subLabel, ...cleanItem } = item;
+        await saveData(STORES.CATEGORIES, cleanItem);
+        await deleteData(STORES.DELETED_CATEGORIES, item.id);
       }
+
+      // Recargar todo
       await get().loadRecycleBin();
       get().loadAllData(true);
+      
     } catch (error) { console.error("Error restaurar:", error); }
   },
 

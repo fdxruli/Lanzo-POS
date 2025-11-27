@@ -1,89 +1,151 @@
 /* src/components/dashboard/RecycleBin.css */
 
 .movement-history-container {
-  margin-top: var(--spacing-xl);
+  margin-top: 0; /* Ajuste para el dashboard */
   background-color: var(--card-background-color);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-lg);
+  border-radius: 16px;
+  padding: 1.5rem;
   box-shadow: var(--box-shadow);
-  /* Para que ocupe toda la altura si es necesario */
   display: flex;
   flex-direction: column;
+  height: 100%;
+  max-height: 500px; /* Límite de altura */
+}
+
+.bin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.bin-count {
+  background-color: var(--light-background);
+  color: var(--text-light);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .movement-history-list {
-  max-height: 400px;
   overflow-y: auto;
+  flex: 1;
+  padding-right: 5px;
 }
 
 .movement-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--spacing-sm);
-  border-bottom: 1px solid var(--light-background);
-}
-
-.movement-item:last-child {
-  border-bottom: none;
-}
-
-.movement-item-info p {
-  margin: 0;
-  color: var(--text-dark);
-}
-
-.movement-item-info .item-type {
-  font-size: 0.8rem;
-  color: var(--text-light);
+  padding: 10px;
+  margin-bottom: 8px;
   background-color: var(--light-background);
-  padding: 2px 6px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.movement-item:hover {
+  background-color: white;
+  border-color: var(--border-color);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+[data-theme="dark"] .movement-item:hover {
+  background-color: #2d3748;
+}
+
+.movement-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.item-icon-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: var(--card-background-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.item-main-text {
+  font-weight: 600;
+  color: var(--text-dark);
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.item-sub-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-light);
+  margin-top: 2px;
+}
+
+.item-badge {
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background-color: rgba(0,0,0,0.05);
+  padding: 1px 4px;
   border-radius: 4px;
 }
 
-.movement-item-actions {
+[data-theme="dark"] .item-badge {
+  background-color: rgba(255,255,255,0.1);
+}
+
+.btn-restore-icon {
+  background-color: transparent;
+  color: var(--success-color);
+  border: 1px solid var(--success-color);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   display: flex;
-  gap: var(--spacing-sm);
-  align-items: center;
-}
-
-.btn-restore {
-  background-color: var(--success-color);
-  color: white;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 0.875rem;
-  border: none;
-  border-radius: var(--border-radius-sm);
-  cursor: pointer;
-}
-
-.btn-restore:hover {
-  background-color: #059669;
-}
-
-/* NUEVO: Estilo específico para mensaje vacío de papelera */
-.recycle-empty-message {
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  color: var(--text-light);
-  padding: var(--spacing-xl);
-  flex-grow: 1;
-  opacity: 0.7;
-  background-color: rgba(0, 0, 0, 0.02);
-  border-radius: var(--border-radius);
-  margin: 10px;
-  border: 2px dashed var(--border-color);
-  font-style: italic;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-/* Icono de Papelera */
+.btn-restore-icon:hover {
+  background-color: var(--success-color);
+  color: white;
+  transform: rotate(-90deg); /* Efecto de "deshacer" */
+}
+
+/* Colores de Iconos */
+.icon-blue { color: #3b82f6; }
+.icon-green { color: #10b981; }
+.icon-orange { color: #f59e0b; }
+.icon-purple { color: #8b5cf6; }
+
+/* Estado Vacío */
+.recycle-empty-message {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: var(--text-light);
+  font-style: italic;
+  opacity: 0.7;
+}
+
 .recycle-empty-message::before {
-  content: '🗑️'; 
-  font-size: 3rem;
-  margin-bottom: 15px;
-  opacity: 0.5;
+  content: '🍃';
+  font-size: 2.5rem;
+  margin-bottom: 10px;
   filter: grayscale(100%);
+  opacity: 0.5;
 }

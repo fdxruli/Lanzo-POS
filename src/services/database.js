@@ -1,7 +1,7 @@
 // src/services/database.js - VERSIÓN OPTIMIZADA PARA PAGINACIÓN
 
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 16;
+const DB_VERSION = 17;
 
 // Objeto de conexión
 const dbConnection = {
@@ -23,6 +23,7 @@ export const STORES = {
   DELETED_MENU: 'deleted_menu',
   DELETED_CUSTOMERS: 'deleted_customers',
   DELETED_SALES: 'deleted_sales',
+  DELETED_CATEGORIES: 'deleted_categories',
   MOVIMIENTOS_CAJA: 'movimientos_caja',
   PRODUCT_BATCHES: 'product_batches',
   WASTE: 'waste_logs',
@@ -108,7 +109,8 @@ export function initDB() {
         const storeDefinitions = [
           STORES.MENU, STORES.COMPANY, STORES.THEME, STORES.INGREDIENTS,
           STORES.CATEGORIES, STORES.CUSTOMERS, STORES.CAJAS,
-          STORES.DELETED_MENU, STORES.DELETED_CUSTOMERS
+          STORES.DELETED_MENU, STORES.DELETED_CUSTOMERS, 
+          STORES.DELETED_CATEGORIES
         ];
 
         storeDefinitions.forEach(store => {
@@ -138,7 +140,7 @@ export function initDB() {
           batchStore.createIndex('expiryDate', 'expiryDate', { unique: false });
           batchStore.createIndex('createdAt', 'createdAt', { unique: false });
           batchStore.createIndex('sku', 'sku', { unique: false });
-        } else if (event.oldVersion < 13) {
+        } else if (event.oldVersion < 17) {
           const batchStore = event.target.transaction.objectStore(STORES.PRODUCT_BATCHES);
           if (!batchStore.indexNames.contains('sku')) {
             batchStore.createIndex('sku', 'sku', { unique: false });
@@ -156,7 +158,7 @@ export function initDB() {
           wasteStore.createIndex('timestamp', 'timestamp', { unique: false });
         }
 
-        if (event.oldVersion < 15) {
+        if (event.oldVersion < 17) {
           // CORRECCIÓN: Usamos la transacción activa del evento
           const txn = event.target.transaction;
           const menuStore = txn.objectStore(STORES.MENU);

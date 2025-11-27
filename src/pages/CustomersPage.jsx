@@ -68,6 +68,14 @@ export default function CustomersPage() {
         return;
       }
 
+      if (customer) {
+        const deletedCustomer = {
+          ...customer,
+          deletedTimestamp: new Date().toISOString()
+        };
+        await saveData(STORES.DELETED_CUSTOMERS, deletedCustomer);
+      }
+
       await deleteData(STORES.CUSTOMERS, customerId);
       loadCustomers();
       showMessageModal('Cliente eliminado.');

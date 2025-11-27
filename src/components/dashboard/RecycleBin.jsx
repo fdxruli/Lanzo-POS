@@ -1,35 +1,67 @@
-// src/components/dashboard/RecycleBin.jsx
 import React from 'react';
-import './RecycleBin.css'
+import { 
+  // RotateCcw, // <-- Lo quitamos porque estaba fallando
+  Trash2, 
+  ShoppingBag, 
+  User, 
+  Package, 
+  Tag 
+} from 'lucide-react';
+import './RecycleBin.css';
 
 export default function RecycleBin({ items, onRestoreItem }) {
+  
+  // Helper para icono según tipo
+  const getIcon = (type) => {
+    switch(type) {
+      case 'Cliente': return <User size={18} className="icon-blue" />;
+      case 'Pedido': return <ShoppingBag size={18} className="icon-green" />;
+      case 'Producto': return <Package size={18} className="icon-orange" />;
+      case 'Categoría': return <Tag size={18} className="icon-purple" />;
+      default: return <Trash2 size={18} />;
+    }
+  };
+
   return (
     <div className="movement-history-container">
-      <h3 className="subtitle">Papelera de Reciclaje</h3>
+      <div className="bin-header">
+        <h3 className="subtitle" style={{margin:0, border: 'none'}}>🗑️ Papelera de Reciclaje</h3>
+        <span className="bin-count">{items.length} items</span>
+      </div>
+      
       {items.length === 0 ? (
-        /* CAMBIO AQUÍ: Usamos una clase específica */
         <div className="recycle-empty-message">
-            No hay elementos eliminados recientemente.
+            Papelera vacía. Todo está limpio.
         </div>
       ) : (
-        <div id="movement-history-list" className="movement-history-list">
+        <div className="movement-history-list">
           {items.map((item) => (
             <div key={item.uniqueId} className="movement-item">
-              <div className="movement-item-info">
-                <p>{item.name}</p>
-                <p>
-                  <span className="item-type">{item.type}</span> 
-                  Eliminado el: {new Date(item.deletedTimestamp).toLocaleString()}
-                </p>
+              
+              {/* Icono y Datos */}
+              <div className="movement-content">
+                <div className="item-icon-circle">
+                  {getIcon(item.type)}
+                </div>
+                <div className="movement-item-info">
+                  <p className="item-main-text">{item.mainLabel}</p>
+                  <div className="item-sub-text">
+                    <span className="item-badge">{item.type}</span>
+                    <span>• Eliminado: {new Date(item.deletedTimestamp).toLocaleDateString()}</span>
+                  </div>
+                </div>
               </div>
-              <div className="movement-item-actions">
-                <button 
-                  className="btn-restore" 
-                  onClick={() => onRestoreItem(item)}
-                >
-                  Restaurar
-                </button>
-              </div>
+
+              {/* Botón Restaurar CORREGIDO */}
+              <button 
+                className="btn-restore-icon" 
+                onClick={() => onRestoreItem(item)}
+                title="Restaurar este elemento"
+                // Usamos un símbolo unicode directo para asegurar que se vea siempre
+                style={{ fontSize: '1.2rem', fontWeight: 'bold' }} 
+              >
+                ⟲
+              </button>
             </div>
           ))}
         </div>

@@ -61,13 +61,22 @@ export default function ProductsPage() {
 
         try {
             setIsLoading(true); // Feedback visual
-            
+
+            const catToDelete = categories.find(c => c.id === categoryId);
+            if (catToDelete) {
+                const deletedCat = {
+                    ...catToDelete,
+                    deletedTimestamp: new Date().toISOString()
+                };
+                await saveData(STORES.DELETED_CATEGORIES, deletedCat);
+            }
+
             // Usamos la nueva transacción atómica
             await deleteCategoryCascading(categoryId);
-            
+
             // Recargamos datos para reflejar cambios
             await refreshData(true);
-            
+
             showMessageModal('✅ Categoría eliminada y productos actualizados correctamente.');
         } catch (error) {
             console.error("Error eliminando categoría:", error);
