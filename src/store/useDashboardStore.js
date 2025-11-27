@@ -1,5 +1,6 @@
 // src/store/useDashboardStore.js
 import { create } from 'zustand';
+import { roundCurrency } from '../services/utils';
 import {
   loadData,
   saveData,
@@ -18,38 +19,56 @@ const CACHE_DURATION = 5 * 60 * 1000;
 // --- HELPER 1: Estadísticas Globales (Sin cambios en lógica, solo en performance) ---
 async function calculateStatsOnTheFly() {
   const db = await initDB();
-  let totalRevenue = 0;
-  let totalNetProfit = 0;
-  let totalOrders = 0;
-  let totalItemsSold = 0;
-  let inventoryValue = 0;
 
-  // A. Sumar Ventas
-  await new Promise((resolve) => {
-    const tx = db.transaction(STORES.SALES, 'readonly');
-    const cursorReq = tx.objectStore(STORES.SALES).openCursor();
-    cursorReq.onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        const sale = cursor.value;
-        totalRevenue += (sale.total || 0);
-        totalOrders++;
-        if (sale.items && Array.isArray(sale.items)) {
-          sale.items.forEach(item => {
-            totalItemsSold += (item.quantity || 0);
-            const itemCost = item.cost || 0;
-            const itemProfit = (item.price - itemCost) * item.quantity;
-            totalNetProfit += itemProfit;
-          });
-        }
-        cursor.continue();
-      } else {
-        resolve();
-      }
+  // 1. Intentar cargar estadísticas pre-calculadas (CACHE)
+  let cachedStats = await loadData(STORES.STATS, 'sales_summary');
+
+  // Si no existe caché, inicializamos en ceros para calcular desde el principio
+  if (!cachedStats) {
+    cachedStats = {
+      id: 'sales_summary',
+      totalRevenue: 0,
+      totalNetProfit: 0,
+      totalOrders: 0,
+      totalItemsSold: 0
     };
-  });
 
-  // B. Sumar Valor Inventario (Solo lotes activos)
+    // RE-CÁLCULO INICIAL (Solo se hace una vez tras la actualización)
+    await new Promise((resolve) => {
+      const tx = db.transaction(STORES.SALES, 'readonly');
+      const cursorReq = tx.objectStore(STORES.SALES).openCursor();
+      cursorReq.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          const sale = cursor.value;
+          if (sale.fulfillmentStatus !== 'cancelled') {
+            // CORRECCIÓN:
+            cachedStats.totalRevenue = roundCurrency(cachedStats.totalRevenue + (sale.total || 0));
+            cachedStats.totalOrders++;
+            if (sale.items && Array.isArray(sale.items)) {
+              sale.items.forEach(item => {
+                cachedStats.totalItemsSold += (item.quantity || 0);
+                const itemCost = item.cost || 0;
+                const profit = (item.price - itemCost) * item.quantity;
+                // CORRECCIÓN:
+                cachedStats.totalNetProfit = roundCurrency(cachedStats.totalNetProfit + profit);
+              });
+            }
+          }
+          cursor.continue();
+        } else {
+          resolve();
+        }
+      };
+    });
+
+    // Guardamos el cálculo inicial para el futuro
+    await saveData(STORES.STATS, cachedStats);
+  }
+
+  // 2. Calcular Valor de Inventario en Tiempo Real 
+  // (Esto siempre debe ser fresco porque el stock cambia sin ventas, ej. mermas/compras)
+  let inventoryValue = 0;
   await new Promise((resolve) => {
     const tx = db.transaction(STORES.PRODUCT_BATCHES, 'readonly');
     const cursorReq = tx.objectStore(STORES.PRODUCT_BATCHES).openCursor();
@@ -57,7 +76,9 @@ async function calculateStatsOnTheFly() {
       const cursor = e.target.result;
       if (cursor) {
         const batch = cursor.value;
-        if (batch.isActive && batch.stock > 0) {
+        // Manejo compatible de booleanos
+        const isActive = batch.isActive === true || batch.isActive === 1;
+        if (isActive && batch.stock > 0) {
           inventoryValue += (batch.cost * batch.stock);
         }
         cursor.continue();
@@ -67,21 +88,70 @@ async function calculateStatsOnTheFly() {
     };
   });
 
-  return { totalRevenue, totalNetProfit, totalOrders, totalItemsSold, inventoryValue };
+  // Retornamos la fusión de Historial (Caché) + Actualidad (Inventario)
+  return { ...cachedStats, inventoryValue };
 }
 
-// --- HELPER 2: Agregación "Lazy" (OPTIMIZADO) ---
 async function aggregateProductsLazy(products) {
   if (!products || products.length === 0) return [];
 
-  const CHUNK_SIZE = 10; // Procesar de 10 en 10
+  // Procesamos en bloques para mantener la interfaz fluida
+  const CHUNK_SIZE = 50;
   const aggregated = [];
+
+  // Aseguramos conexión a BD una sola vez para la operación
+  const db = await initDB();
 
   for (let i = 0; i < products.length; i += CHUNK_SIZE) {
     const chunk = products.slice(i, i + CHUNK_SIZE);
 
-    const chunkResults = await Promise.all(chunk.map(async (product) => {
-      // Si no usa lotes, retornar directo
+    // 1. Identificamos qué productos de este bloque realmente necesitan buscar lotes
+    const productsNeedingBatches = chunk.filter(p => p.batchManagement?.enabled);
+
+    // Mapa para guardar los resultados de la BD temporalmente: { 'prod-123': [Lote1, Lote2] }
+    const batchesMap = new Map();
+
+    // 2. Si hay productos que requieren lotes, hacemos UNA sola transacción para todos ellos
+    if (productsNeedingBatches.length > 0) {
+      await new Promise((resolve) => {
+        const transaction = db.transaction([STORES.PRODUCT_BATCHES], 'readonly');
+        const store = transaction.objectStore(STORES.PRODUCT_BATCHES);
+        const index = store.index('productId');
+
+        let completedRequests = 0;
+        const totalRequests = productsNeedingBatches.length;
+
+        productsNeedingBatches.forEach(product => {
+          const request = index.getAll(product.id); // Trae todos los lotes de este ID
+
+          request.onsuccess = (e) => {
+            const batches = e.target.result || [];
+            // Filtramos en memoria (más rápido que múltiples consultas a DB)
+            const activeBatches = batches.filter(b => {
+              // Manejamos compatibilidad de booleanos (true/1)
+              return (b.isActive === true || b.isActive === 1) && b.stock > 0;
+            });
+
+            if (activeBatches.length > 0) {
+              batchesMap.set(product.id, activeBatches);
+            }
+
+            completedRequests++;
+            if (completedRequests === totalRequests) resolve();
+          };
+
+          request.onerror = (e) => {
+            console.error("Error fetching batch for", product.id, e);
+            completedRequests++;
+            if (completedRequests === totalRequests) resolve();
+          };
+        });
+      });
+    }
+
+    // 3. Construimos el resultado final usando los datos que ya tenemos en memoria
+    const chunkResults = chunk.map(product => {
+      // Caso A: Producto simple (sin lotes)
       if (!product.batchManagement?.enabled) {
         return {
           ...product,
@@ -92,8 +162,8 @@ async function aggregateProductsLazy(products) {
         };
       }
 
-      // Cargar SOLO lotes activos para este producto
-      const batches = await queryBatchesByProductIdAndActive(product.id, true);
+      // Caso B: Producto con lotes (usamos el mapa pre-cargado)
+      const batches = batchesMap.get(product.id);
 
       if (!batches || batches.length === 0) {
         return {
@@ -106,24 +176,25 @@ async function aggregateProductsLazy(products) {
         };
       }
 
-      // Ordenar FIFO (Más antiguo primero)
+      // Lógica FIFO: Ordenar por fecha de creación (más antiguo primero)
       batches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
       const totalStock = batches.reduce((sum, b) => sum + (b.stock || 0), 0);
-      const currentBatch = batches[0];
+      const currentBatch = batches[0]; // El lote activo es el primero (FIFO)
 
       return {
         ...product,
         stock: totalStock,
-        cost: currentBatch.cost, // Costo del lote actual
-        price: currentBatch.price, // Precio del lote actual
+        cost: currentBatch.cost,
+        price: currentBatch.price,
         trackStock: true,
         hasBatches: true
       };
-    }));
+    });
 
     aggregated.push(...chunkResults);
-    // Pequeña pausa para no bloquear la UI
+
+    // "Yield" al event loop para no congelar la UI si hay muchos productos
     await new Promise(resolve => setTimeout(resolve, 0));
   }
 
@@ -131,7 +202,6 @@ async function aggregateProductsLazy(products) {
 }
 
 export const useDashboardStore = create((set, get) => ({
-  // --- ESTADO ---
   isLoading: false,
   sales: [],
   menu: [],
@@ -282,7 +352,50 @@ export const useDashboardStore = create((set, get) => ({
     return batches;
   },
 
-  // ... (loadRecycleBin, deleteSale, restoreItem se mantienen iguales) ...
+  updateStatsWithSale: async (sale) => {
+    try {
+      // 1. Cargar stats actuales
+      let stats = await loadData(STORES.STATS, 'sales_summary');
+      if (!stats) return; // Si no existen, el próximo loadAllData las creará
+
+      // 2. Calcular métricas de ESTA venta
+      let saleProfit = 0;
+      let saleItems = 0;
+
+      sale.items.forEach(item => {
+        saleItems += (item.quantity || 0);
+        const itemCost = item.cost || 0;
+        saleProfit += (item.price - itemCost) * item.quantity;
+      });
+
+      // 3. Actualizar acumuladores
+      const newStats = {
+        ...stats,
+        totalRevenue: roundCurrency(stats.totalRevenue + sale.total),
+        totalNetProfit: roundCurrency(stats.totalNetProfit + saleProfit),
+        totalOrders: stats.totalOrders + 1,
+        totalItemsSold: stats.totalItemsSold + saleItems
+      };
+
+      // 4. Guardar rápido en BD y Estado
+      await saveData(STORES.STATS, newStats);
+
+      // Actualizamos el estado local para que el Dashboard se vea actualizado si entramos
+      const currentStats = get().stats;
+      set({
+        stats: {
+          ...currentStats,
+          ...newStats
+          // Nota: inventoryValue no se actualiza aquí, se actualizará al recargar o
+          // podríamos restarlo manualmente, pero es hilar muy fino.
+        }
+      });
+
+    } catch (error) {
+      console.error("Error actualizando estadísticas incrementales:", error);
+    }
+  },
+
   loadRecycleBin: async () => {
     // ... código existente ...
     set({ isLoading: true });
@@ -332,7 +445,6 @@ export const useDashboardStore = create((set, get) => ({
   },
 
   restoreItem: async (item) => {
-    // ... (código existente) ...
     try {
       if (item.type === 'Producto') {
         delete item.deletedTimestamp;
@@ -350,5 +462,19 @@ export const useDashboardStore = create((set, get) => ({
       await get().loadRecycleBin();
       get().loadAllData(true);
     } catch (error) { console.error("Error restaurar:", error); }
-  }
+  },
+
+  getTotalPrice: () => {
+    const { order } = get();
+    const rawTotal = order.reduce((sum, item) => {
+      if (item.quantity && item.quantity > 0) {
+        // Calculamos el subtotal de la línea sin redondear aún para mantener precisión en granel
+        return sum + (item.price * item.quantity);
+      }
+      return sum;
+    }, 0);
+
+    // 2. APLICAR REDONDEO AL FINAL
+    return roundCurrency(rawTotal);
+  },
 }));

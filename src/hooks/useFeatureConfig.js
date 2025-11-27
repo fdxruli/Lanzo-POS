@@ -16,7 +16,7 @@ const RUBRO_FEATURES = {
   'apparel': ['variants', 'sku', 'suppliers'],
 
   // Ferretería y Similares
-  'hardware': ['variants', 'sku', 'suppliers', 'minmax'],
+  'hardware': ['variants', 'sku', 'suppliers', 'minmax', 'wholesale', 'bulk'],
 
   // --- RUBROS ORIGINALES ---
   // Abarrotes
