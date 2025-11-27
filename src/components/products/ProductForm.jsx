@@ -209,14 +209,17 @@ export default function ProductForm({
     const handleSubmit = (e) => {
         e.preventDefault();
 
-        // Lógica correcta para saleType y bulkData
-        // Si tiene la feature 'bulk' habilitada Y no seleccionó 'pza', es bulk.
-        // Si es Farmacia, 'hasBulk' suele ser false, por lo que se fuerza 'unit'.
+        // LÓGICA DE SEGURIDAD PARA FARMACIA (CORRECCIÓN PRINCIPAL)
         let finalSaleType = 'unit';
         let finalBulkData = null;
 
-        if (features.hasBulk) {
-            // Solo si el rubro permite granel (ej. Frutería, Abarrotes)
+        // Si requiere receta, FORZAMOS unidad (no se puede vender antibiótico a granel)
+        if (features.hasLabFields && requiresPrescription) {
+             finalSaleType = 'unit';
+             finalBulkData = null;
+        } 
+        // Si no es medicamento controlado, revisamos si aplica granel (Frutería/Abarrotes)
+        else if (features.hasBulk) {
             if (saleType === 'bulk' || (features.hasDailyPricing && unit !== 'pza')) {
                 finalSaleType = 'bulk';
                 finalBulkData = { purchase: { unit: unit || 'kg' } };
@@ -236,8 +239,8 @@ export default function ProductForm({
             modifiers: features.hasRecipes ? modifiers : [],
 
             // Abarrotes / Ferretería / Frutería (Gestión de Stock/Precios)
-            saleType: finalSaleType,
-            bulkData: finalBulkData,
+            saleType: finalSaleType, // <--- Usamos el valor calculado arriba
+            bulkData: finalBulkData, // <--- Usamos el valor calculado arriba
             
             wholesaleTiers: features.hasWholesale ? wholesaleTiers : [],
             minStock: features.hasMinMax ? parseFloat(minStock) : null,

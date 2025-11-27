@@ -31,7 +31,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcul
     if (!show) return null;
 
     return (
-        <div className="modal" style={{ display: 'flex', zIndex: 2200 }}>
+        <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }}>
             <div className="modal-content" style={{ maxWidth: '500px' }}>
                 <h2 className="modal-title">Auditoría de Caja (Cierre)</h2>
 

@@ -6,7 +6,7 @@
  * Asegura que el modal del escáner aparezca encima de otros modales.
  */
 #scanner-modal {
-  z-index: 2100;
+  z-index: var(--z-modal-top) !important;
 }
 
 /* * Estilos del visor de la cámara (Video y Overlay)

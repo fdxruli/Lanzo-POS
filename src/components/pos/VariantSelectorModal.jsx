@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useDashboardStore } from '../../store/useDashboardStore';
-import './ProductModifiersModal.css'; // Reusamos estilos de modificadores para mantener consistencia
+import './ProductModifiersModal.css'; 
 
 export default function VariantSelectorModal({ show, onClose, product, onConfirm }) {
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(false);
   
-  // Store para cargar los lotes específicos de este producto
   const loadBatchesForProduct = useDashboardStore(state => state.loadBatchesForProduct);
 
   useEffect(() => {
@@ -14,13 +13,10 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
       const fetchVariants = async () => {
         setLoading(true);
         try {
-          // Cargamos todos los lotes (variantes)
-          const allBatches = await loadData(STORES.PRODUCT_BATCHES); // Ojo: Mejor usar la función optimizada del store si existe, pero por seguridad:
-          // Usamos la función del store que ya tienes optimizada en BatchManager
           const productBatches = await loadBatchesForProduct(product.id);
           
-          // Filtramos solo los que tienen stock y están activos
-          const available = productBatches.filter(b => b.isActive && b.stock > 0);
+          // Filtramos solo los activos con stock
+          const available = (productBatches || []).filter(b => b.isActive && b.stock > 0);
           setBatches(available);
         } catch (error) {
           console.error("Error cargando variantes:", error);
@@ -32,34 +28,65 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
     }
   }, [show, product, loadBatchesForProduct]);
 
+  // --- LÓGICA DE AGRUPACIÓN (NUEVO) ---
+  const groupedVariants = useMemo(() => {
+    const groups = {};
+
+    batches.forEach(batch => {
+        const attrs = batch.attributes || {};
+        // Normalizamos a minúsculas para que "Azul" y "azul" sean lo mismo
+        const t1 = (attrs.talla || attrs.modelo || '').trim();
+        const t2 = (attrs.color || attrs.marca || '').trim();
+        
+        // Creamos una clave única, ej: "29-azul"
+        const key = `${t1}-${t2}`.toLowerCase();
+
+        if (!groups[key]) {
+            // Si es el primero que encontramos, lo guardamos como base
+            groups[key] = {
+                ...batch, // Copiamos datos del lote
+                displayLabel: `${t1} ${t2}`, // Etiqueta bonita
+                totalStock: 0,
+                // Guardamos referencia al lote más antiguo (FIFO) para usar su ID y Precio
+                fifoBatchId: batch.id, 
+                fifoPrice: batch.price
+            };
+        }
+
+        // Sumamos el stock de este lote al grupo
+        groups[key].totalStock += batch.stock;
+        
+        // Opcional: Podrías actualizar el precio si el lote más reciente tiene otro precio
+        // Pero por ahora mantenemos el del primer lote encontrado para consistencia
+    });
+
+    // Convertimos el objeto de grupos de vuelta a un array
+    return Object.values(groups);
+  }, [batches]);
+
   if (!show || !product) return null;
 
-  const handleSelectVariant = (batch) => {
-    // Construimos el objeto "Variante" para el carrito
-    // Usamos el ID del lote para que el carrito los distinga (Ej: Camisa Roja vs Camisa Azul)
-    
-    // Formatear nombre de atributos (Ej: "Talla: M, Color: Rojo")
-    const attrs = batch.attributes || {};
-    const attrString = Object.values(attrs).filter(Boolean).join(' / ');
+  const handleSelectVariant = (groupItem) => {
+    // Al seleccionar, usamos el ID del lote base (FIFO) pero mostramos que hay stock disponible
     
     const variantItem = {
       ...product,
-      id: batch.id, // ¡TRUCO! Usamos el ID del lote para separar items en el carrito
-      parentId: product.id, // Guardamos referencia al padre
-      name: `${product.name} (${attrString || 'Estándar'})`,
-      price: batch.price, // Usamos el precio específico de esta variante
-      cost: batch.cost,
-      stock: batch.stock, // Stock específico de esta variante
+      id: groupItem.fifoBatchId, // Usamos el ID real de un lote para que el sistema sepa qué descontar
+      parentId: product.id, 
+      name: `${product.name} (${groupItem.displayLabel})`,
+      price: groupItem.fifoPrice, 
+      cost: groupItem.cost,
+      stock: groupItem.totalStock, // Pasamos el stock TOTAL sumado
       trackStock: true,
       isVariant: true,
-      batchId: batch.id // Referencia explícita para descontar stock correctamente
+      batchId: groupItem.fifoBatchId 
     };
 
     onConfirm(variantItem);
   };
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 2200 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 1100 }}>
       <div className="modal-content modifiers-modal">
         <div className="modifiers-header">
           <h2 className="modal-title">Selecciona una Opción</h2>
@@ -69,32 +96,35 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
         <div className="modifiers-body">
           {loading ? (
             <p style={{textAlign: 'center', padding: '20px'}}>Cargando stock...</p>
-          ) : batches.length === 0 ? (
-            <div className="empty-message">⚠️ No hay variantes con stock disponible.</div>
+          ) : groupedVariants.length === 0 ? (
+            <div className="variant-empty-state">
+                ⚠️ No hay variantes con stock disponible.
+            </div>
           ) : (
             <div className="modifier-options-grid">
-              {batches.map((batch) => {
-                const attrs = batch.attributes || {};
-                // Mostrar Talla y Color preferentemente
-                const label = `${attrs.talla || ''} ${attrs.color || ''} ${attrs.modelo || ''}`.trim() || 'Estándar';
-                
-                return (
-                  <div 
-                    key={batch.id} 
-                    className="modifier-option-card"
-                    onClick={() => handleSelectVariant(batch)}
-                  >
-                    <span className="opt-name" style={{fontSize: '1.1rem', fontWeight: 'bold'}}>{label}</span>
-                    {batch.sku && <small style={{color: '#666', fontSize: '0.75rem'}}>{batch.sku}</small>}
-                    <div style={{marginTop: '5px', display: 'flex', gap: '10px', justifyContent: 'center'}}>
-                        <span className="opt-price" style={{color: 'var(--primary-color)'}}>${batch.price.toFixed(2)}</span>
-                        <span className="stock-badge" style={{fontSize: '0.8rem', background: '#e5e7eb', padding: '2px 6px', borderRadius: '4px'}}>
-                            Stock: {batch.stock}
-                        </span>
-                    </div>
+              {groupedVariants.map((group, idx) => (
+                <div 
+                  key={idx} 
+                  className="modifier-option-card"
+                  onClick={() => handleSelectVariant(group)}
+                >
+                  <span className="opt-name" style={{fontSize: '1.1rem', fontWeight: 'bold', textTransform: 'capitalize'}}>
+                    {group.displayLabel || 'Estándar'}
+                  </span>
+                  
+                  {group.sku && <small style={{color: '#666', fontSize: '0.75rem'}}>{group.sku}</small>}
+                  
+                  <div style={{marginTop: '5px', display: 'flex', gap: '10px', justifyContent: 'center'}}>
+                      <span className="opt-price" style={{color: 'var(--primary-color)'}}>
+                        ${group.fifoPrice.toFixed(2)}
+                      </span>
+                      <span className="stock-badge" style={{fontSize: '0.8rem', background: '#e5e7eb', padding: '2px 6px', borderRadius: '4px'}}>
+                          {/* AQUÍ MOSTRAMOS LA SUMA TOTAL */}
+                          Stock: {group.totalStock}
+                      </span>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
         </div>

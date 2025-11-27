@@ -31,7 +31,6 @@ function Navbar() {
   // Enlaces que irán en el "Menú Más" (Drawer deslizable)
   const drawerLinks = [
     { to: '/clientes', label: 'Clientes', icon: <Users size={20} /> },
-    // Solo mostramos Pedidos si el rubro tiene KDS (ej: Restaurante)
     ...(features.hasKDS ? [{ to: '/pedidos', label: 'Monitor Cocina', icon: <ChefHat size={20} /> }] : []),
     { to: '/configuracion', label: 'Configuración', icon: <Settings size={20} /> },
     { to: '/acerca-de', label: 'Acerca de', icon: <Info size={20} /> },
@@ -43,9 +42,12 @@ function Navbar() {
           1. BARRA SUPERIOR MÓVIL (Solo Branding)
          ============================================== */}
       <div className="mobile-top-bar">
-        <div className="mobile-brand">
-          <Logo style={{ height: '32px', width: 'auto' }} />
-          <span className="brand-name">{companyProfile?.name || 'Lanzo'}</span>
+        <div className="mobile-brand" style={{ width: '100%', justifyContent: 'center' }}>
+          {/* CAMBIO: Eliminamos el <span> con el nombre.
+              Ahora solo mostramos el Logo que ya incluye el texto "LANZO x NEGOCIO".
+              Aumenté un poco la altura (40px) para que luzca mejor.
+          */}
+          <Logo style={{ height: '40px', width: 'auto' }} />
         </div>
       </div>
 
@@ -53,31 +55,26 @@ function Navbar() {
           2. BARRA DE NAVEGACIÓN INFERIOR (App Bar)
          ============================================== */}
       <nav className="mobile-bottom-nav">
-        {/* 1. Caja */}
         <NavLink to="/caja" className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`} onClick={closeMenu}>
           <Inbox size={22} />
           <span>Caja</span>
         </NavLink>
 
-        {/* 2. Productos */}
         <NavLink to="/productos" className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`} onClick={closeMenu}>
           <Package size={22} />
           <span>Productos</span>
         </NavLink>
 
-        {/* 3. CAMBIO AQUÍ: PUNTO DE VENTA (Vender) AHORA ES UN ÍTEM NORMAL */}
         <NavLink to="/" className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`} onClick={closeMenu} end>
           <Store size={22} />
           <span>Vender</span>
         </NavLink>
 
-        {/* 4. Ventas */}
         <NavLink to="/ventas" className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`} onClick={closeMenu}>
           <TrendingUp size={22} />
           <span>Metricas</span>
         </NavLink>
 
-        {/* 5. Menú */}
         <button className={`bottom-nav-item ${isMobileMenuOpen ? 'active' : ''}`} onClick={toggleMenu}>
           <Menu size={22} />
           <span>Menú</span>
@@ -113,8 +110,8 @@ function Navbar() {
          ============================================== */}
       <nav className="desktop-sidebar">
         <div className="sidebar-header">
-          <Logo style={{ width: '100%', height: 'auto', maxHeight: '60px' }} />
-          <h1 className="nav-title">{companyProfile?.name || 'Lanzo'}</h1>
+          {/* CAMBIO: También eliminamos el título <h1> aquí para consistencia */}
+          <Logo style={{ width: '100%', height: 'auto', maxHeight: '70px' }} />
         </div>
 
         <div className="sidebar-links">

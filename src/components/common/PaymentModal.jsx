@@ -127,7 +127,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
   return (
     <>
-      <div id="payment-modal" className="modal" style={{ display: 'flex', zIndex: 10006 }}>
+      <div id="payment-modal" className="modal" style={{ display: 'flex'}}>
         <div className="modal-content">
           <h2 className="modal-title">Procesar Pago</h2>
           <form onSubmit={handleSubmit}>
