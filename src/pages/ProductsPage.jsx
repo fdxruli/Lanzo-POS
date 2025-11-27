@@ -1,6 +1,6 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, deleteData, saveBulk, STORES, deleteCategoryCascading } from '../services/database';
+import { loadData, saveData, deleteData, saveBulk, STORES } from '../services/database';
 import { showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
@@ -55,25 +55,16 @@ export default function ProductsPage() {
     };
 
     const handleDeleteCategory = async (categoryId) => {
-        if (!window.confirm('¿Eliminar esta categoría? Los productos asociados quedarán "Sin Categoría".')) {
-            return;
-        }
-
         try {
-            setIsLoading(true); // Feedback visual
-            
-            // Usamos la nueva transacción atómica
-            await deleteCategoryCascading(categoryId);
-            
-            // Recargamos datos para reflejar cambios
+            await deleteData(STORES.CATEGORIES, categoryId);
+            const productsToUpdate = products.filter(p => p.categoryId === categoryId);
+            for (const product of productsToUpdate) {
+                product.categoryId = '';
+                await saveData(STORES.MENU, product);
+            }
             await refreshData(true);
-            
-            showMessageModal('✅ Categoría eliminada y productos actualizados correctamente.');
         } catch (error) {
             console.error("Error eliminando categoría:", error);
-            showMessageModal(`Error de base de datos: ${error.message}`);
-        } finally {
-            setIsLoading(false);
         }
     };
 

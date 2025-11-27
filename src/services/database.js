@@ -1,7 +1,7 @@
 // src/services/database.js - VERSIÓN OPTIMIZADA PARA PAGINACIÓN
 
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 16;
+const DB_VERSION = 15;
 
 // Objeto de conexión
 const dbConnection = {
@@ -13,7 +13,6 @@ const dbConnection = {
 export const STORES = {
   MENU: 'menu',
   SALES: 'sales',
-  STATS: 'global_stats',
   COMPANY: 'company',
   THEME: 'theme',
   INGREDIENTS: 'ingredients',
@@ -116,10 +115,6 @@ export function initDB() {
             tempDb.createObjectStore(store, { keyPath: 'id' });
           }
         });
-
-        if (!tempDb.objectStoreNames.contains(STORES.STATS)) {
-          tempDb.createObjectStore(STORES.STATS, { keyPath: 'id' });
-        }
 
         if (!tempDb.objectStoreNames.contains(STORES.DELETED_SALES)) {
           tempDb.createObjectStore(STORES.DELETED_SALES, { keyPath: 'timestamp' });
@@ -521,47 +516,6 @@ export function saveBulkOptimized(storeName, data, chunkSize = 100) {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
-  });
-}
-
-export async function deleteCategoryCascading(categoryId) {
-  return executeWithRetry(async () => {
-    const db = await initDB();
-    
-    return new Promise((resolve, reject) => {
-      // 1. Abrimos una transacción que abarca AMBOS almacenes
-      const tx = db.transaction([STORES.CATEGORIES, STORES.MENU], 'readwrite');
-      const catStore = tx.objectStore(STORES.CATEGORIES);
-      const menuStore = tx.objectStore(STORES.MENU);
-      
-      // 2. Manejadores de éxito/error global de la transacción
-      tx.oncomplete = () => resolve({ success: true });
-      tx.onerror = (e) => reject(e.target.error);
-      
-      // 3. Eliminar la categoría
-      catStore.delete(categoryId);
-      
-      // 4. Buscar y limpiar productos afectados usando un Cursor
-      // (Más eficiente que cargar todo en memoria)
-      const index = menuStore.index('categoryId'); // Asumiendo que existe índice, si no, usamos cursor normal
-      // Si no tienes índice 'categoryId' definido en initDB, usamos cursor sobre todo el store (fallback)
-      // Nota: En tu código actual no vi índice 'categoryId', así que usaremos cursor general seguro.
-      
-      const request = menuStore.openCursor();
-      
-      request.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          const product = cursor.value;
-          if (product.categoryId === categoryId) {
-            // ¡Encontramos uno! Lo actualizamos dentro de la MISMA transacción
-            const updatedProduct = { ...product, categoryId: '' };
-            cursor.update(updatedProduct);
-          }
-          cursor.continue();
-        }
-      };
-    });
   });
 }
 

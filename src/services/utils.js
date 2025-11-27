@@ -2,33 +2,14 @@
 
 // 1. Importa la nueva función 'show' de tu store
 import { showMessage } from '../store/useMessageStore';
-import toast from 'react-hot-toast';
 
 /**
- * Muestra un mensaje al usuario.
- * - Si hay 'onConfirm', usa el MODAL (porque requiere interacción).
- * - Si NO hay 'onConfirm', usa un TOAST (rápido y no intrusivo).
+ * Muestra un modal con un mensaje.
+ * ¡YA NO MANIPULA EL DOM! Ahora llama al store de React.
  */
 export function showMessageModal(message, onConfirm = null, options = {}) {
-  
-  // CASO A: Es una Confirmación (Ej: "¿Eliminar cliente?") -> USAR MODAL
-  if (typeof onConfirm === 'function') {
-    showMessage(message, onConfirm, options);
-    return; 
-  }
-
-  // CASO B: Es solo información -> USAR TOAST
-  // Detectamos si es error buscando palabras clave o si pasas options.type
-  const isError = options.type === 'error' || 
-                  message.toLowerCase().includes('error') || 
-                  message.toLowerCase().includes('falló') ||
-                  message.startsWith('⚠️');
-
-  if (isError) {
-    toast.error(message, { duration: 4000 });
-  } else {
-    toast.success(message, { duration: 3000 });
-  }
+  // 2. Reemplaza TODO el cuerpo de la función con esta línea:
+  showMessage(message, onConfirm, options);
 }
 
 /**
@@ -40,84 +21,61 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
  */
 export const compressImage = (
   file,
-  targetSize = 300,
-  quality = 0.7
+  targetSize = 300, // Un solo tamaño para ancho y alto
+  quality = 0.7 // Calidad de compresión para WebP
 ) => {
   return new Promise((resolve, reject) => {
-    // 1. Validación temprana
-    if (!file || !file.type.startsWith('image/')) {
-        reject(new Error("El archivo no es una imagen válida."));
-        return;
-    }
-
     const img = new Image();
-    
-    // Crear URL temporal
-    const objectUrl = URL.createObjectURL(file);
-    img.src = objectUrl;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext("2d");
 
     img.onload = () => {
-      // 2. Yield to Event Loop:
-      // Usamos setTimeout para sacar el procesamiento pesado de la pila actual.
-      // Esto permite que React renderice el spinner de "Cargando..." antes de que el CPU se sature.
-      setTimeout(() => {
-        try {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext("2d");
+      let sourceX = 0;
+      let sourceY = 0;
+      let sourceWidth = img.width;
+      let sourceHeight = img.height;
 
-          let sourceX = 0;
-          let sourceY = 0;
-          let sourceWidth = img.width;
-          let sourceHeight = img.height;
+      // Lógica para el recorte cuadrado (sin cambios)
+      if (sourceWidth > sourceHeight) {
+        sourceX = (sourceWidth - sourceHeight) / 2;
+        sourceWidth = sourceHeight;
+      } else if (sourceHeight > sourceWidth) {
+        sourceY = (sourceHeight - sourceWidth) / 2;
+        sourceHeight = sourceWidth;
+      }
 
-          // Lógica de recorte cuadrado (Center Crop)
-          if (sourceWidth > sourceHeight) {
-            sourceX = (sourceWidth - sourceHeight) / 2;
-            sourceWidth = sourceHeight;
-          } else if (sourceHeight > sourceWidth) {
-            sourceY = (sourceHeight - sourceWidth) / 2;
-            sourceHeight = sourceWidth;
+      canvas.width = targetSize;
+      canvas.height = targetSize;
+
+      ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetSize, targetSize);
+
+      // ======================================================
+      // ¡LA MAGIA OCURRE AQUÍ!
+      // ======================================================
+
+      // 1. Usamos 'toBlob' que es asíncrono y mejor que 'toDataURL'
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Error al crear el blob de la imagen."));
+            return;
           }
-
-          canvas.width = targetSize;
-          canvas.height = targetSize;
-
-          // Operación costosa en CPU (Draw)
-          ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetSize, targetSize);
-
-          // Operación costosa en CPU (Encode)
-          canvas.toBlob(
-            (blob) => {
-              // Limpieza de memoria
-              URL.revokeObjectURL(objectUrl);
-
-              if (!blob) {
-                reject(new Error("Error al codificar la imagen a WebP."));
-                return;
-              }
-
-              const newFileName = file.name.replace(/\.[^/.]+$/, "") + '.webp';
-              const webpFile = new File([blob], newFileName, {
-                type: 'image/webp',
-                lastModified: Date.now()
-              });
-              
-              resolve(webpFile);
-            },
-            'image/webp',
-            quality
-          );
-        } catch (err) {
-          URL.revokeObjectURL(objectUrl);
-          reject(new Error("Error durante el procesamiento de imagen."));
-        }
-      }, 50); // 50ms de pausa es imperceptible para el usuario pero suficiente para la UI
+          // 2. Creamos un nuevo objeto File con el formato WebP
+          const newFileName = file.name.split('.')[0] + '.webp';
+          const webpFile = new File([blob], newFileName, {
+            type: 'image/webp', // 3. El tipo es WebP
+            lastModified: Date.now()
+          });
+          resolve(webpFile); // Devolvemos el ARCHIVO, no un Base64
+        },
+        'image/webp', // 4. Solicitamos el formato WebP
+        quality       // 5. Aplicamos la calidad
+      );
+      // ======================================================
     };
 
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("Error al cargar el archivo de imagen original."));
-    };
+    img.onerror = (err) => reject(new Error("Error al cargar la imagen."));
+    img.src = URL.createObjectURL(file);
   });
 };
 
@@ -292,8 +250,3 @@ export async function lookupBarcodeInAPI(barcode) {
     return { success: false, error: `Error de red: ${error.message}` };
   }
 }
-
-export const roundCurrency = (amount) => {
-  if (typeof amount !== 'number') return 0;
-  return Math.round((amount + Number.EPSILON) * 100) / 100;
-};

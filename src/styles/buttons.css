@@ -1,0 +1,63 @@
+.btn {
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-sm);
+    padding: 10px 20px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: transform 0.1s, background-color 0.2s, box-shadow 0.2s;
+}
+
+.btn:active {
+    transform: scale(0.98);
+}
+
+.btn:disabled {
+    background-color: var(--text-light);
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-save,
+.btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.btn-save:hover {
+    background-color: var(--primary-hover);
+}
+
+.btn-secondary {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+.btn-secondary:hover {
+    filter: brightness(1.1);
+}
+
+.btn-cancel {
+    background-color: transparent;
+    color: var(--text-light);
+    border-color: var(--border-color);
+}
+
+.btn-cancel:hover {
+    background-color: var(--light-background);
+    color: var(--text-dark);
+}
+
+.btn-delete {
+    background-color: rgba(255, 59, 92, 0.1);
+    color: var(--error-color);
+}
+
+.btn-delete:hover {
+    background-color: var(--error-color);
+    color: white;
+}

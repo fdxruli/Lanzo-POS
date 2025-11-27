@@ -6,32 +6,23 @@
   font-size: 2rem;
   font-weight: 800;
   margin-top: 2rem;
+  /* Espacio arriba (separar del Ticker) */
   margin-bottom: 2rem;
+  /* Espacio abajo (separar de las tarjetas) */
   padding: 0 1rem;
+  /* Espacio de seguridad a los lados (izq/der) */
   border-bottom: 2px solid rgba(99, 102, 241, 0.1);
   padding-bottom: var(--spacing-sm);
 }
 
-/* CONTENEDOR PRINCIPAL 
-   En móvil es un flex vertical simple. 
-*/
+/* CONTENEDOR GRID PRINCIPAL */
 .about-container {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 2rem;
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 1rem 40px 1rem;
-}
-
-/* NUEVO: Estilos para las columnas contenedoras.
-   Se aseguran de que las tarjetas dentro se apilen con espacio.
-*/
-.about-col-main, 
-.about-col-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem; /* Espacio vertical entre tarjetas de la misma columna */
 }
 
 /* === ESTILOS DE TARJETAS === */
@@ -40,17 +31,20 @@
   border: 1px solid rgba(0, 0, 0, 0.05);
   border-radius: 16px;
   padding: 2rem;
+  /* AUMENTADO: Más padding interno para elegancia */
   box-shadow: var(--box-shadow);
   transition: all 0.3s ease;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  height: fit-content; /* Importante para que no se estiren */
+  height: fit-content;
+  /* Importante para que no se estiren feo */
 }
 
 .about-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+  /* Sombra más suave al hover */
 }
 
 /* TÍTULOS DENTRO DE LAS TARJETAS */
@@ -68,6 +62,7 @@
   color: var(--text-color);
   font-size: 1rem;
   line-height: 1.7;
+  /* Mejor lectura */
   margin-bottom: var(--spacing-sm);
 }
 
@@ -78,8 +73,10 @@
 
 /* === TARJETA PATROCINADOR (ENTRE ALAS) === */
 .sponsored-by {
+  /* Fondo sutil con gradiente muy suave */
   background: linear-gradient(180deg, var(--card-background-color) 0%, rgba(123, 97, 255, 0.04) 100%);
   border-left: 5px solid var(--secondary-color);
+  /* Borde morado más grueso */
   border-top: 1px solid rgba(0, 0, 0, 0.05);
   border-right: 1px solid rgba(0, 0, 0, 0.05);
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
@@ -92,7 +89,7 @@
   margin-bottom: var(--spacing-xs);
 }
 
-/* ENLACES SOCIALES */
+/* ENLACES SOCIALES (MEJORADOS) */
 .social-links {
   display: flex;
   gap: 15px;
@@ -102,7 +99,9 @@
 
 .social-link {
   background-color: #fff;
+  /* Fondo blanco limpio */
   color: var(--secondary-color);
+  /* Texto color marca */
   padding: 12px 20px;
   border-radius: 12px;
   text-decoration: none;
@@ -110,6 +109,7 @@
   font-size: 0.95rem;
   transition: all 0.2s ease;
   border: 2px solid rgba(123, 97, 255, 0.2);
+  /* Borde sutil coloreado */
   text-align: center;
   flex: 1;
   display: flex;
@@ -139,6 +139,7 @@
 .features-list li {
   position: relative;
   padding-left: 35px;
+  /* Más espacio para el check */
   color: var(--text-color);
   font-size: 1rem;
   display: flex;
@@ -164,6 +165,7 @@
 /* === TARJETA DE CONTACTO === */
 .about-card.contact-card {
   border-left: 5px solid var(--success-color);
+  /* Borde verde más grueso */
 }
 
 .contact-buttons {
@@ -203,22 +205,54 @@
 }
 
 /* ============================================================
-   MEDIA QUERY PARA ESCRITORIO (CORREGIDO)
+   MEDIA QUERY PARA ESCRITORIO (EL CAMBIO CLAVE)
    ============================================================ */
 @media (min-width: 1024px) {
   .about-container {
-    /* Activamos GRID solo en el contenedor principal */
-    display: grid;
-    /* Dos columnas asimétricas: Izquierda ancha, Derecha angosta */
-    grid-template-columns: 1.6fr 1fr; 
-    align-items: start; /* Alinea al inicio para evitar estiramientos extraños */
+    /* Usamos 2 columnas asimétricas:
+       - Columna Izquierda (Más ancha): Para texto largo y lista de features.
+       - Columna Derecha (Más estrecha): Para la info lateral (patrocinador/contacto).
+    */
+    grid-template-columns: 1.6fr 1fr;
+    align-items: start;
+    /* Alinea las cajas arriba para que no floten raro */
     gap: 2.5rem;
   }
 
-  /* La lista de features ahora a 2 columnas internas */
+  /* --- COLUMNA IZQUIERDA --- */
+
+  /* Intro */
+  .about-card:not(.features-card):not(.sponsored-by):not(.contact-card) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  /* Features (Debajo de Intro) */
+  .about-card.features-card {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
   .features-list {
     grid-template-columns: 1fr 1fr;
+    /* 2 columnas internas para la lista */
     column-gap: 2rem;
+  }
+
+  /* --- COLUMNA DERECHA --- */
+
+  /* Patrocinador (Arriba Derecha) */
+  .about-card.sponsored-by {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  /* Contacto (Debajo de Patrocinador) */
+  .about-card.contact-card {
+    grid-column: 2;
+    grid-row: 2;
+    /* Truco visual: Si la columna izq es muy larga, esto se pega arriba */
+    margin-top: -1rem;
   }
 
   .contact-buttons {

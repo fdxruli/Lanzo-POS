@@ -1,23 +1,24 @@
 // src/pages/PosPage.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Await, useNavigate } from 'react-router-dom';
 import ProductMenu from '../components/pos/ProductMenu';
 import OrderSummary from '../components/pos/OrderSummary';
 import ScannerModal from '../components/common/ScannerModal';
 import PaymentModal from '../components/common/PaymentModal';
 import QuickCajaModal from '../components/common/QuickCajaModal';
-import PrescriptionModal from '../components/pos/PrescriptionModal';
 import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
-import { useDashboardStore } from '../store/useDashboardStore';
+import { useDashboardStore } from '../store/useDashboardStore'; // Store Global
 import { loadData, saveBulk, saveData, queryByIndex, queryBatchesByProductIdAndActive, STORES } from '../services/database';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useDebounce } from '../hooks/useDebounce';
+import PrescriptionModal from '../components/pos/PrescriptionModal';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './PosPage.css';
 
 export default function PosPage() {
+  // --- Estados Locales ---
   const features = useFeatureConfig();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -27,30 +28,29 @@ export default function PosPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // --- NUEVO ESTADO: Controlar el Modal de Resumen en Móvil ---
-  const [isMobileOrderOpen, setIsMobileOrderOpen] = useState(false);
-
   const searchProducts = useDashboardStore((state) => state.searchProducts);
 
   useEffect(() => {
     searchProducts(debouncedSearchTerm);
   }, [debouncedSearchTerm, searchProducts]);
 
+  const navigate = useNavigate();
   const { cajaActual, abrirCaja } = useCaja();
   const { order, clearOrder, getTotalPrice } = useOrderStore();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
+
+  // --- 1. CONEXIÓN AL STORE ---
   const allProducts = useDashboardStore((state) => state.menu);
   const refreshData = useDashboardStore((state) => state.loadAllData);
 
   const total = getTotalPrice();
 
-  // Calculamos cantidad total de items para el badge del botón flotante
-  const totalItemsCount = order.reduce((acc, item) => acc + (item.saleType === 'bulk' ? 1 : item.quantity), 0);
-
+  // modal de llenado de receta...
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [prescriptionItems, setPrescriptionItems] = useState([]);
   const [tempPrescriptionData, setTempPrescriptionData] = useState(null);
 
+  // --- 2. EFECTO DE CARGA INICIAL ---
   useEffect(() => {
     const loadExtras = async () => {
       try {
@@ -58,14 +58,16 @@ export default function PosPage() {
         setCategories(categoryData || []);
         await refreshData();
       } catch (error) {
-        console.error("Error cargando datos:", error);
+        console.error("Error cargando datos iniciales del POS:", error);
       }
     };
     loadExtras();
   }, []);
 
+  // --- 3. FILTRADO DE PRODUCTOS ---
   const filteredProducts = useMemo(() => {
     let items = (allProducts || []).filter(p => p.productType === 'sellable' || !p.productType);
+
     if (selectedCategoryId) {
       items = items.filter(p => p.categoryId === selectedCategoryId);
     }
@@ -74,8 +76,14 @@ export default function PosPage() {
       items = items.filter(p => {
         const matchName = p.name.toLowerCase().includes(lowerTerm);
         const matchBarcode = p.barcode && p.barcode.includes(lowerTerm);
+
+        // --- LÓGICA FARMACIA: Buscar por Sustancia Activa ---
         let matchSustancia = false;
-        if (p.sustancia) matchSustancia = p.sustancia.toLowerCase().includes(lowerTerm);
+        // features viene de un hook, asegúrate de importarlo o checar si p.sustancia existe
+        if (p.sustancia) {
+          matchSustancia = p.sustancia.toLowerCase().includes(lowerTerm);
+        }
+
         return matchName || matchBarcode || matchSustancia;
       });
     }
@@ -88,32 +96,37 @@ export default function PosPage() {
       showMessageModal('⚠️ Error de Seguridad: Licencia no válida.');
       return;
     }
+
+    // Validar pedido vacío
     const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
     if (itemsToProcess.length === 0) {
       showMessageModal('El pedido está vacío.');
       return;
     }
 
-    // Cerramos el modal móvil si está abierto
-    setIsMobileOrderOpen(false);
-
+    // LÓGICA FARMACIA: Detectar si requiere receta ANTES de pagar
     const itemsRequiring = itemsToProcess.filter(item => item.requiresPrescription);
+
     if (itemsRequiring.length > 0) {
+      // Si hay controlados, abrimos modal de receta PRIMERO
       setPrescriptionItems(itemsRequiring);
-      setTempPrescriptionData(null);
+      setTempPrescriptionData(null); // Limpiamos datos previos
       setIsPrescriptionModalOpen(true);
     } else {
+      // Si no, vamos directo al pago
       setTempPrescriptionData(null);
       setIsPaymentModalOpen(true);
     }
   };
 
+  // 2. El usuario confirma los datos del médico
   const handlePrescriptionConfirm = (data) => {
-    setTempPrescriptionData(data);
-    setIsPrescriptionModalOpen(false);
-    setIsPaymentModalOpen(true);
+    setTempPrescriptionData(data); // Guardamos temporalmente
+    setIsPrescriptionModalOpen(false); // Cerramos receta
+    setIsPaymentModalOpen(true); // Abrimos pago
   };
 
+  // 3. El usuario confirma el pago (Finalizar Venta)
   const handleProcessOrder = async (paymentData) => {
     // Validar Caja
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
@@ -123,7 +136,7 @@ export default function PosPage() {
     }
 
     try {
-      setIsPaymentModalOpen(false);
+      setIsPaymentModalOpen(false); // Cerramos modal de pago
       console.time('ProcesoVenta');
 
       const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
@@ -229,9 +242,6 @@ export default function PosPage() {
 
       await saveData(STORES.SALES, sale);
 
-      // --- CORRECCIÓN AQUÍ: Nombre correcto de la función del store ---
-      useDashboardStore.getState().updateStatsWithSale(sale); 
-
       if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
         const customer = await loadData(STORES.CUSTOMERS, sale.customerId);
         if (customer) {
@@ -241,8 +251,7 @@ export default function PosPage() {
       }
 
       clearOrder();
-      setTempPrescriptionData(null);
-      setIsMobileOrderOpen(false); // CERRAR EL MODAL MÓVIL
+      setTempPrescriptionData(null); // Limpiar datos temporales
       showMessageModal('✅ ¡Venta registrada correctamente!');
       refreshData(true);
 
@@ -255,6 +264,7 @@ export default function PosPage() {
             receiptText += `*Negocio:* ${companyName}\n`;
             receiptText += `*Fecha:* ${new Date().toLocaleString()}\n\n`;
 
+            // INFO MÉDICA EN EL TICKET
             if (sale.prescriptionDetails) {
               receiptText += `*--- DATOS DE DISPENSACIÓN ---*\n`;
               receiptText += `Dr(a): ${sale.prescriptionDetails.doctorName}\n`;
@@ -301,16 +311,11 @@ export default function PosPage() {
     }
   };
 
-  const handleBarcodeScanned = (code) => {
-    // ... lógica de escaneo ...
-  };
-
+  // --- 6. VISTA (JSX) ---
   return (
     <>
-      <h2 className="section-title">Punto de Venta</h2>
+      <h2 className="section-title">Punto de Venta Rápido y Eficiente</h2>
       <div className="pos-grid">
-
-        {/* 1. Menú de Productos (Siempre visible) */}
         <ProductMenu
           products={filteredProducts}
           categories={categories}
@@ -320,45 +325,9 @@ export default function PosPage() {
           onSearchChange={setSearchTerm}
           onOpenScanner={() => setIsScannerOpen(true)}
         />
-
-        {/* 2. Resumen de Pedido (Visible solo en Desktop por CSS) */}
         <OrderSummary onOpenPayment={handleInitiateCheckout} />
       </div>
 
-      {/* --- 3. BARRA FLOTANTE MÓVIL (Toast) --- */}
-      {/* Solo se muestra si hay items y estamos en pantalla pequeña (controlado por CSS) */}
-      {order.length > 0 && !isMobileOrderOpen && !isPrescriptionModalOpen && !isPaymentModalOpen && (
-        <div className="floating-cart-bar" onClick={() => setIsMobileOrderOpen(true)}>
-          <div className="cart-count-badge">{totalItemsCount}</div>
-          <span>Ver Pedido</span>
-          <span className="cart-total-label">${total.toFixed(2)}</span>
-        </div>
-      )}
-      {/* --- 4. MODAL RESUMEN PEDIDO (MÓVIL) --- */}
-      {isMobileOrderOpen && (
-        /* CAMBIO AQUÍ: Subimos el zIndex a 10005 para superar al Navbar (que tiene 9999) */
-        <div className="modal" style={{ display: 'flex', zIndex: 10005, alignItems: 'flex-end' }}>
-
-          {/* Estilo del contenido del modal (hoja deslizable) */}
-          <div className="modal-content" style={{
-            borderRadius: '20px 20px 0 0',
-            width: '100%',
-            height: '85vh', /* Ocupa casi toda la pantalla */
-            maxWidth: '100%',
-            padding: '0', /* Quitamos padding del contenedor para que el hijo maneje el scroll */
-            animation: 'slideUp 0.3s ease-out',
-            overflow: 'hidden' /* Importante para que el scroll sea interno */
-          }}>
-            <OrderSummary
-              onOpenPayment={handleInitiateCheckout}
-              isMobileModal={true}
-              onClose={() => setIsMobileOrderOpen(false)}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* --- Otros Modales --- */}
       <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
 
       <PaymentModal

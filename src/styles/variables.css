@@ -1,0 +1,56 @@
+:root {
+    /* --- PALETA PRINCIPAL --- */
+    --primary-color: #FF3B5C;
+    --primary-hover: #E02041;
+    --secondary-color: #7B61FF;
+
+    /* --- ESTADOS --- */
+    --success-color: #00C48C;
+    --warning-color: #FFB800;
+    --error-color: #FF3B5C;
+
+    /* --- NEUTROS & FONDOS (Modo Claro por defecto) --- */
+    --background-color: #E8EAED;
+    --card-background-color: #FFFFFF;
+    --light-background: #DCE0E5;
+    --border-color: #BCC3CD;
+
+    /* --- TEXTOS --- */
+    --text-dark: #1F2937;
+    --text-color: #4B5563;
+    --text-light: #6B7280;
+
+    /* --- ESPACIADO --- */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+
+    /* --- UI TOKENS --- */
+    --border-radius: 12px;
+    --border-radius-sm: 8px;
+    --box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 8px rgba(0, 0, 0, 0.02);
+    --box-shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.08);
+
+    /* --- Z-INDEX --- */
+    --z-navbar: 100;
+    --z-backdrop: 900;
+    --z-modal: 1000;
+    --z-tooltip: 1200;
+
+    /* --- TRANSICIONES --- */
+    --transition-fast: 0.2s ease-in-out;
+    --transition-theme: 0.8s ease-in-out;
+}
+
+/* MODO OSCURO */
+[data-theme="dark"] {
+    --background-color: #0F172A;
+    --card-background-color: #1E293B;
+    --light-background: #334155;
+    --border-color: #475569;
+    --text-dark: #F8FAFC;
+    --text-color: #CBD5E1;
+    --text-light: #94A3B8;
+    --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+}

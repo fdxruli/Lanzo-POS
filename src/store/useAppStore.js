@@ -1,7 +1,7 @@
 // src/store/useAppStore.js
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
-import { isLocalStorageEnabled, normalizeDate, showMessageModal } from '../services/utils';
+import { isLocalStorageEnabled, normalizeDate } from '../services/utils';
 
 const _ui_render_config_v2 = "LANZO_SECURE_KEY_v1_X9Z";
 
@@ -163,22 +163,10 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  /**
-   * REFACTORIZADO: Gestión robusta de suscripción a seguridad.
-   * Evita duplicidad de listeners y fugas de memoria.
-   */
   startRealtimeSecurity: async () => {
-    const { licenseDetails, realtimeSubscription, stopRealtimeSecurity } = get();
+    const { licenseDetails, realtimeSubscription } = get();
 
-    // 1. Si ya existe una suscripción activa, la limpiamos primero para evitar duplicados (Idempotencia)
-    if (realtimeSubscription) {
-      console.log("♻️ Limpiando suscripción anterior antes de reiniciar seguridad...");
-      await stopRealtimeSecurity();
-    }
-
-    if (!licenseDetails?.license_key) return;
-
-    console.log("🔌 Iniciando nueva suscripción de seguridad...");
+    if (realtimeSubscription || !licenseDetails?.license_key) return;
 
     const sub = await window.subscribeToSecurityChanges(
       licenseDetails.license_key,
@@ -189,7 +177,7 @@ export const useAppStore = create((set, get) => ({
             `⚠️ ALERTA DE SEGURIDAD: Tu licencia ha sido marcada como "${newLicenseData.status}". La sesión se cerrará.`,
             () => {
               get().logout();
-              window.location.reload(); // Recarga para limpiar todo estado residual
+              window.location.reload(); // Recarga para limpiar todo
             }
           );
           get().logout();
@@ -218,27 +206,6 @@ export const useAppStore = create((set, get) => ({
     set({ realtimeSubscription: sub });
   },
 
-  /**
-   * NUEVA ACCIÓN: Detiene la vigilancia en tiempo real.
-   * Crucial para desmontaje de componentes y logout.
-   */
-  stopRealtimeSecurity: async () => {
-    const { realtimeSubscription } = get();
-    
-    if (realtimeSubscription) {
-      console.log("🔌 Deteniendo vigilancia en tiempo real...");
-      try {
-        if (typeof window.removeRealtimeChannel === 'function') {
-          await window.removeRealtimeChannel(realtimeSubscription);
-        }
-      } catch (err) {
-        console.warn("Advertencia no crítica al desconectar canal:", err);
-      }
-      // Limpiamos la referencia en el estado
-      set({ realtimeSubscription: null });
-    }
-  },
-
   handleLogin: async (licenseKey) => {
     try {
       const result = await window.activateLicense(licenseKey);
@@ -265,14 +232,14 @@ export const useAppStore = create((set, get) => ({
             set({
               licenseDetails: result.details,
               companyProfile: mappedData,
-              appStatus: 'ready'
+              appStatus: 'ready' // <--- ¡Aquí está la clave! Entra directo.
             });
 
           } else {
             console.log("Licencia nueva sin perfil. Requiere configuración.");
             set({
               licenseDetails: result.details,
-              appStatus: 'setup_required'
+              appStatus: 'setup_required' // <--- Solo aquí mostramos el modal
             });
           }
         } catch (profileError) {
@@ -288,7 +255,6 @@ export const useAppStore = create((set, get) => ({
       return { success: false, message: error.message };
     }
   },
-
   handleFreeTrial: async () => {
     try {
       const result = await window.createFreeTrial();
@@ -321,7 +287,7 @@ export const useAppStore = create((set, get) => ({
 
       const profileData = {
         ...setupData,
-        logo: logoUrl 
+        logo: logoUrl // Usa la nueva URL (o null si no había)
       };
 
       await window.saveBusinessProfile(licenseKey, profileData);
@@ -347,7 +313,7 @@ export const useAppStore = create((set, get) => ({
       if (companyData.logo && companyData.logo instanceof File) {
         console.log("Subiendo nuevo logo a Supabase Storage...");
         const logoUrl = await window.uploadFile(companyData.logo, 'logo');
-        companyData.logo = logoUrl;
+        companyData.logo = logoUrl; // Reemplaza el File por la URL
       }
 
       await window.saveBusinessProfile(licenseKey, companyData);
@@ -361,10 +327,18 @@ export const useAppStore = create((set, get) => ({
   },
 
   logout: async () => {
-    const { licenseDetails } = get();
+    const { realtimeSubscription, licenseDetails } = get();
 
-    // 1. REFACTORIZADO: Detener escucha de seguridad explícitamente antes de salir
-    await get().stopRealtimeSecurity();
+    if (realtimeSubscription) {
+      console.log("Desconectando vigilancia en tiempo real...");
+      try {
+        if (typeof window.removeRealtimeChannel === 'function') {
+          await window.removeRealtimeChannel(realtimeSubscription);
+        }
+      } catch (err) {
+        console.warn("No se pudo desconectar el canal realtime (no es crítico):", err);
+      }
+    }
 
     try {
       const licenseKey = licenseDetails?.license_key;
@@ -384,7 +358,7 @@ export const useAppStore = create((set, get) => ({
       companyProfile: null,
       licenseStatus: 'active',
       gracePeriodEnds: null,
-      realtimeSubscription: null 
+      realtimeSubscription: null // ¡Importante! Limpiamos la referencia a la suscripción
     });
 
     console.log("Sesión cerrada correctamente.");

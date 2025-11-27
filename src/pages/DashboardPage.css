@@ -15,6 +15,54 @@
   gap: var(--spacing-lg);
 }
 
+/* ===== PESTAÑAS (TABS) MODERNAS ===== */
+/* Reemplazamos el estilo de "botón sólido" por uno de "navegación limpia" */
+
+.tabs-container {
+  display: flex;
+  gap: var(--spacing-lg);
+  /* Más espacio entre opciones */
+  border-bottom: 1px solid var(--border-color);
+  /* Línea base sutil */
+  margin-bottom: var(--spacing-xl);
+  padding-left: var(--spacing-xs);
+  overflow-x: auto;
+  /* Scroll en móvil si es necesario */
+}
+
+.tab-btn {
+  background: transparent;
+  /* Fondo transparente para integrarse */
+  border: none;
+  border-bottom: 3px solid transparent;
+  /* Borde invisible por defecto */
+  padding: var(--spacing-sm) var(--spacing-xs);
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-light);
+  /* Gris suave cuando está inactivo */
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  margin-bottom: -1px;
+  /* Para que el borde activo se solape con la línea base */
+}
+
+.tab-btn:hover {
+  color: var(--text-color);
+  /* Color principal al pasar el mouse */
+}
+
+/* Estado Activo: Solo texto coloreado y subrayado */
+.tab-btn.active {
+  color: var(--primary-color);
+  /* Rojo vibrante */
+  border-bottom-color: var(--primary-color);
+  background-color: transparent;
+  /* Asegurarnos de quitar el blanco */
+  font-weight: 600;
+}
+
 /* ===== CONTENEDORES DE PANELES ===== */
 .dashboard-stats-container {
   background-color: var(--card-background-color);
