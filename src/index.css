@@ -44,13 +44,20 @@
   --box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 8px rgba(0, 0, 0, 0.02);
   --box-shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.08);
 
-  /* --- CAPAS (Z-INDEX ARCHITECTURE) --- */
-  --z-navbar: 100;
-  --z-backdrop: 900;
-  --z-modal: 1000;
-  --z-modal-high: 1100;
-  --z-tooltip: 1200;
-  --z-toast: 2000;
+  /* --- ARQUITECTURA DE Z-INDEX (SISTEMA DE CAPAS) --- */
+  --z-normal: 1;
+  --z-navbar: 100;       /* Barra de navegación */
+  --z-sticky: 200;       /* Elementos pegajosos (headers de tablas) */
+  --z-drawer: 300;       /* Menú lateral móvil */
+  --z-backdrop: 900;     /* Fondo oscuro de modales */
+  
+  /* NIVELES DE MODALES */
+  --z-modal-base: 1000;  /* Modales estándar (Config, Agregar Producto) */
+  --z-modal-high: 1100;  /* Modales secundarios (Payment, Modificadores) */
+  --z-modal-top: 1200;   /* Modales críticos (Scanner, Auditoría, Alertas) */
+  
+  /* CAPA DE NOTIFICACIONES (Siempre encima de todo) */
+  --z-toast: 9999;
 
   /* Transición suave para evitar dolor de ojos */
   --transition: all 0.2s ease-in-out;
@@ -247,6 +254,13 @@ svg {
   transition: stroke var(--theme-transition-duration) ease, fill var(--theme-transition-duration) ease;
 }
 
+svg,
+svg rect,
+svg text,
+svg path {
+  transition: fill var(--theme-transition-duration) ease, stroke var(--theme-transition-duration) ease;
+}
+
 /* ===== UTILS: BADGES ===== */
 .status-badge {
   padding: 4px 10px;
@@ -292,7 +306,7 @@ svg {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: var(--z-modal);
+  z-index: var(--z-modal-base);
   padding: var(--spacing-md);
 }
 
@@ -339,4 +353,44 @@ svg {
 
 ::-webkit-scrollbar-thumb:hover {
   background-color: var(--text-light);
+}
+
+/* =========================================
+   ESTILOS GLOBALES DE PESTAÑAS (TABS)
+   Diseño moderno subrayado
+   ========================================= */
+
+.tabs-container {
+  display: flex;
+  gap: var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: var(--spacing-xl);
+  padding-left: var(--spacing-xs);
+  overflow-x: auto; /* Permite scroll horizontal en móviles */
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent; /* Línea invisible base */
+  padding: var(--spacing-sm) var(--spacing-xs);
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  margin-bottom: -1px; /* Solapamiento con la línea base */
+}
+
+.tab-btn:hover {
+  color: var(--text-color);
+}
+
+/* Estado Activo: Texto coloreado y línea inferior */
+.tab-btn.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  background-color: transparent;
+  font-weight: 600;
 }

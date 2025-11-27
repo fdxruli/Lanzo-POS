@@ -115,11 +115,6 @@ export default function PosPage() {
   };
 
   const handleProcessOrder = async (paymentData) => {
-    // ... (LÓGICA DE PAGO IDÉNTICA A LA ANTERIOR - NO CAMBIA) ...
-    // Copia toda la lógica de handleProcessOrder de tu archivo original aquí
-    // Solo asegúrate de cerrar el modal móvil al finalizar con éxito:
-    // setIsMobileOrderOpen(false); 
-
     // Validar Caja
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       setIsPaymentModalOpen(false);
@@ -234,6 +229,9 @@ export default function PosPage() {
 
       await saveData(STORES.SALES, sale);
 
+      // --- CORRECCIÓN AQUÍ: Nombre correcto de la función del store ---
+      useDashboardStore.getState().updateStatsWithSale(sale); 
+
       if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
         const customer = await loadData(STORES.CUSTOMERS, sale.customerId);
         if (customer) {
@@ -305,7 +303,6 @@ export default function PosPage() {
 
   const handleBarcodeScanned = (code) => {
     // ... lógica de escaneo ...
-    // Se mantiene igual, asegúrate de importarlo si lo usas
   };
 
   return (
