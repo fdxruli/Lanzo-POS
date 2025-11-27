@@ -1,3 +1,4 @@
+// src/components/dashboard/RecycleBin.jsx
 import React from 'react';
 import './RecycleBin.css'
 
@@ -6,7 +7,10 @@ export default function RecycleBin({ items, onRestoreItem }) {
     <div className="movement-history-container">
       <h3 className="subtitle">Papelera de Reciclaje</h3>
       {items.length === 0 ? (
-        <div className="empty-message">No hay elementos eliminados.</div>
+        /* CAMBIO AQUÍ: Usamos una clase específica */
+        <div className="recycle-empty-message">
+            No hay elementos eliminados recientemente.
+        </div>
       ) : (
         <div id="movement-history-list" className="movement-history-list">
           {items.map((item) => (

@@ -45,3 +45,20 @@
   font-weight: 600;
   color: var(--success-color);
 }
+
+/* Estilo para el botón de eliminar. 
+   Asumiendo que usa la clase .btn-delete global o similar.
+   Si .delete-order-btn es único, puedes estilizarlo aquí.
+*/
+.delete-order-btn {
+  background-color: transparent;
+  color: var(--error-color);
+  padding: var(--spacing-xs);
+  border: 1px solid var(--error-color);
+  font-size: 0.8rem;
+}
+
+.delete-order-btn:hover {
+  background-color: var(--error-color);
+  color: white;
+}

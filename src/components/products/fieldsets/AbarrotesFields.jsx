@@ -1,8 +1,22 @@
 // src/components/products/fieldsets/AbarrotesFields.jsx
 import React, { useEffect } from 'react';
 
+const COMMON_UNITS = [
+  { val: 'kg', label: 'Kilogramos (kg)' },
+  { val: 'lt', label: 'Litros (L)' },
+  { val: 'mt', label: 'Metros (m)' }, // Vital para Ferretería
+  { val: 'pza', label: 'Pieza (pza)' },
+  { val: 'gal', label: 'Galón (gal)' }, // Pintura/Líquidos
+  { val: 'cm', label: 'Centímetros (cm)' },
+  { val: 'ft', label: 'Pies (ft)' }, // Madera/Tubos
+  { val: 'in', label: 'Pulgadas (in)' },
+  { val: 'gr', label: 'Gramos (gr)' }, // Para cosas muy finas (semillas)
+  { val: 'ml', label: 'Mililitros (ml)' }
+];
+
 export default function AbarrotesFields({
   saleType, setSaleType,
+  unit, setUnit,
   onManageWholesale,
   minStock, setMinStock,
   maxStock, setMaxStock,
@@ -107,21 +121,43 @@ export default function AbarrotesFields({
             <select
               className="form-input"
               value={saleType}
-              onChange={(e) => setSaleType(e.target.value)}
+              onChange={(e) => {
+                setSaleType(e.target.value);
+                // Si cambia a unitario, forzamos 'pza'
+                if(e.target.value === 'unit') setUnit('pza');
+                // Si cambia a granel y estaba en pza, sugerimos kg o mt
+                else if(unit === 'pza') setUnit('kg');
+              }}
             >
               <option value="unit">Por Pieza/Unidad</option>
-              <option value="bulk">A Granel (Kg/Lt)</option>
+              <option value="bulk">A Granel / Fraccionado</option>
             </select>
           </div>
         )}
 
-        {features.hasWholesale && (
+        {saleType === 'bulk' && (
+          <div className="form-group">
+            <label className="form-label">Unidad de Medida</label>
+            <select
+              className="form-input"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              style={{ border: '2px solid var(--primary-color)' }} // Resaltar para que lo vean
+            >
+              {COMMON_UNITS.map(u => (
+                <option key={u.val} value={u.val}>{u.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {features.hasWholesale && saleType !== 'bulk' && (
           <div className="form-group">
             <label className="form-label">Precios Especiales</label>
             <button
               type="button"
               className="btn btn-secondary"
-              style={{ width: '100%', padding: '10px', fontSize: '0.9rem' }}
+              style={{ width: '100%' }}
               onClick={onManageWholesale}
             >
               Configurar Mayoreo
@@ -129,6 +165,12 @@ export default function AbarrotesFields({
           </div>
         )}
       </div>
+
+      <small style={{display:'block', marginBottom:'15px', color:'#666'}}>
+        {saleType === 'bulk' 
+          ? `El precio y costo que ingreses arriba será por cada 1 ${unit.toUpperCase()}.` 
+          : `El precio es por cada pieza unitaria.`}
+      </small>
 
       {/* 4. ALERTAS DE INVENTARIO */}
       {features.hasMinMax && (

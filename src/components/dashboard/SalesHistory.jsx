@@ -66,7 +66,7 @@ export default function SalesHistory({ sales, onDeleteSale }) {
               {/* Botón de Eliminar (Pie de la tarjeta) */}
               <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
                 <button
-                  className="btn-delete"
+                  className="delete-order-btn"
                   onClick={() => onDeleteSale(sale.timestamp)}
                 >
                   Eliminar Venta

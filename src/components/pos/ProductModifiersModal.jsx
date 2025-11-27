@@ -73,7 +73,7 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
     };
 
     return (
-        <div className="modal" style={{ display: 'flex', zIndex: 2200 }}>
+        <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-high)' }}>
             <div className="modal-content modifiers-modal">
                 <div className="modifiers-header">
                     <h2 className="modal-title">{product.name}</h2>

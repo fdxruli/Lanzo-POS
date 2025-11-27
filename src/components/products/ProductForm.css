@@ -9,12 +9,28 @@
   box-shadow: var(--box-shadow);
 }
 
+.form-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-weight: 500;
+  color: var(--text-dark);
+}
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  /* Estilos base ya están en index.css */
+}
+
 /* Botón de ayuda (ej. Calcular Costo, Administrar Categorías) */
 .btn-help {
   background-color: var(--light-background);
   color: var(--primary-color);
-  border: 1px solid #e5e7eb;
-  /* TODO: Usar variable */
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: 0.875rem;
   margin-top: var(--spacing-xs);
@@ -36,13 +52,37 @@
   height: 100px;
   border-radius: var(--border-radius-sm);
   object-fit: cover;
-  border: 1px solid #e5e7eb;
-  /* TODO: Usar variable */
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
 }
 
 .file-input {
   flex-grow: 1;
   padding: var(--spacing-xs);
+}
+
+/* Botones de Guardar y Cancelar */
+.btn-save {
+  background-color: var(--primary-color);
+  color: white;
+  width: 100%;
+  margin-bottom: var(--spacing-sm);
+}
+
+.btn-save:hover {
+  background-color: #5558e3; /* TODO: Usar variable */
+}
+
+.btn-cancel {
+  background-color: transparent;
+  color: var(--text-light);
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  width: 100%;
+}
+
+.btn-cancel:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--error-color);
+  border-color: var(--error-color);
 }
 
 .input-with-button {
@@ -52,19 +92,16 @@
 }
 
 .input-with-button .form-input {
-  flex-grow: 1;
-  /* El input ocupa el espacio disponible */
+  flex-grow: 1; /* El input ocupa el espacio disponible */
 }
 
 .btn-scan-inline {
-  flex-shrink: 0;
-  /* Evita que el botón se encoja */
+  flex-shrink: 0; /* Evita que el botón se encoja */
   padding: var(--spacing-sm);
   background-color: var(--secondary-color);
   color: white;
   font-size: 1.2rem;
-  line-height: 1;
-  /* Asegura que el emoji esté centrado */
+  line-height: 1; /* Asegura que el emoji esté centrado */
 }
 
 .btn-scan-inline:hover {
@@ -78,8 +115,7 @@
   color: white;
   font-size: 1.2rem;
   line-height: 1;
-  width: 52px;
-  /* Ancho fijo para que no salte al cambiar '...' por '🔍' */
+  width: 52px; /* Ancho fijo para que no salte al cambiar '...' por '🔍' */
   text-align: center;
 }
 
@@ -106,26 +142,23 @@
   cursor: pointer;
   font-weight: 500;
   font-size: 0.9rem;
-  text-decoration: none;
-  /* Quitamos el subrayado por defecto */
+  text-decoration: none; /* Quitamos el subrayado por defecto */
 }
 
 .btn-toggle-specific:hover {
   color: var(--secondary-color);
-  text-decoration: underline;
-  /* Subrayado en hover */
+  text-decoration: underline; /* Subrayado en hover */
 }
 
 /* Contenedor para los campos específicos/opcionales */
 .specific-data-container {
   /* Animación suave de entrada */
   animation: fadeIn 0.3s ease-in-out;
-
+  
   /* Separador visual */
   margin-top: var(--spacing-lg);
   padding-top: var(--spacing-lg);
-  border-top: 2px dashed #e5e7eb;
-  /* TODO: Usar variable */
+  border-top: 2px dashed #e5e7eb; /* TODO: Usar variable */
 }
 
 @keyframes fadeIn {
@@ -133,7 +166,6 @@
     opacity: 0;
     transform: translateY(-10px);
   }
-
   to {
     opacity: 1;
     transform: translateY(0);

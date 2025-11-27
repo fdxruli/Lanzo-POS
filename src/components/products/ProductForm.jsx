@@ -9,7 +9,7 @@ import './ProductForm.css';
 // -- IMPORTACIÓN DE LOS MINI-FORMULARIOS (FIELDSETS) ---
 import RestauranteFields from './fieldsets/RestauranteFields';
 import AbarrotesFields from './fieldsets/AbarrotesFields';
-import FarmaciaFields from './fieldsets/FarmaciaFIelds'; // Nota: Mantenemos el nombre del import como está en tu archivo original
+import FarmaciaFields from './fieldsets/FarmaciaFIelds';
 
 // --- IMPORTACIÓN DE LOS MODALES DE GESTIÓN ---
 import RecipeBuilderModal from './RecipeBuilderModal';
@@ -40,7 +40,6 @@ export default function ProductForm({
     const [productType, setProductType] = useState('sellable'); // 'sellable' o 'ingredient'
     const [recipe, setRecipe] = useState([]);
     const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
-    // NUEVO: Estación de impresión (Cocina/Barra)
     const [printStation, setPrintStation] = useState('kitchen');
     const [prepTime, setPrepTime] = useState('');
     const [modifiers, setModifiers] = useState([]);
@@ -49,7 +48,6 @@ export default function ProductForm({
     const [saleType, setSaleType] = useState('unit');
     const [wholesaleTiers, setWholesaleTiers] = useState([]);
     const [isWholesaleModalOpen, setIsWholesaleModalOpen] = useState(false);
-    // NUEVO: Puntos de reorden (Stock Mínimo/Máximo)
     const [minStock, setMinStock] = useState('');
     const [maxStock, setMaxStock] = useState('');
     const [cost, setCost] = useState('');
@@ -59,7 +57,6 @@ export default function ProductForm({
     // Farmacia
     const [sustancia, setSustancia] = useState('');
     const [laboratorio, setLaboratorio] = useState('');
-    // NUEVO: Control de antibióticos y presentación
     const [requiresPrescription, setRequiresPrescription] = useState(false);
     const [presentation, setPresentation] = useState('');
 
@@ -117,7 +114,8 @@ export default function ProductForm({
                 productToEdit.categoryId ||
                 productToEdit.image ||
                 productToEdit.sustancia ||
-                productToEdit.minStock
+                productToEdit.minStock ||
+                productToEdit.requiresPrescription
             ) {
                 setShowSpecificData(true);
             } else {
@@ -211,6 +209,23 @@ export default function ProductForm({
     const handleSubmit = (e) => {
         e.preventDefault();
 
+        // LÓGICA DE SEGURIDAD PARA FARMACIA (CORRECCIÓN PRINCIPAL)
+        let finalSaleType = 'unit';
+        let finalBulkData = null;
+
+        // Si requiere receta, FORZAMOS unidad (no se puede vender antibiótico a granel)
+        if (features.hasLabFields && requiresPrescription) {
+             finalSaleType = 'unit';
+             finalBulkData = null;
+        } 
+        // Si no es medicamento controlado, revisamos si aplica granel (Frutería/Abarrotes)
+        else if (features.hasBulk) {
+            if (saleType === 'bulk' || (features.hasDailyPricing && unit !== 'pza')) {
+                finalSaleType = 'bulk';
+                finalBulkData = { purchase: { unit: unit || 'kg' } };
+            }
+        }
+
         let productData = {
             // Comunes
             name, barcode, description, categoryId,
@@ -223,8 +238,10 @@ export default function ProductForm({
             prepTime: features.hasRecipes ? prepTime : null,
             modifiers: features.hasRecipes ? modifiers : [],
 
-            // Abarrotes / Ferretería
-            saleType: features.hasBulk ? saleType : 'unit',
+            // Abarrotes / Ferretería / Frutería (Gestión de Stock/Precios)
+            saleType: finalSaleType, // <--- Usamos el valor calculado arriba
+            bulkData: finalBulkData, // <--- Usamos el valor calculado arriba
+            
             wholesaleTiers: features.hasWholesale ? wholesaleTiers : [],
             minStock: features.hasMinMax ? parseFloat(minStock) : null,
             maxStock: features.hasMinMax ? parseFloat(maxStock) : null,
@@ -238,10 +255,8 @@ export default function ProductForm({
             requiresPrescription: features.hasLabFields ? requiresPrescription : false,
             presentation: features.hasLabFields ? presentation : null,
 
-            //Fruteria
+            // Fruteria (Pricing Diario)
             shelfLife: features.hasDailyPricing ? shelfLife : null,
-            bulkData: (features.hasBulk) ? { purchase: { unit: unit } } : null,
-            saleType: (features.hasBulk && unit !== 'pza') ? 'bulk' : 'unit,'
         };
 
         onSave(productData, internalEditingProduct);
@@ -353,6 +368,8 @@ export default function ProductForm({
                         <AbarrotesFields
                             saleType={saleType}
                             setSaleType={setSaleType}
+                            unit={unit}
+                            setUnit={setUnit}
                             onManageWholesale={() => setIsWholesaleModalOpen(true)}
                             minStock={minStock}
                             setMinStock={setMinStock}

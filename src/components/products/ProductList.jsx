@@ -4,7 +4,7 @@ import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useDashboardStore } from '../../store/useDashboardStore';
 import WasteModal from './WasteModal';
-import './ProductList.module.css';
+import './ProductList.css';
 
 const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
 

@@ -30,7 +30,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       if (paymentMethod === 'efectivo') {
         setAmountPaid(total.toFixed(2));
       } else {
-        setAmountPaid('');   
+        setAmountPaid('');
       }
     } else {
       // Limpiar al cerrar
@@ -45,19 +45,19 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
   // Lógica de cálculo
   const paid = parseFloat(amountPaid) || 0;
-  
+
   // Lógica condicional
   const isEfectivo = paymentMethod === 'efectivo';
   const isFiado = paymentMethod === 'fiado';
-  
+
   // Cálculo de Cambio (Efectivo)
   const change = isEfectivo ? paid - total : 0;
-  
+
   // Cálculo de Saldo (Fiado)
   const saldoPendiente = isFiado ? total - paid : 0;
 
   // Validación para confirmar
-  const canConfirm = isEfectivo 
+  const canConfirm = isEfectivo
     ? (paid >= total) // Si es efectivo, debe pagar completo
     : (selectedCustomerId !== null); // Si es fiado, debe tener cliente
 
@@ -91,7 +91,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!canConfirm) return;
-    
+
     onConfirm({
       amountPaid: paid, // Será 0 si es fiado y no abona
       customerId: selectedCustomerId,
@@ -100,7 +100,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       sendReceipt: sendReceipt
     });
   };
-  
+
   // --- NUEVO: Handler para el cliente guardado ---
   const handleQuickCustomerSaved = (newCustomer) => {
     // Añadir el nuevo cliente a la lista local
@@ -110,7 +110,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     // Cerrar el modal rápido
     setIsQuickAddOpen(false);
   };
-  
+
   // --- NUEVO: Cambiar el input de monto al cambiar método ---
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method);
@@ -127,7 +127,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
   return (
     <>
-      <div id="payment-modal" className="modal" style={{ display: 'flex' }}>
+      <div id="payment-modal" className="modal" style={{ display: 'flex'}}>
         <div className="modal-content">
           <h2 className="modal-title">Procesar Pago</h2>
           <form onSubmit={handleSubmit}>
@@ -139,14 +139,14 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
               <div className="form-group">
                 <label className="form-label">Método de Pago:</label>
                 <div className="payment-method-selector">
-                  <button 
+                  <button
                     type="button"
                     className={`btn-method ${isEfectivo ? 'active' : ''}`}
                     onClick={() => handlePaymentMethodChange('efectivo')}
                   >
                     Efectivo
                   </button>
-                  <button 
+                  <button
                     type="button"
                     className={`btn-method ${isFiado ? 'active' : ''}`}
                     onClick={() => handlePaymentMethodChange('fiado')}
@@ -155,7 +155,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   </button>
                 </div>
               </div>
-              
+
               {/* --- SECCIÓN DE CLIENTE MODIFICADA --- */}
               <div className="form-group customer-search-wrapper">
                 <label className="form-label" htmlFor="sale-customer-input">
@@ -184,15 +184,15 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   </div>
                 )}
                 {/* --- NUEVO: Botón de añadir rápido --- */}
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn-quick-add"
                   onClick={() => setIsQuickAddOpen(true)}
                 >
                   + Nuevo Cliente
                 </button>
               </div>
-              
+
               {/* --- LÓGICA CONDICIONAL DE MONTO --- */}
               <label className="payment-input-label" htmlFor="payment-amount">
                 {isEfectivo ? 'Monto Recibido:' : 'Abono (Opcional):'}
@@ -208,7 +208,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                 onFocus={handleAmountFocus}
                 required={isEfectivo} // Solo requerido si es efectivo
               />
-              
+
               {/* --- LÓGICA CONDICIONAL DE CAMBIO/SALDO --- */}
               {isEfectivo ? (
                 <>
@@ -226,7 +226,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                 </>
               )}
             </div>
-            
+
             {selectedCustomerId && (
               <div className="form-group-checkbox">
                 <input
@@ -239,17 +239,17 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
               </div>
             )}
 
-            <button 
-              id="confirm-payment-btn" 
-              className="btn btn-confirm" 
+            <button
+              id="confirm-payment-btn"
+              className="btn btn-confirm"
               type="submit"
               disabled={!canConfirm}
             >
               Confirmar Pago
             </button>
-            <button 
-              id="cancel-payment-btn" 
-              className="btn btn-cancel-payment" 
+            <button
+              id="cancel-payment-btn"
+              className="btn btn-cancel-payment"
               type="button"
               onClick={onClose}
             >
@@ -258,7 +258,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
           </form>
         </div>
       </div>
-      
+
       {/* --- RENDER DEL NUEVO MODAL --- */}
       <QuickAddCustomerModal
         show={isQuickAddOpen}

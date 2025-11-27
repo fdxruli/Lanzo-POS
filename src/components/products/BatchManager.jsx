@@ -1,15 +1,13 @@
-// src/components/products/BatchManager.jsx
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useDashboardStore } from '../../store/useDashboardStore';
 import { saveData, STORES, deleteData } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useCaja } from '../../hooks/useCaja';
 import './BatchManager.css';
-import { Menu } from 'lucide-react';
 
 /**
- * Formulario para añadir o editar un lote O variante (Modal)
+ * Formulario Optimizado (Compatible con Ropa, Farmacia y Restaurante)
  */
 const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) => {
   // --- Estados Comunes ---
@@ -23,24 +21,24 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
 
   // --- Estados para Variantes (Ropa/Ferretería) ---
   const [sku, setSku] = useState('');
-  const [attribute1, setAttribute1] = useState('');
-  const [attribute2, setAttribute2] = useState('');
+  const [attribute1, setAttribute1] = useState(''); // Talla
+  const [attribute2, setAttribute2] = useState(''); // Color
 
-  // Estado para pagar desde caja
   const [pagadoDeCaja, setPagadoDeCaja] = useState(false);
+  
+  // Referencia para enfocar el primer input al guardar y continuar
+  const firstInputRef = useRef(null);
 
-  // Acceso a la caja
   const { registrarMovimiento, cajaActual } = useCaja();
-
   const isEditing = !!batchToEdit;
 
   useEffect(() => {
     if (isEditing) {
+      // --- MODO EDICIÓN ---
       setCost(batchToEdit.cost);
       setPrice(batchToEdit.price);
       setStock(batchToEdit.stock);
       setNotes(batchToEdit.notes || '');
-
       if (features.hasLots) {
         setExpiryDate(batchToEdit.expiryDate ? batchToEdit.expiryDate.split('T')[0] : '');
       }
@@ -51,9 +49,12 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
         setAttribute2(attrs.color || attrs.marca || '');
       }
     } else {
-      let calculatedCost = '';
-
-      if (product.recipe && product.recipe.length > 0) {
+      // --- MODO CREACIÓN (Lógica Inteligente Restaurada) ---
+      
+      // 1. Intentamos calcular costo desde receta (Para Restaurantes)
+      let initialCost = product.cost || '';
+      
+      if (features.hasRecipes && product.recipe && product.recipe.length > 0) {
         const totalRecipeCost = product.recipe.reduce((sum, item) => {
           const ingredient = menu.find(p => p.id === item.ingredientId);
           const unitCost = ingredient?.cost || 0;
@@ -61,66 +62,63 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
         }, 0);
 
         if (totalRecipeCost > 0) {
-          calculatedCost = totalRecipeCost.toFixed(2);
+          initialCost = totalRecipeCost.toFixed(2);
         }
       }
 
-      setCost(calculatedCost);
-      setPrice(product.price || '');
-
+      setCost(initialCost);
+      setPrice(product.price || ''); // Hereda precio base (Optimización Ropa)
       setStock('');
       setNotes('');
       setPagadoDeCaja(false);
 
       if (features.hasLots) setExpiryDate('');
+      
       if (features.hasVariants) {
         setSku('');
         setAttribute1('');
-        setAttribute2('');
+        // Nota: No borramos attribute2 (Color) para agilizar la carga de tallas del mismo color
+        setAttribute2(''); 
       }
     }
   }, [batchToEdit, isEditing, features, product, menu]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // Generador de SKU Automático
+  const generateAutoSku = () => {
+    if (sku.trim()) return sku; 
+    
+    const cleanName = product.name.replace(/\s+/g, '').toUpperCase().substring(0, 4);
+    const attr1Code = attribute1.replace(/\s+/g, '').toUpperCase();
+    const attr2Code = attribute2.replace(/\s+/g, '').toUpperCase().substring(0, 3);
+    
+    return `${cleanName}-${attr2Code}-${attr1Code}-${Date.now().toString().slice(-4)}`;
+  };
 
+  const handleProcessSave = async (shouldClose) => {
     const nStock = parseInt(stock, 10);
     const nCost = parseFloat(cost);
     const nPrice = parseFloat(price);
 
     if (isNaN(nStock) || isNaN(nCost) || isNaN(nPrice)) {
       showMessageModal("Por favor, ingresa valores numéricos válidos.");
-      return;
+      return false;
     }
 
     // Lógica de pago desde caja
     if (pagadoDeCaja && !isEditing) {
-      if (product.BatchManager?.enabled) {
-        if (product.shelfLife && product.shelfLife > 0) {
-          const today = new Date();
-          today.setDate(today.getDate() + parseInt(product.shelfLife));
-          setExpiryDate(today.toISOString().split('T')[0]);
-        } else {
-          setExpiryDate('');
+        if (!cajaActual || cajaActual.estado !== 'abierta') {
+            showMessageModal("⚠️ La caja está cerrada. Abre la caja para registrar el pago.");
+            return false;
         }
-      }
-      if (!cajaActual || cajaActual.estado !== 'abierta') {
-        showMessageModal("⚠️ La caja está cerrada. Abre la caja para registrar el pago.");
-        return;
-      }
-
-      const totalCosto = nCost * nStock;
-      const conceptoSalida = `Compra Stock: ${product.name} (x${nStock})`;
-
-      const exito = await registrarMovimiento('salida', totalCosto, conceptoSalida);
-
-      if (!exito) {
-        showMessageModal("Error al registrar la salida de dinero.");
-        return;
-      }
+        const totalCosto = nCost * nStock;
+        const exito = await registrarMovimiento('salida', totalCosto, `Compra Stock: ${product.name} (x${nStock})`);
+        if (!exito) {
+            showMessageModal("Error al registrar la salida de dinero.");
+            return false;
+        }
     }
 
-    const now = new Date().toISOString();
+    const finalSku = features.hasVariants ? generateAutoSku() : null;
 
     const batchData = {
       id: isEditing ? batchToEdit.id : `batch-${product.id}-${Date.now()}`,
@@ -131,9 +129,9 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
       notes: notes || null,
       trackStock: nStock > 0,
       isActive: nStock > 0,
-      createdAt: isEditing ? batchToEdit.createdAt : now,
+      createdAt: isEditing ? batchToEdit.createdAt : new Date().toISOString(),
       expiryDate: (features.hasLots && expiryDate) ? expiryDate : null,
-      sku: features.hasVariants ? sku : null,
+      sku: finalSku,
       attributes: features.hasVariants ? {
         talla: attribute1,
         color: attribute2
@@ -141,7 +139,26 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
     };
 
     await onSave(batchData);
-    onClose();
+
+    if (shouldClose) {
+        onClose();
+    } else {
+        // --- FLUJO RÁPIDO (Agilidad para Ropa) ---
+        setStock('');
+        // Solo limpiamos Talla y SKU, mantenemos Color, Costo y Precio
+        setAttribute1(''); 
+        setSku('');
+        showMessageModal('Guardado. Agrega la siguiente talla.', null, { type: 'success' });
+        
+        // Re-enfocar el input de Talla/Modelo para seguir escribiendo sin usar el mouse
+        setTimeout(() => {
+            // Buscamos el input de Talla (Attribute 1)
+            const tallaInput = document.getElementById('input-talla');
+            if(tallaInput) tallaInput.focus();
+            else if(firstInputRef.current) firstInputRef.current.focus();
+        }, 100);
+    }
+    return true;
   };
 
   return (
@@ -150,41 +167,72 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
         <h2 className="modal-title">{isEditing ? 'Editar' : 'Registrar'} {features.hasVariants ? 'Variante' : 'Lote'}</h2>
         <p>Producto: <strong>{product.name}</strong></p>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={(e) => e.preventDefault()}>
           {features.hasVariants && (
             <>
               <div className="form-group">
-                <label>SKU (Opcional)</label>
-                <input type="text" placeholder="Ej: PLA-R-M" value={sku} onChange={(e) => setSku(e.target.value)} />
+                <label>Color / Marca / Material-'Ferreteria'</label>
+                <input 
+                    ref={firstInputRef}
+                    type="text" 
+                    placeholder="Ej: Rojo, Nike, Acero" 
+                    value={attribute2} 
+                    onChange={(e) => setAttribute2(e.target.value)} 
+                    className="form-input"
+                />
               </div>
               <div className="form-group">
-                <label>Atributo 1 (Ej: Talla, Modelo)</label>
-                <input type="text" placeholder="Ej: M" value={attribute1} onChange={(e) => setAttribute1(e.target.value)} />
+                <label>Talla / Modelo / Dimensiones-'Ferreteria'</label>
+                <input 
+                    id="input-talla" /* ID para el auto-focus */
+                    type="text" 
+                    placeholder="Ej: M, 28 mx, 10cm" 
+                    value={attribute1} 
+                    onChange={(e) => setAttribute1(e.target.value)} 
+                    className="form-input"
+                />
               </div>
               <div className="form-group">
-                <label>Atributo 2 (Ej: Color, Marca)</label>
-                <input type="text" placeholder="Ej: Rojo" value={attribute2} onChange={(e) => setAttribute2(e.target.value)} />
+                <label>SKU (Auto-generado si se deja vacío)</label>
+                <input 
+                    type="text" 
+                    placeholder="Generar automático..." 
+                    value={sku} 
+                    onChange={(e) => setSku(e.target.value)} 
+                    className="form-input"
+                />
               </div>
             </>
           )}
 
-          <div className="form-group">
-            <label>Costo Unitario ($) *</label>
-            <input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} required />
+          <div style={{display: 'flex', gap: '10px'}}>
+             <div className="form-group" style={{flex: 1}}>
+                <label>Costo Unitario ($)</label>
+                <input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} className="form-input" />
+             </div>
+             <div className="form-group" style={{flex: 1}}>
+                <label>Precio Venta ($)</label>
+                <input type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className="form-input" />
+             </div>
           </div>
+
           <div className="form-group">
-            <label>Precio Venta ($) *</label>
-            <input type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required />
-          </div>
-          <div className="form-group">
-            <label>Stock Actual *</label>
-            <input type="number" min="0" step="1" value={stock} onChange={(e) => setStock(e.target.value)} required />
+            <label>Cantidad (Stock) *</label>
+            <input 
+                type="number" 
+                min="0" 
+                step="1" 
+                value={stock} 
+                onChange={(e) => setStock(e.target.value)} 
+                className="form-input"
+                style={{ fontSize: '1.2rem', fontWeight: 'bold' }}
+            />
           </div>
 
           {features.hasLots && (
             <div className="form-group">
               <label>Fecha Caducidad</label>
-              <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+              <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="form-input" />
             </div>
           )}
 
@@ -194,20 +242,36 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
           </div>
 
           {!isEditing && (
-            <div className="form-group-checkbox" style={{ marginTop: '10px', padding: '10px', backgroundColor: '#fff3cd', borderRadius: '8px' }}>
+            <div className="form-group-checkbox" style={{ marginTop: '5px', padding: '8px', backgroundColor: '#fff3cd', borderRadius: '8px' }}>
               <input
                 type="checkbox"
                 id="pay-from-caja"
                 checked={pagadoDeCaja}
                 onChange={(e) => setPagadoDeCaja(e.target.checked)}
               />
-              <label htmlFor="pay-from-caja">💸 Pagar con dinero de Caja</label>
+              <label htmlFor="pay-from-caja" style={{fontSize: '0.9rem'}}>💸 Pagar con dinero de Caja</label>
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-            <button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn btn-save">Guardar</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
+            {/* BOTÓN PRINCIPAL: GUARDAR Y AGREGAR OTRO */}
+            {!isEditing && (
+                <button 
+                    type="button" 
+                    className="btn btn-save" 
+                    onClick={() => handleProcessSave(false)}
+                    style={{ backgroundColor: 'var(--secondary-color)' }}
+                >
+                    💾 Guardar y Agregar Otra Talla/Lote
+                </button>
+            )}
+            
+            <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" className="btn btn-cancel" onClick={onClose} style={{flex: 1}}>Cancelar</button>
+                <button type="button" className="btn btn-primary" onClick={() => handleProcessSave(true)} style={{flex: 1}}>
+                    {isEditing ? 'Actualizar' : 'Guardar y Cerrar'}
+                </button>
+            </div>
           </div>
         </form>
       </div>
@@ -222,50 +286,43 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   const features = useFeatureConfig();
   const rawProducts = useDashboardStore((state) => state.rawProducts);
   const refreshData = useDashboardStore((state) => state.loadAllData);
-
   const menu = useDashboardStore((state) => state.menu);
-
   const loadBatchesForProduct = useDashboardStore((state) => state.loadBatchesForProduct);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [batchToEdit, setBatchToEdit] = useState(null);
   const [localBatches, setLocalBatches] = useState([]);
   const [isLoadingBatches, setIsLoadingBatches] = useState(false);
-
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  // Sincronizar buscador
   useEffect(() => {
     if (selectedProductId) {
       const prod = rawProducts.find(p => p.id === selectedProductId);
-      if (prod) {
-        setSearchTerm(prod.name);
-      }
+      if (prod) setSearchTerm(prod.name);
     } else {
-      setSearchTerm('');
+        setSearchTerm('');
     }
   }, [selectedProductId, rawProducts]);
 
   const filteredProducts = useMemo(() => {
     if (!searchTerm) return [];
     const lower = searchTerm.toLowerCase();
-    return rawProducts
-      .filter(p => p.name.toLowerCase().includes(lower))
-      .slice(0, 10);
+    return rawProducts.filter(p => p.name.toLowerCase().includes(lower)).slice(0, 10);
   }, [searchTerm, rawProducts]);
 
   const selectedProduct = useMemo(() => {
     return rawProducts.find(p => p.id === selectedProductId);
   }, [selectedProductId, rawProducts]);
 
-  // CORRECCIÓN 2: Sintaxis del useEffect arreglada (paréntesis y dependencias)
+  // Cargar lotes
   useEffect(() => {
     const fetchBatches = async () => {
       if (selectedProductId) {
         setIsLoadingBatches(true);
         try {
           const batches = await loadBatchesForProduct(selectedProductId);
-          // Aseguramos que sea un array para evitar error de .sort
           setLocalBatches(Array.isArray(batches) ? batches : []);
         } catch (error) {
           console.error("Error cargando lotes:", error);
@@ -280,27 +337,13 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     fetchBatches();
   }, [selectedProductId, loadBatchesForProduct]);
 
-  // CORRECCIÓN 3: Validación de seguridad en el sort
   const productBatches = useMemo(() => {
     if (!selectedProductId || !localBatches) return [];
     return [...localBatches].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [selectedProductId, localBatches]);
 
-  const inventoryValue = useMemo(() => {
-    return productBatches.reduce((sum, b) => sum + (b.cost * b.stock), 0);
-  }, [productBatches]);
-
-  const totalStock = useMemo(() => {
-    return productBatches.reduce((sum, b) => sum + b.stock, 0);
-  }, [productBatches]);
-
-  const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value);
-    setShowSuggestions(true);
-    if (e.target.value === '') {
-      onProductSelect(null);
-    }
-  };
+  const totalStock = productBatches.reduce((sum, b) => sum + b.stock, 0);
+  const inventoryValue = productBatches.reduce((sum, b) => sum + (b.cost * b.stock), 0);
 
   const handleSelectProduct = (product) => {
     setSearchTerm(product.name);
@@ -308,53 +351,20 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     setShowSuggestions(false);
   }
 
-  const handleClearSearch = () => {
-    setSearchTerm('');
-    onProductSelect(null);
-    setShowSuggestions(false);
-  }
-
-  const handleSaveStrategy = async (e) => {
-    const newStrategy = e.target.value;
-    if (selectedProduct) {
-      const updatedProduct = {
-        ...selectedProduct,
-        batchManagement: {
-          ...selectedProduct.batchManagement,
-          enabled: true,
-          selectionStrategy: newStrategy,
-        },
-        updatedAt: new Date().toISOString()
-      };
-      await saveData(STORES.MENU, updatedProduct);
-      await refreshData(); // Recarga para actualizar la vista global
-      showMessageModal('Estrategia actualizada.');
-    }
-  };
-
   const handleSaveBatch = async (batchData) => {
     try {
-      // Activar gestión de lotes si no estaba activa
       if (selectedProduct && !selectedProduct.batchManagement?.enabled) {
         const updatedProduct = {
           ...selectedProduct,
-          batchManagement: {
-            enabled: true,
-            selectionStrategy: 'fifo'
-          }
+          batchManagement: { enabled: true, selectionStrategy: 'fifo' }
         };
         await saveData(STORES.MENU, updatedProduct);
       }
 
       await saveData(STORES.PRODUCT_BATCHES, batchData);
-
-      // Recargar solo los lotes locales para rapidez
       const updatedBatches = await loadBatchesForProduct(selectedProductId);
       setLocalBatches(updatedBatches);
-
-      // Actualizar vista global en segundo plano
-      await refreshData(true);
-      showMessageModal('Guardado exitosamente.');
+      await refreshData(true); 
     } catch (error) {
       console.error(error);
       showMessageModal(`Error: ${error.message}`);
@@ -368,7 +378,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
 
   const handleDeleteBatch = async (batch) => {
     if (batch.stock > 0) {
-      showMessageModal("No puedes eliminar un lote con stock. Pon el stock en 0 primero.");
+      showMessageModal("No puedes eliminar con stock disponible. Pon el stock en 0 primero.");
       return;
     }
     if (window.confirm('¿Eliminar este registro permanentemente?')) {
@@ -377,13 +387,11 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
         const updatedBatches = await loadBatchesForProduct(selectedProductId);
         setLocalBatches(updatedBatches);
         refreshData(true);
-        showMessageModal('Eliminado.');
-      } catch (error) {
-        console.error(error);
-      }
+      } catch (error) { console.error(error); }
     }
   };
 
+  // Formato de fecha seguro
   const formatDate = (iso) => iso ? new Date(iso).toLocaleDateString() : '-';
 
   return (
@@ -394,98 +402,71 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
           <input
             type="text"
             className="form-input product-search-input"
-            placeholder="Escribe para buscar (ej. Huevo, Paracetamol)..."
+            placeholder="Buscar producto..."
             value={searchTerm}
-            onChange={handleSearchChange}
+            onChange={(e) => { setSearchTerm(e.target.value); setShowSuggestions(true); }}
             onFocus={() => setShowSuggestions(true)}
-            // Retrasamos el blur para permitir el click en la lista
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
           />
-
-          {searchTerm && (
-            <button className="btn-clear-search" onClick={handleClearSearch}>×</button>
-          )}
-
+          {searchTerm && <button className="btn-clear-search" onClick={() => { setSearchTerm(''); onProductSelect(null); }}>×</button>}
+          
           {showSuggestions && searchTerm && (
             <div className="product-suggestions-list">
-              {filteredProducts.length === 0 ? (
-                <div style={{ padding: '10px', color: '#666', fontStyle: 'italic' }}>
-                  No se encontraron productos.
+              {filteredProducts.map(p => (
+                <div key={p.id} className="product-suggestion-item" onMouseDown={() => handleSelectProduct(p)}>
+                  <span className="suggestion-name">{p.name}</span>
+                  {/* --- RECUPERADO: Muestra el stock para referencia rápida --- */}
+                  <span className="suggestion-meta">Stock: {p.stock || 0}</span>
                 </div>
-              ) : (
-                filteredProducts.map(p => (
-                  <div
-                    key={p.id}
-                    className="product-suggestion-item"
-                    onMouseDown={() => handleSelectProduct(p)} // onMouseDown ocurre antes que onBlur
-                  >
-                    <span className="suggestion-name">{p.name}</span>
-                    <span className="suggestion-meta">Stock Actual: {p.stock || 0}</span>
-                  </div>
-                ))
-              )}
+              ))}
             </div>
           )}
         </div>
       </div>
 
-      {isLoadingBatches && <p style={{ textAlign: 'center', color: '#666' }}>Cargando...</p>}
-
-      {!isLoadingBatches && !selectedProduct && !searchTerm && (
-        <p style={{ textAlign: 'center', color: 'var(--text-light)', marginTop: '20px' }}>
-          👆 Busca un producto arriba para gestionar sus lotes.
-        </p>
+      {!selectedProduct && !isLoadingBatches && (
+        <p style={{ textAlign: 'center', color: '#888', marginTop: '20px' }}>Selecciona un producto para comenzar.</p>
       )}
 
-      {!isLoadingBatches && selectedProduct && (
+      {selectedProduct && (
         <div className="batch-details-container">
           <div className="batch-controls">
-            {!features.hasVariants && (
-              <div className="form-group batch-strategy">
-                <label>Estrategia:</label>
-                <select
-                  className="form-input"
-                  value={selectedProduct.batchManagement?.selectionStrategy || 'fifo'}
-                  onChange={handleSaveStrategy}
-                >
-                  <option value="fifo">FIFO (Primero entra, primero sale)</option>
-                  <option value="lifo">LIFO (Último entra, primero sale)</option>
-                </select>
-              </div>
-            )}
-            <button className="btn btn-save" onClick={() => { setBatchToEdit(null); setIsModalOpen(true); }}>
-              + Nuevo Ingreso
-            </button>
+             <h4 style={{margin:0, fontSize:'1rem'}}>
+                Lotes/Variantes: {productBatches.length} <br/>
+                <span style={{color:'var(--text-light)', fontSize:'0.9rem'}}>Stock Total: {totalStock} | Valor: ${inventoryValue.toFixed(2)}</span>
+             </h4>
+             <button className="btn btn-save" onClick={() => { setBatchToEdit(null); setIsModalOpen(true); }}>
+               + Nuevo Ingreso
+             </button>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
             <table className="batch-list-table">
               <thead>
                 <tr>
-                  {features.hasVariants && <th>Variante / SKU</th>}
+                  {features.hasVariants ? <th>Variante</th> : <th>Fecha</th>}
+                  {features.hasVariants && <th>SKU</th>}
                   {features.hasLots && <th>Caducidad</th>}
-                  <th>Costo</th>
                   <th>Precio</th>
                   <th>Stock</th>
-                  <th>Acciones</th>
+                  <th>Acción</th>
                 </tr>
               </thead>
               <tbody>
                 {productBatches.map(batch => (
                   <tr key={batch.id} className={!batch.isActive ? 'inactive-batch' : ''}>
-                    {features.hasVariants && (
-                      <td>
-                        {batch.attributes?.talla} {batch.attributes?.color} <br />
-                        <small>{batch.sku}</small>
-                      </td>
-                    )}
+                    <td>
+                       {features.hasVariants ? (
+                           <><strong>{batch.attributes?.talla || '-'}</strong> {batch.attributes?.color}</>
+                       ) : (
+                           <>{formatDate(batch.createdAt)}</>
+                       )}
+                    </td>
+                    {features.hasVariants && <td><small>{batch.sku}</small></td>}
                     {features.hasLots && <td>{formatDate(batch.expiryDate)}</td>}
-                    <td>${batch.cost.toFixed(2)}</td>
                     <td>${batch.price.toFixed(2)}</td>
                     <td>
-                      {batch.stock}
-                      {batch.stock < 5 && batch.stock > 0 && <span className="batch-badge bajo">Bajo</span>}
-                      {batch.stock === 0 && <span className="batch-badge agotado">0</span>}
+                        <span className={`batch-badge ${batch.stock > 0 ? 'activo' : 'agotado'}`}>{batch.stock}</span>
                     </td>
                     <td>
                       <button className="btn-action" onClick={() => handleEditBatch(batch)}>✏️</button>
@@ -495,11 +476,6 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
                 ))}
               </tbody>
             </table>
-          </div>
-
-          <div className="batch-summary">
-            <p>Stock Total: {totalStock}</p>
-            <p>Valor Inventario: ${inventoryValue.toFixed(2)}</p>
           </div>
         </div>
       )}

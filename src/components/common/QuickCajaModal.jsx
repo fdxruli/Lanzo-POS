@@ -25,7 +25,7 @@ export default function QuickCajaModal({ show, onClose, onConfirm }) {
   }
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 2100 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }}>
       <div className="modal-content">
         <h2 className="modal-title">Abrir Caja Rápido</h2>
         <p>No hay una caja abierta. Ingresa el monto inicial para comenzar.</p>

@@ -1,6 +1,9 @@
 /*
  * Estilos para PaymentModal.jsx
  */
+ #payment-modal {
+  z-index: var(--z-modal-high);
+ }
 
 .payment-details {
   margin-bottom: var(--spacing-lg);
@@ -18,6 +21,12 @@
   margin-bottom: var(--spacing-md);
 }
 
+.payment-input {
+  margin-bottom: var(--spacing-md);
+  font-size: 1.2rem;
+  text-align: center;
+}
+
 .payment-change {
   font-size: 1.25rem;
   font-weight: 600;
@@ -25,10 +34,35 @@
   text-align: center;
 }
 
+.btn-confirm {
+  background-color: var(--success-color);
+  color: white;
+  width: 100%;
+  margin-bottom: var(--spacing-sm);
+}
+
+.btn-confirm:hover {
+  background-color: #059669;
+}
+
 .btn-confirm:disabled {
   background-color: #9ca3af;
   /* TODO: Usar variable */
   cursor: not-allowed;
+}
+
+.btn-cancel-payment {
+  background-color: transparent;
+  color: var(--text-light);
+  border: 1px solid #e5e7eb;
+  /* TODO: Usar variable */
+  width: 100%;
+}
+
+.btn-cancel-payment:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--error-color);
+  border-color: var(--error-color);
 }
 
 .form-group.customer-search-wrapper {
@@ -45,8 +79,7 @@
   box-shadow: var(--box-shadow);
   max-height: 150px;
   overflow-y: auto;
-  z-index: 10;
-  /* Asegura que esté sobre el input de monto */
+  z-index: 10; /* Asegura que esté sobre el input de monto */
 }
 
 .customer-result-item {
@@ -74,8 +107,7 @@
 .btn-method {
   flex: 1;
   padding: var(--spacing-sm);
-  border: 1px solid #e5e7eb;
-  /* TODO: Usar variable */
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
   background-color: var(--card-background-color);
   color: var(--text-light);
 }
@@ -100,7 +132,6 @@
   margin-top: var(--spacing-xs);
   cursor: pointer;
 }
-
 .btn-quick-add:hover {
   text-decoration: underline;
 }
@@ -109,7 +140,6 @@
 .payment-saldo {
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--error-color);
-  /* Lo marcamos como deuda */
+  color: var(--error-color); /* Lo marcamos como deuda */
   text-align: center;
 }

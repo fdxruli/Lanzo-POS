@@ -4,20 +4,24 @@
 
 /* Ajusta el ancho del modal de configuración */
 #business-setup-modal .modal-content {
-  width: 95%;
-  padding: var(--spacing-md);
-  /* Base móvil */
+  max-width: 600px;
+  max-height: 90vh; /* Limita la altura máxima */
+  overflow-y: auto; /* Permite scroll vertical */
+  display: flex;
+  flex-direction: column;
 }
 
 .business-type-container {
-  grid-template-columns: repeat(2, 1fr);
-  /* Base móvil */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
 }
 
 .type-box {
   padding: var(--spacing-lg);
-  border: 2px solid #e5e7eb;
-  /* TODO: Usar variable */
+  border: 2px solid #e5e7eb; /* TODO: Usar variable */
   border-radius: var(--border-radius-sm);
   text-align: center;
   font-weight: 500;
@@ -37,13 +41,20 @@
 }
 
 /* Responsive para móviles */
-@media (min-width: 768px) {
+@media (max-width: 768px) {
   #business-setup-modal .modal-content {
-    max-width: 600px;
-    padding: var(--spacing-lg);
+    width: 95%;
+    max-height: 85vh;
+    padding: var(--spacing-md);
   }
 
   .business-type-container {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-sm);
+  }
+
+  .type-box {
+    padding: var(--spacing-md);
+    font-size: 0.9rem;
   }
 }
