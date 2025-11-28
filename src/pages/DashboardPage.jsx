@@ -1,45 +1,53 @@
 // src/pages/DashboardPage.jsx
-import React, { useState } from 'react';
-import { useDashboardStore } from '../store/useDashboardStore';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+// --- STORES ---
+import { useStatsStore } from '../store/useStatsStore';
+import { useSalesStore } from '../store/useSalesStore';
+import { useRecycleBinStore } from '../store/useRecycleBinStore';
+import { useProductStore } from '../store/useProductStore'; // <--- FALTABA ESTE IMPORT
+
+// --- COMPONENTES ---
 import StatsGrid from '../components/dashboard/StatsGrid';
 import SalesHistory from '../components/dashboard/SalesHistory';
 import RecycleBin from '../components/dashboard/RecycleBin';
 import BusinessTips from '../components/dashboard/BusinessTips';
 import WasteHistory from '../components/dashboard/WasteHistory';
+
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
-import { useNavigate } from 'react-router-dom';
 import './DashboardPage.css';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState('stats');
-
   const navigate = useNavigate();
-
   const features = useFeatureConfig();
 
-  // 1. Obtenemos los datos del store
-  const isLoading = useDashboardStore((state) => state.isLoading);
-  const sales = useDashboardStore((state) => state.sales); // Solo las ventas recientes (paginadas)
-  const menu = useDashboardStore((state) => state.menu);
-  const deletedItems = useDashboardStore((state) => state.deletedItems);
-  const wasteLogs = useDashboardStore((state) => state.wasteLogs);
+  // 1. ESTADÍSTICAS (Store: useStatsStore)
+  const stats = useStatsStore((state) => state.stats);
+  const isStatsLoading = useStatsStore((state) => state.isLoading);
 
-  // 2. OBTENEMOS LAS ESTADÍSTICAS YA CALCULADAS POR EL STORE
-  // En lugar de calcularlas aquí, usamos las que 'calculateStatsOnTheFly' generó.
-  const stats = useDashboardStore((state) => state.stats);
+  // 2. VENTAS Y MERMAS (Store: useSalesStore)
+  // Aquí faltaba extraer 'deleteSale' y 'wasteLogs'
+  const sales = useSalesStore((state) => state.sales);
+  const deleteSale = useSalesStore((state) => state.deleteSale); // <--- CORRECCIÓN 1
+  const wasteLogs = useSalesStore((state) => state.wasteLogs);   // <--- CORRECCIÓN 2
 
-  const deleteSale = useDashboardStore((state) => state.deleteSale);
-  const restoreItem = useDashboardStore((state) => state.restoreItem);
-  const loadRecycleBin = useDashboardStore((state) => state.loadRecycleBin);
+  // 3. PRODUCTOS (Store: useProductStore)
+  // Necesario para los consejos de negocio ('BusinessTips')
+  const menu = useProductStore((state) => state.menu);           // <--- CORRECCIÓN 3
+
+  // 4. PAPELERA (Store: useRecycleBinStore)
+  const loadRecycleBin = useRecycleBinStore(state => state.loadRecycleBin);
+  const deletedItems = useRecycleBinStore(state => state.deletedItems);
+  const restoreItem = useRecycleBinStore(state => state.restoreItem);
 
   // Cargar papelera solo si entramos a esa pestaña
-  React.useEffect(() => {
-    if (activeTab === 'history') {
-      loadRecycleBin();
-    }
+  useEffect(() => {
+    if (activeTab === 'history') loadRecycleBin();
   }, [activeTab, loadRecycleBin]);
 
-  if (isLoading) {
+  if (isStatsLoading) {
     return <div style={{ padding: '2rem', textAlign: 'center' }}>Calculando estadísticas globales...</div>;
   }
 
@@ -77,11 +85,12 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* 3. Pasamos el objeto 'stats' directo del store */}
+      {/* PESTAÑA: ESTADÍSTICAS */}
       {activeTab === 'stats' && (
         <StatsGrid stats={stats} />
       )}
 
+      {/* PESTAÑA: HISTORIAL Y PAPELERA */}
       {activeTab === 'history' && (
         <>
           <div className="data-warning-banner">
@@ -111,17 +120,19 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="dashboard-grid-condensed">
+            {/* Ahora 'deleteSale' ya existe y no dará error */}
             <SalesHistory sales={sales} onDeleteSale={deleteSale} />
             <RecycleBin items={deletedItems} onRestoreItem={restoreItem} />
           </div>
         </>
       )}
 
+      {/* PESTAÑA: CONSEJOS (Necesita 'menu') */}
       {activeTab === 'tips' && (
         <BusinessTips sales={sales} menu={menu} />
       )}
 
-      {/* RENDERIZAR COMPONENTE DE MERMAS */}
+      {/* PESTAÑA: MERMAS (Necesita 'wasteLogs') */}
       {activeTab === 'waste' && features.hasWaste && (
         <WasteHistory logs={wasteLogs} />
       )}

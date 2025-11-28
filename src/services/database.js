@@ -1,7 +1,7 @@
 // src/services/database.js - VERSIÓN OPTIMIZADA PARA PAGINACIÓN
 
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 17;
+const DB_VERSION = 18;
 
 // Objeto de conexión
 const dbConnection = {
@@ -28,6 +28,7 @@ export const STORES = {
   PRODUCT_BATCHES: 'product_batches',
   WASTE: 'waste_logs',
   DAILY_STATS: 'daily_stats',
+  PROCESSED_SALES_LOG: 'processed_sales_log'
 };
 
 /**
@@ -141,7 +142,7 @@ export function initDB() {
           batchStore.createIndex('expiryDate', 'expiryDate', { unique: false });
           batchStore.createIndex('createdAt', 'createdAt', { unique: false });
           batchStore.createIndex('sku', 'sku', { unique: false });
-        } else if (event.oldVersion < 17) {
+        } else if (event.oldVersion < 18) {
           const batchStore = event.target.transaction.objectStore(STORES.PRODUCT_BATCHES);
           if (!batchStore.indexNames.contains('sku')) {
             batchStore.createIndex('sku', 'sku', { unique: false });
@@ -164,7 +165,12 @@ export function initDB() {
           tempDb.createObjectStore(STORES.DAILY_STATS, { keyPath: 'date' });
         }
 
-        if (event.oldVersion < 17) {
+        if (!tempDb.objectStoreNames.contains(STORES.PROCESSED_SALES_LOG)) {
+          // KeyPath es 'id' (que será el timestamp de la venta)
+          tempDb.createObjectStore(STORES.PROCESSED_SALES_LOG, { keyPath: 'id' });
+        }
+
+        if (event.oldVersion < 18) {
           // CORRECCIÓN: Usamos la transacción activa del evento
           const txn = event.target.transaction;
           const menuStore = txn.objectStore(STORES.MENU);
@@ -549,53 +555,55 @@ export async function processBatchDeductions(deductions) {
   const db = await initDB();
 
   return new Promise((resolve, reject) => {
-    // 1. Abrimos una transacción que abarca todos los lotes
-    const transaction = db.transaction([STORES.PRODUCT_BATCHES], 'readwrite');
-    const store = transaction.objectStore(STORES.PRODUCT_BATCHES);
+    // 1. Abrimos una transacción de LECTURA y ESCRITURA
+    // Esto bloquea el almacén 'product_batches' para otros procesos de escritura
+    const tx = db.transaction([STORES.PRODUCT_BATCHES], 'readwrite');
+    const store = tx.objectStore(STORES.PRODUCT_BATCHES);
 
-    // Contenedor para errores internos
     let aborted = false;
 
-    transaction.oncomplete = () => resolve({ success: true });
-    transaction.onerror = (e) => reject(e.target.error);
-    transaction.onabort = (e) => reject(new Error('Transacción abortada: Stock insuficiente o error de escritura.'));
+    // Monitor de errores global de la transacción
+    tx.oncomplete = () => resolve({ success: true });
+    tx.onerror = (e) => reject(e.target.error);
+    tx.onabort = () => reject(new Error('STOCK_CHANGED')); // Error específico para manejar en UI
 
-    // 2. Iteramos sobre los descuentos DENTRO de la transacción
+    // 2. Iteramos las deducciones DENTRO de la transacción
     deductions.forEach(({ batchId, quantity }) => {
       if (aborted) return;
 
+      // a) LEER (Single Source of Truth)
       const getRequest = store.get(batchId);
 
       getRequest.onsuccess = () => {
+        if (aborted) return;
+
         const batch = getRequest.result;
 
+        // b) VALIDAR (Atomic Check)
         if (!batch) {
+          console.error(`Lote ${batchId} no encontrado durante la transacción.`);
           aborted = true;
-          transaction.abort(); // Cancelar TODO si falta un lote
+          tx.abort();
           return;
         }
 
         if (batch.stock < quantity) {
-          console.error(`Stock insuficiente en lote ${batchId}. Stock: ${batch.stock}, Req: ${quantity}`);
+          console.error(`Race Condition evitada: Lote ${batchId} tiene ${batch.stock}, se requerían ${quantity}.`);
           aborted = true;
-          transaction.abort(); // Cancelar TODO si falta stock
+          tx.abort(); // Cancelar TODO el pedido si falta un solo artículo
           return;
         }
 
-        // Aplicar descuento
+        // c) ESCRIBIR (Update)
         batch.stock -= quantity;
+
+        // Desactivar lote si llega a 0 (limpieza)
         if (batch.stock <= 0.0001) {
           batch.stock = 0;
           batch.isActive = false;
         }
 
-        // Guardar actualización
         store.put(batch);
-      };
-
-      getRequest.onerror = () => {
-        aborted = true;
-        transaction.abort();
       };
     });
   });

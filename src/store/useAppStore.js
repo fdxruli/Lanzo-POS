@@ -5,6 +5,7 @@ import { isLocalStorageEnabled, normalizeDate, showMessageModal } from '../servi
 
 const _ui_render_config_v2 = "LANZO_SECURE_KEY_v1_X9Z";
 
+// ... (Las funciones auxiliares generateSignature, saveLicenseToStorage, etc. se mantienen igual) ...
 const generateSignature = (data) => {
   const stringData = JSON.stringify(data);
   let hash = 0;
@@ -13,51 +14,37 @@ const generateSignature = (data) => {
   for (let i = 0; i < mixedString.length; i++) {
     const char = mixedString.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convertir a 32bit integer
+    hash = hash & hash;
   }
-  return hash.toString(16); // Retornar como hex
+  return hash.toString(16);
 };
 
 const saveLicenseToStorage = async (licenseData) => {
   if (!isLocalStorageEnabled()) return;
-
   const dataToStore = { ...licenseData };
   dataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
   const signature = generateSignature(dataToStore);
-
-  const packageToStore = {
-    data: dataToStore,
-    signature: signature
-  };
-
+  const packageToStore = { data: dataToStore, signature: signature };
   localStorage.setItem('lanzo_license', JSON.stringify(packageToStore));
 };
 
 const getLicenseFromStorage = async () => {
   if (!isLocalStorageEnabled()) return null;
-
   const storedString = localStorage.getItem('lanzo_license');
   if (!storedString) return null;
-
   try {
     const parsedPackage = JSON.parse(storedString);
-
     if (!parsedPackage.data || !parsedPackage.signature) {
       localStorage.removeItem('lanzo_license');
       return null;
     }
-
     const expectedSignature = generateSignature(parsedPackage.data);
-
     if (parsedPackage.signature !== expectedSignature) {
       console.warn("Error de integridad en datos locales. Reiniciando sesión.");
       localStorage.removeItem('lanzo_license');
       return null;
     }
-
     return parsedPackage.data;
-
   } catch (e) {
     localStorage.removeItem('lanzo_license');
     return null;
@@ -72,6 +59,9 @@ const clearLicenseFromStorage = () => {
 export const useAppStore = create((set, get) => ({
 
   realtimeSubscription: null,
+  
+  // 1. NUEVA BANDERA DE ESTADO (MUTEX)
+  _isInitializingSecurity: false,
 
   appStatus: 'loading',
   licenseStatus: 'active',
@@ -80,6 +70,7 @@ export const useAppStore = create((set, get) => ({
   licenseDetails: null,
 
   initializeApp: async () => {
+    // ... (Lógica de initializeApp se mantiene igual) ...
     const license = await getLicenseFromStorage();
 
     if (!license || !license.valid) {
@@ -99,9 +90,7 @@ export const useAppStore = create((set, get) => ({
         });
 
         const currentLicenseKey = serverValidation.license_key || license.license_key;
-
         const profileResult = await window.getBusinessProfile(currentLicenseKey);
-
         let companyData = null;
 
         if (profileResult.success && profileResult.data) {
@@ -164,34 +153,49 @@ export const useAppStore = create((set, get) => ({
   },
 
   // ============================================================
-  // GESTIÓN DE SEGURIDAD REALTIME (MEJORADA)
+  // GESTIÓN DE SEGURIDAD REALTIME (CORREGIDA)
   // ============================================================
 
   startRealtimeSecurity: async () => {
-    const { licenseDetails, realtimeSubscription, stopRealtimeSecurity } = get();
+    // 2. OBTENEMOS LA BANDERA Y EL ESTADO ACTUAL
+    const { 
+      licenseDetails, 
+      realtimeSubscription, 
+      stopRealtimeSecurity, 
+      _isInitializingSecurity 
+    } = get();
 
-    // 1. Validación temprana
+    // 3. CHEQUEO DE MUTEX: Si ya estamos iniciando, abortamos esta llamada
+    if (_isInitializingSecurity) {
+      console.log('🛡️ startRealtimeSecurity ignorado: Inicialización en curso.');
+      return;
+    }
+
     if (!licenseDetails?.license_key) {
       console.warn('⚠️ Seguridad: No se puede iniciar sin licencia válida.');
       return;
     }
 
-    // 2. Limpieza preventiva (Evitar duplicados y Zombis)
-    if (realtimeSubscription) {
-      console.log("♻️ Limpiando suscripción anterior...");
-      await stopRealtimeSecurity();
-      // Aumentamos pausa a 150ms para asegurar desconexión total del socket
-      await new Promise(resolve => setTimeout(resolve, 150));
-    }
-
-    console.log("🔌 Conectando seguridad en tiempo real...");
+    // 4. BLOQUEAMOS EL ACCESO
+    set({ _isInitializingSecurity: true });
 
     try {
+      // Limpieza preventiva (Evitar duplicados y Zombis)
+      if (realtimeSubscription) {
+        console.log("♻️ Limpiando suscripción anterior...");
+        await stopRealtimeSecurity();
+        // El await setTimeout aquí es seguro porque estamos dentro del bloqueo
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+
+      console.log("🔌 Conectando seguridad en tiempo real...");
+
       const sub = await window.subscribeToSecurityChanges(
         licenseDetails.license_key,
 
         // Callback: Cambio en Licencia
         (newLicenseData) => {
+          // Nota: Usamos get() aquí para obtener el estado más fresco en el momento del evento
           const currentSub = get().realtimeSubscription;
 
           // VALIDACIÓN ROBUSTA: Si no hay sub activa o no coincide, ignorar (Zombi)
@@ -219,7 +223,6 @@ export const useAppStore = create((set, get) => ({
         // Callback: Cambio en Dispositivo
         (newDeviceData, eventType) => {
           const currentSub = get().realtimeSubscription;
-
           if (!currentSub || currentSub !== sub) return;
 
           if (eventType === 'DELETE' || (newDeviceData && !newDeviceData.is_active)) {
@@ -234,25 +237,25 @@ export const useAppStore = create((set, get) => ({
         }
       );
 
-      // 3. Guardar la referencia activa
+      // Guardar la referencia activa
       set({ realtimeSubscription: sub });
 
     } catch (error) {
       console.error('Error al iniciar seguridad realtime:', error);
-      // Aseguramos que el estado quede limpio si falla
       set({ realtimeSubscription: null });
+    } finally {
+      // 5. LIBERAMOS EL ACCESO (Siempre, ocurra error o no)
+      set({ _isInitializingSecurity: false });
     }
   },
 
   stopRealtimeSecurity: async () => {
     const { realtimeSubscription } = get();
 
-    // Si no hay nada que detener, salimos
     if (!realtimeSubscription) return;
 
     console.log("🔌 Desconectando seguridad...");
 
-    // Limpiamos el estado INMEDIATAMENTE para bloquear callbacks entrantes
     set({ realtimeSubscription: null });
 
     try {
@@ -264,18 +267,17 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
+  // ... (Resto de funciones handleLogin, handleFreeTrial, handleSetup, etc. se mantienen igual) ...
+  
   handleLogin: async (licenseKey) => {
     try {
       const result = await window.activateLicense(licenseKey);
-
       if (result.valid) {
         await saveLicenseToStorage(result.details);
         try {
           const profileResult = await window.getBusinessProfile(licenseKey);
-
           if (profileResult.success && profileResult.data) {
             console.log("¡Perfil encontrado al iniciar sesión! Sincronizando...");
-
             const mappedData = {
               id: 'company',
               name: profileResult.data.business_name || profileResult.data.name,
@@ -284,27 +286,20 @@ export const useAppStore = create((set, get) => ({
               logo: profileResult.data.logo_url || profileResult.data.logo,
               business_type: profileResult.data.business_type
             };
-
             await saveData(STORES.COMPANY, mappedData);
-
             set({
               licenseDetails: result.details,
               companyProfile: mappedData,
               appStatus: 'ready'
             });
-
           } else {
             console.log("Licencia nueva sin perfil. Requiere configuración.");
-            set({
-              licenseDetails: result.details,
-              appStatus: 'setup_required'
-            });
+            set({ licenseDetails: result.details, appStatus: 'setup_required' });
           }
         } catch (profileError) {
           console.error("Error al intentar recuperar perfil tras login:", profileError);
           set({ licenseDetails: result.details, appStatus: 'setup_required' });
         }
-
         return { success: true };
       } else {
         return { success: false, message: result.message || 'Licencia no válida' };
@@ -335,26 +330,17 @@ export const useAppStore = create((set, get) => ({
       console.error("No hay clave de licencia para guardar el perfil");
       return;
     }
-
     try {
       let logoUrl = null;
-
       if (setupData.logo && setupData.logo instanceof File) {
         console.log("Subiendo logo a Supabase Storage...");
         logoUrl = await window.uploadFile(setupData.logo, 'logo');
       }
-
-      const profileData = {
-        ...setupData,
-        logo: logoUrl
-      };
-
+      const profileData = { ...setupData, logo: logoUrl };
       await window.saveBusinessProfile(licenseKey, profileData);
       console.log("Perfil de negocio guardado en Supabase DB.");
-
       const companyData = { id: 'company', ...profileData };
       await saveData(STORES.COMPANY, companyData);
-
       set({ companyProfile: companyData, appStatus: 'ready' });
     } catch (error) {
       console.error("Error al guardar setup:", error);
@@ -367,17 +353,14 @@ export const useAppStore = create((set, get) => ({
       console.error("No hay clave de licencia para actualizar el perfil");
       return;
     }
-
     try {
       if (companyData.logo && companyData.logo instanceof File) {
         console.log("Subiendo nuevo logo a Supabase Storage...");
         const logoUrl = await window.uploadFile(companyData.logo, 'logo');
         companyData.logo = logoUrl;
       }
-
       await window.saveBusinessProfile(licenseKey, companyData);
       console.log("Perfil de negocio actualizado en Supabase DB.");
-
       await saveData(STORES.COMPANY, companyData);
       set({ companyProfile: companyData });
     } catch (error) {
@@ -387,10 +370,7 @@ export const useAppStore = create((set, get) => ({
 
   logout: async () => {
     const { licenseDetails } = get();
-
-    // 1. REFACTORIZADO: Detener escucha de seguridad explícitamente antes de salir
     await get().stopRealtimeSecurity();
-
     try {
       const licenseKey = licenseDetails?.license_key;
       if (licenseKey) {
@@ -400,9 +380,7 @@ export const useAppStore = create((set, get) => ({
     } catch (error) {
       console.error("Error al desactivar dispositivo en servidor (continuando logout local):", error);
     }
-
     clearLicenseFromStorage();
-
     set({
       appStatus: 'unauthenticated',
       licenseDetails: null,
@@ -411,7 +389,6 @@ export const useAppStore = create((set, get) => ({
       gracePeriodEnds: null,
       realtimeSubscription: null
     });
-
     console.log("Sesión cerrada correctamente.");
   }
 }));

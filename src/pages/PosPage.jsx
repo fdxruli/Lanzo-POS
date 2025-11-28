@@ -9,7 +9,11 @@ import QuickCajaModal from '../components/common/QuickCajaModal';
 import PrescriptionModal from '../components/pos/PrescriptionModal';
 import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
-import { useDashboardStore } from '../store/useDashboardStore';
+
+// --- CAMBIOS: Importamos los nuevos stores especializados ---
+import { useProductStore } from '../store/useProductStore';
+import { useStatsStore } from '../store/useStatsStore';
+
 import { loadData, saveBulk, saveData, queryByIndex, queryBatchesByProductIdAndActive, STORES, processBatchDeductions } from '../services/database';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
@@ -24,16 +28,17 @@ export default function PosPage() {
   const [isQuickCajaOpen, setIsQuickCajaOpen] = useState(false);
   const [categories, setCategories] = useState([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
-  
+
   const [searchTerm, setSearchTerm] = useState('');
   // Esperamos 300ms después de que el usuario deje de escribir para buscar en la BD
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
-  
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [isMobileOrderOpen, setIsMobileOrderOpen] = useState(false);
 
-  const searchProducts = useDashboardStore((state) => state.searchProducts);
-  
+  // --- CAMBIO: Usamos useProductStore para buscar ---
+  const searchProducts = useProductStore((state) => state.searchProducts);
+
   // Ejecutar búsqueda en base de datos cuando el término "debounced" cambie
   useEffect(() => {
     searchProducts(debouncedSearchTerm);
@@ -42,10 +47,11 @@ export default function PosPage() {
   const { cajaActual, abrirCaja } = useCaja();
   const { order, clearOrder, getTotalPrice } = useOrderStore();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
-  
-  // Estos "allProducts" ya son los resultados filtrados que vienen de la BD
-  const allProducts = useDashboardStore((state) => state.menu); 
-  const refreshData = useDashboardStore((state) => state.loadAllData);
+
+  // --- CAMBIO: Usamos useProductStore para obtener el menú y la función de recarga ---
+  // Nota: 'loadInitialProducts' es el equivalente a la carga inicial/refresco en el nuevo store
+  const allProducts = useProductStore((state) => state.menu);
+  const refreshData = useProductStore((state) => state.loadInitialProducts);
 
   const total = getTotalPrice();
   const totalItemsCount = order.reduce((acc, item) => acc + (item.saleType === 'bulk' ? 1 : item.quantity), 0);
@@ -59,33 +65,27 @@ export default function PosPage() {
       try {
         const categoryData = await loadData(STORES.CATEGORIES);
         setCategories(categoryData || []);
+        // Cargamos los productos iniciales
         await refreshData();
       } catch (error) {
         console.error("Error cargando datos:", error);
       }
     };
     loadExtras();
-  }, []);
+  }, []); // Dependencias vacías para cargar solo al montar
 
-  // --- OPTIMIZACIÓN CRÍTICA (PASO 2) ---
-  // Eliminamos el filtrado de texto local. Confiamos en que 'allProducts' 
-  // ya contiene los resultados correctos gracias a 'searchProducts' del store.
-  // Solo filtramos localmente por Categoría y Tipo, que son filtros rápidos.
+  // Filtramos localmente por Categoría y Tipo (búsqueda por texto ya viene filtrada del store)
   const filteredProducts = useMemo(() => {
     // 1. Filtro base (Vendibles)
     let items = (allProducts || []).filter(p => p.productType === 'sellable' || !p.productType);
-    
+
     // 2. Filtro de Categoría
     if (selectedCategoryId) {
       items = items.filter(p => p.categoryId === selectedCategoryId);
     }
 
-    // NOTA: Ya no filtramos por 'searchTerm' aquí. 
-    // El Store ya nos devuelve la lista filtrada por nombre/código desde la BD.
-    
     return items;
-  }, [allProducts, selectedCategoryId]); 
-  // Quitamos 'searchTerm' de las dependencias para evitar re-renders innecesarios al escribir
+  }, [allProducts, selectedCategoryId]);
 
   const handleInitiateCheckout = () => {
     const licenseDetails = useAppStore.getState().licenseDetails;
@@ -166,7 +166,7 @@ export default function PosPage() {
       );
 
       // B. PLANIFICACIÓN DE DESCUENTOS
-      const batchesToDeduct = []; 
+      const batchesToDeduct = [];
       const processedItems = [];
 
       for (const orderItem of itemsToProcess) {
@@ -221,18 +221,25 @@ export default function PosPage() {
         });
       }
 
-      // C. EJECUCIÓN
+      // C. EJECUCIÓN (Transacción Atómica de Stock)
       if (batchesToDeduct.length > 0) {
         try {
           await processBatchDeductions(batchesToDeduct);
         } catch (error) {
           console.error("Error crítico en inventario:", error);
-          showMessageModal("⚠️ Error de Inventario: El stock cambió. Intenta de nuevo.");
-          return;
+
+          // MANEJO DE RACE CONDITION
+          if (error.message === 'STOCK_CHANGED' || error.message.includes('Transacción abortada')) {
+            showMessageModal("⚠️ El stock cambió mientras cobrabas. Se han actualizado los datos. Intenta cobrar de nuevo.");
+            await refreshData(); // Recargar datos frescos
+            setIsProcessing(false);
+            return;
+          }
+          throw error;
         }
       }
 
-      // D. GUARDADO
+      // D. GUARDADO DE VENTA
       const sale = {
         timestamp: new Date().toISOString(),
         items: processedItems,
@@ -247,8 +254,14 @@ export default function PosPage() {
 
       await saveData(STORES.SALES, sale);
 
-      useDashboardStore.getState().updateStatsWithSale(sale);
+      // --- CAMBIO: Actualización de estadísticas con el nuevo store ---
+      // Calculamos el costo total de los bienes vendidos (COGS) para restar del valor del inventario
+      const costOfGoodsSold = processedItems.reduce((acc, item) => acc + (item.cost * item.quantity), 0);
+      
+      // Llamamos a la acción segura del nuevo store
+      useStatsStore.getState().updateStatsForNewSale(sale, costOfGoodsSold);
 
+      // Lógica de clientes (Fiado)
       if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
         const customer = await loadData(STORES.CUSTOMERS, sale.customerId);
         if (customer) {
@@ -261,9 +274,11 @@ export default function PosPage() {
       setTempPrescriptionData(null);
       setIsMobileOrderOpen(false);
       showMessageModal('✅ ¡Venta registrada correctamente!');
-      refreshData(true);
+      
+      // Recargar stock en la UI
+      refreshData();
 
-      // E. WHATSAPP
+      // E. WHATSAPP (Ticket)
       if (paymentData.sendReceipt && paymentData.customerId) {
         try {
           const customer = await loadData(STORES.CUSTOMERS, paymentData.customerId);

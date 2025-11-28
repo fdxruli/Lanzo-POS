@@ -1,6 +1,14 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, deleteData, saveBulk, STORES, deleteCategoryCascading } from '../services/database';
+import { 
+    loadData, 
+    saveData, 
+    deleteData, 
+    saveBulk, 
+    queryByIndex, // <--- Importante: Añadido para buscar lotes sin cargar todo en memoria
+    STORES, 
+    deleteCategoryCascading 
+} from '../services/database';
 import { showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
@@ -8,7 +16,9 @@ import CategoryManagerModal from '../components/products/CategoryManagerModal';
 import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
 
-import { useDashboardStore } from '../store/useDashboardStore';
+// --- CAMBIO: Usamos el store especializado ---
+import { useProductStore } from '../store/useProductStore';
+
 import BatchManager from '../components/products/BatchManager';
 import DataTransferModal from '../components/products/DataTransferModal';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
@@ -21,12 +31,13 @@ export default function ProductsPage() {
 
     const features = useFeatureConfig();
 
-    // Store Global
-    const categories = useDashboardStore((state) => state.categories);
-    const products = useDashboardStore((state) => state.menu);
-    const rawProducts = useDashboardStore((state) => state.rawProducts);
-    const rawBatches = useDashboardStore((state) => state.rawBatches);
-    const refreshData = useDashboardStore((state) => state.loadAllData);
+    // --- CONEXIÓN AL NUEVO STORE DE PRODUCTOS ---
+    const categories = useProductStore((state) => state.categories);
+    const products = useProductStore((state) => state.menu);
+    const rawProducts = useProductStore((state) => state.rawProducts);
+    
+    // Alias para mantener la compatibilidad con el resto del código
+    const refreshData = useProductStore((state) => state.loadInitialProducts);
 
     const [editingProduct, setEditingProduct] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -34,9 +45,7 @@ export default function ProductsPage() {
     const [showDataTransfer, setShowDataTransfer] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
 
-    // --- CORRECCIÓN DEL ERROR DE CONSOLA ---
-    // Dejamos el array vacío []. Esto asegura que se ejecute solo al montar 
-    // y evita el error "changed size between renders" causado por el Hot Reload.
+    // Carga inicial
     useEffect(() => {
         refreshData();
     }, []);
@@ -48,7 +57,7 @@ export default function ProductsPage() {
     const handleSaveCategory = async (categoryData) => {
         try {
             await saveData(STORES.CATEGORIES, categoryData);
-            await refreshData(true); // Forzamos recarga
+            await refreshData(); // Recargar categorías en el store
         } catch (error) {
             console.error("Error guardando categoría:", error);
         }
@@ -60,7 +69,7 @@ export default function ProductsPage() {
         }
 
         try {
-            setIsLoading(true); // Feedback visual
+            setIsLoading(true);
 
             const catToDelete = categories.find(c => c.id === categoryId);
             if (catToDelete) {
@@ -71,11 +80,11 @@ export default function ProductsPage() {
                 await saveData(STORES.DELETED_CATEGORIES, deletedCat);
             }
 
-            // Usamos la nueva transacción atómica
+            // Usamos la transacción atómica para limpiar referencias
             await deleteCategoryCascading(categoryId);
 
             // Recargamos datos para reflejar cambios
-            await refreshData(true);
+            await refreshData();
 
             showMessageModal('✅ Categoría eliminada y productos actualizados correctamente.');
         } catch (error) {
@@ -146,7 +155,7 @@ export default function ProductsPage() {
                 }
             }
 
-            await refreshData(true);
+            await refreshData();
             setEditingProduct(null);
 
             if (productData.productType === 'ingredient') {
@@ -164,6 +173,7 @@ export default function ProductsPage() {
     };
 
     const handleEditProduct = (product) => {
+        // Buscamos en rawProducts para tener la versión original sin agregaciones
         const productToEdit = rawProducts.find(p => p.id === product.id);
         if (productToEdit) {
             setEditingProduct(productToEdit);
@@ -186,21 +196,28 @@ export default function ProductsPage() {
                 await saveData(STORES.DELETED_MENU, product);
                 await deleteData(STORES.MENU, product.id);
 
-                const productBatches = rawBatches.filter(b => b.productId === product.id);
+                // --- CAMBIO: Buscar lotes en BD en lugar de memoria ---
+                const productBatches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', product.id);
+                
                 if (productBatches.length > 0) {
-                    const updatedBatches = productBatches.map(b => ({ ...b, isActive: false, stock: 0, notes: b.notes + ' [Eliminado]' }));
+                    const updatedBatches = productBatches.map(b => ({ 
+                        ...b, 
+                        isActive: false, 
+                        stock: 0, 
+                        notes: b.notes + ' [Eliminado]' 
+                    }));
                     await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches);
                 }
-                await refreshData(true);
+                
+                await refreshData();
             } catch (error) {
                 console.error(error);
+                showMessageModal("Error al eliminar el producto.");
             }
         }
     };
 
-    // --- CORRECCIÓN DE ACTIVAR/DESACTIVAR ---
     const handleToggleStatus = async (product) => {
-        // 1. Activamos el loading para dar feedback visual inmediato
         setIsLoading(true);
         try {
             const currentStatus = product.isActive !== false;
@@ -212,15 +229,12 @@ export default function ProductsPage() {
             };
 
             await saveData(STORES.MENU, updatedProduct);
-
-            // 2. Forzamos la recarga ignorando el caché
-            await refreshData(true);
+            await refreshData();
 
         } catch (error) {
             console.error(error);
             showMessageModal("Error al cambiar el estado del producto");
         } finally {
-            // 3. Desactivamos loading al terminar
             setIsLoading(false);
         }
     };
@@ -239,7 +253,7 @@ export default function ProductsPage() {
                     {features.hasDailyPricing && (
                         <button
                             className="btn btn-primary btn-action-header"
-                            style={{ backgroundColor: '#f97316' }} // Naranja distintivo
+                            style={{ backgroundColor: '#f97316' }}
                             onClick={() => setShowDailyPrice(true)}
                         >
                             📝 Actualizar Precios del Día
@@ -370,8 +384,8 @@ export default function ProductsPage() {
             <DailyPriceModal
                 show={showDailyPrice}
                 onClose={() => setShowDailyPrice(false)}
-                products={products} // Pasamos el menú completo
-                onRefresh={() => refreshData(true)}
+                products={products}
+                onRefresh={() => refreshData()}
             />
         </>
     );
