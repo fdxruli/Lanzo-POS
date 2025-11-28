@@ -1,132 +1,144 @@
 // src/store/useOrderStore.jsx
 import { create } from 'zustand';
 
-// --- 1. Función Helper para calcular el precio (fuera del store) ---
-// Determina el precio unitario basándose en la cantidad y las reglas de mayoreo
-const calculateDynamicPrice = (product, quantity) => {
-  // El precio base es el precio original del producto (o del lote activo)
-  let finalPrice = product.originalPrice || product.price;
+// ============================================================
+// LÓGICA DE CÁLCULO DE PRECIOS (Helper puro)
+// ============================================================
 
-  // Si el producto tiene reglas de mayoreo y la cantidad es válida
-  if (product.wholesaleTiers && product.wholesaleTiers.length > 0 && quantity > 0) {
-
-    // Ordenamos los niveles de mayor a menor cantidad mínima (descendente)
-    // Ej: [{min: 100, price: 8}, {min: 12, price: 9}]
-    const tiersDesc = [...product.wholesaleTiers].sort((a, b) => b.min - a.min);
-
-    // Buscamos el primer nivel que cumpla la condición (cantidad >= min)
-    const applicableTier = tiersDesc.find(tier => quantity >= tier.min);
-
-    if (applicableTier) {
-      finalPrice = applicableTier.price;
-    }
-  }
-  return finalPrice;
-};
-
-// --- HELPER MEJORADO: Calcula precio considerando Lotes (FIFO) Y Mayoreo ---
 const calculateCompositePrice = (product, quantity) => {
-  // 1. Si no usa lotes o no tiene lotes cargados, usar lógica normal (mayoreo o base)
-  if (!product.batchManagement?.enabled || !product.activeBatches || product.activeBatches.length === 0) {
-    // Aquí va tu lógica original de calculateDynamicPrice para mayoreo
-    // (La copias de tu archivo actual si tienes lógica de mayoreo)
-    return product.price;
+  // 1. CASO VARIANTE ESPECÍFICA (Ropa, Zapatos, etc.)
+  // Si el usuario seleccionó una variante específica (tiene batchId y flag isVariant),
+  // el precio es FIJO de ese lote. No se promedia.
+  if (product.isVariant && product.batchId) {
+    let basePrice = product.price;
+
+    // Aplicar mayoreo si existe
+    if (product.wholesaleTiers?.length > 0 && quantity > 0) {
+      const tiersDesc = [...product.wholesaleTiers].sort((a, b) => b.min - a.min);
+      const tier = tiersDesc.find(t => quantity >= t.min);
+      if (tier) basePrice = tier.price;
+    }
+    return basePrice;
   }
 
+  // 2. CASO PRODUCTO SIMPLE (Sin gestión de lotes)
+  if (!product.batchManagement?.enabled || !product.activeBatches || product.activeBatches.length === 0) {
+    let basePrice = product.price;
+    
+    // Aplicar mayoreo
+    if (product.wholesaleTiers?.length > 0 && quantity > 0) {
+      const tiersDesc = [...product.wholesaleTiers].sort((a, b) => b.min - a.min);
+      const tier = tiersDesc.find(t => quantity >= t.min);
+      if (tier) basePrice = tier.price;
+    }
+    return basePrice;
+  }
+
+  // 3. CASO LOTES FIFO (Farmacia, Abarrotes - Promedio Ponderado)
+  // Aquí sí nos interesa consumir los lotes más viejos primero y promediar el costo si se mezclan.
   let remainingQty = quantity;
   let totalPriceAccumulated = 0;
 
-  // 2. Recorrer lotes FIFO para acumular el precio real
-  for (const batch of product.activeBatches) {
+  // Ordenar FIFO estricto (Más antiguo primero)
+  const sortedBatches = [...product.activeBatches].sort((a, b) => 
+    new Date(a.createdAt) - new Date(b.createdAt)
+  );
+
+  for (const batch of sortedBatches) {
     if (remainingQty <= 0) break;
+    if (batch.stock <= 0) continue; // Saltar vacíos
 
-    // Tomamos lo que haya en el lote o lo que nos falte, lo que sea menor
     const takeFromBatch = Math.min(remainingQty, batch.stock);
-
     totalPriceAccumulated += (takeFromBatch * batch.price);
     remainingQty -= takeFromBatch;
   }
 
-  // 3. Si el cliente pide más de lo que hay en stock total (remainingQty > 0),
-  // el excedente se cobra al precio del ULTIMO lote disponible (o precio base).
+  // Si pidieron más de lo que hay, el resto se cobra al precio actual (o del último lote)
   if (remainingQty > 0) {
-    const lastBatchPrice = product.activeBatches[product.activeBatches.length - 1].price;
-    totalPriceAccumulated += (remainingQty * lastBatchPrice);
+    const fallbackPrice = sortedBatches.length > 0 
+      ? sortedBatches[sortedBatches.length - 1].price 
+      : product.price;
+    totalPriceAccumulated += (remainingQty * fallbackPrice);
   }
 
-  // 4. Devolvemos el precio unitario promedio (ponderado)
-  // Ej: (5*$13 + 1*$15) / 6 = $13.3333...
-  return quantity > 0 ? (totalPriceAccumulated / quantity) : 0;
+  // Precio promedio resultante
+  const avgPrice = quantity > 0 ? (totalPriceAccumulated / quantity) : 0;
+
+  // Aplicar mayoreo sobre el resultado final si corresponde
+  if (product.wholesaleTiers?.length > 0 && quantity > 0) {
+    const tiersDesc = [...product.wholesaleTiers].sort((a, b) => b.min - a.min);
+    const tier = tiersDesc.find(t => quantity >= t.min);
+    // En mayoreo, usualmente el precio de oferta reemplaza al cálculo FIFO
+    if (tier) return tier.price;
+  }
+
+  return avgPrice;
 };
 
 
-// create() crea un "almacén" (store).
+// ============================================================
+// STORE ZUSTAND
+// ============================================================
+
 export const useOrderStore = create((set, get) => ({
 
-  // ======================================================
-  // 1. EL ESTADO
-  // ======================================================
-  order: [], // El estado inicial es un array vacío
+  order: [],
 
-  // ======================================================
-  // 2. LAS ACCIONES
-  // ======================================================
-
-  /**
-   * Añade un producto al pedido.
-   * Ahora incluye lógica de cálculo de precio dinámico.
-   */
   addItem: (product) => {
     set((state) => {
       const { order } = state;
-      const existingItem = order.find((item) => item.id === product.id);
 
-      if (existingItem) {
+      // BUSCAR EXISTENCIA:
+      // - Si es variante, buscamos por ID de lote (batchId).
+      // - Si es normal, buscamos por ID de producto.
+      const existingItemIndex = order.findIndex((item) => {
+        if (product.isVariant && product.batchId) {
+          return item.batchId === product.batchId;
+        }
+        return item.id === product.id;
+      });
+
+      if (existingItemIndex >= 0) {
+        // --- ACTUALIZAR ITEM EXISTENTE ---
+        const existingItem = order[existingItemIndex];
         const newQuantity = existingItem.quantity + 1;
-        // USAMOS LA NUEVA FUNCIÓN COMPUESTA
         const newPrice = calculateCompositePrice(existingItem, newQuantity);
 
-        const updatedOrder = order.map((item) => {
-          if (item.id === product.id) {
-            return {
-              ...item,
-              quantity: newQuantity,
-              price: newPrice,
-              exceedsStock: item.trackStock && newQuantity > item.stock
-            };
-          }
-          return item;
-        });
+        const updatedOrder = [...order];
+        updatedOrder[existingItemIndex] = {
+          ...existingItem,
+          quantity: newQuantity,
+          price: newPrice,
+          exceedsStock: existingItem.trackStock && newQuantity > existingItem.stock
+        };
+
         return { order: updatedOrder };
 
       } else {
+        // --- AGREGAR NUEVO ITEM ---
         const newQuantity = 1;
-        // USAMOS LA NUEVA FUNCIÓN COMPUESTA
         const initialPrice = calculateCompositePrice(product, newQuantity);
 
         const newItem = {
           ...product,
           quantity: newQuantity,
           price: initialPrice,
-          originalPrice: product.price,
+          originalPrice: product.price, // Guardamos referencia
           exceedsStock: product.trackStock && newQuantity > product.stock
         };
+
         return { order: [...order, newItem] };
       }
     });
   },
 
-  /**
-   * Actualiza la cantidad de un item (para +/- o input a granel).
-   * Ahora recalcula el precio en tiempo real.
-   */
-  updateItemQuantity: (productId, newQuantity) => {
+  updateItemQuantity: (itemId, newQuantity) => {
     set((state) => {
       const updatedOrder = state.order.map((item) => {
-        if (item.id === productId) {
+        // Nota: Aquí usamos itemId que debe ser único en el carrito
+        // (En variants, el id del item en el carrito ya debería ser el batchId o un composite)
+        if (item.id === itemId) {
           const safeQuantity = newQuantity === null ? 0 : newQuantity;
-
-          // USAMOS LA NUEVA FUNCIÓN COMPUESTA
           const newPrice = calculateCompositePrice(item, safeQuantity);
 
           return {
@@ -142,39 +154,16 @@ export const useOrderStore = create((set, get) => ({
     });
   },
 
-  /**
-   * Elimina un item del pedido.
-   */
-  removeItem: (productId) => {
+  removeItem: (itemId) => {
     set((state) => ({
-      order: state.order.filter((item) => item.id !== productId),
+      order: state.order.filter((item) => item.id !== itemId),
     }));
   },
 
-  /**
-   * Vacía el pedido completo.
-   */
   clearOrder: () => set({ order: [] }),
+  
   setOrder: (newOrder) => set({ order: newOrder }),
 
-  /**
-   * Sobrescribe el pedido (útil para el scanner masivo o recuperación).
-   * Aseguramos que se recalcule el precio para los items entrantes.
-   */
-  setOrder: (newOrder) => {
-    // Opcional: Recorrer newOrder para asegurar que los precios sean correctos
-    // según sus cantidades, pero por rendimiento confiamos en el origen o
-    // lo dejamos simple por ahora.
-    set({ order: newOrder });
-  },
-
-  // ======================================================
-  // 3. Funciones "Getter" para estado derivado
-  // ======================================================
-
-  /**
-   * Calcula el total sumando (precio * cantidad) de cada item.
-   */
   getTotalPrice: () => {
     const { order } = get();
     return order.reduce((sum, item) => {

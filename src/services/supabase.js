@@ -1,15 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
-// --- SUPABASE CLIENT INITIALIZATION ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// CORRECCIÓN: Usar createClient directamente
 const supabaseClient = createClient(supabaseUrl, supabaseKey);
 
-// --- USER MANAGEMENT ---
-// (Esta función no cambia)
 async function getSupabaseUser() {
     const SYSTEM_USER_EMAIL = 'sistema@lanzo.local';
     const SYSTEM_USER_PASSWORD = 'LanzoDB1';
@@ -34,7 +30,6 @@ async function getSupabaseUser() {
     }
 }
 
-// --- (¡NUEVO!) HELPER DE NOMBRES AMIGABLES ---
 /**
  * Intenta analizar el User Agent para un nombre más legible.
  * @param {string} userAgent - El string de navigator.userAgent
@@ -45,7 +40,6 @@ function getFriendlyDeviceName(userAgent) {
     let browser = 'Navegador';
     const ua = userAgent.toLowerCase();
 
-    // Detectar OS
     if (ua.includes('win')) os = 'Windows';
     else if (ua.includes('mac')) os = 'Mac';
     else if (ua.includes('android')) os = 'Android';
@@ -53,7 +47,6 @@ function getFriendlyDeviceName(userAgent) {
     else if (ua.includes('iphone')) os = 'iPhone';
     else if (ua.includes('ipad')) os = 'iPad';
 
-    // Detectar Navegador
     if (ua.includes('edg/')) browser = 'Edge';
     else if (ua.includes('opr/')) browser = 'Opera';
     else if (ua.includes('chrome') && !ua.includes('chromium')) browser = 'Chrome';
@@ -63,8 +56,6 @@ function getFriendlyDeviceName(userAgent) {
     return `${browser} en ${os}`;
 }
 
-
-// --- LICENSE ACTIVATION & VALIDATION ---
 window.activateLicense = async function (licenseKey) {
     try {
         const user = await getSupabaseUser();
@@ -78,8 +69,6 @@ window.activateLicense = async function (licenseKey) {
 
         const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
 
-        // --- ¡CAMBIO AQUÍ! ---
-        // Usamos el nuevo helper para el nombre
         const friendlyName = getFriendlyDeviceName(navigator.userAgent);
 
         const { data, error } = await supabaseClient.rpc(
@@ -87,11 +76,10 @@ window.activateLicense = async function (licenseKey) {
             license_key_param: licenseKey,
             user_id_param: user.id,
             device_fingerprint_param: deviceFingerprint,
-            device_name_param: friendlyName, // <-- Nombre amigable
+            device_name_param: friendlyName,
             device_info_param: deviceInfo
         }
         );
-        // --- FIN DEL CAMBIO ---
 
         if (error) throw error;
 
@@ -139,29 +127,22 @@ window.revalidateLicense = async function () {
     } catch (error) {
         console.error('Error during license revalidation:', error);
 
-        // --- CORRECCIÓN CRÍTICA PARA MODO OFFLINE ---
-        // Si el error es por falta de internet, lanzamos el error hacia arriba (throw).
-        // Esto permite que 'useAppStore.js' capture el error en su bloque catch
-        // y active el modo "Confiando en caché local".
         const errorMsg = error.message ? error.message.toLowerCase() : '';
 
         if (
             errorMsg.includes('failed to fetch') ||
             errorMsg.includes('network error') ||
             errorMsg.includes('connection') ||
-            !navigator.onLine // Doble verificación
+            !navigator.onLine
         ) {
-            // Al lanzar el error aquí, evitamos el return { valid: false } de abajo
             throw new Error('OFFLINE_MODE_TRIGGER');
         }
-        // ---------------------------------------------
-
+    
         return { valid: false, message: error.message };
     }
 };
 
 window.deactivateCurrentDevice = async function (licenseKey) {
-    // (Esta función no cambia)
     try {
         const user = await getSupabaseUser();
         if (!user) throw new Error('User session not found.');
@@ -188,9 +169,6 @@ window.deactivateCurrentDevice = async function (licenseKey) {
         return { success: false, message: error.message };
     }
 };
-
-// --- BUSINESS PROFILE MANAGEMENT ---
-// (Estas funciones no cambian)
 
 window.getBusinessCategories = async function () {
     try {
@@ -249,7 +227,6 @@ window.getBusinessProfile = async function (licenseKey) {
             return { success: false, message: 'License key is required to fetch profile.' };
         }
 
-        // 1. Primero obtenemos el ID de la licencia usando la Key
         const { data: license, error: licenseError } = await supabaseClient
             .from('licenses')
             .select('id')
@@ -257,19 +234,16 @@ window.getBusinessProfile = async function (licenseKey) {
             .single();
 
         if (licenseError || !license) {
-            // Si no encuentra la licencia, no puede haber perfil
             return { success: true, data: null };
         }
 
-        // 2. Ahora buscamos el perfil asociado a ESE license_id (único por negocio)
         const { data, error } = await supabaseClient
             .from('business_profiles')
             .select('*')
-            .eq('license_id', license.id) // <--- CAMBIO CRÍTICO: Usamos license_id, no user_id
+            .eq('license_id', license.id)
             .single();
 
         if (error) {
-            // Código PGRST116 significa que no encontró filas (aún no hay perfil creado)
             if (error.code === 'PGRST116') {
                 return { success: true, data: null };
             }
@@ -288,8 +262,6 @@ window.getLicenseDevices = async function (licenseKey) {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
 
-        // --- ¡CAMBIO AQUÍ! ---
-        // Obtenemos la huella actual para pasarla a la función SQL
         let deviceFingerprint = localStorage.getItem('fp');
         if (!deviceFingerprint) {
             const fp = await FingerprintJS.load();
@@ -297,8 +269,7 @@ window.getLicenseDevices = async function (licenseKey) {
             deviceFingerprint = result.visitorId;
             localStorage.setItem('fp', deviceFingerprint);
         }
-        // --- FIN DEL CAMBIO ---
-
+        
         const { data, error } = await supabaseClient.rpc('get_license_devices', {
             license_key_param: licenseKey,
             current_fingerprint_param: deviceFingerprint // <-- Pasamos el nuevo parámetro
@@ -314,7 +285,6 @@ window.getLicenseDevices = async function (licenseKey) {
 };
 
 window.deactivateDeviceById = async function (deviceId) {
-    // (Esta función no cambia)
     try {
         const user = await getSupabaseUser();
         if (!user) throw new Error('User session not found.');
@@ -343,7 +313,6 @@ window.createFreeTrial = async function () {
         const result = await fp.get();
         const deviceFingerprint = result.visitorId;
 
-        // (Guardamos la huella para futuras revalidaciones)
         localStorage.setItem('fp', deviceFingerprint);
 
         const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
@@ -360,7 +329,6 @@ window.createFreeTrial = async function () {
 
         if (error) throw error;
 
-        // La función SQL devuelve {success: true/false, details: {...}, error: "..."}
         return data;
 
     } catch (error) {
@@ -382,28 +350,25 @@ window.uploadFile = async function (file, type = 'product') {
         const user = await getSupabaseUser();
         if (!user) throw new Error("No se pudo obtener la sesión del usuario.");
 
-        // Creamos un nombre de archivo único
         const fileExt = file.name.split('.').pop();
         const fileName = `${type}-${user.id}-${Date.now()}.${fileExt}`;
         const filePath = `${user.id}/${fileName}`; // Ej: 'user-id-123/product-user-id-123-456789.webp'
 
-        // 1. Subir el archivo
         let { error: uploadError } = await supabaseClient
             .storage
-            .from('images') // El nombre de tu bucket
+            .from('images')
             .upload(filePath, file, {
                 cacheControl: '3600',
-                upsert: false // No sobrescribir
+                upsert: false
             });
 
         if (uploadError) {
             throw uploadError;
         }
 
-        // 2. Obtener la URL pública
         const { data } = supabaseClient
             .storage
-            .from('images') // El nombre de tu bucket
+            .from('images')
             .getPublicUrl(filePath);
 
         if (!data || !data.publicUrl) {
@@ -415,7 +380,7 @@ window.uploadFile = async function (file, type = 'product') {
 
     } catch (error) {
         console.error('Error al subir el archivo:', error);
-        return null; // Devolvemos null en caso de error
+        return null;
     }
 };
 
@@ -429,7 +394,6 @@ window.uploadFile = async function (file, type = 'product') {
 window.subscribeToSecurityChanges = async function (licenseKey, onLicenseChange, onDeviceChange) {
     if (!licenseKey) return null;
 
-    // Obtenemos el fingerprint actual
     const fp = await FingerprintJS.load();
     const result = await fp.get();
     const currentFingerprint = result.visitorId;
@@ -437,7 +401,6 @@ window.subscribeToSecurityChanges = async function (licenseKey, onLicenseChange,
     console.log("🔌 Conectando a Realtime Security para:", licenseKey);
 
     const channel = supabaseClient.channel('security-monitoring')
-        // 1. Escuchar cambios en la LICENCIA (Bloqueos, Expiración)
         .on(
             'postgres_changes',
             {
@@ -451,18 +414,16 @@ window.subscribeToSecurityChanges = async function (licenseKey, onLicenseChange,
                 onLicenseChange(payload.new);
             }
         )
-        // 2. Escuchar cambios en EL DISPOSITIVO (Si el admin te desactiva o elimina)
         .on(
             'postgres_changes',
             {
-                event: '*', // UPDATE o DELETE
+                event: '*',
                 schema: 'public',
                 table: 'license_devices',
                 filter: `device_fingerprint=eq.${currentFingerprint}`
             },
             (payload) => {
                 console.log('⚠️ Cambio crítico en Dispositivo detectado:', payload);
-                // Si es DELETE, payload.new es null, usamos payload.old
                 onDeviceChange(payload.new || null, payload.eventType);
             }
         )

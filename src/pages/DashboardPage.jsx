@@ -7,10 +7,13 @@ import RecycleBin from '../components/dashboard/RecycleBin';
 import BusinessTips from '../components/dashboard/BusinessTips';
 import WasteHistory from '../components/dashboard/WasteHistory';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
+import { useNavigate } from 'react-router-dom';
 import './DashboardPage.css';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState('stats');
+
+  const navigate = useNavigate();
 
   const features = useFeatureConfig();
 
@@ -80,10 +83,38 @@ export default function DashboardPage() {
       )}
 
       {activeTab === 'history' && (
-        <div className="dashboard-grid-condensed">
-          <SalesHistory sales={sales} onDeleteSale={deleteSale} />
-          <RecycleBin items={deletedItems} onRestoreItem={restoreItem} />
-        </div>
+        <>
+          <div className="data-warning-banner">
+            <span className="data-warning-icon">💾</span>
+            <div>
+              <strong>Importante: Tus datos viven en este dispositivo.</strong>
+              <p style={{ margin: '4px 0 0 0' }}>
+                Lanzo POS guarda toda la información en el navegador. Si borras el historial o las "cookies", podrías perder tus registros.
+                <br />
+                Te recomendamos hacer una <strong>Copia de Seguridad</strong> semanalmente.
+                <button
+                  onClick={() => navigate('/productos')} // Redirige a productos donde está el botón de exportar
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    textDecoration: 'underline',
+                    color: 'inherit',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    padding: 0,
+                    marginLeft: '5px'
+                  }}
+                >
+                  Ir a Respaldar ahora →
+                </button>
+              </p>
+            </div>
+          </div>
+          <div className="dashboard-grid-condensed">
+            <SalesHistory sales={sales} onDeleteSale={deleteSale} />
+            <RecycleBin items={deletedItems} onRestoreItem={restoreItem} />
+          </div>
+        </>
       )}
 
       {activeTab === 'tips' && (

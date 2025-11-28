@@ -16,7 +16,6 @@
 .caja-grid {
   display: grid;
   grid-template-columns: 1fr;
-  /* Móvil: 1 columna vertical */
   gap: 1.5rem;
   max-width: 1200px;
   margin: 0 auto;
@@ -29,10 +28,9 @@
   border-radius: 16px;
   padding: 2rem;
   box-shadow: var(--box-shadow);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border-color); /* Variable genérica mejor que hardcode */
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   height: 100%;
-  /* Para que se estiren y tengan la misma altura en fila */
 }
 
 .caja-card:hover {
@@ -104,17 +102,9 @@
   font-family: 'Inter', monospace;
 }
 
-.amount.neutral {
-  color: var(--text-dark);
-}
-
-.amount.positive {
-  color: var(--success-color);
-}
-
-.amount.negative {
-  color: var(--error-color);
-}
+.amount.neutral { color: var(--text-dark); }
+.amount.positive { color: var(--success-color); }
+.amount.negative { color: var(--error-color); }
 
 /* === TARJETA DE ACCIONES (Derecha Arriba) === */
 .actions-title {
@@ -129,18 +119,22 @@
 .actions-grid {
   display: grid;
   gap: 1rem;
-  /* En móvil 1 columna, en escritorio se ajusta */
   grid-template-columns: 1fr;
   height: 100%;
   align-content: center;
-  /* Centrar botones verticalmente */
 }
+
+/* -------------------------------------------------------
+   CORRECCIÓN CRÍTICA DE BOTONES (Dark Mode Friendly)
+   -------------------------------------------------------
+*/
 
 /* Botón Auditar (Principal) */
 .btn-audit {
-  background-color: var(--text-dark);
+  /* Fondo por defecto (Modo Claro: Negro/Gris Oscuro) */
+  background-color: #1F2937; 
   color: white;
-  border: none;
+  border: 1px solid transparent;
   padding: 1.2rem;
   font-size: 1.1rem;
   border-radius: 12px;
@@ -150,21 +144,53 @@
   justify-content: center;
   align-items: center;
   font-weight: 700;
+  transition: all 0.2s;
 }
 
 .btn-audit:hover {
   background-color: black;
   transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
 }
 
-/* Botones Entrada/Salida */
+/* Botones Entrada/Salida (Estilos Base) */
 .btn-entry,
 .btn-exit {
   padding: 1rem;
   font-size: 1rem;
   border-radius: 12px;
-  font-weight: 600;
+  font-weight: 700;
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+/* Estilo específico Entrada (Verde suave) */
+.btn-entry {
+  background-color: var(--light-background); /* Gris muy suave */
+  color: var(--success-color);
+  border: 1px solid var(--success-color);
+}
+
+.btn-entry:hover {
+  background-color: var(--success-color);
+  color: white;
+  transform: translateY(-2px);
+}
+
+/* Estilo específico Salida (Rojo suave) */
+.btn-exit {
+  background-color: var(--light-background);
+  color: var(--text-dark); /* Texto oscuro por defecto */
+  border: 1px solid var(--border-color);
+}
+
+.btn-exit:hover {
+  background-color: var(--light-background);
+  border-color: var(--text-dark);
+  transform: translateY(-2px);
 }
 
 /* === HISTORIAL (Abajo) === */
@@ -185,7 +211,7 @@
 
 .history-item:hover,
 .movement-item:hover {
-  background-color: #e2e8f0;
+  background-color: rgba(0,0,0,0.05); /* Efecto hover sutil */
 }
 
 .history-item .status-badge {
@@ -193,62 +219,31 @@
   padding: 2px 8px;
 }
 
-.status-badge.success {
-  background-color: #d1fae5;
-  color: #047857;
-}
-
-.status-badge.error {
-  background-color: #fee2e2;
-  color: #b91c1c;
-}
+.status-badge.success { background-color: #d1fae5; color: #047857; }
+.status-badge.error { background-color: #fee2e2; color: #b91c1c; }
 
 
 /* ============================================================
    MEDIA QUERY ESCRITORIO (>= 900px)
-   Organización: Arriba (Estado + Acciones), Abajo (Historial)
    ============================================================ */
 @media (min-width: 900px) {
   .caja-grid {
-    /* Dos columnas iguales arriba */
     grid-template-columns: 1fr 1fr;
-    /* Filas automáticas */
     grid-template-rows: auto auto auto;
-    /* MAPA DE ÁREAS: La magia ocurre aquí */
     grid-template-areas:
       "status actions"
-      /* Fila 1: Estado | Acciones */
       "movements movements"
-      /* Fila 2: Movimientos (Ancho completo) */
       "history history";
-    /* Fila 3: Historial (Ancho completo) */
-
     align-items: stretch;
-    /* Para que las cajas de arriba tengan misma altura */
   }
 
-  /* Asignamos cada tarjeta a su área en el mapa */
-  #caja-status-container {
-    grid-area: status;
-  }
+  #caja-status-container { grid-area: status; }
+  #caja-actions-container { grid-area: actions; }
+  #caja-movements-container { grid-area: movements; }
+  #caja-history-container { grid-area: history; }
 
-  #caja-actions-container {
-    grid-area: actions;
-  }
-
-  #caja-movements-container {
-    grid-area: movements;
-  }
-
-  #caja-history-container {
-    grid-area: history;
-  }
-
-  /* Ajuste específico para la tarjeta de acciones en escritorio */
   .actions-grid {
-    /* Rejilla interna de los botones */
     grid-template-columns: 1fr 1fr;
-    /* Auditar a la izq, Ent/Sal a la der? O todo apilado? */
     grid-template-areas:
       "audit audit"
       "entry exit";
@@ -258,35 +253,68 @@
     grid-area: audit;
     height: 100%;
   }
+  .btn-entry { grid-area: entry; }
+  .btn-exit { grid-area: exit; }
 
-  .btn-entry {
-    grid-area: entry;
-  }
-
-  .btn-exit {
-    grid-area: exit;
-  }
-
-  /* Si la caja está cerrada, centramos el aviso */
   #caja-status-container:only-child {
     grid-column: 1 / -1;
-    /* Ocupa todo el ancho */
     max-width: 600px;
     margin: 0 auto;
   }
 }
 
-/* MODO OSCURO */
+/* ============================================================
+   AJUSTES ESPECÍFICOS MODO OSCURO
+   Aquí arreglamos la "descoordinación"
+   ============================================================ */
 [data-theme="dark"] .caja-card {
-  background-color: #1e1e24;
-  border-color: #333;
+  background-color: #1e293b; /* Azul muy oscuro (Slate 800) */
+  border-color: #334155;
 }
 
+/* FIX DEL BOTÓN AUDITAR EN DARK MODE:
+   Lo hacemos Blanco (o gris muy claro) con texto Oscuro para máximo contraste.
+*/
+[data-theme="dark"] .btn-audit {
+  background-color: #f1f5f9; /* Slate 100 (Casi blanco) */
+  color: #0f172a; /* Slate 900 (Casi negro) */
+  box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+}
+
+[data-theme="dark"] .btn-audit:hover {
+  background-color: #ffffff; /* Blanco puro al hover */
+  transform: translateY(-2px);
+}
+
+/* Ajustes para Entrada/Salida en Dark Mode */
+[data-theme="dark"] .btn-entry {
+  background-color: rgba(16, 185, 129, 0.1); /* Verde muy transparente */
+  color: #34d399; /* Verde brillante */
+  border-color: #059669;
+}
+[data-theme="dark"] .btn-entry:hover {
+  background-color: #059669;
+  color: white;
+}
+
+[data-theme="dark"] .btn-exit {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1; /* Texto gris claro */
+  border-color: #475569;
+}
+[data-theme="dark"] .btn-exit:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+/* Items del historial en modo oscuro */
 [data-theme="dark"] .history-item,
 [data-theme="dark"] .movement-item {
-  background-color: #2d2d35;
+  background-color: #0f172a; /* Fondo más oscuro que la tarjeta */
+  border: 1px solid #334155;
 }
 
 [data-theme="dark"] .history-item:hover {
-  background-color: #383842;
+  background-color: #1e293b;
+  border-color: #475569;
 }

@@ -27,6 +27,7 @@ export const STORES = {
   MOVIMIENTOS_CAJA: 'movimientos_caja',
   PRODUCT_BATCHES: 'product_batches',
   WASTE: 'waste_logs',
+  DAYLY_STATS: 'dayly_stats',
 };
 
 /**
@@ -109,7 +110,7 @@ export function initDB() {
         const storeDefinitions = [
           STORES.MENU, STORES.COMPANY, STORES.THEME, STORES.INGREDIENTS,
           STORES.CATEGORIES, STORES.CUSTOMERS, STORES.CAJAS,
-          STORES.DELETED_MENU, STORES.DELETED_CUSTOMERS, 
+          STORES.DELETED_MENU, STORES.DELETED_CUSTOMERS,
           STORES.DELETED_CATEGORIES
         ];
 
@@ -156,6 +157,11 @@ export function initDB() {
         if (!tempDb.objectStoreNames.contains(STORES.WASTE)) {
           const wasteStore = tempDb.createObjectStore(STORES.WASTE, { keyPath: 'id' });
           wasteStore.createIndex('timestamp', 'timestamp', { unique: false });
+        }
+
+        if (!tempDb.objectStoreNames.contains(STORES.DAILY_STATS)) {
+          // KeyPath será la fecha string YYYY-MM-DD
+          tempDb.createObjectStore(STORES.DAILY_STATS, { keyPath: 'date' });
         }
 
         if (event.oldVersion < 17) {
@@ -526,31 +532,91 @@ export function saveBulkOptimized(storeName, data, chunkSize = 100) {
   });
 }
 
+/**
+ * Procesa múltiples descuentos de stock en una sola transacción atómica.
+ * Garantiza integridad: Si un lote falla, NINGUNO se descuenta (Rollback).
+ */
+export async function processBatchDeductions(deductions) {
+  const db = await initDB();
+
+  return new Promise((resolve, reject) => {
+    // 1. Abrimos una transacción que abarca todos los lotes
+    const transaction = db.transaction([STORES.PRODUCT_BATCHES], 'readwrite');
+    const store = transaction.objectStore(STORES.PRODUCT_BATCHES);
+
+    // Contenedor para errores internos
+    let aborted = false;
+
+    transaction.oncomplete = () => resolve({ success: true });
+    transaction.onerror = (e) => reject(e.target.error);
+    transaction.onabort = (e) => reject(new Error('Transacción abortada: Stock insuficiente o error de escritura.'));
+
+    // 2. Iteramos sobre los descuentos DENTRO de la transacción
+    deductions.forEach(({ batchId, quantity }) => {
+      if (aborted) return;
+
+      const getRequest = store.get(batchId);
+
+      getRequest.onsuccess = () => {
+        const batch = getRequest.result;
+
+        if (!batch) {
+          aborted = true;
+          transaction.abort(); // Cancelar TODO si falta un lote
+          return;
+        }
+
+        if (batch.stock < quantity) {
+          console.error(`Stock insuficiente en lote ${batchId}. Stock: ${batch.stock}, Req: ${quantity}`);
+          aborted = true;
+          transaction.abort(); // Cancelar TODO si falta stock
+          return;
+        }
+
+        // Aplicar descuento
+        batch.stock -= quantity;
+        if (batch.stock <= 0.0001) {
+          batch.stock = 0;
+          batch.isActive = false;
+        }
+
+        // Guardar actualización
+        store.put(batch);
+      };
+
+      getRequest.onerror = () => {
+        aborted = true;
+        transaction.abort();
+      };
+    });
+  });
+}
+
 export async function deleteCategoryCascading(categoryId) {
   return executeWithRetry(async () => {
     const db = await initDB();
-    
+
     return new Promise((resolve, reject) => {
       // 1. Abrimos una transacción que abarca AMBOS almacenes
       const tx = db.transaction([STORES.CATEGORIES, STORES.MENU], 'readwrite');
       const catStore = tx.objectStore(STORES.CATEGORIES);
       const menuStore = tx.objectStore(STORES.MENU);
-      
+
       // 2. Manejadores de éxito/error global de la transacción
       tx.oncomplete = () => resolve({ success: true });
       tx.onerror = (e) => reject(e.target.error);
-      
+
       // 3. Eliminar la categoría
       catStore.delete(categoryId);
-      
+
       // 4. Buscar y limpiar productos afectados usando un Cursor
       // (Más eficiente que cargar todo en memoria)
       const index = menuStore.index('categoryId'); // Asumiendo que existe índice, si no, usamos cursor normal
       // Si no tienes índice 'categoryId' definido en initDB, usamos cursor sobre todo el store (fallback)
       // Nota: En tu código actual no vi índice 'categoryId', así que usaremos cursor general seguro.
-      
+
       const request = menuStore.openCursor();
-      
+
       request.onsuccess = (e) => {
         const cursor = e.target.result;
         if (cursor) {

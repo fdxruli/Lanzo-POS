@@ -163,79 +163,97 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  /**
-   * REFACTORIZADO: Gestión robusta de suscripción a seguridad.
-   * Evita duplicidad de listeners y fugas de memoria.
-   */
+  // ============================================================
+  // GESTIÓN DE SEGURIDAD REALTIME (OPTIMIZADA)
+  // ============================================================
+
   startRealtimeSecurity: async () => {
     const { licenseDetails, realtimeSubscription, stopRealtimeSecurity } = get();
 
-    // 1. Si ya existe una suscripción activa, la limpiamos primero para evitar duplicados (Idempotencia)
-    if (realtimeSubscription) {
-      console.log("♻️ Limpiando suscripción anterior antes de reiniciar seguridad...");
-      await stopRealtimeSecurity();
+    // 1. Validación temprana
+    if (!licenseDetails?.license_key) {
+      console.warn('⚠️ Seguridad: No se puede iniciar sin licencia válida.');
+      return;
     }
 
-    if (!licenseDetails?.license_key) return;
+    // 2. Limpieza preventiva (Evitar duplicados)
+    if (realtimeSubscription) {
+      console.log("♻️ Reiniciando servicio de seguridad...");
+      await stopRealtimeSecurity();
+      // Pequeña pausa para asegurar que el socket anterior se cierre completamente
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
 
-    console.log("🔌 Iniciando nueva suscripción de seguridad...");
+    console.log("🔌 Conectando seguridad en tiempo real...");
 
-    const sub = await window.subscribeToSecurityChanges(
-      licenseDetails.license_key,
+    try {
+      const sub = await window.subscribeToSecurityChanges(
+        licenseDetails.license_key,
 
-      (newLicenseData) => {
-        if (newLicenseData.status !== 'active') {
-          showMessageModal(
-            `⚠️ ALERTA DE SEGURIDAD: Tu licencia ha sido marcada como "${newLicenseData.status}". La sesión se cerrará.`,
-            () => {
-              get().logout();
-              window.location.reload(); // Recarga para limpiar todo estado residual
-            }
-          );
-          get().logout();
-        } else {
-          set((state) => ({
-            licenseDetails: { ...state.licenseDetails, ...newLicenseData }
-          }));
-          console.log("Licencia actualizada en tiempo real (sigue activa).");
+        // Callback: Cambio en Licencia
+        (newLicenseData) => {
+          // CLAVE: Ignorar eventos de suscripciones viejas/zombies
+          if (get().realtimeSubscription !== sub) return;
+
+          if (newLicenseData.status !== 'active') {
+            showMessageModal(
+              `⚠️ ALERTA DE SEGURIDAD: Tu licencia ahora está marcada como "${newLicenseData.status}".`,
+              () => {
+                get().logout();
+                window.location.reload();
+              }
+            );
+          } else {
+            // Actualización silenciosa de datos
+            set((state) => ({
+              licenseDetails: { ...state.licenseDetails, ...newLicenseData }
+            }));
+          }
+        },
+
+        // Callback: Cambio en Dispositivo
+        (newDeviceData, eventType) => {
+          // CLAVE: Ignorar eventos de suscripciones viejas/zombies
+          if (get().realtimeSubscription !== sub) return;
+
+          if (eventType === 'DELETE' || (newDeviceData && !newDeviceData.is_active)) {
+            showMessageModal(
+              `⚠️ ACCESO REVOCADO: Este dispositivo ha sido desactivado remotamente.`,
+              () => {
+                get().logout();
+                window.location.reload();
+              }
+            );
+          }
         }
-      },
+      );
 
-      (newDeviceData, eventType) => {
-        if (eventType === 'DELETE' || (newDeviceData && !newDeviceData.is_active)) {
-          showMessageModal(
-            `⚠️ ACCESO REVOCADO: Este dispositivo ha sido desactivado por el administrador.`,
-            () => {
-              get().logout();
-              window.location.reload();
-            }
-          );
-          get().logout();
-        }
-      }
-    );
+      // 3. Guardar la referencia activa
+      set({ realtimeSubscription: sub });
 
-    set({ realtimeSubscription: sub });
+    } catch (error) {
+      console.error('Error no crítico al iniciar seguridad:', error);
+      set({ realtimeSubscription: null });
+    }
   },
 
-  /**
-   * NUEVA ACCIÓN: Detiene la vigilancia en tiempo real.
-   * Crucial para desmontaje de componentes y logout.
-   */
   stopRealtimeSecurity: async () => {
     const { realtimeSubscription } = get();
-    
-    if (realtimeSubscription) {
-      console.log("🔌 Deteniendo vigilancia en tiempo real...");
-      try {
-        if (typeof window.removeRealtimeChannel === 'function') {
-          await window.removeRealtimeChannel(realtimeSubscription);
-        }
-      } catch (err) {
-        console.warn("Advertencia no crítica al desconectar canal:", err);
+
+    // Si no hay nada que detener, salimos
+    if (!realtimeSubscription) return;
+
+    console.log("🔌 Desconectando seguridad...");
+
+    // Limpiamos el estado INMEDIATAMENTE para bloquear callbacks entrantes
+    set({ realtimeSubscription: null });
+
+    try {
+      if (typeof window.removeRealtimeChannel === 'function') {
+        await window.removeRealtimeChannel(realtimeSubscription);
       }
-      // Limpiamos la referencia en el estado
-      set({ realtimeSubscription: null });
+    } catch (err) {
+      console.warn("Advertencia al desconectar canal (ignorable):", err);
     }
   },
 
@@ -321,7 +339,7 @@ export const useAppStore = create((set, get) => ({
 
       const profileData = {
         ...setupData,
-        logo: logoUrl 
+        logo: logoUrl
       };
 
       await window.saveBusinessProfile(licenseKey, profileData);
@@ -384,7 +402,7 @@ export const useAppStore = create((set, get) => ({
       companyProfile: null,
       licenseStatus: 'active',
       gracePeriodEnds: null,
-      realtimeSubscription: null 
+      realtimeSubscription: null
     });
 
     console.log("Sesión cerrada correctamente.");

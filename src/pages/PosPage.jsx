@@ -10,7 +10,7 @@ import PrescriptionModal from '../components/pos/PrescriptionModal';
 import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
 import { useDashboardStore } from '../store/useDashboardStore';
-import { loadData, saveBulk, saveData, queryByIndex, queryBatchesByProductIdAndActive, STORES } from '../services/database';
+import { loadData, saveBulk, saveData, queryByIndex, queryBatchesByProductIdAndActive, STORES, processBatchDeductions } from '../services/database';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useDebounce } from '../hooks/useDebounce';
@@ -24,14 +24,17 @@ export default function PosPage() {
   const [isQuickCajaOpen, setIsQuickCajaOpen] = useState(false);
   const [categories, setCategories] = useState([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  
   const [searchTerm, setSearchTerm] = useState('');
+  // Esperamos 300ms después de que el usuario deje de escribir para buscar en la BD
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-  // --- NUEVO ESTADO: Controlar el Modal de Resumen en Móvil ---
+  
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isMobileOrderOpen, setIsMobileOrderOpen] = useState(false);
 
   const searchProducts = useDashboardStore((state) => state.searchProducts);
-
+  
+  // Ejecutar búsqueda en base de datos cuando el término "debounced" cambie
   useEffect(() => {
     searchProducts(debouncedSearchTerm);
   }, [debouncedSearchTerm, searchProducts]);
@@ -39,12 +42,12 @@ export default function PosPage() {
   const { cajaActual, abrirCaja } = useCaja();
   const { order, clearOrder, getTotalPrice } = useOrderStore();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
-  const allProducts = useDashboardStore((state) => state.menu);
+  
+  // Estos "allProducts" ya son los resultados filtrados que vienen de la BD
+  const allProducts = useDashboardStore((state) => state.menu); 
   const refreshData = useDashboardStore((state) => state.loadAllData);
 
   const total = getTotalPrice();
-
-  // Calculamos cantidad total de items para el badge del botón flotante
   const totalItemsCount = order.reduce((acc, item) => acc + (item.saleType === 'bulk' ? 1 : item.quantity), 0);
 
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
@@ -64,23 +67,25 @@ export default function PosPage() {
     loadExtras();
   }, []);
 
+  // --- OPTIMIZACIÓN CRÍTICA (PASO 2) ---
+  // Eliminamos el filtrado de texto local. Confiamos en que 'allProducts' 
+  // ya contiene los resultados correctos gracias a 'searchProducts' del store.
+  // Solo filtramos localmente por Categoría y Tipo, que son filtros rápidos.
   const filteredProducts = useMemo(() => {
+    // 1. Filtro base (Vendibles)
     let items = (allProducts || []).filter(p => p.productType === 'sellable' || !p.productType);
+    
+    // 2. Filtro de Categoría
     if (selectedCategoryId) {
       items = items.filter(p => p.categoryId === selectedCategoryId);
     }
-    if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      items = items.filter(p => {
-        const matchName = p.name.toLowerCase().includes(lowerTerm);
-        const matchBarcode = p.barcode && p.barcode.includes(lowerTerm);
-        let matchSustancia = false;
-        if (p.sustancia) matchSustancia = p.sustancia.toLowerCase().includes(lowerTerm);
-        return matchName || matchBarcode || matchSustancia;
-      });
-    }
+
+    // NOTA: Ya no filtramos por 'searchTerm' aquí. 
+    // El Store ya nos devuelve la lista filtrada por nombre/código desde la BD.
+    
     return items;
-  }, [allProducts, selectedCategoryId, searchTerm]);
+  }, [allProducts, selectedCategoryId]); 
+  // Quitamos 'searchTerm' de las dependencias para evitar re-renders innecesarios al escribir
 
   const handleInitiateCheckout = () => {
     const licenseDetails = useAppStore.getState().licenseDetails;
@@ -94,7 +99,6 @@ export default function PosPage() {
       return;
     }
 
-    // Cerramos el modal móvil si está abierto
     setIsMobileOrderOpen(false);
 
     const itemsRequiring = features.hasLabFields
@@ -118,10 +122,13 @@ export default function PosPage() {
   };
 
   const handleProcessOrder = async (paymentData) => {
-    // Validar Caja
+    if (isProcessing) return;
+    setIsProcessing(true);
+
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       setIsPaymentModalOpen(false);
       setIsQuickCajaOpen(true);
+      setIsProcessing(false);
       return;
     }
 
@@ -131,7 +138,7 @@ export default function PosPage() {
 
       const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
 
-      // A. Pre-carga de Lotes
+      // A. PRE-CARGA DE LOTES
       const uniqueProductIds = new Set();
       for (const orderItem of itemsToProcess) {
         const realProductId = orderItem.parentId || orderItem.id;
@@ -158,9 +165,9 @@ export default function PosPage() {
         })
       );
 
-      // B. Descuento de Stock
+      // B. PLANIFICACIÓN DE DESCUENTOS
+      const batchesToDeduct = []; 
       const processedItems = [];
-      const batchUpdates = new Map();
 
       for (const orderItem of itemsToProcess) {
         const realProductId = orderItem.parentId || orderItem.id;
@@ -181,25 +188,26 @@ export default function PosPage() {
 
           for (const batch of batches) {
             if (requiredQty <= 0.0001) break;
-            const currentBatch = batchUpdates.get(batch.id) || batch;
-            const toDeduct = Math.min(requiredQty, currentBatch.stock);
+            if (batch.stock <= 0) continue;
 
-            currentBatch.stock -= toDeduct;
-            if (currentBatch.stock < 0.0001) {
-              currentBatch.stock = 0;
-              currentBatch.isActive = false;
-            }
+            const toDeduct = Math.min(requiredQty, batch.stock);
 
-            itemBatchesUsed.push({
-              batchId: currentBatch.id,
-              ingredientId: targetId,
-              quantity: toDeduct,
-              cost: currentBatch.cost
+            batchesToDeduct.push({
+              batchId: batch.id,
+              quantity: toDeduct
             });
 
-            itemTotalCost += (currentBatch.cost * toDeduct);
+            batch.stock -= toDeduct;
+
+            itemBatchesUsed.push({
+              batchId: batch.id,
+              ingredientId: targetId,
+              quantity: toDeduct,
+              cost: batch.cost
+            });
+
+            itemTotalCost += (batch.cost * toDeduct);
             requiredQty -= toDeduct;
-            batchUpdates.set(currentBatch.id, currentBatch);
           }
         }
 
@@ -213,11 +221,18 @@ export default function PosPage() {
         });
       }
 
-      // C. Guardar cambios
-      if (batchUpdates.size > 0) {
-        await saveBulk(STORES.PRODUCT_BATCHES, Array.from(batchUpdates.values()));
+      // C. EJECUCIÓN
+      if (batchesToDeduct.length > 0) {
+        try {
+          await processBatchDeductions(batchesToDeduct);
+        } catch (error) {
+          console.error("Error crítico en inventario:", error);
+          showMessageModal("⚠️ Error de Inventario: El stock cambió. Intenta de nuevo.");
+          return;
+        }
       }
 
+      // D. GUARDADO
       const sale = {
         timestamp: new Date().toISOString(),
         items: processedItems,
@@ -232,7 +247,6 @@ export default function PosPage() {
 
       await saveData(STORES.SALES, sale);
 
-      // --- CORRECCIÓN AQUÍ: Nombre correcto de la función del store ---
       useDashboardStore.getState().updateStatsWithSale(sale);
 
       if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
@@ -245,11 +259,11 @@ export default function PosPage() {
 
       clearOrder();
       setTempPrescriptionData(null);
-      setIsMobileOrderOpen(false); // CERRAR EL MODAL MÓVIL
+      setIsMobileOrderOpen(false);
       showMessageModal('✅ ¡Venta registrada correctamente!');
       refreshData(true);
 
-      // D. Ticket WhatsApp
+      // E. WHATSAPP
       if (paymentData.sendReceipt && paymentData.customerId) {
         try {
           const customer = await loadData(STORES.CUSTOMERS, paymentData.customerId);
@@ -291,6 +305,8 @@ export default function PosPage() {
     } catch (error) {
       console.error('Error al procesar:', error);
       showMessageModal(`Error: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -305,15 +321,14 @@ export default function PosPage() {
   };
 
   const handleBarcodeScanned = (code) => {
-    // ... lógica de escaneo ...
+    // Si tienes lógica específica de escaneo manual, va aquí.
+    // El ScannerModal ya maneja la adición al carrito internamente en modo POS.
   };
 
   return (
     <>
       <h2 className="section-title">Punto de Venta</h2>
       <div className="pos-grid">
-
-        {/* 1. Menú de Productos (Siempre visible) */}
         <ProductMenu
           products={filteredProducts}
           categories={categories}
@@ -323,13 +338,9 @@ export default function PosPage() {
           onSearchChange={setSearchTerm}
           onOpenScanner={() => setIsScannerOpen(true)}
         />
-
-        {/* 2. Resumen de Pedido (Visible solo en Desktop por CSS) */}
         <OrderSummary onOpenPayment={handleInitiateCheckout} />
       </div>
 
-      {/* --- 3. BARRA FLOTANTE MÓVIL (Toast) --- */}
-      {/* Solo se muestra si hay items y estamos en pantalla pequeña (controlado por CSS) */}
       {order.length > 0 && !isMobileOrderOpen && !isPrescriptionModalOpen && !isPaymentModalOpen && (
         <div className="floating-cart-bar" onClick={() => setIsMobileOrderOpen(true)}>
           <div className="cart-count-badge">{totalItemsCount}</div>
@@ -337,20 +348,17 @@ export default function PosPage() {
           <span className="cart-total-label">${total.toFixed(2)}</span>
         </div>
       )}
-      {/* --- 4. MODAL RESUMEN PEDIDO (MÓVIL) --- */}
-      {isMobileOrderOpen && (
-        /* CAMBIO AQUÍ: Subimos el zIndex a 10005 para superar al Navbar (que tiene 9999) */
-        <div className="modal" style={{ display: 'flex', zIndex: 10005, alignItems: 'flex-end' }}>
 
-          {/* Estilo del contenido del modal (hoja deslizable) */}
+      {isMobileOrderOpen && (
+        <div className="modal" style={{ display: 'flex', zIndex: 10005, alignItems: 'flex-end' }}>
           <div className="modal-content" style={{
             borderRadius: '20px 20px 0 0',
             width: '100%',
-            height: '85vh', /* Ocupa casi toda la pantalla */
+            height: '85vh',
             maxWidth: '100%',
-            padding: '0', /* Quitamos padding del contenedor para que el hijo maneje el scroll */
+            padding: '0',
             animation: 'slideUp 0.3s ease-out',
-            overflow: 'hidden' /* Importante para que el scroll sea interno */
+            overflow: 'hidden'
           }}>
             <OrderSummary
               onOpenPayment={handleInitiateCheckout}
@@ -361,7 +369,6 @@ export default function PosPage() {
         </div>
       )}
 
-      {/* --- Otros Modales --- */}
       <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
 
       <PaymentModal
