@@ -10,14 +10,14 @@ const supportFields = [
   { id: 'problem', label: 'Describe tu problema', type: 'textarea' }
 ];
 
-const SUPPORT_PHONE_NUMBER = '521122334455'; 
+const SUPPORT_PHONE_NUMBER = '521122334455';
 
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isContactOpen, setIsContactOpen] = useState(false);
-  
+
   // --- NUEVO ESTADO: Detección de Internet ---
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -40,7 +40,7 @@ export default function WelcomeModal() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     // --- VALIDACIÓN DE INTERNET ---
     if (!isOnline) {
       setErrorMessage('⚠️ Para introducir una licencia es necesario estar conectado a internet.');
@@ -64,8 +64,8 @@ export default function WelcomeModal() {
   const handleTrialClick = async () => {
     // --- VALIDACIÓN DE INTERNET TAMBIÉN AQUÍ ---
     if (!isOnline) {
-       setErrorMessage('⚠️ Para activar la prueba gratis es necesario estar conectado a internet.');
-       return;
+      setErrorMessage('⚠️ Para activar la prueba gratis es necesario estar conectado a internet.');
+      return;
     }
     // -------------------------------------------
 
@@ -89,26 +89,23 @@ export default function WelcomeModal() {
     <>
       <div className="modal" style={{ display: 'flex' }}>
         <div className="welcome-modal-content">
-          <h2>Bienvenido a Lanzo POS</h2>
-          
-          {/* ... (welcome-summary igual) ... */}
+          <h2>Bienvenido a Lanzo</h2>
           <div className="welcome-summary">
-             {/* ... contenido ... */}
-             <p><strong>Lanzo</strong> es un sistema completo...</p>
-             <ul>
-               <li>Gestiona tu Punto de Venta</li>
-               <li>Controla tu inventario</li>
-               <li>Administra Clientes</li>
-             </ul>
+            <p><strong>Lanzo</strong> es un sistema completo...</p>
+            <ul>
+              <li>Gestiona tu Punto de Venta</li>
+              <li>Controla tu inventario</li>
+              <li>Administra Clientes</li>
+            </ul>
           </div>
 
           {/* MENSAJE DE ADVERTENCIA VISUAL SI NO HAY INTERNET */}
           {!isOnline && (
-            <div style={{ 
-              backgroundColor: '#fee2e2', 
-              color: '#b91c1c', 
-              padding: '10px', 
-              borderRadius: '8px', 
+            <div style={{
+              backgroundColor: '#fee2e2',
+              color: '#b91c1c',
+              padding: '10px',
+              borderRadius: '8px',
               marginBottom: '15px',
               fontSize: '0.9rem',
               textAlign: 'center',
@@ -128,44 +125,42 @@ export default function WelcomeModal() {
                 id="license-key"
                 type="text"
                 required
-                placeholder="Ej: LANZO-XXXX-XXXX-XXXX"
+                placeholder=" LANZO-XXXX-XXXX-XXXX"
                 value={licenseKey}
                 onChange={(e) => setLicenseKey(e.target.value)}
                 disabled={isLoading || !isOnline} /* Deshabilitamos si no hay red */
               />
             </div>
-            <button 
-              type="submit" 
-              className="btn btn-save" 
+            <button
+              type="submit"
+              className="btn btn-save"
               disabled={isLoading || !isOnline} /* Deshabilitamos botón */
               style={!isOnline ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
             >
               {isLoading ? 'Validando...' : 'Validar Licencia'}
             </button>
+            <div className="trial-divider">
+              <span>O</span>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-trial"
+              onClick={handleTrialClick}
+              disabled={isLoading || !isOnline} /* Deshabilitamos botón */
+              style={!isOnline ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
+            >
+              {isLoading ? 'Generando...' : 'Probar Gratis por 3 Meses'}
+            </button>
           </form>
-
-          <div className="trial-divider">
-            <span>O</span>
-          </div>
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-trial"
-            onClick={handleTrialClick}
-            disabled={isLoading || !isOnline} /* Deshabilitamos botón */
-            style={!isOnline ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
-          >
-            {isLoading ? 'Generando...' : 'Probar Gratis por 3 Meses'}
-          </button>
-          
           <div className="welcome-footer">
             {errorMessage && (
               <p className="welcome-error-message">
                 {errorMessage}
               </p>
             )}
-            
-            <button 
-              type="button" 
+
+            <button
+              type="button"
               className="btn-support-link"
               onClick={() => setIsContactOpen(true)}
             >

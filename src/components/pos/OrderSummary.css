@@ -461,3 +461,55 @@
 .btn-remove-item:active {
   transform: scale(0.95);
 }
+
+/* ============================================================
+   FIX: ALERTAS DE STOCK EN MODO OSCURO
+   ============================================================ */
+
+/* 1. Fondo del ITEM completo cuando falta stock */
+[data-theme="dark"] .order-item.exceeds-stock {
+  /* Fondo rojo muy oscuro y transparente en lugar de blanco rosado */
+  background-color: rgba(69, 10, 10, 0.4); 
+  border-color: #7f1d1d; /* Borde rojo oscuro */
+  border-left-color: #ef4444; /* Mantenemos el borde izquierdo brillante */
+}
+
+/* 2. La cajita de la alerta (donde dice "STOCK INSUFICIENTE") */
+[data-theme="dark"] .stock-error-container {
+  /* Fondo sólido oscuro rojizo */
+  background-color: #450a0a; 
+  border-color: #7f1d1d;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* 3. Textos dentro de la alerta */
+[data-theme="dark"] .stock-error-text {
+  color: #fca5a5; /* Rojo claro pastel para leerse bien sobre fondo oscuro */
+}
+
+[data-theme="dark"] .stock-error-text strong {
+  color: #f87171; /* Rojo brillante para el título */
+}
+
+/* 4. Botón "Ajustar a X" */
+[data-theme="dark"] .btn-fix-stock {
+  background-color: transparent;
+  border-color: #f87171;
+  color: #f87171;
+}
+
+[data-theme="dark"] .btn-fix-stock:hover {
+  background-color: #f87171; /* Relleno rojo brillante */
+  color: #1e293b; /* Texto oscuro para contraste */
+}
+
+/* 5. Ajuste de la animación de pulso para que brille en oscuro */
+[data-theme="dark"] .stock-error-container {
+  animation: pulse-red-dark 2s infinite;
+}
+
+@keyframes pulse-red-dark {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
+  70% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}

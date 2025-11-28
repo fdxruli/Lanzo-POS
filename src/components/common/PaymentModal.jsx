@@ -58,8 +58,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
   // Validación para confirmar
   const canConfirm = isEfectivo
-    ? (paid >= total) // Si es efectivo, debe pagar completo
-    : (selectedCustomerId !== null); // Si es fiado, debe tener cliente
+    ? (paid >= total)
+    : (selectedCustomerId !== null && paid <= total);
 
   const handleAmountFocus = (e) => {
     e.target.select();
@@ -127,7 +127,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
   return (
     <>
-      <div id="payment-modal" className="modal" style={{ display: 'flex'}}>
+      <div id="payment-modal" className="modal" style={{ display: 'flex' }}>
         <div className="modal-content">
           <h2 className="modal-title">Procesar Pago</h2>
           <form onSubmit={handleSubmit}>
@@ -223,6 +223,11 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   <p id="payment-change" className="payment-saldo">
                     ${saldoPendiente.toFixed(2)}
                   </p>
+                  {isFiado && paid > total && (
+                    <p style={{ color: 'var(--error-color)', fontSize: '0.8rem', marginTop: '5px' }}>
+                      El abono inicial no puede ser mayor al total.
+                    </p>
+                  )}
                 </>
               )}
             </div>

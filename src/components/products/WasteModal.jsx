@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { saveData, STORES } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
+import { useDashboardStore } from '../../store/useDashboardStore';
 
 export default function WasteModal({ show, onClose, product, onConfirm }) {
     const [quantity, setQuantity] = useState('');
     const [reason, setReason] = useState('caducado'); // caducado, dañado, etc.
     const [notes, setNotes] = useState('');
+
+    const adjustInventoryValue = useDashboardStore(state => state.adjustInventoryValue);
 
     if (!show || !product) return null;
 
@@ -50,6 +53,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
         await saveData(STORES.WASTE, wasteRecord);
 
         const lossAmount = (product.cost || 0) * qty;
+        await adjustInventoryValue(-lossAmount);
         showMessageModal(`✅ Merma registrada. Stock actualizado.\nPérdida estimada: $${lossAmount.toFixed(2)}`);
 
         onConfirm();

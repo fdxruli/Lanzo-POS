@@ -1,10 +1,172 @@
-/* Estilos para ContactModal.jsx */
+/* src/components/common/ContactModal.css */
+
+/* 1. CONTENEDOR MODAL ESTILIZADO */
 .modal-content.contact-modal {
+  background-color: var(--card-background-color);
+  padding: 40px;
+  border-radius: 24px;
+  width: 90%;
   max-width: 500px;
+  /* Altura máxima segura para móviles */
+  max-height: 85vh; 
+  
+  /* --- CORRECCIÓN DEL SCROLL --- */
+  overflow-y: auto;  /* Habilita el scroll vertical */
+  overflow-x: hidden; /* Evita scroll lateral */
+  
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  position: relative;
+  border: 1px solid var(--border-color);
 }
 
-/* Asegura que los textareas en el modal tengan una altura mínima */
-.modal-content.contact-modal .form-textarea {
-  min-height: 100px;
+/* Barra superior decorativa */
+.modal-content.contact-modal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 8px;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+  
+  /* --- CORRECCIÓN VISUAL --- */
+  /* Redondeamos las esquinas superiores de la barra manualmente */
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+}
+
+/* 2. TÍTULO */
+.contact-modal .modal-title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  text-align: center;
+  margin-top: 10px;
+  margin-bottom: 25px;
+  
+  /* Efecto de texto con gradiente sutil */
+  background: linear-gradient(135deg, var(--text-dark) 0%, var(--text-light) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--text-dark);
+}
+
+/* 3. INPUTS Y TEXTAREA */
+.contact-modal .form-group {
+  margin-bottom: 20px;
+}
+
+.contact-modal .form-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.contact-modal .form-input,
+.contact-modal .form-textarea {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  background-color: var(--light-background);
+  font-size: 1rem;
+  color: var(--text-dark);
+  transition: all 0.3s ease;
+}
+
+.contact-modal .form-textarea {
+  min-height: 120px;
   resize: vertical;
+  line-height: 1.5;
+}
+
+/* Efecto Focus en Inputs */
+.contact-modal .form-input:focus,
+.contact-modal .form-textarea:focus {
+  background-color: var(--card-background-color);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 4px rgba(255, 59, 92, 0.1);
+  outline: none;
+}
+
+/* 4. BOTÓN DE WHATSAPP (ACCIÓN PRINCIPAL) */
+.contact-modal .btn-save {
+  width: 100%;
+  padding: 16px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: 14px;
+  margin-top: 10px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  
+  /* Gradiente Verde para WhatsApp */
+  background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+  color: white;
+  box-shadow: 0 8px 15px rgba(37, 211, 102, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.contact-modal .btn-save::before {
+  content: '💬';
+  font-size: 1.2rem;
+}
+
+.contact-modal .btn-save:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 20px rgba(37, 211, 102, 0.4);
+  filter: brightness(1.05);
+}
+
+.contact-modal .btn-save:active {
+  transform: scale(0.98);
+}
+
+/* 5. BOTÓN CANCELAR (SECUNDARIO) */
+.contact-modal .btn-cancel {
+  width: 100%;
+  padding: 14px;
+  margin-top: 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 12px;
+  background-color: transparent;
+  color: var(--text-light);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.contact-modal .btn-cancel:hover {
+  background-color: var(--light-background);
+  color: var(--text-dark);
+}
+
+/* MODO OSCURO */
+[data-theme="dark"] .contact-modal .form-input,
+[data-theme="dark"] .contact-modal .form-textarea {
+  background-color: #0f172a;
+  border-color: #334155;
+}
+
+[data-theme="dark"] .contact-modal .form-input:focus,
+[data-theme="dark"] .contact-modal .form-textarea:focus {
+  border-color: var(--primary-color);
+  background-color: #1e293b;
+}
+
+/* Ajustes Responsive */
+@media (max-width: 480px) {
+  .modal-content.contact-modal {
+    padding: 25px; /* Menos relleno en pantallas pequeñas para dar más espacio al contenido */
+    width: 95%;
+  }
+  .contact-modal .modal-title {
+    font-size: 1.5rem;
+  }
 }

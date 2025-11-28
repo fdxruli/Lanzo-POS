@@ -94,10 +94,16 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
     return `${cleanName}-${attr2Code}-${attr1Code}-${Date.now().toString().slice(-4)}`;
   };
 
+  const adjustInventoryValue = useDashboardStore(state => state.adjustInventoryValue);
+
   const handleProcessSave = async (shouldClose) => {
     const nStock = parseInt(stock, 10);
     const nCost = parseFloat(cost);
     const nPrice = parseFloat(price);
+
+    const oldTotalValue = isEditing ? (batchToEdit.cost * batchToEdit.stock) : 0;
+    const newTotalValue = nCost * nStock;
+    const valueDifference = newTotalValue - oldTotalValue;
 
     if (isNaN(nStock) || isNaN(nCost) || isNaN(nPrice)) {
       showMessageModal("Por favor, ingresa valores numéricos válidos.");
@@ -139,6 +145,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
     };
 
     await onSave(batchData);
+    await adjustInventoryValue(valueDifference);
 
     if (shouldClose) {
         onClose();
@@ -383,7 +390,14 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     }
     if (window.confirm('¿Eliminar este registro permanentemente?')) {
       try {
+        const batchValue = batch.cost * batch.stock;
+        
         await deleteData(STORES.PRODUCT_BATCHES, batch.id);
+        
+        if (batchValue > 0) {
+            await adjustInventoryValue(-batchValue); 
+        }
+        
         const updatedBatches = await loadBatchesForProduct(selectedProductId);
         setLocalBatches(updatedBatches);
         refreshData(true);

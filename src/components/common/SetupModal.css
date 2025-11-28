@@ -1,60 +1,322 @@
-/*
- * Estilos para SetupModal.jsx
- */
+/* src/components/common/SetupModal.css */
 
-/* Ajusta el ancho del modal de configuración */
-#business-setup-modal .modal-content {
-  max-width: 600px;
-  max-height: 90vh; /* Limita la altura máxima */
-  overflow-y: auto; /* Permite scroll vertical */
+/* =========================================
+   1. ESTILOS BASE (MOBILE FIRST)
+   ========================================= */
+
+#business-setup-modal {
+  padding: 0 !important;
+  align-items: flex-start;
+}
+
+#business-setup-modal .modal-content.setup-content {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
   display: flex;
+  flex-direction: column;
+  background-color: var(--background-color);
+}
+
+.setup-header {
+  background-color: var(--card-background-color);
+  padding: 20px;
+  padding-top: max(20px, env(safe-area-inset-top));
+  text-align: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
+}
+
+.setup-header h2 {
+  margin: 0 0 5px 0;
+  color: var(--primary-color);
+  font-size: 1.5rem;
+}
+
+.setup-header p {
+  color: var(--text-light);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+#business-setup-form {
+  padding: 15px;
+  overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
+  /* Scroll suave iOS */
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
+}
+
+/* --- ACORDEÓN --- */
+.accordion-item {
+  background-color: var(--card-background-color);
+  border-radius: 12px;
+  margin-bottom: 15px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.accordion-item.open {
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.accordion-item.locked {
+  opacity: 0.6;
+  background-color: #f3f4f6;
+  pointer-events: none;
+  border-style: dashed;
+}
+
+.accordion-header {
+  padding: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  background-color: var(--card-background-color);
+}
+
+.accordion-item.open .accordion-header {
+  border-bottom: 1px solid var(--light-background);
+  background-color: rgba(99, 102, 241, 0.03);
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  color: var(--text-dark);
+  font-size: 1rem;
+}
+
+.step-number {
+  background-color: var(--light-background);
+  color: var(--text-light);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.accordion-item.open .step-number {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.accordion-item.completed .step-number {
+  background-color: var(--success-color);
+  color: white;
+}
+
+.accordion-item.completed .header-title {
+  color: var(--success-color);
+}
+
+.icon-success {
+  color: var(--success-color);
+  margin-right: 10px;
+}
+
+.icon-locked {
+  color: var(--text-light);
+}
+
+.accordion-body {
+  padding: 15px;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Forms */
+.form-row-split {
+  display: flex;
+  gap: 15px;
+  flex-direction: row;
+}
+
+.mini-logo-upload {
+  display: flex;
+  justify-content: center;
+}
+
+.logo-preview-wrapper {
+  width: 60px;
+  height: 60px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  position: relative;
+  cursor: pointer;
+  background-color: var(--light-background);
+}
+
+.logo-preview-wrapper img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Grid de Rubros */
+.rubro-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+/* === TARJETA DE RUBRO (CORREGIDO) === */
+.rubro-card {
+  border: 2px solid var(--light-background);
+  /* Borde base */
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  background-color: var(--card-background-color);
+  transition: all 0.2s ease-in-out;
+  /* Transición suave */
+}
+
+.rubro-icon {
+  font-size: 1.5rem;
+}
+
+.rubro-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+/* ESTADO SELECCIONADO (Alta Prioridad) */
+.rubro-card.selected {
+  border-color: var(--primary-color) !important;
+  /* Forzamos color de borde */
+  background-color: rgba(255, 59, 92, 0.05);
+  box-shadow: 0 0 0 2px rgba(255, 59, 92, 0.1);
+  /* Efecto de anillo */
+  transform: translateY(-2px);
+  /* Pequeño salto visual */
+}
+
+.error-message {
+  color: var(--error-color);
+  background-color: #fee2e2;
+  padding: 10px;
+  border-radius: 8px;
+  margin-top: 15px;
+  font-size: 0.9rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.step-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.step-actions.end {
   flex-direction: column;
 }
 
-.business-type-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
+.btn-finish {
+  width: 100%;
+  padding: 16px;
+  font-size: 1.1rem;
 }
 
-.type-box {
-  padding: var(--spacing-lg);
-  border: 2px solid #e5e7eb; /* TODO: Usar variable */
-  border-radius: var(--border-radius-sm);
-  text-align: center;
-  font-weight: 500;
-  cursor: pointer;
-  transition: var(--transition);
+/* =========================================
+   2. MEDIA QUERY: ESCRITORIO (>= 768px)
+   ========================================= */
+@media (min-width: 480px) and (max-width: 767px) {
+  .rubro-grid {
+    gap: 12px;
+  }
+  .rubro-card {
+    padding: 14px;
+  }
 }
 
-.type-box:hover {
-  border-color: var(--secondary-color);
-  color: var(--secondary-color);
-}
-
-.type-box.selected {
-  background-color: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
-}
-
-/* Responsive para móviles */
-@media (max-width: 768px) {
-  #business-setup-modal .modal-content {
-    width: 95%;
-    max-height: 85vh;
-    padding: var(--spacing-md);
+@media (min-width: 768px) {
+  #business-setup-modal {
+    padding: 20px !important;
+    align-items: center;
   }
 
-  .business-type-container {
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--spacing-sm);
+  #business-setup-modal .modal-content.setup-content {
+    width: 100%;
+    max-width: 550px;
+    height: auto;
+    max-height: 90vh;
+    border-radius: 24px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-color);
   }
 
-  .type-box {
-    padding: var(--spacing-md);
-    font-size: 0.9rem;
+  .setup-header {
+    padding: 25px 25px 15px 25px;
+    border-radius: 24px 24px 0 0;
   }
+
+  .setup-header h2 {
+    font-size: 1.8rem;
+  }
+
+  #business-setup-form {
+    padding: 25px;
+  }
+
+  .rubro-grid {
+    gap: 15px;
+  }
+}
+
+/* =========================================
+   3. MODO OSCURO (CORREGIDO PARA NO TAPAR SELECCIÓN)
+   ========================================= */
+
+[data-theme="dark"] .accordion-item.locked {
+  background-color: #1e1e24;
+  border-color: #333;
+}
+
+/* Base de tarjeta en modo oscuro */
+[data-theme="dark"] .rubro-card {
+  border-color: #333;
+  background-color: #1f2937;
+}
+
+/* SELECCIONADO EN MODO OSCURO (Debe ir AL FINAL para ganar) */
+[data-theme="dark"] .rubro-card.selected {
+  border-color: var(--primary-color) !important;
+  background-color: rgba(255, 59, 92, 0.15);
+  /* Fondo rojizo más visible */
+  box-shadow: 0 0 15px rgba(255, 59, 92, 0.2);
+  /* Resplandor */
 }
