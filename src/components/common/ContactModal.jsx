@@ -1,12 +1,9 @@
-// src/components/common/ContactModal.jsx
 import React, { useState, useEffect } from 'react';
 import './ContactModal.css'; // Aseguramos que se importen los nuevos estilos PRO
 
-// Un modal genérico para formularios de contacto
 export default function ContactModal({ show, onClose, onSubmit, title, fields }) {
   const [formData, setFormData] = useState({});
 
-  // Reinicia el formulario cuando cambian los campos (al abrir el modal)
   useEffect(() => {
     if (show) {
       const initialData = fields.reduce((acc, field) => {
@@ -32,9 +29,6 @@ export default function ContactModal({ show, onClose, onSubmit, title, fields })
     return null;
   }
 
-  // --- CORRECCIÓN DE Z-INDEX ---
-  // El Navbar tiene z-index: 9999.
-  // Ponemos 11000 aquí para asegurar que este modal flote ENCIMA del Navbar.
   return (
     <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-critical)' }}>
       <div className="modal-content contact-modal">
