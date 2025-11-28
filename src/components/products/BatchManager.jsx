@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useDashboardStore } from '../../store/useDashboardStore';
-import { saveData, STORES, deleteData } from '../../services/database';
+import { saveData, STORES, deleteData, queryByIndex } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useCaja } from '../../hooks/useCaja';
@@ -121,6 +121,21 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
         if (!exito) {
             showMessageModal("Error al registrar la salida de dinero.");
             return false;
+        }
+    }
+
+    if (sku && sku.trim() !== '') {
+        // Buscamos si existe algun lote con ese SKU
+        const existingBatches = await queryByIndex(STORES.PRODUCT_BATCHES, 'sku', sku);
+        
+        // Si estamos editando, excluimos el lote actual de la búsqueda
+        const isDuplicate = existingBatches.some(b => 
+            isEditing ? b.id !== batchToEdit.id : true
+        );
+
+        if (isDuplicate) {
+            showMessageModal(`⚠️ El SKU "${sku}" ya está en uso en otro lote/producto.`);
+            return false; 
         }
     }
 

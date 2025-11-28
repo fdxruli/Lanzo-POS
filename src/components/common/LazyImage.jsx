@@ -22,10 +22,12 @@ export default function LazyImage({
         if (currentSrcRef.current !== src) {
             currentSrcRef.current = src;
 
-            if (src) {
+            // MEJORA: Validar que sea un string con contenido real
+            if (src && typeof src === 'string' && src.trim().length > 0) {
                 setHasError(false);
                 setIsLoaded(false);
             } else {
+                // Si es inválido, marcamos error de inmediato para mostrar el placeholder
                 setHasError(true);
                 setIsLoaded(true);
             }

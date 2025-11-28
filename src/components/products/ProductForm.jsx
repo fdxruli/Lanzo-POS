@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { compressImage, lookupBarcodeInAPI, showMessageModal } from '../../services/utils';
@@ -21,6 +21,8 @@ export default function ProductForm({
     onSave, onCancel, productToEdit, categories, onOpenCategoryManager,
     products, onEdit, onManageBatches
 }) {
+
+    const [isImageProcessing, setIsImageProcessing] = useState(false);
 
     // 1. Hook de Configuración (El cerebro)
     const features = useFeatureConfig();
@@ -164,6 +166,7 @@ export default function ProductForm({
     const handleImageChange = async (e) => {
         const file = e.target.files[0];
         if (file) {
+            setIsImageProcessing(true); // ⏳ Iniciar carga
             try {
                 const compressedFile = await compressImage(file);
                 setImagePreview(URL.createObjectURL(compressedFile));
@@ -172,6 +175,9 @@ export default function ProductForm({
                 console.error("Error al comprimir imagen:", error);
                 setImagePreview(defaultPlaceholder);
                 setImageData(null);
+                showMessageModal("Error al procesar la imagen", null, { type: 'error' });
+            } finally {
+                setIsImageProcessing(false); // ✅ Terminar carga
             }
         }
     };
@@ -215,9 +221,9 @@ export default function ProductForm({
 
         // Si requiere receta, FORZAMOS unidad (no se puede vender antibiótico a granel)
         if (features.hasLabFields && requiresPrescription) {
-             finalSaleType = 'unit';
-             finalBulkData = null;
-        } 
+            finalSaleType = 'unit';
+            finalBulkData = null;
+        }
         // Si no es medicamento controlado, revisamos si aplica granel (Frutería/Abarrotes)
         else if (features.hasBulk) {
             if (saleType === 'bulk' || (features.hasDailyPricing && unit !== 'pza')) {
@@ -241,7 +247,7 @@ export default function ProductForm({
             // Abarrotes / Ferretería / Frutería (Gestión de Stock/Precios)
             saleType: finalSaleType, // <--- Usamos el valor calculado arriba
             bulkData: finalBulkData, // <--- Usamos el valor calculado arriba
-            
+
             wholesaleTiers: features.hasWholesale ? wholesaleTiers : [],
             minStock: features.hasMinMax ? parseFloat(minStock) : null,
             maxStock: features.hasMinMax ? parseFloat(maxStock) : null,
@@ -259,10 +265,41 @@ export default function ProductForm({
             shelfLife: features.hasDailyPricing ? shelfLife : null,
         };
 
+        const validationErrors = validateProductData(productData);
+        if (validationErrors.length > 0) {
+            showMessageModal(`⚠️ Error de validación:\n- ${validationErrors.join('\n- ')}`);
+            return;
+        }
+
         onSave(productData, internalEditingProduct);
         resetForm();
     };
 
+    const validateProductData = (data) => {
+        const errors = [];
+        
+        // Validar nombre (no vacío y al menos 2 letras)
+        if (!data.name || data.name.trim().length < 2) {
+            errors.push('El nombre debe tener al menos 2 caracteres.');
+        }
+
+        // Validar precios negativos
+        if (parseFloat(data.price) < 0) {
+            errors.push('El precio de venta no puede ser negativo.');
+        }
+        
+        // Validar costos negativos
+        if (parseFloat(data.cost) < 0) {
+            errors.push('El costo no puede ser negativo.');
+        }
+
+        // Validar stock negativo (si aplica)
+        if (data.minStock && parseFloat(data.minStock) < 0) {
+             errors.push('El stock mínimo no puede ser negativo.');
+        }
+
+        return errors;
+    };
 
     // 4. VISTA (JSX)
     return (
@@ -439,9 +476,32 @@ export default function ProductForm({
 
                             <div className="form-group">
                                 <label className="form-label">Imagen</label>
-                                <div className="image-upload-container">
-                                    <img className="image-preview" src={imagePreview} alt="Preview" />
-                                    <input className="file-input" type="file" accept="image/*" onChange={handleImageChange} />
+                                <div className="image-upload-container" style={{ position: 'relative' }}>
+
+                                    {/* SPINNER DE CARGA */}
+                                    {isImageProcessing && (
+                                        <div style={{
+                                            position: 'absolute', top: 0, left: 0, width: '100px', height: '100px',
+                                            background: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center',
+                                            justifyContent: 'center', zIndex: 10, borderRadius: '8px'
+                                        }}>
+                                            <div className="spinner-loader small"></div>
+                                        </div>
+                                    )}
+
+                                    <img
+                                        className="image-preview"
+                                        src={imagePreview}
+                                        alt="Preview"
+                                        style={{ opacity: isImageProcessing ? 0.5 : 1 }}
+                                    />
+                                    <input
+                                        className="file-input"
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleImageChange}
+                                        disabled={isImageProcessing} // Bloquear input mientras procesa
+                                    />
                                 </div>
                             </div>
                         </div>

@@ -50,7 +50,7 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
   if (!show || !customer) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 2200 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-mid)' }}>
       <div className="modal-content abono-modal">
         <h2 className="modal-title">Abonar a Deuda</h2>
         <div className="abono-summary">

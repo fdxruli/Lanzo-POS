@@ -46,9 +46,13 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, allCust
     setPhone(newPhone);
     validatePhone(newPhone);
   };
-  
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (name.trim().length === 0) {
+      alert("El nombre del cliente no puede estar vacío.");
+      return;
+    }
     if (validatePhone(phone)) {
       // Llama a la función 'onSave' que nos pasó el padre
       onSave({ name, phone, address });

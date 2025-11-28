@@ -36,7 +36,7 @@ export default function ContactModal({ show, onClose, onSubmit, title, fields })
   // El Navbar tiene z-index: 9999.
   // Ponemos 11000 aquí para asegurar que este modal flote ENCIMA del Navbar.
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 11000 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-critical)' }}>
       <div className="modal-content contact-modal">
         <h2 className="modal-title">{title}</h2>
         <form onSubmit={handleSubmit}>
