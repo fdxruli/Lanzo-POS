@@ -107,20 +107,27 @@ export default function CustomersPage() {
   };
 
   const handleConfirmAbono = async (customer, amount, sendReceipt) => {
-    // ... (esta función no cambia)
     try {
       const concepto = `Abono de cliente: ${customer.name}`;
+      
+      // 1. Intentamos registrar el dinero en la caja
       const movimientoExitoso = await registrarMovimiento('entrada', amount, concepto);
 
       if (!movimientoExitoso) {
-        showMessageModal('Error al registrar la entrada en caja. Intenta de nuevo.');
+        showMessageModal('Error: No se pudo registrar en caja (¿Caja cerrada?).');
+        // ✅ MEJORA: Cerramos el modal para que el usuario pueda ir a abrir la caja
+        handleCloseModals(); 
         return;
       }
 
+      // 2. Cargamos y actualizamos al cliente
       const customerData = await loadData(STORES.CUSTOMERS, customer.id);
       const deudaAnterior = customerData.debt || 0;
-      const nuevaDeuda = deudaAnterior - amount;
-      customerData.debt = nuevaDeuda < 0 ? 0 : nuevaDeuda;
+      
+      // ✅ MEJORA: Math.max evita deudas negativas si el cálculo falla
+      const nuevaDeuda = Math.max(0, deudaAnterior - amount);
+      
+      customerData.debt = nuevaDeuda;
 
       await saveData(STORES.CUSTOMERS, customerData);
 
@@ -128,26 +135,26 @@ export default function CustomersPage() {
       handleCloseModals();
       loadCustomers();
 
+      // 3. Enviar Recibo (Opcional)
       if (sendReceipt) {
         const message =
-          `*--- Recibo de Abono ---*
-*Negocio:* ${companyName}
-
-Hola *${customer.name}*,
-Hemos registrado tu abono:
-
-Monto Abonado: *$${amount.toFixed(2)}*
-Deuda Anterior: $${deudaAnterior.toFixed(2)}
-*Saldo Restante: $${customerData.debt.toFixed(2)}*
-
-¡Gracias por tu pago!`;
+          `*--- Recibo de Abono ---*\n` +
+          `*Negocio:* ${companyName}\n\n` +
+          `Hola *${customer.name}*,\n` +
+          `Hemos registrado tu abono:\n\n` +
+          `Monto Abonado: *$${amount.toFixed(2)}*\n` +
+          `Deuda Anterior: $${deudaAnterior.toFixed(2)}\n` +
+          `*Saldo Restante: $${nuevaDeuda.toFixed(2)}*\n\n` +
+          `¡Gracias por tu pago!`;
 
         sendWhatsAppMessage(customer.phone, message);
       }
 
     } catch (error) {
-      console.error('Error al confirmar abono:', error);
-      showMessageModal(`Error al procesar el abono: ${error.message}`);
+      console.error('Error crítico en abono:', error);
+      showMessageModal(`Error al procesar: ${error.message}`);
+      // ✅ MEJORA CRÍTICA: Aseguramos que el modal se cierre si hay error de sistema
+      handleCloseModals();
     }
   };
 

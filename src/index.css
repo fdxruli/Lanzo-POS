@@ -52,9 +52,9 @@
   --z-backdrop: 900;     /* Fondo oscuro de modales */
   
   /* NIVELES DE MODALES */
-  --z-modal-base: 1000;  /* Modales estándar (Config, Agregar Producto) */
+  --z-modal-base: var(--z-modal-low);  /* Modales estándar (Config, Agregar Producto) */
   --z-modal-high: 1100;  /* Modales secundarios (Payment, Modificadores) */
-  --z-modal-top: 1200;   /* Modales críticos (Scanner, Auditoría, Alertas) */
+  --z-modal-top: var(--z-modal-high);   /* Modales críticos (Scanner, Auditoría, Alertas) */
   
   /* CAPA DE NOTIFICACIONES (Siempre encima de todo) */
   --z-toast: 9999;

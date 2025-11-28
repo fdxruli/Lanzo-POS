@@ -37,10 +37,10 @@ export function useCaja() {
           const sale = cursor.value;
           if (sale.fulfillmentStatus !== 'cancelled') {
             if (sale.paymentMethod === 'efectivo') {
-               contado = roundCurrency(contado + (sale.total || 0));
-             } else if (sale.paymentMethod === 'fiado') {
-               abonos = roundCurrency(abonos + (sale.abono || 0));
-             }
+              contado = roundCurrency(contado + (sale.total || 0));
+            } else if (sale.paymentMethod === 'fiado') {
+              abonos = roundCurrency(abonos + (sale.abono || 0));
+            }
           }
           cursor.continue();
         } else {
@@ -154,10 +154,21 @@ export function useCaja() {
   const calcularTotalTeorico = async () => {
     if (!cajaActual) return 0;
 
-    const ingresos = roundCurrency(cajaActual.monto_inicial + ventasContado + abonosFiado + cajaActual.entradas_efectivo);
-    const total = roundCurrency(ingresos - cajaActual.salidas_efectivo);
+    // 1. Extraemos los valores del estado 'totalesTurno' que ya calculaste previamente
+    const { ventasContado, abonosFiado } = totalesTurno;
 
-    return cajaActual.monto_inicial + ingresoPorVentas + cajaActual.entradas_efectivo - cajaActual.salidas_efectivo;
+    // 2. Sumamos todo lo que entró (Inicio + Ventas efectivo + Abonos de deuda + Entradas manuales)
+    const ingresos = roundCurrency(
+      cajaActual.monto_inicial +
+      (ventasContado || 0) +
+      (abonosFiado || 0) +
+      (cajaActual.entradas_efectivo || 0)
+    );
+
+    // 3. Restamos las salidas manuales
+    const total = roundCurrency(ingresos - (cajaActual.salidas_efectivo || 0));
+
+    return total;
   }
 
   // --- CIERRE DE CAJA (OPTIMIZADO) ---

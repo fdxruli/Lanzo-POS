@@ -32,6 +32,7 @@ const getInitialTheme = () => {
 };
 
 export default function SettingsPage() {
+  const [isProcessingLogo, setIsProcessingLogo] = useState(false);
   const companyProfile = useAppStore((state) => state.companyProfile);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
@@ -107,18 +108,18 @@ export default function SettingsPage() {
   const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
+      setIsProcessingLogo(true); // ⏳ Iniciar
       try {
-        if (logoObjectURL) {
-          URL.revokeObjectURL(logoObjectURL);
-        }
-
+        if (logoObjectURL) URL.revokeObjectURL(logoObjectURL);
         const compressedFile = await compressImage(file);
         const objectURL = URL.createObjectURL(compressedFile);
         setLogoObjectURL(objectURL);
         setLogoPreview(objectURL);
         setLogoData(compressedFile);
       } catch (error) {
-        console.error("Error al comprimir imagen:", error);
+        console.error("Error imagen:", error);
+      } finally {
+        setIsProcessingLogo(false); // ✅ Terminar
       }
     }
   };
@@ -274,7 +275,15 @@ export default function SettingsPage() {
 
           <div className="form-group">
             <label className="form-label" htmlFor="company-logo-file">Logo del Negocio</label>
-            <div className="image-upload-container">
+            <div className="image-upload-container" style={{ position: 'relative', width: 'fit-content' }}>
+              {isProcessingLogo && (
+                <div style={{
+                  position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.7)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, borderRadius: '8px'
+                }}>
+                  <div className="spinner-loader small"></div>
+                </div>
+              )}
               <img
                 id="company-logo-preview"
                 className="image-preview"
@@ -287,6 +296,7 @@ export default function SettingsPage() {
                 type="file"
                 accept="image/*"
                 onChange={handleImageChange}
+                disabled={isProcessingLogo}
               />
             </div>
           </div>

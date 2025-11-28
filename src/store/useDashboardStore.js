@@ -20,7 +20,7 @@ const CACHE_DURATION = 5 * 60 * 1000;
 async function getInventoryValue(db) {
   // 1. Intentar leer el valor pre-calculado de la tabla de estadísticas
   const cached = await loadData(STORES.STATS, 'inventory_summary');
-  
+
   if (cached && typeof cached.value === 'number') {
     return cached.value;
   }
@@ -29,18 +29,18 @@ async function getInventoryValue(db) {
   // Esto es una operación pesada (O(N)), pero solo ocurrirá UNA vez.
   console.log('📊 Calculando valor de inventario inicial (Full Scan)...');
   let calculatedValue = 0;
-  
+
   await new Promise((resolve) => {
     const tx = db.transaction(STORES.PRODUCT_BATCHES, 'readonly');
     const cursorReq = tx.objectStore(STORES.PRODUCT_BATCHES).openCursor();
-    
+
     cursorReq.onsuccess = (e) => {
       const cursor = e.target.result;
       if (cursor) {
         const batch = cursor.value;
         // Compatibilidad booleanos (true/1)
         const isActive = batch.isActive === true || batch.isActive === 1;
-        
+
         if (isActive && batch.stock > 0) {
           calculatedValue += (batch.cost * batch.stock);
         }
@@ -227,7 +227,7 @@ export const useDashboardStore = create((set, get) => ({
 
     try {
       console.time('CargaDashboard');
-      
+
       // 1. Estadísticas (Ahora es rápido porque lee caché)
       const stats = await calculateStatsOnTheFly();
 
@@ -322,7 +322,7 @@ export const useDashboardStore = create((set, get) => ({
     try {
       // 1. Obtener valor actual del estado
       const currentStats = get().stats;
-      
+
       // 2. Si es la primera vez y está en 0, quizás deberíamos cargar de DB primero, 
       // pero asumiremos que loadAllData ya corrió.
       const newValue = (currentStats.inventoryValue || 0) + costDelta;
@@ -332,43 +332,57 @@ export const useDashboardStore = create((set, get) => ({
 
       // 4. Actualizar UI (Store)
       set({ stats: { ...currentStats, inventoryValue: newValue } });
-      
+
       console.log(`💰 Inventario actualizado: ${costDelta > 0 ? '+' : ''}$${costDelta.toFixed(2)}`);
     } catch (e) { console.error("Error ajustando inventario:", e); }
   },
 
   updateStatsWithSale: async (sale) => {
     try {
+      // 1. Cargar estadísticas actuales
       let stats = await loadData(STORES.STATS, 'sales_summary');
-      if (!stats) return; 
+      if (!stats) return;
+
+      // ✅ VALIDACIÓN DE IDEMPOTENCIA
+      // Si la lista de IDs procesados existe y ya incluye esta venta, nos detenemos.
+      const processedSales = stats.processedSaleIds || [];
+      if (processedSales.includes(sale.timestamp)) {
+        console.warn(`⚠️ La venta ${sale.timestamp} ya fue procesada anteriormente. Se omite duplicidad.`);
+        return;
+      }
 
       let saleProfit = 0;
       let saleItems = 0;
       let costOfGoodsSold = 0; // Costo total de lo que salió
 
+      // 2. Calcular totales
       sale.items.forEach(item => {
         saleItems += (item.quantity || 0);
         const itemCost = item.cost || 0;
         const totalLineCost = itemCost * item.quantity;
-        
+
         saleProfit += (item.price * item.quantity) - totalLineCost;
         costOfGoodsSold += totalLineCost;
       });
 
+      // 3. Crear nuevo estado de estadísticas
       const newStats = {
         ...stats,
         totalRevenue: roundCurrency(stats.totalRevenue + sale.total),
         totalNetProfit: roundCurrency(stats.totalNetProfit + saleProfit),
         totalOrders: stats.totalOrders + 1,
-        totalItemsSold: stats.totalItemsSold + saleItems
+        totalItemsSold: stats.totalItemsSold + saleItems,
+        // ✅ REGISTRAMOS EL ID: Agregamos el timestamp de esta venta a la lista de procesados
+        processedSaleIds: [...processedSales, sale.timestamp]
       };
 
+      // 4. Guardar en BD
       await saveData(STORES.STATS, newStats);
 
-      // --- AQUÍ ACTUALIZAMOS EL VALOR DEL INVENTARIO TAMBIÉN ---
-      // Como salió mercancía, restamos su costo al valor total
+      // 5. Actualizar valor de inventario (restando el costo de lo vendido)
       await get().adjustInventoryValue(-costOfGoodsSold);
 
+      // 6. Actualizar Store (Zustand)
       const currentStats = get().stats;
       set({
         stats: {
@@ -412,7 +426,7 @@ export const useDashboardStore = create((set, get) => ({
         saleToDelete = allSales.find(s => s.timestamp === timestamp);
       }
       if (!saleToDelete) return;
-      
+
       let restoredInventoryValue = 0;
 
       for (const item of saleToDelete.items) {
@@ -423,14 +437,14 @@ export const useDashboardStore = create((set, get) => ({
               batch.stock += batchInfo.quantity;
               batch.isActive = true;
               await saveData(STORES.PRODUCT_BATCHES, batch);
-              
+
               // Sumamos al valor recuperado
               restoredInventoryValue += (batch.cost * batchInfo.quantity);
             }
           }
         }
       }
-      
+
       // Restauramos el valor del inventario
       await get().adjustInventoryValue(restoredInventoryValue);
 

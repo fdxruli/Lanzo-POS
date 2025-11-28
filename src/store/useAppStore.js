@@ -164,7 +164,7 @@ export const useAppStore = create((set, get) => ({
   },
 
   // ============================================================
-  // GESTIÓN DE SEGURIDAD REALTIME (OPTIMIZADA)
+  // GESTIÓN DE SEGURIDAD REALTIME (MEJORADA)
   // ============================================================
 
   startRealtimeSecurity: async () => {
@@ -176,12 +176,12 @@ export const useAppStore = create((set, get) => ({
       return;
     }
 
-    // 2. Limpieza preventiva (Evitar duplicados)
+    // 2. Limpieza preventiva (Evitar duplicados y Zombis)
     if (realtimeSubscription) {
-      console.log("♻️ Reiniciando servicio de seguridad...");
+      console.log("♻️ Limpiando suscripción anterior...");
       await stopRealtimeSecurity();
-      // Pequeña pausa para asegurar que el socket anterior se cierre completamente
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Aumentamos pausa a 150ms para asegurar desconexión total del socket
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
 
     console.log("🔌 Conectando seguridad en tiempo real...");
@@ -192,8 +192,13 @@ export const useAppStore = create((set, get) => ({
 
         // Callback: Cambio en Licencia
         (newLicenseData) => {
-          // CLAVE: Ignorar eventos de suscripciones viejas/zombies
-          if (get().realtimeSubscription !== sub) return;
+          const currentSub = get().realtimeSubscription;
+
+          // VALIDACIÓN ROBUSTA: Si no hay sub activa o no coincide, ignorar (Zombi)
+          if (!currentSub || currentSub !== sub) {
+            console.warn('⚠️ Evento de seguridad ignorado (Suscripción antigua).');
+            return;
+          }
 
           if (newLicenseData.status !== 'active') {
             showMessageModal(
@@ -213,8 +218,9 @@ export const useAppStore = create((set, get) => ({
 
         // Callback: Cambio en Dispositivo
         (newDeviceData, eventType) => {
-          // CLAVE: Ignorar eventos de suscripciones viejas/zombies
-          if (get().realtimeSubscription !== sub) return;
+          const currentSub = get().realtimeSubscription;
+
+          if (!currentSub || currentSub !== sub) return;
 
           if (eventType === 'DELETE' || (newDeviceData && !newDeviceData.is_active)) {
             showMessageModal(
@@ -232,7 +238,8 @@ export const useAppStore = create((set, get) => ({
       set({ realtimeSubscription: sub });
 
     } catch (error) {
-      console.error('Error no crítico al iniciar seguridad:', error);
+      console.error('Error al iniciar seguridad realtime:', error);
+      // Aseguramos que el estado quede limpio si falla
       set({ realtimeSubscription: null });
     }
   },

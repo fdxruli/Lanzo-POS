@@ -27,7 +27,7 @@ export const STORES = {
   MOVIMIENTOS_CAJA: 'movimientos_caja',
   PRODUCT_BATCHES: 'product_batches',
   WASTE: 'waste_logs',
-  DAYLY_STATS: 'dayly_stats',
+  DAILY_STATS: 'daily_stats',
 };
 
 /**
@@ -200,12 +200,21 @@ async function executeWithRetry(operation, maxRetries = 3) {
       return await operation();
     } catch (error) {
       lastError = error;
-      // Si es error de conexión, intentar recuperar
-      if (error.name === 'InvalidStateError' || error.name === 'NotFoundError' || error.name === 'TransactionInactiveError') {
-        console.warn(`Reintento ${attempt} por error de conexión:`, error.name);
+
+      // Lista de errores recuperables
+      const recoverableErrors = [
+        'InvalidStateError',
+        'NotFoundError',
+        'TransactionInactiveError',
+        'UnknownError' // ✅ Agregado
+      ];
+
+      if (recoverableErrors.includes(error.name)) {
+        console.warn(`🔄 Reintento ${attempt}/${maxRetries} por: ${error.name}`);
         dbConnection.instance = null;
         await new Promise(resolve => setTimeout(resolve, 200 * attempt));
       } else {
+        // Error no recuperable, lanzar inmediatamente
         throw error;
       }
     }
