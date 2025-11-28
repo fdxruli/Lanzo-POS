@@ -1,14 +1,17 @@
+// src/components/products/WasteModal.jsx
 import React, { useState } from 'react';
 import { saveData, STORES } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
-import { useDashboardStore } from '../../store/useDashboardStore';
+// --- CAMBIO: Usamos el store correcto (Estadísticas) ---
+import { useStatsStore } from '../../store/useStatsStore';
 
 export default function WasteModal({ show, onClose, product, onConfirm }) {
     const [quantity, setQuantity] = useState('');
     const [reason, setReason] = useState('caducado'); // caducado, dañado, etc.
     const [notes, setNotes] = useState('');
 
-    const adjustInventoryValue = useDashboardStore(state => state.adjustInventoryValue);
+    // --- CAMBIO: Usamos el hook del store de estadísticas ---
+    const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
 
     if (!show || !product) return null;
 
@@ -27,8 +30,6 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
         }
 
         // 1. Descontar del inventario directamente (Stock global)
-        // Nota: Si usas lotes estrictos, lo ideal sería descontar del lote más viejo,
-        // pero para frutería rápida, descontar del global es aceptable.
         const updatedProduct = {
             ...product,
             stock: product.stock - qty,

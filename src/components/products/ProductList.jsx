@@ -1,8 +1,10 @@
+// src/components/products/ProductList.jsx
 import React, { useState, useMemo } from 'react';
 import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
-import { useDashboardStore } from '../../store/useDashboardStore';
+// --- CAMBIO: Usamos useProductStore en lugar de useDashboardStore ---
+import { useProductStore } from '../../store/useProductStore';
 import WasteModal from './WasteModal';
 import './ProductList.css';
 
@@ -11,11 +13,12 @@ const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Eleg
 export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus }) {
   const features = useFeatureConfig(); // Configuración del rubro
 
-  // --- OPTIMIZACIÓN: Conexión al Store para Paginación y Recarga ---
-  const refreshData = useDashboardStore((state) => state.loadAllData);
-  const loadMoreProducts = useDashboardStore((state) => state.loadMoreProducts);
-  const hasMoreProducts = useDashboardStore((state) => state.hasMoreProducts);
-  const isGlobalLoading = useDashboardStore((state) => state.isLoading);
+  // --- OPTIMIZACIÓN: Conexión al nuevo ProductStore para Paginación y Recarga ---
+  // Nota: Usamos 'loadInitialProducts' para refrescar la lista completa
+  const refreshData = useProductStore((state) => state.loadInitialProducts);
+  const loadMoreProducts = useProductStore((state) => state.loadMoreProducts);
+  const hasMoreProducts = useProductStore((state) => state.hasMoreProducts);
+  const isGlobalLoading = useProductStore((state) => state.isLoading);
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -46,9 +49,10 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
   const handleWasteConfirmed = async () => {
     // Recargar los datos para que se actualice el stock en pantalla
-    await refreshData(true);
+    await refreshData();
   };
 
+  // 'isLoading' aquí viene de props (estado local de ProductsPage para delete/save actions)
   if (isLoading && products.length === 0) {
     return <div style={{ padding: '20px', textAlign: 'center' }}>Cargando productos...</div>;
   }

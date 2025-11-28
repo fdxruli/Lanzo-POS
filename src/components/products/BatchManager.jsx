@@ -1,5 +1,10 @@
+// src/components/products/BatchManager.jsx
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useDashboardStore } from '../../store/useDashboardStore';
+
+// --- CAMBIO: Usamos los stores especializados ---
+import { useProductStore } from '../../store/useProductStore';
+import { useStatsStore } from '../../store/useStatsStore';
+
 import { saveData, STORES, deleteData, queryByIndex } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -94,7 +99,8 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
     return `${cleanName}-${attr2Code}-${attr1Code}-${Date.now().toString().slice(-4)}`;
   };
 
-  const adjustInventoryValue = useDashboardStore(state => state.adjustInventoryValue);
+  // --- CAMBIO: Usamos useStatsStore para ajustar inventario ---
+  const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
 
   const handleProcessSave = async (shouldClose) => {
     const nStock = parseInt(stock, 10);
@@ -193,7 +199,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
           {features.hasVariants && (
             <>
               <div className="form-group">
-                <label>Color / Marca / Material-'Ferreteria'</label>
+                <label>Color / Marca / Material</label>
                 <input 
                     ref={firstInputRef}
                     type="text" 
@@ -204,7 +210,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
                 />
               </div>
               <div className="form-group">
-                <label>Talla / Modelo / Dimensiones-'Ferreteria'</label>
+                <label>Talla / Modelo / Dimensiones</label>
                 <input 
                     id="input-talla" /* ID para el auto-focus */
                     type="text" 
@@ -306,10 +312,13 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
  */
 export default function BatchManager({ selectedProductId, onProductSelect }) {
   const features = useFeatureConfig();
-  const rawProducts = useDashboardStore((state) => state.rawProducts);
-  const refreshData = useDashboardStore((state) => state.loadAllData);
-  const menu = useDashboardStore((state) => state.menu);
-  const loadBatchesForProduct = useDashboardStore((state) => state.loadBatchesForProduct);
+  
+  // --- CAMBIO: Usamos useProductStore y useStatsStore ---
+  const rawProducts = useProductStore((state) => state.rawProducts);
+  const refreshData = useProductStore((state) => state.loadInitialProducts); // Ojo: loadAllData ya no existe
+  const menu = useProductStore((state) => state.menu);
+  const loadBatchesForProduct = useProductStore((state) => state.loadBatchesForProduct);
+  const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [batchToEdit, setBatchToEdit] = useState(null);
@@ -386,7 +395,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
       await saveData(STORES.PRODUCT_BATCHES, batchData);
       const updatedBatches = await loadBatchesForProduct(selectedProductId);
       setLocalBatches(updatedBatches);
-      await refreshData(true); 
+      await refreshData(); // Recargar productos para reflejar nuevo stock
     } catch (error) {
       console.error(error);
       showMessageModal(`Error: ${error.message}`);
@@ -415,7 +424,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
         
         const updatedBatches = await loadBatchesForProduct(selectedProductId);
         setLocalBatches(updatedBatches);
-        refreshData(true);
+        refreshData();
       } catch (error) { console.error(error); }
     }
   };

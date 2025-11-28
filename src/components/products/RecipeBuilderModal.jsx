@@ -1,18 +1,19 @@
-// src/components/products/RecipeBuilderModal.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { useDashboardStore } from '../../store/useDashboardStore';
+// --- CAMBIO: Usamos useProductStore en lugar de useDashboardStore ---
+import { useProductStore } from '../../store/useProductStore';
 import './RecipeBuilderModal.css';
 
 export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSave, productName }) {
 
-  // 1. CAMBIO IMPORTANTE: Usamos 'menu' en lugar de 'rawProducts'
-  // 'menu' contiene los productos con el Stock y Costo ya calculados desde los lotes.
-  const menu = useDashboardStore((state) => state.menu);
+  // 1. OBTENER MENÚ DEL STORE CORRECTO
+  // 'menu' contiene los productos con el Stock y Costo ya calculados.
+  const menu = useProductStore((state) => state.menu);
 
-  // 2. Filtramos sobre 'menu' (que tiene los datos enriquecidos)
+  // 2. FILTRAR INGREDIENTES
+  // Filtramos sobre 'menu' para obtener solo los insumos activos
   const availableIngredients = useMemo(() => {
     return menu.filter(p => p.productType === 'ingredient' && p.isActive !== false);
-  }, [menu]); // Dependencia cambiada a 'menu'
+  }, [menu]); 
 
   // Estado local de la receta
   const [recipeItems, setRecipeItems] = useState([]);
@@ -62,8 +63,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
       return;
     }
 
-    // 3. CAMBIO IMPORTANTE: Usamos 'ingredient.cost' directo
-    // Ya no buscamos en 'batchManagement' porque 'menu' ya nos da el costo actual del lote activo
+    // Usamos el costo actual del ingrediente (que viene del lote activo en 'menu')
     const currentCost = ingredient.cost || 0;
 
     const newItem = {
@@ -89,7 +89,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
 
   // Calcular costo teórico total visual
   const totalEstimatedCost = recipeItems.reduce((sum, item) => {
-    // Buscamos en 'menu' para tener el costo actualizado
+    // Buscamos en 'menu' para tener el costo actualizado al momento
     const ing = menu.find(p => p.id === item.ingredientId);
     const unitCost = ing?.cost || 0;
     return sum + (unitCost * item.quantity);
@@ -120,7 +120,6 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
                 <option value="">-- Seleccionar --</option>
                 {availableIngredients.map(ing => (
                   <option key={ing.id} value={ing.id}>
-                    {/* Ahora ing.stock y ing.cost tendrán valores reales */}
                     {ing.name} (Stock: {ing.stock || 0} | ${ing.cost?.toFixed(2)})
                   </option>
                 ))}

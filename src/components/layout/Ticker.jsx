@@ -1,6 +1,6 @@
 // src/components/layout/Ticker.jsx
 import React, { useMemo } from 'react';
-import { useDashboardStore } from '../../store/useDashboardStore';
+import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore'; // <-- 1. Importa el App Store
 import { getProductAlerts } from '../../services/utils';
 import './Ticker.css';
@@ -46,8 +46,8 @@ export default function Ticker() {
   const gracePeriodEnds = useAppStore((state) => state.gracePeriodEnds);
 
   // Lee el estado del dashboard (para los mensajes normales)
-  const menu = useDashboardStore((state) => state.menu);
-  const isLoading = useDashboardStore((state) => state.isLoading);
+  const menu = useProductStore((state) => state.menu);
+  const isLoading = useProductStore((state) => state.isLoading)
 
   // <-- 4. Lógica de mensajes MODIFICADA
   const { messages, isPriority } = useMemo(() => {

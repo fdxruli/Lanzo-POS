@@ -1,12 +1,15 @@
+// src/components/pos/VariantSelectorModal.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { useDashboardStore } from '../../store/useDashboardStore';
+// CAMBIO: Importamos el store correcto
+import { useProductStore } from '../../store/useProductStore';
 import './ProductModifiersModal.css'; 
 
 export default function VariantSelectorModal({ show, onClose, product, onConfirm }) {
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(false);
   
-  const loadBatchesForProduct = useDashboardStore(state => state.loadBatchesForProduct);
+  // CAMBIO: Usamos el selector del store de productos
+  const loadBatchesForProduct = useProductStore(state => state.loadBatchesForProduct);
 
   useEffect(() => {
     if (show && product) {
@@ -28,7 +31,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
     }
   }, [show, product, loadBatchesForProduct]);
 
-  // --- LÓGICA DE AGRUPACIÓN (NUEVO) ---
+  // --- LÓGICA DE AGRUPACIÓN (Se mantiene igual) ---
   const groupedVariants = useMemo(() => {
     const groups = {};
 
@@ -55,9 +58,6 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
 
         // Sumamos el stock de este lote al grupo
         groups[key].totalStock += batch.stock;
-        
-        // Opcional: Podrías actualizar el precio si el lote más reciente tiene otro precio
-        // Pero por ahora mantenemos el del primer lote encontrado para consistencia
     });
 
     // Convertimos el objeto de grupos de vuelta a un array
@@ -119,7 +119,6 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
                         ${group.fifoPrice.toFixed(2)}
                       </span>
                       <span className="stock-badge" style={{fontSize: '0.8rem', background: '#e5e7eb', padding: '2px 6px', borderRadius: '4px'}}>
-                          {/* AQUÍ MOSTRAMOS LA SUMA TOTAL */}
                           Stock: {group.totalStock}
                       </span>
                   </div>

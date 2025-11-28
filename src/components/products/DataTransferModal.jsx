@@ -1,11 +1,11 @@
 // src/components/products/DataTransferModal.jsx
 import React, { useState } from 'react';
-import { useDashboardStore } from '../../store/useDashboardStore';
-// Asegúrate de que generatePharmacyReport esté importado
+// --- CAMBIO: Usamos useProductStore en lugar de useDashboardStore ---
+import { useProductStore } from '../../store/useProductStore';
+
 import { generateCSV, processImport, downloadFile, generatePharmacyReport } from '../../services/dataTransfer';
 import { showMessageModal } from '../../services/utils';
 import { loadData, STORES } from '../../services/database';
-// 1. IMPORTAMOS EL HOOK DE CONFIGURACIÓN
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 
 export default function DataTransferModal({ show, onClose, onRefresh }) {
@@ -13,27 +13,28 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
   const [isLoading, setIsLoading] = useState(false);
   const [importLog, setImportLog] = useState(null);
 
-  // 2. USAMOS EL HOOK PARA SABER EL RUBRO
+  // Hook de configuración para saber si mostrar opciones de Farmacia
   const features = useFeatureConfig();
 
-  // Datos del store
-  const products = useDashboardStore(state => state.menu);
-  const batches = useDashboardStore(state => state.rawBatches); // Nota: Verifica si rawBatches se usa o se eliminó en versiones previas
-  const categories = useDashboardStore(state => state.categories);
+  // --- CAMBIO: Obtenemos categorías del store especializado ---
+  // No necesitamos 'menu' ni 'rawBatches' aquí porque handleExport carga todo de la BD 
+  // para garantizar que la exportación sea completa y fresca.
+  const categories = useProductStore(state => state.categories);
 
   // --- MANEJADORES ---
 
   const handleExport = async () => {
     setIsLoading(true);
     try {
-      // Para exportar todo, usamos los datos en memoria del store si están completos,
-      // o cargamos de DB para asegurar. Aquí cargamos de DB por seguridad.
+      // Para exportar todo, cargamos directamente de la BD por seguridad y consistencia.
       const [allProducts, allBatches] = await Promise.all([
         loadData(STORES.MENU),
         loadData(STORES.PRODUCT_BATCHES)
       ]);
-      // Usamos allProducts/allBatches frescos en lugar de los del store
+      
+      // Usamos las categorías del store (memoria) para mapear IDs a Nombres
       const csvContent = generateCSV(allProducts, allBatches || [], categories);
+      
       const date = new Date().toISOString().split('T')[0];
       downloadFile(csvContent, `inventario_lanzo_${date}.csv`);
       showMessageModal('Archivo generado y descargado correctamente.');
@@ -140,9 +141,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
                   {isLoading ? 'Generando...' : '⬇️ Descargar Inventario Completo'}
                 </button>
 
-                {/* 3. CONDICIONAL: SOLO VISIBLE SI ES FARMACIA 
-                    (features.hasLabFields es true solo para Farmacia)
-                */}
+                {/* BOTÓN CONDICIONAL: SOLO VISIBLE SI ES FARMACIA */}
                 {features.hasLabFields && (
                   <button
                     className="btn btn-secondary"

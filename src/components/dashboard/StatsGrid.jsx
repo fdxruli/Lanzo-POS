@@ -7,11 +7,11 @@ import {
   Package, 
   Activity
 } from 'lucide-react';
-import { useDashboardStore } from '../../store/useDashboardStore';
+import { useSalesStore } from '../../store/useSalesStore';
 import './StatsGrid.css';
 
 export default function StatsGrid({ stats }) {
-  const sales = useDashboardStore((state) => state.sales);
+  const sales = useSalesStore((state) => state.sales);
   const [timeRange, setTimeRange] = useState('today'); // 'today' | 'all'
 
   const metrics = useMemo(() => {

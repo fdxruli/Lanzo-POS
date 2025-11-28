@@ -4,17 +4,25 @@ import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
-import { useDashboardStore } from '../../store/useDashboardStore';
+import { useStatsStore } from '../../store/useStatsStore';
+import { useSalesStore } from '../../store/useSalesStore';
+import { useProductStore } from '../../store/useProductStore';
 // 1. IMPORTAR TOASTER
 import { Toaster } from 'react-hot-toast'; 
 import './Layout.css';
 
 function Layout() {
-  const loadAllData = useDashboardStore((state) => state.loadAllData);
+  const loadStats = useStatsStore(state => state.loadStats);
+  const loadProducts = useProductStore(state => state.loadInitialProducts);
+  const loadSales = useSalesStore(state => state.loadRecentSales);
 
   useEffect(() => {
-    loadAllData();
-  }, [loadAllData]);
+    // Disparamos todo en paralelo
+    console.log("🚀 Inicializando Stores modulares...");
+    loadStats();
+    loadProducts();
+    loadSales();
+  }, []);
 
   return (
     <div className="app-layout">
