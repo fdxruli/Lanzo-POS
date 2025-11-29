@@ -1,6 +1,7 @@
 // src/components/common/DeviceManager.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import './DeviceManager.css';
+import { getLicenseDevices, deactivateDeviceById } from '../../services/supabase';
 
 export default function DeviceManager({ licenseKey }) {
   const [devices, setDevices] = useState([]);
@@ -15,7 +16,7 @@ export default function DeviceManager({ licenseKey }) {
     setError(null);
     try {
       // Esta función (getLicenseDevices) ahora hace todo el trabajo
-      const result = await window.getLicenseDevices(licenseKey);
+      const result = await getLicenseDevices(licenseKey);
       if (result.success) {
         setDevices(result.data);
       } else {
@@ -40,7 +41,7 @@ export default function DeviceManager({ licenseKey }) {
     }
     
     try {
-      const result = await window.deactivateDeviceById(deviceId);
+      const result = await deactivateDeviceById(deviceId);
       if (result.success) {
         alert('Dispositivo desactivado con éxito.');
         fetchDevices(); // Recargar la lista

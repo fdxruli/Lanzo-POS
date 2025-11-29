@@ -1,4 +1,6 @@
+// src/components/customers/CustomerList.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import CustomerCard from './CustomerCard'; // <--- 1. IMPORTAR EL NUEVO COMPONENTE
 import './CustomerList.css';
 
 export default function CustomerList({
@@ -11,62 +13,39 @@ export default function CustomerList({
     onWhatsApp,
     onWhatsAppLoading
 }) {
-    // Estado para controlar cuántos se muestran
+    // ... (Mantén toda tu lógica de estado, refs y observer igual) ...
     const [displayLimit, setDisplayLimit] = useState(20);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
-
-    // Referencias para el Scroll Infinito
     const observerRef = useRef(null);
     const sentinelRef = useRef(null);
 
-    // 1. Ordenar clientes (Memoria) - Prioridad a los deudores
     const sortedCustomers = useMemo(() => {
         return [...customers].sort((a, b) => (b.debt || 0) - (a.debt || 0));
     }, [customers]);
 
-    // 2. Resetear límite si cambia la base de datos (ej. búsqueda o recarga)
-    useEffect(() => {
-        setDisplayLimit(20);
-    }, [customers]);
+    useEffect(() => { setDisplayLimit(20); }, [customers]);
 
-    // 3. Lógica de lista visible
     const visibleCustomers = sortedCustomers.slice(0, displayLimit);
     const hasMore = displayLimit < sortedCustomers.length;
 
-    // 4. Intersection Observer (El motor del Scroll Infinito)
+    // ... (Mantén tu useEffect del IntersectionObserver igual) ...
     useEffect(() => {
         if (isLoadingMore || !hasMore) return;
-
         const observerCallback = (entries) => {
             const [entry] = entries;
             if (entry.isIntersecting) {
                 setIsLoadingMore(true);
-
-                // Pequeño delay para suavizar la UI y mostrar el spinner
                 setTimeout(() => {
                     setDisplayLimit((prev) => prev + 20);
                     setIsLoadingMore(false);
                 }, 300);
             }
         };
-
-        const options = {
-            root: null, // Viewport del navegador
-            rootMargin: '100px', // Cargar 100px antes de llegar al final
-            threshold: 0.1
-        };
-
+        const options = { root: null, rootMargin: '100px', threshold: 0.1 };
         observerRef.current = new IntersectionObserver(observerCallback, options);
-
-        if (sentinelRef.current) {
-            observerRef.current.observe(sentinelRef.current);
-        }
-
-        return () => {
-            if (observerRef.current) observerRef.current.disconnect();
-        };
+        if (sentinelRef.current) observerRef.current.observe(sentinelRef.current);
+        return () => { if (observerRef.current) observerRef.current.disconnect(); };
     }, [isLoadingMore, hasMore]);
-
 
     // --- RENDERS ---
 
@@ -87,81 +66,38 @@ export default function CustomerList({
         <div className="customer-list-container">
             {/* Lista Grid */}
             <div id="customer-list" className="customer-list" aria-label="Lista de clientes">
-                {visibleCustomers.map((customer) => {
-                    const hasDebt = customer.debt && customer.debt > 0;
-                    const isWhatsAppLoading = onWhatsAppLoading === customer.id;
-
-                    return (
-                        <div key={customer.id} className={`customer-card ${hasDebt ? 'has-debt' : ''}`}>
-                            <div className="customer-info">
-                                <h4>{customer.name}</h4>
-                                <p><strong>Teléfono:</strong> {customer.phone}</p>
-                                <p><strong>Dirección:</strong> {customer.address}</p>
-
-                                {hasDebt && (
-                                    <p className="customer-debt">
-                                        <strong>Deuda:</strong> ${customer.debt.toFixed(2)}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="customer-actions">
-                                {hasDebt && (
-                                    <button
-                                        className="btn btn-abono"
-                                        onClick={() => onAbonar(customer)}
-                                    >
-                                        Abonar
-                                    </button>
-                                )}
-
-                                {customer.phone && (
-                                    <button
-                                        className="btn btn-whatsapp"
-                                        title={hasDebt ? "Enviar recordatorio" : "Chat"}
-                                        onClick={() => onWhatsApp(customer)}
-                                        disabled={isWhatsAppLoading}
-                                    >
-                                        {isWhatsAppLoading ? '...' : (hasDebt ? 'Cobrar' : 'Chat')}
-                                    </button>
-                                )}
-
-                                <button
-                                    className="btn btn-history"
-                                    onClick={() => onViewHistory(customer)}
-                                >
-                                    Historial
-                                </button>
-                                <button className="btn btn-edit" onClick={() => onEdit(customer)}>
-                                    ✏️
-                                </button>
-                                <button className="btn btn-delete" onClick={() => onDelete(customer.id)}>
-                                    🗑️
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })}
+                {visibleCustomers.map((customer) => (
+                    // --- 2. USAR EL COMPONENTE MEMOIZADO ---
+                    <CustomerCard
+                        key={customer.id}
+                        customer={customer}
+                        // Aquí ocurre la magia: Calculamos el booleano y lo pasamos.
+                        // Si 'onWhatsAppLoading' cambia, solo 2 tarjetas verán un cambio en sus props:
+                        // la que estaba cargando (pasa a false) y la nueva (pasa a true).
+                        isWhatsAppLoading={onWhatsAppLoading === customer.id}
+                        onEdit={onEdit}
+                        onDelete={onDelete}
+                        onViewHistory={onViewHistory}
+                        onAbonar={onAbonar}
+                        onWhatsApp={onWhatsApp}
+                    />
+                ))}
             </div>
 
-            {/* --- SENTINEL (El elemento invisible que detecta el final) --- */}
+            {/* ... (Mantén el sentinel y el contador igual) ... */}
             {hasMore && (
                 <div
                     ref={sentinelRef}
                     className="sentinel-loader"
                     style={{
-                        height: '60px',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        marginTop: '20px'
+                        height: '60px', display: 'flex', justifyContent: 'center',
+                        alignItems: 'center', marginTop: '20px'
                     }}
                 >
                     {isLoadingMore && <div className="spinner-loader small"></div>}
                 </div>
             )}
 
-            {/* Contador Informativo */}
             <div style={{ textAlign: 'center', color: '#999', fontSize: '0.8rem', marginTop: '10px', paddingBottom: '20px' }}>
                 Mostrando {visibleCustomers.length} de {sortedCustomers.length} clientes
             </div>

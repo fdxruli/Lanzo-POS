@@ -105,7 +105,9 @@
    ============================================================ */
 @media (min-width: 1024px) {
   .notification-ticker-container {
-    margin-bottom: 30px;
+    /* Reducimos el margen inferior para pegar más el POS al techo */
+    margin-bottom: 15px; 
     border-radius: var(--border-radius);
+    flex-shrink: 0; /* Asegura que el ticker no se encoja */
   }
 }

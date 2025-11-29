@@ -39,12 +39,13 @@
 /* === LISTA DE PRODUCTOS === */
 .order-list {
   flex-grow: 1;
-  overflow-y: auto; /* El scroll ocurre AQUÍ dentro */
+  overflow-y: auto;
+  /* El scroll ocurre AQUÍ dentro */
   margin-bottom: var(--spacing-md);
   padding-right: 5px;
-  
+
   /* Aseguramos que la lista no empuje los botones fuera */
-  min-height: 0; 
+  min-height: 0;
 }
 
 /* === ITEM INDIVIDUAL (CORREGIDO PARA EVITAR SOLAPAMIENTO) === */
@@ -187,10 +188,12 @@
 }
 
 /* === FOOTER (TOTALES Y BOTONES) === */
-.order-total, 
+.order-total,
 .order-actions {
-  flex-shrink: 0; /* PROHIBIDO encogerse: Siempre visibles */
-  background-color: var(--card-background-color); /* Fondo solido para que no se transparente */
+  flex-shrink: 0;
+  /* PROHIBIDO encogerse: Siempre visibles */
+  background-color: var(--card-background-color);
+  /* Fondo solido para que no se transparente */
   z-index: 5;
 }
 
@@ -262,16 +265,18 @@
 /* Contenedor de la alerta profesional */
 .stock-error-container {
   margin-top: 8px;
-  background-color: #fee2e2; /* Rojo muy suave */
-  border: 1px solid #ef4444; /* Borde rojo alerta */
+  background-color: #fee2e2;
+  /* Rojo muy suave */
+  border: 1px solid #ef4444;
+  /* Borde rojo alerta */
   border-radius: 6px;
   padding: 8px 10px;
-  
+
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  
+
   /* Animación para llamar la atención suavemente */
   animation: pulse-red 2s infinite;
 }
@@ -281,7 +286,8 @@
   display: flex;
   flex-direction: column;
   font-size: 0.8rem;
-  color: #7f1d1d; /* Rojo oscuro para texto */
+  color: #7f1d1d;
+  /* Rojo oscuro para texto */
   line-height: 1.2;
 }
 
@@ -304,7 +310,7 @@
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .btn-fix-stock:hover {
@@ -319,31 +325,44 @@
 
 /* Animación de pulso sutil */
 @keyframes pulse-red {
-  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-  70% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
 }
 
 /* Ajuste visual para el item cuando tiene error */
 .order-item.exceeds-stock {
   /* Hacemos el borde izquierdo más grueso para destacar */
   border-left: 4px solid var(--error-color);
-  background-color: #fffafa; /* Fondo apenas rosado en todo el item */
-  align-items: flex-start; /* Alineamos arriba porque ahora el contenido es más alto */
-  flex-direction: column; /* Apilamos contenido */
+  background-color: #fffafa;
+  /* Fondo apenas rosado en todo el item */
+  align-items: flex-start;
+  /* Alineamos arriba porque ahora el contenido es más alto */
+  flex-direction: column;
+  /* Apilamos contenido */
   gap: 5px;
 }
 
 /* Al poner flex-direction column, necesitamos re-alinear los hijos internos */
-.order-item.exceeds-stock > .order-item-info,
-.order-item.exceeds-stock > .order-item-controls {
-  width: 100%; /* Ocupan todo el ancho */
+.order-item.exceeds-stock>.order-item-info,
+.order-item.exceeds-stock>.order-item-controls {
+  width: 100%;
+  /* Ocupan todo el ancho */
   justify-content: space-between;
 }
 
-.order-item.exceeds-stock > .order-item-controls {
+.order-item.exceeds-stock>.order-item-controls {
   margin-top: 5px;
-  justify-content: flex-end; /* Controles a la derecha */
+  justify-content: flex-end;
+  /* Controles a la derecha */
 }
 
 /* ============================================================
@@ -394,11 +413,45 @@
 
 @media (min-width: 1024px) {
   .pos-order-container {
-    height: 100%;
-    /* Hereda del grid */
+    height: 100%; /* Usa toda la altura disponible */
     min-height: 0;
+    
+    /* Quitamos sticky porque ahora usamos flexbox full height */
+    position: relative; 
     top: 0;
-    border: 1px solid var(--border-color);
+    
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Nada sale del contenedor */
+    padding-bottom: 0; /* Quitamos padding extra abajo */
+  }
+
+  /* El Título se queda fijo arriba */
+  .pos-order-container h2 {
+    flex-shrink: 0;
+  }
+
+  /* LA LISTA ES LA ÚNICA QUE HACE SCROLL */
+  .order-list {
+    flex: 1; /* Ocupa todo el espacio sobrante en el medio */
+    overflow-y: auto; /* Scroll aquí */
+    min-height: 0;
+    margin-bottom: 10px;
+    padding-right: 5px;
+  }
+
+  /* El Footer (Total y Botones) se queda fijo abajo */
+  .order-total,
+  .order-actions {
+    flex-shrink: 0; /* No dejes que se aplaste */
+    background-color: var(--card-background-color); /* Fondo sólido */
+    margin-top: 0;
+    z-index: 2;
+  }
+  
+  /* Asegura que los botones se vean bien */
+  .order-actions {
+    padding-bottom: 5px;
   }
 }
 
@@ -443,19 +496,22 @@
 .btn-remove-item {
   background-color: transparent;
   border: none;
-  color: var(--error-color); /* Rojo */
+  color: var(--error-color);
+  /* Rojo */
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 6px;
   border-radius: 6px;
-  margin-right: 5px; /* Separación del input */
+  margin-right: 5px;
+  /* Separación del input */
   transition: background-color 0.2s;
 }
 
 .btn-remove-item:hover {
-  background-color: rgba(255, 59, 92, 0.1); /* Fondo rojizo suave al pasar el mouse */
+  background-color: rgba(255, 59, 92, 0.1);
+  /* Fondo rojizo suave al pasar el mouse */
 }
 
 .btn-remove-item:active {
@@ -469,26 +525,30 @@
 /* 1. Fondo del ITEM completo cuando falta stock */
 [data-theme="dark"] .order-item.exceeds-stock {
   /* Fondo rojo muy oscuro y transparente en lugar de blanco rosado */
-  background-color: rgba(69, 10, 10, 0.4); 
-  border-color: #7f1d1d; /* Borde rojo oscuro */
-  border-left-color: #ef4444; /* Mantenemos el borde izquierdo brillante */
+  background-color: rgba(69, 10, 10, 0.4);
+  border-color: #7f1d1d;
+  /* Borde rojo oscuro */
+  border-left-color: #ef4444;
+  /* Mantenemos el borde izquierdo brillante */
 }
 
 /* 2. La cajita de la alerta (donde dice "STOCK INSUFICIENTE") */
 [data-theme="dark"] .stock-error-container {
   /* Fondo sólido oscuro rojizo */
-  background-color: #450a0a; 
+  background-color: #450a0a;
   border-color: #7f1d1d;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* 3. Textos dentro de la alerta */
 [data-theme="dark"] .stock-error-text {
-  color: #fca5a5; /* Rojo claro pastel para leerse bien sobre fondo oscuro */
+  color: #fca5a5;
+  /* Rojo claro pastel para leerse bien sobre fondo oscuro */
 }
 
 [data-theme="dark"] .stock-error-text strong {
-  color: #f87171; /* Rojo brillante para el título */
+  color: #f87171;
+  /* Rojo brillante para el título */
 }
 
 /* 4. Botón "Ajustar a X" */
@@ -499,8 +559,10 @@
 }
 
 [data-theme="dark"] .btn-fix-stock:hover {
-  background-color: #f87171; /* Relleno rojo brillante */
-  color: #1e293b; /* Texto oscuro para contraste */
+  background-color: #f87171;
+  /* Relleno rojo brillante */
+  color: #1e293b;
+  /* Texto oscuro para contraste */
 }
 
 /* 5. Ajuste de la animación de pulso para que brille en oscuro */
@@ -509,7 +571,15 @@
 }
 
 @keyframes pulse-red-dark {
-  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
-  70% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2);
+  }
+
+  70% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
 }
