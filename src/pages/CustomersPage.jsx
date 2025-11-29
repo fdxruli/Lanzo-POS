@@ -270,8 +270,6 @@ ${itemsString}
   // RENDER (Sin cambios, solo pasamos los props)
   return (
     <>
-      <h2 className="section-title">Administración de Clientes</h2>
-
       <div className="tabs-container" id="customers-tabs">
         <button
           className={`tab-btn ${activeTab === 'add-customer' ? 'active' : ''}`}

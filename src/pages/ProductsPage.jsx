@@ -1,23 +1,16 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { 
-    loadData, 
-    saveData, 
-    deleteData, 
-    saveBulk, 
-    queryByIndex, // <--- Importante: Añadido para buscar lotes sin cargar todo en memoria
-    STORES, 
-    deleteCategoryCascading 
-} from '../services/database';
+import { loadData, saveData, deleteData, saveBulk, queryByIndex,STORES, deleteCategoryCascading } from '../services/database';
 import { showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
 import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
-
+import { uploadFile } from '../services/supabase';
 // --- CAMBIO: Usamos el store especializado ---
 import { useProductStore } from '../store/useProductStore';
+import { useStatsStore } from '../store/useStatsStore';
 
 import BatchManager from '../components/products/BatchManager';
 import DataTransferModal from '../components/products/DataTransferModal';
@@ -30,6 +23,8 @@ export default function ProductsPage() {
     const [activeTab, setActiveTab] = useState('view-products');
 
     const features = useFeatureConfig();
+
+    const adjuntInventoryValue = useStatsStore(state => state.adjuntInventoryValue);
 
     // --- CONEXIÓN AL NUEVO STORE DE PRODUCTOS ---
     const categories = useProductStore((state) => state.categories);
@@ -100,11 +95,14 @@ export default function ProductsPage() {
         try {
             let finalImage = productData.image;
             if (productData.image && productData.image instanceof File) {
-                finalImage = await window.uploadFile(productData.image, 'product');
+                finalImage = await uploadFile(productData.image, 'product');
                 if (!finalImage) finalImage = null;
             }
 
+            let valueDifference = 0; // Para ajustar el valor del inventario
+
             if (editingProduct && editingProduct.id) {
+                // ... (Lógica de edición existente) ...
                 const updatedProduct = {
                     ...editingProduct,
                     ...productData,
@@ -115,6 +113,7 @@ export default function ProductsPage() {
                 showMessageModal('¡Actualizado exitosamente!');
 
             } else {
+                // CREACIÓN DE NUEVO PRODUCTO
                 const newId = `product-${Date.now()}`;
                 const newProduct = {
                     id: newId,
@@ -132,7 +131,8 @@ export default function ProductsPage() {
 
                 const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
 
-                if (!isRecipeProduct) {
+                // Si tiene stock inicial y costo, calculamos el valor para sumarlo al Dashboard
+                if (!isRecipeProduct && initialStock > 0) {
                     const initialBatch = {
                         id: `batch-${newId}-initial`,
                         productId: newId,
@@ -146,16 +146,26 @@ export default function ProductsPage() {
                         sku: null, attributes: null
                     };
                     await saveData(STORES.PRODUCT_BATCHES, initialBatch);
+                    
+                    // --- CORRECCIÓN CLAVE: Sumar al valor del inventario ---
+                    valueDifference = initialCost * initialStock;
                 }
 
                 if (productData.productType === 'ingredient' && initialStock > 0) {
-                    showMessageModal(`¡Insumo creado con ${initialStock} ${productData.bulkData?.purchase?.unit || 'unidades'} de stock!`);
+                    showMessageModal(`¡Insumo creado con ${initialStock} unidades!`);
                 } else {
                     showMessageModal('¡Producto creado exitosamente!');
                 }
             }
 
+            // Actualizamos la vista de productos
             await refreshData();
+            
+            // Actualizamos el Dashboard (Store de estadísticas)
+            if (valueDifference > 0) {
+                await adjustInventoryValue(valueDifference);
+            }
+
             setEditingProduct(null);
 
             if (productData.productType === 'ingredient') {
@@ -247,7 +257,6 @@ export default function ProductsPage() {
     return (
         <>
             <div className="products-header">
-                <h2 className="section-title">Gestión de Inventario</h2>
                 <div style={{ display: 'flex', gap: '10px', flexDirection: 'column', width: '100%' }}>
                     {/* BOTÓN NUEVO PARA FRUTERÍA */}
                     {features.hasDailyPricing && (

@@ -30,6 +30,49 @@ async function getSupabaseUser() {
     }
 }
 
+// Configuración del Rate Limit
+const RATE_LIMIT_KEY = 'lanzo_license_attempts';
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_TIME = 5 * 60 * 1000; // 5 minutos en milisegundos
+
+function checkRateLimit() {
+  const storedData = localStorage.getItem(RATE_LIMIT_KEY);
+  if (!storedData) return { attempts: 0, lockedUntil: null };
+
+  const { attempts, lockedUntil } = JSON.parse(storedData);
+
+  // Si hay un bloqueo activo y el tiempo no ha pasado
+  if (lockedUntil && new Date().getTime() < lockedUntil) {
+    const remainingSeconds = Math.ceil((lockedUntil - new Date().getTime()) / 1000);
+    throw new Error(`Demasiados intentos. Por favor espera ${Math.ceil(remainingSeconds / 60)} minutos.`);
+  }
+
+  // Si el tiempo de bloqueo ya pasó, reseteamos
+  if (lockedUntil && new Date().getTime() > lockedUntil) {
+    localStorage.removeItem(RATE_LIMIT_KEY);
+    return { attempts: 0, lockedUntil: null };
+  }
+
+  return { attempts, lockedUntil };
+}
+
+function registerFailedAttempt() {
+  const { attempts } = checkRateLimit();
+  const newAttempts = attempts + 1;
+  
+  let newData = { attempts: newAttempts, lockedUntil: null };
+
+  if (newAttempts >= MAX_ATTEMPTS) {
+    newData.lockedUntil = new Date().getTime() + LOCKOUT_TIME;
+  }
+
+  localStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(newData));
+}
+
+function resetRateLimit() {
+  localStorage.removeItem(RATE_LIMIT_KEY);
+}
+
 /**
  * Intenta analizar el User Agent para un nombre más legible.
  * @param {string} userAgent - El string de navigator.userAgent
@@ -56,8 +99,11 @@ function getFriendlyDeviceName(userAgent) {
     return `${browser} en ${os}`;
 }
 
-window.activateLicense = async function (licenseKey) {
+export const activateLicense = async function (licenseKey) {
     try {
+        // 1. Verificar bloqueo antes de llamar a Supabase
+        checkRateLimit(); 
+
         const user = await getSupabaseUser();
         if (!user) return { valid: false, message: 'Could not get a user session.' };
 
@@ -65,12 +111,11 @@ window.activateLicense = async function (licenseKey) {
         const result = await fp.get();
         const deviceFingerprint = result.visitorId;
 
-        localStorage.setItem('fp', deviceFingerprint);
-
+        // Datos del dispositivo
+        const friendlyName = getFriendlyDeviceName(navigator.userAgent);
         const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
 
-        const friendlyName = getFriendlyDeviceName(navigator.userAgent);
-
+        // 2. Llamada a la API (Solo si pasó el checkRateLimit)
         const { data, error } = await supabaseClient.rpc(
             'activate_license_on_device', {
             license_key_param: licenseKey,
@@ -78,30 +123,55 @@ window.activateLicense = async function (licenseKey) {
             device_fingerprint_param: deviceFingerprint,
             device_name_param: friendlyName,
             device_info_param: deviceInfo
-        }
-        );
+        });
 
         if (error) throw error;
 
         if (data && data.success) {
+            // 3. ÉXITO: Resetear contador de intentos fallidos
+            resetRateLimit();
+            
+            // Verificación secundaria
             const { data: licenseDetails, error: verifyError } = await supabaseClient.rpc(
                 'verify_device_license', {
                 user_id_param: user.id,
                 device_fingerprint_param: deviceFingerprint
-            }
-            );
+            });
             if (verifyError) throw verifyError;
+            
             return { valid: true, message: data.message, details: licenseDetails };
         } else {
+            // 4. FALLO DE LICENCIA (Clave incorrecta): Registrar intento
+            registerFailedAttempt();
             return { valid: false, message: data.error || 'License activation failed.' };
         }
+
     } catch (error) {
-        console.error('Error during license activation:', error);
-        return { valid: false, message: `Client-side error: ${error.message}` };
+        // ============================================================
+        // MEJORA AQUÍ: Manejo inteligente de errores
+        // ============================================================
+        
+        // Detectamos si es nuestro error de Rate Limit
+        const isRateLimit = error.message && error.message.includes('Demasiados intentos');
+
+        if (isRateLimit) {
+            // A) Si es bloqueo: No ensuciamos la consola con console.error
+            console.warn(`🔒 Bloqueo activo: ${error.message}`);
+        } else {
+            // B) Si es otro error (Red, Supabase caído, Bug): SÍ lo registramos
+            console.error('❌ Error crítico activando licencia:', error);
+            
+            // Opcional: Contamos errores de red como intentos fallidos también
+            // para evitar spam de peticiones si alguien ataca tu API
+            registerFailedAttempt();
+        }
+
+        // Devolvemos el mensaje limpio para que el Modal lo muestre al usuario
+        return { valid: false, message: error.message }; 
     }
 };
 
-window.revalidateLicense = async function () {
+export const revalidateLicense = async function () {
     try {
         const user = await getSupabaseUser();
         if (!user) return { valid: false, message: 'No user session.' };
@@ -142,7 +212,7 @@ window.revalidateLicense = async function () {
     }
 };
 
-window.deactivateCurrentDevice = async function (licenseKey) {
+export const deactivateCurrentDevice = async function (licenseKey) {
     try {
         const user = await getSupabaseUser();
         if (!user) throw new Error('User session not found.');
@@ -170,7 +240,7 @@ window.deactivateCurrentDevice = async function (licenseKey) {
     }
 };
 
-window.getBusinessCategories = async function () {
+export const getBusinessCategories = async function () {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
@@ -183,7 +253,7 @@ window.getBusinessCategories = async function () {
     }
 };
 
-window.saveBusinessProfile = async function (licenseKey, profileData) {
+export const saveBusinessProfile = async function (licenseKey, profileData) {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
@@ -218,7 +288,7 @@ window.saveBusinessProfile = async function (licenseKey, profileData) {
     }
 };
 
-window.getBusinessProfile = async function (licenseKey) {
+export const getBusinessProfile = async function (licenseKey) {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
@@ -257,7 +327,7 @@ window.getBusinessProfile = async function (licenseKey) {
     }
 };
 
-window.getLicenseDevices = async function (licenseKey) {
+export const getLicenseDevices = async function (licenseKey) {
     try {
         const user = await getSupabaseUser();
         if (!user) return { success: false, message: 'Could not get a user session.' };
@@ -284,7 +354,7 @@ window.getLicenseDevices = async function (licenseKey) {
     }
 };
 
-window.deactivateDeviceById = async function (deviceId) {
+export const deactivateDeviceById = async function (deviceId) {
     try {
         const user = await getSupabaseUser();
         if (!user) throw new Error('User session not found.');
@@ -304,7 +374,7 @@ window.deactivateDeviceById = async function (deviceId) {
  * Llama a la función SQL para crear una licencia de prueba
  * y registrar el dispositivo actual.
  */
-window.createFreeTrial = async function () {
+export const createFreeTrial = async function () {
     try {
         const user = await getSupabaseUser();
         if (!user) return { valid: false, message: 'No se pudo obtener la sesión del usuario.' };
@@ -343,7 +413,7 @@ window.createFreeTrial = async function () {
  * @param {'logo' | 'product'} type El tipo de imagen, para la carpeta.
  * @returns {Promise<string>} La URL pública de la imagen subida.
  */
-window.uploadFile = async function (file, type = 'product') {
+export const uploadFile = async function (file, type = 'product') {
     if (!file) throw new Error("No se proporcionó ningún archivo.");
 
     try {
@@ -391,7 +461,7 @@ window.uploadFile = async function (file, type = 'product') {
  * @param {function} onDeviceChange - Callback cuando cambia la tabla 'license_devices'.
  * @returns {object} La suscripción para poder desuscribirse luego.
  */
-window.subscribeToSecurityChanges = async function (licenseKey, onLicenseChange, onDeviceChange) {
+export const subscribeToSecurityChanges = async function (licenseKey, onLicenseChange, onDeviceChange) {
     if (!licenseKey) return null;
 
     const fp = await FingerprintJS.load();
@@ -436,6 +506,6 @@ window.subscribeToSecurityChanges = async function (licenseKey, onLicenseChange,
     return channel;
 };
 
-window.removeRealtimeChannel = async (channel) => {
+export const removeRealtimeChannel = async (channel) => {
     if (channel) await supabaseClient.removeChannel(channel);
 };

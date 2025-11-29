@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStatsStore } from '../store/useStatsStore';
 import { useSalesStore } from '../store/useSalesStore';
 import { useRecycleBinStore } from '../store/useRecycleBinStore';
-import { useProductStore } from '../store/useProductStore'; // <--- FALTABA ESTE IMPORT
+import { useProductStore } from '../store/useProductStore';
 
 // --- COMPONENTES ---
 import StatsGrid from '../components/dashboard/StatsGrid';
@@ -23,24 +23,32 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const features = useFeatureConfig();
 
-  // 1. ESTADÍSTICAS (Store: useStatsStore)
+  // 1. ESTADÍSTICAS
   const stats = useStatsStore((state) => state.stats);
+  const loadStats = useStatsStore((state) => state.loadStats); // IMPORTANTE: Traemos la acción de carga
   const isStatsLoading = useStatsStore((state) => state.isLoading);
 
-  // 2. VENTAS Y MERMAS (Store: useSalesStore)
-  // Aquí faltaba extraer 'deleteSale' y 'wasteLogs'
+  // 2. VENTAS Y MERMAS
   const sales = useSalesStore((state) => state.sales);
-  const deleteSale = useSalesStore((state) => state.deleteSale); // <--- CORRECCIÓN 1
-  const wasteLogs = useSalesStore((state) => state.wasteLogs);   // <--- CORRECCIÓN 2
+  const loadRecentSales = useSalesStore((state) => state.loadRecentSales); // IMPORTANTE: Traemos la acción
+  const deleteSale = useSalesStore((state) => state.deleteSale);
+  const wasteLogs = useSalesStore((state) => state.wasteLogs);
 
-  // 3. PRODUCTOS (Store: useProductStore)
-  // Necesario para los consejos de negocio ('BusinessTips')
-  const menu = useProductStore((state) => state.menu);           // <--- CORRECCIÓN 3
+  // 3. PRODUCTOS
+  const menu = useProductStore((state) => state.menu);
 
-  // 4. PAPELERA (Store: useRecycleBinStore)
+  // 4. PAPELERA
   const loadRecycleBin = useRecycleBinStore(state => state.loadRecycleBin);
   const deletedItems = useRecycleBinStore(state => state.deletedItems);
   const restoreItem = useRecycleBinStore(state => state.restoreItem);
+
+  // --- EFECTO DE CARGA INICIAL (LA SOLUCIÓN AL "DESCONECTADO") ---
+  useEffect(() => {
+    // Al entrar a la página, forzamos la recarga de estadísticas y ventas
+    console.log("🔄 Actualizando Dashboard...");
+    loadStats();
+    loadRecentSales();
+  }, []); // Se ejecuta solo al montar el componente
 
   // Cargar papelera solo si entramos a esa pestaña
   useEffect(() => {
@@ -48,13 +56,16 @@ export default function DashboardPage() {
   }, [activeTab, loadRecycleBin]);
 
   if (isStatsLoading) {
-    return <div style={{ padding: '2rem', textAlign: 'center' }}>Calculando estadísticas globales...</div>;
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4rem' }}>
+            <div className="spinner-loader"></div>
+            <p style={{ marginTop: '1rem', color: '#666' }}>Analizando ventas e inventario...</p>
+        </div>
+    );
   }
 
   return (
     <>
-      <h2 className="section-title">Panel de Ventas y Estadísticas</h2>
-
       <div className="tabs-container" id="sales-tabs">
         <button
           className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
@@ -102,7 +113,7 @@ export default function DashboardPage() {
                 <br />
                 Te recomendamos hacer una <strong>Copia de Seguridad</strong> semanalmente.
                 <button
-                  onClick={() => navigate('/productos')} // Redirige a productos donde está el botón de exportar
+                  onClick={() => navigate('/productos')}
                   style={{
                     background: 'none',
                     border: 'none',
@@ -120,19 +131,18 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="dashboard-grid-condensed">
-            {/* Ahora 'deleteSale' ya existe y no dará error */}
             <SalesHistory sales={sales} onDeleteSale={deleteSale} />
             <RecycleBin items={deletedItems} onRestoreItem={restoreItem} />
           </div>
         </>
       )}
 
-      {/* PESTAÑA: CONSEJOS (Necesita 'menu') */}
+      {/* PESTAÑA: CONSEJOS */}
       {activeTab === 'tips' && (
         <BusinessTips sales={sales} menu={menu} />
       )}
 
-      {/* PESTAÑA: MERMAS (Necesita 'wasteLogs') */}
+      {/* PESTAÑA: MERMAS */}
       {activeTab === 'waste' && features.hasWaste && (
         <WasteHistory logs={wasteLogs} />
       )}

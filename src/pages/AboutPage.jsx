@@ -66,8 +66,6 @@ export default function AboutPage() {
 
   return (
     <>
-      <h2 className="section-title">Acerca de Lanzo POS</h2>
-
       <div className="about-container">
 
         {/* --- COLUMNA IZQUIERDA (PRINCIPAL) --- */}

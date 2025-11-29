@@ -435,33 +435,38 @@ export function searchProductByBarcode(barcode) {
 export function searchProductsInDB(term) {
   return executeWithRetry(async () => {
     const db = await initDB();
-    const results = [];
-    const limit = 50; // Traer máx 50 resultados para no saturar
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORES.MENU], 'readonly');
       const store = tx.objectStore(STORES.MENU);
+
+      // Validación de seguridad por si el índice no existe en versiones viejas
+      if (!store.indexNames.contains('name_lower')) {
+        console.warn('Índice name_lower no encontrado, retornando array vacío.');
+        resolve([]);
+        return;
+      }
+
       const index = store.index('name_lower');
 
       // Rango: Todo lo que empiece con el término
-      // Ej: "coca" -> de "coca" a "coca" + caracter final unicode
       const lowerTerm = term.toLowerCase();
       const range = IDBKeyRange.bound(lowerTerm, lowerTerm + '\uffff');
 
-      const request = index.openCursor(range);
+      // --- OPTIMIZACIÓN (Opción B) ---
+      // Usamos getAll nativo con límite. 
+      // Es mucho más rápido que iterar un cursor fila por fila.
+      // Pedimos 60 para tener un margen por si algunos están inactivos.
+      const request = index.getAll(range, 60);
 
-      request.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (!cursor || results.length >= limit) {
-          resolve(results);
-          return;
-        }
+      request.onsuccess = () => {
+        const allMatches = request.result || [];
 
-        const product = cursor.value;
-        if (product.isActive !== false) { // Solo activos
-          results.push(product);
-        }
-        cursor.continue();
+        // Filtramos en memoria (operación instantánea para <100 items)
+        const results = allMatches.filter(product => product.isActive !== false);
+
+        // Opcional: Recortar a 50 exactos si el filtro dejó más de la cuenta
+        resolve(results.slice(0, 50));
       };
 
       request.onerror = (e) => reject(e.target.error);

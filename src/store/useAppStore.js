@@ -2,10 +2,10 @@
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
 import { isLocalStorageEnabled, normalizeDate, showMessageModal } from '../services/utils';
+import { activateLicense, revalidateLicense, getBusinessProfile, saveBusinessProfile, createFreeTrial, uploadFile, deactivateCurrentDevice, subscribeToSecurityChanges, removeRealtimeChannel } from '../services/supabase';
 
 const _ui_render_config_v2 = "LANZO_SECURE_KEY_v1_X9Z";
 
-// ... (Las funciones auxiliares generateSignature, saveLicenseToStorage, etc. se mantienen igual) ...
 const generateSignature = (data) => {
   const stringData = JSON.stringify(data);
   let hash = 0;
@@ -79,7 +79,7 @@ export const useAppStore = create((set, get) => ({
     }
 
     try {
-      const serverValidation = await window.revalidateLicense();
+      const serverValidation = await revalidateLicense();
 
       if (serverValidation && serverValidation.valid) {
         await saveLicenseToStorage(serverValidation);
@@ -90,7 +90,7 @@ export const useAppStore = create((set, get) => ({
         });
 
         const currentLicenseKey = serverValidation.license_key || license.license_key;
-        const profileResult = await window.getBusinessProfile(currentLicenseKey);
+        const profileResult = await getBusinessProfile(currentLicenseKey);
         let companyData = null;
 
         if (profileResult.success && profileResult.data) {
@@ -190,7 +190,7 @@ export const useAppStore = create((set, get) => ({
 
       console.log("🔌 Conectando seguridad en tiempo real...");
 
-      const sub = await window.subscribeToSecurityChanges(
+      const sub = await subscribeToSecurityChanges(
         licenseDetails.license_key,
 
         // Callback: Cambio en Licencia
@@ -259,23 +259,21 @@ export const useAppStore = create((set, get) => ({
     set({ realtimeSubscription: null });
 
     try {
-      if (typeof window.removeRealtimeChannel === 'function') {
-        await window.removeRealtimeChannel(realtimeSubscription);
+      if (typeof removeRealtimeChannel === 'function') {
+        await removeRealtimeChannel(realtimeSubscription);
       }
     } catch (err) {
       console.warn("Advertencia al desconectar canal (ignorable):", err);
     }
   },
 
-  // ... (Resto de funciones handleLogin, handleFreeTrial, handleSetup, etc. se mantienen igual) ...
-  
   handleLogin: async (licenseKey) => {
     try {
-      const result = await window.activateLicense(licenseKey);
+      const result = await activateLicense(licenseKey);
       if (result.valid) {
         await saveLicenseToStorage(result.details);
         try {
-          const profileResult = await window.getBusinessProfile(licenseKey);
+          const profileResult = await getBusinessProfile(licenseKey);
           if (profileResult.success && profileResult.data) {
             console.log("¡Perfil encontrado al iniciar sesión! Sincronizando...");
             const mappedData = {
@@ -311,7 +309,7 @@ export const useAppStore = create((set, get) => ({
 
   handleFreeTrial: async () => {
     try {
-      const result = await window.createFreeTrial();
+      const result = await createFreeTrial();
       if (result.success && result.details) {
         await saveLicenseToStorage(result.details);
         set({ licenseDetails: result.details, appStatus: 'setup_required' });
@@ -334,10 +332,10 @@ export const useAppStore = create((set, get) => ({
       let logoUrl = null;
       if (setupData.logo && setupData.logo instanceof File) {
         console.log("Subiendo logo a Supabase Storage...");
-        logoUrl = await window.uploadFile(setupData.logo, 'logo');
+        logoUrl = await uploadFile(setupData.logo, 'logo');
       }
       const profileData = { ...setupData, logo: logoUrl };
-      await window.saveBusinessProfile(licenseKey, profileData);
+      await saveBusinessProfile(licenseKey, profileData);
       console.log("Perfil de negocio guardado en Supabase DB.");
       const companyData = { id: 'company', ...profileData };
       await saveData(STORES.COMPANY, companyData);
@@ -356,10 +354,10 @@ export const useAppStore = create((set, get) => ({
     try {
       if (companyData.logo && companyData.logo instanceof File) {
         console.log("Subiendo nuevo logo a Supabase Storage...");
-        const logoUrl = await window.uploadFile(companyData.logo, 'logo');
+        const logoUrl = await uploadFile(companyData.logo, 'logo');
         companyData.logo = logoUrl;
       }
-      await window.saveBusinessProfile(licenseKey, companyData);
+      await saveBusinessProfile(licenseKey, companyData);
       console.log("Perfil de negocio actualizado en Supabase DB.");
       await saveData(STORES.COMPANY, companyData);
       set({ companyProfile: companyData });
@@ -374,7 +372,7 @@ export const useAppStore = create((set, get) => ({
     try {
       const licenseKey = licenseDetails?.license_key;
       if (licenseKey) {
-        await window.deactivateCurrentDevice(licenseKey);
+        await deactivateCurrentDevice(licenseKey);
         console.log("Dispositivo desactivado del servidor.");
       }
     } catch (error) {

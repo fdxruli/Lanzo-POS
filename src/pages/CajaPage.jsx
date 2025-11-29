@@ -233,7 +233,6 @@ export default function CajaPage() {
 
   return (
     <>
-      <h2 className="section-title">Gestión de Caja</h2>
       <div className="caja-grid">
 
         {/* Panel Superior: Estado de Caja */}

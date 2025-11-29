@@ -93,7 +93,6 @@ export default function OrdersPage() {
     return (
         <div className="orders-page-container">
             <div className="orders-header">
-                <h2 className="section-title">Monitor de Cocina / Pedidos</h2>
                 <div className="orders-filters">
                     <button className={`filter-btn ${filter === 'pending' ? 'active' : ''}`} onClick={() => setFilter('pending')}>Pendientes</button>
                     <button className={`filter-btn ${filter === 'ready' ? 'active' : ''}`} onClick={() => setFilter('ready')}>Listos</button>

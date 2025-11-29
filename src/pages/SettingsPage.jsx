@@ -206,7 +206,6 @@ export default function SettingsPage() {
 
   return (
     <>
-      <h2 className="section-title">Configuración del Negocio</h2>
       <div className="company-form-container">
         <h3 className="subtitle">Datos de la Empresa</h3>
         <form id="company-form" className="company-form" onSubmit={handleSubmit}>

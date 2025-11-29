@@ -5,18 +5,13 @@ import { loadData, saveData, STORES, initDB } from '../services/database';
 
 // --- HELPER: Obtener Valor de Inventario ---
 async function getInventoryValue(db) {
-  const cached = await loadData(STORES.STATS, 'inventory_summary');
+  // ELIMINAMOS LA CACHÉ AGRESIVA QUE CAUSABA EL ERROR
+  // Antes, si el sistema veía un "0" guardado, no volvía a contar. 
+  // Ahora forzamos el recálculo real siempre que se entra al dashboard.
   
-  // CORRECCIÓN AQUÍ: Si existe caché Y es positivo, lo usamos.
-  // Si es negativo (bug) o no existe, forzamos el recálculo.
-  if (cached && typeof cached.value === 'number' && cached.value >= 0) {
-    return cached.value;
-  }
-
-  console.log('🔄 Detectado inventario desincronizado o negativo. Recalculando...');
-
   // Fallback: Cálculo inicial (Suma real de todos los lotes)
   let calculatedValue = 0;
+  
   await new Promise((resolve) => {
     const tx = db.transaction(STORES.PRODUCT_BATCHES, 'readonly');
     const cursorReq = tx.objectStore(STORES.PRODUCT_BATCHES).openCursor();
@@ -37,7 +32,7 @@ async function getInventoryValue(db) {
     };
   });
 
-  // Guardamos el valor corregido
+  // Guardamos el valor corregido para referencia futura
   await saveData(STORES.STATS, { id: 'inventory_summary', value: calculatedValue });
   return calculatedValue;
 }
@@ -46,7 +41,7 @@ async function getInventoryValue(db) {
 async function calculateStatsOnTheFly() {
   const db = await initDB();
 
-  // 1. Cargar estadísticas de ventas (Caché existente)
+  // 1. Cargar estadísticas de ventas
   let cachedStats = await loadData(STORES.STATS, 'sales_summary');
 
   // Inicialización si no existe caché de ventas
@@ -131,14 +126,6 @@ export const useStatsStore = create((set, get) => ({
 
   updateStatsForNewSale: async (sale, costOfGoodsSold) => {
     try {
-      // 1. VALIDACIÓN DE IDEMPOTENCIA
-      const alreadyProcessed = await loadData(STORES.PROCESSED_SALES_LOG, sale.timestamp);
-      
-      if (alreadyProcessed) {
-        console.warn(`⚠️ La venta ${sale.timestamp} ya fue procesada. Se omite.`);
-        return;
-      }
-
       const currentStats = get().stats;
       let saleProfit = 0;
       let itemsCount = 0;
@@ -151,7 +138,7 @@ export const useStatsStore = create((set, get) => ({
 
       // Calculamos nuevo valor de inventario
       let newInventoryValue = (currentStats.inventoryValue || 0) - costOfGoodsSold;
-      if (newInventoryValue < 0) newInventoryValue = 0; // Protección
+      if (newInventoryValue < 0) newInventoryValue = 0; 
 
       const newStats = {
           ...currentStats,
@@ -166,10 +153,6 @@ export const useStatsStore = create((set, get) => ({
       await Promise.all([
         saveData(STORES.STATS, { ...newStats, id: 'sales_summary' }),
         saveData(STORES.STATS, { id: 'inventory_summary', value: newStats.inventoryValue }),
-        saveData(STORES.PROCESSED_SALES_LOG, { 
-            id: sale.timestamp, 
-            processedAt: Date.now() 
-        })
       ]);
       
       set({ stats: newStats });
