@@ -139,6 +139,21 @@
   }
 }
 
+@media (max-width: 1023px) {
+  /* Apuntamos específicamente al contenedor del resumen que está 
+     dentro del grid principal (.pos-grid).
+     El resumen dentro del modal NO se verá afectado porque no está dentro de .pos-grid
+  */
+  .pos-grid .pos-order-container {
+    display: none !important;
+  }
+  
+  /* Ajustamos el grid para que use todo el ancho */
+  .pos-grid {
+    grid-template-columns: 1fr;
+    padding-bottom: 100px; /* Espacio extra para que el botón flotante no tape el último producto */
+  }
+}
 /* ========================================
    ESCRITORIO (≥ 1024px) - PANTALLA COMPLETA
    ======================================== */
