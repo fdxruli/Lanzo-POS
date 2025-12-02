@@ -84,7 +84,10 @@ function Navbar() {
       <div className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="drawer-header">
           <h3>Menú Principal</h3>
-          <button onClick={closeMenu} className="btn-close-drawer"><X /></button>
+          {/* CORRECCIÓN AQUÍ: Se agregó size={24} para asegurar que se vea el icono */}
+          <button onClick={closeMenu} className="btn-close-drawer">
+            <X size={24} /> 
+          </button>
         </div>
         <div className="drawer-links">
           {drawerLinks.map((link) => (
@@ -106,10 +109,9 @@ function Navbar() {
          ============================================== */}
       <nav className="desktop-sidebar">
         <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          {/* Updated Logo for vertical layout */}
           <Logo
             style={{ width: '100%', height: 'auto', maxHeight: '120px' }}
-            vertical={true} // Pass vertical prop to adjust layout
+            vertical={true}
           />
         </div>
 

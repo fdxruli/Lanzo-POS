@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { downloadBackupSmart } from '../../services/dataTransfer';
-import { useProductStore } from '../../store/useProductStore'; // <-- Importamos para verificar volumen de datos
+import { useProductStore } from '../../store/useProductStore';
 import './MessageModal.css';
 
 export default function BackupReminder() {
@@ -12,18 +12,26 @@ export default function BackupReminder() {
 
   useEffect(() => {
     const checkBackupStatus = () => {
-      // 1. REGLA DE "INTELIGENCIA": 
-      // Si el usuario tiene menos de 10 productos, no lo molestamos con modales.
+      // 1. REGLA: Si tiene pocos productos, no molestar.
       if (!products || products.length < 10) {
         return;
       }
 
+      // --- CORRECCIÓN 1: Verificar si el usuario lo pospuso ---
+      const postponedUntil = localStorage.getItem('backup_postponed_until');
+      if (postponedUntil) {
+        const datePostponed = new Date(postponedUntil);
+        // Si la fecha actual es MENOR a la fecha de posposición, no mostramos nada
+        if (new Date() < datePostponed) {
+          return; 
+        }
+      }
+      // --------------------------------------------------------
+
       const lastBackup = localStorage.getItem('last_backup_date');
 
-      // Caso A: Nunca ha hecho respaldo, pero ya tiene datos (>10 productos)
+      // Caso A: Nunca ha hecho respaldo
       if (!lastBackup) {
-        // Le damos un pequeño margen de "gracia" simulado o mostramos aviso inicial
-        // Aquí asumimos que si ya trabajó tanto, debe respaldar.
         setShow(true);
         return;
       }
@@ -32,31 +40,42 @@ export default function BackupReminder() {
       const diffTime = Math.abs(Date.now() - new Date(lastBackup).getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-      if (diffDays > 7) { // 7 días de límite
+      if (diffDays > 7) { 
         setDaysSince(diffDays);
         setShow(true);
       }
     };
 
-    // Verificamos SOLO al montar el componente (al recargar la página o entrar a la app).
-    // Quitamos el setInterval para no interrumpir el flujo de trabajo cada hora.
-    const timer = setTimeout(checkBackupStatus, 2000); // Esperamos 2s para no chocar con la carga inicial
+    // Verificamos con un pequeño delay para no bloquear el render inicial
+    const timer = setTimeout(checkBackupStatus, 3000);
 
     return () => clearTimeout(timer);
-  }, [products]); // Se vuelve a verificar si la lista de productos cambia drásticamente, pero el flag 'show' lo controla.
+  }, [products]); 
 
   const handleBackup = async () => {
     try {
-      // CAMBIO AQUÍ: Usamos la función optimizada
       await downloadBackupSmart();
-
-      // Guardar fecha actual
+      // Guardar fecha actual del respaldo
       localStorage.setItem('last_backup_date', new Date().toISOString());
+      // Limpiamos la posposición porque ya cumplió
+      localStorage.removeItem('backup_postponed_until');
       setShow(false);
     } catch (error) {
-      console.error(error); // Es bueno loguear el error
+      console.error(error);
       alert("Error al generar respaldo. Intenta de nuevo.");
     }
+  };
+
+  // --- CORRECCIÓN 2: Función para guardar la posposición ---
+  const handlePostpone = () => {
+    // Calculamos la fecha de mañana
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1); // Sumar 1 día
+    
+    // Guardamos en LocalStorage
+    localStorage.setItem('backup_postponed_until', tomorrow.toISOString());
+    
+    setShow(false);
   };
 
   if (!show) return null;
@@ -68,7 +87,7 @@ export default function BackupReminder() {
         <p>
           {daysSince > 0
             ? `Han pasado ${daysSince} días desde tu último respaldo.`
-            : "Detectamos que has agregado información valiosa pero aún no tienes una copia de seguridad."}
+            : "Detectamos información valiosa pero aún no tienes una copia de seguridad."}
         </p>
         <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '20px' }}>
           Recuerda que toda la información vive <strong>solo en este dispositivo</strong>.
@@ -83,9 +102,9 @@ export default function BackupReminder() {
           ⬇️ Descargar Respaldo Ahora
         </button>
 
-        {/* Opción de posponer */}
+        {/* Usamos la nueva función handlePostpone */}
         <button
-          onClick={() => setShow(false)}
+          onClick={handlePostpone}
           style={{
             background: 'none', border: 'none', color: '#999',
             marginTop: '15px', width: '100%', textDecoration: 'underline', cursor: 'pointer'
