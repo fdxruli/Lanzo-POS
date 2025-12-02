@@ -1,4 +1,3 @@
-// src/store/useAppStore.js
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
 import { isLocalStorageEnabled, normalizeDate, showMessageModal } from '../services/utils';
@@ -70,9 +69,9 @@ export const useAppStore = create((set, get) => ({
   licenseDetails: null,
 
   initializeApp: async () => {
-    // ... (Lógica de initializeApp se mantiene igual) ...
     const license = await getLicenseFromStorage();
 
+    // AQUÍ FALLABA: Si 'license' existía pero no tenía 'valid: true', te sacaba.
     if (!license || !license.valid) {
       set({ appStatus: 'unauthenticated' });
       return;
@@ -82,6 +81,7 @@ export const useAppStore = create((set, get) => ({
       const serverValidation = await revalidateLicense();
 
       if (serverValidation && serverValidation.valid) {
+        // CASO 1: ÉXITO ROTUNDO (El servidor dice que sí) -> Guardamos y seguimos
         await saveLicenseToStorage(serverValidation);
         set({
           licenseDetails: serverValidation,
@@ -91,8 +91,8 @@ export const useAppStore = create((set, get) => ({
 
         const currentLicenseKey = serverValidation.license_key || license.license_key;
         const profileResult = await getBusinessProfile(currentLicenseKey);
+        
         let companyData = null;
-
         if (profileResult.success && profileResult.data) {
           console.log("Perfil de negocio cargado desde Supabase.");
           const mappedData = {
@@ -119,12 +119,36 @@ export const useAppStore = create((set, get) => ({
         }
 
       } else {
-        clearLicenseFromStorage();
-        set({
-          appStatus: 'unauthenticated',
-          licenseDetails: null,
-          licenseStatus: serverValidation.reason || 'expired'
-        });
+        // CASO 2: FALLO DE VALIDACIÓN (Puede ser error de red o licencia vencida)
+        
+        // Si el servidor nos dio una RAZÓN específica de rechazo (ej: 'expired', 'revoked')
+        if (serverValidation.reason) {
+            console.warn("⛔ Licencia rechazada por servidor:", serverValidation.reason);
+            clearLicenseFromStorage();
+            set({
+              appStatus: 'unauthenticated',
+              licenseDetails: null,
+              licenseStatus: serverValidation.reason || 'expired'
+            });
+        } else {
+            // Si NO hay razón, asumimos que fue un error de red/cancelación (refresh rápido)
+            // y CONFIAMOS en la licencia local para no sacar al usuario.
+            console.warn("⚠️ Validación interrumpida (Refresh rápido o Red). Manteniendo sesión local.");
+            
+            set({
+                licenseDetails: license,
+                licenseStatus: license.reason || 'active',
+                gracePeriodEnds: license.grace_period_ends || null
+            });
+
+            // Intentamos cargar perfil local
+            const companyData = await loadData(STORES.COMPANY, 'company');
+            if (companyData && companyData.name) {
+                set({ companyProfile: companyData, appStatus: 'ready' });
+            } else {
+                set({ appStatus: 'setup_required' });
+            }
+        }
       }
     } catch (error) {
       console.warn("No se pudo revalidar la licencia (¿sin red?). Confiando en caché local.");
@@ -153,11 +177,10 @@ export const useAppStore = create((set, get) => ({
   },
 
   // ============================================================
-  // GESTIÓN DE SEGURIDAD REALTIME (CORREGIDA)
+  // GESTIÓN DE SEGURIDAD REALTIME
   // ============================================================
 
   startRealtimeSecurity: async () => {
-    // 2. OBTENEMOS LA BANDERA Y EL ESTADO ACTUAL
     const { 
       licenseDetails, 
       realtimeSubscription, 
@@ -165,44 +188,23 @@ export const useAppStore = create((set, get) => ({
       _isInitializingSecurity 
     } = get();
 
-    // 3. CHEQUEO DE MUTEX: Si ya estamos iniciando, abortamos esta llamada
-    if (_isInitializingSecurity) {
-      console.log('🛡️ startRealtimeSecurity ignorado: Inicialización en curso.');
-      return;
-    }
+    if (_isInitializingSecurity) return;
 
-    if (!licenseDetails?.license_key) {
-      console.warn('⚠️ Seguridad: No se puede iniciar sin licencia válida.');
-      return;
-    }
+    if (!licenseDetails?.license_key) return;
 
-    // 4. BLOQUEAMOS EL ACCESO
     set({ _isInitializingSecurity: true });
 
     try {
-      // Limpieza preventiva (Evitar duplicados y Zombis)
       if (realtimeSubscription) {
-        console.log("♻️ Limpiando suscripción anterior...");
         await stopRealtimeSecurity();
-        // El await setTimeout aquí es seguro porque estamos dentro del bloqueo
         await new Promise(resolve => setTimeout(resolve, 150));
       }
 
-      console.log("🔌 Conectando seguridad en tiempo real...");
-
       const sub = await subscribeToSecurityChanges(
         licenseDetails.license_key,
-
-        // Callback: Cambio en Licencia
         (newLicenseData) => {
-          // Nota: Usamos get() aquí para obtener el estado más fresco en el momento del evento
           const currentSub = get().realtimeSubscription;
-
-          // VALIDACIÓN ROBUSTA: Si no hay sub activa o no coincide, ignorar (Zombi)
-          if (!currentSub || currentSub !== sub) {
-            console.warn('⚠️ Evento de seguridad ignorado (Suscripción antigua).');
-            return;
-          }
+          if (!currentSub || currentSub !== sub) return;
 
           if (newLicenseData.status !== 'active') {
             showMessageModal(
@@ -213,14 +215,11 @@ export const useAppStore = create((set, get) => ({
               }
             );
           } else {
-            // Actualización silenciosa de datos
             set((state) => ({
               licenseDetails: { ...state.licenseDetails, ...newLicenseData }
             }));
           }
         },
-
-        // Callback: Cambio en Dispositivo
         (newDeviceData, eventType) => {
           const currentSub = get().realtimeSubscription;
           if (!currentSub || currentSub !== sub) return;
@@ -236,34 +235,26 @@ export const useAppStore = create((set, get) => ({
           }
         }
       );
-
-      // Guardar la referencia activa
       set({ realtimeSubscription: sub });
 
     } catch (error) {
       console.error('Error al iniciar seguridad realtime:', error);
       set({ realtimeSubscription: null });
     } finally {
-      // 5. LIBERAMOS EL ACCESO (Siempre, ocurra error o no)
       set({ _isInitializingSecurity: false });
     }
   },
 
   stopRealtimeSecurity: async () => {
     const { realtimeSubscription } = get();
-
     if (!realtimeSubscription) return;
-
-    console.log("🔌 Desconectando seguridad...");
-
     set({ realtimeSubscription: null });
-
     try {
       if (typeof removeRealtimeChannel === 'function') {
         await removeRealtimeChannel(realtimeSubscription);
       }
     } catch (err) {
-      console.warn("Advertencia al desconectar canal (ignorable):", err);
+      console.warn("Advertencia al desconectar canal:", err);
     }
   },
 
@@ -271,7 +262,16 @@ export const useAppStore = create((set, get) => ({
     try {
       const result = await activateLicense(licenseKey);
       if (result.valid) {
-        await saveLicenseToStorage(result.details);
+        // === CORRECCIÓN CLAVE AQUÍ ===
+        // Inyectamos "valid: true" manualmente porque el objeto 'details'
+        // que viene de la base de datos NO lo trae por defecto.
+        const licenseDataToSave = { 
+            ...result.details, 
+            valid: true 
+        };
+        
+        await saveLicenseToStorage(licenseDataToSave);
+        
         try {
           const profileResult = await getBusinessProfile(licenseKey);
           if (profileResult.success && profileResult.data) {
@@ -286,17 +286,17 @@ export const useAppStore = create((set, get) => ({
             };
             await saveData(STORES.COMPANY, mappedData);
             set({
-              licenseDetails: result.details,
+              licenseDetails: licenseDataToSave,
               companyProfile: mappedData,
               appStatus: 'ready'
             });
           } else {
             console.log("Licencia nueva sin perfil. Requiere configuración.");
-            set({ licenseDetails: result.details, appStatus: 'setup_required' });
+            set({ licenseDetails: licenseDataToSave, appStatus: 'setup_required' });
           }
         } catch (profileError) {
-          console.error("Error al intentar recuperar perfil tras login:", profileError);
-          set({ licenseDetails: result.details, appStatus: 'setup_required' });
+          console.error("Error al recuperar perfil:", profileError);
+          set({ licenseDetails: licenseDataToSave, appStatus: 'setup_required' });
         }
         return { success: true };
       } else {
@@ -310,9 +310,25 @@ export const useAppStore = create((set, get) => ({
   handleFreeTrial: async () => {
     try {
       const result = await createFreeTrial();
-      if (result.success && result.details) {
-        await saveLicenseToStorage(result.details);
-        set({ licenseDetails: result.details, appStatus: 'setup_required' });
+      // Nota: Tu SQL de trial devuelve los campos planos (license_key, etc),
+      // NO devuelve un objeto "details". Ajustamos para soportar ambas estructuras.
+      if (result.success) {
+        
+        // Si result.details existe úsalo, sino usa result mismo (menos success)
+        const rawData = result.details || result;
+        
+        // === CORRECCIÓN CLAVE AQUÍ TAMBIÉN ===
+        const licenseDataToSave = {
+            ...rawData,
+            valid: true,
+            // Aseguramos campos mínimos si faltan
+            product_name: rawData.product_name || 'Lanzo Trial', 
+            max_devices: rawData.max_devices || 1
+        };
+
+        await saveLicenseToStorage(licenseDataToSave);
+        
+        set({ licenseDetails: licenseDataToSave, appStatus: 'setup_required' });
         return { success: true };
       } else {
         return { success: false, message: result.error || 'No se pudo crear la prueba gratuita.' };
@@ -376,7 +392,7 @@ export const useAppStore = create((set, get) => ({
         console.log("Dispositivo desactivado del servidor.");
       }
     } catch (error) {
-      console.error("Error al desactivar dispositivo en servidor (continuando logout local):", error);
+      console.error("Error al desactivar dispositivo (logout local):", error);
     }
     clearLicenseFromStorage();
     set({
@@ -388,5 +404,57 @@ export const useAppStore = create((set, get) => ({
       realtimeSubscription: null
     });
     console.log("Sesión cerrada correctamente.");
-  }
+  },
+
+  // ============================================================
+  // seguridad
+  // ============================================================
+  verifySessionIntegrity: async () => {
+    const { licenseDetails, logout } = get();
+
+    // 1. Validación Básica
+    if (!licenseDetails || !licenseDetails.license_key) {
+        return false;
+    }
+
+    // 2. Validación Local (Anti-Tamper)
+    const storedPackage = await getLicenseFromStorage();
+    if (!storedPackage) {
+       console.warn("⚠️ Error de integridad local.");
+    }
+
+    // 3. Validación Remota (Server-Side Authority)
+    if (navigator.onLine) {
+        try {
+            const serverCheck = await revalidateLicense(licenseDetails.license_key);
+            
+            // === CORRECCIÓN CRÍTICA PARA SOPORTAR 7 DÍAS DE TOLERANCIA ===
+            
+            // Definimos qué se considera "Permitido trabajar":
+            // 1. La licencia es válida (valid: true)
+            // 2. O BIEN, está en periodo de gracia (status: 'grace_period')
+            const isAccessAllowed = serverCheck.valid || serverCheck.status === 'grace_period';
+
+            if (!isAccessAllowed) {
+                console.error(`⛔ SEGURIDAD: Acceso denegado. Estado: ${serverCheck.status}`);
+                await logout(); // Expulsión inmediata solo si NO hay permiso
+                return false;
+            }
+            
+            // Actualizamos fechas de gracia en el estado para que el Ticker avise
+            if (serverCheck.grace_period_ends) {
+                set({ 
+                    gracePeriodEnds: serverCheck.grace_period_ends,
+                    licenseStatus: serverCheck.status // Actualizamos estado (active/grace_period)
+                });
+            }
+            // ==============================================================
+
+        } catch (error) {
+            console.warn("⚠️ Verificación online falló (red inestable). Continuando offline.");
+        }
+    }
+
+    return true; 
+  },
 }));

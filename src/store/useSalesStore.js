@@ -1,6 +1,7 @@
+// src/store/useSalesStore.js
 import { create } from 'zustand';
 import { loadData, saveData, deleteData, loadDataPaginated, STORES } from '../services/database';
-import { useStatsStore } from './useStatsStore'; // Importamos el otro store para comunicación
+import { useStatsStore } from './useStatsStore'; 
 
 export const useSalesStore = create((set, get) => ({
   sales: [],
@@ -23,40 +24,86 @@ export const useSalesStore = create((set, get) => ({
   },
 
   deleteSale: async (timestamp) => {
-      if (!window.confirm('¿Restaurar stock y eliminar venta?')) return;
+      if (!window.confirm('¿Restaurar stock y eliminar venta de forma permanente?')) return;
+      
       try {
+        // 1. Encontrar la venta (en memoria o BD)
         let saleToDelete = get().sales.find(s => s.timestamp === timestamp);
         if (!saleToDelete) {
           const allSales = await loadData(STORES.SALES);
           saleToDelete = allSales.find(s => s.timestamp === timestamp);
         }
-        if (!saleToDelete) return;
+        
+        if (!saleToDelete) {
+            alert("No se encontró la venta para eliminar.");
+            return;
+        }
   
+        // 2. Restaurar Stock (Lógica existente)
         let restoredInventoryValue = 0;
-  
+        let saleProfit = 0; // Calcularemos la ganancia para restarla
+        let itemsCount = 0;
+
         for (const item of saleToDelete.items) {
+          itemsCount += (item.quantity || 0);
+          
+          // Calcular utilidad de este item para restar a las estadísticas
+          const itemCost = item.cost || 0;
+          const itemTotal = item.price * item.quantity;
+          const itemProfit = itemTotal - (itemCost * item.quantity);
+          saleProfit += itemProfit;
+
+          // Restaurar lotes
           if (item.batchesUsed) {
             for (const batchInfo of item.batchesUsed) {
               const batch = await loadData(STORES.PRODUCT_BATCHES, batchInfo.batchId);
               if (batch) {
                 batch.stock += batchInfo.quantity;
-                batch.isActive = true;
+                batch.isActive = true; // Reactivar lote si estaba en 0
                 await saveData(STORES.PRODUCT_BATCHES, batch);
   
-                // Sumamos al valor recuperado
+                // Sumamos al valor de inventario recuperado
                 restoredInventoryValue += (batch.cost * batchInfo.quantity);
               }
             }
           }
         }
   
-        // Restauramos el valor del inventario
-        await get().adjustInventoryValue(restoredInventoryValue);
+        // 3. Ajustar Valor de Inventario Global
+        await useStatsStore.getState().adjustInventoryValue(restoredInventoryValue);
   
+        // 4. CORRECCIÓN: Restar de Estadísticas Diarias (DAILY_STATS)
+        const dateKey = new Date(saleToDelete.timestamp).toISOString().split('T')[0];
+        const dailyStat = await loadData(STORES.DAILY_STATS, dateKey);
+
+        if (dailyStat) {
+            dailyStat.revenue -= saleToDelete.total;
+            dailyStat.profit -= saleProfit;
+            dailyStat.orders -= 1;
+            dailyStat.itemsSold -= itemsCount;
+
+            // Evitar números negativos por errores de redondeo
+            if (dailyStat.revenue < 0) dailyStat.revenue = 0;
+            if (dailyStat.profit < 0) dailyStat.profit = 0;
+
+            await saveData(STORES.DAILY_STATS, dailyStat);
+        }
+
+        // 5. Mover a Papelera y Borrar
         saleToDelete.deletedTimestamp = new Date().toISOString();
         await saveData(STORES.DELETED_SALES, saleToDelete);
         await deleteData(STORES.SALES, timestamp);
-        get().loadAllData(true);
-      } catch (error) { console.error("Error eliminar venta:", error); }
+        
+        // 6. Recargar datos en la UI
+        get().loadRecentSales();
+        // Forzamos actualización del dashboard también
+        useStatsStore.getState().loadStats(); 
+
+        alert("✅ Venta eliminada, stock restaurado y estadísticas actualizadas.");
+
+      } catch (error) { 
+          console.error("Error eliminar venta:", error); 
+          alert("Ocurrió un error al intentar eliminar la venta.");
+      }
     }
 }));

@@ -4,10 +4,10 @@ import {
     STORES,
     queryBatchesByProductIdAndActive,
     queryByIndex,
-    processBatchDeductions
+    executeSaleTransaction
 } from './database';
 import { useStatsStore } from '../store/useStatsStore';
-import { sendWhatsAppMessage } from './utils';
+import { roundCurrency, sendWhatsAppMessage } from './utils';
 
 /**
  * Procesa una venta completa: Inventario, Guardado, Estadísticas y Notificaciones.
@@ -29,9 +29,33 @@ export const processSale = async ({
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
-        // ============================================================
-        // 1. PRE-CARGA DE LOTES (Inventario)
-        // ============================================================
+        itemsToProcess.forEach((item, index) => {
+            // Aseguramos conversión a número
+            const safePrice = parseFloat(item.price);
+            const safeCost = parseFloat(item.cost); // Puede ser 0 o NaN si no tiene costo
+
+            // 1. Validar Precio
+            if (isNaN(safePrice) || !isFinite(safePrice) || safePrice < 0) {
+                throw new Error(`Error en producto "${item.name}": El precio no es un número válido (${item.price}).`);
+            }
+
+            // 2. Validar Costo (si es inválido, lo forzamos a 0, pero no dejamos pasar texto)
+            if (isNaN(safeCost) || !isFinite(safeCost)) {
+                console.warn(`Costo inválido detectado en "${item.name}", ajustando a 0.`);
+                item.cost = 0;
+            } else {
+                item.cost = safeCost;
+            }
+
+            // 3. Aplicar el precio limpio al objeto
+            item.price = safePrice;
+        });
+        
+        // Validar el total global también
+        if (isNaN(parseFloat(total)) || parseFloat(total) < 0) {
+             throw new Error("El total de la venta no es válido.");
+        }
+
         const uniqueProductIds = new Set();
 
         // Identificar qué productos necesitamos buscar en BD
@@ -112,40 +136,42 @@ export const processSale = async ({
                         cost: batch.cost
                     });
 
-                    itemTotalCost += (batch.cost * toDeduct);
+                    itemTotalCost += roundCurrency(batch.cost * toDeduct);
                     requiredQty -= toDeduct;
+                }
+                if (requiredQty > 0.0001) {
+                    const originalProduct = allProducts.find(p => p.id === targetId);
+                    const fallbackCost = originalProduct?.cost || 0;
+
+                    itemTotalCost += (fallbackCost * requiredQty);
                 }
             }
 
-            const avgUnitCost = orderItem.quantity > 0 ? (itemTotalCost / orderItem.quantity) : 0;
+            // --- LÓGICA CORREGIDA ---
+            // Calculamos el costo unitario REAL basado en la suma de los lotes consumidos
+            const calculatedAvgCost = orderItem.quantity > 0 ? roundCurrency(itemTotalCost / orderItem.quantity) : 0;
+            
+            // Aplicamos seguridad para evitar NaN o Null en la base de datos
+            const finalSafeCost = (isNaN(calculatedAvgCost) || calculatedAvgCost === null) ? 0 : parseFloat(calculatedAvgCost);
 
             processedItems.push({
                 ...orderItem,
-                cost: avgUnitCost,
+                image: null,
+                base64: null,
+                cost: finalSafeCost, // Guardamos el costo real calculado
+                originalProductCost: orderItem.cost, // (Opcional) Referencia histórica
                 batchesUsed: itemBatchesUsed,
                 stockDeducted: orderItem.quantity
             });
         }
 
         // ============================================================
-        // 3. TRANSACCIÓN ATÓMICA DE STOCK (Base de Datos)
+        // 3. y 4. TRANSACCIÓN ATÓMICA (VENTA + INVENTARIO)
         // ============================================================
-        if (batchesToDeduct.length > 0) {
-            try {
-                await processBatchDeductions(batchesToDeduct);
-            } catch (error) {
-                // Relanzamos errores específicos de concurrencia
-                if (error.message === 'STOCK_CHANGED' || error.message.includes('Transacción abortada')) {
-                    return { success: false, errorType: 'RACE_CONDITION', message: "El stock cambió mientras cobrabas." };
-                }
-                throw error;
-            }
-        }
+        const now = new Date().toISOString();
 
-        // ============================================================
-        // 4. GUARDADO DE LA VENTA
-        // ============================================================
         const sale = {
+            id: now,
             timestamp: new Date().toISOString(),
             items: processedItems,
             total: total,
@@ -157,14 +183,24 @@ export const processSale = async ({
             prescriptionDetails: tempPrescriptionData || null
         };
 
-        await saveData(STORES.SALES, sale);
+        // EJECUTAMOS TODO JUNTO
+        // Si esto falla, no se guarda la venta ni se descuenta el stock.
+        try {
+            await executeSaleTransaction(sale, batchesToDeduct);
+        } catch (error) {
+            // Manejo de errores de concurrencia
+            if (error.message === 'STOCK_CHANGED' || error.message.includes('Transacción abortada')) {
+                return { success: false, errorType: 'RACE_CONDITION', message: "El stock cambió mientras cobrabas. Intenta de nuevo." };
+            }
+            throw error; // Otros errores (disco lleno, etc)
+        }
 
         // ============================================================
         // 5. ACTUALIZACIÓN DE ESTADÍSTICAS Y CLIENTES
         // ============================================================
 
         // Calcular Costo de Bienes Vendidos (COGS) para ajustar valor de inventario
-        const costOfGoodsSold = processedItems.reduce((acc, item) => acc + (item.cost * item.quantity), 0);
+        const costOfGoodsSold = processedItems.reduce((acc, item) => roundCurrency(acc + roundCurrency(item.cost * item.quantity)), 0);
 
         // Usar el store fuera de componentes React
         await useStatsStore.getState().updateStatsForNewSale(sale, costOfGoodsSold);
@@ -245,6 +281,7 @@ export const updateDailyStats = async (sale) => {
 
     if (!dailyStat) {
         dailyStat = {
+            id: dateKey,
             date: dateKey,
             revenue: 0,
             profit: 0,

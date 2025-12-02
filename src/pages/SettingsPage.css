@@ -215,3 +215,77 @@
 [data-theme="dark"] .rubro-box:hover {
   border-color: var(--secondary-color);
 }
+
+/* ===== ESTILOS NUEVOS: MANTENIMIENTO INTEGRADO ===== */
+
+.maintenance-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.maintenance-tool-card {
+  /* Usamos el fondo suave del sistema en lugar de blanco/transparente */
+  background-color: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 12px; /* Más redondeado acorde al sistema */
+  padding: 15px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.maintenance-tool-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow);
+  /* Borde sutil del color primario al pasar el mouse */
+  border-color: rgba(123, 97, 255, 0.3); 
+}
+
+.tool-info h4 {
+  margin: 0 0 6px 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tool-info p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-light);
+  line-height: 1.5;
+}
+
+/* Ajuste de botones para que se vean uniformes */
+.maintenance-tool-card .btn {
+  width: 100%;
+  justify-content: center;
+  padding: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+/* MEDIA QUERY ESCRITORIO */
+@media (min-width: 768px) {
+  .maintenance-tool-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .tool-info {
+    flex: 1;
+    padding-right: 30px;
+  }
+
+  .maintenance-tool-card .btn {
+    width: auto;
+    min-width: 200px; /* Ancho fijo para alineación perfecta */
+    flex-shrink: 0;
+  }
+}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { saveData, STORES } from '../services/database';
+import { saveData, loadData, saveBulk, STORES, archiveOldData } from '../services/database';
 import { compressImage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
+import { useStatsStore } from '../store/useStatsStore';
 import DeviceManager from '../components/common/DeviceManager';
 import './SettingsPage.css';
 
@@ -38,14 +39,19 @@ export default function SettingsPage() {
   const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
   const logout = useAppStore((state) => state.logout);
 
+  const loadStats = useStatsStore((state) => state.loadStats);
+
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
 
   const [businessType, setBusinessType] = useState([]);
 
-  const isTrial = licenseDetails?.license_type === 'trial';
-  const MAX_SELECTION = isTrial ? 1 : 4;
+  // --- LÓGICA DINÁMICA DE LICENCIA ---
+  const licenseFeatures = licenseDetails?.features || {};
+  const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
+  const allowedRubrosList = licenseFeatures.allowed_rubros || ['*'];
+  const isAllAllowed = allowedRubrosList.includes('*');
 
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
   const [logoData, setLogoData] = useState(null);
@@ -89,18 +95,38 @@ export default function SettingsPage() {
     };
   }, [activeTheme]);
 
+  // --- HANDLER ACTUALIZADO CON BLOQUEO ESTRICTO ---
   const handleRubroToggle = (rubroId) => {
+    // 1. Validar si el rubro está permitido específicamente por la licencia (ej: Solo Farmacias)
+    if (!isAllAllowed && !allowedRubrosList.includes(rubroId)) {
+      alert("Tu licencia actual no permite seleccionar este rubro.");
+      return;
+    }
+
+    // 2. BLOQUEO ESTRICTO PARA TRIAL (Max 1)
+    // Si la licencia solo permite 1 rubro Y ya tenemos uno seleccionado...
+    // El usuario NO puede cambiarlo ni quitarlo. Debe contactar a soporte.
+    if (maxRubrosAllowed === 1 && businessType.length > 0) {
+      // Si intenta tocar el que ya tiene seleccionado
+      if (businessType.includes(rubroId)) {
+        alert("🔒 El rubro está bloqueado por tu licencia de prueba. No puedes deseleccionarlo.");
+      } else {
+        // Si intenta tocar otro
+        alert("🔒 Tu licencia de prueba está vinculada al rubro seleccionado inicialmente. Contáctanos para cambiarlo.");
+      }
+      return;
+    }
+
+    // 3. Comportamiento normal (Multirubro o primera selección)
     setBusinessType(prev => {
       if (prev.includes(rubroId)) {
-        return prev.filter(id => id !== rubroId); // Quitar siempre se puede
+        return prev.filter(id => id !== rubroId);
       } else {
-        if (prev.length >= MAX_SELECTION) {
-          alert(isTrial
-            ? "Tu licencia de prueba solo permite 1 rubro activo."
-            : "Has alcanzado el límite de rubros.");
+        if (prev.length >= maxRubrosAllowed) {
+          alert(`Has alcanzado el límite de ${maxRubrosAllowed} rubros permitidos por tu licencia.`);
           return prev;
         }
-        return [...prev, rubroId]; // Añadir
+        return [...prev, rubroId];
       }
     });
   };
@@ -108,7 +134,7 @@ export default function SettingsPage() {
   const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      setIsProcessingLogo(true); // ⏳ Iniciar
+      setIsProcessingLogo(true);
       try {
         if (logoObjectURL) URL.revokeObjectURL(logoObjectURL);
         const compressedFile = await compressImage(file);
@@ -119,7 +145,7 @@ export default function SettingsPage() {
       } catch (error) {
         console.error("Error imagen:", error);
       } finally {
-        setIsProcessingLogo(false); // ✅ Terminar
+        setIsProcessingLogo(false);
       }
     }
   };
@@ -129,20 +155,19 @@ export default function SettingsPage() {
     try {
       const companyData = {
         id: 'company',
-        name: name,           // Usamos la variable de estado del input
-        phone: phone,         // Usamos la variable de estado del input
-        address: address,     // Usamos la variable de estado del input
-        logo: logoData,       // El archivo o URL
-        business_type: businessType // Array de rubros
+        name: name,
+        phone: phone,
+        address: address,
+        logo: logoData,
+        business_type: businessType
       };
 
       await updateCompanyProfile(companyData);
-
       alert('¡Configuración guardada! Los formularios se han actualizado.');
 
     } catch (error) {
       console.error("Error al guardar configuración:", error);
-      alert('Hubo un error al guardar.'); // Feedback visual simple
+      alert('Hubo un error al guardar.');
     }
   };
 
@@ -156,6 +181,127 @@ export default function SettingsPage() {
       applyTheme(newTheme);
     }
   }
+
+  const handleRecalculateProfits = async () => {
+    if (!window.confirm("⚠️ ¿Deseas recalcular todas las ventas usando los COSTOS ACTUALES de tus productos?\n\nEsto corregirá las ganancias negativas causadas por errores de importación, pero sobrescribirá el historial de costos.")) {
+      return;
+    }
+
+    try {
+      const [sales, products] = await Promise.all([
+        loadData(STORES.SALES),
+        loadData(STORES.MENU)
+      ]);
+
+      const productCostMap = new Map();
+      products.forEach(p => productCostMap.set(p.id, parseFloat(p.cost) || 0));
+
+      let updatedCount = 0;
+
+      const updatedSales = sales.map(sale => {
+        let saleModified = false;
+        if (sale.fulfillmentStatus === 'cancelled') return sale;
+
+        const newItems = sale.items.map(item => {
+          const realId = item.parentId || item.id;
+          const currentCost = productCostMap.get(realId);
+
+          if (currentCost !== undefined) {
+            const oldCost = parseFloat(item.cost) || 0;
+            if (Math.abs(oldCost - currentCost) > 0.01) {
+              saleModified = true;
+              return { ...item, cost: currentCost };
+            }
+          }
+          return item;
+        });
+
+        if (saleModified) {
+          updatedCount++;
+          return { ...sale, items: newItems };
+        }
+        return sale;
+      });
+
+      if (updatedCount > 0) {
+        await saveBulk(STORES.SALES, updatedSales);
+        await loadStats(true);
+        alert(`✅ Reparación completada.\nSe actualizaron ${updatedCount} ventas.`);
+      } else {
+        alert("No se encontraron discrepancias.");
+      }
+
+    } catch (error) {
+      console.error(error);
+      alert("Error al recalcular: " + error.message);
+    }
+  };
+
+  const handleSyncStock = async () => {
+    if (!window.confirm("⚠️ ¿Deseas sincronizar el stock visible en el POS con la suma real de tus lotes?\n\nEsto corregirá los productos que dicen 'AGOTADO' pero tienen lotes activos.")) {
+      return;
+    }
+
+    setIsProcessingLogo(true); // Usamos el loader existente para bloquear UI
+    try {
+      // 1. Cargar todos los productos y lotes
+      const [allBatches, allProducts] = await Promise.all([
+        loadData(STORES.PRODUCT_BATCHES),
+        loadData(STORES.MENU)
+      ]);
+
+      // 2. Calcular la suma real de stock por producto
+      const realStockMap = {};
+
+      allBatches.forEach(batch => {
+        // Solo sumamos lotes que estén marcados como activos y tengan stock positivo
+        if (batch.isActive && batch.stock > 0) {
+          const currentSum = realStockMap[batch.productId] || 0;
+          realStockMap[batch.productId] = currentSum + batch.stock;
+        }
+      });
+
+      // 3. Comparar y preparar actualizaciones
+      const updates = [];
+      let updatedCount = 0;
+
+      allProducts.forEach(product => {
+        // Si el producto usa gestión de lotes (o debería usarla porque tiene lotes)
+        const calculatedStock = realStockMap[product.id] || 0;
+        const currentStock = product.stock || 0;
+
+        // Detectamos discrepancia (tolerancia de 0.01 por decimales)
+        if (Math.abs(currentStock - calculatedStock) > 0.01) {
+          // Si el producto tiene lotes pero tracking desactivado, lo activamos
+          const shouldTrack = calculatedStock > 0 || product.trackStock;
+
+          updates.push({
+            ...product,
+            stock: calculatedStock,
+            trackStock: shouldTrack,
+            updatedAt: new Date().toISOString()
+          });
+          updatedCount++;
+        }
+      });
+
+      // 4. Guardar cambios
+      if (updates.length > 0) {
+        await saveBulk(STORES.MENU, updates);
+        alert(`✅ Sincronización completada.\nSe corrigió el stock de ${updatedCount} productos.`);
+        // Forzar recarga de estadísticas si es necesario
+        await loadStats(true);
+      } else {
+        alert("✅ El inventario ya está perfectamente sincronizado.");
+      }
+
+    } catch (error) {
+      console.error(error);
+      alert("Error al sincronizar: " + error.message);
+    } finally {
+      setIsProcessingLogo(false);
+    }
+  };
 
   const renderLicenseInfo = () => {
     if (!licenseDetails || !licenseDetails.valid) {
@@ -187,6 +333,10 @@ export default function SettingsPage() {
             <span className="license-label">Límite de Dispositivos:</span>
             <span className="license-value">{max_devices || 'N/A'}</span>
           </div>
+          <div className="license-detail">
+            <span className="license-label">Límite de Rubros:</span>
+            <span className="license-value">{maxRubrosAllowed === 999 ? 'Ilimitado' : maxRubrosAllowed}</span>
+          </div>
         </div>
 
         <h4 className="device-manager-title">Dispositivos Activados</h4>
@@ -202,6 +352,31 @@ export default function SettingsPage() {
         </button>
       </div>
     );
+  };
+
+  const handleArchive = async () => {
+    if (!confirm("Esto descargará y BORRARÁ las ventas de hace más de 6 meses para acelerar el sistema. ¿Continuar?")) return;
+
+    try {
+      const oldSales = await archiveOldData(6); // 6 meses
+
+      if (oldSales.length > 0) {
+        // Descargar archivo
+        const blob = new Blob([JSON.stringify(oldSales)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ARCHIVO_LANZO_HISTORICO_${new Date().toISOString()}.json`;
+        a.click();
+
+        alert(`✅ Se archivaron y limpiaron ${oldSales.length} ventas.`);
+      } else {
+        alert("No hay ventas antiguas para archivar.");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Error al archivar.");
+    }
   };
 
   return (
@@ -248,24 +423,57 @@ export default function SettingsPage() {
 
           <div className="form-group">
             <label className="form-label">Rubros del Negocio (Selecciona múltiples)</label>
-            {isTrial && (
-              <p style={{ fontSize: '0.9rem', color: 'var(--warning-color)', marginBottom: '10px' }}>
-                🔒 Licencia Trial: Límite de 1 rubro. <button className="btn-link" style={{ border: 'none', background: 'none', color: 'blue', cursor: 'pointer', textDecoration: 'underline' }}>Mejorar Plan</button>
+
+            {/* Mensaje de Bloqueo */}
+            {maxRubrosAllowed === 1 && (
+              <p style={{ fontSize: '0.9rem', color: 'var(--primary-color)', marginBottom: '10px', backgroundColor: '#eff6ff', padding: '10px', borderRadius: '6px', borderLeft: '4px solid var(--primary-color)' }}>
+                ℹ️ <strong>Modo Prueba Activado:</strong> El rubro está vinculado a tu licencia y no se puede cambiar aquí.
               </p>
             )}
+
             <div className="rubro-selector-grid">
-              {BUSINESS_RUBROS.map(rubro => (
-                <div
-                  key={rubro.id}
-                  className={`rubro-box ${businessType.includes(rubro.id) ? 'selected' : ''}`}
-                  onClick={() => handleRubroToggle(rubro.id)}
-                  style={{
-                    opacity: (!businessType.includes(rubro.id) && businessType.length >= MAX_SELECTION) ? 0.5 : 1
-                  }}
-                >
-                  {rubro.label}
-                </div>
-              ))}
+              {BUSINESS_RUBROS.map(rubro => {
+                // Verificar si está permitido por la licencia (General)
+                const isNotAllowedByLicense = !isAllAllowed && !allowedRubrosList.includes(rubro.id);
+
+                // Verificar si está "Bloqueado" por la regla de Max 1 (Trial)
+                // Si el límite es 1 y ya hay selección, TODO está bloqueado visualmente (excepto el seleccionado que se ve activo pero no clickeable)
+                const isTrialLocked = maxRubrosAllowed === 1 && businessType.length > 0;
+
+                // Si está seleccionado, se ve verde. Si no, y está locked, se ve gris.
+                const isSelected = businessType.includes(rubro.id);
+
+                return (
+                  <div
+                    key={rubro.id}
+                    className={`rubro-box ${isSelected ? 'selected' : ''}`}
+                    onClick={() => handleRubroToggle(rubro.id)}
+                    style={{
+                      // Opacidad visual:
+                      // Si no está permitido -> 0.5
+                      // Si es trial locked y NO es el seleccionado -> 0.5 (gris)
+                      opacity: (isNotAllowedByLicense || (isTrialLocked && !isSelected)) ? 0.5 : 1,
+
+                      // Cursor:
+                      // Si hay bloqueo -> not-allowed
+                      cursor: (isNotAllowedByLicense || isTrialLocked) ? 'not-allowed' : 'pointer',
+
+                      position: 'relative'
+                    }}
+                    title={isTrialLocked ? "Bloqueado por licencia de prueba" : ""}
+                  >
+                    {rubro.label}
+                    {/* Candado si está bloqueado por cualquiera de las dos razones */}
+                    {(isNotAllowedByLicense || (isTrialLocked && !isSelected)) && (
+                      <span style={{ position: 'absolute', top: 2, right: 5, fontSize: '0.9rem' }}>🔒</span>
+                    )}
+                    {/* Candado VERDE si es el seleccionado en modo trial (indicando que es fijo) */}
+                    {(isTrialLocked && isSelected) && (
+                      <span style={{ position: 'absolute', top: 2, right: 5, fontSize: '0.9rem' }}>🔒</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <small className="form-help-text">
               Esto adaptará los formularios de productos a tus necesidades.
@@ -320,6 +528,76 @@ export default function SettingsPage() {
 
         <h3 className="subtitle">Licencia del Software</h3>
         {renderLicenseInfo()}
+
+        <div className="backup-container" style={{ marginTop: '2rem', borderTop: '2px dashed var(--warning-color)', padding: '20px', backgroundColor: '#fff7ed' }}>
+          <h3 className="subtitle" style={{ color: '#c2410c', marginTop: 0, borderBottom: 'none' }}>
+            🔧 Mantenimiento del Sistema
+          </h3>
+          <p style={{ fontSize: '0.9rem', color: '#9a3412', marginBottom: '20px' }}>
+            Utiliza estas herramientas avanzadas para corregir inconsistencias en los datos.
+            <br /><strong>Recomendación:</strong> Haz una copia de seguridad antes de usarlas.
+          </p>
+
+          <div className="maintenance-grid">
+
+            {/* HERRAMIENTA 1: REPARAR GANANCIAS */}
+            <div className="maintenance-tool-card">
+              <div className="tool-info">
+                <h4>📊 Recalcular Reportes</h4>
+                <p>
+                  Usa esto si ves <strong>ganancias negativas</strong> o costos en cero.
+                  Reconstruye el historial de ventas basado en el costo actual de los productos.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleRecalculateProfits}
+                style={{ backgroundColor: '#ea580c', border: 'none' }}
+              >
+                🔄 Reparar Ganancias
+              </button>
+            </div>
+
+            {/* HERRAMIENTA 2: SINCRONIZAR STOCK */}
+            <div className="maintenance-tool-card">
+              <div className="tool-info">
+                <h4>📦 Sincronizar Inventario</h4>
+                <p>
+                  Usa esto si el Punto de Venta dice <strong>"AGOTADO"</strong> pero tienes lotes disponibles.
+                  Suma el stock real de todos los lotes y actualiza el catálogo.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleSyncStock}
+                style={{ backgroundColor: '#2563eb', border: 'none' }}
+              >
+                🧩 Sincronizar Stock
+              </button>
+            </div>
+
+            <div className="maintenance-tool-card" style={{ borderColor: '#7c3aed' }}>
+              <div className="tool-info">
+                <h4 style={{ color: '#7c3aed' }}>🗄️ Archivar Historial</h4>
+                <p>
+                  Mejora la velocidad del sistema. Descarga un respaldo y <strong>elimina</strong> las ventas antiguas (más de 6 meses) de este dispositivo.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleArchive}
+                style={{ backgroundColor: '#7c3aed', border: 'none', color: 'white' }}
+              >
+                📦 Archivar y Limpiar
+              </button>
+            </div>
+
+          </div>
+        </div>
+
       </div>
     </>
   );

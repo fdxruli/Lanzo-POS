@@ -1,7 +1,7 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, deleteData, saveBulk, queryByIndex,STORES, deleteCategoryCascading } from '../services/database';
-import { showMessageModal } from '../services/utils';
+import { loadData, saveData, deleteData, saveBulk, queryByIndex, STORES, deleteCategoryCascading, saveBatchAndSyncProduct } from '../services/database';
+import { showMessageModal, generateID } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
@@ -24,13 +24,14 @@ export default function ProductsPage() {
 
     const features = useFeatureConfig();
 
-    const adjuntInventoryValue = useStatsStore(state => state.adjuntInventoryValue);
+    // Corrección tipográfica: adjustInventoryValue
+    const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
 
     // --- CONEXIÓN AL NUEVO STORE DE PRODUCTOS ---
     const categories = useProductStore((state) => state.categories);
     const products = useProductStore((state) => state.menu);
     const rawProducts = useProductStore((state) => state.rawProducts);
-    
+
     // Alias para mantener la compatibilidad con el resto del código
     const refreshData = useProductStore((state) => state.loadInitialProducts);
 
@@ -93,45 +94,61 @@ export default function ProductsPage() {
     const handleSaveProduct = async (productData, editingProduct) => {
         setIsLoading(true);
         try {
+            // 1. Procesamiento de Imagen (Si se subió una nueva)
             let finalImage = productData.image;
             if (productData.image && productData.image instanceof File) {
                 finalImage = await uploadFile(productData.image, 'product');
                 if (!finalImage) finalImage = null;
             }
 
-            let valueDifference = 0; // Para ajustar el valor del inventario
+            let valueDifference = 0; // Para ajustar el valor del inventario en el Dashboard
 
+            // --- CASO A: EDICIÓN DE PRODUCTO EXISTENTE ---
             if (editingProduct && editingProduct.id) {
-                // ... (Lógica de edición existente) ...
                 const updatedProduct = {
                     ...editingProduct,
                     ...productData,
                     image: finalImage || editingProduct.image,
                     updatedAt: new Date().toISOString()
                 };
+
+                // Nota: Al editar, guardamos en MENU. Si el stock cambió por lotes,
+                // esa lógica se maneja en BatchManager, no aquí.
                 await saveData(STORES.MENU, updatedProduct);
                 showMessageModal('¡Actualizado exitosamente!');
 
             } else {
-                // CREACIÓN DE NUEVO PRODUCTO
-                const newId = `product-${Date.now()}`;
+                // --- CASO B: CREACIÓN DE NUEVO PRODUCTO ---
+                const newId = generateID('prod');
+
+                // Preparamos el objeto del producto
                 const newProduct = {
-                    id: newId,
-                    ...productData,
+                    ...productData, // Esparcimos los datos del formulario primero
+                    id: newId,      // Sobreescribimos con el ID generado
+
+                    // Inicializamos el stock en 0 en la tabla principal.
+                    // Si hay stock inicial, la función 'saveBatchAndSyncProduct' 
+                    // actualizará este campo automáticamente después.
+                    stock: 0,
+
                     image: finalImage,
                     isActive: true,
                     createdAt: new Date().toISOString(),
+                    // Forzamos la gestión de lotes para mantener la consistencia
                     batchManagement: { enabled: true, selectionStrategy: 'fifo' },
                 };
 
+                // Guardamos el producto base (con stock 0)
                 await saveData(STORES.MENU, newProduct);
 
+                // Verificamos si el usuario ingresó Stock Inicial en el formulario
                 const initialCost = productData.cost ? parseFloat(productData.cost) : 0;
                 const initialStock = productData.stock ? parseFloat(productData.stock) : 0;
 
+                // Detectamos si es un producto "Receta" (que no lleva stock físico directo)
                 const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
 
-                // Si tiene stock inicial y costo, calculamos el valor para sumarlo al Dashboard
+                // SI HAY STOCK INICIAL: Creamos el primer lote automáticamente
                 if (!isRecipeProduct && initialStock > 0) {
                     const initialBatch = {
                         id: `batch-${newId}-initial`,
@@ -141,13 +158,17 @@ export default function ProductsPage() {
                         stock: initialStock,
                         createdAt: new Date().toISOString(),
                         trackStock: true,
-                        isActive: initialStock > 0,
+                        isActive: true,
                         notes: "Stock Inicial (Registro Rápido)",
-                        sku: null, attributes: null
+                        sku: null,
+                        attributes: null
                     };
-                    await saveData(STORES.PRODUCT_BATCHES, initialBatch);
-                    
-                    // --- CORRECCIÓN CLAVE: Sumar al valor del inventario ---
+
+                    // 🔥 MODIFICACIÓN CLAVE: Usamos la función sincronizada
+                    // Esto guarda el lote Y actualiza el campo 'stock' en la tabla MENU
+                    await saveBatchAndSyncProduct(initialBatch);
+
+                    // Calculamos el valor para sumar al store de estadísticas
                     valueDifference = initialCost * initialStock;
                 }
 
@@ -158,14 +179,15 @@ export default function ProductsPage() {
                 }
             }
 
-            // Actualizamos la vista de productos
+            // Recargamos la lista visual de productos
             await refreshData();
-            
-            // Actualizamos el Dashboard (Store de estadísticas)
+
+            // Actualizamos el valor del inventario en el Dashboard (Zustand)
             if (valueDifference > 0) {
                 await adjustInventoryValue(valueDifference);
             }
 
+            // Limpieza de estado y redirección de pestaña
             setEditingProduct(null);
 
             if (productData.productType === 'ingredient') {
@@ -175,7 +197,7 @@ export default function ProductsPage() {
             }
 
         } catch (error) {
-            console.error("Error:", error);
+            console.error("Error en guardar producto:", error);
             showMessageModal(`Error: ${error.message}`);
         } finally {
             setIsLoading(false);
@@ -206,19 +228,19 @@ export default function ProductsPage() {
                 await saveData(STORES.DELETED_MENU, product);
                 await deleteData(STORES.MENU, product.id);
 
-                // --- CAMBIO: Buscar lotes en BD en lugar de memoria ---
+                // Buscar lotes en BD en lugar de memoria
                 const productBatches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', product.id);
-                
+
                 if (productBatches.length > 0) {
-                    const updatedBatches = productBatches.map(b => ({ 
-                        ...b, 
-                        isActive: false, 
-                        stock: 0, 
-                        notes: b.notes + ' [Eliminado]' 
+                    const updatedBatches = productBatches.map(b => ({
+                        ...b,
+                        isActive: false,
+                        stock: 0,
+                        notes: b.notes + ' [Eliminado]'
                     }));
                     await saveBulk(STORES.PRODUCT_BATCHES, updatedBatches);
                 }
-                
+
                 await refreshData();
             } catch (error) {
                 console.error(error);

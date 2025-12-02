@@ -1,6 +1,6 @@
 // src/pages/CustomersPage.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, deleteData, STORES } from '../services/database';
+import { loadData, saveData, deleteData, loadDataPaginated, STORES } from '../services/database';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
@@ -15,6 +15,9 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const PAGE_SIZE = 50;
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
@@ -25,14 +28,44 @@ export default function CustomersPage() {
 
   // ... (funciones loadCustomers, handleSaveCustomer, handleEditCustomer, handleDeleteCustomer, etc. SIN CAMBIOS) ...
   useEffect(() => {
-    loadCustomers();
+    loadInitialCustomers();
   }, []);
 
-  const loadCustomers = async () => {
+  const loadInitialCustomers = async () => {
     setLoading(true);
-    const customerData = await loadData(STORES.CUSTOMERS);
-    setCustomers(customerData);
-    setLoading(false);
+    try {
+      const data = await loadDataPaginated(STORES.CUSTOMERS, { limit: PAGE_SIZE, offset: 0 });
+      setCustomers(data);
+      setPage(1);
+      setHasMore(data.length === PAGE_SIZE);
+    } catch (error) {
+      console.error("Error cargando clientes:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMoreCustomers = async () => {
+    if (!hasMore) return;
+    setLoading(true);
+    try {
+      const nextData = await loadDataPaginated(STORES.CUSTOMERS, {
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE
+      });
+
+      if (nextData.length > 0) {
+        setCustomers(prev => [...prev, ...nextData]);
+        setPage(prev => prev + 1);
+        setHasMore(nextData.length === PAGE_SIZE);
+      } else {
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error("Error paginando:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSaveCustomer = async (customerData) => {
@@ -45,8 +78,9 @@ export default function CustomersPage() {
 
       setEditingCustomer(null);
       setActiveTab('view-customers');
-      loadCustomers();
 
+      // Recargar lista al inicio para ver el nuevo
+      loadInitialCustomers();
       showMessageModal('¡Cliente guardado con éxito!');
 
     } catch (error) {
@@ -77,7 +111,7 @@ export default function CustomersPage() {
       }
 
       await deleteData(STORES.CUSTOMERS, customerId);
-      loadCustomers();
+      loadInitialCustomers();
       showMessageModal('Cliente eliminado.');
     }
   };
@@ -109,31 +143,31 @@ export default function CustomersPage() {
   const handleConfirmAbono = async (customer, amount, sendReceipt) => {
     try {
       const concepto = `Abono de cliente: ${customer.name}`;
-      
+
       // 1. Intentamos registrar el dinero en la caja
       const movimientoExitoso = await registrarMovimiento('entrada', amount, concepto);
 
       if (!movimientoExitoso) {
         showMessageModal('Error: No se pudo registrar en caja (¿Caja cerrada?).');
         // ✅ MEJORA: Cerramos el modal para que el usuario pueda ir a abrir la caja
-        handleCloseModals(); 
+        handleCloseModals();
         return;
       }
 
       // 2. Cargamos y actualizamos al cliente
       const customerData = await loadData(STORES.CUSTOMERS, customer.id);
       const deudaAnterior = customerData.debt || 0;
-      
+
       // ✅ MEJORA: Math.max evita deudas negativas si el cálculo falla
       const nuevaDeuda = Math.max(0, deudaAnterior - amount);
-      
+
       customerData.debt = nuevaDeuda;
 
       await saveData(STORES.CUSTOMERS, customerData);
 
       showMessageModal('¡Abono registrado exitosamente!');
       handleCloseModals();
-      loadCustomers();
+      loadInitialCustomers();
 
       // 3. Enviar Recibo (Opcional)
       if (sendReceipt) {
@@ -288,25 +322,39 @@ ${itemsString}
         </button>
       </div>
 
-
       {activeTab === 'add-customer' ? (
         <CustomerForm
           onSave={handleSaveCustomer}
           onCancel={handleCancelEdit}
           customerToEdit={editingCustomer}
-          allCustomers={customers}
+          allCustomers={customers} // Nota: Esto pasará solo los cargados. Para validación perfecta, idealmente CustomerForm buscaría en BD.
         />
       ) : (
-        <CustomerList
-          customers={customers}
-          isLoading={loading}
-          onEdit={handleEditCustomer}
-          onDelete={handleDeleteCustomer}
-          onViewHistory={handleViewHistory}
-          onAbonar={handleOpenAbono}
-          onWhatsApp={handleWhatsApp}
-          onWhatsAppLoading={whatsAppLoading}
-        />
+        <>
+          <CustomerList
+            customers={customers}
+            isLoading={loading && customers.length === 0} // Solo loading full si está vacío
+            onEdit={handleEditCustomer}
+            onDelete={handleDeleteCustomer}
+            onViewHistory={handleViewHistory}
+            onAbonar={handleOpenAbono}
+            onWhatsApp={handleWhatsApp}
+            onWhatsAppLoading={whatsAppLoading}
+          />
+
+          {/* BOTÓN CARGAR MÁS */}
+          {hasMore && (
+            <div style={{ textAlign: 'center', padding: '20px' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={loadMoreCustomers}
+                disabled={loading}
+              >
+                {loading ? 'Cargando...' : '⬇️ Cargar más clientes'}
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <PurchaseHistoryModal

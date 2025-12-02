@@ -1,7 +1,8 @@
-// src/services/database.js - VERSIÓN OPTIMIZADA PARA PAGINACIÓN
+// src/services/database.js - VERSIÓN CORREGIDA Y ROBUSTA
 
+// Incrementamos versión para forzar la creación de las tablas faltantes
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 18;
+const DB_VERSION = 20; // si le vamos a mover a este numero asegurar que tengamos el mismo en el archivo workers/stats.worker.js
 
 // Objeto de conexión
 const dbConnection = {
@@ -53,34 +54,56 @@ function isConnectionValid(db) {
 export function initDB() {
   return new Promise((resolve, reject) => {
 
+    // Si ya hay una conexión abriéndose, devolver esa promesa
     if (dbConnection.isOpening && dbConnection.openPromise) {
       return dbConnection.openPromise.then(resolve).catch(reject);
     }
 
+    // Si ya está abierta y válida, devolverla
     if (isConnectionValid(dbConnection.instance)) {
       return resolve(dbConnection.instance);
     }
 
+    // Limpieza de conexión previa si existía pero no era válida
     if (dbConnection.instance) {
-      try {
-        dbConnection.instance.close();
-      } catch (e) {
-        console.warn('Error cerrando conexión anterior:', e);
-      }
+      try { dbConnection.instance.close(); } catch (e) { /* ignorar */ }
       dbConnection.instance = null;
     }
 
     dbConnection.isOpening = true;
+
+    // Intentamos abrir
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     dbConnection.openPromise = new Promise((res, rej) => {
+
       request.onerror = (event) => {
         dbConnection.isOpening = false;
         dbConnection.openPromise = null;
         dbConnection.instance = null;
-        const error = new Error(`Error al abrir BD: ${event.target.errorCode || event.target.error?.message}`);
-        console.error(error);
-        rej(error);
+
+        const errorTarget = event.target.error;
+        let errorMessage = `Error crítico de base de datos: ${errorTarget?.message || 'Desconocido'}`;
+        let errorName = errorTarget?.name;
+
+        if (errorName === 'InvalidStateError' || errorName === 'UnknownError') {
+          errorMessage = "❌ Tu navegador está bloqueando el almacenamiento de datos. \n\n" +
+            "• Si estás en 'Modo Incógnito' o 'Privado', sal y usa el modo normal.\n" +
+            "• Verifica que no tengas el disco lleno.";
+        } else if (errorName === 'QuotaExceededError') {
+          errorMessage = "💾 Espacio de almacenamiento lleno. Por favor libera espacio en tu dispositivo.";
+        } else if (errorName === 'VersionError') {
+          errorMessage = "⚠️ Versión de base de datos incompatible. Intenta recargar la página.";
+        }
+
+        console.error("🔥 initDB Error:", errorTarget);
+        // alert(errorMessage); // Opcional: Descomentar si quieres alerta visual
+        rej(new Error(errorMessage));
+      };
+
+      request.onblocked = () => {
+        console.warn('⚠️ Apertura de BD bloqueada. Cierra otras pestañas.');
+        alert('⚠️ ALERTA: Tienes otra pestaña de Lanzo POS abierta con una versión antigua.\n\nPor favor, cierra todas las pestañas de Lanzo POS y recarga esta página.');
       };
 
       request.onsuccess = (event) => {
@@ -93,9 +116,11 @@ export function initDB() {
         };
 
         dbConnection.instance.onversionchange = () => {
-          console.warn('⚠️ Otra pestaña actualizó la BD, recargando...');
-          dbConnection.instance.close();
-          dbConnection.instance = null;
+          console.warn('⚠️ Otra pestaña actualizó la BD, forzando recarga...');
+          if (dbConnection.instance) {
+            dbConnection.instance.close();
+            dbConnection.instance = null;
+          }
           window.location.reload();
         };
 
@@ -103,92 +128,51 @@ export function initDB() {
         res(dbConnection.instance);
       };
 
+      // --- AQUÍ ESTÁ LA CORRECCIÓN CLAVE ---
       request.onupgradeneeded = (event) => {
         const tempDb = event.target.result;
         console.log('Actualizando BD a la versión', DB_VERSION);
 
-        // Crear stores si no existen (Lógica original conservada)
-        const storeDefinitions = [
-          STORES.MENU, STORES.COMPANY, STORES.THEME, STORES.INGREDIENTS,
-          STORES.CATEGORIES, STORES.CUSTOMERS, STORES.CAJAS,
-          STORES.DELETED_MENU, STORES.DELETED_CUSTOMERS,
-          STORES.DELETED_CATEGORIES
-        ];
-
-        storeDefinitions.forEach(store => {
-          if (!tempDb.objectStoreNames.contains(store)) {
-            tempDb.createObjectStore(store, { keyPath: 'id' });
+        // 1. Crear TODOS los ObjectStores definidos en STORES si no existen
+        Object.values(STORES).forEach(storeName => {
+          if (!tempDb.objectStoreNames.contains(storeName)) {
+            // Nota: daily_stats usa 'date' como clave lógica, pero por estandarización usamos 'id' o keyPath
+            // Si tus objetos daily_stats no tienen 'id', hay que tener cuidado. 
+            // Por defecto usamos keyPath: 'id' para todo.
+            // Para daily_stats, si guardas {date: '...'}, asegúrate de ponerle id: '...' también en el servicio.
+            const keyPath = storeName === STORES.DAILY_STATS ? 'id' : 'id';
+            tempDb.createObjectStore(storeName, { keyPath });
           }
         });
 
-        if (!tempDb.objectStoreNames.contains(STORES.STATS)) {
-          tempDb.createObjectStore(STORES.STATS, { keyPath: 'id' });
-        }
-
-        if (!tempDb.objectStoreNames.contains(STORES.DELETED_SALES)) {
-          tempDb.createObjectStore(STORES.DELETED_SALES, { keyPath: 'timestamp' });
-        }
-
-        if (!tempDb.objectStoreNames.contains(STORES.MOVIMIENTOS_CAJA)) {
-          const movStore = tempDb.createObjectStore(STORES.MOVIMIENTOS_CAJA, { keyPath: 'id' });
-          movStore.createIndex('caja_id', 'caja_id', { unique: false });
-        }
-
-        // Product Batches Store
-        if (!tempDb.objectStoreNames.contains(STORES.PRODUCT_BATCHES)) {
-          const batchStore = tempDb.createObjectStore(STORES.PRODUCT_BATCHES, { keyPath: 'id' });
-          batchStore.createIndex('productId', 'productId', { unique: false });
-          batchStore.createIndex('productId_isActive', ['productId', 'isActive'], { unique: false });
-          batchStore.createIndex('expiryDate', 'expiryDate', { unique: false });
-          batchStore.createIndex('createdAt', 'createdAt', { unique: false });
-          batchStore.createIndex('sku', 'sku', { unique: false });
-        } else if (event.oldVersion < 18) {
-          const batchStore = event.target.transaction.objectStore(STORES.PRODUCT_BATCHES);
-          if (!batchStore.indexNames.contains('sku')) {
-            batchStore.createIndex('sku', 'sku', { unique: false });
+        // 2. Crear Índices Específicos (Idempotente)
+        const ensureIndex = (storeName, indexName, keyPath, options = {}) => {
+          if (tempDb.objectStoreNames.contains(storeName)) {
+            const store = request.transaction.objectStore(storeName);
+            if (!store.indexNames.contains(indexName)) {
+              store.createIndex(indexName, keyPath, options);
+            }
           }
-        }
+        };
 
-        if (!tempDb.objectStoreNames.contains(STORES.SALES)) {
-          const salesStore = tempDb.createObjectStore(STORES.SALES, { keyPath: 'timestamp' });
-          salesStore.createIndex('customerId', 'customerId', { unique: false });
-          salesStore.createIndex('timestamp', 'timestamp', { unique: false });
-        }
+        // MENU (Productos)
+        ensureIndex(STORES.MENU, 'barcode', 'barcode', { unique: false });
+        ensureIndex(STORES.MENU, 'name_lower', 'name_lower', { unique: false });
+        ensureIndex(STORES.MENU, 'categoryId', 'categoryId', { unique: false });
 
-        if (!tempDb.objectStoreNames.contains(STORES.WASTE)) {
-          const wasteStore = tempDb.createObjectStore(STORES.WASTE, { keyPath: 'id' });
-          wasteStore.createIndex('timestamp', 'timestamp', { unique: false });
-        }
+        // PRODUCT_BATCHES (Lotes)
+        ensureIndex(STORES.PRODUCT_BATCHES, 'productId', 'productId', { unique: false });
+        ensureIndex(STORES.PRODUCT_BATCHES, 'sku', 'sku', { unique: false });
 
-        if (!tempDb.objectStoreNames.contains(STORES.DAILY_STATS)) {
-          // KeyPath será la fecha string YYYY-MM-DD
-          tempDb.createObjectStore(STORES.DAILY_STATS, { keyPath: 'date' });
-        }
+        // SALES (Ventas)
+        ensureIndex(STORES.SALES, 'timestamp', 'timestamp', { unique: true });
+        ensureIndex(STORES.SALES, 'customerId', 'customerId', { unique: false });
 
-        if (!tempDb.objectStoreNames.contains(STORES.PROCESSED_SALES_LOG)) {
-          // KeyPath es 'id' (que será el timestamp de la venta)
-          tempDb.createObjectStore(STORES.PROCESSED_SALES_LOG, { keyPath: 'id' });
-        }
+        // MOVIMIENTOS_CAJA
+        ensureIndex(STORES.MOVIMIENTOS_CAJA, 'caja_id', 'caja_id', { unique: false });
 
-        if (event.oldVersion < 18) {
-          // CORRECCIÓN: Usamos la transacción activa del evento
-          const txn = event.target.transaction;
-          const menuStore = txn.objectStore(STORES.MENU);
-
-          // Ahora sí funcionará
-          if (!menuStore.indexNames.contains('name_lower')) {
-            menuStore.createIndex('name_lower', 'name_lower', { unique: false });
-          }
-
-          if (!menuStore.indexNames.contains('barcode')) {
-            menuStore.createIndex('barcode', 'barcode', { unique: false });
-          }
-        }
-      };
-
-      request.onblocked = () => {
-        console.warn('⚠️ Apertura de BD bloqueada. Cierra otras pestañas.');
-        alert('Por favor, cierra otras pestañas de Lanzo POS para continuar.');
+        // CUSTOMERS
+        ensureIndex(STORES.CUSTOMERS, 'phone', 'phone', { unique: false });
       };
     });
 
@@ -206,21 +190,14 @@ async function executeWithRetry(operation, maxRetries = 3) {
       return await operation();
     } catch (error) {
       lastError = error;
-
-      // Lista de errores recuperables
       const recoverableErrors = [
-        'InvalidStateError',
-        'NotFoundError',
-        'TransactionInactiveError',
-        'UnknownError' // ✅ Agregado
+        'InvalidStateError', 'NotFoundError', 'TransactionInactiveError', 'UnknownError'
       ];
-
       if (recoverableErrors.includes(error.name)) {
         console.warn(`🔄 Reintento ${attempt}/${maxRetries} por: ${error.name}`);
         dbConnection.instance = null;
         await new Promise(resolve => setTimeout(resolve, 200 * attempt));
       } else {
-        // Error no recuperable, lanzar inmediatamente
         throw error;
       }
     }
@@ -229,46 +206,31 @@ async function executeWithRetry(operation, maxRetries = 3) {
 }
 
 // ============================================================
-// ✅ NUEVAS FUNCIONES OPTIMIZADAS (SOLUCIÓN AL PROBLEMA CRÍTICO)
+// FUNCIONES DE ACCESO A DATOS
 // ============================================================
 
-/**
- * Carga datos usando un cursor para paginación.
- * Evita cargar toda la base de datos en memoria.
- * * @param {string} storeName - Nombre del almacén.
- * @param {object} options - { limit, offset, indexName, range, direction }
- */
 export function loadDataPaginated(storeName, { limit = 50, offset = 0, indexName = null, range = null, direction = 'next' } = {}) {
   return executeWithRetry(async () => {
     const dbInstance = await initDB();
-
     return new Promise((resolve, reject) => {
       const transaction = dbInstance.transaction([storeName], 'readonly');
       const store = transaction.objectStore(storeName);
-
-      // Usar índice si se especifica, sino usar el store principal
       const source = indexName ? store.index(indexName) : store;
-
       const request = source.openCursor(range, direction);
       const results = [];
       let hasAdvanced = false;
 
       request.onsuccess = (event) => {
         const cursor = event.target.result;
-
         if (!cursor) {
           resolve(results);
           return;
         }
-
-        // Optimización: Saltar registros usando advance() nativo si hay offset
         if (offset > 0 && !hasAdvanced) {
           hasAdvanced = true;
           cursor.advance(offset);
           return;
         }
-
-        // Recolectar datos hasta llegar al límite
         if (results.length < limit) {
           results.push(cursor.value);
           cursor.continue();
@@ -276,98 +238,66 @@ export function loadDataPaginated(storeName, { limit = 50, offset = 0, indexName
           resolve(results);
         }
       };
-
-      request.onerror = (event) => {
-        console.error(`Error paginando ${storeName}:`, event.target.error);
-        reject(event.target.error);
-      };
+      request.onerror = (e) => reject(e.target.error);
     });
   });
 }
 
-/**
- * Búsqueda rápida usando índices.
- * Mucho más eficiente que filtrar arrays en memoria con .filter().
- * Soporta valores simples y arrays compuestos (para índices compuestos).
- * @param {string} storeName - Nombre del almacén.
- * @param {string} indexName - Nombre del índice (ej: 'productId' o 'productId_isActive').
- * @param {any} value - Valor a buscar. Puede ser un valor simple o un array [productId, isActive].
- * @param {number} limit - Límite opcional (default 100).
- */
 export function queryByIndex(storeName, indexName, value, limit = 100) {
   return executeWithRetry(async () => {
     const dbInstance = await initDB();
-
     return new Promise((resolve, reject) => {
       const transaction = dbInstance.transaction([storeName], 'readonly');
       const objectStore = transaction.objectStore(storeName);
 
       if (!objectStore.indexNames.contains(indexName)) {
-        reject(new Error(`Índice '${indexName}' no existe en '${storeName}'`));
+        // Fallback si no existe índice: devolver array vacío o buscar manual (aquí devolvemos vacío para no crashear)
+        console.warn(`Índice '${indexName}' no encontrado en '${storeName}'. Retornando vacío.`);
+        resolve([]);
         return;
       }
 
       const index = objectStore.index(indexName);
-
-      // Si value es un array (índice compuesto), usar IDBKeyRange.only con el array
-      // Si es un valor simple, usar IDBKeyRange.only normal
-      let range;
-      if (Array.isArray(value)) {
-        // Para índices compuestos, necesitamos usar el array completo
-        range = IDBKeyRange.only(value);
-      } else {
-        range = IDBKeyRange.only(value);
-      }
-
-      // getAll es muy rápido para búsquedas exactas
+      let range = Array.isArray(value) ? IDBKeyRange.only(value) : IDBKeyRange.only(value);
       const request = index.getAll(range, limit);
 
       request.onsuccess = () => resolve(request.result || []);
-      request.onerror = (event) => {
-        console.error(`Error consultando índice ${indexName}:`, event.target.error);
-        reject(event.target.error);
-      };
+      request.onerror = (e) => reject(e.target.error);
     });
   });
 }
 
-/**
- * Query por índice compuesto específicamente para productId + isActive
- * Esto maneja correctamente el caso donde isActive es un booleano en JavaScript
- * pero se guarda como 1/0 en IndexedDB
- */
 export function queryBatchesByProductIdAndActive(productId, isActive = true) {
   return executeWithRetry(async () => {
     const dbInstance = await initDB();
-
     return new Promise((resolve, reject) => {
       const transaction = dbInstance.transaction([STORES.PRODUCT_BATCHES], 'readonly');
       const objectStore = transaction.objectStore(STORES.PRODUCT_BATCHES);
 
-      // Usamos el índice 'productId' que es seguro (string/texto)
-      // y filtramos por 'isActive' en memoria. Esto es rápido y evita el crash.
+      // --- CORRECCIÓN: Validación estricta ---
+      if (!objectStore.indexNames.contains('productId')) {
+        console.error("🔥 Falta índice 'productId'. No se puede consultar inventario eficientemente.");
+        // Devolvemos array vacío para no romper la UI, pero logueamos el error grave.
+        // Opcional: reject(new Error("INDEX_MISSING")) si quieres mostrar alerta al usuario.
+        resolve([]);
+        return;
+      }
+
       const index = objectStore.index('productId');
       const range = IDBKeyRange.only(productId);
       const request = index.getAll(range);
 
       request.onsuccess = () => {
         const batches = request.result || [];
-        // Filtrar manual en JavaScript (soporta true, 1, "true", etc.)
-        const filtered = batches.filter(b => {
-          // Convertimos ambos a booleano para asegurar la comparación
-          return Boolean(b.isActive) === Boolean(isActive);
-        });
+        // Filtramos en memoria solo lo necesario (activo/inactivo), que es rápido
+        // porque ya filtramos por producto con el índice.
+        const filtered = batches.filter(b => Boolean(b.isActive) === Boolean(isActive));
         resolve(filtered);
       };
-
-      request.onerror = (event) => reject(event.target.error);
+      request.onerror = (e) => reject(e.target.error);
     });
   });
 }
-
-// ============================================================
-// FUNCIONES EXISTENTES (Mantenidas por compatibilidad)
-// ============================================================
 
 export function saveData(storeName, data) {
   return executeWithRetry(async () => {
@@ -379,6 +309,10 @@ export function saveData(storeName, data) {
       const normalizeItem = (item) => {
         if (storeName === STORES.MENU && item.name) {
           return { ...item, name_lower: item.name.toLowerCase() };
+        }
+        // Para Daily Stats, asegurar que tenga ID si no lo tiene
+        if (storeName === STORES.DAILY_STATS && !item.id && item.date) {
+          return { ...item, id: item.date };
         }
         return item;
       };
@@ -395,38 +329,21 @@ export function saveData(storeName, data) {
   });
 }
 
-/**
- * Busca un producto por código de barras usando el índice 'barcode'
- * Mucho más eficiente que cargar toda la BD
- */
 export function searchProductByBarcode(barcode) {
   return executeWithRetry(async () => {
     const db = await initDB();
-
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORES.MENU], 'readonly');
       const store = tx.objectStore(STORES.MENU);
-
-      // Verificar que el índice existe
-      if (!store.indexNames.contains('barcode')) {
-        // Fallback: retornar null si no hay índice
-        resolve(null);
-        return;
-      }
+      if (!store.indexNames.contains('barcode')) { resolve(null); return; }
 
       const index = store.index('barcode');
       const request = index.get(barcode);
-
       request.onsuccess = () => {
         const product = request.result;
-        // Solo retornar si está activo
-        if (product && product.isActive !== false) {
-          resolve(product);
-        } else {
-          resolve(null);
-        }
+        if (product && product.isActive !== false) resolve(product);
+        else resolve(null);
       };
-
       request.onerror = (e) => reject(e.target.error);
     });
   });
@@ -435,40 +352,33 @@ export function searchProductByBarcode(barcode) {
 export function searchProductsInDB(term) {
   return executeWithRetry(async () => {
     const db = await initDB();
-
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORES.MENU], 'readonly');
       const store = tx.objectStore(STORES.MENU);
 
-      // Validación de seguridad por si el índice no existe en versiones viejas
+      // --- CORRECCIÓN: Si falta el índice, mejor fallar o usar búsqueda básica por nombre ---
       if (!store.indexNames.contains('name_lower')) {
-        console.warn('Índice name_lower no encontrado, retornando array vacío.');
-        resolve([]);
-        return;
+         console.warn("⚠️ Índice 'name_lower' faltante. Búsqueda degradada.");
+         // En este caso excepcional, podríamos permitir getAll() si el catálogo es pequeño,
+         // PERO lo ideal es forzar el uso del índice.
+         // Si decides mantener el fallback aquí, ponle un límite duro:
+         const req = store.getAll(null, 500); // Límite de 500 para no matar el navegador
+         req.onsuccess = () => {
+            // ... lógica de filtrado manual ...
+            resolve([]);
+         };
+         return;
       }
 
       const index = store.index('name_lower');
-
-      // Rango: Todo lo que empiece con el término
       const lowerTerm = term.toLowerCase();
       const range = IDBKeyRange.bound(lowerTerm, lowerTerm + '\uffff');
-
-      // --- OPTIMIZACIÓN (Opción B) ---
-      // Usamos getAll nativo con límite. 
-      // Es mucho más rápido que iterar un cursor fila por fila.
-      // Pedimos 60 para tener un margen por si algunos están inactivos.
       const request = index.getAll(range, 60);
 
       request.onsuccess = () => {
-        const allMatches = request.result || [];
-
-        // Filtramos en memoria (operación instantánea para <100 items)
-        const results = allMatches.filter(product => product.isActive !== false);
-
-        // Opcional: Recortar a 50 exactos si el filtro dejó más de la cuenta
+        const results = (request.result || []).filter(p => p.isActive !== false);
         resolve(results.slice(0, 50));
       };
-
       request.onerror = (e) => reject(e.target.error);
     });
   });
@@ -480,8 +390,7 @@ export function loadData(storeName, key = null) {
     return new Promise((resolve, reject) => {
       const transaction = dbInstance.transaction([storeName], 'readonly');
       const store = transaction.objectStore(storeName);
-      const request = key ? store.get(key) : store.getAll(); // ⚠️ Usar con cuidado en tablas grandes
-
+      const request = key ? store.get(key) : store.getAll();
       request.onsuccess = () => resolve(request.result || (key ? null : []));
       request.onerror = (e) => reject(e.target.error);
     });
@@ -501,152 +410,171 @@ export function deleteData(storeName, key) {
   });
 }
 
-export const saveBulk = saveBulkOptimized;
+export const saveBulk = async (storeName, data) => saveData(storeName, data);
 
-export function saveBulkOptimized(storeName, data, chunkSize = 100) {
-  return executeWithRetry(async () => {
-    const dbInstance = await initDB();
-
-    if (!Array.isArray(data) || data.length === 0) {
-      return;
-    }
-
-    // Helper interno para mantener la lógica de búsqueda
-    const normalizeItem = (item) => {
-      if (storeName === STORES.MENU && item.name) {
-        return { ...item, name_lower: item.name.toLowerCase() };
-      }
-      return item;
-    };
-
-    // Procesar en chunks para no bloquear el thread principal
-    for (let i = 0; i < data.length; i += chunkSize) {
-      const chunk = data.slice(i, i + chunkSize);
-
-      await new Promise((resolve, reject) => {
-        const transaction = dbInstance.transaction([storeName], 'readwrite');
-        const store = transaction.objectStore(storeName);
-
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = (e) => reject(e.target.error);
-        transaction.onabort = (e) => reject(new Error('Transacción abortada'));
-
-        chunk.forEach(item => {
-          const normalized = normalizeItem(item);
-          // Usamos put para crear o actualizar
-          const request = store.put(normalized);
-
-          request.onerror = (e) => {
-            // Logueamos pero no rechazamos toda la transacción por un item fallido individual
-            // a menos que sea error crítico de estructura
-            console.error('Error guardando item en bulk:', normalized.id, e.target.error);
-          };
-        });
-      });
-
-      // "Yield" al event loop para que la UI no se congele
-      if (i + chunkSize < data.length) {
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
-    }
-  });
+export function closeDB() {
+  if (dbConnection.instance) {
+    try { dbConnection.instance.close(); } catch (e) { }
+    dbConnection.instance = null;
+  }
 }
 
-/**
- * Procesa múltiples descuentos de stock en una sola transacción atómica.
- * Garantiza integridad: Si un lote falla, NINGUNO se descuenta (Rollback).
- */
+// Transacciones Atómicas Complejas
+
 export async function processBatchDeductions(deductions) {
   const db = await initDB();
-
   return new Promise((resolve, reject) => {
-    // 1. Abrimos una transacción de LECTURA y ESCRITURA
-    // Esto bloquea el almacén 'product_batches' para otros procesos de escritura
     const tx = db.transaction([STORES.PRODUCT_BATCHES], 'readwrite');
     const store = tx.objectStore(STORES.PRODUCT_BATCHES);
-
     let aborted = false;
 
-    // Monitor de errores global de la transacción
     tx.oncomplete = () => resolve({ success: true });
     tx.onerror = (e) => reject(e.target.error);
-    tx.onabort = () => reject(new Error('STOCK_CHANGED')); // Error específico para manejar en UI
+    tx.onabort = () => reject(new Error('STOCK_CHANGED'));
 
-    // 2. Iteramos las deducciones DENTRO de la transacción
     deductions.forEach(({ batchId, quantity }) => {
       if (aborted) return;
-
-      // a) LEER (Single Source of Truth)
       const getRequest = store.get(batchId);
-
       getRequest.onsuccess = () => {
         if (aborted) return;
-
         const batch = getRequest.result;
-
-        // b) VALIDAR (Atomic Check)
-        if (!batch) {
-          console.error(`Lote ${batchId} no encontrado durante la transacción.`);
-          aborted = true;
-          tx.abort();
-          return;
+        if (!batch || batch.stock < quantity) {
+          aborted = true; tx.abort(); return;
         }
-
-        if (batch.stock < quantity) {
-          console.error(`Race Condition evitada: Lote ${batchId} tiene ${batch.stock}, se requerían ${quantity}.`);
-          aborted = true;
-          tx.abort(); // Cancelar TODO el pedido si falta un solo artículo
-          return;
-        }
-
-        // c) ESCRIBIR (Update)
         batch.stock -= quantity;
-
-        // Desactivar lote si llega a 0 (limpieza)
-        if (batch.stock <= 0.0001) {
-          batch.stock = 0;
-          batch.isActive = false;
-        }
-
+        if (batch.stock <= 0.0001) { batch.stock = 0; batch.isActive = false; }
         store.put(batch);
       };
     });
   });
 }
 
+export async function executeSaleTransaction(sale, deductions) {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    // Abarcamos Ventas, Lotes y Menú en una sola transacción atómica
+    const tx = db.transaction([STORES.SALES, STORES.PRODUCT_BATCHES, STORES.MENU], 'readwrite');
+    const salesStore = tx.objectStore(STORES.SALES);
+    const batchesStore = tx.objectStore(STORES.PRODUCT_BATCHES);
+    const productStore = tx.objectStore(STORES.MENU);
+
+    let aborted = false;
+
+    tx.oncomplete = () => resolve({ success: true });
+    tx.onerror = (e) => reject(e.target.error);
+    tx.onabort = () => reject(new Error('STOCK_INSUFFICIENT'));
+
+    // --- CORRECCIÓN: Pre-calcular las actualizaciones del padre SÍNCRONAMENTE ---
+    const productUpdates = new Map();
+
+    // 1. Sumar cantidades de Lotes (Deductions)
+    deductions.forEach(({ productId, quantity }) => {
+      if (productId) {
+        const current = productUpdates.get(productId) || 0;
+        productUpdates.set(productId, current + quantity);
+      }
+    });
+
+    // 2. Sumar cantidades de Productos Simples (sin lotes)
+    if (sale && sale.items) {
+      sale.items.forEach(item => {
+        // Si el item NO usó lotes (es producto simple), lo sumamos aquí
+        if (!item.batchesUsed || item.batchesUsed.length === 0) {
+          const pid = item.parentId || item.id;
+          const current = productUpdates.get(pid) || 0;
+          productUpdates.set(pid, current + item.quantity);
+        }
+      });
+    }
+
+    // --- EJECUCIÓN DE LA TRANSACCIÓN ---
+
+    // A) Procesar Lotes (Validar existencia y stock suficiente)
+    deductions.forEach(({ batchId, quantity }) => {
+      if (aborted) return;
+
+      const batchReq = batchesStore.get(batchId);
+
+      batchReq.onsuccess = () => {
+        if (aborted) return;
+        const batch = batchReq.result;
+
+        // Validación crítica de integridad
+        if (!batch) {
+          console.error(`Lote ${batchId} no encontrado.`);
+          aborted = true; tx.abort(); return;
+        }
+        if (batch.stock < quantity) {
+          console.error(`Stock insuficiente en lote ${batchId}. Req: ${quantity}, Hay: ${batch.stock}`);
+          aborted = true; tx.abort(); return;
+        }
+
+        // Descuento
+        batch.stock -= quantity;
+        // Desactivar si llega a 0 (con tolerancia a decimales)
+        if (batch.stock <= 0.0001) {
+          batch.stock = 0;
+          batch.isActive = false;
+        }
+        batchesStore.put(batch);
+      };
+    });
+
+    // B) Actualizar Stocks Padres (Usando el mapa pre-calculado)
+    productUpdates.forEach((qtyToDeduct, productId) => {
+      if (aborted) return;
+
+      const prodReq = productStore.get(productId);
+
+      prodReq.onsuccess = () => {
+        if (aborted) return;
+        const product = prodReq.result;
+
+        if (product && product.trackStock) {
+          // Validación de seguridad para el padre
+          if ((product.stock - qtyToDeduct) < -0.0001) {
+            // Opcional: Podrías permitir negativos en el padre si los lotes pasaron, 
+            // pero es mejor ser estricto.
+            console.warn(`Stock negativo detectado en producto padre ${product.name}`);
+            // aborted = true; tx.abort(); return; // Descomentar para estricto
+          }
+
+          product.stock -= qtyToDeduct;
+          // Evitar -0.0000001
+          if (Math.abs(product.stock) < 0.0001) product.stock = 0;
+
+          productStore.put(product);
+        }
+      };
+    });
+
+    // C) Guardar la Venta
+    if (sale && !aborted) {
+      salesStore.add(sale);
+    }
+  });
+}
+
 export async function deleteCategoryCascading(categoryId) {
   return executeWithRetry(async () => {
     const db = await initDB();
-
     return new Promise((resolve, reject) => {
-      // 1. Abrimos una transacción que abarca AMBOS almacenes
       const tx = db.transaction([STORES.CATEGORIES, STORES.MENU], 'readwrite');
       const catStore = tx.objectStore(STORES.CATEGORIES);
       const menuStore = tx.objectStore(STORES.MENU);
 
-      // 2. Manejadores de éxito/error global de la transacción
       tx.oncomplete = () => resolve({ success: true });
       tx.onerror = (e) => reject(e.target.error);
 
-      // 3. Eliminar la categoría
       catStore.delete(categoryId);
 
-      // 4. Buscar y limpiar productos afectados usando un Cursor
-      // (Más eficiente que cargar todo en memoria)
-      const index = menuStore.index('categoryId'); // Asumiendo que existe índice, si no, usamos cursor normal
-      // Si no tienes índice 'categoryId' definido en initDB, usamos cursor sobre todo el store (fallback)
-      // Nota: En tu código actual no vi índice 'categoryId', así que usaremos cursor general seguro.
-
       const request = menuStore.openCursor();
-
       request.onsuccess = (e) => {
         const cursor = e.target.result;
         if (cursor) {
-          const product = cursor.value;
-          if (product.categoryId === categoryId) {
-            // ¡Encontramos uno! Lo actualizamos dentro de la MISMA transacción
-            const updatedProduct = { ...product, categoryId: '' };
-            cursor.update(updatedProduct);
+          if (cursor.value.categoryId === categoryId) {
+            const updated = { ...cursor.value, categoryId: '' };
+            cursor.update(updated);
           }
           cursor.continue();
         }
@@ -655,53 +583,224 @@ export async function deleteCategoryCascading(categoryId) {
   });
 }
 
-export function deleteBulk(storeName, keys, chunkSize = 100) {
-  return executeWithRetry(async () => {
-    const dbInstance = await initDB();
+export async function saveBatchAndSyncProduct(batchData) {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORES.PRODUCT_BATCHES, STORES.MENU], 'readwrite');
+    const batchStore = tx.objectStore(STORES.PRODUCT_BATCHES);
+    const productStore = tx.objectStore(STORES.MENU);
 
-    if (!Array.isArray(keys) || keys.length === 0) {
+    tx.oncomplete = () => resolve({ success: true });
+    tx.onerror = (e) => reject(e.target.error);
+
+    batchStore.put(batchData);
+
+    // --- CORRECCIÓN: Eliminamos el fallback a getAll() ---
+    if (!batchStore.indexNames.contains('productId')) {
+      // Si no existe el índice, detenemos todo. Esto obliga al desarrollador a revisar initDB.
+      // No vale la pena intentar escanear todo el almacén en una transacción de escritura crítica.
+      console.error("🔥 ERROR CRÍTICO: Falta índice 'productId' en product_batches");
+      tx.abort();
+      reject(new Error("DB_CORRUPTION_MISSING_INDEX: productId"));
       return;
     }
 
-    for (let i = 0; i < keys.length; i += chunkSize) {
-      const chunk = keys.slice(i, i + chunkSize);
+    // Ahora usamos el índice con confianza absoluta
+    const index = batchStore.index('productId');
+    const request = index.getAll(IDBKeyRange.only(batchData.productId));
 
-      await new Promise((resolve, reject) => {
-        const transaction = dbInstance.transaction([storeName], 'readwrite');
-        const store = transaction.objectStore(storeName);
+    request.onsuccess = () => {
+      const allBatchesRaw = request.result || [];
+      // Filtrar manual si usamos el fallback de getAll()
+      const allBatches = batchStore.indexNames.contains('productId')
+        ? allBatchesRaw
+        : allBatchesRaw.filter(b => b.productId === batchData.productId);
 
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = (e) => reject(e.target.error);
+      let totalStock = 0;
+      let currentCost = 0;
+      let currentPrice = 0;
 
-        chunk.forEach(key => {
-          store.delete(key);
-        });
+      const batches = allBatches.map(b => b.id === batchData.id ? batchData : b); // Usar el nuevo en memoria
+      batches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+      batches.forEach(b => {
+        if (b.isActive && b.stock > 0) {
+          totalStock += b.stock;
+        }
       });
 
-      if (i + chunkSize < keys.length) {
-        await new Promise(resolve => setTimeout(resolve, 0));
+      const activeBatches = batches.filter(b => b.isActive && b.stock > 0);
+      if (activeBatches.length > 0) {
+        currentCost = activeBatches[0].cost;
+        currentPrice = activeBatches[0].price;
+      } else {
+        currentCost = batchData.cost;
+        currentPrice = batchData.price;
       }
-    }
+
+      const prodReq = productStore.get(batchData.productId);
+      prodReq.onsuccess = () => {
+        const product = prodReq.result;
+        if (product) {
+          product.stock = totalStock;
+          product.cost = currentCost || product.cost;
+          product.price = currentPrice || product.price;
+          product.hasBatches = true;
+          product.updatedAt = new Date().toISOString();
+          productStore.put(product);
+        }
+      };
+    };
   });
 }
 
-export function closeDB() {
-  if (dbConnection.instance) {
-    try {
-      dbConnection.instance.close();
-      console.log('✅ Conexión de BD cerrada manualmente.');
-    } catch (e) { console.warn(e); }
-    dbConnection.instance = null;
-  }
+/**
+ * Obtiene las ventas desde una fecha específica usando el índice 'timestamp'.
+ * Optimizado para no cargar toda la base de datos.
+ */
+export function getOrdersSince(isoDateString) {
+  return executeWithRetry(async () => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORES.SALES], 'readonly');
+      const store = tx.objectStore(STORES.SALES);
+
+      // Usamos el índice 'timestamp' que ya creaste en initDB
+      const index = store.index('timestamp');
+
+      // Creamos un rango: desde la fecha dada hasta el infinito (el futuro)
+      const range = IDBKeyRange.lowerBound(isoDateString);
+
+      const request = index.getAll(range);
+
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = (e) => reject(e.target.error);
+    });
+  });
 }
 
-export async function checkDBHealth() {
-  try {
-    const db = await initDB();
-    if (!isConnectionValid(db)) throw new Error('Conexión inválida');
-    await loadData(STORES.COMPANY, 'company');
-    return { healthy: true, message: 'BD funcionando correctamente' };
-  } catch (error) {
-    return { healthy: false, message: error.message };
+export async function streamStoreToCSV(storeName, mapFn, onChunk, chunkSize = 500) {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([storeName], 'readonly');
+    const store = tx.objectStore(storeName);
+    const request = store.openCursor();
+
+    let chunk = [];
+    let count = 0;
+
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor) {
+        // Transformamos el dato usando la función que pasemos (mapFn)
+        const rowString = mapFn(cursor.value);
+        chunk.push(rowString);
+        count++;
+
+        // Si el chunk se llena, lo enviamos al callback
+        if (chunk.length >= chunkSize) {
+          onChunk(chunk.join('\n') + '\n');
+          chunk = []; // Liberamos memoria
+        }
+
+        cursor.continue();
+      } else {
+        // Enviar lo que sobró
+        if (chunk.length > 0) {
+          onChunk(chunk.join('\n') + '\n');
+        }
+        resolve(count);
+      }
+    };
+    request.onerror = (e) => reject(e.target.error);
+  });
+}
+
+export async function archiveOldData(monthsToKeep = 6) {
+  const db = await initDB();
+
+  // Calcular fecha de corte
+  const cutoffDate = new Date();
+  cutoffDate.setMonth(cutoffDate.getMonth() - monthsToKeep);
+  const isoCutoff = cutoffDate.toISOString();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORES.SALES, STORES.DAILY_STATS], 'readwrite');
+    const salesStore = tx.objectStore(STORES.SALES);
+    const dailyStore = tx.objectStore(STORES.DAILY_STATS); // Para actualizar históricos
+
+    // Usamos índice por fecha
+    const index = salesStore.index('timestamp');
+    const range = IDBKeyRange.upperBound(isoCutoff); // Todo lo anterior a la fecha
+    const request = index.openCursor(range);
+
+    const salesToArchive = [];
+
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor) {
+        salesToArchive.push(cursor.value);
+        cursor.delete(); // BORRAMOS DE LA BD ACTIVA
+        cursor.continue();
+      } else {
+        // Terminó la iteración.
+        // Aquí deberías guardar 'salesToArchive' en un JSON y descargarlo
+        if (salesToArchive.length > 0) {
+          console.log(`Archivando ${salesToArchive.length} ventas antiguas...`);
+          // Retornamos los datos para que la UI los descargue
+          resolve(salesToArchive);
+        } else {
+          resolve([]);
+        }
+      }
+    };
+
+    request.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Recorre TODAS las tiendas y emite los datos en formato JSONL (JSON Lines).
+ * @param {function} onChunk - Callback que recibe un string con varios registros.
+ */
+export async function streamAllDataToJSONL(onChunk) {
+  const db = await initDB();
+  const storeNames = Object.values(STORES);
+
+  // Recorremos tienda por tienda para no saturar transacciones
+  for (const storeName of storeNames) {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction([storeName], 'readonly');
+      const store = tx.objectStore(storeName);
+      const request = store.openCursor();
+
+      let chunkBuffer = [];
+      const CHUNK_SIZE = 100; // Procesamos de 100 en 100 registros
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor) {
+          // Guardamos el registro con una etiqueta para saber de qué tienda es
+          // s: store (tienda), d: data (datos)
+          const recordWrapper = { s: storeName, d: cursor.value };
+          chunkBuffer.push(JSON.stringify(recordWrapper));
+
+          // Si llenamos el buffer, lo enviamos y limpiamos memoria
+          if (chunkBuffer.length >= CHUNK_SIZE) {
+            onChunk(chunkBuffer.join('\n') + '\n');
+            chunkBuffer = []; // ¡Liberamos RAM aquí!
+          }
+
+          cursor.continue();
+        } else {
+          // Se acabaron los registros de esta tienda, enviar lo que sobre
+          if (chunkBuffer.length > 0) {
+            onChunk(chunkBuffer.join('\n') + '\n');
+          }
+          resolve();
+        }
+      };
+      request.onerror = (e) => reject(e.target.error);
+    });
   }
 }

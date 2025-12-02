@@ -2,11 +2,15 @@
 import React, { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
+import ErrorBoundary from './components/common/ErrorBoundary';
+import NavigationGuard from './components/common/NavigationGuard';
 
 // --- COMPONENTES CRÍTICOS (Eager Loading) ---
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
 import SetupModal from './components/common/SetupModal';
+import { useSalesStore } from './store/useSalesStore';
+import { useSingleInstance } from './hooks/useSingleInstance';
 
 // --- FUNCIÓN "LAZY" INTELIGENTE ---
 const lazyRetry = (importFn) => {
@@ -19,8 +23,8 @@ const lazyRetry = (importFn) => {
       const hasRefreshed = window.sessionStorage.getItem('retry-lazy-refreshed');
       if (!hasRefreshed) {
         window.sessionStorage.setItem('retry-lazy-refreshed', 'true');
-        window.location.reload(); 
-        return new Promise(() => {}); 
+        window.location.reload();
+        return new Promise(() => { });
       }
       throw error;
     }
@@ -44,9 +48,10 @@ const PageLoader = () => (
 );
 
 function App() {
+  const isDuplicate = useSingleInstance();
   const appStatus = useAppStore((state) => state.appStatus);
   const initializeApp = useAppStore((state) => state.initializeApp);
-  
+
   // Traemos ambas acciones: Iniciar y Detener
   const startRealtimeSecurity = useAppStore((state) => state.startRealtimeSecurity);
   const stopRealtimeSecurity = useAppStore((state) => state.stopRealtimeSecurity);
@@ -71,6 +76,23 @@ function App() {
     };
   }, [appStatus, startRealtimeSecurity, stopRealtimeSecurity]);
 
+  if (isDuplicate) {
+    return (
+      <div style={{
+        height: '100vh', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '20px'
+      }}>
+        <h1 style={{ fontSize: '3rem' }}>⛔</h1>
+        <h2>Aplicación ya abierta</h2>
+        <p>Lanzo POS ya está abierto en otra pestaña o ventana.</p>
+        <p>Por seguridad de tus datos, usa solo una pestaña a la vez.</p>
+        <button className="btn btn-primary" onClick={() => window.location.reload()}>
+          Reintentar (si ya cerraste la otra)
+        </button>
+      </div>
+    );
+  }
+
   switch (appStatus) {
     case 'loading':
       return (
@@ -88,18 +110,21 @@ function App() {
     case 'ready':
       return (
         <Suspense fallback={<Layout><PageLoader /></Layout>}>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Suspense fallback={<PageLoader />}><PosPage /></Suspense>} />
-              <Route path="caja" element={<Suspense fallback={<PageLoader />}><CajaPage /></Suspense>} />
-              <Route path='pedidos' element={<Suspense fallback={<PageLoader />}><OrdersPage /></Suspense>} />
-              <Route path="productos" element={<Suspense fallback={<PageLoader />}><ProductsPage /></Suspense>} />
-              <Route path="clientes" element={<Suspense fallback={<PageLoader />}><CustomersPage /></Suspense>} />
-              <Route path="ventas" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
-              <Route path="configuracion" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
-              <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
-            </Route>
-          </Routes>
+          <NavigationGuard />
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Layout />}>
+                <Route index element={<Suspense fallback={<PageLoader />}><PosPage /></Suspense>} />
+                <Route path="caja" element={<Suspense fallback={<PageLoader />}><CajaPage /></Suspense>} />
+                <Route path='pedidos' element={<Suspense fallback={<PageLoader />}><OrdersPage /></Suspense>} />
+                <Route path="productos" element={<Suspense fallback={<PageLoader />}><ProductsPage /></Suspense>} />
+                <Route path="clientes" element={<Suspense fallback={<PageLoader />}><CustomersPage /></Suspense>} />
+                <Route path="ventas" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
+                <Route path="configuracion" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
+                <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
+              </Route>
+            </Routes>
+          </ErrorBoundary>
         </Suspense>
       );
 

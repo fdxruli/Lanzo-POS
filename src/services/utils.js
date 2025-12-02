@@ -32,6 +32,17 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
 }
 
 /**
+ * Genera un identificador unico universal (UUID v4).
+ * Mucho mas seguro que Date.now() para evitar duplicados.
+ * Ejemplo: '3b12f1df-5232-4e6c-8a8b-1a2b3c4d5e6f'
+ */
+
+export const generateID = (prefix = '') => {
+  const uuid = crypto.randomUUID();
+  return prefix ? `${prefix}_${uuid}` : uuid;
+};
+
+/**
  * Comprime, recorta a cuadrado y convierte una imagen a WebP.
  * @param {File} file El archivo de imagen a comprimir.
  * @param {number} targetSize El tamaño (ancho y alto) de la imagen resultante.
@@ -296,4 +307,26 @@ export async function lookupBarcodeInAPI(barcode) {
 export const roundCurrency = (amount) => {
   if (typeof amount !== 'number') return 0;
   return Math.round((amount + Number.EPSILON) * 100) / 100;
+};
+
+/**
+ * Intenta activar el almacenamiento persistente del navegador.
+ * Esto evita que el navegador borre los datos automáticamente si falta espacio.
+ */
+export const tryEnablePersistence = async () => {
+  if (navigator.storage && navigator.storage.persist) {
+    try {
+      const isPersisted = await navigator.storage.persisted();
+      if (!isPersisted) {
+        const result = await navigator.storage.persist();
+        console.log(`Solicitud de persistencia: ${result ? 'CONCEDIDA ✅' : 'DENEGADA ⚠️'}`);
+        return result;
+      }
+      return true; // Ya estaba persistente
+    } catch (error) {
+      console.error("Error solicitando persistencia:", error);
+      return false;
+    }
+  }
+  return false;
 };

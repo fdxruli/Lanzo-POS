@@ -1,6 +1,6 @@
 // src/pages/OrdersPage.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, STORES } from '../services/database';
+import { loadData, saveData, STORES, getOrdersSince } from '../services/database';
 import { showMessageModal } from '../services/utils';
 import './OrderPage.css';
 
@@ -11,24 +11,29 @@ export default function OrdersPage() {
 
     const fetchOrders = async () => {
         try {
-            const allSales = await loadData(STORES.SALES);
+            // Calculamos la fecha de ayer (hace 24 horas)
             const yesterday = new Date();
             yesterday.setHours(yesterday.getHours() - 24);
+            const isoDate = yesterday.toISOString();
 
-            const activeOrders = allSales.filter(sale => {
-                const saleDate = new Date(sale.timestamp);
+            // --- CAMBIO CRÍTICO ---
+            // ANTES: const allSales = await loadData(STORES.SALES); (Cargaba TODO)
+            // AHORA: Solo cargamos lo que necesitamos
+            const activeOrders = await getOrdersSince(isoDate);
+
+            // El resto de tu lógica de filtrado se mantiene igual, 
+            // pero ahora trabaja sobre un array pequeño (ej. 50 items) en lugar de miles.
+            const filteredOrders = activeOrders.filter(sale => {
                 const status = sale.fulfillmentStatus || 'completed';
 
-                // Si filtro es 'all', mostramos todo (incluyendo cancelados)
-                if (filter === 'all') return saleDate > yesterday;
+                if (filter === 'all') return true; // Ya viene filtrado por fecha desde la BD
 
-                // Si no, coincidencia exacta (pending, ready)
                 // Ocultamos 'cancelled' y 'completed' de las vistas activas
-                return status === filter && saleDate > yesterday;
+                return status === filter;
             });
 
-            activeOrders.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-            setOrders(activeOrders);
+            filteredOrders.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            setOrders(filteredOrders);
         } catch (error) {
             console.error("Error cargando pedidos:", error);
         } finally {

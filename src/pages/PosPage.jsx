@@ -23,6 +23,7 @@ import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './PosPage.css';
 
 export default function PosPage() {
+  const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
   const features = useFeatureConfig();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -124,6 +125,15 @@ export default function PosPage() {
 
   const handleProcessOrder = async (paymentData) => {
     if (isProcessing) return;
+
+    const isSessionValid = await verifySessionIntegrity();
+    if (!isSessionValid) {
+      showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
+        window.location.reload();
+      });
+      return;
+    }
+
     setIsProcessing(true);
 
     // Validación rápida de caja (UI logic)

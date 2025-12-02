@@ -1,90 +1,101 @@
 // src/hooks/useCaja.js
 import { useState, useEffect, useCallback } from 'react';
-import { loadData, saveData, STORES, initDB } from '../services/database';
-import { showMessageModal, roundCurrency } from '../services/utils';
+import { loadDataPaginated, saveData, STORES, initDB } from '../services/database';
+import { showMessageModal, roundCurrency, generateID } from '../services/utils';
 
 export function useCaja() {
   const [cajaActual, setCajaActual] = useState(null);
   const [historialCajas, setHistorialCajas] = useState([]);
   const [movimientosCaja, setMovimientosCaja] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [montoSugerido, setMontoSugerido] = useState(0);
-
+  
   // Estado desglosado para el turno
   const [totalesTurno, setTotalesTurno] = useState({
     ventasContado: 0,
     abonosFiado: 0
   });
 
-  // --- HELPER OPTIMIZADO: Suma con Cursor (Memoria Constante O(1)) ---
   const calcularTotalesSesion = async (fechaApertura) => {
     const db = await initDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORES.SALES], 'readonly');
       const store = tx.objectStore(STORES.SALES);
       const index = store.index('timestamp');
-
-      // Rango: Desde que se abrió la caja hasta el infinito (futuro)
       const range = IDBKeyRange.lowerBound(fechaApertura);
-      const request = index.openCursor(range);
+      const request = index.getAll(range);
 
-      let contado = 0;
-      let abonos = 0;
+      request.onsuccess = () => {
+        const sales = request.result || [];
+        let contado = 0;
+        let abonos = 0;
 
-      request.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          const sale = cursor.value;
-          if (sale.fulfillmentStatus !== 'cancelled') {
-            if (sale.paymentMethod === 'efectivo') {
-              contado = roundCurrency(contado + (sale.total || 0));
-            } else if (sale.paymentMethod === 'fiado') {
-              abonos = roundCurrency(abonos + (sale.abono || 0));
-            }
+        for (const sale of sales) {
+          if (sale.fulfillmentStatus === 'cancelled') continue;
+          if (sale.paymentMethod === 'efectivo') {
+            contado += (sale.total || 0);
+          } else if (sale.paymentMethod === 'fiado') {
+            abonos += (sale.abono || 0);
           }
-          cursor.continue();
-        } else {
-          // Fin del cursor: devolvemos los totales acumulados
-          resolve({ ventasContado: contado, abonosFiado: abonos });
         }
+        resolve({
+          ventasContado: roundCurrency(contado),
+          abonosFiado: roundCurrency(abonos)
+        });
       };
       request.onerror = (e) => reject(e.target.error);
     });
   };
 
-  // --- CARGA INICIAL ---
+  // --- LÓGICA DE APERTURA INTELIGENTE ---
+  const autoAbrirCaja = async (ultimaCajaCerrada) => {
+    const montoHeredado = ultimaCajaCerrada ? ultimaCajaCerrada.monto_cierre : 0;
+    
+    const nuevaCaja = {
+      id: generateID('caja'),
+      fecha_apertura: new Date().toISOString(),
+      monto_inicial: montoHeredado, // <--- INTELIGENCIA: Hereda el saldo anterior
+      estado: 'abierta',
+      fecha_cierre: null,
+      monto_cierre: null,
+      ventas_efectivo: 0,
+      entradas_efectivo: 0,
+      salidas_efectivo: 0,
+      diferencia: null,
+      es_auto_apertura: true // Marca para identificar que fue automático
+    };
+
+    await saveData(STORES.CAJAS, nuevaCaja);
+    return nuevaCaja;
+  };
+
   const cargarEstadoCaja = useCallback(async () => {
     setIsLoading(true);
     try {
-      const todasLasCajas = await loadData(STORES.CAJAS);
+      // 1. Traer últimas cajas
+      const cajasRecientes = await loadDataPaginated(STORES.CAJAS, {
+        limit: 20,
+        direction: 'prev' // De la más nueva a la más vieja
+      });
 
-      // 1. Buscar caja abierta
-      let cajaAbierta = todasLasCajas.find(c => c.estado === 'abierta');
+      let cajaActiva = cajasRecientes.find(c => c.estado === 'abierta');
+      const ultimaCaja = cajasRecientes.find(c => c.estado === 'cerrada'); // La última cerrada
 
-      // 2. Buscar último cierre para sugerir monto
-      const cajasCerradas = todasLasCajas
-        .filter(c => c.estado === 'cerrada')
-        .sort((a, b) => new Date(b.fecha_cierre) - new Date(a.fecha_cierre));
-
-      if (cajasCerradas.length > 0) {
-        setMontoSugerido(cajasCerradas[0].monto_cierre);
+      // 2. SI NO HAY CAJA ABIERTA -> LA CREAMOS AUTOMÁTICAMENTE
+      if (!cajaActiva) {
+        console.log("🔄 Sistema inteligente: Iniciando nuevo turno automáticamente...");
+        cajaActiva = await autoAbrirCaja(ultimaCaja);
+        // Actualizamos la lista local añadiendo la nueva al principio
+        cajasRecientes.unshift(cajaActiva);
       }
 
-      if (cajaAbierta) {
-        setCajaActual(cajaAbierta);
-        await cargarMovimientos(cajaAbierta.id);
+      // 3. Cargar datos de la caja activa
+      setCajaActual(cajaActiva);
+      await cargarMovimientos(cajaActiva.id);
+      const totales = await calcularTotalesSesion(cajaActiva.fecha_apertura);
+      setTotalesTurno(totales);
 
-        // USAMOS LA NUEVA FUNCIÓN OPTIMIZADA
-        const totales = await calcularTotalesSesion(cajaAbierta.fecha_apertura);
-        setTotalesTurno(totales);
-
-      } else {
-        setCajaActual(null);
-        setMovimientosCaja([]);
-        setTotalesTurno({ ventasContado: 0, abonosFiado: 0 });
-      }
-
-      setHistorialCajas(cajasCerradas);
+      // Historial (excluyendo la actual)
+      setHistorialCajas(cajasRecientes.filter(c => c.id !== cajaActiva.id));
 
     } catch (error) {
       console.error("Error al cargar estado de caja:", error);
@@ -103,122 +114,70 @@ export function useCaja() {
       const transaction = db.transaction(STORES.MOVIMIENTOS_CAJA, 'readonly');
       const store = transaction.objectStore(STORES.MOVIMIENTOS_CAJA);
       const index = store.index('caja_id');
-      const movimientos = await new Promise(resolve => {
-        const request = index.getAll(cajaId); // Los movimientos son pocos, getAll está bien
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => resolve([]);
-      });
-      setMovimientosCaja(movimientos);
+      const request = index.getAll(cajaId);
+      request.onsuccess = () => setMovimientosCaja(request.result || []);
     } catch (error) {
-      console.error("Error al cargar movimientos:", error);
       setMovimientosCaja([]);
     }
   };
 
-  const abrirCaja = async (monto_inicial) => {
-    if (cajaActual) {
-      showMessageModal('Ya existe una caja abierta.');
-      return false;
-    }
-    const montoFinal = (monto_inicial !== undefined && monto_inicial !== null)
-      ? parseFloat(monto_inicial)
-      : montoSugerido;
-
-    const nuevaCaja = {
-      id: `caja-${Date.now()}`,
-      fecha_apertura: new Date().toISOString(),
-      monto_inicial: montoFinal,
-      estado: 'abierta',
-      fecha_cierre: null,
-      monto_cierre: null,
-      ventas_efectivo: 0,
-      entradas_efectivo: 0,
-      salidas_efectivo: 0,
-      diferencia: null
-    };
-
-    try {
-      await saveData(STORES.CAJAS, nuevaCaja);
-      setCajaActual(nuevaCaja);
-      setMovimientosCaja([]);
-      setTotalesTurno({ ventasContado: 0, abonosFiado: 0 });
-      showMessageModal(`Caja abierta con $${montoFinal.toFixed(2)}`);
-      return true;
-    } catch (error) {
-      console.error('Error al abrir la caja:', error);
-      return false;
-    }
+  // Permite editar el monto inicial si el automático no era correcto
+  const ajustarMontoInicial = async (nuevoMonto) => {
+    if (!cajaActual) return;
+    const cajaActualizada = { ...cajaActual, monto_inicial: parseFloat(nuevoMonto) };
+    await saveData(STORES.CAJAS, cajaActualizada);
+    setCajaActual(cajaActualizada);
+    showMessageModal("✅ Fondo inicial ajustado.");
   };
 
-  // --- CÁLCULO DEL TOTAL TEÓRICO (OPTIMIZADO) ---
   const calcularTotalTeorico = async () => {
     if (!cajaActual) return 0;
-
-    // 1. Extraemos los valores del estado 'totalesTurno' que ya calculaste previamente
     const { ventasContado, abonosFiado } = totalesTurno;
-
-    // 2. Sumamos todo lo que entró (Inicio + Ventas efectivo + Abonos de deuda + Entradas manuales)
     const ingresos = roundCurrency(
       cajaActual.monto_inicial +
       (ventasContado || 0) +
       (abonosFiado || 0) +
       (cajaActual.entradas_efectivo || 0)
     );
-
-    // 3. Restamos las salidas manuales
     const total = roundCurrency(ingresos - (cajaActual.salidas_efectivo || 0));
-
     return total;
   }
 
-  // --- CIERRE DE CAJA (OPTIMIZADO) ---
   const realizarAuditoriaYCerrar = async (montoFisico, comentarios = '') => {
     if (!cajaActual) return false;
-
     try {
       const totalTeorico = await calcularTotalTeorico();
       const diferencia = montoFisico - totalTeorico;
-
-      // Obtenemos los totales finales una última vez
       const { ventasContado, abonosFiado } = await calcularTotalesSesion(cajaActual.fecha_apertura);
 
       const cajaCerrada = {
         ...cajaActual,
         fecha_cierre: new Date().toISOString(),
         monto_cierre: parseFloat(montoFisico),
-        ventas_efectivo: ventasContado + abonosFiado, // Guardamos el total histórico
+        ventas_efectivo: ventasContado + abonosFiado,
         diferencia: diferencia,
         comentarios_auditoria: comentarios,
         estado: 'cerrada',
-        detalle_cierre: {
-          ventas_contado: ventasContado,
-          abonos_fiado: abonosFiado,
-          total_teorico: totalTeorico
-        }
+        detalle_cierre: { ventas_contado: ventasContado, abonos_fiado: abonosFiado, total_teorico: totalTeorico }
       };
 
       await saveData(STORES.CAJAS, cajaCerrada);
-
-      // Limpieza de estado
-      setCajaActual(null);
-      setMovimientosCaja([]);
-      setHistorialCajas([cajaCerrada, ...historialCajas]);
-      setTotalesTurno({ ventasContado: 0, abonosFiado: 0 });
+      
+      // INMEDIATAMENTE ABRIMOS LA SIGUIENTE PARA MANTENER EL FLUJO
+      // (Opcional: Si prefieres que se quede cerrada hasta recargar, quita esta línea)
+      // await autoAbrirCaja(cajaCerrada); 
+      
+      // Recargamos todo el estado
+      await cargarEstadoCaja();
 
       return { success: true, diferencia };
-
     } catch (error) {
-      console.error('Error en auditoría:', error);
       return { success: false, error };
     }
   };
 
   const registrarMovimiento = async (tipo, monto, concepto) => {
-    if (!cajaActual) {
-      showMessageModal('No hay una caja abierta para registrar movimientos.');
-      return false;
-    }
-
+    if (!cajaActual) return false;
     const movimiento = {
       id: `mov-${Date.now()}`,
       caja_id: cajaActual.id,
@@ -227,24 +186,17 @@ export function useCaja() {
       concepto: concepto.trim(),
       fecha: new Date().toISOString()
     };
-
     try {
       await saveData(STORES.MOVIMIENTOS_CAJA, movimiento);
-
       const cajaActualizada = { ...cajaActual };
       if (tipo === 'entrada') cajaActualizada.entradas_efectivo += movimiento.monto;
       else cajaActualizada.salidas_efectivo += movimiento.monto;
 
       await saveData(STORES.CAJAS, cajaActualizada);
-
       setCajaActual(cajaActualizada);
       setMovimientosCaja(prev => [...prev, movimiento]);
-
       return true;
-    } catch (error) {
-      console.error(error);
-      return false;
-    }
+    } catch (error) { return false; }
   };
 
   return {
@@ -252,9 +204,8 @@ export function useCaja() {
     historialCajas,
     movimientosCaja,
     isLoading,
-    montoSugerido,
     totalesTurno,
-    abrirCaja,
+    ajustarMontoInicial, // Nueva función expuesta
     realizarAuditoriaYCerrar,
     registrarMovimiento,
     calcularTotalTeorico
