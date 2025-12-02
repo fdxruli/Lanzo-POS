@@ -20,11 +20,13 @@ export default function AbarrotesFields({
   onManageWholesale,
   minStock, setMinStock,
   maxStock, setMaxStock,
-  features,
   supplier, setSupplier,
-  taxType, setTaxType,
-  cost, setCost, // Necesitamos acceso al costo y precio para la calculadora
-  price, setPrice
+  cost, setCost, 
+  price, setPrice,
+  showSuppliers = false, 
+  showBulk = false, 
+  showWholesale = false, 
+  showStockAlerts = false
 }) {
 
   // Calculadora de Margen automática
@@ -100,7 +102,7 @@ export default function AbarrotesFields({
       </div>
 
       {/* 2. DATOS ADMINISTRATIVOS (Proveedor) */}
-      {features.hasSuppliers && (
+      {showSuppliers && (
         <div className="form-group">
           <label className="form-label">Proveedor Principal</label>
           <input
@@ -115,7 +117,7 @@ export default function AbarrotesFields({
 
       {/* 3. FORMA DE VENTA Y MAYOREO */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
-        {features.hasBulk && (
+        {showBulk && (
           <div className="form-group">
             <label className="form-label">Forma de Venta</label>
             <select
@@ -151,7 +153,7 @@ export default function AbarrotesFields({
           </div>
         )}
 
-        {features.hasWholesale && saleType !== 'bulk' && (
+        {showWholesale && saleType !== 'bulk' && (
           <div className="form-group">
             <label className="form-label">Precios Especiales</label>
             <button
@@ -173,7 +175,7 @@ export default function AbarrotesFields({
       </small>
 
       {/* 4. ALERTAS DE INVENTARIO */}
-      {features.hasMinMax && (
+      {showStockAlerts && (
         <div style={{
           marginTop: '10px',
           padding: '15px',

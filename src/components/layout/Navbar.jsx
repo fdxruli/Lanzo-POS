@@ -117,7 +117,7 @@ function Navbar() {
           <NavLink to="/" className="nav-link" end> <Store size={20} /> Punto de Venta</NavLink>
           <NavLink to="/caja" className="nav-link"> <Inbox size={20} /> Caja</NavLink>
           {features.hasKDS && (
-            <NavLink to="/pedidos" className="nav-link"> <ChefHat size={20} /> Pedidos KDS</NavLink>
+            <NavLink to="/pedidos" className="nav-link"> <ChefHat size={20} /> Pedidos-Rest.</NavLink>
           )}
           <NavLink to="/productos" className="nav-link"> <Package size={20} /> Productos</NavLink>
           <NavLink to="/clientes" className="nav-link"> <Users size={20} /> Clientes</NavLink>

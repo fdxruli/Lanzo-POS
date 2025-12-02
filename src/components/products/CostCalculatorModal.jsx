@@ -1,5 +1,6 @@
 // src/components/products/CostCalculatorModal.jsx
 import React, { useState, useMemo } from 'react';
+import { roundCurrency} from '../../services/utils';
 import './CostCalculatorModal.css'
 
 export default function CostCalculatorModal({ show, onClose, onAssignCost }) {
@@ -30,7 +31,7 @@ export default function CostCalculatorModal({ show, onClose, onAssignCost }) {
 
   // Calcula el total
   const totalCost = useMemo(() => {
-    return ingredients.reduce((sum, ing) => sum + (ing.cost * ing.quantity), 0);
+    return ingredients.reduce((sum, ing) => sum + roundCurrency(ing.cost * ing.quantity), 0);
   }, [ingredients]);
 
   const handleAssign = () => {

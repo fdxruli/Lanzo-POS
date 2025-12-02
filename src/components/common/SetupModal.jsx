@@ -1,5 +1,5 @@
 // src/components/common/SetupModal.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
 import LazyImage from './LazyImage';
@@ -22,6 +22,15 @@ export default function SetupModal() {
   const handleSetup = useAppStore((state) => state.handleSetup);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
 
+  useEffect(() => {
+    // Si la licencia NO permite todo ("*") y solo hay 1 rubro permitido...
+    if (!isAllAllowed && allowedRubrosList.length === 1) {
+      // ...lo seleccionamos automáticamente al cargar
+      const rubroForzado = allowedRubrosList[0];
+      setSelectedTypes([rubroForzado]);
+    }
+  }, [licenseDetails]);
+
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -33,9 +42,20 @@ export default function SetupModal() {
   // Control del Acordeón: 'info' | 'type'
   const [activeSection, setActiveSection] = useState('info');
 
-  // Validación robusta del tipo de licencia
-  const isTrial = licenseDetails?.license_type === 'trial';
-  const MAX_SELECTION = isTrial ? 1 : 4;
+  // ============================================================
+  // LÓGICA DE LICENCIA DINÁMICA (MEJORADA)
+  // ============================================================
+  
+  // 1. Obtener configuración de features desde la licencia
+  // Si no existen features (licencias viejas), asumimos defaults restrictivos (1 rubro, todos permitidos)
+  const licenseFeatures = licenseDetails?.features || {};
+  
+  // 2. Definir límite máximo (Default 1 si no viene definido)
+  const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
+  
+  // 3. Definir rubros permitidos (Si es ["*"] o undefined, permite todos)
+  const allowedRubrosList = licenseFeatures.allowed_rubros || ['*'];
+  const isAllAllowed = allowedRubrosList.includes('*');
 
   // Validación del Paso 1 (Nombre obligatorio)
   const isStep1Complete = useMemo(() => name.trim().length > 0, [name]);
@@ -50,25 +70,30 @@ export default function SetupModal() {
   const handleTypeClick = (value) => {
     setError('');
     
+    // VALIDACIÓN PREVIA: ¿La licencia permite este rubro específico?
+    if (!isAllAllowed && !allowedRubrosList.includes(value)) {
+        setError("Tu licencia no incluye acceso a este rubro específico.");
+        return;
+    }
+    
     setSelectedTypes(prev => {
       // 1. Si ya está seleccionado, lo quitamos (Toggle Off)
       if (prev.includes(value)) {
         return prev.filter(t => t !== value);
       }
 
-      // 2. CORRECCIÓN CRÍTICA: Si es Trial (Max 1), funciona como Radio Button (Reemplaza)
-      // Esto evita que el usuario tenga que deseleccionar manualmente para cambiar.
-      if (isTrial) {
+      // 2. Si el límite es 1, funciona como Radio Button (Reemplaza la selección anterior)
+      if (maxRubrosAllowed === 1) {
         return [value];
       }
 
-      // 3. Modo Normal: Si no hemos llegado al límite, agregamos (Checkbox behavior)
-      if (prev.length < MAX_SELECTION) {
+      // 3. Modo Multi: Si no hemos llegado al límite, agregamos (Checkbox behavior)
+      if (prev.length < maxRubrosAllowed) {
         return [...prev, value];
       }
       
       // 4. Si excedió el límite en modo normal, mostramos error
-      setError(`Máximo ${MAX_SELECTION} rubros permitidos en tu plan.`);
+      setError(`Tu licencia permite máximo ${maxRubrosAllowed} rubros.`);
       return prev;
     });
   };
@@ -215,23 +240,32 @@ export default function SetupModal() {
                   Selecciona a qué se dedica tu empresa. Esto activará funciones especiales (recetas, tallas, caducidad, etc.).
                 </p>
 
-                {isTrial && (
+                {maxRubrosAllowed === 1 && (
                   <div className="trial-badge" style={{marginBottom: '10px', fontSize: '0.9rem', color: 'var(--primary-color)', backgroundColor: '#fff3cd', padding: '8px', borderRadius: '6px'}}>
-                    ℹ️ <strong>Modo Prueba:</strong> Puedes seleccionar 1 rubro principal.
+                    ℹ️ <strong>Atención:</strong> Tu plan actual permite seleccionar <strong>1 rubro</strong> principal.
                   </div>
                 )}
 
                 <div className="rubro-grid">
-                  {BUSINESS_RUBROS.map(rubro => (
-                    <div
-                      key={rubro.id}
-                      className={`rubro-card ${selectedTypes.includes(rubro.id) ? 'selected' : ''}`}
-                      onClick={() => handleTypeClick(rubro.id)}
-                    >
-                      <span className="rubro-icon">{rubro.icon}</span>
-                      <span className="rubro-label">{rubro.label}</span>
-                    </div>
-                  ))}
+                  {BUSINESS_RUBROS.map(rubro => {
+                    // Verificar visualmente si está bloqueado por licencia
+                    const isLockedByLicense = !isAllAllowed && !allowedRubrosList.includes(rubro.id);
+                    const isSelected = selectedTypes.includes(rubro.id);
+
+                    return (
+                      <div
+                        key={rubro.id}
+                        className={`rubro-card ${isSelected ? 'selected' : ''} ${isLockedByLicense ? 'disabled' : ''}`}
+                        onClick={() => !isLockedByLicense && handleTypeClick(rubro.id)}
+                        style={isLockedByLicense ? { opacity: 0.5, cursor: 'not-allowed', filter: 'grayscale(1)' } : {}}
+                        title={isLockedByLicense ? "No incluido en tu licencia" : ""}
+                      >
+                        <span className="rubro-icon">{rubro.icon}</span>
+                        <span className="rubro-label">{rubro.label}</span>
+                        {isLockedByLicense && <span style={{fontSize:'0.65rem', color:'var(--error-color)', marginTop:'2px'}}>Bloqueado</span>}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {error && <div className="error-message">{error}</div>}

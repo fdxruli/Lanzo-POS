@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { loadData, saveData, STORES } from '../../services/database';
 import './QuickAddCustomerModal.css';
+import { generateID } from '../../services/utils';
 
 export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved }) {
   const [name, setName] = useState('');
@@ -26,7 +27,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved }
 
       // Guardar
       const newCustomer = {
-        id: `customer-${Date.now()}`,
+        id: generateID('cust'),
         name,
         phone,
         address: '', // Lo dejamos vacío por rapidez

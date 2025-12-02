@@ -1,7 +1,7 @@
 // src/components/products/WasteModal.jsx
 import React, { useState } from 'react';
 import { saveData, STORES } from '../../services/database';
-import { showMessageModal } from '../../services/utils';
+import { generateID, showMessageModal, roundCurrency } from '../../services/utils';
 // --- CAMBIO: Usamos el store correcto (Estadísticas) ---
 import { useStatsStore } from '../../store/useStatsStore';
 
@@ -39,13 +39,13 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
         await saveData(STORES.MENU, updatedProduct);
 
         const wasteRecord = {
-            id: `waste-${Date.now()}`,
+            id: generateID('waste'),
             productId: product.id,
             productName: product.name,
             quantity: qty,
             unit: product.bulkData?.purchase?.unit || 'u',
             costAtTime: product.cost || 0,
-            lossAmount: (product.cost || 0) * qty, // Dinero perdido
+            lossAmount: roundCurrency((product.cost || 0) * qty),
             reason: reason,
             notes: notes,
             timestamp: new Date().toISOString()

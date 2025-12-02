@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 // --- CAMBIO: Usamos useProductStore en lugar de useDashboardStore ---
 import { useProductStore } from '../../store/useProductStore';
+import { roundCurrency } from '../../services/utils';
 import './RecipeBuilderModal.css';
 
 export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSave, productName }) {
@@ -71,7 +72,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
       name: ingredient.name,
       quantity: parseFloat(quantity),
       unit: unit,
-      estimatedCost: currentCost * parseFloat(quantity)
+      estimatedCost: roundCurrency(currentCost * parseFloat(quantity))
     };
 
     setRecipeItems([...recipeItems, newItem]);
@@ -92,7 +93,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     // Buscamos en 'menu' para tener el costo actualizado al momento
     const ing = menu.find(p => p.id === item.ingredientId);
     const unitCost = ing?.cost || 0;
-    return sum + (unitCost * item.quantity);
+    return sum + roundCurrency(unitCost * item.quantity);
   }, 0);
 
   if (!show) return null;

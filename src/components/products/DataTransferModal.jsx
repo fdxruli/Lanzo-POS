@@ -1,9 +1,7 @@
 // src/components/products/DataTransferModal.jsx
 import React, { useState } from 'react';
-// --- CAMBIO: Usamos useProductStore en lugar de useDashboardStore ---
 import { useProductStore } from '../../store/useProductStore';
-
-import { generateCSV, processImport, downloadFile, generatePharmacyReport } from '../../services/dataTransfer';
+import { downloadInventorySmart, processImport, downloadFile, generatePharmacyReport } from '../../services/dataTransfer';
 import { showMessageModal } from '../../services/utils';
 import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -16,28 +14,15 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
   // Hook de configuración para saber si mostrar opciones de Farmacia
   const features = useFeatureConfig();
 
-  // --- CAMBIO: Obtenemos categorías del store especializado ---
-  // No necesitamos 'menu' ni 'rawBatches' aquí porque handleExport carga todo de la BD 
-  // para garantizar que la exportación sea completa y fresca.
   const categories = useProductStore(state => state.categories);
-
-  // --- MANEJADORES ---
 
   const handleExport = async () => {
     setIsLoading(true);
     try {
-      // Para exportar todo, cargamos directamente de la BD por seguridad y consistencia.
-      const [allProducts, allBatches] = await Promise.all([
-        loadData(STORES.MENU),
-        loadData(STORES.PRODUCT_BATCHES)
-      ]);
-      
-      // Usamos las categorías del store (memoria) para mapear IDs a Nombres
-      const csvContent = generateCSV(allProducts, allBatches || [], categories);
-      
-      const date = new Date().toISOString().split('T')[0];
-      downloadFile(csvContent, `inventario_lanzo_${date}.csv`);
-      showMessageModal('Archivo generado y descargado correctamente.');
+      // Ya no cargamos datos aquí, la función 'smart' se encarga internamente
+      await downloadInventorySmart();
+
+      showMessageModal('✅ Archivo de inventario generado correctamente.');
     } catch (error) {
       console.error(error);
       showMessageModal('Error al generar la exportación.');

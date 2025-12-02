@@ -4,10 +4,12 @@ import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
+import DataSafetyModal from '../common/DataSafetyModal';
+import BackupReminder from '../common/BackupRemider';
+
 import { useStatsStore } from '../../store/useStatsStore';
 import { useSalesStore } from '../../store/useSalesStore';
 import { useProductStore } from '../../store/useProductStore';
-// 1. IMPORTAR TOASTER
 import { Toaster } from 'react-hot-toast'; 
 import './Layout.css';
 
@@ -17,7 +19,6 @@ function Layout() {
   const loadSales = useSalesStore(state => state.loadRecentSales);
 
   useEffect(() => {
-    // Disparamos todo en paralelo
     console.log("🚀 Inicializando Stores modulares...");
     loadStats();
     loadProducts();
@@ -26,7 +27,6 @@ function Layout() {
 
   return (
     <div className="app-layout">
-      {/* 2. AGREGAR EL COMPONENTE TOASTER AQUÍ */}
       <Toaster 
         position="top-center"
         toastOptions={{
@@ -56,7 +56,13 @@ function Layout() {
         </main>
       </div>
 
+      {/* --- MODALES GLOBALES --- */}
       <MessageModal />
+      <DataSafetyModal />
+      
+      {/* 2. AGREGAR EL COMPONENTE AL FINAL */}
+      <BackupReminder />
+      
     </div>
   );
 }

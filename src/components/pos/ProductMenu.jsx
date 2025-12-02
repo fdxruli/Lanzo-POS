@@ -1,4 +1,3 @@
-// src/components/pos/ProductMenu.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
 import { getProductAlerts } from '../../services/utils';
@@ -24,7 +23,7 @@ export default function ProductMenu({
   const [modModalOpen, setModModalOpen] = useState(false);
   const [selectedProductFormMod, setSelectedProductForMod] = useState(null);
 
-  // --- ESTADOS PARA VARIANTES (Ropa/Zapatos) - ¡AQUÍ FALTABA ESTO! ---
+  // --- ESTADOS PARA VARIANTES (Ropa/Zapatos) ---
   const [variantModalOpen, setVariantModalOpen] = useState(false);
   const [selectedProductForVariant, setSelectedProductForVariant] = useState(null);
 
@@ -63,44 +62,48 @@ export default function ProductMenu({
     const useVariants = features.hasVariants && product.batchManagement?.enabled;
 
     if (useVariants) {
-      setSelectedProductForVariant(product); // Usamos el estado de variantes
-      setVariantModalOpen(true);             // Abrimos el modal de variantes
+      setSelectedProductForVariant(product); 
+      setVariantModalOpen(true);             
       return;
     }
 
     // 2. Lógica de Modificadores (Extras/Receta)
     if (features.hasModifiers && product.modifiers && product.modifiers.length > 0) {
-      setSelectedProductForMod(product);     // Usamos el estado de modificadores
-      setModModalOpen(true);                 // Abrimos el modal de modificadores
+      setSelectedProductForMod(product);     
+      setModModalOpen(true);                 
       return;
     }
 
     const cleanProduct = {
-        ...product,
-        // Si NO hay mayoreo activo, borramos las reglas para evitar descuentos fantasma
-        wholesaleTiers: features.hasWholesale ? product.wholesaleTiers : [] 
+      ...product,
+      wholesaleTiers: features.hasWholesale ? product.wholesaleTiers : []
     };
 
     addItemToOrder(cleanProduct);
   };
 
-  // Confirmar variante seleccionada (desde VariantSelectorModal)
   const handleConfirmVariants = (variantItem) => {
     addItemToOrder(variantItem);
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
   }
 
-  // Confirmar modificadores seleccionados (desde ProductModifiersModal)
   const handleConfirmModifiers = (customizedProduct) => {
     addItemToOrder(customizedProduct);
     setModModalOpen(false);
     setSelectedProductForMod(null);
   }
 
+  // --- CORRECCIÓN AQUÍ ---
   const renderStockInfo = (item) => {
-    if (!item.trackStock) return <div className="stock-info no-stock-label">Sin seguimiento</div>;
+    // Verificamos si tiene trackStock explícito O si tiene gestión de lotes habilitada (importados por CSV)
+    const isTracking = item.trackStock || item.batchManagement?.enabled;
+
+    if (!isTracking) return <div className="stock-info no-stock-label">Sin seguimiento</div>;
+    
     const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
+    
+    // Mostramos stock si es mayor a 0, de lo contrario AGOTADO
     return item.stock > 0
       ? <div className="stock-info">Stock: {item.stock}{unit}</div>
       : <div className="stock-info out-of-stock-label">AGOTADO</div>;
@@ -149,10 +152,7 @@ export default function ProductMenu({
       >
         <div id="menu-items" className="menu-items-grid" aria-label="Elementos del menú">
 
-          {/* CASO 1: NO HAY PRODUCTOS EN LA LISTA FILTRADA */}
           {visibleProducts.length === 0 ? (
-
-            /* Verificamos si es porque NO hay inventario o porque NO hay coincidencias */
             (products.length === 0 && !searchTerm && !selectedCategoryId) ? (
               <div className="menu-empty-state">
                 <div className="empty-icon">📦</div>
@@ -166,29 +166,38 @@ export default function ProductMenu({
                 <small>Intenta con otro nombre o escanea el código.</small>
               </div>
             )
-
           ) : (
-            /* CASO 2: SI HAY PRODUCTOS */
             visibleProducts.map((item) => {
               const { isLowStock, isNearingExpiry, isOutOfStock } = getProductAlerts(item);
               const hasModifiers = features.hasModifiers && item.modifiers && item.modifiers.length > 0;
-              // Comprobamos si tiene variantes para mostrar badge (Opcional)
               const hasVariants = features.hasVariants && item.batchManagement?.enabled;
 
               const itemClasses = ['menu-item', isLowStock ? 'low-stock-warning' : '', isNearingExpiry ? 'nearing-expiry-warning' : '', isOutOfStock ? 'out-of-stock' : ''].filter(Boolean).join(' ');
 
               return (
-                <div key={item.id} className={itemClasses} onClick={() => handleProductClick(item, isOutOfStock)}>
+                <div
+                  key={item.id}
+                  className={itemClasses}
+                  onClick={() => handleProductClick(item, isOutOfStock)}
+                  role="button"
+                  tabIndex={isOutOfStock ? -1 : 0}
+                  aria-disabled={isOutOfStock}
+                  aria-label={`${item.name} precio ${item.price}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleProductClick(item, isOutOfStock);
+                    }
+                  }}
+                >
                   {isOutOfStock && <div className="stock-overlay">Agotado</div>}
 
-                  {/* Badge para Modificadores (Restaurante) */}
                   {hasModifiers && !isOutOfStock && (
                     <div className="modifier-badge" style={{ position: 'absolute', top: '5px', left: '5px', background: 'var(--primary-color)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', zIndex: 2 }}>
                       ✨ Extras
                     </div>
                   )}
 
-                  {/* Badge para Variantes (Ropa) */}
                   {hasVariants && !isOutOfStock && (
                     <div className="modifier-badge" style={{ position: 'absolute', top: '5px', left: '5px', background: 'var(--secondary-color)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', zIndex: 2 }}>
                       🎨 Opciones
@@ -233,7 +242,6 @@ export default function ProductMenu({
         </div>
       </div>
 
-      {/* Modal para Modificadores (Restaurantes) */}
       <ProductModifiersModal
         show={modModalOpen}
         onClose={() => { setModModalOpen(false); setSelectedProductForMod(null); }}
@@ -241,7 +249,6 @@ export default function ProductMenu({
         onConfirm={handleConfirmModifiers}
       />
 
-      {/* Modal para Variantes (Ropa/Zapatos) - ¡AHORA SÍ FUNCIONARÁ! */}
       <VariantSelectorModal
         show={variantModalOpen}
         onClose={() => { setVariantModalOpen(false); setSelectedProductForVariant(null); }}
