@@ -5,7 +5,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useProductStore } from '../../store/useProductStore';
 import { useStatsStore } from '../../store/useStatsStore';
 
-import { saveData, STORES, deleteData, queryByIndex, saveBatchAndSyncProduct } from '../../services/database';
+import { saveDataSafe, saveBatchAndSyncProductSafe, deleteDataSafe, saveData, STORES, deleteData, queryByIndex, saveBatchAndSyncProduct } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useCaja } from '../../hooks/useCaja';
@@ -166,7 +166,9 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
       } : null,
     };
 
-    await onSave(batchData);
+    const success = await onSave(batchData);
+    if (!success) return false;
+
     await adjustInventoryValue(valueDifference);
 
     if (shouldClose) {
@@ -383,6 +385,11 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     setShowSuggestions(false);
   }
 
+  const handleActionableError = (result) => {
+    const { message } = result.error;
+    showMessageModal(message);
+  };
+
   const handleSaveBatch = async (batchData) => {
     try {
       // Si el producto no tenía activado el manejo de lotes, lo activamos
@@ -393,12 +400,12 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
           ...selectedProduct,
           batchManagement: { enabled: true, selectionStrategy: 'fifo' }
         };
-        await saveData(STORES.MENU, updatedProduct);
+        await saveDataSafe(STORES.MENU, updatedProduct);
       }
 
       // AQUÍ ESTÁ EL CAMBIO CLAVE:
       // En lugar de saveData(STORES.PRODUCT_BATCHES...), usamos la función sincronizada.
-      await saveBatchAndSyncProduct(batchData);
+      const result = await saveBatchAndSyncProductSafe(batchData);
 
       const updatedBatches = await loadBatchesForProduct(selectedProductId);
       setLocalBatches(updatedBatches);
@@ -428,7 +435,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
       try {
         const batchValue = batch.cost * batch.stock;
 
-        await deleteData(STORES.PRODUCT_BATCHES, batch.id);
+        const result = await deleteDataSafe(STORES.PRODUCT_BATCHES, batch.id);
 
         if (batchValue > 0) {
           await adjustInventoryValue(-batchValue);

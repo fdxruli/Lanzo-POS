@@ -1,6 +1,6 @@
 // src/components/common/QuickAddCustomerModal.jsx
 import React, { useState } from 'react';
-import { loadData, saveData, STORES } from '../../services/database';
+import { loadData, saveDataSafe, STORES } from '../../services/database';
 import './QuickAddCustomerModal.css';
 import { generateID } from '../../services/utils';
 
@@ -34,7 +34,12 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved }
         debt: 0
       };
       
-      await saveData(STORES.CUSTOMERS, newCustomer);
+      const result = await saveDataSafe(STORES.CUSTOMERS, newCustomer);
+      if (!result.success){
+        setError(result.error.message);
+        setIsLoading(false);
+        return;
+      }
       
       // Devolver el cliente al modal de pago
       onCustomerSaved(newCustomer);
