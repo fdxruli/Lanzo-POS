@@ -1,214 +1,219 @@
-/*
- * Estilos para ProductList.jsx
- */
+/* src/components/products/ProductList.css */
 
+/* --- CONTENEDOR PRINCIPAL --- */
 .product-list-container {
   background-color: var(--card-background-color);
   border-radius: var(--border-radius);
   padding: var(--spacing-lg);
   box-shadow: var(--box-shadow);
+  border: 1px solid var(--border-color);
 }
 
 .search-container {
   margin-bottom: var(--spacing-lg);
-  max-width: 400px;
+  max-width: 100%;
 }
 
+/* --- GRID DE PRODUCTOS --- */
 .product-list {
   display: grid;
-  grid-template-columns: 1fr;
-  /* Una columna por defecto */
-  gap: var(--spacing-md);
+  /* Móvil: 1 columna. Escritorio: Grid automático (min 320px) */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 15px;
 }
 
-/* Tarjeta de producto individual */
+/* --- TARJETA DE PRODUCTO INDIVIDUAL --- */
 .product-item {
   position: relative;
   background-color: var(--card-background-color);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 15px;
   box-shadow: var(--box-shadow);
-  transition: var(--transition);
+  transition: all 0.2s ease-in-out;
   display: flex;
   flex-direction: column;
-  border-left: 5px solid transparent;
-  /* Para alertas de stock/caducidad */
+  justify-content: space-between;
+  overflow: hidden;
+  border-left: 5px solid transparent; /* Para alertas */
 }
 
 .product-item:hover {
   transform: translateY(-3px);
   box-shadow: var(--box-shadow-lg);
+  border-color: var(--secondary-color);
 }
 
+/* --- BADGE DE ESTADO --- */
 .product-status-badge {
   position: absolute;
   top: 10px;
   right: 10px;
-  padding: 5px 10px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
   color: white;
-  z-index: 2;
+  z-index: 5;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.product-status-badge.active {
-  background-color: var(--success-color);
-}
+.product-status-badge.active { background-color: var(--success-color); }
+.product-status-badge.inactive { background-color: var(--text-light); }
 
-.product-status-badge.inactive {
-  background-color: var(--text-light);
-}
-
+/* --- SECCIÓN SUPERIOR (Imagen + Info) --- */
 .product-item-info {
   display: flex;
-  gap: var(--spacing-md);
-  align-items: center;
-  margin-bottom: var(--spacing-md);
+  gap: 15px;
+  align-items: flex-start;
+  margin-bottom: 10px;
 }
 
+/* IMAGEN CONTROLADA */
 .product-item-info img {
-  width: 80px;
+  width: 80px;  /* Tamaño fijo para que no invada */
   height: 80px;
-  border-radius: var(--border-radius-sm);
+  border-radius: 12px;
   object-fit: cover;
   flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  background-color: var(--light-background);
 }
 
+/* --- DETALLES DE TEXTO --- */
 .product-item-details {
   flex-grow: 1;
+  min-width: 0; 
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.product-item-details span {
+/* CLASE NUEVA ESPECÍFICA PARA EL TÍTULO (NOMBRE) */
+/* Esto corrige el error de ocultar precios */
+.product-item-title {
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-dark);
+  line-height: 1.2;
+  margin-bottom: 4px;
+  
+  /* Solo el título se corta si es largo */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 65px; /* Espacio para el badge "ACTIVO" */
+  display: block;
 }
 
 .product-item-details p {
-  font-size: 0.875rem;
+  font-size: 0.9rem;
   color: var(--text-light);
-  margin: 4px 0 0;
-}
-
-.product-item-controls {
+  margin: 0;
   display: flex;
-  gap: var(--spacing-sm);
-  margin-top: auto;
-  /* Empuja los controles al final */
+  justify-content: space-between;
+  align-items: center;
 }
 
-.product-item-controls .btn-toggle-status,
-.product-item-controls .edit-product-btn,
-.product-item-controls .delete-product-btn {
-  flex-grow: 1;
-  padding: var(--spacing-sm);
-  font-size: 0.875rem;
-  border: none;
-  border-radius: var(--border-radius-sm);
+.product-price-highlight {
+  color: var(--primary-color);
+  font-weight: 800;
+  font-size: 1.05rem;
 }
 
-.btn-toggle-status.btn-activate {
-  background-color: var(--success-color);
-  color: white;
-}
-
-.btn-toggle-status.btn-activate:hover {
-  background-color: #059669;
-}
-
-.btn-toggle-status.btn-deactivate {
-  background-color: var(--warning-color);
-  color: white;
-}
-
-.btn-toggle-status.btn-deactivate:hover {
-  background-color: #d97706;
-}
-
-.edit-product-btn,
-.delete-product-btn {
-  background-color: var(--light-background);
-  color: var(--text-dark);
-  font-size: 1.2rem;
-}
-
-.edit-product-btn:hover,
-.delete-product-btn:hover {
-  background-color: #e5e7eb;
-}
-
-/* Mensaje de lista vacía */
-.empty-message {
-  text-align: center;
-  color: var(--text-light);
-  padding: var(--spacing-lg);
-  font-style: italic;
-}
-
-/* Alertas de Stock y Caducidad */
-.product-item.low-stock-warning {
-  border-left-color: var(--warning-color);
-}
-
-.product-item.nearing-expiry-warning {
-  border-left-color: var(--error-color);
-}
-
-.product-item-details .alert-indicator {
-  display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
-  margin-top: 4px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: white;
-  text-align: center;
-}
-
-.product-item-details .low-stock-indicator {
-  background-color: var(--warning-color);
-}
-
-.product-item-details .nearing-expiry-indicator {
-  background-color: var(--error-color);
-}
-
-/* Responsive de la lista */
-@media (max-width: 480px) {
-  .product-list {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Nuevo botón de Merma */
-.btn-waste {
-  background-color: #f59e0b;
-  /* Ámbar / Naranja */
-  color: white;
-  font-size: 1.2rem;
-  border: none;
-  border-radius: var(--border-radius-sm);
-  padding: var(--spacing-sm);
-  transition: background-color 0.2s;
-}
-
-.btn-waste:hover {
-  background-color: #d97706;
-  /* Naranja más oscuro */
-}
-
-/* Ajuste para que los botones se distribuyan bien */
+/* --- CONTROLES (Botones) --- */
 .product-item-controls {
-  display: flex;
-  gap: var(--spacing-sm);
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: 8px;
   margin-top: auto;
+  border-top: 1px dashed var(--light-background);
+  padding-top: 10px;
 }
 
 .product-item-controls button {
-  flex: 1;
-  /* Todos los botones ocupan el mismo ancho */
+  padding: 8px;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+/* Botones específicos */
+.btn-toggle-status { color: white; width: 100%; }
+.btn-toggle-status.btn-activate { background-color: var(--success-color); }
+.btn-toggle-status.btn-deactivate { background-color: var(--warning-color); color: #fff; }
+
+.edit-product-btn {
+  background-color: var(--light-background);
+  color: var(--text-dark);
+  border: 1px solid transparent;
+}
+.edit-product-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
+.delete-product-btn {
+  background-color: rgba(255, 59, 92, 0.1);
+  color: var(--error-color);
+}
+.delete-product-btn:hover { background-color: var(--error-color); color: white; }
+
+.btn-waste {
+  grid-column: span 3;
+  margin-bottom: 5px;
+  background-color: #f59e0b;
+  color: white;
+}
+
+/* Alertas */
+.product-item.low-stock-warning { border-left-color: var(--warning-color); }
+.product-item.nearing-expiry-warning { border-left-color: var(--error-color); }
+
+.alert-indicator {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: white;
+  text-align: center;
+  width: 100%;
+}
+.low-stock-indicator { background-color: var(--warning-color); }
+.nearing-expiry-indicator { background-color: var(--error-color); }
+
+.empty-message {
+  text-align: center;
+  color: var(--text-light);
+  padding: 3rem;
+  background-color: var(--light-background);
+  border-radius: var(--border-radius);
+  border: 2px dashed var(--border-color);
+  font-style: italic;
+}
+
+/* Modo Oscuro */
+[data-theme="dark"] .product-item {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+[data-theme="dark"] .product-item-info img {
+  border-color: #475569;
+  background-color: #0f172a;
+}
+[data-theme="dark"] .product-item-controls {
+  border-top-color: #334155;
+}
+[data-theme="dark"] .edit-product-btn {
+  background-color: #334155; color: #cbd5e1;
+}
+[data-theme="dark"] .edit-product-btn:hover {
+  background-color: #475569; color: white;
 }

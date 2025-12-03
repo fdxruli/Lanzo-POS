@@ -1,6 +1,6 @@
 // src/components/products/WasteModal.jsx
 import React, { useState } from 'react';
-import { saveData, STORES } from '../../services/database';
+import { saveDataSafe, STORES } from '../../services/database';
 import { generateID, showMessageModal, roundCurrency } from '../../services/utils';
 // --- CAMBIO: Usamos el store correcto (Estadísticas) ---
 import { useStatsStore } from '../../store/useStatsStore';
@@ -36,7 +36,11 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
             updatedAt: new Date().toISOString()
         };
 
-        await saveData(STORES.MENU, updatedProduct);
+        const prodResult = await saveDataSafe(STORES.MENU, updatedProduct);
+        if (!prodResult.success) {
+            alert(`Error al actualizar stock: ${prodResult.error?.message}`);
+            return;
+        }
 
         const wasteRecord = {
             id: generateID('waste'),
@@ -51,7 +55,12 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
             timestamp: new Date().toISOString()
         };
 
-        await saveData(STORES.WASTE, wasteRecord);
+        const wasteResult = await saveDataSafe(STORES.WASTE, wasteRecord);
+
+        if (!wasteResult.success) {
+            alert(`Advertencia: El stock se descontó pero falló el registro de merma: ${wasteResult.error?.message}`);
+            // Aun así continuamos porque el stock es lo crítico
+        }
 
         const lossAmount = (product.cost || 0) * qty;
         await adjustInventoryValue(-lossAmount);

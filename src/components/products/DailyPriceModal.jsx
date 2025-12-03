@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { saveData, saveBulk, STORES } from '../../services/database';
+import { saveData, saveBulkSafe, STORES } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
 
 export default function DailyPriceModal({ show, onClose, products, onRefresh }) {
@@ -47,15 +47,16 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
             return;
         }
 
-        try {
-            await saveBulk(STORES.MENU, updates);
+        const result = await saveBulkSafe(STORES.MENU, updates);
+
+        if (result.success) {
             await onRefresh();
             showMessageModal(`✅ Precios actualizados para ${updates.length} productos.`);
             setEditedProducts({});
             onClose();
-        } catch (error) {
-            console.error(error);
-            showMessageModal('Error al actualizar precios.');
+        } else {
+            console.error(result.error);
+            showMessageModal(`Error al actualizar precios: ${result.error?.message}`);
         }
     };
 

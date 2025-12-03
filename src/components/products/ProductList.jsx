@@ -3,26 +3,19 @@ import React, { useState, useMemo } from 'react';
 import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
-// --- CAMBIO: Usamos useProductStore en lugar de useDashboardStore ---
 import { useProductStore } from '../../store/useProductStore';
 import WasteModal from './WasteModal';
 import './ProductList.css';
 
-const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
-
 export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus }) {
-  const features = useFeatureConfig(); // Configuración del rubro
+  const features = useFeatureConfig();
 
-  // --- OPTIMIZACIÓN: Conexión al nuevo ProductStore para Paginación y Recarga ---
-  // Nota: Usamos 'loadInitialProducts' para refrescar la lista completa
   const refreshData = useProductStore((state) => state.loadInitialProducts);
   const loadMoreProducts = useProductStore((state) => state.loadMoreProducts);
   const hasMoreProducts = useProductStore((state) => state.hasMoreProducts);
   const isGlobalLoading = useProductStore((state) => state.isLoading);
 
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Estados para el Modal de Merma
   const [showWaste, setShowWaste] = useState(false);
   const [productForWaste, setProductForWaste] = useState(null);
 
@@ -36,7 +29,6 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
     );
   }, [products, searchTerm]);
 
-  // Manejadores para Merma
   const handleOpenWaste = (product) => {
     setProductForWaste(product);
     setShowWaste(true);
@@ -48,11 +40,9 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
   };
 
   const handleWasteConfirmed = async () => {
-    // Recargar los datos para que se actualice el stock en pantalla
     await refreshData();
   };
 
-  // 'isLoading' aquí viene de props (estado local de ProductsPage para delete/save actions)
   if (isLoading && products.length === 0) {
     return <div style={{ padding: '20px', textAlign: 'center' }}>Cargando productos...</div>;
   }
@@ -82,6 +72,14 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
               const isActive = item.isActive !== false;
               const { isLowStock, isNearingExpiry } = getProductAlerts(item);
 
+              // Lógica de Stock Inteligente
+              const isTracked = item.trackStock || item.batchManagement?.enabled;
+              
+              // Unidad de Medida
+              const unitLabel = item.saleType === 'bulk' 
+                ? (item.bulkData?.purchase?.unit || 'kg') 
+                : 'pza';
+
               const itemClasses = [
                 'product-item',
                 isLowStock ? 'low-stock-warning' : '',
@@ -93,29 +91,55 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                   <div className={`product-status-badge ${isActive ? 'active' : 'inactive'}`}>
                     {isActive ? 'Activo' : 'Inactivo'}
                   </div>
+                  
                   <div className="product-item-info">
-                    <LazyImage
-                      src={item.image}
-                      alt={item.name} />
+                    <LazyImage src={item.image} alt={item.name} />
+                    
                     <div className="product-item-details">
-                      <span>{item.name}</span>
+                      {/* --- CORRECCIÓN AQUÍ: Usamos la clase específica --- */}
+                      <span className="product-item-title" title={item.name}>{item.name}</span>
+                      
                       {item.sustancia && (
-                        <p style={{ color: 'var(--secondary-color)', fontWeight: '500', fontSize: '0.85rem' }}>
+                        <p style={{ color: 'var(--secondary-color)', fontWeight: '500', fontSize: '0.8rem', justifyContent:'flex-start' }}>
                           💊 {item.sustancia}
                         </p>
                       )}
-                      <p><strong>Categoría:</strong> {categoryName}</p>
-                      <p><strong>Precio:</strong> ${item.price?.toFixed(2)}</p>
-                      <p><strong>Costo:</strong> ${item.cost?.toFixed(2)}</p>
-                      <p><strong>Stock:</strong> {item.trackStock ? item.stock : 'N/A'}</p>
+                      
+                      <p style={{color: '#666', fontSize: '0.8rem', justifyContent: 'flex-start'}}>{categoryName}</p>
+                      
+                      <div style={{marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px'}}>
+                        <p>
+                            <strong>Precio:</strong> 
+                            <span className="product-price-highlight">${item.price?.toFixed(2)}</span>
+                        </p>
+                        <p>
+                            <span style={{color:'var(--text-light)'}}>Costo:</span> 
+                            <span>${item.cost?.toFixed(2)}</span>
+                        </p>
+                        
+                        <p style={{marginTop: '2px'}}>
+                            <strong>Existencia:</strong>
+                            {isTracked ? (
+                                item.stock > 0 ? (
+                                    <span style={{ fontWeight: 'bold', color: isLowStock ? 'var(--warning-color)' : 'var(--text-dark)' }}>
+                                        {item.stock} <small style={{fontSize: '0.75em', textTransform: 'uppercase'}}>{unitLabel}</small>
+                                    </span>
+                                ) : (
+                                    <span style={{ color: 'var(--error-color)', fontWeight: 'bold', fontSize: '0.9rem' }}>AGOTADO</span>
+                                )
+                            ) : (
+                                <span style={{ fontStyle: 'italic', color: '#999', fontSize: '0.8rem' }}>Infinito (N/A)</span>
+                            )}
+                        </p>
+                      </div>
 
-                      {isLowStock && <span className="alert-indicator low-stock-indicator">Stock bajo</span>}
+                      {/* Alertas Visuales */}
+                      {isLowStock && isTracked && item.stock > 0 && <span className="alert-indicator low-stock-indicator">Stock bajo</span>}
                       {isNearingExpiry && <span className="alert-indicator nearing-expiry-indicator">Próximo a caducar</span>}
                     </div>
                   </div>
 
                   <div className="product-item-controls">
-                    {/* Botón de Estado (Activar/Desactivar) */}
                     <button
                       className={`btn-toggle-status ${isActive ? 'btn-deactivate' : 'btn-activate'}`}
                       onClick={() => onToggleStatus(item)}
@@ -124,23 +148,16 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                       {isActive ? 'Desactivar' : 'Activar'}
                     </button>
 
-                    {/* Botón de Merma (Solo si el rubro lo permite, ej: Frutería) */}
                     {features.hasWaste && isActive && (
-                      <button
-                        className="btn-waste"
-                        onClick={() => handleOpenWaste(item)}
-                        title="Registrar Merma / Desperdicio"
-                      >
+                      <button className="btn-waste" onClick={() => handleOpenWaste(item)} title="Registrar Merma">
                         Merma
                       </button>
                     )}
 
-                    {/* Botón Editar */}
                     <button className="edit-product-btn" onClick={() => onEdit(item)} title="Editar">
                       ✏️
                     </button>
 
-                    {/* Botón Eliminar */}
                     <button className="delete-product-btn" onClick={() => onDelete(item)} title="Eliminar">
                       🗑️
                     </button>
@@ -150,8 +167,6 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             })}
           </div>
 
-          {/* --- SECCIÓN DE PAGINACIÓN --- */}
-          {/* Solo mostramos el botón si NO estamos buscando (en búsqueda mostramos todo lo encontrado) y si el store dice que hay más páginas */}
           {!searchTerm && hasMoreProducts && (
             <div style={{ textAlign: 'center', marginTop: '20px', paddingBottom: '20px' }}>
               <button
@@ -177,7 +192,6 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
         </>
       )}
 
-      {/* Renderizamos el Modal de Merma fuera del loop */}
       <WasteModal
         show={showWaste}
         onClose={handleCloseWaste}
