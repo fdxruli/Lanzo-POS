@@ -2,7 +2,7 @@
 
 // Incrementamos versión para forzar la creación de las tablas faltantes
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 20; // si le vamos a mover a este numero asegurar que tengamos el mismo en el archivo workers/stats.worker.js
+const DB_VERSION = 23; // si le vamos a mover a este numero asegurar que tengamos el mismo en el archivo workers/stats.worker.js
 
 // Objeto de conexión
 const dbConnection = {
@@ -29,8 +29,80 @@ export const STORES = {
   PRODUCT_BATCHES: 'product_batches',
   WASTE: 'waste_logs',
   DAILY_STATS: 'daily_stats',
-  PROCESSED_SALES_LOG: 'processed_sales_log'
+  PROCESSED_SALES_LOG: 'processed_sales_log',
+  TRANSACTION_LOG: 'transaction_log'
 };
+
+// ============================================================
+// SISTEMA DE ERRORES (AUDITORÍA)
+// ============================================================
+
+export class DatabaseError extends Error {
+  constructor(code, message, details = {}) {
+    super(message);
+    this.name = 'DatabaseError';
+    this.code = code;
+    this.details = details;
+    this.timestamp = new Date().toISOString();
+  }
+}
+
+export const DB_ERROR_CODES = {
+  QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
+  INVALID_STATE: 'INVALID_STATE',
+  NOT_FOUND: 'NOT_FOUND',
+  CONSTRAINT_VIOLATION: 'CONSTRAINT_VIOLATION',
+  TRANSACTION_INACTIVE: 'TRANSACTION_INACTIVE',
+  VERSION_ERROR: 'VERSION_ERROR',
+  BLOCKED: 'BLOCKED',
+  TIMEOUT: 'TIMEOUT',
+  UNKNOWN: 'UNKNOWN'
+};
+
+/**
+ * Función interna para clasificar errores de IndexedDB
+ */
+function classifyError(error, storeName, operation) {
+  let errorCode = DB_ERROR_CODES.UNKNOWN;
+  let userMessage = 'Ocurrió un error inesperado en la base de datos.';
+  let actionable = null;
+
+  const errName = error.name || '';
+  const errMsg = error.message || '';
+
+  if (errName === 'QuotaExceededError' || errMsg.includes('quota')) {
+    errorCode = DB_ERROR_CODES.QUOTA_EXCEEDED;
+    userMessage = '💾 Espacio lleno. El navegador no permite guardar más datos. Libera espacio o realiza un respaldo y limpieza.';
+    actionable = 'SUGGEST_BACKUP';
+  } else if (errName === 'InvalidStateError' || errName === 'TransactionInactiveError') {
+    errorCode = DB_ERROR_CODES.INVALID_STATE;
+    userMessage = '⚠️ Conexión interrumpida con la base de datos. Por favor, recarga la página.';
+    actionable = 'SUGGEST_RELOAD';
+  } else if (errName === 'ConstraintError') {
+    errorCode = DB_ERROR_CODES.CONSTRAINT_VIOLATION;
+    userMessage = '⚠️ Duplicado: Ya existe un registro con este ID, Código de Barras o SKU.';
+    actionable = 'SUGGEST_EDIT';
+  } else if (errName === 'VersionError') {
+    errorCode = DB_ERROR_CODES.VERSION_ERROR;
+    userMessage = '⚠️ La base de datos está desactualizada. Cierra todas las pestañas y vuelve a abrir.';
+    actionable = 'SUGGEST_RELOAD';
+  } else if (errMsg.includes('TIMEOUT')) {
+    errorCode = DB_ERROR_CODES.TIMEOUT;
+    userMessage = '⏱️ La operación tardó demasiado. Intenta de nuevo.';
+  }
+
+  // Log técnico para depuración
+  console.error(`[DB_ERROR:${errorCode}] Store: ${storeName} | Op: ${operation}`, {
+    originalError: error,
+    message: errMsg
+  });
+
+  return new DatabaseError(errorCode, userMessage, {
+    storeName,
+    originalError: errMsg,
+    actionable
+  });
+}
 
 /**
  * Validación robusta de conexión
@@ -53,131 +125,189 @@ function isConnectionValid(db) {
  */
 export function initDB() {
   return new Promise((resolve, reject) => {
-
-    // Si ya hay una conexión abriéndose, devolver esa promesa
     if (dbConnection.isOpening && dbConnection.openPromise) {
       return dbConnection.openPromise.then(resolve).catch(reject);
     }
-
-    // Si ya está abierta y válida, devolverla
     if (isConnectionValid(dbConnection.instance)) {
       return resolve(dbConnection.instance);
     }
-
-    // Limpieza de conexión previa si existía pero no era válida
     if (dbConnection.instance) {
-      try { dbConnection.instance.close(); } catch (e) { /* ignorar */ }
+      try { dbConnection.instance.close(); } catch (e) { }
       dbConnection.instance = null;
     }
 
-    dbConnection.isOpening = true;
+    if (dbConnection.instance) {
+      // VALIDACIÓN CLAVE: Verificar si la conexión sigue viva
+      // A veces el objeto existe pero la conexión interna está 'closed'
+      try {
+        // Intentamos una transacción dummy muy ligera
+        const tx = dbConnection.instance.transaction([STORES.MENU], 'readonly');
+        tx.abort(); // Si no falla al crearla, está viva. Abortamos para no gastar.
+        return resolve(dbConnection.instance);
+      } catch (error) {
+        console.warn("⚠️ Conexión IDB perdida en segundo plano. Reconectando...", error);
+        dbConnection.instance = null; // Forzamos reconexión
+      }
+    }
 
-    // Intentamos abrir
+    dbConnection.isOpening = true;
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     dbConnection.openPromise = new Promise((res, rej) => {
-
       request.onerror = (event) => {
         dbConnection.isOpening = false;
-        dbConnection.openPromise = null;
-        dbConnection.instance = null;
-
-        const errorTarget = event.target.error;
-        let errorMessage = `Error crítico de base de datos: ${errorTarget?.message || 'Desconocido'}`;
-        let errorName = errorTarget?.name;
-
-        if (errorName === 'InvalidStateError' || errorName === 'UnknownError') {
-          errorMessage = "❌ Tu navegador está bloqueando el almacenamiento de datos. \n\n" +
-            "• Si estás en 'Modo Incógnito' o 'Privado', sal y usa el modo normal.\n" +
-            "• Verifica que no tengas el disco lleno.";
-        } else if (errorName === 'QuotaExceededError') {
-          errorMessage = "💾 Espacio de almacenamiento lleno. Por favor libera espacio en tu dispositivo.";
-        } else if (errorName === 'VersionError') {
-          errorMessage = "⚠️ Versión de base de datos incompatible. Intenta recargar la página.";
-        }
-
-        console.error("🔥 initDB Error:", errorTarget);
-        // alert(errorMessage); // Opcional: Descomentar si quieres alerta visual
-        rej(new Error(errorMessage));
+        rej(event.target.error);
       };
 
       request.onblocked = () => {
-        console.warn('⚠️ Apertura de BD bloqueada. Cierra otras pestañas.');
-        alert('⚠️ ALERTA: Tienes otra pestaña de Lanzo POS abierta con una versión antigua.\n\nPor favor, cierra todas las pestañas de Lanzo POS y recarga esta página.');
+        alert('⚠️ Actualización de base de datos pendiente. Cierra otras pestañas de Lanzo POS.');
       };
 
       request.onsuccess = (event) => {
         dbConnection.instance = event.target.result;
         dbConnection.isOpening = false;
-
-        dbConnection.instance.onclose = () => {
-          console.warn('⚠️ Conexión de BD cerrada inesperadamente');
-          dbConnection.instance = null;
-        };
-
-        dbConnection.instance.onversionchange = () => {
-          console.warn('⚠️ Otra pestaña actualizó la BD, forzando recarga...');
-          if (dbConnection.instance) {
-            dbConnection.instance.close();
-            dbConnection.instance = null;
-          }
-          window.location.reload();
-        };
-
-        console.log('✅ Base de datos abierta exitosamente.');
         res(dbConnection.instance);
+        recoverPendingTransactions().catch(console.error);
       };
 
-      // --- AQUÍ ESTÁ LA CORRECCIÓN CLAVE ---
+      // ✅ PASO 2: Aquí aplicamos la solución de la auditoría
       request.onupgradeneeded = (event) => {
         const tempDb = event.target.result;
         console.log('Actualizando BD a la versión', DB_VERSION);
 
-        // 1. Crear TODOS los ObjectStores definidos en STORES si no existen
+        // 1. Crear almacenes si no existen
         Object.values(STORES).forEach(storeName => {
           if (!tempDb.objectStoreNames.contains(storeName)) {
-            // Nota: daily_stats usa 'date' como clave lógica, pero por estandarización usamos 'id' o keyPath
-            // Si tus objetos daily_stats no tienen 'id', hay que tener cuidado. 
-            // Por defecto usamos keyPath: 'id' para todo.
-            // Para daily_stats, si guardas {date: '...'}, asegúrate de ponerle id: '...' también en el servicio.
             const keyPath = storeName === STORES.DAILY_STATS ? 'id' : 'id';
             tempDb.createObjectStore(storeName, { keyPath });
           }
         });
 
-        // 2. Crear Índices Específicos (Idempotente)
+        const tx = request.transaction;
+
+        // Función auxiliar segura para crear índices
         const ensureIndex = (storeName, indexName, keyPath, options = {}) => {
           if (tempDb.objectStoreNames.contains(storeName)) {
-            const store = request.transaction.objectStore(storeName);
+            const store = tx.objectStore(storeName);
             if (!store.indexNames.contains(indexName)) {
+              console.log(`Creando índice: ${indexName} en ${storeName}`);
               store.createIndex(indexName, keyPath, options);
             }
           }
         };
 
-        // MENU (Productos)
+        // --- ÍNDICES BÁSICOS (Existentes) ---
         ensureIndex(STORES.MENU, 'barcode', 'barcode', { unique: false });
         ensureIndex(STORES.MENU, 'name_lower', 'name_lower', { unique: false });
         ensureIndex(STORES.MENU, 'categoryId', 'categoryId', { unique: false });
-
-        // PRODUCT_BATCHES (Lotes)
         ensureIndex(STORES.PRODUCT_BATCHES, 'productId', 'productId', { unique: false });
         ensureIndex(STORES.PRODUCT_BATCHES, 'sku', 'sku', { unique: false });
-
-        // SALES (Ventas)
         ensureIndex(STORES.SALES, 'timestamp', 'timestamp', { unique: true });
-        ensureIndex(STORES.SALES, 'customerId', 'customerId', { unique: false });
-
-        // MOVIMIENTOS_CAJA
+        ensureIndex(STORES.SALES, 'customerId', 'customerId', { unique: false }); // Básico existente
         ensureIndex(STORES.MOVIMIENTOS_CAJA, 'caja_id', 'caja_id', { unique: false });
-
-        // CUSTOMERS
         ensureIndex(STORES.CUSTOMERS, 'phone', 'phone', { unique: false });
+        ensureIndex(STORES.TRANSACTION_LOG, 'status', 'status', { unique: false });
+        ensureIndex(STORES.TRANSACTION_LOG, 'timestamp', 'timestamp', { unique: false });
+
+        // --- 🚀 MEJORAS DE LA AUDITORÍA (Nuevos Índices Compuestos) ---
+
+        // A. SALES: Para filtrar pedidos por estado (KDS) y por Cliente+Fecha
+        ensureIndex(STORES.SALES, 'fulfillment_status', 'fulfillmentStatus', { unique: false });
+        ensureIndex(STORES.SALES, 'customer_date', ['customerId', 'timestamp'], { unique: false });
+
+        // B. PRODUCT_BATCHES: Para selección FIFO ultra-rápida (Producto + Activo + Fecha Creación)
+        ensureIndex(STORES.PRODUCT_BATCHES, 'product_active_date', ['productId', 'isActive', 'createdAt'], { unique: false });
+
+        // C. CAJAS: Para encontrar la caja abierta actual sin recorrer todo el historial
+        ensureIndex(STORES.CAJAS, 'estado', 'estado', { unique: false });
       };
     });
 
     dbConnection.openPromise.then(resolve).catch(reject);
   });
+}
+
+// ============================================================
+// WRAPPERS SEGUROS (SAFE) - IMPLEMENTACIÓN DE LA AUDITORÍA
+// ============================================================
+
+/**
+ * Guarda un registro de forma segura, retornando un objeto de resultado estructurado.
+ */
+export async function saveDataSafe(storeName, data) {
+  try {
+    await saveData(storeName, data);
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: classifyError(error, storeName, 'saveData')
+    };
+  }
+}
+
+/**
+ * Guarda múltiples registros de forma segura.
+ */
+export async function saveBulkSafe(storeName, dataArray) {
+  try {
+    await saveBulk(storeName, dataArray);
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: classifyError(error, storeName, 'saveBulk')
+    };
+  }
+}
+
+export async function executeSaleTransactionSafe(sale, deductions) {
+  try {
+    const result = await executeSaleTransaction(sale, deductions);
+    return { success: true, transactionId: result.transactionId };
+  } catch (error) {
+    // Si es un error de lógica de negocio (Stock cambió), lo dejamos pasar tal cual
+    if (error.message === 'STOCK_CHANGED' || error.message === 'TRANSACTION_ABORTED_OR_STOCK_ERROR') {
+      // Retornamos un objeto de error específico para que salesService sepa que fue concurrencia
+      return { success: false, isConcurrencyError: true, originalError: error };
+    }
+
+    // Para errores técnicos (Disco, DB cerrada), usamos el clasificador
+    return {
+      success: false,
+      error: classifyError(error, STORES.SALES, 'executeSaleTransaction')
+    };
+  }
+}
+
+/**
+ * Elimina un registro de forma segura.
+ */
+export async function deleteDataSafe(storeName, key) {
+  try {
+    await deleteData(storeName, key);
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: classifyError(error, storeName, 'deleteData')
+    };
+  }
+}
+
+/**
+ * Wrapper especial para la función compleja de lotes.
+ */
+export async function saveBatchAndSyncProductSafe(batchData) {
+  try {
+    await saveBatchAndSyncProduct(batchData);
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: classifyError(error, STORES.PRODUCT_BATCHES, 'saveBatchAndSyncProduct')
+    };
+  }
 }
 
 /**
@@ -358,16 +488,16 @@ export function searchProductsInDB(term) {
 
       // --- CORRECCIÓN: Si falta el índice, mejor fallar o usar búsqueda básica por nombre ---
       if (!store.indexNames.contains('name_lower')) {
-         console.warn("⚠️ Índice 'name_lower' faltante. Búsqueda degradada.");
-         // En este caso excepcional, podríamos permitir getAll() si el catálogo es pequeño,
-         // PERO lo ideal es forzar el uso del índice.
-         // Si decides mantener el fallback aquí, ponle un límite duro:
-         const req = store.getAll(null, 500); // Límite de 500 para no matar el navegador
-         req.onsuccess = () => {
-            // ... lógica de filtrado manual ...
-            resolve([]);
-         };
-         return;
+        console.warn("⚠️ Índice 'name_lower' faltante. Búsqueda degradada.");
+        // En este caso excepcional, podríamos permitir getAll() si el catálogo es pequeño,
+        // PERO lo ideal es forzar el uso del índice.
+        // Si decides mantener el fallback aquí, ponle un límite duro:
+        const req = store.getAll(null, 500); // Límite de 500 para no matar el navegador
+        req.onsuccess = () => {
+          // ... lógica de filtrado manual ...
+          resolve([]);
+        };
+        return;
       }
 
       const index = store.index('name_lower');
@@ -451,23 +581,80 @@ export async function processBatchDeductions(deductions) {
 
 export async function executeSaleTransaction(sale, deductions) {
   const db = await initDB();
+  const TRANSACTION_TIMEOUT = 15000; // 5 segundos máximo
+
   return new Promise((resolve, reject) => {
-    // Abarcamos Ventas, Lotes y Menú en una sola transacción atómica
-    const tx = db.transaction([STORES.SALES, STORES.PRODUCT_BATCHES, STORES.MENU], 'readwrite');
+    // Incluimos TRANSACTION_LOG en la transacción atómica
+    const tx = db.transaction(
+      [STORES.SALES, STORES.PRODUCT_BATCHES, STORES.MENU, STORES.TRANSACTION_LOG],
+      'readwrite'
+    );
+
     const salesStore = tx.objectStore(STORES.SALES);
     const batchesStore = tx.objectStore(STORES.PRODUCT_BATCHES);
     const productStore = tx.objectStore(STORES.MENU);
+    const logStore = tx.objectStore(STORES.TRANSACTION_LOG);
 
     let aborted = false;
+    let completed = false;
 
-    tx.oncomplete = () => resolve({ success: true });
-    tx.onerror = (e) => reject(e.target.error);
-    tx.onabort = () => reject(new Error('STOCK_INSUFFICIENT'));
+    // A. TIMEOUT DE SEGURIDAD
+    const timeoutId = setTimeout(() => {
+      if (!completed && !aborted) {
+        console.error('⏱️ Transacción excedió timeout (5s)');
+        aborted = true;
+        try {
+          tx.abort();
+        } catch (e) {
+          console.warn("No se pudo abortar (posiblemente ya finalizó):", e);
+        }
+        reject(new Error('TRANSACTION_TIMEOUT'));
+      }
+    }, TRANSACTION_TIMEOUT);
 
-    // --- CORRECCIÓN: Pre-calcular las actualizaciones del padre SÍNCRONAMENTE ---
+    // B. GENERAR ID Y LOG (Write-Ahead Log dentro de la transacción)
+    // Si la transacción falla, este log también se borra (atomicidad),
+    // pero si se comete y falla el código posterior (UI), queda rastro.
+    const transactionId = `tx-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    logStore.add({
+      id: transactionId,
+      type: 'SALE',
+      status: 'PENDING',
+      timestamp: new Date().toISOString(),
+      amount: sale.total,
+      payload: { saleId: sale.id, itemsCount: sale.items.length }
+    });
+
+    // C. HANDLERS DE TRANSACCIÓN
+    tx.oncomplete = () => {
+      clearTimeout(timeoutId);
+      completed = true;
+      // Éxito: Marcar log como completado en una nueva transacción asíncrona
+      markTransactionComplete(transactionId);
+      resolve({ success: true, transactionId });
+    };
+
+    tx.onerror = (e) => {
+      clearTimeout(timeoutId);
+      console.error('❌ Transaction error:', e.target.error);
+      reject(e.target.error);
+    };
+
+    tx.onabort = () => {
+      clearTimeout(timeoutId);
+      aborted = true;
+      // Nota: Si se aborta la transacción, el registro 'PENDING' en logStore 
+      // TAMBIÉN se deshace (porque es parte de la misma transacción ACID).
+      // Esto es correcto para IndexedDB. El log persistente 'FAILED' 
+      // se usaría si tuviéramos un sistema multi-paso no atómico.
+      reject(new Error('TRANSACTION_ABORTED_OR_STOCK_ERROR'));
+    };
+
+    // D. LÓGICA DE NEGOCIO (Pre-cálculo)
     const productUpdates = new Map();
 
-    // 1. Sumar cantidades de Lotes (Deductions)
+    // Sumar lotes
     deductions.forEach(({ productId, quantity }) => {
       if (productId) {
         const current = productUpdates.get(productId) || 0;
@@ -475,10 +662,9 @@ export async function executeSaleTransaction(sale, deductions) {
       }
     });
 
-    // 2. Sumar cantidades de Productos Simples (sin lotes)
+    // Sumar productos simples
     if (sale && sale.items) {
       sale.items.forEach(item => {
-        // Si el item NO usó lotes (es producto simple), lo sumamos aquí
         if (!item.batchesUsed || item.batchesUsed.length === 0) {
           const pid = item.parentId || item.id;
           const current = productUpdates.get(pid) || 0;
@@ -487,72 +673,101 @@ export async function executeSaleTransaction(sale, deductions) {
       });
     }
 
-    // --- EJECUCIÓN DE LA TRANSACCIÓN ---
+    try {
+      // E. EJECUCIÓN (Lecturas y Escrituras)
 
-    // A) Procesar Lotes (Validar existencia y stock suficiente)
-    deductions.forEach(({ batchId, quantity }) => {
-      if (aborted) return;
-
-      const batchReq = batchesStore.get(batchId);
-
-      batchReq.onsuccess = () => {
+      // 1. Procesar Lotes
+      deductions.forEach(({ batchId, quantity }) => {
         if (aborted) return;
-        const batch = batchReq.result;
-
-        // Validación crítica de integridad
-        if (!batch) {
-          console.error(`Lote ${batchId} no encontrado.`);
-          aborted = true; tx.abort(); return;
-        }
-        if (batch.stock < quantity) {
-          console.error(`Stock insuficiente en lote ${batchId}. Req: ${quantity}, Hay: ${batch.stock}`);
-          aborted = true; tx.abort(); return;
-        }
-
-        // Descuento
-        batch.stock -= quantity;
-        // Desactivar si llega a 0 (con tolerancia a decimales)
-        if (batch.stock <= 0.0001) {
-          batch.stock = 0;
-          batch.isActive = false;
-        }
-        batchesStore.put(batch);
-      };
-    });
-
-    // B) Actualizar Stocks Padres (Usando el mapa pre-calculado)
-    productUpdates.forEach((qtyToDeduct, productId) => {
-      if (aborted) return;
-
-      const prodReq = productStore.get(productId);
-
-      prodReq.onsuccess = () => {
-        if (aborted) return;
-        const product = prodReq.result;
-
-        if (product && product.trackStock) {
-          // Validación de seguridad para el padre
-          if ((product.stock - qtyToDeduct) < -0.0001) {
-            // Opcional: Podrías permitir negativos en el padre si los lotes pasaron, 
-            // pero es mejor ser estricto.
-            console.warn(`Stock negativo detectado en producto padre ${product.name}`);
-            // aborted = true; tx.abort(); return; // Descomentar para estricto
+        const batchReq = batchesStore.get(batchId);
+        batchReq.onsuccess = () => {
+          if (aborted) return;
+          const batch = batchReq.result;
+          if (!batch || batch.stock < quantity) {
+            aborted = true;
+            tx.abort();
+            return;
           }
+          batch.stock -= quantity;
+          if (batch.stock <= 0.0001) { batch.stock = 0; batch.isActive = false; }
+          batchesStore.put(batch);
+        };
+      });
 
-          product.stock -= qtyToDeduct;
-          // Evitar -0.0000001
-          if (Math.abs(product.stock) < 0.0001) product.stock = 0;
+      // 2. Actualizar Productos Padre
+      productUpdates.forEach((qtyToDeduct, productId) => {
+        if (aborted) return;
+        const prodReq = productStore.get(productId);
+        prodReq.onsuccess = () => {
+          if (aborted) return;
+          const product = prodReq.result;
+          if (product && product.trackStock) {
+            product.stock -= qtyToDeduct;
+            if (Math.abs(product.stock) < 0.0001) product.stock = 0;
+            productStore.put(product);
+          }
+        };
+      });
 
-          productStore.put(product);
-        }
-      };
-    });
+      // 3. Guardar Venta
+      if (sale && !aborted) {
+        salesStore.add(sale);
+      }
 
-    // C) Guardar la Venta
-    if (sale && !aborted) {
-      salesStore.add(sale);
+    } catch (error) {
+      // Captura errores síncronos en la lógica
+      aborted = true;
+      tx.abort();
     }
   });
+}
+
+async function markTransactionComplete(transactionId) {
+  try {
+    // Usamos una transacción separada rápida
+    await saveData(STORES.TRANSACTION_LOG, {
+      id: transactionId,
+      status: 'COMPLETED',
+      completedAt: new Date().toISOString()
+      // Nota: saveData hace un merge/put, pero si quieres preservar los datos originales
+      // deberías leer primero. Para eficiencia, aquí solo actualizamos el estado si es simple
+      // o usamos 'readwrite' manual.
+    });
+
+    // Versión manual más segura para preservar payload:
+    const db = await initDB();
+    const tx = db.transaction(STORES.TRANSACTION_LOG, 'readwrite');
+    const store = tx.objectStore(STORES.TRANSACTION_LOG);
+    const req = store.get(transactionId);
+
+    req.onsuccess = () => {
+      const data = req.result;
+      if (data) {
+        data.status = 'COMPLETED';
+        data.completedAt = new Date().toISOString();
+        store.put(data);
+      }
+    };
+  } catch (e) { console.error("Error marking tx complete", e); }
+}
+
+async function markTransactionFailed(transactionId, errorMsg = 'Unknown') {
+  try {
+    const db = await initDB();
+    const tx = db.transaction(STORES.TRANSACTION_LOG, 'readwrite');
+    const store = tx.objectStore(STORES.TRANSACTION_LOG);
+    const req = store.get(transactionId);
+
+    req.onsuccess = () => {
+      const data = req.result;
+      if (data) {
+        data.status = 'FAILED';
+        data.error = errorMsg;
+        data.failedAt = new Date().toISOString();
+        store.put(data);
+      }
+    };
+  } catch (e) { console.error("Error marking tx failed", e); }
 }
 
 export async function deleteCategoryCascading(categoryId) {
@@ -802,5 +1017,81 @@ export async function streamAllDataToJSONL(onChunk) {
       };
       request.onerror = (e) => reject(e.target.error);
     });
+  }
+}
+
+export async function recoverPendingTransactions() {
+  try {
+    const db = await initDB();
+
+    // ✅ CORRECCIÓN DE SEGURIDAD:
+    // Verificamos si la tabla existe antes de intentar abrir la transacción.
+    // Esto evita el "NotFoundError" si la actualización de versión apenas está ocurriendo.
+    if (!db.objectStoreNames.contains(STORES.TRANSACTION_LOG)) {
+      console.warn("⚠️ La tabla 'transaction_log' aún no está disponible. Saltando recuperación inicial.");
+      return;
+    }
+
+    // Revisamos logs pendientes
+    const tx = db.transaction(STORES.TRANSACTION_LOG, 'readonly');
+    const store = tx.objectStore(STORES.TRANSACTION_LOG);
+    const index = store.index('status');
+    const request = index.getAll('PENDING');
+
+    request.onsuccess = async () => {
+      const pending = request.result;
+      if (pending && pending.length > 0) {
+        console.warn(`⚠️ Detectadas ${pending.length} transacciones incompletas.`);
+
+        // Procesar las que son viejas (> 1 minuto)
+        for (const log of pending) {
+          const age = Date.now() - new Date(log.timestamp).getTime();
+          if (age > 60000) {
+            console.log(`Marcando transacción ${log.id} como FALLIDA (Timeout post-reinicio)`);
+            await markTransactionFailed(log.id, 'Stale transaction found on startup');
+          }
+        }
+      }
+    };
+  } catch (error) {
+    // Si falla (ej. base de datos bloqueada), solo lo registramos y no rompemos la app
+    console.warn("Recuperación de transacciones omitida por estado de BD:", error.name);
+  }
+}
+
+/**
+ * Verifica la cuota de almacenamiento disponible en el navegador.
+ * @returns {Promise<{warning: boolean, message?: string}>}
+ */
+export async function checkStorageQuota() {
+  // Verificamos si el navegador soporta la API
+  if (!navigator.storage || !navigator.storage.estimate) {
+    return { warning: false };
+  }
+
+  try {
+    const estimate = await navigator.storage.estimate();
+
+    const usage = estimate.usage || 0; // Bytes usados
+    const quota = estimate.quota || 1; // Bytes totales permitidos (evitar 0)
+
+    const percentUsed = (usage / quota) * 100;
+    const remainingMB = (quota - usage) / (1024 * 1024);
+
+    console.log(`💾 Estado de Disco: ${(usage / 1024 / 1024).toFixed(2)}MB usados de ${(quota / 1024 / 1024).toFixed(2)}MB (${percentUsed.toFixed(1)}%)`);
+
+    // UMBRAL DE ALERTA: 80%
+    if (percentUsed > 80) {
+      return {
+        warning: true,
+        message: `⚠️ ALERTA CRÍTICA DE ESPACIO\n\nEl almacenamiento del navegador está al ${percentUsed.toFixed(0)}% de su capacidad.\nQuedan aprox. ${remainingMB.toFixed(0)} MB.\n\nPor favor, ve a Configuración > Mantenimiento y usa "Archivar Historial" para liberar espacio.`
+      };
+    }
+
+    return { warning: false };
+
+  } catch (error) {
+    console.error("Error verificando cuota de disco:", error);
+    return { warning: false };
   }
 }

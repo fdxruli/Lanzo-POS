@@ -1,6 +1,6 @@
 // src/pages/CustomersPage.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, deleteData, loadDataPaginated, STORES } from '../services/database';
+import {saveDataSafe, deleteDataSafe, loadDataPaginated, STORES } from '../services/database';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
@@ -8,9 +8,10 @@ import AbonoModal from '../components/common/AbonoModal';
 import { useCaja } from '../hooks/useCaja';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
+import { useNavigate } from 'react-router-dom';
 
 export default function CustomersPage() {
-  // ... (estados existentes sin cambios) ...
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('add-customer');
   const [customers, setCustomers] = useState([]);
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -68,24 +69,51 @@ export default function CustomersPage() {
     }
   };
 
+  const handleActionableError = (result) => {
+    const { message, details } = result.error;
+    
+    // Opción 1: Sugerir Recarga (DB Bloqueada/Desconectada)
+    if (details.actionable === 'SUGGEST_RELOAD') {
+      showMessageModal(message, () => window.location.reload(), { 
+          confirmButtonText: 'Recargar Página' 
+      });
+    } 
+    // Opción 2: Sugerir Respaldo (Disco Lleno)
+    else if (details.actionable === 'SUGGEST_BACKUP') {
+      // CORREGIDO: Usamos navigate y corregimos la ruta '/configuracion'
+      showMessageModal(message, () => navigate('/configuracion'), { 
+          confirmButtonText: 'Ir a Respaldar' 
+      });
+    } 
+    // Opción 3: Error Genérico
+    else {
+      showMessageModal(message, null, { type: 'error' });
+    }
+  };
+
   const handleSaveCustomer = async (customerData) => {
     try {
       const id = editingCustomer ? editingCustomer.id : `customer-${Date.now()}`;
       const existingDebt = editingCustomer ? editingCustomer.debt : 0;
       const dataToSave = { ...customerData, id, debt: existingDebt };
 
-      await saveData(STORES.CUSTOMERS, dataToSave);
+      // --- CAMBIO: Usamos versión Segura ---
+      const result = await saveDataSafe(STORES.CUSTOMERS, dataToSave);
+
+      if (!result.success) {
+        handleActionableError(result);
+        return; // Detenemos si falló
+      }
+      // ------------------------------------
 
       setEditingCustomer(null);
       setActiveTab('view-customers');
-
-      // Recargar lista al inicio para ver el nuevo
       loadInitialCustomers();
       showMessageModal('¡Cliente guardado con éxito!');
 
     } catch (error) {
       console.error('Error al guardar cliente:', error);
-      showMessageModal('Error al guardar cliente.');
+      showMessageModal('Error inesperado al guardar cliente.');
     }
   };
 
@@ -107,10 +135,18 @@ export default function CustomersPage() {
           ...customer,
           deletedTimestamp: new Date().toISOString()
         };
-        await saveData(STORES.DELETED_CUSTOMERS, deletedCustomer);
+         const trashResult = await saveDataSafe(STORES.DELETED_CUSTOMERS, deletedCustomer);
+         if (!trashResult.success) {
+          handleActionableError(trashResult);
+          return;
+         }
       }
 
-      await deleteData(STORES.CUSTOMERS, customerId);
+      const deleteResult = await deleteDataSafe(STORES.CUSTOMERS, customerId);
+      if (!deleteResult.success){
+        handleActionableError(deleteResult);
+        return;
+      }
       loadInitialCustomers();
       showMessageModal('Cliente eliminado.');
     }

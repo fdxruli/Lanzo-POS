@@ -98,13 +98,28 @@ export default function CajaPage() {
     }
   };
 
+  const handleActionableError = (errorObj) => {
+    const { message, details } = errorObj;
+    if (details.actionable === 'SUGGEST_RELOAD') {
+      showMessageModal(message, () => window.location.reload(), { confirmButtonText: 'Recargar Página' });
+    } else {
+      showMessageModal(message, null, { type: 'error' });
+    }
+  };
+
   const handleAuditConfirm = async (montoFisico, comentarios) => {
     const result = await realizarAuditoriaYCerrar(montoFisico, comentarios);
+
     if (result.success) {
       setIsAuditOpen(false);
-      showMessageModal(`✅ Corte realizado con éxito. Se ha iniciado un nuevo turno automáticamente.`);
+      showMessageModal(`✅ Corte realizado con éxito.`);
     } else {
-      showMessageModal(`Error al cerrar caja: ${result.error}`, null, { type: 'error' });
+      // --- CAMBIO: Usamos el helper inteligente ---
+      if (result.error && result.error.details) {
+        handleActionableError(result.error);
+      } else {
+        showMessageModal(`Error al cerrar caja: ${result.error}`, null, { type: 'error' });
+      }
     }
   };
 

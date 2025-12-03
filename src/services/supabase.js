@@ -32,65 +32,65 @@ function getFriendlyDeviceName(userAgent) {
 }
 
 async function getStableDeviceId() {
-  const STORAGE_KEY = 'lanzo_device_id';
-  let existingId = localStorage.getItem(STORAGE_KEY);
-  if (existingId) return existingId;
+    const STORAGE_KEY = 'lanzo_device_id';
+    let existingId = localStorage.getItem(STORAGE_KEY);
+    if (existingId) return existingId;
 
-  try {
-    const fp = await FingerprintJS.load();
-    const result = await fp.get();
-    const newId = result.visitorId;
-    localStorage.setItem(STORAGE_KEY, newId);
-    return newId;
-  } catch (error) {
-    console.error("Error generando fingerprint, usando fallback UUID", error);
-    const fallbackId = `fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    localStorage.setItem(STORAGE_KEY, fallbackId);
-    return fallbackId;
-  }
+    try {
+        const fp = await FingerprintJS.load();
+        const result = await fp.get();
+        const newId = result.visitorId;
+        localStorage.setItem(STORAGE_KEY, newId);
+        return newId;
+    } catch (error) {
+        console.error("Error generando fingerprint, usando fallback UUID", error);
+        const fallbackId = `fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        localStorage.setItem(STORAGE_KEY, fallbackId);
+        return fallbackId;
+    }
 }
 
 // Configuración del Rate Limit
 const RATE_LIMIT_KEY = 'lanzo_license_attempts';
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_TIME = 5 * 60 * 1000; 
+const LOCKOUT_TIME = 5 * 60 * 1000;
 
 function checkRateLimit() {
-  const storedData = localStorage.getItem(RATE_LIMIT_KEY);
-  if (!storedData) return { attempts: 0, lockedUntil: null };
-  const { attempts, lockedUntil } = JSON.parse(storedData);
+    const storedData = localStorage.getItem(RATE_LIMIT_KEY);
+    if (!storedData) return { attempts: 0, lockedUntil: null };
+    const { attempts, lockedUntil } = JSON.parse(storedData);
 
-  if (lockedUntil && new Date().getTime() < lockedUntil) {
-    const remainingSeconds = Math.ceil((lockedUntil - new Date().getTime()) / 1000);
-    throw new Error(`Demasiados intentos. Por favor espera ${Math.ceil(remainingSeconds / 60)} minutos.`);
-  }
+    if (lockedUntil && new Date().getTime() < lockedUntil) {
+        const remainingSeconds = Math.ceil((lockedUntil - new Date().getTime()) / 1000);
+        throw new Error(`Demasiados intentos. Por favor espera ${Math.ceil(remainingSeconds / 60)} minutos.`);
+    }
 
-  if (lockedUntil && new Date().getTime() > lockedUntil) {
-    localStorage.removeItem(RATE_LIMIT_KEY);
-    return { attempts: 0, lockedUntil: null };
-  }
-  return { attempts, lockedUntil };
+    if (lockedUntil && new Date().getTime() > lockedUntil) {
+        localStorage.removeItem(RATE_LIMIT_KEY);
+        return { attempts: 0, lockedUntil: null };
+    }
+    return { attempts, lockedUntil };
 }
 
 function registerFailedAttempt() {
-  const { attempts } = checkRateLimit();
-  const newAttempts = attempts + 1;
-  let newData = { attempts: newAttempts, lockedUntil: null };
-  if (newAttempts >= MAX_ATTEMPTS) {
-    newData.lockedUntil = new Date().getTime() + LOCKOUT_TIME;
-  }
-  localStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(newData));
+    const { attempts } = checkRateLimit();
+    const newAttempts = attempts + 1;
+    let newData = { attempts: newAttempts, lockedUntil: null };
+    if (newAttempts >= MAX_ATTEMPTS) {
+        newData.lockedUntil = new Date().getTime() + LOCKOUT_TIME;
+    }
+    localStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(newData));
 }
 
 function resetRateLimit() {
-  localStorage.removeItem(RATE_LIMIT_KEY);
+    localStorage.removeItem(RATE_LIMIT_KEY);
 }
 
 // --- Funciones Principales ---
 
 export const activateLicense = async function (licenseKey) {
     try {
-        checkRateLimit(); 
+        checkRateLimit();
         const deviceFingerprint = await getStableDeviceId();
         const friendlyName = getFriendlyDeviceName(navigator.userAgent);
         const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
@@ -120,7 +120,7 @@ export const activateLicense = async function (licenseKey) {
             console.error('❌ Error activando licencia:', error);
             registerFailedAttempt();
         }
-        return { valid: false, message: error.message }; 
+        return { valid: false, message: error.message };
     }
 };
 
@@ -128,12 +128,12 @@ export const revalidateLicense = async function (licenseKeyProp) {
     try {
         let storedLicense = null;
         try {
-             const ls = localStorage.getItem('lanzo_license');
-             if(ls) storedLicense = JSON.parse(ls)?.data;
-        } catch(e){}
+            const ls = localStorage.getItem('lanzo_license');
+            if (ls) storedLicense = JSON.parse(ls)?.data;
+        } catch (e) { }
 
         const licenseKey = licenseKeyProp || storedLicense?.license_key;
-        
+
         if (!licenseKey) return { valid: false, message: 'No license key found' };
 
         const deviceFingerprint = await getStableDeviceId();
@@ -145,27 +145,26 @@ export const revalidateLicense = async function (licenseKeyProp) {
         });
 
         if (error) throw error;
-        
+
         if (!data.valid) {
-             console.warn("Licencia invalidada por el servidor:", data.reason);
+            console.warn("Licencia invalidada por el servidor:", data.reason);
         }
 
         return data;
 
     } catch (error) {
-        console.error('Error revalidando licencia:', error);
-        
-        const errorMsg = error.message ? error.message.toLowerCase() : '';
-        if (
-            errorMsg.includes('failed to fetch') ||
-            errorMsg.includes('network error') ||
-            !navigator.onLine
-        ) {
-            console.log("⚠️ Offline: Saltando validación estricta.");
-            return { valid: true, reason: 'offline_grace', license_key: licenseKeyProp }; 
-        }
-    
-        return { valid: false, message: error.message };
+        console.error('Error de conexión al revalidar (Modo Offline Activado):', error);
+
+        // --- CAMBIO: BLINDAJE TOTAL ---
+        // Ante CUALQUIER error de conexión (timeout, DNS, cambio de red, etc.),
+        // si ya teníamos una licencia, asumimos que sigue siendo válida temporalmente.
+        return {
+            valid: true,
+            reason: 'offline_grace',
+            license_key: licenseKeyProp,
+            // Importante: Marcamos esto para que el store sepa que es data parcial
+            is_fallback: true
+        };
     }
 };
 
@@ -199,7 +198,7 @@ export const getBusinessProfile = async function (licenseKey) {
         });
 
         if (error) throw error;
-        return data; 
+        return data;
     } catch (error) {
         console.error('Error obteniendo perfil:', error);
         return { success: false, message: error.message };
@@ -211,8 +210,8 @@ export const uploadFile = async function (file, type = 'product') {
 
     try {
         const fileExt = file.name.split('.').pop();
-        const fileName = `${type}-${Date.now()}-${Math.floor(Math.random()*1000)}.${fileExt}`;
-        const filePath = `public_uploads/${fileName}`; 
+        const fileName = `${type}-${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
+        const filePath = `public_uploads/${fileName}`;
 
         let { error: uploadError } = await supabaseClient
             .storage
@@ -249,10 +248,10 @@ export const createFreeTrial = async function () {
 
         const deviceFingerprint = await getStableDeviceId();
         const friendlyName = getFriendlyDeviceName(navigator.userAgent);
-        const deviceInfo = { 
-            userAgent: navigator.userAgent, 
+        const deviceInfo = {
+            userAgent: navigator.userAgent,
             platform: navigator.platform,
-            language: navigator.language 
+            language: navigator.language
         };
 
         const { data, error } = await supabaseClient.rpc(
@@ -266,11 +265,11 @@ export const createFreeTrial = async function () {
 
         if (data && data.success) {
             localStorage.setItem('fp', deviceFingerprint);
-            
+
             // --- CORRECCIÓN AQUÍ: ---
             // Si la SQL devuelve 'details', úsalo. Si no (nueva SQL), usa 'data' completo.
             const licenseData = data.details || data;
-            
+
             return { success: true, details: licenseData };
         } else {
             registerFailedAttempt();
@@ -292,14 +291,14 @@ export const getLicenseDevices = async function (licenseKey) {
         if (!licenseKey) return { success: false, message: 'Falta la clave de licencia.' };
 
         const deviceFingerprint = await getStableDeviceId();
-        
+
         const { data, error } = await supabaseClient.rpc('get_license_devices_anon', {
             license_key_param: licenseKey,
             current_fingerprint_param: deviceFingerprint
         });
 
         if (error) throw error;
-        
+
         if (data.success) {
             return { success: true, data: data.data || [] };
         } else {
@@ -329,7 +328,7 @@ export const deactivateDeviceById = async function (deviceId) {
         });
 
         if (error) throw error;
-        return data; 
+        return data;
 
     } catch (error) {
         console.error('Error deactivating device:', error);

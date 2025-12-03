@@ -1,6 +1,6 @@
 // src/hooks/useCaja.js
 import { useState, useEffect, useCallback } from 'react';
-import { loadDataPaginated, saveData, STORES, initDB } from '../services/database';
+import { loadDataPaginated, saveDataSafe, STORES, initDB } from '../services/database';
 import { showMessageModal, roundCurrency, generateID } from '../services/utils';
 
 export function useCaja() {
@@ -64,7 +64,8 @@ export function useCaja() {
       es_auto_apertura: true // Marca para identificar que fue automático
     };
 
-    await saveData(STORES.CAJAS, nuevaCaja);
+    const result = await saveDataSafe(STORES.CAJAS, nuevaCaja);
+    if (!result.success) throw result.error;
     return nuevaCaja;
   };
 
@@ -161,11 +162,10 @@ export function useCaja() {
         detalle_cierre: { ventas_contado: ventasContado, abonos_fiado: abonosFiado, total_teorico: totalTeorico }
       };
 
-      await saveData(STORES.CAJAS, cajaCerrada);
-      
-      // INMEDIATAMENTE ABRIMOS LA SIGUIENTE PARA MANTENER EL FLUJO
-      // (Opcional: Si prefieres que se quede cerrada hasta recargar, quita esta línea)
-      // await autoAbrirCaja(cajaCerrada); 
+      const result = await saveDataSafe(STORES.CAJAS, cajaCerrada);
+      if (!result.success){
+        return { success: false, error: result.error };
+      }
       
       // Recargamos todo el estado
       await cargarEstadoCaja();
@@ -187,12 +187,20 @@ export function useCaja() {
       fecha: new Date().toISOString()
     };
     try {
-      await saveData(STORES.MOVIMIENTOS_CAJA, movimiento);
+      const movResult = await saveDataSafe(STORES.MOVIMIENTOS_CAJA, movimiento);
+      if (!movResult.success){
+        showMessageModal(movResult.error.message);
+        return false;
+      }
       const cajaActualizada = { ...cajaActual };
       if (tipo === 'entrada') cajaActualizada.entradas_efectivo += movimiento.monto;
       else cajaActualizada.salidas_efectivo += movimiento.monto;
 
-      await saveData(STORES.CAJAS, cajaActualizada);
+      const cajaResult = await saveDataSafe(STORES.CAJAS, cajaActualizada);
+      if (!cajaResult.success){
+        showMessageModal("El movimiento se guardo pero no se pudo actualizar el total en caja; " + cajaResult.error.message);
+        return false;
+      }
       setCajaActual(cajaActualizada);
       setMovimientosCaja(prev => [...prev, movimiento]);
       return true;

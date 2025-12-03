@@ -4,7 +4,7 @@ import {
     STORES,
     queryBatchesByProductIdAndActive,
     queryByIndex,
-    executeSaleTransaction
+    executeSaleTransactionSafe
 } from './database';
 import { useStatsStore } from '../store/useStatsStore';
 import { roundCurrency, sendWhatsAppMessage } from './utils';
@@ -50,10 +50,10 @@ export const processSale = async ({
             // 3. Aplicar el precio limpio al objeto
             item.price = safePrice;
         });
-        
+
         // Validar el total global también
         if (isNaN(parseFloat(total)) || parseFloat(total) < 0) {
-             throw new Error("El total de la venta no es válido.");
+            throw new Error("El total de la venta no es válido.");
         }
 
         const uniqueProductIds = new Set();
@@ -150,7 +150,7 @@ export const processSale = async ({
             // --- LÓGICA CORREGIDA ---
             // Calculamos el costo unitario REAL basado en la suma de los lotes consumidos
             const calculatedAvgCost = orderItem.quantity > 0 ? roundCurrency(itemTotalCost / orderItem.quantity) : 0;
-            
+
             // Aplicamos seguridad para evitar NaN o Null en la base de datos
             const finalSafeCost = (isNaN(calculatedAvgCost) || calculatedAvgCost === null) ? 0 : parseFloat(calculatedAvgCost);
 
@@ -186,7 +186,16 @@ export const processSale = async ({
         // EJECUTAMOS TODO JUNTO
         // Si esto falla, no se guarda la venta ni se descuenta el stock.
         try {
-            await executeSaleTransaction(sale, batchesToDeduct);
+            const transactionResult = await executeSaleTransactionSafe(sale, batchesToDeduct);
+            if (!transactionResult.success) {
+                // Caso A: Error de concurrencia (Stock cambió)
+                if (transactionResult.isConcurrencyError) {
+                    return { success: false, errorType: 'RACE_CONDITION', message: "El stock cambió mientras cobrabas. Intenta de nuevo." };
+                }
+
+                // Caso B: Error técnico (Disco lleno, etc.) -> Usamos el mensaje amigable
+                return { success: false, message: transactionResult.error.message };
+            }
         } catch (error) {
             // Manejo de errores de concurrencia
             if (error.message === 'STOCK_CHANGED' || error.message.includes('Transacción abortada')) {
@@ -294,7 +303,8 @@ export const updateDailyStats = async (sale) => {
     let saleProfit = 0;
     sale.items.forEach(item => {
         const cost = item.cost || 0;
-        saleProfit += (item.price - cost) * item.quantity;
+        const profitUnitario = roundCurrency(item.price - cost);
+        saleProfit += roundCurrency(profitUnitario * item.quantity);
     });
 
     // 3. Actualizar acumuladores (Incremental)
