@@ -10,19 +10,19 @@ import toast from 'react-hot-toast';
  * - Si NO hay 'onConfirm', usa un TOAST (rápido y no intrusivo).
  */
 export function showMessageModal(message, onConfirm = null, options = {}) {
-  
+
   // CASO A: Es una Confirmación (Ej: "¿Eliminar cliente?") -> USAR MODAL
   if (typeof onConfirm === 'function') {
     showMessage(message, onConfirm, options);
-    return; 
+    return;
   }
 
   // CASO B: Es solo información -> USAR TOAST
   // Detectamos si es error buscando palabras clave o si pasas options.type
-  const isError = options.type === 'error' || 
-                  message.toLowerCase().includes('error') || 
-                  message.toLowerCase().includes('falló') ||
-                  message.startsWith('⚠️');
+  const isError = options.type === 'error' ||
+    message.toLowerCase().includes('error') ||
+    message.toLowerCase().includes('falló') ||
+    message.startsWith('⚠️');
 
   if (isError) {
     toast.error(message, { duration: 4000 });
@@ -43,34 +43,38 @@ export const generateID = (prefix = '') => {
 };
 
 /**
+ * Convierte un archivo (File/Blob) a una cadena Base64 para guardar en BD local.
+ */
+export const fileToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = (error) => reject(error);
+  });
+};
+
+/**
  * Comprime, recorta a cuadrado y convierte una imagen a WebP.
- * @param {File} file El archivo de imagen a comprimir.
- * @param {number} targetSize El tamaño (ancho y alto) de la imagen resultante.
- * @param {number} quality La calidad de WebP (0 a 1). 0.7 es un buen balance.
- * @returns {Promise<File>} Una promesa que resuelve con el nuevo archivo de imagen .webp.
+ * OPTIMIZADO PARA USO LOCAL: Calidad 0.6 y 300px es suficiente para tarjetas.
  */
 export const compressImage = (
   file,
-  targetSize = 300,
-  quality = 0.7
+  targetSize = 300, // 300px es perfecto para tarjetas de POS
+  quality = 0.6     // 60% calidad en WebP es muy ligero y se ve bien
 ) => {
   return new Promise((resolve, reject) => {
-    // 1. Validación temprana
     if (!file || !file.type.startsWith('image/')) {
-        reject(new Error("El archivo no es una imagen válida."));
-        return;
+      reject(new Error("El archivo no es una imagen válida."));
+      return;
     }
 
     const img = new Image();
-    
-    // Crear URL temporal
     const objectUrl = URL.createObjectURL(file);
     img.src = objectUrl;
 
     img.onload = () => {
-      // 2. Yield to Event Loop:
-      // Usamos setTimeout para sacar el procesamiento pesado de la pila actual.
-      // Esto permite que React renderice el spinner de "Cargando..." antes de que el CPU se sature.
+      // Usamos un pequeño delay para no congelar la UI
       setTimeout(() => {
         try {
           const canvas = document.createElement('canvas');
@@ -81,7 +85,7 @@ export const compressImage = (
           let sourceWidth = img.width;
           let sourceHeight = img.height;
 
-          // Lógica de recorte cuadrado (Center Crop)
+          // Recorte cuadrado centrado (Center Crop)
           if (sourceWidth > sourceHeight) {
             sourceX = (sourceWidth - sourceHeight) / 2;
             sourceWidth = sourceHeight;
@@ -93,26 +97,26 @@ export const compressImage = (
           canvas.width = targetSize;
           canvas.height = targetSize;
 
-          // Operación costosa en CPU (Draw)
+          // Dibujar imagen redimensionada
           ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetSize, targetSize);
 
-          // Operación costosa en CPU (Encode)
+          // Convertir a WebP (Formato de nueva generación, muy ligero)
           canvas.toBlob(
             (blob) => {
-              // Limpieza de memoria
               URL.revokeObjectURL(objectUrl);
 
               if (!blob) {
-                reject(new Error("Error al codificar la imagen a WebP."));
+                reject(new Error("Error al procesar imagen."));
                 return;
               }
 
+              // Creamos un nuevo archivo WebP
               const newFileName = file.name.replace(/\.[^/.]+$/, "") + '.webp';
               const webpFile = new File([blob], newFileName, {
                 type: 'image/webp',
                 lastModified: Date.now()
               });
-              
+
               resolve(webpFile);
             },
             'image/webp',
@@ -120,14 +124,14 @@ export const compressImage = (
           );
         } catch (err) {
           URL.revokeObjectURL(objectUrl);
-          reject(new Error("Error durante el procesamiento de imagen."));
+          reject(new Error("Error durante el procesamiento."));
         }
-      }, 50); // 50ms de pausa es imperceptible para el usuario pero suficiente para la UI
+      }, 50);
     };
 
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error("Error al cargar el archivo de imagen original."));
+      reject(new Error("Error al cargar la imagen."));
     };
   });
 };

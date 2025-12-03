@@ -1,4 +1,12 @@
-import { saveData, saveBulk, loadData, STORES, initDB, streamStoreToCSV, streamAllDataToJSONL } from './database';
+import {
+  saveData,
+  saveBulkSafe,
+  loadData,
+  STORES,
+  initDB,
+  streamStoreToCSV,
+  streamAllDataToJSONL
+} from './database';
 import { generateID } from './utils';
 
 // Encabezados para el CSV de Inventario
@@ -33,7 +41,7 @@ export const downloadInventorySmart = async () => {
       (product) => {
         // --- LOGICA POR FILA ---
         const catName = catMap.get(product.categoryId) || '';
-        
+
         // Nota: Confiamos en que 'product.stock' está sincronizado. 
         // Si usas lotes, asegúrate de correr "Sincronizar Stock" en Configuración antes.
         return [
@@ -65,17 +73,17 @@ export const downloadInventorySmart = async () => {
     const date = new Date().toISOString().split('T')[0];
     const blob = new Blob(fileParts, { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    
+
     const link = document.createElement("a");
     link.href = url;
     link.setAttribute("download", `inventario_lanzo_${date}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     // Limpieza de memoria
     URL.revokeObjectURL(url);
-    
+
     return true;
 
   } catch (error) {
@@ -102,7 +110,7 @@ export const downloadSalesSmart = async () => {
         const d = new Date(sale.timestamp);
         const dateStr = d.toLocaleDateString();
         const timeStr = d.toLocaleTimeString();
-        
+
         // Resumen de items
         const itemsSummary = sale.items.map(i => `${i.quantity}x ${i.name}`).join(' | ');
         const clientText = sale.customerId ? 'Registrado' : 'Público General';
@@ -125,7 +133,7 @@ export const downloadSalesSmart = async () => {
     const date = new Date().toISOString().split('T')[0];
     const blob = new Blob(fileParts, { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    
+
     const link = document.createElement("a");
     link.href = url;
     link.setAttribute("download", `reporte_ventas_${date}.csv`);
@@ -167,8 +175,8 @@ export const processImport = async (csvContent) => {
 
     const row = {};
     headers.forEach((header, index) => {
-      if(values[index] !== undefined) {
-          row[header.trim()] = values[index];
+      if (values[index] !== undefined) {
+        row[header.trim()] = values[index];
       }
     });
 
@@ -190,7 +198,7 @@ export const processImport = async (csvContent) => {
 
       const stock = parseFloat(row.stock) || 0;
       const cost = parseFloat(row.cost) || 0;
-      
+
       const product = {
         id: newId,
         name: row.name,
@@ -208,8 +216,8 @@ export const processImport = async (csvContent) => {
         presentation: row.presentation || null,
         isActive: true,
         createdAt: new Date().toISOString(),
-        trackStock: true, 
-        stock: stock,     
+        trackStock: true,
+        stock: stock,
         batchManagement: { enabled: true, selectionStrategy: 'fifo' },
         image: null
       };
@@ -237,17 +245,35 @@ export const processImport = async (csvContent) => {
     }
   }
 
-  // Guardado en lotes (Bulk)
+  let successCount = 0;
+
+  // 1. Guardar Productos (Safe)
   if (productsToSave.length > 0) {
-    await saveBulk(STORES.MENU, productsToSave);
+    const result = await saveBulkSafe(STORES.MENU, productsToSave);
+
+    if (result.success) {
+      successCount = productsToSave.length;
+    } else {
+      console.error("Error importando productos:", result.error);
+      errors.push(`FATAL: No se pudieron guardar los productos. ${result.error.message}`);
+      // Si fallan los productos, no intentamos guardar los lotes para evitar inconsistencia
+      return { success: false, importedCount: 0, errors };
+    }
   }
+
+  // 2. Guardar Lotes (Safe)
   if (batchesToSave.length > 0) {
-    await saveBulk(STORES.PRODUCT_BATCHES, batchesToSave);
+    const batchResult = await saveBulkSafe(STORES.PRODUCT_BATCHES, batchesToSave);
+
+    if (!batchResult.success) {
+      console.error("Error importando lotes:", batchResult.error);
+      errors.push(`ADVERTENCIA: Los productos se crearon, pero falló el registro de stock inicial (Lotes). Error: ${batchResult.error.message}`);
+    }
   }
 
   return {
     success: true,
-    importedCount: productsToSave.length,
+    importedCount: successCount,
     errors
   };
 };
@@ -337,14 +363,14 @@ export const downloadBackupSmart = async () => {
           accept: { 'application/json': ['.jsonl'] },
         }],
       });
-      
+
       const writable = await handle.createWritable();
-      
+
       // Aquí ocurre la magia: escribimos directo al disco conforme leemos de la BD
       await streamAllDataToJSONL(async (chunkString) => {
         await writable.write(chunkString);
       });
-      
+
       await writable.close();
       return true; // Éxito
     } catch (err) {
@@ -363,7 +389,7 @@ export const downloadBackupSmart = async () => {
 
   const blob = new Blob(parts, { type: 'application/x-jsonlines;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  
+
   const link = document.createElement("a");
   link.href = url;
   link.setAttribute("download", fileName);
@@ -371,6 +397,6 @@ export const downloadBackupSmart = async () => {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  
+
   return true;
 };

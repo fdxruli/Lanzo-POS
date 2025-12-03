@@ -1,14 +1,13 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { saveDataSafe, deleteDataSafe, saveBatchAndSyncProductSafe, loadData, saveData, deleteData, saveBulk, queryByIndex, STORES, deleteCategoryCascading, saveBatchAndSyncProduct } from '../services/database';
-import { showMessageModal, generateID } from '../services/utils';
+import { showMessageModal, generateID, fileToBase64 } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
 import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
-import { uploadFile } from '../services/supabase';
-// --- CAMBIO: Usamos el store especializado ---
+
 import { useProductStore } from '../store/useProductStore';
 import { useStatsStore } from '../store/useStatsStore';
 
@@ -122,9 +121,18 @@ export default function ProductsPage() {
         setIsLoading(true);
         try {
             let finalImage = productData.image;
-            if (productData.image && productData.image instanceof File) {
-                finalImage = await uploadFile(productData.image, 'product');
-                if (!finalImage) finalImage = null;
+
+            // LÓGICA DE IMAGEN LOCAL:
+            // Si viene un archivo (File) nuevo, lo convertimos a Base64 (texto)
+            // para guardarlo en IndexedDB y NO subirlo a Supabase.
+            if (productData.image instanceof File) {
+                // El archivo ya viene comprimido en WebP desde ProductForm gracias a utils.js
+                finalImage = await fileToBase64(productData.image);
+            } 
+            // Si no es archivo, mantenemos lo que ya tenía (puede ser null o un base64 viejo)
+            else if (!productData.image && editingProduct?.image) {
+               // Si el usuario no seleccionó nada nuevo, mantenemos la anterior
+               finalImage = editingProduct.image;
             }
 
             let valueDifference = 0;
@@ -134,10 +142,9 @@ export default function ProductsPage() {
                 const updatedProduct = {
                     ...editingProduct,
                     ...productData,
-                    image: finalImage || editingProduct.image,
+                    image: finalImage, // Guardamos la cadena Base64
                     updatedAt: new Date().toISOString()
                 };
-                // GUARDADO SEGURO
                 result = await saveDataSafe(STORES.MENU, updatedProduct);
             } else {
                 const newId = generateID('prod');
@@ -145,16 +152,16 @@ export default function ProductsPage() {
                     ...productData,
                     id: newId,
                     stock: 0,
-                    image: finalImage,
+                    image: finalImage, // Guardamos la cadena Base64
                     isActive: true,
                     createdAt: new Date().toISOString(),
                     batchManagement: { enabled: true, selectionStrategy: 'fifo' },
                 };
 
-                // GUARDADO SEGURO
                 result = await saveDataSafe(STORES.MENU, newProduct);
 
                 if (result.success) {
+                    // Lógica de stock inicial (Igual que antes)
                     const initialCost = productData.cost ? parseFloat(productData.cost) : 0;
                     const initialStock = productData.stock ? parseFloat(productData.stock) : 0;
                     const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
@@ -169,39 +176,26 @@ export default function ProductsPage() {
                             createdAt: new Date().toISOString(),
                             trackStock: true,
                             isActive: true,
-                            notes: "Stock Inicial (Registro Rápido)",
+                            notes: "Stock Inicial",
                             sku: null,
                             attributes: null
                         };
-                        // GUARDADO DE LOTE SEGURO
                         const batchRes = await saveBatchAndSyncProductSafe(initialBatch);
-                        if (!batchRes.success) {
-                            // Si falla el lote, mostramos el error pero no bloqueamos todo el producto
-                            handleActionableError(batchRes);
-                        } else {
-                            valueDifference = initialCost * initialStock;
-                        }
+                        if (batchRes.success) valueDifference = initialCost * initialStock;
                     }
                 }
             }
 
-            // --- VERIFICACIÓN DE ÉXITO ---
             if (result.success) {
                 await refreshData();
-                if (valueDifference > 0) {
-                    await adjustInventoryValue(valueDifference);
-                }
+                if (valueDifference > 0) await adjustInventoryValue(valueDifference);
                 
                 showMessageModal(editingProduct ? '¡Actualizado exitosamente!' : '¡Producto creado exitosamente!');
-                
                 setEditingProduct(null);
-                if (productData.productType === 'ingredient') {
-                    setActiveTab('ingredients');
-                } else {
-                    setActiveTab('view-products');
-                }
+                
+                if (productData.productType === 'ingredient') setActiveTab('ingredients');
+                else setActiveTab('view-products');
             } else {
-                // MANEJO DE ERROR TIPADO
                 handleActionableError(result);
             }
 

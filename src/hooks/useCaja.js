@@ -1,14 +1,14 @@
 // src/hooks/useCaja.js
 import { useState, useEffect, useCallback } from 'react';
-import { loadDataPaginated, saveDataSafe, STORES, initDB } from '../services/database';
 import { showMessageModal, roundCurrency, generateID } from '../services/utils';
+import { loadDataPaginated, saveDataSafe, STORES, initDB } from '../services/database';
 
 export function useCaja() {
   const [cajaActual, setCajaActual] = useState(null);
   const [historialCajas, setHistorialCajas] = useState([]);
   const [movimientosCaja, setMovimientosCaja] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // Estado desglosado para el turno
   const [totalesTurno, setTotalesTurno] = useState({
     ventasContado: 0,
@@ -49,7 +49,7 @@ export function useCaja() {
   // --- LÓGICA DE APERTURA INTELIGENTE ---
   const autoAbrirCaja = async (ultimaCajaCerrada) => {
     const montoHeredado = ultimaCajaCerrada ? ultimaCajaCerrada.monto_cierre : 0;
-    
+
     const nuevaCaja = {
       id: generateID('caja'),
       fecha_apertura: new Date().toISOString(),
@@ -126,9 +126,18 @@ export function useCaja() {
   const ajustarMontoInicial = async (nuevoMonto) => {
     if (!cajaActual) return;
     const cajaActualizada = { ...cajaActual, monto_inicial: parseFloat(nuevoMonto) };
-    await saveData(STORES.CAJAS, cajaActualizada);
-    setCajaActual(cajaActualizada);
-    showMessageModal("✅ Fondo inicial ajustado.");
+
+    // --- REFACTORIZACIÓN A SAFE ---
+    const result = await saveDataSafe(STORES.CAJAS, cajaActualizada);
+
+    if (result.success) {
+      setCajaActual(cajaActualizada);
+      showMessageModal("✅ Fondo inicial ajustado.");
+    } else {
+      // Manejo seguro del error
+      const msg = result.error?.message || "No se pudo actualizar el fondo.";
+      showMessageModal(`Error: ${msg}`);
+    }
   };
 
   const calcularTotalTeorico = async () => {
@@ -163,10 +172,10 @@ export function useCaja() {
       };
 
       const result = await saveDataSafe(STORES.CAJAS, cajaCerrada);
-      if (!result.success){
+      if (!result.success) {
         return { success: false, error: result.error };
       }
-      
+
       // Recargamos todo el estado
       await cargarEstadoCaja();
 
@@ -188,7 +197,7 @@ export function useCaja() {
     };
     try {
       const movResult = await saveDataSafe(STORES.MOVIMIENTOS_CAJA, movimiento);
-      if (!movResult.success){
+      if (!movResult.success) {
         showMessageModal(movResult.error.message);
         return false;
       }
@@ -197,7 +206,7 @@ export function useCaja() {
       else cajaActualizada.salidas_efectivo += movimiento.monto;
 
       const cajaResult = await saveDataSafe(STORES.CAJAS, cajaActualizada);
-      if (!cajaResult.success){
+      if (!cajaResult.success) {
         showMessageModal("El movimiento se guardo pero no se pudo actualizar el total en caja; " + cajaResult.error.message);
         return false;
       }

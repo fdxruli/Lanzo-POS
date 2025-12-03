@@ -1,6 +1,6 @@
 // src/pages/OrdersPage.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, STORES, getOrdersSince } from '../services/database';
+import { loadData, saveDataSafe, STORES, getOrdersSince } from '../services/database';
 import { showMessageModal } from '../services/utils';
 import './OrderPage.css';
 
@@ -49,16 +49,19 @@ export default function OrdersPage() {
 
     const handleAdvanceStatus = async (order) => {
         const nextStatus = order.fulfillmentStatus === 'pending' ? 'ready' : 'completed';
-        try {
-            const updatedOrder = { ...order, fulfillmentStatus: nextStatus };
-            await saveData(STORES.SALES, updatedOrder);
+        const updatedOrder = { ...order, fulfillmentStatus: nextStatus };
+
+        // CAMBIO: saveDataSafe
+        const result = await saveDataSafe(STORES.SALES, updatedOrder);
+
+        if (result.success) {
             if (filter !== 'all') {
                 setOrders(prev => prev.filter(o => o.timestamp !== order.timestamp));
             } else {
                 fetchOrders();
             }
-        } catch (error) {
-            showMessageModal('Error al actualizar el pedido');
+        } else {
+            showMessageModal(`Error al actualizar: ${result.error?.message}`);
         }
     };
 
@@ -66,22 +69,20 @@ export default function OrdersPage() {
     const handleCancelOrder = async (order) => {
         if (!window.confirm('¿Seguro que deseas CANCELAR este pedido?')) return;
 
-        try {
-            const updatedOrder = { ...order, fulfillmentStatus: 'cancelled' };
-            await saveData(STORES.SALES, updatedOrder);
+        const updatedOrder = { ...order, fulfillmentStatus: 'cancelled' };
 
-            // Nota: Aquí podrías agregar lógica para devolver stock si quisieras,
-            // pero por ahora solo marcamos el estado.
+        // CAMBIO: saveDataSafe
+        const result = await saveDataSafe(STORES.SALES, updatedOrder);
 
+        if (result.success) {
             if (filter !== 'all') {
                 setOrders(prev => prev.filter(o => o.timestamp !== order.timestamp));
             } else {
                 fetchOrders();
             }
             showMessageModal('Pedido cancelado.');
-        } catch (error) {
-            console.error(error);
-            showMessageModal('Error al cancelar.');
+        } else {
+            showMessageModal(`Error al cancelar: ${result.error?.message}`);
         }
     };
 

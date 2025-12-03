@@ -1,6 +1,5 @@
 // src/pages/CustomersPage.jsx
 import React, { useState, useEffect } from 'react';
-import {saveDataSafe, deleteDataSafe, loadDataPaginated, STORES } from '../services/database';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
@@ -9,6 +8,13 @@ import { useCaja } from '../hooks/useCaja';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useNavigate } from 'react-router-dom';
+import {
+  saveDataSafe,
+  deleteDataSafe,
+  loadDataPaginated,
+  loadData,
+  STORES
+} from '../services/database';
 
 export default function CustomersPage() {
   const navigate = useNavigate();
@@ -71,20 +77,20 @@ export default function CustomersPage() {
 
   const handleActionableError = (result) => {
     const { message, details } = result.error;
-    
+
     // Opción 1: Sugerir Recarga (DB Bloqueada/Desconectada)
     if (details.actionable === 'SUGGEST_RELOAD') {
-      showMessageModal(message, () => window.location.reload(), { 
-          confirmButtonText: 'Recargar Página' 
+      showMessageModal(message, () => window.location.reload(), {
+        confirmButtonText: 'Recargar Página'
       });
-    } 
+    }
     // Opción 2: Sugerir Respaldo (Disco Lleno)
     else if (details.actionable === 'SUGGEST_BACKUP') {
       // CORREGIDO: Usamos navigate y corregimos la ruta '/configuracion'
-      showMessageModal(message, () => navigate('/configuracion'), { 
-          confirmButtonText: 'Ir a Respaldar' 
+      showMessageModal(message, () => navigate('/configuracion'), {
+        confirmButtonText: 'Ir a Respaldar'
       });
-    } 
+    }
     // Opción 3: Error Genérico
     else {
       showMessageModal(message, null, { type: 'error' });
@@ -135,15 +141,15 @@ export default function CustomersPage() {
           ...customer,
           deletedTimestamp: new Date().toISOString()
         };
-         const trashResult = await saveDataSafe(STORES.DELETED_CUSTOMERS, deletedCustomer);
-         if (!trashResult.success) {
+        const trashResult = await saveDataSafe(STORES.DELETED_CUSTOMERS, deletedCustomer);
+        if (!trashResult.success) {
           handleActionableError(trashResult);
           return;
-         }
+        }
       }
 
       const deleteResult = await deleteDataSafe(STORES.CUSTOMERS, customerId);
-      if (!deleteResult.success){
+      if (!deleteResult.success) {
         handleActionableError(deleteResult);
         return;
       }
@@ -180,26 +186,33 @@ export default function CustomersPage() {
     try {
       const concepto = `Abono de cliente: ${customer.name}`;
 
-      // 1. Intentamos registrar el dinero en la caja
+      // 1. Registrar en caja (existente)
       const movimientoExitoso = await registrarMovimiento('entrada', amount, concepto);
-
       if (!movimientoExitoso) {
         showMessageModal('Error: No se pudo registrar en caja (¿Caja cerrada?).');
-        // ✅ MEJORA: Cerramos el modal para que el usuario pueda ir a abrir la caja
         handleCloseModals();
         return;
       }
 
-      // 2. Cargamos y actualizamos al cliente
+      // 2. Cargar cliente (usamos loadData normal porque es lectura simple)
       const customerData = await loadData(STORES.CUSTOMERS, customer.id);
       const deudaAnterior = customerData.debt || 0;
-
-      // ✅ MEJORA: Math.max evita deudas negativas si el cálculo falla
       const nuevaDeuda = Math.max(0, deudaAnterior - amount);
-
       customerData.debt = nuevaDeuda;
 
-      await saveData(STORES.CUSTOMERS, customerData);
+      // 3. --- REFACTORIZACIÓN A SAFE ---
+      const result = await saveDataSafe(STORES.CUSTOMERS, customerData);
+
+      if (!result.success) {
+        // Usamos tu helper de errores accionables si existe, o mensaje directo
+        if (result.error && result.error.details) {
+          handleActionableError(result); // Reutilizamos tu función de manejo de errores
+        } else {
+          showMessageModal(`Error al guardar el abono: ${result.error?.message || 'Desconocido'}`);
+        }
+        handleCloseModals();
+        return;
+      }
 
       showMessageModal('¡Abono registrado exitosamente!');
       handleCloseModals();

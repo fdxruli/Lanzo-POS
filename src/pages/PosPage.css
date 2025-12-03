@@ -23,8 +23,13 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 0 16px 90px 16px; /* Solo padding lateral y espacio para barra flotante */
+  padding: 0 16px 90px 16px;
+  /* Solo padding lateral y espacio para barra flotante */
   height: 100%;
+}
+
+.pos-grid .pos-order-container {
+  display: none;
 }
 
 /* ========================================
@@ -42,7 +47,7 @@
   color: white;
   padding: 16px 20px;
   border-radius: 16px;
-  box-shadow: 
+  box-shadow:
     0 4px 20px rgba(0, 196, 140, 0.3),
     0 8px 40px rgba(0, 0, 0, 0.2);
   display: flex;
@@ -58,7 +63,7 @@
 
 .floating-cart-bar:active {
   transform: translateX(-50%) scale(0.96);
-  box-shadow: 
+  box-shadow:
     0 2px 10px rgba(0, 196, 140, 0.3),
     0 4px 20px rgba(0, 0, 0, 0.15);
 }
@@ -99,6 +104,7 @@
     transform: translate(-50%, 120px);
     opacity: 0;
   }
+
   to {
     transform: translate(-50%, 0);
     opacity: 1;
@@ -144,6 +150,7 @@
    ======================================== */
 
 @media (min-width: 1024px) {
+
   /* Ocultar barra flotante en escritorio */
   .floating-cart-bar {
     display: none !important;
@@ -152,7 +159,8 @@
   /* Layout que ocupa toda la pantalla disponible */
   .pos-page-layout {
     /* Ajusta este cálculo según tu navbar/header */
-    height: calc(100vh - 60px); /* Solo resta la altura del navbar superior */
+    height: calc(100vh - 60px);
+    /* Solo resta la altura del navbar superior */
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -170,17 +178,24 @@
   /* Grid de dos columnas - OCUPA TODO EL ESPACIO */
   .pos-grid {
     display: grid;
-    grid-template-columns: 1fr 440px; /* Resumen más ancho */
+    grid-template-columns: 1fr 440px;
+    /* Resumen más ancho */
     gap: 20px;
     flex: 1;
     min-height: 0;
     height: 100%;
-    padding: 0 24px 24px 24px; /* Solo padding lateral y abajo */
+    padding: 0 24px 24px 24px;
+    /* Solo padding lateral y abajo */
     overflow: hidden;
   }
 
+  .pos-grid .pos-order-container {
+    display: flex;
+    flex-direction: column;
+  }
+
   /* Las columnas deben ocupar toda la altura */
-  .pos-grid > * {
+  .pos-grid>* {
     height: 100%;
     max-height: 100%;
     display: flex;
@@ -205,7 +220,8 @@
   }
 
   .pos-grid {
-    grid-template-columns: 1fr 500px; /* Resumen aún más ancho */
+    grid-template-columns: 1fr 500px;
+    /* Resumen aún más ancho */
     gap: 24px;
     padding: 0 32px 32px 32px;
   }
