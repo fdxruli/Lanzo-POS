@@ -75,7 +75,6 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
               // Lógica de Stock Inteligente
               const isTracked = item.trackStock || item.batchManagement?.enabled;
               
-              // Unidad de Medida
               const unitLabel = item.saleType === 'bulk' 
                 ? (item.bulkData?.purchase?.unit || 'kg') 
                 : 'pza';
@@ -96,7 +95,6 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                     <LazyImage src={item.image} alt={item.name} />
                     
                     <div className="product-item-details">
-                      {/* --- CORRECCIÓN AQUÍ: Usamos la clase específica --- */}
                       <span className="product-item-title" title={item.name}>{item.name}</span>
                       
                       {item.sustancia && (
@@ -128,12 +126,12 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                                     <span style={{ color: 'var(--error-color)', fontWeight: 'bold', fontSize: '0.9rem' }}>AGOTADO</span>
                                 )
                             ) : (
-                                <span style={{ fontStyle: 'italic', color: '#999', fontSize: '0.8rem' }}>Infinito (N/A)</span>
+                                // --- CAMBIO VISUAL AQUÍ ---
+                                <span style={{ fontStyle: 'italic', color: '#999', fontSize: '0.8rem' }}>Sin control</span>
                             )}
                         </p>
                       </div>
 
-                      {/* Alertas Visuales */}
                       {isLowStock && isTracked && item.stock > 0 && <span className="alert-indicator low-stock-indicator">Stock bajo</span>}
                       {isNearingExpiry && <span className="alert-indicator nearing-expiry-indicator">Próximo a caducar</span>}
                     </div>

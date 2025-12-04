@@ -56,8 +56,6 @@ export default function ProductMenu({
 
   // --- HANDLERS ---
   const handleProductClick = (product, isOutOfStock) => {
-    if (isOutOfStock) return;
-
     // 1. Lógica de Variantes (Prioridad alta)
     const useVariants = features.hasVariants && product.batchManagement?.enabled;
 
@@ -99,7 +97,7 @@ export default function ProductMenu({
     // Verificamos si tiene trackStock explícito O si tiene gestión de lotes habilitada (importados por CSV)
     const isTracking = item.trackStock || item.batchManagement?.enabled;
 
-    if (!isTracking) return <div className="stock-info no-stock-label">Sin seguimiento</div>;
+    if (!isTracking) return <div className="stock-info no-stock-label" style={{color:'#999'}}>---</div>;
     
     const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
     

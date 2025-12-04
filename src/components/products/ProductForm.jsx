@@ -33,6 +33,9 @@ export default function ProductForm({
     const [imageData, setImageData] = useState(null);
     const [categoryId, setCategoryId] = useState('');
 
+    // --- NUEVO: Interruptor de Control de Stock ---
+    const [doesTrackStock, setDoesTrackStock] = useState(true);
+
     // --- ESTADOS ESPECÍFICOS ---
     const [productType, setProductType] = useState('sellable');
     const [recipe, setRecipe] = useState([]);
@@ -74,6 +77,9 @@ export default function ProductForm({
             setImageData(productToEdit.image || null);
             setCategoryId(productToEdit.categoryId || '');
 
+            // Recuperar configuración de trackStock (por defecto true si no existe)
+            setDoesTrackStock(productToEdit.trackStock !== false);
+
             setProductType(productToEdit.productType || 'sellable');
             setRecipe(productToEdit.recipe || []);
             setPrintStation(productToEdit.printStation || 'kitchen');
@@ -114,6 +120,7 @@ export default function ProductForm({
         setName(''); setBarcode(''); setDescription('');
         setImagePreview(defaultPlaceholder); setImageData(null);
         setCategoryId('');
+        setDoesTrackStock(true); // Reset a Activado
         setProductType('sellable'); setRecipe([]); setPrintStation('kitchen'); setPrepTime(''); setModifiers([]);
         setSaleType('unit'); setWholesaleTiers([]); setMinStock(''); setMaxStock(''); setCost(''); setPrice(''); setSupplier('');
         setSustancia(''); setLaboratorio(''); setRequiresPrescription(false); setPresentation('');
@@ -128,15 +135,12 @@ export default function ProductForm({
             setTimeout(async () => {
                 try {
                     const compressedFile = await compressImage(file);
-
-                    // Liberar la anterior si existe para no acumular basura
                     if (previewUrl && previewUrl.startsWith('blob:')) {
                         URL.revokeObjectURL(previewUrl);
                     }
-
                     const newUrl = URL.createObjectURL(compressedFile);
-                    setPreviewUrl(newUrl); // Guardamos referencia para limpiar luego
-                    setImagePreview(newUrl); // Actualizamos la vista
+                    setPreviewUrl(newUrl);
+                    setImagePreview(newUrl);
                     setImageData(compressedFile);
                 } catch (error) {
                     showMessageModal("Error al procesar imagen", null, { type: 'error' });
@@ -161,52 +165,27 @@ export default function ProductForm({
             }
             showMessageModal('¡Producto encontrado!');
         } else {
-            showMessageModal(`Producto no encontrado.`);
+            showMessageModal(`Producto no encontrado.`, null, { type: 'error' });
         }
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
 
-        // --- 1. LIMPIEZA Y CONVERSIÓN DE DATOS ---
         const finalPrice = parseFloat(price) || 0;
         const finalCost = parseFloat(cost) || 0;
         const finalMinStock = minStock !== '' ? parseFloat(minStock) : null;
         const finalMaxStock = maxStock !== '' ? parseFloat(maxStock) : null;
 
-        // --- 2. VALIDACIONES DE NEGOCIO (REGLAS DE ORO) ---
-
-        // A) Nombre obligatorio
         if (!name || name.trim().length < 2) {
             showMessageModal('⚠️ El nombre es obligatorio (mínimo 2 letras).', null, { type: 'error' });
             return;
         }
 
-        // B) Precios Negativos
         if (finalPrice < 0) {
             showMessageModal('⚠️ El precio de venta no puede ser negativo.', null, { type: 'error' });
             return;
         }
-        if (finalCost < 0) {
-            showMessageModal('⚠️ El costo no puede ser negativo.', null, { type: 'error' });
-            return;
-        }
-
-        // C) Alerta de Pérdida (Costo > Precio)
-        // Solo alertamos si ambos son mayores a 0 para no molestar en creación rápida
-        if (finalCost > finalPrice && finalPrice > 0) {
-            if (!window.confirm(`⚠️ ADVERTENCIA DE PÉRDIDA:\n\nEl costo ($${finalCost}) es mayor que el precio de venta ($${finalPrice}).\n\n¿Estás seguro de que deseas guardar este producto así?`)) {
-                return;
-            }
-        }
-
-        // D) Lógica de Stock (Mínimo > Máximo)
-        if (finalMinStock !== null && finalMaxStock !== null && finalMinStock > finalMaxStock) {
-            showMessageModal('⚠️ Lógica inválida: El Stock Mínimo no puede ser mayor al Stock Máximo.', null, { type: 'error' });
-            return;
-        }
-
-        // --- 3. PREPARACIÓN DEL OBJETO ---
 
         let finalSaleType = saleType;
         let finalBulkData = (saleType === 'bulk') ? { purchase: { unit: unit } } : null;
@@ -223,6 +202,13 @@ export default function ProductForm({
             description: description.trim(),
             categoryId,
             image: imageData,
+
+            // --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
+            // Guardamos la preferencia del usuario
+            trackStock: doesTrackStock,
+            
+            // Si NO trackea stock, desactivamos gestión de lotes para evitar conflictos
+            batchManagement: doesTrackStock ? { enabled: true, selectionStrategy: 'fifo' } : { enabled: false },
 
             productType: features.hasRecipes ? productType : 'sellable',
             recipe: (features.hasRecipes && productType === 'sellable') ? recipe : [],
@@ -242,6 +228,8 @@ export default function ProductForm({
             shelfLife,
         };
 
+        // NOTA: Ya NO forzamos stock = 9999. Dejamos que el sistema maneje el null/0 limpiamente.
+
         onSave(productData, internalEditingProduct);
         resetForm();
     };
@@ -255,7 +243,6 @@ export default function ProductForm({
 
                 <form id="product-form" onSubmit={handleSubmit}>
 
-                    {/* --- A. CAMPOS PRINCIPALES (Siempre visibles) --- */}
                     <div className="form-group">
                         <label className="form-label">Nombre del Producto *</label>
                         <input className="form-input" type="text" required value={name} onChange={(e) => setName(e.target.value)} />
@@ -270,7 +257,6 @@ export default function ProductForm({
                         </div>
                     </div>
 
-                    {/* --- B. PRECIOS (SIEMPRE VISIBLES AHORA) --- */}
                     <div style={{ display: 'flex', gap: '15px' }}>
                         <div className="form-group" style={{ flex: 1 }}>
                             <label className="form-label">Precio Venta *</label>
@@ -281,7 +267,7 @@ export default function ProductForm({
                                 onChange={e => setPrice(e.target.value)}
                                 required
                                 placeholder="0.00"
-                                min="0" // HTML5 validation visual
+                                min="0"
                                 step="0.01"
                             />
                         </div>
@@ -299,7 +285,46 @@ export default function ProductForm({
                         </div>
                     </div>
 
-                    {/* --- C. MÓDULOS ESPECÍFICOS (Se apilan) --- */}
+                    {/* --- INTERRUPTOR DE STOCK (MEJORADO) --- */}
+                    <div className="form-group-checkbox" style={{
+                        backgroundColor: doesTrackStock ? '#f0fdf4' : '#f3f4f6', // Verde si activo, gris si inactivo
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: `1px solid ${doesTrackStock ? '#bbf7d0' : '#d1d5db'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '15px',
+                        cursor: 'pointer',
+                        marginTop: '10px'
+                    }} onClick={() => setDoesTrackStock(!doesTrackStock)}>
+                        
+                        {/* Switch Visual */}
+                        <div style={{
+                            width: '44px', height: '24px', 
+                            backgroundColor: doesTrackStock ? 'var(--success-color)' : '#9ca3af',
+                            borderRadius: '20px', position: 'relative', transition: 'all 0.3s'
+                        }}>
+                            <div style={{
+                                width: '18px', height: '18px', backgroundColor: 'white', borderRadius: '50%',
+                                position: 'absolute', top: '3px', 
+                                left: doesTrackStock ? '23px' : '3px', 
+                                transition: 'all 0.3s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                            }}></div>
+                        </div>
+
+                        <div>
+                            <span style={{fontWeight: 'bold', display: 'block', color: 'var(--text-dark)'}}>
+                                {doesTrackStock ? 'Controlar Inventario' : 'Venta Libre (Sin Stock)'}
+                            </span>
+                            <span style={{fontSize: '0.8rem', color: 'var(--text-light)'}}>
+                                {doesTrackStock 
+                                    ? 'El sistema descontará unidades y avisará si se agota.' 
+                                    : 'Ideal para servicios o productos a granel sin medición exacta.'}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* --- MÓDULOS ESPECÍFICOS --- */}
 
                     {features.hasRecipes && (
                         <div className="module-section">
@@ -336,8 +361,8 @@ export default function ProductForm({
                         </div>
                     )}
 
-                    {/* Módulo Abarrotes / Ferretería (Ahora solo Stock y Mayoreo) */}
-                    {(features.hasBulk || features.hasMinMax) && !features.hasDailyPricing && (
+                    {/* Módulo Abarrotes / Ferretería - Solo visible si hay control de stock */}
+                    {(features.hasBulk || features.hasMinMax) && !features.hasDailyPricing && doesTrackStock && (
                         <div className="module-section" style={{ borderTop: '2px dashed #e5e7eb', marginTop: '15px', paddingTop: '15px' }}>
                             <AbarrotesFields
                                 saleType={saleType} setSaleType={setSaleType}
@@ -353,8 +378,7 @@ export default function ProductForm({
                         </div>
                     )}
 
-                    {/* --- D. GESTIÓN DE LOTES (Si aplica y ya existe el producto) --- */}
-                    {internalEditingProduct && (features.hasLots || features.hasVariants) && (
+                    {internalEditingProduct && doesTrackStock && (features.hasLots || features.hasVariants) && (
                         <div className="form-group" style={{ marginTop: '20px' }}>
                             <button type="button" className="btn btn-secondary" onClick={() => onManageBatches(internalEditingProduct.id)}>
                                 Gestionar {features.hasVariants ? 'Variantes (Tallas/Colores)' : 'Lotes (Stock/Costos)'}
@@ -362,7 +386,6 @@ export default function ProductForm({
                         </div>
                     )}
 
-                    {/* --- E. DATOS SECUNDARIOS (Ocultos) --- */}
                     <button type="button" className="btn-toggle-specific" onClick={() => setShowSpecificData(!showSpecificData)}>
                         {showSpecificData ? 'Ocultar detalles (Foto, Cat, Desc)' : 'Agregar Foto, Categoría o Descripción'}
                         {showSpecificData ? ' 🔼' : ' 🔽'}
