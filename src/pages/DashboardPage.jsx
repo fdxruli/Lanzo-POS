@@ -14,11 +14,12 @@ import SalesHistory from '../components/dashboard/SalesHistory';
 import RecycleBin from '../components/dashboard/RecycleBin';
 import BusinessTips from '../components/dashboard/BusinessTips';
 import WasteHistory from '../components/dashboard/WasteHistory';
-
+import { loadData, STORES } from '../services/database';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
 
 export default function DashboardPage() {
+  const [customers, setCustomers] = useState([]);
   const [activeTab, setActiveTab] = useState('stats');
   const navigate = useNavigate();
   const features = useFeatureConfig();
@@ -42,12 +43,23 @@ export default function DashboardPage() {
   const deletedItems = useRecycleBinStore(state => state.deletedItems);
   const restoreItem = useRecycleBinStore(state => state.restoreItem);
 
+  const loadCustomers = async () => {
+    try {
+      const customersData = await loadData(STORES.CUSTOMERS);
+      setCustomers(customersData || []);
+    } catch (error) {
+      console.error("Error cargando clientes:", error);
+      setCustomers([]);
+    }
+  };
+
   // --- EFECTO DE CARGA INICIAL (LA SOLUCIÓN AL "DESCONECTADO") ---
   useEffect(() => {
     // Al entrar a la página, forzamos la recarga de estadísticas y ventas
     console.log("🔄 Actualizando Dashboard...");
     loadStats();
     loadRecentSales();
+    loadCustomers();
   }, []); // Se ejecuta solo al montar el componente
 
   // Cargar papelera solo si entramos a esa pestaña
@@ -57,10 +69,10 @@ export default function DashboardPage() {
 
   if (isStatsLoading) {
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4rem' }}>
-            <div className="spinner-loader"></div>
-            <p style={{ marginTop: '1rem', color: '#666' }}>Analizando ventas e inventario...</p>
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4rem' }}>
+        <div className="spinner-loader"></div>
+        <p style={{ marginTop: '1rem', color: '#666' }}>Analizando ventas e inventario...</p>
+      </div>
     );
   }
 
@@ -139,7 +151,7 @@ export default function DashboardPage() {
 
       {/* PESTAÑA: CONSEJOS */}
       {activeTab === 'tips' && (
-        <BusinessTips sales={sales} menu={menu} />
+        <BusinessTips sales={sales} menu={menu} customers={customers} />
       )}
 
       {/* PESTAÑA: MERMAS */}
