@@ -5,6 +5,9 @@ import { supabaseClient } from './supabase';
 let activeChannel = null;
 let reconnectTimer = null;
 let isConnecting = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_RECONNECT_DELAY = 3000;
 
 /**
  * Inicia la escucha en tiempo real para cambios en la licencia y el dispositivo.
@@ -21,15 +24,15 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
     return null;
   }
 
-  // Evitar duplicados: Si ya hay un canal activo, limpiarlo primero
-  if (activeChannel) {
-    console.warn("[Realtime] Limpiando canal existente antes de crear uno nuevo.");
-    stopLicenseListener(activeChannel);
-  }
-
   if (isConnecting) {
     console.warn("[Realtime] Ya hay una conexión en progreso, espere...");
     return null;
+  }
+
+  // Limpiar canal previo si existe
+  if (activeChannel) {
+    console.warn("[Realtime] Limpiando canal existente antes de crear uno nuevo.");
+    stopLicenseListener(activeChannel);
   }
 
   isConnecting = true;
@@ -56,7 +59,11 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
         if (!payload.new) return;
         console.log("🔔 [Realtime] Cambio detectado en LICENCIA:", payload.new);
         if (callbacks.onLicenseChanged) {
-          callbacks.onLicenseChanged(payload.new);
+          try {
+            callbacks.onLicenseChanged(payload.new);
+          } catch (err) {
+            console.error("[Realtime] Error en callback onLicenseChanged:", err);
+          }
         }
       }
     )
@@ -74,7 +81,11 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
         
         if (payload.new.is_active === false) {
           if (callbacks.onDeviceChanged) {
-            callbacks.onDeviceChanged({ status: 'banned', data: payload.new });
+            try {
+              callbacks.onDeviceChanged({ status: 'banned', data: payload.new });
+            } catch (err) {
+              console.error("[Realtime] Error en callback onDeviceChanged:", err);
+            }
           }
         }
       }
@@ -90,7 +101,11 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       (payload) => {
         console.log("🔔 [Realtime] DELETE detectado en DISPOSITIVO:", payload);
         if (callbacks.onDeviceChanged) {
-          callbacks.onDeviceChanged({ status: 'deleted', data: payload.old });
+          try {
+            callbacks.onDeviceChanged({ status: 'deleted', data: payload.old });
+          } catch (err) {
+            console.error("[Realtime] Error en callback onDeviceChanged:", err);
+          }
         }
       }
     )
@@ -100,8 +115,8 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       if (status === 'SUBSCRIBED') {
         console.log("✅ [Realtime] Conexión establecida y segura.");
         activeChannel = channel;
+        reconnectAttempts = 0;
         
-        // Limpiar timer de reconexión si existía
         if (reconnectTimer) {
           clearTimeout(reconnectTimer);
           reconnectTimer = null;
@@ -111,13 +126,18 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
         console.error("❌ [Realtime] Error en la conexión WebSocket:", err);
         activeChannel = null;
         
-        // Reconexión automática con backoff
-        if (!reconnectTimer) {
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimer) {
+          const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
+          reconnectAttempts++;
+          
+          console.log(`🔄 [Realtime] Reintentando conexión en ${delay}ms (intento ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+          
           reconnectTimer = setTimeout(() => {
-            console.log("🔄 [Realtime] Intentando reconectar...");
             reconnectTimer = null;
             startLicenseListener(licenseKey, deviceFingerprint, callbacks);
-          }, 5000);
+          }, delay);
+        } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+          console.error("❌ [Realtime] Máximo de reintentos alcanzado. Se requiere intervención manual.");
         }
       }
       else if (status === 'CLOSED') {
@@ -127,6 +147,16 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       else if (status === 'TIMED_OUT') {
         console.warn("⏱️ [Realtime] Timeout de conexión.");
         activeChannel = null;
+        
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimer) {
+          const delay = BASE_RECONNECT_DELAY;
+          reconnectAttempts++;
+          
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            startLicenseListener(licenseKey, deviceFingerprint, callbacks);
+          }, delay);
+        }
       }
     });
 
@@ -157,6 +187,7 @@ export const stopLicenseListener = async (channel) => {
   }
 
   isConnecting = false;
+  reconnectAttempts = 0;
 };
 
 /**
@@ -174,5 +205,19 @@ export const cleanupAllChannels = async () => {
   }
 
   isConnecting = false;
+  reconnectAttempts = 0;
   console.log("🧹 [Realtime] Limpieza completa ejecutada.");
+};
+
+/**
+ * Obtiene el estado actual de la conexión.
+ * @returns {object} Estado de la conexión
+ */
+export const getConnectionStatus = () => {
+  return {
+    isActive: activeChannel !== null,
+    isConnecting,
+    reconnectAttempts,
+    channelId: activeChannel?.topic || null
+  };
 };

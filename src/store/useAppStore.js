@@ -1,8 +1,8 @@
+// src/store/useAppStore.js
 import { create } from 'zustand';
-import { loadData, saveData, STORES, checkStorageQuota } from '../services/database';
+import { loadData, saveData, STORES } from '../services/database';
 import { isLocalStorageEnabled, normalizeDate, showMessageModal } from '../services/utils';
 
-// ✅ IMPORTS ACTIVOS
 import {
   activateLicense,
   revalidateLicense,
@@ -30,16 +30,14 @@ const generateSignature = (data) => {
   return hash.toString(16);
 };
 
-const saveLicenseToStorageHelper = async (licenseData) => {
+const saveLicenseToStorage = async (licenseData) => {
   if (!isLocalStorageEnabled()) return;
   const dataToStore = { ...licenseData };
   dataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   const signature = generateSignature(dataToStore);
-  const packageToStore = { data: dataToStore, signature: signature };
+  const packageToStore = { data: dataToStore, signature };
   localStorage.setItem('lanzo_license', JSON.stringify(packageToStore));
 };
-
-const saveLicenseToStorage = async (licenseData) => saveLicenseToStorageHelper(licenseData);
 
 const getLicenseFromStorage = async () => {
   if (!isLocalStorageEnabled()) return null;
@@ -53,7 +51,7 @@ const getLicenseFromStorage = async () => {
     }
     const expectedSignature = generateSignature(parsedPackage.data);
     if (parsedPackage.signature !== expectedSignature) {
-      console.warn("Error de integridad en datos locales. Reiniciando sesión.");
+      console.warn("Integridad comprometida. Limpiando sesión.");
       localStorage.removeItem('lanzo_license');
       return null;
     }
@@ -70,9 +68,9 @@ const clearLicenseFromStorage = () => {
 };
 
 export const useAppStore = create((set, get) => ({
-
   realtimeSubscription: null,
   _isInitializingSecurity: false,
+  _securityCleanupScheduled: false,
 
   appStatus: 'loading',
   licenseStatus: 'active',
@@ -83,8 +81,7 @@ export const useAppStore = create((set, get) => ({
   initializeApp: async () => {
     const localLicense = await getLicenseFromStorage();
 
-    if (!localLicense || !localLicense.license_key) {
-      console.log("ℹ️ No hay sesión activa. Solicitando login.");
+    if (!localLicense?.license_key) {
       set({ appStatus: 'unauthenticated' });
       return;
     }
@@ -93,34 +90,26 @@ export const useAppStore = create((set, get) => ({
 
     try {
       if (isOnline) {
-        console.log('🌍 Conectado a internet. Validando con servidor...');
-
         const serverValidation = await revalidateLicense(localLicense.license_key);
 
-        if (serverValidation && serverValidation.valid !== undefined) {
-
+        if (serverValidation?.valid !== undefined) {
           if (!serverValidation.valid && serverValidation.reason !== 'offline_grace') {
-            console.error(`⛔ Servidor denegó acceso: ${serverValidation.reason}`);
             clearLicenseFromStorage();
             set({
               appStatus: 'unauthenticated',
               licenseDetails: null,
-              licenseStatus: serverValidation.reason
+              licenseStatus: serverValidation.reason || 'invalid'
             });
-            return; 
+            return;
           }
 
           if (serverValidation.valid) {
-            console.log("✅ Servidor confirmó licencia. Estado:", serverValidation.reason);
             const finalLicenseData = { ...localLicense, ...serverValidation };
-
-            await saveLicenseToStorageHelper(finalLicenseData);
+            await saveLicenseToStorage(finalLicenseData);
 
             set({
               licenseDetails: finalLicenseData,
-              // CORRECCIÓN CRÍTICA: Usamos el 'reason' del servidor (active, grace_period)
-              // en lugar de forzar 'active'.
-              licenseStatus: serverValidation.reason || 'active', 
+              licenseStatus: serverValidation.reason || 'active',
               gracePeriodEnds: finalLicenseData.grace_period_ends || null
             });
 
@@ -130,11 +119,8 @@ export const useAppStore = create((set, get) => ({
         }
       }
 
-      console.warn("⚠️ Usando caché local (Modo Offline o Servidor Inalcanzable).");
-
-      if (localLicense && localLicense.valid) {
+      if (localLicense?.valid) {
         if (localLicense.localExpiry && normalizeDate(localLicense.localExpiry) <= new Date()) {
-          console.error("⏰ Licencia local caducada por tiempo.");
           clearLicenseFromStorage();
           set({ appStatus: 'unauthenticated' });
           return;
@@ -150,15 +136,15 @@ export const useAppStore = create((set, get) => ({
       } else {
         set({ appStatus: 'unauthenticated' });
       }
-
     } catch (error) {
-      console.error("Error crítico en inicio:", error);
+      console.error("Error crítico en inicialización:", error);
       set({ appStatus: 'unauthenticated' });
     }
   },
 
   _loadProfile: async (licenseKey) => {
     let companyData = null;
+
     if (licenseKey && navigator.onLine) {
       try {
         const profileResult = await getBusinessProfile(licenseKey);
@@ -173,7 +159,9 @@ export const useAppStore = create((set, get) => ({
           };
           await saveData(STORES.COMPANY, companyData);
         }
-      } catch (e) { console.warn("Fallo carga perfil online", e); }
+      } catch (e) {
+        console.warn("Fallo carga perfil online:", e);
+      }
     }
 
     if (!companyData) {
@@ -190,57 +178,52 @@ export const useAppStore = create((set, get) => ({
   },
 
   startRealtimeSecurity: async () => {
-    const { licenseDetails, realtimeSubscription, stopRealtimeSecurity, logout, _isInitializingSecurity } = get();
+    const state = get();
+    
+    if (state._isInitializingSecurity) return;
+    if (!state.licenseDetails?.license_key) return;
 
-    if (_isInitializingSecurity) return;
-    if (!licenseDetails?.license_key) return;
+    const deviceFingerprint = localStorage.getItem('lanzo_device_id');
+    if (!deviceFingerprint) return;
 
     set({ _isInitializingSecurity: true });
 
     try {
-      if (realtimeSubscription) {
-        await stopRealtimeSecurity();
-        await new Promise(resolve => setTimeout(resolve, 150));
-      }
-
-      const deviceFingerprint = localStorage.getItem('lanzo_device_id');
-      if (!deviceFingerprint) {
-        set({ _isInitializingSecurity: false });
-        return;
+      if (state.realtimeSubscription) {
+        await get().stopRealtimeSecurity();
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
 
       const channel = startLicenseListener(
-        licenseDetails.license_key,
+        state.licenseDetails.license_key,
         deviceFingerprint,
         {
           onLicenseChanged: (newLicenseData) => {
-            console.log("🔄 [Realtime] Cambio recibido:", newLicenseData);
-
             const currentDetails = get().licenseDetails || {};
             const mergedLicense = { ...currentDetails, ...newLicenseData };
 
             const now = new Date();
             const expiresAt = mergedLicense.expires_at ? new Date(mergedLicense.expires_at) : null;
             const graceEnds = mergedLicense.grace_period_ends ? new Date(mergedLicense.grace_period_ends) : null;
-            
+
             let smartStatus = newLicenseData.status || currentDetails.status;
 
             if (expiresAt && expiresAt < now) {
-                if (graceEnds && graceEnds > now) {
-                    smartStatus = 'grace_period';
-                } else {
-                    smartStatus = 'expired';
-                }
+              if (graceEnds && graceEnds > now) {
+                smartStatus = 'grace_period';
+              } else {
+                smartStatus = 'expired';
+              }
             } else if (expiresAt && expiresAt > now && smartStatus !== 'suspended') {
-                smartStatus = 'active';
+              smartStatus = 'active';
             }
 
             const isValidNow = smartStatus === 'active' || smartStatus === 'grace_period';
 
             const finalDetails = {
-                ...mergedLicense,
-                status: smartStatus,
-                valid: isValidNow
+              ...mergedLicense,
+              status: smartStatus,
+              valid: isValidNow
             };
 
             set({
@@ -249,34 +232,35 @@ export const useAppStore = create((set, get) => ({
               gracePeriodEnds: finalDetails.grace_period_ends
             });
 
-            saveLicenseToStorageHelper(finalDetails);
+            saveLicenseToStorage(finalDetails);
 
             if (!isValidNow) {
-               showMessageModal(
-                 `⛔ ACCESO DENEGADO: Tu licencia ha cambiado a estado: ${smartStatus.toUpperCase()}`,
-                 () => window.location.reload(),
-                 { type: 'error', confirmButtonText: 'Recargar Sistema' }
-               );
-            } else if (smartStatus === 'grace_period') {
-                console.warn("⚠️ El sistema ha entrado en periodo de gracia.");
+              showMessageModal(
+                `⛔ ACCESO DENEGADO: Licencia en estado ${smartStatus.toUpperCase()}`,
+                () => window.location.reload(),
+                { type: 'error', confirmButtonText: 'Recargar Sistema' }
+              );
             }
           },
-          
+
           onDeviceChanged: (event) => {
             if (event.status === 'banned' || event.status === 'deleted') {
               showMessageModal(
-                `🚫 ACCESO REVOCADO: Este dispositivo ha sido desactivado.`,
-                () => { logout(); window.location.reload(); },
+                '🚫 ACCESO REVOCADO: Dispositivo desactivado.',
+                () => {
+                  get().logout();
+                  window.location.reload();
+                },
                 { type: 'error', confirmButtonText: 'Cerrar Sesión' }
               );
             }
           }
         }
       );
-      set({ realtimeSubscription: channel });
 
+      set({ realtimeSubscription: channel });
     } catch (error) {
-      console.error('Error security realtime:', error);
+      console.error('Error inicializando seguridad realtime:', error);
       set({ realtimeSubscription: null });
     } finally {
       set({ _isInitializingSecurity: false });
@@ -284,12 +268,22 @@ export const useAppStore = create((set, get) => ({
   },
 
   stopRealtimeSecurity: async () => {
-    const { realtimeSubscription } = get();
-    if (!realtimeSubscription) return;
-    set({ realtimeSubscription: null });
+    const { realtimeSubscription, _securityCleanupScheduled } = get();
+    
+    if (!realtimeSubscription || _securityCleanupScheduled) return;
+    
+    set({ _securityCleanupScheduled: true });
+
     try {
       await stopLicenseListener(realtimeSubscription);
-    } catch (err) { console.warn(err); }
+    } catch (err) {
+      console.warn('Error deteniendo listener:', err);
+    } finally {
+      set({ 
+        realtimeSubscription: null,
+        _securityCleanupScheduled: false 
+      });
+    }
   },
 
   handleLogin: async (licenseKey) => {
@@ -301,9 +295,8 @@ export const useAppStore = create((set, get) => ({
         set({ licenseDetails: licenseDataToSave });
         await get()._loadProfile(licenseKey);
         return { success: true };
-      } else {
-        return { success: false, message: result.message || 'Licencia no válida' };
       }
+      return { success: false, message: result.message || 'Licencia no válida' };
     } catch (error) {
       return { success: false, message: error.message };
     }
@@ -323,9 +316,8 @@ export const useAppStore = create((set, get) => ({
         await saveLicenseToStorage(licenseDataToSave);
         set({ licenseDetails: licenseDataToSave, appStatus: 'setup_required' });
         return { success: true };
-      } else {
-        return { success: false, message: result.error || 'No se pudo crear prueba.' };
       }
+      return { success: false, message: result.error || 'No se pudo crear prueba.' };
     } catch (error) {
       return { success: false, message: error.message };
     }
@@ -334,76 +326,95 @@ export const useAppStore = create((set, get) => ({
   handleSetup: async (setupData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) return;
+
     try {
       let logoUrl = null;
-      if (setupData.logo && setupData.logo instanceof File) {
+      if (setupData.logo instanceof File) {
         logoUrl = await uploadFile(setupData.logo, 'logo');
       }
+
       const profileData = { ...setupData, logo: logoUrl };
       await saveBusinessProfile(licenseKey, profileData);
+
       const companyData = { id: 'company', ...profileData };
       await saveData(STORES.COMPANY, companyData);
+
       set({ companyProfile: companyData, appStatus: 'ready' });
-    } catch (error) { console.error(error); }
+    } catch (error) {
+      console.error('Error en setup:', error);
+    }
   },
 
   updateCompanyProfile: async (companyData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) return;
+
     try {
-      if (companyData.logo && companyData.logo instanceof File) {
+      if (companyData.logo instanceof File) {
         const logoUrl = await uploadFile(companyData.logo, 'logo');
         companyData.logo = logoUrl;
       }
+
       await saveBusinessProfile(licenseKey, companyData);
       await saveData(STORES.COMPANY, companyData);
       set({ companyProfile: companyData });
-    } catch (error) { console.error(error); }
+    } catch (error) {
+      console.error('Error actualizando perfil:', error);
+    }
   },
 
   logout: async () => {
     const { licenseDetails } = get();
+
     await get().stopRealtimeSecurity();
+
     try {
       if (licenseDetails?.license_key) {
         await deactivateCurrentDevice(licenseDetails.license_key);
       }
-    } catch (error) { }
+    } catch (error) {
+      console.warn('Error desactivando dispositivo:', error);
+    }
+
     clearLicenseFromStorage();
+
     set({
       appStatus: 'unauthenticated',
       licenseDetails: null,
       companyProfile: null,
       licenseStatus: 'active',
       gracePeriodEnds: null,
-      realtimeSubscription: null
+      realtimeSubscription: null,
+      _isInitializingSecurity: false,
+      _securityCleanupScheduled: false
     });
   },
 
   verifySessionIntegrity: async () => {
     const { licenseDetails, logout } = get();
-    if (!licenseDetails || !licenseDetails.license_key) return false;
+
+    if (!licenseDetails?.license_key) return false;
 
     if (navigator.onLine) {
       try {
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
 
-        if (serverCheck && serverCheck.valid === false && serverCheck.reason !== 'offline_grace') {
-          console.error(`⛔ Sesión invalidada por servidor: ${serverCheck.reason}`);
+        if (serverCheck?.valid === false && serverCheck.reason !== 'offline_grace') {
           await logout();
           return false;
         }
 
-        if (serverCheck.grace_period_ends) {
+        if (serverCheck?.grace_period_ends) {
           set({
             gracePeriodEnds: serverCheck.grace_period_ends,
-            licenseStatus: serverCheck.status || serverCheck.reason // fallback
+            licenseStatus: serverCheck.status || serverCheck.reason
           });
         }
       } catch (error) {
-        console.warn("⚠️ Verificación online falló, manteniendo sesión offline.");
+        console.warn("Verificación fallida, manteniendo sesión offline:", error);
       }
     }
+
     return true;
-  },
+  }
 }));
