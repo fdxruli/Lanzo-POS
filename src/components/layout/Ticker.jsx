@@ -10,7 +10,6 @@ const promotionalMessages = [
   "✨ ¡Sigue creciendo tu negocio con nosotros!"
 ];
 
-// Función auxiliar para revisar el estado del backup
 function getBackupAlertMessage() {
   const lastBackup = localStorage.getItem('last_backup_date');
   if (!lastBackup) return "⚠️ No has realizado ninguna copia de seguridad. Ve a Configuración > Exportar.";
@@ -26,9 +25,6 @@ function getBackupAlertMessage() {
 
 function generateAlertMessages(menu) {
   const alerts = [];
-
-  // 1. Agregar alerta de Backup si es necesario (Prioridad Media)
-  // Solo mostramos esto en el ticker si hay datos (menu.length > 0)
   if (menu.length > 5) {
       const backupMsg = getBackupAlertMessage();
       if (backupMsg) alerts.push(backupMsg);
@@ -50,12 +46,23 @@ function generateAlertMessages(menu) {
   return alerts;
 }
 
+// --- FUNCIÓN CORREGIDA PARA CÁLCULO DE DÍAS ---
 function getDaysRemaining(endDate) {
   if (!endDate) return 0;
+  
   const now = new Date();
   const end = new Date(endDate);
-  const diffTime = end - now;
-  if (diffTime <= 0) return 0;
+  
+  // Normalizar a medianoche para comparar DÍAS calendario, no horas
+  now.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  
+  const diffTime = end.getTime() - now.getTime();
+  
+  // Si la fecha ya pasó o es hoy
+  if (diffTime < 0) return 0;
+  
+  // Convertir milisegundos a días
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
@@ -67,11 +74,17 @@ export default function Ticker() {
   const isLoading = useProductStore((state) => state.isLoading)
 
   const { messages, isPriority } = useMemo(() => {
-    // 1. Prioridad MÁXIMA: Licencia
+    
+    // --- LÓGICA DE ALERTA DE LICENCIA MEJORADA ---
     if (licenseStatus === 'grace_period' && gracePeriodEnds) {
       const days = getDaysRemaining(gracePeriodEnds);
-      const dayText = days === 1 ? '1 día' : `${days} días`;
-      const copy = `Tu licencia ha caducado. El sistema se bloqueará en ${dayText}. Renueva tu plan para evitar interrupciones.`;
+      
+      let dayText = '';
+      if (days <= 0) dayText = 'hoy';
+      else if (days === 1) dayText = 'mañana';
+      else dayText = `en ${days} días`;
+
+      const copy = `⚠️ Tu licencia ha caducado. El sistema se bloqueará ${dayText}. Renueva tu plan para evitar interrupciones.`;
       
       return {
         messages: [copy, copy, copy], 
@@ -84,7 +97,6 @@ export default function Ticker() {
     }
 
     try {
-      // 2. Alertas Normales (Backup + Stock + Caducidad)
       const alerts = generateAlertMessages(menu); 
       
       if (alerts.length === 0) {
