@@ -140,7 +140,7 @@ export default function MaintenanceSettings() {
       <h3 className="subtitle">Mantenimiento del Sistema</h3>
 
       <div className="backup-container" style={{ marginTop: '0', borderTop: 'none' }}>
-        <p style={{ fontSize: '0.9rem', color: '#9a3412', marginBottom: '20px' }}>
+        <p style={{ fontSize: '0.9rem', color: 'var(--text-primary', marginBottom: '20px' }}>
           Herramientas para corregir inconsistencias y optimizar la base de datos.
         </p>
 
@@ -149,7 +149,7 @@ export default function MaintenanceSettings() {
           <div className="maintenance-tool-card">
             <div className="tool-info">
               <h4>📊 Reparar Ganancias</h4>
-              <p>Recalcula reportes históricos con costos actuales si ves negativos.</p>
+              <p>- Recalcula reportes históricos con costos actuales si ves negativos.</p>
             </div>
             <button className="btn btn-secondary" onClick={handleRecalculateProfits} disabled={isProcessing}>
               {isProcessing ? '...' : '🔄 Ejecutar'}
@@ -160,8 +160,8 @@ export default function MaintenanceSettings() {
           <div className="maintenance-tool-card">
             <div className="tool-info">
               <h4>📦 Sincronizar Stock</h4>
-              <p>Corrige discrepancias si ves "Agotado" pero tienes lotes.</p>
-              <p> Este problema puede llegar a presentarse despues de una actualizacion </p>
+              <p>- Corrige discrepancias si ves "Agotado" pero tienes lotes.</p>
+              <p>- Este problema puede llegar a presentarse despues de una actualizacion del sistema</p>
             </div>
             <button className="btn btn-primary" onClick={handleSyncStock} disabled={isProcessing}>
               {isProcessing ? '...' : '🧩 Sincronizar'}
@@ -172,7 +172,9 @@ export default function MaintenanceSettings() {
           <div className="maintenance-tool-card" style={{ borderColor: '#7c3aed' }}>
             <div className="tool-info">
               <h4 style={{ color: '#7c3aed' }}>🗄️ Archivar Historial</h4>
-              <p>Limpia ventas antiguas (&gt;6 meses) para acelerar.</p>
+              <p>- Limpia ventas antiguas para acelerar. </p>
+              <p>- Se descargará un archivo JSON con las ventas eliminadas.</p>
+              <p>- Recomendado cada 6 meses o más.</p>
             </div>
             <button className="btn btn-secondary" onClick={handleArchive} style={{ backgroundColor: '#7c3aed', color: 'white', border: 'none' }}>
               📦 Archivar

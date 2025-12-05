@@ -108,7 +108,7 @@ export default function GeneralSettings() {
             <div className="form-group">
                 <label className="form-label">Teléfono</label>
                 <input className="form-input" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} disabled />
-                <small className="form-help-text">Para cambiar el nombre y/0 numero, contacta a soporte.</small>
+                <small className="form-help-text">Para cambiar el nombre y/o numero, contacta a soporte.</small>
             </div>
             
             <div className="form-group">
