@@ -1,9 +1,8 @@
-// src/store/useAppStore.js
 import { create } from 'zustand';
 import { loadData, saveData, STORES, checkStorageQuota } from '../services/database';
 import { isLocalStorageEnabled, normalizeDate, showMessageModal } from '../services/utils';
 
-// ✅ IMPORTS ACTIVOS (Ya no están comentados)
+// ✅ IMPORTS ACTIVOS
 import {
   activateLicense,
   revalidateLicense,
@@ -31,11 +30,9 @@ const generateSignature = (data) => {
   return hash.toString(16);
 };
 
-// Función auxiliar para guardar en disco (usada internamente y por realtime)
 const saveLicenseToStorageHelper = async (licenseData) => {
   if (!isLocalStorageEnabled()) return;
   const dataToStore = { ...licenseData };
-  // Renovamos la expiración local cada vez que guardamos
   dataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   const signature = generateSignature(dataToStore);
   const packageToStore = { data: dataToStore, signature: signature };
@@ -83,14 +80,9 @@ export const useAppStore = create((set, get) => ({
   companyProfile: null,
   licenseDetails: null,
 
-  // ============================================================
-  // PROCESO DE INICIO (SERVIDOR > CACHÉ)
-  // ============================================================
   initializeApp: async () => {
     const localLicense = await getLicenseFromStorage();
 
-    // 1. CHEQUEO RÁPIDO: Si no hay licencia local, pedir login.
-    // Esto evita el error "no_license_key" y el bloqueo rojo en consola.
     if (!localLicense || !localLicense.license_key) {
       console.log("ℹ️ No hay sesión activa. Solicitando login.");
       set({ appStatus: 'unauthenticated' });
@@ -100,55 +92,47 @@ export const useAppStore = create((set, get) => ({
     const isOnline = navigator.onLine;
 
     try {
-      // 2. Si estamos ONLINE, el SERVIDOR tiene prioridad absoluta.
       if (isOnline) {
         console.log('🌍 Conectado a internet. Validando con servidor...');
 
         const serverValidation = await revalidateLicense(localLicense.license_key);
 
-        // CASO A: El servidor respondió explícitamente
         if (serverValidation && serverValidation.valid !== undefined) {
 
-          // Si es INVÁLIDA (expirada, baneada) y NO es error de red
           if (!serverValidation.valid && serverValidation.reason !== 'offline_grace') {
             console.error(`⛔ Servidor denegó acceso: ${serverValidation.reason}`);
-
-            // 🔥 BORRAMOS EL CACHÉ: El servidor manda.
             clearLicenseFromStorage();
-
             set({
               appStatus: 'unauthenticated',
               licenseDetails: null,
               licenseStatus: serverValidation.reason
             });
-            return; // Fin del camino.
+            return; 
           }
 
-          // Si es VÁLIDA
           if (serverValidation.valid) {
-            console.log("✅ Servidor confirmó licencia.");
+            console.log("✅ Servidor confirmó licencia. Estado:", serverValidation.reason);
             const finalLicenseData = { ...localLicense, ...serverValidation };
 
-            // Actualizamos caché con la verdad del servidor
             await saveLicenseToStorageHelper(finalLicenseData);
 
             set({
               licenseDetails: finalLicenseData,
-              licenseStatus: 'active',
+              // CORRECCIÓN CRÍTICA: Usamos el 'reason' del servidor (active, grace_period)
+              // en lugar de forzar 'active'.
+              licenseStatus: serverValidation.reason || 'active', 
               gracePeriodEnds: finalLicenseData.grace_period_ends || null
             });
 
             await get()._loadProfile(finalLicenseData.license_key);
-            return; // Éxito online.
+            return;
           }
         }
       }
 
-      // 3. FALLBACK: Solo si NO hay internet o el servidor falló (Timeout)
       console.warn("⚠️ Usando caché local (Modo Offline o Servidor Inalcanzable).");
 
       if (localLicense && localLicense.valid) {
-        // Seguridad extra: Expiración local de 30 días
         if (localLicense.localExpiry && normalizeDate(localLicense.localExpiry) <= new Date()) {
           console.error("⏰ Licencia local caducada por tiempo.");
           clearLicenseFromStorage();
@@ -158,7 +142,7 @@ export const useAppStore = create((set, get) => ({
 
         set({
           licenseDetails: localLicense,
-          licenseStatus: localLicense.status || 'active',
+          licenseStatus: localLicense.status || (localLicense.reason === 'grace_period' ? 'grace_period' : 'active'),
           gracePeriodEnds: localLicense.grace_period_ends || null
         });
 
@@ -173,11 +157,8 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  // Helper interno para cargar perfil
   _loadProfile: async (licenseKey) => {
     let companyData = null;
-
-    // Intento Online
     if (licenseKey && navigator.onLine) {
       try {
         const profileResult = await getBusinessProfile(licenseKey);
@@ -195,7 +176,6 @@ export const useAppStore = create((set, get) => ({
       } catch (e) { console.warn("Fallo carga perfil online", e); }
     }
 
-    // Fallback Local
     if (!companyData) {
       companyData = await loadData(STORES.COMPANY, 'company');
     }
@@ -209,9 +189,6 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  // ============================================================
-  // SEGURIDAD EN TIEMPO REAL (WEBSOCKETS)
-  // ============================================================
   startRealtimeSecurity: async () => {
     const { licenseDetails, realtimeSubscription, stopRealtimeSecurity, logout, _isInitializingSecurity } = get();
 
@@ -239,37 +216,27 @@ export const useAppStore = create((set, get) => ({
           onLicenseChanged: (newLicenseData) => {
             console.log("🔄 [Realtime] Cambio recibido:", newLicenseData);
 
-            // 1. OBTENER ESTADO ACTUALIZADO
             const currentDetails = get().licenseDetails || {};
-            // Mezclamos lo nuevo con lo viejo para no perder datos que no vengan en el payload
             const mergedLicense = { ...currentDetails, ...newLicenseData };
 
-            // 2. LÓGICA DE RE-CÁLCULO INTELIGENTE (Aquí está la magia)
-            // No confiamos ciegamente en el 'status' de la BD si las fechas dicen otra cosa.
             const now = new Date();
             const expiresAt = mergedLicense.expires_at ? new Date(mergedLicense.expires_at) : null;
             const graceEnds = mergedLicense.grace_period_ends ? new Date(mergedLicense.grace_period_ends) : null;
             
             let smartStatus = newLicenseData.status || currentDetails.status;
 
-            // Si ya expiró la fecha principal...
             if (expiresAt && expiresAt < now) {
-                // ...verificamos si estamos en periodo de gracia
                 if (graceEnds && graceEnds > now) {
-                    smartStatus = 'grace_period'; // Forzamos estado de Gracia
+                    smartStatus = 'grace_period';
                 } else {
-                    smartStatus = 'expired'; // Forzamos expiración
+                    smartStatus = 'expired';
                 }
             } else if (expiresAt && expiresAt > now && smartStatus !== 'suspended') {
-                // Si la fecha se extendió (renovación), reactivamos
                 smartStatus = 'active';
             }
 
-            // 3. ACTUALIZAR BANDERA 'VALID'
-            // Solo es válido si está activo o en gracia
             const isValidNow = smartStatus === 'active' || smartStatus === 'grace_period';
 
-            // 4. GUARDAR EN EL STORE CON DATOS CALCULADOS
             const finalDetails = {
                 ...mergedLicense,
                 status: smartStatus,
@@ -282,10 +249,8 @@ export const useAppStore = create((set, get) => ({
               gracePeriodEnds: finalDetails.grace_period_ends
             });
 
-            // Guardar en caché local inmediatamente
             saveLicenseToStorageHelper(finalDetails);
 
-            // 5. ALERTAS CRÍTICAS
             if (!isValidNow) {
                showMessageModal(
                  `⛔ ACCESO DENEGADO: Tu licencia ha cambiado a estado: ${smartStatus.toUpperCase()}`,
@@ -293,12 +258,10 @@ export const useAppStore = create((set, get) => ({
                  { type: 'error', confirmButtonText: 'Recargar Sistema' }
                );
             } else if (smartStatus === 'grace_period') {
-                // Notificar discretamente si entró en gracia en vivo
                 console.warn("⚠️ El sistema ha entrado en periodo de gracia.");
             }
           },
           
-          // ... resto del código (onDeviceChanged) ...
           onDeviceChanged: (event) => {
             if (event.status === 'banned' || event.status === 'deleted') {
               showMessageModal(
@@ -425,18 +388,16 @@ export const useAppStore = create((set, get) => ({
       try {
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
 
-        // Si el servidor responde explícitamente inválido, sacamos al usuario
         if (serverCheck && serverCheck.valid === false && serverCheck.reason !== 'offline_grace') {
           console.error(`⛔ Sesión invalidada por servidor: ${serverCheck.reason}`);
           await logout();
           return false;
         }
 
-        // Si es válido, actualizamos estado local
         if (serverCheck.grace_period_ends) {
           set({
             gracePeriodEnds: serverCheck.grace_period_ends,
-            licenseStatus: serverCheck.status
+            licenseStatus: serverCheck.status || serverCheck.reason // fallback
           });
         }
       } catch (error) {
