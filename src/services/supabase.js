@@ -2,11 +2,10 @@
 import { createClient } from "@supabase/supabase-js";
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
-// Usamos las variables de entorno
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const supabaseClient = createClient(supabaseUrl, supabaseKey);
+export const supabaseClient = createClient(supabaseUrl, supabaseKey);
 
 // --- Helpers ---
 
@@ -124,8 +123,25 @@ export const activateLicense = async function (licenseKey) {
     }
 };
 
+// ✅ REVALIDACIÓN ROBUSTA CON TIMEOUT MANUAL
+// src/services/supabase.js
+
+// ... (El resto de tus imports y helpers como getStableDeviceId se mantienen igual)
+
+// ✅ REVALIDACIÓN ROBUSTA CON TIMEOUT MANUAL Y PRIORIDAD DE SERVIDOR
 export const revalidateLicense = async function (licenseKeyProp) {
+    // 1. Configurar un Timeout de 8 segundos (tiempo justo para redes lentas)
+    const timeoutMs = 8000;
+    let timeoutId;
+
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            reject(new Error('VALIDATION_TIMEOUT'));
+        }, timeoutMs);
+    });
+
     try {
+        // 2. Obtener clave de licencia (desde argumento o storage)
         let storedLicense = null;
         try {
             const ls = localStorage.getItem('lanzo_license');
@@ -134,37 +150,85 @@ export const revalidateLicense = async function (licenseKeyProp) {
 
         const licenseKey = licenseKeyProp || storedLicense?.license_key;
 
-        if (!licenseKey) return { valid: false, message: 'No license key found' };
+        if (!licenseKey) {
+            clearTimeout(timeoutId);
+            return { valid: false, reason: 'no_license_key' };
+        }
+
+        // 3. Verificación PREVIA de conexión
+        // Si el navegador dice que no hay internet, ni intentamos el fetch
+        if (!navigator.onLine) {
+            throw new Error("OFFLINE_PRECHECK");
+        }
 
         const deviceFingerprint = await getStableDeviceId();
 
-        const { data, error } = await supabaseClient.rpc(
+        // 4. Intentar validar con el servidor (compite contra el timeout)
+        const validationPromise = supabaseClient.rpc(
             'verify_device_license', {
             license_key_param: licenseKey,
             device_fingerprint_param: deviceFingerprint
         });
 
+        // Promise.race ganará quien termine primero (la respuesta o el timeout)
+        const { data, error } = await Promise.race([validationPromise, timeoutPromise]);
+
+        clearTimeout(timeoutId);
+
+        // Si Supabase devuelve error técnico (ej. error 500, error de sintaxis), lanzamos excepción
         if (error) throw error;
 
+        // 5. ÉXITO DEL SERVIDOR:
+        // Aquí es donde corregimos el problema. Si el servidor respondió, 
+        // devolvemos SU verdad, aunque sea { valid: false }.
+        // NO activamos el catch ni el modo offline.
         if (!data.valid) {
-            console.warn("Licencia invalidada por el servidor:", data.reason);
+            console.warn("⛔ Servidor: Licencia no válida o expirada:", data.reason);
+        } else {
+            console.log("✅ Servidor: Licencia válida.");
         }
 
         return data;
 
     } catch (error) {
-        console.error('Error de conexión al revalidar (Modo Offline Activado):', error);
+        clearTimeout(timeoutId);
 
-        // --- CAMBIO: BLINDAJE TOTAL ---
-        // Ante CUALQUIER error de conexión (timeout, DNS, cambio de red, etc.),
-        // si ya teníamos una licencia, asumimos que sigue siendo válida temporalmente.
-        return {
-            valid: true,
-            reason: 'offline_grace',
-            license_key: licenseKeyProp,
-            // Importante: Marcamos esto para que el store sepa que es data parcial
-            is_fallback: true
-        };
+        // 6. DIAGNÓSTICO DE ERROR (Solo usamos caché si es culpa de la RED)
+        const errorMessage = error.message || '';
+
+        console.warn('⚠️ Fallo al validar con servidor:', errorMessage);
+
+        const isNetworkError =
+            errorMessage === 'VALIDATION_TIMEOUT' ||
+            errorMessage === 'OFFLINE_PRECHECK' ||
+            errorMessage.includes('fetch') ||
+            errorMessage.includes('network') ||
+            errorMessage.includes('Failed to fetch');
+
+        // Si es error de RED, activamos el "Modo Gracia Offline"
+        if (isNetworkError) {
+            console.log('☁️ Activando modo offline por falta de conexión...');
+
+            // Intentar cargar caché local
+            let storedLicense = null;
+            try {
+                const ls = localStorage.getItem('lanzo_license');
+                if (ls) storedLicense = JSON.parse(ls)?.data;
+            } catch (e) { }
+
+            if (storedLicense && storedLicense.license_key) {
+                return {
+                    ...storedLicense,
+                    valid: true, // Asumimos válido temporalmente porque no podemos comprobar
+                    reason: 'offline_grace', // Marcador especial para la UI
+                    is_fallback: true
+                };
+            }
+        }
+
+        // Si es otro tipo de error (ej. base de datos corrupta, error lógico)
+        // o si no hay caché, devolvemos fallo.
+        return { valid: false, reason: 'error_unknown', details: errorMessage };
     }
 };
 
@@ -237,11 +301,10 @@ export const uploadFile = async function (file, type = 'product') {
 };
 
 export const deactivateCurrentDevice = async () => {
-    console.warn("Deactivación manual pendiente de implementación en backend anónimo.");
+    console.warn("Desactivación manual pendiente de implementación en backend anónimo.");
     return { success: true };
 };
 
-// --- FUNCIÓN CORREGIDA ---
 export const createFreeTrial = async function () {
     try {
         checkRateLimit();
@@ -265,11 +328,7 @@ export const createFreeTrial = async function () {
 
         if (data && data.success) {
             localStorage.setItem('fp', deviceFingerprint);
-
-            // --- CORRECCIÓN AQUÍ: ---
-            // Si la SQL devuelve 'details', úsalo. Si no (nueva SQL), usa 'data' completo.
             const licenseData = data.details || data;
-
             return { success: true, details: licenseData };
         } else {
             registerFailedAttempt();
@@ -286,30 +345,7 @@ export const createFreeTrial = async function () {
     }
 };
 
-export const getLicenseDevices = async function (licenseKey) {
-    try {
-        if (!licenseKey) return { success: false, message: 'Falta la clave de licencia.' };
 
-        const deviceFingerprint = await getStableDeviceId();
-
-        const { data, error } = await supabaseClient.rpc('get_license_devices_anon', {
-            license_key_param: licenseKey,
-            current_fingerprint_param: deviceFingerprint
-        });
-
-        if (error) throw error;
-
-        if (data.success) {
-            return { success: true, data: data.data || [] };
-        } else {
-            return { success: false, message: data.message };
-        }
-
-    } catch (error) {
-        console.error('Error getting license devices:', error);
-        return { success: false, message: `Error de red o servidor: ${error.message}` };
-    }
-};
 
 export const deactivateDeviceById = async function (deviceId) {
     try {

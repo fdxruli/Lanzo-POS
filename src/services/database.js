@@ -2,7 +2,7 @@
 
 // Incrementamos versión para forzar la creación de las tablas faltantes
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 23; // si le vamos a mover a este numero asegurar que tengamos el mismo en el archivo workers/stats.worker.js
+const DB_VERSION = 24; // si le vamos a mover a este numero asegurar que tengamos el mismo en el archivo workers/stats.worker.js
 
 // Objeto de conexión
 const dbConnection = {
@@ -30,7 +30,8 @@ export const STORES = {
   WASTE: 'waste_logs',
   DAILY_STATS: 'daily_stats',
   PROCESSED_SALES_LOG: 'processed_sales_log',
-  TRANSACTION_LOG: 'transaction_log'
+  TRANSACTION_LOG: 'transaction_log',
+  SYNC_CACHE: 'sync_cache'
 };
 
 // ============================================================
@@ -178,7 +179,8 @@ export function initDB() {
         // 1. Crear almacenes si no existen
         Object.values(STORES).forEach(storeName => {
           if (!tempDb.objectStoreNames.contains(storeName)) {
-            const keyPath = storeName === STORES.DAILY_STATS ? 'id' : 'id';
+            // SYNC_CACHE usa 'key' como índice porque guardaremos por nombre (ej: "devices_LANZO-123")
+            const keyPath = storeName === STORES.SYNC_CACHE ? 'key' : 'id';
             tempDb.createObjectStore(storeName, { keyPath });
           }
         });
