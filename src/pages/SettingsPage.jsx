@@ -11,10 +11,6 @@ export default function SettingsPage() {
 
   return (
     <div className="settings-page-wrapper">
-      <div className="products-header">
-         <h2 className="section-title">Configuración</h2>
-      </div>
-
       <div className="tabs-container">
         <button
           className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`}
