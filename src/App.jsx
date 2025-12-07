@@ -17,27 +17,33 @@ const lazyRetry = (importFn) => {
   return lazy(async () => {
     try {
       const component = await importFn();
-      // Si tuvo éxito, limpiamos marcas de error previo
       window.sessionStorage.removeItem('retry-lazy-refreshed');
       return component;
     } catch (error) {
-      // 1. Si no hay internet, NO recargues la página (bucle de muerte)
+      // --- CÓDIGO CORREGIDO ---
+
+      // 1. Validación estricta de conexión
       if (!navigator.onLine) {
-        throw new Error("No hay conexión a internet para cargar este módulo.");
+        console.warn("Offline: No se puede cargar el módulo.");
+        // Retornamos un componente "dummy" para evitar el crash
+        return {
+          default: () => (
+            <div style={{ padding: '20px', textAlign: 'center' }}>
+              <h3>📡 Sin conexión</h3>
+              <p>No se puede cargar esta sección sin internet.</p>
+            </div>
+          )
+        };
       }
 
-      // 2. Si es un error de red y ya intentamos recargar una vez, no lo hagas de nuevo
+      // 2. Lógica de reintento existente
       const hasRefreshed = window.sessionStorage.getItem('retry-lazy-refreshed');
-
       if (!hasRefreshed) {
-        console.log("Error de carga detectado, intentando recargar sesión...");
         window.sessionStorage.setItem('retry-lazy-refreshed', 'true');
         window.location.reload();
-        // Retornamos promesa vacía para esperar el reload
         return new Promise(() => { });
       }
 
-      // Si ya recargamos y sigue fallando, lanzamos el error para que lo atrape el ErrorBoundary
       throw error;
     }
   });

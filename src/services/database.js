@@ -2,7 +2,7 @@
 
 // Incrementamos versión para forzar la creación de las tablas faltantes
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 24; // si le vamos a mover a este numero asegurar que tengamos el mismo en el archivo workers/stats.worker.js
+const DB_VERSION = 25; // si le vamos a mover a este numero asegurar que tengamos el mismo en el archivo workers/stats.worker.js
 
 // Objeto de conexión
 const dbConnection = {
@@ -31,7 +31,8 @@ export const STORES = {
   DAILY_STATS: 'daily_stats',
   PROCESSED_SALES_LOG: 'processed_sales_log',
   TRANSACTION_LOG: 'transaction_log',
-  SYNC_CACHE: 'sync_cache'
+  SYNC_CACHE: 'sync_cache',
+  IMAGES: 'images',
 };
 
 // ============================================================
@@ -136,7 +137,6 @@ export function initDB() {
       try { dbConnection.instance.close(); } catch (e) { }
       dbConnection.instance = null;
     }
-
     if (dbConnection.instance) {
       // VALIDACIÓN CLAVE: Verificar si la conexión sigue viva
       // A veces el objeto existe pero la conexión interna está 'closed'
@@ -340,6 +340,29 @@ async function executeWithRetry(operation, maxRetries = 3) {
 // ============================================================
 // FUNCIONES DE ACCESO A DATOS
 // ============================================================
+
+export async function saveImageToDB(id, blob) {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORES.IMAGES], 'readwrite');
+    const store = tx.objectStore(STORES.IMAGES);
+    //Guardamos el blob
+    const request = store.put({ id, blob });
+    request.onsuccess = () => resolve(true);
+    request.onerror = (e) => reject(e.target.error);
+  });
+}
+
+export async function getImageFromDB(id) {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORES.IMAGES], 'readonly');
+    const store = tx.objectStore(STORES.IMAGES);
+    const request = store.get(id);
+    request.onsuccess = () => resolve(request.result ? request.result.blob : null);
+    request.onerror = () => resolve(null);
+  });
+}
 
 export function loadDataPaginated(storeName, { limit = 50, offset = 0, indexName = null, range = null, direction = 'next' } = {}) {
   return executeWithRetry(async () => {

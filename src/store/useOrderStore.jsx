@@ -1,104 +1,105 @@
 // src/store/useOrderStore.jsx
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware'; // <--- Importante
 import { calculateCompositePrice } from '../services/pricingLogic';
 import { roundCurrency } from '../services/utils';
 
-// ============================================================
-// STORE ZUSTAND
-// ============================================================
+export const useOrderStore = create(
+  persist(
+    (set, get) => ({
+      order: [],
 
-export const useOrderStore = create((set, get) => ({
+      addItem: (product) => {
+        set((state) => {
+          const { order } = state;
 
-  order: [],
+          // BUSCAR EXISTENCIA:
+          // - Si es variante, buscamos por ID de lote (batchId).
+          // - Si es normal, buscamos por ID de producto.
+          const existingItemIndex = order.findIndex((item) => {
+            if (product.isVariant && product.batchId) {
+              return item.batchId === product.batchId;
+            }
+            return item.id === product.id;
+          });
 
-  addItem: (product) => {
-    set((state) => {
-      const { order } = state;
+          if (existingItemIndex >= 0) {
+            // --- ACTUALIZAR ITEM EXISTENTE ---
+            const existingItem = order[existingItemIndex];
+            const newQuantity = existingItem.quantity + 1;
+            const newPrice = calculateCompositePrice(existingItem, newQuantity);
 
-      // BUSCAR EXISTENCIA:
-      // - Si es variante, buscamos por ID de lote (batchId).
-      // - Si es normal, buscamos por ID de producto.
-      const existingItemIndex = order.findIndex((item) => {
-        if (product.isVariant && product.batchId) {
-          return item.batchId === product.batchId;
-        }
-        return item.id === product.id;
-      });
+            const updatedOrder = [...order];
+            updatedOrder[existingItemIndex] = {
+              ...existingItem,
+              quantity: newQuantity,
+              price: newPrice,
+              exceedsStock: existingItem.trackStock && newQuantity > existingItem.stock
+            };
 
-      if (existingItemIndex >= 0) {
-        // --- ACTUALIZAR ITEM EXISTENTE ---
-        const existingItem = order[existingItemIndex];
-        const newQuantity = existingItem.quantity + 1;
-        const newPrice = calculateCompositePrice(existingItem, newQuantity);
+            return { order: updatedOrder };
 
-        const updatedOrder = [...order];
-        updatedOrder[existingItemIndex] = {
-          ...existingItem,
-          quantity: newQuantity,
-          price: newPrice,
-          exceedsStock: existingItem.trackStock && newQuantity > existingItem.stock
-        };
+          } else {
+            // --- AGREGAR NUEVO ITEM ---
+            const newQuantity = 1;
+            const initialPrice = calculateCompositePrice(product, newQuantity);
 
-        return { order: updatedOrder };
+            const newItem = {
+              ...product,
+              quantity: newQuantity,
+              price: initialPrice,
+              originalPrice: product.price, // Guardamos referencia
+              exceedsStock: product.trackStock && newQuantity > product.stock
+            };
 
-      } else {
-        // --- AGREGAR NUEVO ITEM ---
-        const newQuantity = 1;
-        const initialPrice = calculateCompositePrice(product, newQuantity);
+            return { order: [...order, newItem] };
+          }
+        });
+      },
 
-        const newItem = {
-          ...product,
-          quantity: newQuantity,
-          price: initialPrice,
-          originalPrice: product.price, // Guardamos referencia
-          exceedsStock: product.trackStock && newQuantity > product.stock
-        };
+      updateItemQuantity: (itemId, newQuantity) => {
+        set((state) => {
+          const updatedOrder = state.order.map((item) => {
+            if (item.id === itemId) {
+              const safeQuantity = newQuantity === null ? 0 : newQuantity;
+              const newPrice = calculateCompositePrice(item, safeQuantity);
 
-        return { order: [...order, newItem] };
-      }
-    });
-  },
+              return {
+                ...item,
+                quantity: newQuantity,
+                price: newPrice,
+                exceedsStock: item.trackStock && safeQuantity > item.stock
+              };
+            }
+            return item;
+          });
+          return { order: updatedOrder };
+        });
+      },
 
-  updateItemQuantity: (itemId, newQuantity) => {
-    set((state) => {
-      const updatedOrder = state.order.map((item) => {
-        // Nota: Aquí usamos itemId que debe ser único en el carrito
-        // (En variants, el id del item en el carrito ya debería ser el batchId o un composite)
-        if (item.id === itemId) {
-          const safeQuantity = newQuantity === null ? 0 : newQuantity;
-          const newPrice = calculateCompositePrice(item, safeQuantity);
+      removeItem: (itemId) => {
+        set((state) => ({
+          order: state.order.filter((item) => item.id !== itemId),
+        }));
+      },
 
-          return {
-            ...item,
-            quantity: newQuantity,
-            price: newPrice,
-            exceedsStock: item.trackStock && safeQuantity > item.stock
-          };
-        }
-        return item;
-      });
-      return { order: updatedOrder };
-    });
-  },
+      clearOrder: () => set({ order: [] }),
 
-  removeItem: (itemId) => {
-    set((state) => ({
-      order: state.order.filter((item) => item.id !== itemId),
-    }));
-  },
+      setOrder: (newOrder) => set({ order: newOrder }),
 
-  clearOrder: () => set({ order: [] }),
-
-  setOrder: (newOrder) => set({ order: newOrder }),
-
-  getTotalPrice: () => {
-    const { order } = get();
-    return order.reduce((sum, item) => {
-      if (item.quantity && item.quantity > 0) {
-        return roundCurrency(sum + roundCurrency(item.price * item.quantity));
-      }
-      return sum;
-    }, 0);
-  },
-
-}));
+      getTotalPrice: () => {
+        const { order } = get();
+        return order.reduce((sum, item) => {
+          if (item.quantity && item.quantity > 0) {
+            return roundCurrency(sum + roundCurrency(item.price * item.quantity));
+          }
+          return sum;
+        }, 0);
+      },
+    }),
+    {
+      name: 'lanzo-cart-storage', // Nombre único en LocalStorage para no mezclar datos
+      partialize: (state) => ({ order: state.order }), // Solo persistimos el array 'order'
+    }
+  )
+);

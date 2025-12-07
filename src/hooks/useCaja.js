@@ -8,6 +8,7 @@ export function useCaja() {
   const [historialCajas, setHistorialCajas] = useState([]);
   const [movimientosCaja, setMovimientosCaja] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Estado desglosado para el turno
   const [totalesTurno, setTotalesTurno] = useState({
@@ -100,6 +101,7 @@ export function useCaja() {
 
     } catch (error) {
       console.error("Error al cargar estado de caja:", error);
+      setError(error.message || "Error al cargar la caja.");
     } finally {
       setIsLoading(false);
     }
@@ -220,6 +222,7 @@ export function useCaja() {
     cajaActual,
     historialCajas,
     movimientosCaja,
+    error,
     isLoading,
     totalesTurno,
     ajustarMontoInicial, // Nueva función expuesta

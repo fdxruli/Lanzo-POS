@@ -1,6 +1,6 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { saveDataSafe, deleteDataSafe, saveBatchAndSyncProductSafe, loadData, saveData, deleteData, saveBulk, queryByIndex, STORES, deleteCategoryCascading, saveBatchAndSyncProduct } from '../services/database';
+import { saveDataSafe, deleteDataSafe, saveBatchAndSyncProductSafe, loadData, saveData, deleteData, saveBulk, queryByIndex, STORES, deleteCategoryCascading, saveBatchAndSyncProduct, saveImageToDB } from '../services/database';
 import { showMessageModal, generateID, fileToBase64 } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
@@ -126,12 +126,11 @@ export default function ProductsPage() {
             // Si viene un archivo (File) nuevo, lo convertimos a Base64 (texto)
             // para guardarlo en IndexedDB y NO subirlo a Supabase.
             if (productData.image instanceof File) {
-                // El archivo ya viene comprimido en WebP desde ProductForm gracias a utils.js
-                finalImage = await fileToBase64(productData.image);
+                const imageId = `img-${Date.now()}`;
+                await saveImageToDB(imageId, productData.image);
+                finalImage = imageId;
             } 
-            // Si no es archivo, mantenemos lo que ya tenía (puede ser null o un base64 viejo)
             else if (!productData.image && editingProduct?.image) {
-               // Si el usuario no seleccionó nada nuevo, mantenemos la anterior
                finalImage = editingProduct.image;
             }
 

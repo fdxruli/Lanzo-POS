@@ -1,7 +1,7 @@
 // src/workers/stats.worker.js
 
 const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 24; // Asegurar que coincida con tu database.js
+const DB_VERSION = 25; // Asegurar que coincida con tu database.js
 
 // Mini función para abrir DB dentro del worker
 const openDB = () => {

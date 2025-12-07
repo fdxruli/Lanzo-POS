@@ -15,7 +15,7 @@ import {
 
 import { startLicenseListener, stopLicenseListener } from '../services/licenseRealtime';
 
-const _ui_render_config_v2 = "LANZO_SECURE_KEY_v1_X9Z";
+const _ui_render_config_v2 = import.meta.env.VITE_LICENSE_SALT;
 
 const generateSignature = (data) => {
   const stringData = JSON.stringify(data);

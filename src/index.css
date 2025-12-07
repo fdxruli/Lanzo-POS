@@ -95,7 +95,11 @@ body {
   color: var(--text-color);
   line-height: 1.6;
   min-height: 100vh;
-  /* La transición global está aplicada abajo */
+
+  overscroll-behavior-y: contain;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Títulos */
@@ -125,6 +129,11 @@ select {
   font-size: 1rem;
   transition: border-color 0.2s, box-shadow 0.2s;
   /* Transición rápida para foco */
+}
+
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 input:focus,
