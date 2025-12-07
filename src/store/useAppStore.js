@@ -1,4 +1,5 @@
-// src/store/useAppStore.js
+// src/store/useAppStore.js - VERSIÓN CORREGIDA CON MANEJO DE ERRORES ROBUSTO
+
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
 import { isLocalStorageEnabled, normalizeDate, showMessageModal } from '../services/utils';
@@ -17,6 +18,7 @@ import { startLicenseListener, stopLicenseListener } from '../services/licenseRe
 
 const _ui_render_config_v2 = import.meta.env.VITE_LICENSE_SALT;
 
+// === HELPERS (Sin cambios) ===
 const generateSignature = (data) => {
   const stringData = JSON.stringify(data);
   let hash = 0;
@@ -78,115 +80,202 @@ export const useAppStore = create((set, get) => ({
   companyProfile: null,
   licenseDetails: null,
 
+  // === 🔧 FUNCIÓN CORREGIDA CON MANEJO DE ERRORES ROBUSTO ===
   initializeApp: async () => {
-    const localLicense = await getLicenseFromStorage();
-
-    if (!localLicense?.license_key) {
-      set({ appStatus: 'unauthenticated' });
-      return;
-    }
-
-    const isOnline = navigator.onLine;
-
+    console.log('🔄 [AppStore] Iniciando aplicación...');
+    
     try {
-      if (isOnline) {
-        const serverValidation = await revalidateLicense(localLicense.license_key);
+      // PASO 1: Intentar cargar licencia local
+      const localLicense = await getLicenseFromStorage();
 
-        if (serverValidation?.valid !== undefined) {
-          const now = new Date();
-          const graceEnd = serverValidation.grace_period_ends ? new Date(serverValidation.grace_period_ends) : null;
-
-          // Lógica de tolerancia
-          const isWithinGracePeriod = graceEnd && graceEnd > now;
-
-          if (!serverValidation.valid && serverValidation.reason !== 'offline_grace' && !isWithinGracePeriod) {
-            clearLicenseFromStorage();
-            set({
-              appStatus: 'unauthenticated',
-              licenseDetails: null,
-              licenseStatus: serverValidation.reason || 'invalid'
-            });
-            return;
-          }
-
-          const isTechnicallyValid = serverValidation.valid || isWithinGracePeriod;
-
-          if (isTechnicallyValid) {
-            // Calcular el estado final REAL
-            let finalStatus = serverValidation.reason || 'active';
-            if (!serverValidation.valid && isWithinGracePeriod) {
-              finalStatus = 'grace_period';
-            }
-
-            const finalLicenseData = {
-              ...localLicense,
-              ...serverValidation,
-              valid: true,
-              status: finalStatus // <--- CORRECCIÓN IMPORTANTE: Sobrescribimos el status dentro del objeto
-            };
-
-            await saveLicenseToStorage(finalLicenseData);
-
-            set({
-              licenseDetails: finalLicenseData,
-              licenseStatus: finalStatus,
-              gracePeriodEnds: finalLicenseData.grace_period_ends || null
-            });
-
-            await get()._loadProfile(finalLicenseData.license_key);
-            return;
-          }
-        }
+      if (!localLicense?.license_key) {
+        console.log('❌ [AppStore] No hay licencia guardada');
+        set({ appStatus: 'unauthenticated' });
+        return;
       }
 
-      // LÓGICA OFFLINE (FALLBACK)
-      if (localLicense?.valid) {
-        if (localLicense.localExpiry && normalizeDate(localLicense.localExpiry) <= new Date()) {
+      console.log('📦 [AppStore] Licencia local encontrada:', localLicense.license_key);
+
+      // PASO 2: Decidir estrategia según conectividad
+      const isOnline = navigator.onLine;
+      
+      if (isOnline) {
+        console.log('🌐 [AppStore] Modo ONLINE - Validando con servidor...');
+        
+        try {
+          // Sub-Paso A: Intentar validación con timeout personalizado
+          const serverValidation = await Promise.race([
+            revalidateLicense(localLicense.license_key),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('CUSTOM_TIMEOUT')), 5000)
+            )
+          ]);
+
+          console.log('✅ [AppStore] Respuesta del servidor:', serverValidation);
+
+          // Sub-Paso B: Procesar respuesta exitosa del servidor
+          if (serverValidation?.valid !== undefined) {
+            await get()._processServerValidation(serverValidation, localLicense);
+            return; // ← Salida exitosa
+          }
+
+        } catch (validationError) {
+          // Sub-Paso C: Manejo de errores de red
+          const errMsg = validationError.message || '';
+          console.warn('⚠️ [AppStore] Fallo validación online:', errMsg);
+
+          // Si es error de RED (no lógico), activar modo offline
+          const isNetworkError = 
+            errMsg === 'CUSTOM_TIMEOUT' ||
+            errMsg === 'VALIDATION_TIMEOUT' ||
+            errMsg.includes('fetch') ||
+            errMsg.includes('Network');
+
+          if (isNetworkError) {
+            console.log('☁️ [AppStore] Activando modo OFFLINE por fallo de red');
+            await get()._processOfflineMode(localLicense);
+            return;
+          }
+
+          // Si NO es error de red, es algo grave (licencia revocada por servidor)
+          console.error('🚫 [AppStore] Error lógico del servidor, cerrando sesión');
           clearLicenseFromStorage();
           set({ appStatus: 'unauthenticated' });
           return;
         }
+      } 
+      
+      // PASO 3: Modo OFFLINE desde el inicio (sin internet)
+      console.log('📴 [AppStore] Modo OFFLINE - Sin conexión detectada');
+      await get()._processOfflineMode(localLicense);
 
-        let localStatus = localLicense.status || 'active';
-        const now = new Date();
-        const expiryDate = localLicense.expires_at ? new Date(localLicense.expires_at) : null;
-        const graceDate = localLicense.grace_period_ends ? new Date(localLicense.grace_period_ends) : null;
-
-        if (expiryDate && expiryDate < now) {
-          if (graceDate && graceDate > now) {
-            localStatus = 'grace_period';
-          } else {
-            clearLicenseFromStorage();
-            set({ appStatus: 'unauthenticated' });
-            return;
-          }
-        }
-
-        // <--- CORRECCIÓN IMPORTANTE TAMBIÉN AQUÍ
-        const updatedLocalLicense = { ...localLicense, status: localStatus };
-
-        set({
-          licenseDetails: updatedLocalLicense,
-          licenseStatus: localStatus,
-          gracePeriodEnds: localLicense.grace_period_ends || null
-        });
-
-        await get()._loadProfile(null);
-      } else {
-        set({ appStatus: 'unauthenticated' });
-      }
-    } catch (error) {
-      console.error("Error crítico en inicialización:", error);
-      set({ appStatus: 'unauthenticated' });
+    } catch (criticalError) {
+      // PASO 4: Captura de errores CRÍTICOS (DB corrupta, etc.)
+      console.error('💥 [AppStore] Error CRÍTICO en inicialización:', criticalError);
+      
+      // Intentar limpiar y pedir re-login
+      clearLicenseFromStorage();
+      set({ 
+        appStatus: 'unauthenticated',
+        licenseDetails: null 
+      });
+      
+      // Mostrar mensaje al usuario
+      showMessageModal(
+        '⚠️ Ocurrió un error al iniciar la aplicación. Por favor, inicia sesión de nuevo.',
+        null,
+        { type: 'error' }
+      );
     }
   },
 
+  // === 🆕 HELPER: Procesar Validación Exitosa del Servidor ===
+  _processServerValidation: async (serverValidation, localLicense) => {
+    const now = new Date();
+    const graceEnd = serverValidation.grace_period_ends 
+      ? new Date(serverValidation.grace_period_ends) 
+      : null;
+
+    const isWithinGracePeriod = graceEnd && graceEnd > now;
+
+    // A) Verificar si la licencia está bloqueada (sin gracia)
+    if (!serverValidation.valid && 
+        serverValidation.reason !== 'offline_grace' && 
+        !isWithinGracePeriod) {
+      
+      console.warn('🚫 [AppStore] Licencia inválida según servidor');
+      clearLicenseFromStorage();
+      set({
+        appStatus: 'unauthenticated',
+        licenseDetails: null,
+        licenseStatus: serverValidation.reason || 'invalid'
+      });
+      return;
+    }
+
+    // B) Licencia válida O en período de gracia
+    let finalStatus = serverValidation.reason || 'active';
+    
+    if (!serverValidation.valid && isWithinGracePeriod) {
+      finalStatus = 'grace_period';
+      console.log('⏰ [AppStore] Licencia en PERÍODO DE GRACIA');
+    }
+
+    const finalLicenseData = {
+      ...localLicense,
+      ...serverValidation,
+      valid: true,
+      status: finalStatus
+    };
+
+    await saveLicenseToStorage(finalLicenseData);
+
+    set({
+      licenseDetails: finalLicenseData,
+      licenseStatus: finalStatus,
+      gracePeriodEnds: finalLicenseData.grace_period_ends || null
+    });
+
+    // C) Cargar perfil de empresa
+    await get()._loadProfile(finalLicenseData.license_key);
+  },
+
+  // === 🆕 HELPER: Procesar Modo Offline ===
+  _processOfflineMode: async (localLicense) => {
+    // A) Verificar expiración del caché local (30 días)
+    if (localLicense.localExpiry && 
+        normalizeDate(localLicense.localExpiry) <= new Date()) {
+      
+      console.warn('🕐 [AppStore] Caché local expirado (30 días)');
+      clearLicenseFromStorage();
+      set({ appStatus: 'unauthenticated' });
+      return;
+    }
+
+    // B) Calcular estado basado en fechas locales
+    let localStatus = localLicense.status || 'active';
+    const now = new Date();
+    const expiryDate = localLicense.expires_at 
+      ? new Date(localLicense.expires_at) 
+      : null;
+    const graceDate = localLicense.grace_period_ends 
+      ? new Date(localLicense.grace_period_ends) 
+      : null;
+
+    // C) Verificar si expiró localmente
+    if (expiryDate && expiryDate < now) {
+      if (graceDate && graceDate > now) {
+        localStatus = 'grace_period';
+        console.log('⏰ [AppStore] Licencia en PERÍODO DE GRACIA (offline)');
+      } else {
+        console.warn('🚫 [AppStore] Licencia expirada localmente');
+        clearLicenseFromStorage();
+        set({ appStatus: 'unauthenticated' });
+        return;
+      }
+    }
+
+    // D) Licencia válida en modo offline
+    const updatedLocalLicense = { ...localLicense, status: localStatus };
+
+    set({
+      licenseDetails: updatedLocalLicense,
+      licenseStatus: localStatus,
+      gracePeriodEnds: localLicense.grace_period_ends || null
+    });
+
+    await get()._loadProfile(null); // null = modo offline
+  },
+
+  // === _loadProfile (MEJORADO CON TRY/CATCH) ===
   _loadProfile: async (licenseKey) => {
     let companyData = null;
 
+    // PASO 1: Intentar cargar desde servidor (si hay licenseKey)
     if (licenseKey && navigator.onLine) {
       try {
         const profileResult = await getBusinessProfile(licenseKey);
+        
         if (profileResult.success && profileResult.data) {
           companyData = {
             id: 'company',
@@ -196,34 +285,57 @@ export const useAppStore = create((set, get) => ({
             logo: profileResult.data.logo_url || profileResult.data.logo,
             business_type: profileResult.data.business_type
           };
+          
+          // Guardar en DB local
           await saveData(STORES.COMPANY, companyData);
         }
       } catch (e) {
-        console.warn("Fallo carga perfil online:", e);
+        console.warn('⚠️ [AppStore] Fallo carga perfil online:', e);
+        // No es crítico, seguimos con caché local
       }
     }
 
+    // PASO 2: Fallback a caché local si no se pudo cargar online
     if (!companyData) {
-      companyData = await loadData(STORES.COMPANY, 'company');
+      try {
+        companyData = await loadData(STORES.COMPANY, 'company');
+      } catch (e) {
+        console.warn('⚠️ [AppStore] Fallo carga perfil local:', e);
+      }
     }
 
+    // PASO 3: Actualizar estado de la UI
     set({ companyProfile: companyData });
 
     if (companyData && (companyData.name || companyData.business_name)) {
+      console.log('✅ [AppStore] Aplicación lista (ready)');
       set({ appStatus: 'ready' });
     } else {
+      console.log('⚙️ [AppStore] Requiere configuración inicial');
       set({ appStatus: 'setup_required' });
     }
   },
 
+  // === RESTO DE FUNCIONES (Sin cambios críticos, solo agregamos logs) ===
+
   startRealtimeSecurity: async () => {
     const state = get();
 
-    if (state._isInitializingSecurity) return;
-    if (!state.licenseDetails?.license_key) return;
+    if (state._isInitializingSecurity) {
+      console.log('⏳ [Realtime] Ya hay inicialización en progreso');
+      return;
+    }
+    
+    if (!state.licenseDetails?.license_key) {
+      console.warn('⚠️ [Realtime] No hay licencia para monitorear');
+      return;
+    }
 
     const deviceFingerprint = localStorage.getItem('lanzo_device_id');
-    if (!deviceFingerprint) return;
+    if (!deviceFingerprint) {
+      console.warn('⚠️ [Realtime] No hay fingerprint del dispositivo');
+      return;
+    }
 
     set({ _isInitializingSecurity: true });
 
@@ -237,18 +349,14 @@ export const useAppStore = create((set, get) => ({
         state.licenseDetails.license_key,
         deviceFingerprint,
         {
-          // --- AQUÍ ESTÁ EL CAMBIO MAGISTRAL ---
-          // Cuando algo cambia en la licencia, NO intentamos mezclar datos manualmente.
-          // En su lugar, pedimos una re-verificación completa al servidor.
-          // Esto trae las nuevas fechas calculadas (grace_period_ends) correctamente.
           onLicenseChanged: async (newLicenseData) => {
-            console.log("🔔 Cambio en licencia detectado. Actualizando estado completo...");
-            // Usamos la función que ya arreglamos antes para que haga el trabajo pesado
+            console.log("🔔 [Realtime] Cambio en licencia detectado");
             await get().verifySessionIntegrity();
           },
 
           onDeviceChanged: (event) => {
             if (event.status === 'banned' || event.status === 'deleted') {
+              console.warn('🚫 [Realtime] Dispositivo revocado');
               showMessageModal(
                 '🚫 ACCESO REVOCADO: Dispositivo desactivado.',
                 () => {
@@ -263,8 +371,10 @@ export const useAppStore = create((set, get) => ({
       );
 
       set({ realtimeSubscription: channel });
+      console.log('✅ [Realtime] Seguridad iniciada');
+
     } catch (error) {
-      console.error('Error inicializando seguridad realtime:', error);
+      console.error('❌ [Realtime] Error inicializando seguridad:', error);
       set({ realtimeSubscription: null });
     } finally {
       set({ _isInitializingSecurity: false });
@@ -280,8 +390,9 @@ export const useAppStore = create((set, get) => ({
 
     try {
       await stopLicenseListener(realtimeSubscription);
+      console.log('🔕 [Realtime] Seguridad detenida');
     } catch (err) {
-      console.warn('Error deteniendo listener:', err);
+      console.warn('⚠️ [Realtime] Error deteniendo listener:', err);
     } finally {
       set({
         realtimeSubscription: null,
@@ -401,45 +512,38 @@ export const useAppStore = create((set, get) => ({
 
     if (navigator.onLine) {
       try {
-        // 1. Consultar estado fresco al servidor
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
 
-        // 2. Calcular si aplica tolerancia (Modo Gracia)
         const now = new Date();
-        const graceEnd = serverCheck.grace_period_ends ? new Date(serverCheck.grace_period_ends) : null;
+        const graceEnd = serverCheck.grace_period_ends 
+          ? new Date(serverCheck.grace_period_ends) 
+          : null;
         const isWithinGracePeriod = graceEnd && graceEnd > now;
 
-        // 3. Verificar bloqueo (Si es inválido Y se acabó la tolerancia)
-        if (serverCheck?.valid === false && serverCheck.reason !== 'offline_grace' && !isWithinGracePeriod) {
+        if (serverCheck?.valid === false && 
+            serverCheck.reason !== 'offline_grace' && 
+            !isWithinGracePeriod) {
           await logout();
           return false;
         }
 
-        // 4. PREPARAR DATOS ACTUALIZADOS
-        // Determinamos el estatus correcto
         let newStatus = serverCheck.status || serverCheck.reason;
 
-        // Si el servidor dice "inválido" pero estamos en tiempo de gracia, forzamos el estado visual
         if (isWithinGracePeriod && !serverCheck.valid) {
           newStatus = 'grace_period';
         }
 
-        // --- CORRECCIÓN FINAL AQUÍ ---
-        // Fusionamos TODO lo que viene del servidor (fechas nuevas, features, etc.)
-        // con lo que ya teníamos, y sobreescribimos el estatus calculado.
         const updatedDetails = {
-          ...licenseDetails,  // Datos viejos (base)
-          ...serverCheck,     // Datos nuevos (sobrescriben fechas y valid)
-          status: newStatus,  // Estatus corregido (sobrescribe todo)
-          // Aseguramos que la UI no se bloquee si estamos en gracia
+          ...licenseDetails,
+          ...serverCheck,
+          status: newStatus,
           valid: serverCheck.valid || isWithinGracePeriod
         };
 
-        // 5. ACTUALIZAR EL STORE Y EL DISCO
         set({
           licenseStatus: newStatus,
           gracePeriodEnds: serverCheck.grace_period_ends,
-          licenseDetails: updatedDetails // ¡Ahora sí tiene la fecha nueva!
+          licenseDetails: updatedDetails
         });
 
         await saveLicenseToStorage(updatedDetails);
