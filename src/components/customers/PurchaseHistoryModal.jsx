@@ -1,6 +1,6 @@
 // src/components/customers/PurchaseHistoryModal.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, STORES } from '../../services/database';
+import { loadData, queryByIndex, STORES } from '../../services/database';
 import './PurchaseHistoryModal.css';
 
 export default function PurchaseHistoryModal({ show, onClose, customer }) {
@@ -11,12 +11,21 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
     if (show && customer) {
       const fetchHistory = async () => {
         setLoading(true);
-        const allSales = await loadData(STORES.SALES);
-        const customerSales = allSales
-          .filter(sale => sale.customerId === customer.id)
-          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        setSales(customerSales);
-        setLoading(false);
+        try {
+          // --- CÓDIGO CORREGIDO ---
+          // En lugar de cargar TODO (loadData), usamos el índice específico
+          // Esto buscará solo las ventas donde customerId coincida
+          const customerSales = await queryByIndex(STORES.SALES, 'customerId', customer.id);
+
+          // Ordenamos en memoria (esto es rápido porque son pocas ventas por cliente)
+          const sortedSales = customerSales.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+          setSales(sortedSales);
+        } catch (error) {
+          console.error("Error cargando historial:", error);
+        } finally {
+          setLoading(false);
+        }
       };
       fetchHistory();
     }
@@ -29,7 +38,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
   const totalPurchases = sales.length;
   const totalAmount = sales.reduce((sum, sale) => sum + sale.total, 0);
   const averagePurchase = totalPurchases > 0 ? totalAmount / totalPurchases : 0;
-  
+
   // 1. Obtenemos la deuda actual (puede estar desactualizada si se abona
   //    mientras el modal está abierto, pero es suficiente para visualización)
   const currentDebt = customer.debt || 0;
@@ -50,7 +59,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
               <span>${currentDebt.toFixed(2)}</span>
             </div>
           )}
-          
+
           <div id="purchase-history-list" className="purchase-history-list">
             {loading ? (
               <p>Cargando historial...</p>
@@ -92,7 +101,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
               })
             )}
           </div>
-          
+
           <div className="purchase-summary">
             <h4>Resumen General</h4>
             <p>Total de compras: <span id="total-purchases">{totalPurchases}</span></p>

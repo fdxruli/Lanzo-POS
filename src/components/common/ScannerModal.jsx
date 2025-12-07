@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useZxing } from 'react-zxing';
 import { useOrderStore } from '../../store/useOrderStore';
-import { loadData, STORES, queryBatchesByProductIdAndActive } from '../../services/database';
+import { searchProductByBarcode, STORES, queryBatchesByProductIdAndActive } from '../../services/database';
 import './ScannerModal.css';
 
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
@@ -135,9 +135,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
   const processScannedCode = async (code) => {
     try {
-      const menu = await loadData(STORES.MENU);
-      const product = menu.find(p => p.barcode === code && p.isActive !== false);
-
+      const product = await searchProductByBarcode(code);
       if (product) {
 
         // ============================================================

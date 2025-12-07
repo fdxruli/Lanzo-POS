@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+// src/components/layout/Ticker.jsx
+import React, { useMemo, useEffect } from 'react';
 import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore'; 
 import { getProductAlerts } from '../../services/utils';
@@ -25,17 +26,20 @@ function getBackupAlertMessage() {
 
 function generateAlertMessages(menu) {
   const alerts = [];
+  
   if (menu.length > 5) {
-      const backupMsg = getBackupAlertMessage();
-      if (backupMsg) alerts.push(backupMsg);
+    const backupMsg = getBackupAlertMessage();
+    if (backupMsg) alerts.push(backupMsg);
   }
 
   menu.forEach(product => {
     if (product.isActive === false) return;
     const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(product); 
+    
     if (isLowStock) {
       alerts.push(`¡Stock bajo! Quedan ${product.stock} unidades de ${product.name}.`);
     }
+    
     if (isNearingExpiry) {
       const message = expiryDays === 0 ?
         `¡Atención! ${product.name} caduca hoy.` :
@@ -43,23 +47,23 @@ function generateAlertMessages(menu) {
       alerts.push(message);
     }
   });
+  
   return alerts;
 }
 
-// --- FUNCIÓN CORREGIDA PARA CÁLCULO DE DÍAS ---
 function getDaysRemaining(endDate) {
   if (!endDate) return 0;
   
   const now = new Date();
   const end = new Date(endDate);
   
-  // Normalizar a medianoche para comparar DÍAS calendario, no horas
+  // Normalizar a medianoche para comparar DÍAS calendario
   now.setHours(0, 0, 0, 0);
   end.setHours(0, 0, 0, 0);
   
   const diffTime = end.getTime() - now.getTime();
   
-  // Si la fecha ya pasó o es hoy
+  // Si la fecha ya pasó
   if (diffTime < 0) return 0;
   
   // Convertir milisegundos a días
@@ -69,13 +73,27 @@ function getDaysRemaining(endDate) {
 export default function Ticker() {
   const licenseStatus = useAppStore((state) => state.licenseStatus);
   const gracePeriodEnds = useAppStore((state) => state.gracePeriodEnds);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
 
   const menu = useProductStore((state) => state.menu);
-  const isLoading = useProductStore((state) => state.isLoading)
+  const isLoading = useProductStore((state) => state.isLoading);
+
+  // Log para debug (solo en desarrollo)
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[Ticker Debug]', {
+        licenseStatus,
+        gracePeriodEnds,
+        isGracePeriod: licenseStatus === 'grace_period',
+        daysRemaining: gracePeriodEnds ? getDaysRemaining(gracePeriodEnds) : null
+      });
+    }
+  }, [licenseStatus, gracePeriodEnds]);
 
   const { messages, isPriority } = useMemo(() => {
     
-    // --- LÓGICA DE ALERTA DE LICENCIA MEJORADA ---
+    // --- VALIDACIÓN 1: Período de Gracia por Status ---
+    // Si el status es explícitamente 'grace_period', mostramos alerta
     if (licenseStatus === 'grace_period' && gracePeriodEnds) {
       const days = getDaysRemaining(gracePeriodEnds);
       
@@ -92,7 +110,33 @@ export default function Ticker() {
       };
     }
 
-    if (isLoading || !menu) {
+    // --- VALIDACIÓN 2: Período de Gracia por Fechas (Fallback) ---
+    // Por si el status no se actualizó pero las fechas sí
+    if (licenseDetails && gracePeriodEnds) {
+      const now = new Date();
+      const graceDate = new Date(gracePeriodEnds);
+      const expiryDate = licenseDetails.expires_at ? new Date(licenseDetails.expires_at) : null;
+
+      // Si ya expiró pero aún estamos en gracia
+      if (expiryDate && expiryDate < now && graceDate > now) {
+        const days = getDaysRemaining(gracePeriodEnds);
+        
+        let dayText = '';
+        if (days <= 0) dayText = 'hoy';
+        else if (days === 1) dayText = 'mañana';
+        else dayText = `en ${days} días`;
+
+        const copy = `⚠️ Tu licencia ha caducado. El sistema se bloqueará ${dayText}. Renueva tu plan para evitar interrupciones.`;
+        
+        return {
+          messages: [copy, copy, copy], 
+          isPriority: true 
+        };
+      }
+    }
+
+    // --- VALIDACIÓN 3: Alertas de Inventario ---
+    if (isLoading || !menu || menu.length === 0) {
       return { messages: promotionalMessages, isPriority: false };
     }
 
@@ -102,12 +146,13 @@ export default function Ticker() {
       if (alerts.length === 0) {
         return { messages: promotionalMessages, isPriority: false };
       }
+      
       return { messages: alerts, isPriority: false };
     } catch (error) {
       console.error('Error generando alertas:', error);
       return { messages: promotionalMessages, isPriority: false };
     }
-  }, [licenseStatus, gracePeriodEnds, menu, isLoading]);
+  }, [licenseStatus, gracePeriodEnds, licenseDetails, menu, isLoading]);
   
   const containerClasses = [
     'notification-ticker-container',
@@ -119,7 +164,7 @@ export default function Ticker() {
       <div className="ticker-wrap">
         <div className="ticker-move">
           {messages.map((msg, index) => (
-            <div key={index} className="ticker-item">
+            <div key={`${index}-${isPriority}`} className="ticker-item">
               {msg}
             </div>
           ))}

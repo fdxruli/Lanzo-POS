@@ -9,7 +9,6 @@ const BUSINESS_RUBROS = [
     { id: 'verduleria/fruteria', label: 'Frutería / Verdulería' },
     { id: 'apparel', label: 'Ropa / Calzado' },
     { id: 'hardware', label: 'Ferretería' },
-    { id: 'otro', label: 'Otro' },
 ];
 
 export default function LicenseSettings() {

@@ -23,7 +23,10 @@ function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const companyProfile = useAppStore((state) => state.companyProfile);
   const features = useFeatureConfig();
+  
+  // Obtenemos la ubicación actual para saber en qué página estamos
   const location = useLocation();
+  const isAboutPage = location.pathname === '/acerca-de';
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
   const closeMenu = () => setIsMobileMenuOpen(false);
@@ -40,12 +43,15 @@ function Navbar() {
     <>
       {/* ==============================================
           1. BARRA SUPERIOR MÓVIL (Solo Branding)
+          OCULTA EN 'ACERCA DE' para evitar redundancia
          ============================================== */}
-      <div className="mobile-top-bar">
-        <div className="mobile-brand" style={{ width: '100%', justifyContent: 'center' }}>
-          <Logo style={{ height: '40px', width: 'auto' }} />
+      {!isAboutPage && (
+        <div className="mobile-top-bar">
+          <div className="mobile-brand" style={{ width: '100%', justifyContent: 'center' }}>
+            <Logo style={{ height: '40px', width: 'auto' }} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ==============================================
           2. BARRA DE NAVEGACIÓN INFERIOR (App Bar)
@@ -84,7 +90,6 @@ function Navbar() {
       <div className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="drawer-header">
           <h3>Menú Principal</h3>
-          {/* CORRECCIÓN AQUÍ: Se agregó size={24} para asegurar que se vea el icono */}
           <button onClick={closeMenu} className="btn-close-drawer">
             <X size={24} /> 
           </button>

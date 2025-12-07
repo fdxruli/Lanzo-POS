@@ -15,7 +15,6 @@ const BUSINESS_RUBROS = [
   { id: 'verduleria/fruteria', label: 'Frutería / Verdulería', icon: '🍎' },
   { id: 'apparel', label: 'Ropa / Calzado', icon: '👕' },
   { id: 'hardware', label: 'Ferretería', icon: '🔨' },
-  { id: 'otro', label: 'Otro / General', icon: '✨' },
 ];
 
 export default function SetupModal() {
