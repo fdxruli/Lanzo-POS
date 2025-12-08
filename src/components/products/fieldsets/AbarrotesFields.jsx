@@ -1,16 +1,16 @@
-// src/components/products/fieldsets/AbarrotesFields.jsx
-import React, { useEffect } from 'react';
+import React, { useState } from 'react';
+import { Info, X } from 'lucide-react';
 
 const COMMON_UNITS = [
   { val: 'kg', label: 'Kilogramos (kg)' },
   { val: 'lt', label: 'Litros (L)' },
-  { val: 'mt', label: 'Metros (m)' }, // Vital para Ferretería
+  { val: 'mt', label: 'Metros (m)' },
   { val: 'pza', label: 'Pieza (pza)' },
-  { val: 'gal', label: 'Galón (gal)' }, // Pintura/Líquidos
+  { val: 'gal', label: 'Galón (gal)' },
   { val: 'cm', label: 'Centímetros (cm)' },
-  { val: 'ft', label: 'Pies (ft)' }, // Madera/Tubos
+  { val: 'ft', label: 'Pies (ft)' },
   { val: 'in', label: 'Pulgadas (in)' },
-  { val: 'gr', label: 'Gramos (gr)' }, // Para cosas muy finas (semillas)
+  { val: 'gr', label: 'Gramos (gr)' },
   { val: 'ml', label: 'Mililitros (ml)' }
 ];
 
@@ -21,101 +21,36 @@ export default function AbarrotesFields({
   minStock, setMinStock,
   maxStock, setMaxStock,
   supplier, setSupplier,
-  cost, setCost, 
-  price, setPrice,
-  showSuppliers = false, 
-  showBulk = false, 
-  showWholesale = false, 
+  location, setLocation,
+  conversionFactor, setConversionFactor,
+  showSuppliers = false,
+  showBulk = false,
+  showWholesale = false,
   showStockAlerts = false
 }) {
 
-  // Calculadora de Margen automática
-  const handleMarginChange = (e) => {
-    const margin = parseFloat(e.target.value);
-    const numericCost = parseFloat(cost);
+  const [showConversionHelp, setShowConversionHelp] = useState(false);
 
-    if (!isNaN(margin) && !isNaN(numericCost) && numericCost > 0) {
-      // Fórmula simple: Precio = Costo * (1 + %/100)
-      const newPrice = numericCost * (1 + (margin / 100));
-      setPrice(newPrice.toFixed(2));
-    }
-  };
-
-  // Calcular margen inverso para mostrarlo visualmente
-  const currentMargin = (cost > 0 && price > 0)
-    ? (((price - cost) / cost) * 100).toFixed(1)
-    : '';
+  // NOTA: Hemos eliminado la calculadora de precios redundante.
+  // Ahora el cálculo de margen se hace directamente en ProductForm.jsx
 
   return (
     <div className="abarrotes-fields-container" style={{ animation: 'fadeIn 0.3s' }}>
 
-      {/* 1. CALCULADORA DE PRECIOS (Lo más importante para la tiendita) */}
-      <div style={{
-        backgroundColor: '#f0fdf4', // Verde muy suave
-        padding: '15px',
-        borderRadius: '8px',
-        border: '1px solid #bbf7d0',
-        marginBottom: '15px'
-      }}>
-        <h4 style={{ margin: '0 0 10px 0', color: '#166534', fontSize: '0.95rem' }}>💰 Calculadora de Ganancia</h4>
-
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-          <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-            <label className="form-label">Costo Compra ($)</label>
-            <input
-              type="number"
-              className="form-input"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-              placeholder="0.00"
-              step="0.50"
-            />
-          </div>
-
-          <div className="form-group" style={{ marginBottom: 0, width: '80px' }}>
-            <label className="form-label">Ganancia %</label>
-            <input
-              type="number"
-              className="form-input"
-              placeholder="%"
-              onChange={handleMarginChange}
-            />
-          </div>
-
-          <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-            <label className="form-label">Precio Final ($)</label>
-            <input
-              type="number"
-              className="form-input"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="0.00"
-              style={{ fontWeight: 'bold', color: 'var(--success-color)' }}
-            />
-          </div>
-        </div>
-        {currentMargin && (
-          <small style={{ display: 'block', marginTop: '5px', color: '#166534', textAlign: 'right' }}>
-            Margen actual: <strong>{currentMargin}%</strong>
-          </small>
-        )}
+      {/* 1. UBICACIÓN Y PROVEEDOR */}
+      <div className="form-group" style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '15px' }}>
+        <label className="form-label">📍 Ubicación en Bodega / Pasillo</label>
+        <input type="text" className="form-input" placeholder="Ej: Pasillo 4, Estante B" value={location || ''} onChange={(e) => setLocation(e.target.value)} />
       </div>
 
-      {/* 2. DATOS ADMINISTRATIVOS (Proveedor) */}
       {showSuppliers && (
         <div className="form-group">
           <label className="form-label">Proveedor Principal</label>
-          <input
-            type="text"
-            className="form-input"
-            placeholder="Ej: Coca-Cola, Bimbo, El Zorro..."
-            value={supplier}
-            onChange={(e) => setSupplier(e.target.value)}
-          />
+          <input type="text" className="form-input" placeholder="Ej: Coca-Cola, Bimbo..." value={supplier} onChange={(e) => setSupplier(e.target.value)} />
         </div>
       )}
 
-      {/* 3. FORMA DE VENTA Y MAYOREO */}
+      {/* 2. FORMA DE VENTA */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
         {showBulk && (
           <div className="form-group">
@@ -125,10 +60,8 @@ export default function AbarrotesFields({
               value={saleType}
               onChange={(e) => {
                 setSaleType(e.target.value);
-                // Si cambia a unitario, forzamos 'pza'
-                if(e.target.value === 'unit') setUnit('pza');
-                // Si cambia a granel y estaba en pza, sugerimos kg o mt
-                else if(unit === 'pza') setUnit('kg');
+                if (e.target.value === 'unit') setUnit('pza');
+                else if (unit === 'pza') setUnit('kg');
               }}
             >
               <option value="unit">Por Pieza/Unidad</option>
@@ -139,12 +72,12 @@ export default function AbarrotesFields({
 
         {saleType === 'bulk' && (
           <div className="form-group">
-            <label className="form-label">Unidad de Medida</label>
+            <label className="form-label">Unidad de Venta</label>
             <select
               className="form-input"
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
-              style={{ border: '2px solid var(--primary-color)' }} // Resaltar para que lo vean
+              style={{ border: '2px solid var(--primary-color)' }}
             >
               {COMMON_UNITS.map(u => (
                 <option key={u.val} value={u.val}>{u.label}</option>
@@ -156,25 +89,122 @@ export default function AbarrotesFields({
         {showWholesale && saleType !== 'bulk' && (
           <div className="form-group">
             <label className="form-label">Precios Especiales</label>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ width: '100%' }}
-              onClick={onManageWholesale}
-            >
+            <button type="button" className="btn btn-secondary" style={{ width: '100%' }} onClick={onManageWholesale}>
               Configurar Mayoreo
             </button>
           </div>
         )}
       </div>
 
-      <small style={{display:'block', marginBottom:'15px', color:'#666'}}>
-        {saleType === 'bulk' 
-          ? `El precio y costo que ingreses arriba será por cada 1 ${unit.toUpperCase()}.` 
-          : `El precio es por cada pieza unitaria.`}
-      </small>
+      {/* 3. CONVERSIÓN DE COMPRA */}
+      {showBulk && saleType === 'bulk' && (
+        <div style={{
+          marginTop: '15px',
+          padding: '15px',
+          backgroundColor: '#eff6ff',
+          borderRadius: '8px',
+          border: '1px solid #bfdbfe'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h4 style={{ margin: 0, fontSize: '0.9rem', color: '#1e40af' }}>🔄 Conversión de Compra</h4>
+              
+              <button 
+                type="button" 
+                onClick={() => setShowConversionHelp(!showConversionHelp)}
+                style={{ 
+                  background: 'none', border: 'none', cursor: 'pointer', 
+                  color: showConversionHelp ? 'var(--primary-color)' : '#60a5fa',
+                  display: 'flex', alignItems: 'center'
+                }}
+                title="¿Cuándo activar esto?"
+              >
+                {showConversionHelp ? <X size={18} /> : <Info size={18} />}
+              </button>
+            </div>
 
-      {/* 4. ALERTAS DE INVENTARIO */}
+            <div className="form-group-checkbox" style={{ margin: 0 }}>
+              <input
+                type="checkbox"
+                id="enable-conversion"
+                checked={conversionFactor?.enabled || false}
+                onChange={(e) => setConversionFactor({
+                  ...conversionFactor,
+                  enabled: e.target.checked
+                })}
+              />
+              <label htmlFor="enable-conversion" style={{ fontSize: '0.85rem', cursor:'pointer' }}>Activar</label>
+            </div>
+          </div>
+
+          {showConversionHelp && (
+            <div style={{ 
+              backgroundColor: 'white', 
+              padding: '12px', 
+              borderRadius: '6px', 
+              marginBottom: '15px',
+              border: '1px solid #dbeafe',
+              fontSize: '0.85rem',
+              color: '#1e3a8a',
+              animation: 'fadeIn 0.2s ease-out'
+            }}>
+              <p style={{marginBottom: '10px', lineHeight:'1.4'}}>
+                <strong>¿Cuándo usar esto?</strong><br/>
+                Solo si compras en una unidad (Cajas/Bultos) y vendes en otra (Piezas/Kilos) y <u>no quieres contar al recibir</u>.
+              </p>
+              
+              <div style={{display:'grid', gap:'10px'}}>
+                <div style={{backgroundColor:'#f0fdf4', padding:'10px', borderRadius:'6px', borderLeft:'4px solid #16a34a'}}>
+                  <strong style={{color:'#166534', display:'block', marginBottom:'2px'}}>✅ SÍ: Ejemplo "Clavos a Granel"</strong>
+                  <span style={{color:'#15803d'}}>
+                    Compras una caja de 25kg, pero vendes piezas sueltas. <br/>
+                    El sistema traduce: <strong>1 Kg = 200 Clavos</strong>.
+                  </span>
+                </div>
+                <div style={{backgroundColor:'#fff7ed', padding:'10px', borderRadius:'6px', borderLeft:'4px solid #ea580c'}}>
+                  <strong style={{color:'#c2410c', display:'block', marginBottom:'2px'}}>❌ NO: Ejemplo "Cemento"</strong>
+                  <span style={{color:'#9a3412'}}>
+                    Compras 10 bultos de 50kg y vendes kilos.<br/>
+                    <strong>Mejor ingresa "500" directo al stock.</strong> Es más claro ver "Quedan 450 kilos" que "Quedan 9.0 bultos".
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {conversionFactor?.enabled && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Unidad de Compra</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Ej: Caja, Bulto, Rollo"
+                  value={conversionFactor.purchaseUnit || ''}
+                  onChange={(e) => setConversionFactor({ ...conversionFactor, purchaseUnit: e.target.value })}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Contenido por unidad ({unit})</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  placeholder={`Ej: 50`}
+                  value={conversionFactor.factor || ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setConversionFactor({
+                      ...conversionFactor,
+                      factor: isNaN(val) ? '' : val
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {showStockAlerts && (
         <div style={{
           marginTop: '10px',

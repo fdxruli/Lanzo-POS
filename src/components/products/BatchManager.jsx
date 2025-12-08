@@ -29,7 +29,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
   const [sku, setSku] = useState('');
   const [attribute1, setAttribute1] = useState(''); // Talla
   const [attribute2, setAttribute2] = useState(''); // Color
-
+  const [location, setLocation] = useState('');
   const [pagadoDeCaja, setPagadoDeCaja] = useState(false);
 
   // Referencia para enfocar el primer input al guardar y continuar
@@ -45,6 +45,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
       setPrice(batchToEdit.price);
       setStock(batchToEdit.stock);
       setNotes(batchToEdit.notes || '');
+      setLocation(batchToEdit.location || '');
       if (features.hasLots) {
         setExpiryDate(batchToEdit.expiryDate ? batchToEdit.expiryDate.split('T')[0] : '');
       }
@@ -77,6 +78,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
       setStock('');
       setNotes('');
       setPagadoDeCaja(false);
+      setLocation('');
 
       if (features.hasLots) setExpiryDate('');
 
@@ -164,6 +166,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
         talla: attribute1,
         color: attribute2
       } : null,
+      location: location,
     };
 
     const success = await onSave(batchData);
@@ -257,6 +260,17 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
               onChange={(e) => setStock(e.target.value)}
               className="form-input"
               style={{ fontSize: '1.2rem', fontWeight: 'bold' }}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Ubicación en Bodega</label>
+            <input
+              type="text"
+              placeholder="Ej: Estante A-3"
+              value={location}
+              onChange={e => setLocation(e.target.value)}
+              className="form-input"
             />
           </div>
 
@@ -505,6 +519,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
                   {features.hasVariants && <th>SKU</th>}
                   {features.hasLots && <th>Caducidad</th>}
                   <th>Precio</th>
+                  <th>Ubicacion</th>
                   <th>Stock</th>
                   <th>Acción</th>
                 </tr>
@@ -519,6 +534,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
                         <>{formatDate(batch.createdAt)}</>
                       )}
                     </td>
+                    <td><small>{batch.location || '-'}</small></td>
                     {features.hasVariants && <td><small>{batch.sku}</small></td>}
                     {features.hasLots && <td>{formatDate(batch.expiryDate)}</td>}
                     <td>${batch.price.toFixed(2)}</td>

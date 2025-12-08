@@ -1,4 +1,3 @@
-// src/components/products/ProductList.jsx
 import React, { useState, useMemo } from 'react';
 import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
@@ -74,10 +73,9 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
               // Lógica de Stock Inteligente
               const isTracked = item.trackStock || item.batchManagement?.enabled;
-              
-              const unitLabel = item.saleType === 'bulk' 
-                ? (item.bulkData?.purchase?.unit || 'kg') 
-                : 'pza';
+
+              // CORRECCIÓN: Leemos la unidad guardada, si no existe usamos 'pza' como fallback
+              const unitLabel = item.bulkData?.purchase?.unit || (item.saleType === 'bulk' ? 'kg' : 'pza');
 
               const itemClasses = [
                 'product-item',
@@ -90,45 +88,59 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                   <div className={`product-status-badge ${isActive ? 'active' : 'inactive'}`}>
                     {isActive ? 'Activo' : 'Inactivo'}
                   </div>
-                  
+
                   <div className="product-item-info">
                     <LazyImage src={item.image} alt={item.name} />
-                    
+
                     <div className="product-item-details">
                       <span className="product-item-title" title={item.name}>{item.name}</span>
-                      
+
                       {item.sustancia && (
-                        <p style={{ color: 'var(--secondary-color)', fontWeight: '500', fontSize: '0.8rem', justifyContent:'flex-start' }}>
+                        <p style={{ color: 'var(--secondary-color)', fontWeight: '500', fontSize: '0.8rem', justifyContent: 'flex-start' }}>
                           💊 {item.sustancia}
                         </p>
                       )}
-                      
-                      <p style={{color: '#666', fontSize: '0.8rem', justifyContent: 'flex-start'}}>{categoryName}</p>
-                      
-                      <div style={{marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px'}}>
+
+                      {item.location && (
+                        <div style={{
+                          fontSize: '0.75rem',
+                          backgroundColor: '#f1f5f9',
+                          color: '#475569',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          display: 'inline-block',
+                          marginTop: '2px',
+                          border: '1px solid #cbd5e1'
+                        }}>
+                          📍 {item.location}
+                        </div>
+                      )}
+
+                      <p style={{ color: '#666', fontSize: '0.8rem', justifyContent: 'flex-start' }}>{categoryName}</p>
+
+                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
                         <p>
-                            <strong>Precio:</strong> 
-                            <span className="product-price-highlight">${item.price?.toFixed(2)}</span>
+                          <strong>Precio:</strong>
+                          <span className="product-price-highlight">${item.price?.toFixed(2)}</span>
                         </p>
                         <p>
-                            <span style={{color:'var(--text-light)'}}>Costo:</span> 
-                            <span>${item.cost?.toFixed(2)}</span>
+                          <span style={{ color: 'var(--text-light)' }}>Costo:</span>
+                          <span>${item.cost?.toFixed(2)}</span>
                         </p>
-                        
-                        <p style={{marginTop: '2px'}}>
-                            <strong>Existencia:</strong>
-                            {isTracked ? (
-                                item.stock > 0 ? (
-                                    <span style={{ fontWeight: 'bold', color: isLowStock ? 'var(--warning-color)' : 'var(--text-dark)' }}>
-                                        {item.stock} <small style={{fontSize: '0.75em', textTransform: 'uppercase'}}>{unitLabel}</small>
-                                    </span>
-                                ) : (
-                                    <span style={{ color: 'var(--error-color)', fontWeight: 'bold', fontSize: '0.9rem' }}>AGOTADO</span>
-                                )
+
+                        <p style={{ marginTop: '2px' }}>
+                          <strong>Existencia:</strong>
+                          {isTracked ? (
+                            item.stock > 0 ? (
+                              <span style={{ fontWeight: 'bold', color: isLowStock ? 'var(--warning-color)' : 'var(--text-dark)' }}>
+                                {item.stock} <small style={{ fontSize: '0.75em', textTransform: 'uppercase' }}>{unitLabel}</small>
+                              </span>
                             ) : (
-                                // --- CAMBIO VISUAL AQUÍ ---
-                                <span style={{ fontStyle: 'italic', color: '#999', fontSize: '0.8rem' }}>Sin control</span>
-                            )}
+                              <span style={{ color: 'var(--error-color)', fontWeight: 'bold', fontSize: '0.9rem' }}>AGOTADO</span>
+                            )
+                          ) : (
+                            <span style={{ fontStyle: 'italic', color: '#999', fontSize: '0.8rem' }}>Sin control</span>
+                          )}
                         </p>
                       </div>
 
