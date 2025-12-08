@@ -149,11 +149,19 @@ export default function AboutPage() {
               </div>
               <div className="roadmap-item upcoming">
                 <span className="dot">○</span>
-                <span>Sincronización Multi-dispositivo (funsion PRO)</span>
+                <span>Envio de cotizaciones</span>
+              </div>
+              <div className="roadmap-item upcoming">
+                <span className="dot">○</span>
+                <span>Sincronización Multi-dispositivo (función PRO de pago)</span>
               </div>
               <div className="roadmap-item upcoming">
                 <span className="dot">○</span>
                 <span>Soporte para lectores de barras USB/Bluetooth (PC)</span>
+              </div>
+              <div className="roadmap-item upcoming">
+                <span className="dot">○</span>
+                <span>Soporte para impresoras termicas USB/Bluetooth (PC-Moviles)</span>
               </div>
             </div>
           </div>
@@ -216,7 +224,7 @@ export default function AboutPage() {
             </div>
 
             <div className="contact-footer">
-              <small>Atención directa vía WhatsApp</small>
+              <small>Atención directa vía WhatsApp Entre Alas</small>
               <MessageCircle size={14} className="icon-whatsapp" />
             </div>
           </div>

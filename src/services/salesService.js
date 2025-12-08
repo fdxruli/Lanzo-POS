@@ -51,12 +51,24 @@ export const processSale = async ({
 
         const uniqueProductIds = new Set();
 
-        // Identificar qué productos necesitan ser buscados en BD
+        // 1. Identificar qué productos necesitan ser buscados en BD
         for (const orderItem of itemsToProcess) {
             const realProductId = orderItem.parentId || orderItem.id;
             const product = allProducts.find(p => p.id === realProductId);
-            
-            // --- CAMBIO CLAVE 1: Si no trackea stock, no buscamos sus lotes ---
+
+            // CORRECCIÓN 1: Corregido el typo 'quantit' -> 'quantity'
+            let quantityToDeduct = orderItem.quantity;
+
+            if (product && product.conversionFactor?.enabled) {
+                const factor = parseFloat(product.conversionFactor.factor);
+                if (!isNaN(factor) && factor > 0) {
+                    // Ejemplo: 5 kg vendidos / 50 factor = 0.1 bultos
+                    quantityToDeduct = orderItem.quantity / factor;
+                    console.log(`🛠️ Conversión aplicada: ${orderItem.quantity} / ${factor} = ${quantityToDeduct}`);
+                }
+            }
+
+            // Si no trackea stock, no buscamos sus lotes
             if (!product || product.trackStock === false) continue;
 
             const itemsToDeduct = (features.hasRecipes && product.recipe && product.recipe.length > 0)
@@ -93,8 +105,18 @@ export const processSale = async ({
         for (const orderItem of itemsToProcess) {
             const realProductId = orderItem.parentId || orderItem.id;
             const product = allProducts.find(p => p.id === realProductId);
-            
-            // --- CAMBIO CLAVE 2: VENTA LIBRE (Sin Lotes) ---
+
+            // CORRECCIÓN 2: Definir 'quantityToDeduct' TAMBIÉN en este ciclo
+            let quantityToDeduct = orderItem.quantity; // Valor por defecto
+
+            if (product && product.conversionFactor?.enabled) {
+                const factor = parseFloat(product.conversionFactor.factor);
+                if (!isNaN(factor) && factor > 0) {
+                    quantityToDeduct = orderItem.quantity / factor;
+                }
+            }
+
+            // CAMBIO CLAVE: Si no trackea stock, no buscamos sus lotes
             if (!product || product.trackStock === false) {
                 // Pasamos el ítem directo sin calcular deducciones ni costos complejos
                 processedItems.push({
@@ -117,7 +139,8 @@ export const processSale = async ({
             const itemBatchesUsed = [];
 
             for (const component of itemsToDeduct) {
-                let requiredQty = component.quantity * orderItem.quantity;
+                // CORRECCIÓN 3: Ahora 'quantityToDeduct' ya existe en este ámbito
+                let requiredQty = component.quantity * quantityToDeduct;
                 const targetId = component.ingredientId;
                 const batches = batchesMap.get(targetId) || [];
 
@@ -126,7 +149,11 @@ export const processSale = async ({
                     if (batch.stock <= 0) continue;
 
                     const toDeduct = Math.min(requiredQty, batch.stock);
-                    batchesToDeduct.push({ batchId: batch.id, quantity: toDeduct });
+                    batchesToDeduct.push({
+                        batchId: batch.id,
+                        quantity: toDeduct,
+                        productId: targetId
+                    });
                     batch.stock -= toDeduct;
 
                     itemBatchesUsed.push({
@@ -156,7 +183,7 @@ export const processSale = async ({
                 base64: null,
                 cost: finalSafeCost,
                 batchesUsed: itemBatchesUsed,
-                stockDeducted: orderItem.quantity
+                stockDeducted: quantityToDeduct // CORRECCIÓN 4: Usamos la variable correcta
             });
         }
 
@@ -177,7 +204,7 @@ export const processSale = async ({
         };
 
         const transactionResult = await executeSaleTransactionSafe(sale, batchesToDeduct);
-        
+
         if (!transactionResult.success) {
             if (transactionResult.isConcurrencyError) {
                 return { success: false, errorType: 'RACE_CONDITION', message: "El stock cambió mientras cobrabas. Intenta de nuevo." };

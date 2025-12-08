@@ -14,6 +14,8 @@ import SalesHistory from '../components/dashboard/SalesHistory';
 import RecycleBin from '../components/dashboard/RecycleBin';
 import BusinessTips from '../components/dashboard/BusinessTips';
 import WasteHistory from '../components/dashboard/WasteHistory';
+import RestockSuggestions from '../components/dashboard/RestockSuggestion';
+
 import { loadData, STORES } from '../services/database';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
@@ -26,12 +28,12 @@ export default function DashboardPage() {
 
   // 1. ESTADÍSTICAS
   const stats = useStatsStore((state) => state.stats);
-  const loadStats = useStatsStore((state) => state.loadStats); // IMPORTANTE: Traemos la acción de carga
+  const loadStats = useStatsStore((state) => state.loadStats);
   const isStatsLoading = useStatsStore((state) => state.isLoading);
 
   // 2. VENTAS Y MERMAS
   const sales = useSalesStore((state) => state.sales);
-  const loadRecentSales = useSalesStore((state) => state.loadRecentSales); // IMPORTANTE: Traemos la acción
+  const loadRecentSales = useSalesStore((state) => state.loadRecentSales);
   const deleteSale = useSalesStore((state) => state.deleteSale);
   const wasteLogs = useSalesStore((state) => state.wasteLogs);
 
@@ -53,16 +55,13 @@ export default function DashboardPage() {
     }
   };
 
-  // --- EFECTO DE CARGA INICIAL (LA SOLUCIÓN AL "DESCONECTADO") ---
   useEffect(() => {
-    // Al entrar a la página, forzamos la recarga de estadísticas y ventas
     console.log("🔄 Actualizando Dashboard...");
     loadStats();
     loadRecentSales();
     loadCustomers();
-  }, []); // Se ejecuta solo al montar el componente
+  }, []);
 
-  // Cargar papelera solo si entramos a esa pestaña
   useEffect(() => {
     if (activeTab === 'history') loadRecycleBin();
   }, [activeTab, loadRecycleBin]);
@@ -85,6 +84,20 @@ export default function DashboardPage() {
         >
           Estadísticas Clave
         </button>
+
+        {/* ------------------------------------------------------------------
+            2. AGREGAR EL BOTÓN DE LA PESTAÑA AQUÍ
+            (Puedes usar features.hasMinMax para ocultarlo si el negocio no usa stock)
+           ------------------------------------------------------------------ */}
+        {features.hasMinMax && (
+            <button
+              className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`}
+              onClick={() => setActiveTab('restock')}
+            >
+              📦 Reabastecimiento
+            </button>
+        )}
+
         <button
           className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
           onClick={() => setActiveTab('history')}
@@ -111,6 +124,13 @@ export default function DashboardPage() {
       {/* PESTAÑA: ESTADÍSTICAS */}
       {activeTab === 'stats' && (
         <StatsGrid stats={stats} />
+      )}
+
+      {/* ------------------------------------------------------------------
+          3. RENDERIZAR EL COMPONENTE AQUÍ
+         ------------------------------------------------------------------ */}
+      {activeTab === 'restock' && (
+        <RestockSuggestions />
       )}
 
       {/* PESTAÑA: HISTORIAL Y PAPELERA */}

@@ -1120,3 +1120,63 @@ export async function checkStorageQuota() {
     return { warning: false };
   }
 }
+
+/**
+ * Busca un producto específico por su SKU de variante (Lote).
+ * Retorna el producto padre con la variante específica pre-inyectada.
+ */
+export function searchProductBySKU(sku) {
+  return executeWithRetry(async () => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORES.PRODUCT_BATCHES, STORES.MENU], 'readonly');
+      const batchStore = tx.objectStore(STORES.PRODUCT_BATCHES);
+      const menuStore = tx.objectStore(STORES.MENU);
+
+      // Verificación de seguridad
+      if (!batchStore.indexNames.contains('sku')) {
+        console.warn("Índice SKU no encontrado");
+        resolve(null);
+        return;
+      }
+
+      const index = batchStore.index('sku');
+      const request = index.get(sku); // Búsqueda exacta
+
+      request.onsuccess = () => {
+        const batch = request.result;
+        
+        if (batch) {
+          // Si encontramos el lote/variante, buscamos al padre
+          const prodRequest = menuStore.get(batch.productId);
+          
+          prodRequest.onsuccess = () => {
+            const product = prodRequest.result;
+            if (product && product.isActive !== false) {
+              // RETORNO INTELIGENTE:
+              // Devolvemos el producto padre, pero le inyectamos los datos 
+              // de la variante encontrada para que el POS sepa exactamente qué cobrar.
+              resolve({
+                ...product,
+                // Sobrescribimos precio y costo con los de la variante
+                price: batch.price,
+                cost: batch.cost,
+                // Inyectamos datos de variante para que useOrderStore sepa que es único
+                isVariant: true,
+                batchId: batch.id,
+                skuDetected: batch.sku,
+                variantName: `${batch.attributes?.talla || ''} ${batch.attributes?.color || ''}`.trim()
+              });
+            } else {
+              resolve(null); // Producto padre inactivo o no encontrado
+            }
+          };
+        } else {
+          resolve(null); // SKU no existe
+        }
+      };
+      
+      request.onerror = (e) => reject(e.target.error);
+    });
+  });
+}

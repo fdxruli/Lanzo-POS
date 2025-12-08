@@ -2,11 +2,12 @@
 import { create } from 'zustand';
 import {
   loadDataPaginated,
-  loadData, // Agregado: necesario para refreshCategories
+  loadData,
   searchProductByBarcode,
   searchProductsInDB,
-  queryByIndex, // Agregado: necesario para loadBatchesForProduct
-  STORES
+  queryByIndex,
+  STORES,
+  searchProductBySKU
 } from '../services/database';
 
 export const useProductStore = create((set, get) => ({
@@ -20,6 +21,34 @@ export const useProductStore = create((set, get) => ({
   menuPage: 0,
   menuPageSize: 50,
   hasMoreProducts: true,
+
+  searchProducts : async (query) => {
+    if (!query || query.trim().length < 2) {
+      get().loadInitialProducts();
+      return;
+    }
+    set({ isLoading: true });
+    try {
+      // Intento 1: Buscar por código de barras (Rápido)
+      const byCode = await searchProductByBarcode(query);
+      if (byCode) {
+        set({ menu: [byCode], isLoading: false, hasMoreProducts: false });
+        return;
+      }
+      // Intento 1.5: Buscar por SKU (Variante especifica)
+      const bySKU = await searchProductBySKU(query);
+      if (bySKU) {
+        set({ menu: [bySKU], isLoading: false, hasMoreProducts: false });
+        return;
+      }
+      // Intento 2: Buscar por nombre en la BD
+      const results = await searchProductsInDB(query);
+      set({ menu: results, isLoading: false, hasMoreProducts: false });
+    } catch (error) {
+      console.error("Error en búsqueda:", error);
+      set({ isLoading: false });
+    }
+  },
 
   loadInitialProducts: async () => {
     set({ isLoading: true });
@@ -112,5 +141,35 @@ export const useProductStore = create((set, get) => ({
     // Usamos loadData para traer todas las categorías (no solo una página)
     const cats = await loadData(STORES.CATEGORIES);
     set({ categories: cats || [] });
+  },
+
+  getLowStockProducts: () => {
+    const { menu } = get();
+    
+    // Filtramos productos activos, que controlan stock y están bajo el mínimo
+    return menu.filter(p => 
+      p.isActive !== false &&
+      p.trackStock && 
+      p.minStock > 0 && 
+      p.stock <= p.minStock
+    ).map(p => {
+      // Si no hay MaxStock definido, sugerimos pedir el doble del mínimo para tener inventario
+      const targetStock = p.maxStock && p.maxStock > p.minStock 
+        ? p.maxStock 
+        : (p.minStock * 2);
+        
+      const deficit = targetStock - p.stock;
+
+      return {
+        id: p.id,
+        name: p.name,
+        currentStock: p.stock,
+        minStock: p.minStock,
+        maxStock: p.maxStock || targetStock, // Para mostrar el calculado si falta
+        suggestedOrder: Math.ceil(deficit), // Redondeamos hacia arriba
+        supplierName: p.supplier || 'Proveedor General', // Agrupación por defecto
+        unit: p.saleType === 'bulk' ? (p.bulkData?.purchase?.unit || 'kg') : 'pza'
+      };
+    });
   }
 }));

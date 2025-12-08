@@ -7,6 +7,7 @@ import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
 import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
+import VariantInventoryView from '../components/products/VarianteInvetoryView';
 
 import { useProductStore } from '../store/useProductStore';
 import { useStatsStore } from '../store/useStatsStore';
@@ -339,6 +340,15 @@ export default function ProductsPage() {
                     </button>
                 )}
 
+                {features.hasVariants && (
+                    <button
+                        className={`tab-btn ${activeTab === 'variants-view' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('variants-view')}
+                    >
+                        👔 Inventario Global (Tallas)
+                    </button>
+                )}
+
                 <button
                     className={`tab-btn ${activeTab === 'categories' ? 'active' : ''}`}
                     onClick={() => setActiveTab('categories')}
@@ -405,6 +415,10 @@ export default function ProductsPage() {
                     />
                 )
             }
+
+            {activeTab === 'variants-view' && features.hasVariants && (
+                <VariantInventoryView />
+            )}
 
             <CategoryManagerModal
                 show={showCategoryModal}
