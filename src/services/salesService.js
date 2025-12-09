@@ -9,6 +9,47 @@ import {
 import { useStatsStore } from '../store/useStatsStore';
 import { roundCurrency, sendWhatsAppMessage } from './utils';
 
+const validateRecipeStock = (orderItems, allProducts) => {
+    const missingIngredients = [];
+
+    for (const item of orderItems) {
+        // Obtenemos el producto padre (por si es una variante)
+        const realId = item.parentId || item.id;
+        const product = allProducts.find(p => p.id === realId);
+
+        // --- CORRECCIÓN AQUÍ ---
+        // Eliminamos 'product.trackStock' de la condición.
+        // Ahora validamos siempre que exista una receta, sin importar si el platillo lleva stock o no.
+        if (product && product.recipe && product.recipe.length > 0) {
+
+            // Recorremos la receta del producto
+            for (const ing of product.recipe) {
+                const ingredientProd = allProducts.find(p => p.id === ing.ingredientId);
+
+                // Si el insumo no existe (fue borrado), lo saltamos
+                if (!ingredientProd) continue;
+
+                // Cantidad total necesaria: (Cant. en receta) * (Cant. vendida)
+                const totalNeeded = ing.quantity * item.quantity;
+
+                // Verificamos si el stock del ingrediente es suficiente
+                // NOTA: Aquí sí validamos el stock del INGREDIENTE
+                if (ingredientProd.stock < totalNeeded) {
+                    missingIngredients.push({
+                        productName: product.name,
+                        ingredientName: ingredientProd.name,
+                        needed: totalNeeded,
+                        available: ingredientProd.stock,
+                        unit: ingredientProd.bulkData?.purchase?.unit || 'u'
+                    });
+                }
+            }
+        }
+    }
+
+    return missingIngredients;
+};
+
 /**
  * Procesa una venta completa: Inventario, Guardado, Estadísticas y Notificaciones.
  * @param {Object} params - Parámetros de la venta
@@ -21,7 +62,8 @@ export const processSale = async ({
     allProducts,
     features,
     companyName,
-    tempPrescriptionData
+    tempPrescriptionData,
+    ignoreStock = false
 }) => {
     console.time('Service:ProcessSale');
 
@@ -29,6 +71,27 @@ export const processSale = async ({
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
+        // --- VALIDACIÓN PREVIA (RECETAS) ---
+        if (features.hasRecipes && !ignoreStock) {
+            const missing = validateRecipeStock(itemsToProcess, allProducts);
+
+            if (missing.length > 0) {
+                // Formateamos los detalles
+                const details = missing.map(m =>
+                    `• ${m.productName}: Faltan ${(m.needed - m.available).toFixed(2)} ${m.unit} de ${m.ingredientName}`
+                ).join('\n');
+
+                // Retornamos un error especial, pero con los datos necesarios para reintentar
+                return {
+                    success: false,
+                    errorType: 'STOCK_WARNING',
+                    message: `Faltan insumos para esta receta:\n\n${details}\n\n¿Deseas procesar la venta de todos modos?`,
+                    missingData: missing
+                };
+            }
+        }
+
+        // --- NORMALIZACIÓN DE PRECIOS ---
         itemsToProcess.forEach((item) => {
             const safePrice = parseFloat(item.price);
             const safeCost = parseFloat(item.cost);
@@ -51,27 +114,20 @@ export const processSale = async ({
 
         const uniqueProductIds = new Set();
 
-        // 1. Identificar qué productos necesitan ser buscados en BD
+        // ============================================================
+        // 1. IDENTIFICACIÓN (Qué lotes cargar)
+        // ============================================================
         for (const orderItem of itemsToProcess) {
             const realProductId = orderItem.parentId || orderItem.id;
             const product = allProducts.find(p => p.id === realProductId);
 
-            // CORRECCIÓN 1: Corregido el typo 'quantit' -> 'quantity'
-            let quantityToDeduct = orderItem.quantity;
+            // Detectar si tiene receta
+            const hasRecipe = features.hasRecipes && product?.recipe && product.recipe.length > 0;
 
-            if (product && product.conversionFactor?.enabled) {
-                const factor = parseFloat(product.conversionFactor.factor);
-                if (!isNaN(factor) && factor > 0) {
-                    // Ejemplo: 5 kg vendidos / 50 factor = 0.1 bultos
-                    quantityToDeduct = orderItem.quantity / factor;
-                    console.log(`🛠️ Conversión aplicada: ${orderItem.quantity} / ${factor} = ${quantityToDeduct}`);
-                }
-            }
+            // Si no trackea stock Y NO tiene receta, saltamos.
+            if (!product || (product.trackStock === false && !hasRecipe)) continue;
 
-            // Si no trackea stock, no buscamos sus lotes
-            if (!product || product.trackStock === false) continue;
-
-            const itemsToDeduct = (features.hasRecipes && product.recipe && product.recipe.length > 0)
+            const itemsToDeduct = hasRecipe
                 ? product.recipe
                 : [{ ingredientId: realProductId, quantity: 1 }];
 
@@ -106,7 +162,10 @@ export const processSale = async ({
             const realProductId = orderItem.parentId || orderItem.id;
             const product = allProducts.find(p => p.id === realProductId);
 
-            // CORRECCIÓN 2: Definir 'quantityToDeduct' TAMBIÉN en este ciclo
+            // 🟢 CORRECCIÓN: Definir hasRecipe AQUÍ TAMBIÉN para usarlo en la condición
+            const hasRecipe = features.hasRecipes && product?.recipe && product.recipe.length > 0;
+
+            // Definir 'quantityToDeduct'
             let quantityToDeduct = orderItem.quantity; // Valor por defecto
 
             if (product && product.conversionFactor?.enabled) {
@@ -116,22 +175,21 @@ export const processSale = async ({
                 }
             }
 
-            // CAMBIO CLAVE: Si no trackea stock, no buscamos sus lotes
-            if (!product || product.trackStock === false) {
-                // Pasamos el ítem directo sin calcular deducciones ni costos complejos
+            // CAMBIO CLAVE: Si no trackea stock Y NO tiene receta, procesamos como venta libre simple
+            if (!product || (product.trackStock === false && !hasRecipe)) {
                 processedItems.push({
                     ...orderItem,
                     image: null,
                     base64: null,
-                    cost: orderItem.cost || 0, // Usamos el costo simple registrado en el producto
+                    cost: orderItem.cost || 0, // Usamos el costo simple registrado
                     batchesUsed: [], // Sin lotes
                     stockDeducted: 0 // No descontamos nada
                 });
                 continue; // Saltamos al siguiente ítem
             }
 
-            // ... (Lógica de recetas existente, solo corre si trackStock es true) ...
-            const itemsToDeduct = (features.hasRecipes && product.recipe && product.recipe.length > 0)
+            // Definir qué descontar: ¿La receta o el producto mismo?
+            const itemsToDeduct = hasRecipe
                 ? product.recipe
                 : [{ ingredientId: realProductId, quantity: 1 }];
 
@@ -139,7 +197,6 @@ export const processSale = async ({
             const itemBatchesUsed = [];
 
             for (const component of itemsToDeduct) {
-                // CORRECCIÓN 3: Ahora 'quantityToDeduct' ya existe en este ámbito
                 let requiredQty = component.quantity * quantityToDeduct;
                 const targetId = component.ingredientId;
                 const batches = batchesMap.get(targetId) || [];
@@ -183,7 +240,7 @@ export const processSale = async ({
                 base64: null,
                 cost: finalSafeCost,
                 batchesUsed: itemBatchesUsed,
-                stockDeducted: quantityToDeduct // CORRECCIÓN 4: Usamos la variable correcta
+                stockDeducted: quantityToDeduct
             });
         }
 
@@ -212,7 +269,7 @@ export const processSale = async ({
             return { success: false, message: transactionResult.error.message };
         }
 
-        // Actualización de estadísticas y demás (sin cambios)
+        // Actualización de estadísticas
         const costOfGoodsSold = processedItems.reduce((acc, item) => roundCurrency(acc + roundCurrency(item.cost * item.quantity)), 0);
         await useStatsStore.getState().updateStatsForNewSale(sale, costOfGoodsSold);
 
@@ -281,7 +338,7 @@ async function sendReceiptWhatsApp(sale, items, paymentData, total, companyName,
 }
 
 export const updateDailyStats = async (sale) => {
-    const dateKey = new Date(sale.timestamp).toISOString().split('T')[0]; // "2023-10-27"
+    const dateKey = new Date(sale.timestamp).toISOString().split('T')[0];
 
     // 1. Obtener registro del día (o crear nuevo)
     let dailyStat = await loadData(STORES.DAILY_STATS, dateKey);

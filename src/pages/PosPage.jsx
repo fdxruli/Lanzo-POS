@@ -123,9 +123,10 @@ export default function PosPage() {
     setIsPaymentModalOpen(true);
   };
 
-  const handleProcessOrder = async (paymentData) => {
+  const handleProcessOrder = async (paymentData, forceSale = false) => {
     if (isProcessing) return;
 
+    // 1. Verificar sesión
     const isSessionValid = await verifySessionIntegrity();
     if (!isSessionValid) {
       showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
@@ -136,7 +137,7 @@ export default function PosPage() {
 
     setIsProcessing(true);
 
-    // Validación rápida de caja (UI logic)
+    // 2. Validación rápida de caja (Solo si es efectivo)
     if (paymentData.paymentMethod === 'efectivo' && (!cajaActual || cajaActual.estado !== 'abierta')) {
       setIsPaymentModalOpen(false);
       setIsQuickCajaOpen(true);
@@ -147,7 +148,7 @@ export default function PosPage() {
     try {
       setIsPaymentModalOpen(false);
 
-      // 🚀 LLAMADA AL SERVICIO: Le pasamos todo lo que necesita
+      // 3. Llamada al servicio con la bandera 'ignoreStock'
       const result = await processSale({
         order,
         paymentData,
@@ -155,11 +156,12 @@ export default function PosPage() {
         allProducts,
         features,
         companyName,
-        tempPrescriptionData
+        tempPrescriptionData,
+        ignoreStock: forceSale // Pasamos true si el usuario ya confirmó
       });
 
       if (result.success) {
-        // --- ÉXITO: Actualizar UI ---
+        // --- ÉXITO ---
         clearOrder();
         setTempPrescriptionData(null);
         setIsMobileOrderOpen(false);
@@ -168,17 +170,36 @@ export default function PosPage() {
         // Recargar inventario visualmente
         await refreshData();
       } else {
-        // --- ERROR CONTROLADO ---
+        // --- MANEJO DE RESPUESTAS NO EXITOSAS ---
+
         if (result.errorType === 'RACE_CONDITION') {
+          // Caso: Stock cambió mientras cobraban (concurrencia)
           showMessageModal(`⚠️ ${result.message} Se han actualizado los datos. Intenta cobrar de nuevo.`);
           await refreshData();
-        } else {
-          showMessageModal(`Error: ${result.message}`);
+        }
+        else if (result.errorType === 'STOCK_WARNING') {
+          // ⚠️ CASO ADVERTENCIA: Faltan insumos, pero permitimos decidir
+          showMessageModal(
+            result.message,
+            () => {
+              // Callback de Confirmación: El usuario elige "Sí, Vender Igual"
+              // Volvemos a ejecutar la función pero forzando la venta
+              handleProcessOrder(paymentData, true);
+            },
+            {
+              confirmButtonText: 'Sí, Vender Igual', // Texto del botón de confirmar
+              type: 'warning' // Estilo visual (amarillo/naranja)
+            }
+          );
+        }
+        else {
+          // Otros errores (bloqueantes)
+          showMessageModal(`Error: ${result.message}`, null, { type: 'error' });
         }
       }
 
     } catch (error) {
-      // --- ERROR NO CONTROLADO ---
+      // --- ERROR NO CONTROLADO (CRASH) ---
       console.error('Error crítico en UI:', error);
       showMessageModal(`Error inesperado: ${error.message}`);
     } finally {
