@@ -1,9 +1,25 @@
-// src/components/common/ScannerModal.jsx
+// src/components/common/ScannerModal.jsx - VERSIÓN OPTIMIZADA
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useZxing } from 'react-zxing';
 import { useOrderStore } from '../../store/useOrderStore';
-import { searchProductByBarcode, STORES, queryBatchesByProductIdAndActive } from '../../services/database';
+import { searchProductByBarcode, queryBatchesByProductIdAndActive } from '../../services/database';
 import './ScannerModal.css';
+
+// ✅ OPTIMIZACIÓN 1: Configuración de cámara SIMPLIFICADA
+const CAMERA_CONSTRAINTS = {
+  video: {
+    facingMode: 'environment',
+    width: { ideal: 1280 }, // Reducido de 1920 (menos procesamiento)
+    height: { ideal: 720 }, // Reducido de 1080
+    frameRate: { ideal: 24, max: 30 } // 24fps es suficiente y más ligero
+  },
+  audio: false
+};
+
+// ✅ OPTIMIZACIÓN 2: Hints simplificados (solo códigos comunes)
+const SCAN_HINTS = new Map([
+  [2, ['EAN_13', 'EAN_8', 'CODE_128', 'QR_CODE']] // Removimos formatos raros
+]);
 
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const currentOrder = useOrderStore((state) => state.order);
@@ -19,18 +35,21 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const lastScannedRef = useRef({ code: null, time: 0 });
   const processingRef = useRef(false);
   const scanCountRef = useRef(0);
+  
+  // ✅ OPTIMIZACIÓN 3: Cache de stream de cámara
+  const cameraStreamRef = useRef(null);
 
-  // Configuración de la cámara y escaneo
+  // ✅ OPTIMIZACIÓN 4: Configuración de ZXing MÁS LIGERA
   const { ref } = useZxing({
     paused: !isScanning,
     onDecodeResult(result) {
       const code = result.getText();
       const now = Date.now();
 
-      // Evitar lecturas duplicadas muy rápidas (1.5 segundos)
+      // Debounce: 1 segundo (reducido de 1.5s para ser más ágil)
       if (
         lastScannedRef.current.code === code &&
-        now - lastScannedRef.current.time < 1500
+        now - lastScannedRef.current.time < 1000
       ) {
         return;
       }
@@ -57,33 +76,21 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
       processScannedCode(code);
 
-      // Pequeña pausa antes de permitir escanear otro
+      // Reactivar escaneo después de procesar
       setTimeout(() => {
         setIsScanning(true);
         processingRef.current = false;
         setScanFeedback('');
-      }, 600);
+      }, 500); // Reducido de 600ms
     },
     onError(error) {
       console.error('Error ZXing:', error);
       setCameraError('Error al leer códigos. Verifica permisos de cámara.');
       processingRef.current = false;
     },
-    constraints: {
-      video: {
-        facingMode: 'environment',
-        width: { min: 640, ideal: 1920, max: 1920 },
-        height: { min: 480, ideal: 1080, max: 1080 },
-        focusMode: { ideal: 'continuous' },
-        aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 30, max: 30 }
-      },
-      audio: false
-    },
-    hints: new Map([
-      [2, ['EAN_13', 'EAN_8', 'UPC_A', 'UPC_E', 'CODE_128', 'CODE_39', 'ITF', 'CODABAR', 'QR_CODE']]
-    ]),
-    timeBetweenDecodingAttempts: 100,
+    constraints: CAMERA_CONSTRAINTS,
+    hints: SCAN_HINTS,
+    timeBetweenDecodingAttempts: 150, // Aumentado de 100ms para reducir carga de CPU
   });
 
   // Limpieza al desmontar
@@ -92,10 +99,16 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
       lastScannedRef.current = { code: null, time: 0 };
       processingRef.current = false;
       scanCountRef.current = 0;
+      
+      // ✅ OPTIMIZACIÓN 5: Liberar stream de cámara
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(track => track.stop());
+        cameraStreamRef.current = null;
+      }
     };
   }, []);
 
-  // Gestión de encendido/apagado de cámara al abrir/cerrar modal
+  // ✅ OPTIMIZACIÓN 6: Apertura de cámara INMEDIATA (sin delay artificial)
   useEffect(() => {
     if (show) {
       setIsScanning(false);
@@ -103,33 +116,40 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
       lastScannedRef.current = { code: null, time: 0 };
       processingRef.current = false;
 
-      const timer = setTimeout(async () => {
+      // Solicitar permisos INMEDIATAMENTE (sin setTimeout)
+      (async () => {
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: 'environment',
-              width: { ideal: 1920 },
-              height: { ideal: 1080 }
-            }
-          });
-          stream.getTracks().forEach(track => track.stop());
+          const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
+          
+          // Guardamos el stream para reutilizarlo
+          cameraStreamRef.current = stream;
+          
+          // Activamos el escáner
           setIsScanning(true);
         } catch (error) {
           console.error('Error accediendo a cámara:', error);
           if (error.name === 'NotAllowedError') {
             setCameraError('❌ Permiso de cámara denegado.');
+          } else if (error.name === 'NotFoundError') {
+            setCameraError('❌ No se encontró cámara en este dispositivo.');
           } else {
             setCameraError(`❌ Error: ${error.message}`);
           }
         }
-      }, 300);
+      })();
 
       return () => {
-        clearTimeout(timer);
         setIsScanning(false);
+        // El stream se liberará en el useEffect de limpieza global
       };
     } else {
       setIsScanning(false);
+      
+      // Liberar cámara al cerrar modal
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(track => track.stop());
+        cameraStreamRef.current = null;
+      }
     }
   }, [show]);
 
@@ -137,30 +157,21 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     try {
       const product = await searchProductByBarcode(code);
       if (product) {
-
-        // ============================================================
-        // ✅ CORRECCIÓN CRÍTICA: Cargar precio desde lotes si aplica
-        // ============================================================
         let finalPrice = 0;
         let finalCost = 0;
 
         // Si el producto usa gestión de lotes, obtener precio/costo del lote activo
         if (product.batchManagement?.enabled) {
           try {
-            // Importa esta función al inicio del archivo si no está
-            const { queryBatchesByProductIdAndActive } = await import('../../services/database');
-
             const activeBatches = await queryBatchesByProductIdAndActive(product.id, true);
 
             if (activeBatches && activeBatches.length > 0) {
-              // Ordenar FIFO (el más antiguo primero)
               activeBatches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
               const currentBatch = activeBatches[0];
 
               finalPrice = parseFloat(currentBatch.price) || 0;
               finalCost = parseFloat(currentBatch.cost) || 0;
             } else {
-              // No hay lotes activos, usar valores del producto base
               finalPrice = parseFloat(product.price) || 0;
               finalCost = parseFloat(product.cost) || 0;
             }
@@ -170,21 +181,18 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
             finalCost = parseFloat(product.cost) || 0;
           }
         } else {
-          // Producto sin lotes, usar precio directo
           finalPrice = parseFloat(product.price) || 0;
           finalCost = parseFloat(product.cost) || 0;
         }
 
-        // Validación final de seguridad
         if (isNaN(finalPrice) || finalPrice < 0) finalPrice = 0;
         if (isNaN(finalCost) || finalCost < 0) finalCost = 0;
-        // ============================================================
 
         const safeProduct = {
           ...product,
           price: finalPrice,
           cost: finalCost,
-          originalPrice: finalPrice, // ✅ Crucial para el cálculo en OrderStore
+          originalPrice: finalPrice,
           stock: (typeof product.stock === 'number' && !isNaN(product.stock)) ? product.stock : 0
         };
 
@@ -221,7 +229,6 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           existingInOrder.quantity += scannedItem.quantity;
         }
       } else {
-        // Al confirmar, pasamos el objeto YA CORREGIDO
         newOrder.push(scannedItem);
       }
     });
@@ -270,7 +277,18 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
               </div>
             ) : (
               <>
-                <video ref={ref} id="scanner-video" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <video 
+                  ref={ref} 
+                  id="scanner-video" 
+                  style={{ 
+                    width: '100%', 
+                    height: '100%', 
+                    objectFit: 'cover',
+                    // ✅ OPTIMIZACIÓN 7: Hardware acceleration
+                    transform: 'translateZ(0)',
+                    backfaceVisibility: 'hidden'
+                  }} 
+                />
                 {scanFeedback && (
                   <div className="scan-feedback-overlay">
                     <div className="scan-feedback-message">{scanFeedback}</div>
@@ -299,7 +317,6 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                   <div key={item.id} className="scanned-item">
                     <span className="scanned-item-name">{item.name}</span>
                     <span className="scanned-item-controls">x{item.quantity}</span>
-                    {/* Mostramos el precio corregido aquí también */}
                     <span className="scanned-item-price">${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 ))
