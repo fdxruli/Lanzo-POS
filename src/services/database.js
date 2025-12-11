@@ -429,23 +429,39 @@ export function queryBatchesByProductIdAndActive(productId, isActive = true) {
       const transaction = dbInstance.transaction([STORES.PRODUCT_BATCHES], 'readonly');
       const objectStore = transaction.objectStore(STORES.PRODUCT_BATCHES);
 
-      // --- CORRECCIÓN: Validación estricta ---
+      // ✅ SOLUCIÓN ROBUSTA: Verificamos existencia del índice
       if (!objectStore.indexNames.contains('productId')) {
-        console.error("🔥 Falta índice 'productId'. No se puede consultar inventario eficientemente.");
-        // Devolvemos array vacío para no romper la UI, pero logueamos el error grave.
-        // Opcional: reject(new Error("INDEX_MISSING")) si quieres mostrar alerta al usuario.
-        resolve([]);
-        return;
+        console.warn("⚠️ Índice 'productId' no encontrado. Usando búsqueda manual (fallback).");
+
+        // Plan B: Búsqueda manual (más lenta, pero segura)
+        const request = objectStore.openCursor();
+        const results = [];
+
+        request.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            const batch = cursor.value;
+            // Filtro manual en memoria
+            if (batch.productId === productId && Boolean(batch.isActive) === Boolean(isActive)) {
+              results.push(batch);
+            }
+            cursor.continue();
+          } else {
+            resolve(results);
+          }
+        };
+        request.onerror = (e) => reject(e.target.error);
+        return; // Detenemos aquí para no ejecutar el código del Plan A
       }
 
+      // Plan A: Usar índice (Rápido)
       const index = objectStore.index('productId');
       const range = IDBKeyRange.only(productId);
       const request = index.getAll(range);
 
       request.onsuccess = () => {
         const batches = request.result || [];
-        // Filtramos en memoria solo lo necesario (activo/inactivo), que es rápido
-        // porque ya filtramos por producto con el índice.
+        // Filtramos isActive en memoria (es muy rápido ya que tenemos pocos lotes por producto)
         const filtered = batches.filter(b => Boolean(b.isActive) === Boolean(isActive));
         resolve(filtered);
       };
@@ -606,10 +622,30 @@ export async function processBatchDeductions(deductions) {
 
 export async function executeSaleTransaction(sale, deductions) {
   const db = await initDB();
-  const TRANSACTION_TIMEOUT = 15000; // 5 segundos máximo
+  const TRANSACTION_TIMEOUT = 15000; // 15 segundos máximo
+
+  // ✅ MEJORA 1: Validación de idempotencia (Lectura rápida previa)
+  // Verifica si la venta ya existe antes de abrir la transacción pesada de escritura
+  const existingSale = await new Promise((resolve) => {
+    const checkTx = db.transaction([STORES.SALES], 'readonly');
+    const checkStore = checkTx.objectStore(STORES.SALES);
+    const checkReq = checkStore.get(sale.id);
+
+    checkReq.onsuccess = () => resolve(checkReq.result);
+    checkReq.onerror = () => resolve(null);
+  });
+
+  if (existingSale) {
+    console.warn('⚠️ Venta duplicada detectada e ignorada:', sale.id);
+    return {
+      success: false,
+      error: new Error('DUPLICATE_SALE'),
+      isDuplicate: true
+    };
+  }
 
   return new Promise((resolve, reject) => {
-    // Incluimos TRANSACTION_LOG en la transacción atómica
+    // Abrimos transacción "readwrite" en todos los stores afectados
     const tx = db.transaction(
       [STORES.SALES, STORES.PRODUCT_BATCHES, STORES.MENU, STORES.TRANSACTION_LOG],
       'readwrite'
@@ -623,124 +659,196 @@ export async function executeSaleTransaction(sale, deductions) {
     let aborted = false;
     let completed = false;
 
-    // A. TIMEOUT DE SEGURIDAD
+    // ✅ MEJORA 2: ID de transacción único para trazabilidad
+    const transactionId = `tx-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+
+    // Timeout de seguridad: Si la DB no responde, abortamos para liberar recursos
     const timeoutId = setTimeout(() => {
       if (!completed && !aborted) {
-        console.error('⏱️ Transacción excedió timeout (5s)');
+        console.error('⏱️ Transacción excedió timeout (15s)');
         aborted = true;
         try {
           tx.abort();
         } catch (e) {
-          console.warn("No se pudo abortar (posiblemente ya finalizó):", e);
+          console.warn('Intento de abortar falló (quizás ya cerró):', e);
         }
         reject(new Error('TRANSACTION_TIMEOUT'));
       }
     }, TRANSACTION_TIMEOUT);
 
-    // B. GENERAR ID Y LOG (Write-Ahead Log dentro de la transacción)
-    // Si la transacción falla, este log también se borra (atomicidad),
-    // pero si se comete y falla el código posterior (UI), queda rastro.
-    const transactionId = `tx-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-    logStore.add({
+    // ✅ MEJORA 3: Log de auditoría (Write-Ahead Log)
+    // Se guarda como PENDING. Si la transacción falla, el log desaparece (rollback),
+    // lo cual es correcto para no dejar basura. Si tiene éxito, se marca COMPLETED.
+    const logEntry = {
       id: transactionId,
       type: 'SALE',
       status: 'PENDING',
       timestamp: new Date().toISOString(),
       amount: sale.total,
-      payload: { saleId: sale.id, itemsCount: sale.items.length }
-    });
+      payload: {
+        saleId: sale.id,
+        itemsCount: sale.items.length,
+        deductionsCount: deductions.length,
+        // Snapshot para posible depuración futura
+        deductionsSnapshot: deductions.map(d => ({
+          batchId: d.batchId,
+          productId: d.productId,
+          quantity: d.quantity
+        }))
+      }
+    };
 
-    // C. HANDLERS DE TRANSACCIÓN
+    logStore.add(logEntry);
+
+    // --- HANDLERS DE LA TRANSACCIÓN ---
+
     tx.oncomplete = () => {
       clearTimeout(timeoutId);
       completed = true;
-      // Éxito: Marcar log como completado en una nueva transacción asíncrona
-      markTransactionComplete(transactionId);
+
+      // ✅ MEJORA 4: Marcar log como completado en una nueva transacción ligera
+      // Esto se hace "fire and forget" para no bloquear la UI
+      markTransactionComplete(transactionId).catch(err =>
+        console.warn('No se pudo actualizar el estado del log:', err)
+      );
+
       resolve({ success: true, transactionId });
     };
 
     tx.onerror = (e) => {
       clearTimeout(timeoutId);
-      console.error('❌ Transaction error:', e.target.error);
+      console.error('❌ Error crítico en transacción:', e.target.error);
+
+      // Intentamos registrar el fallo (si es posible)
+      markTransactionFailed(transactionId, e.target.error.message);
       reject(e.target.error);
     };
 
     tx.onabort = () => {
       clearTimeout(timeoutId);
       aborted = true;
-      // Nota: Si se aborta la transacción, el registro 'PENDING' en logStore 
-      // TAMBIÉN se deshace (porque es parte de la misma transacción ACID).
-      // Esto es correcto para IndexedDB. El log persistente 'FAILED' 
-      // se usaría si tuviéramos un sistema multi-paso no atómico.
       reject(new Error('TRANSACTION_ABORTED_OR_STOCK_ERROR'));
     };
 
-    // D. LÓGICA DE NEGOCIO (Pre-cálculo)
-    const productUpdates = new Map();
+    // --- LÓGICA DE NEGOCIO ---
 
-    // Sumar lotes
-    deductions.forEach(({ productId, quantity }) => {
+    // ✅ MEJORA 6: Pre-cálculo y Validación en memoria antes de tocar la BD
+    const productUpdates = new Map(); // Mapa para acumular restas al stock global (padre)
+    const validationErrors = [];
+
+    deductions.forEach(({ productId, quantity, batchId }) => {
+      if (!productId || !batchId) {
+        validationErrors.push(`Datos incompletos en deducción: batchId=${batchId}`);
+      }
+
+      if (quantity <= 0) {
+        validationErrors.push(`Cantidad inválida en deducción: ${quantity}`);
+      }
+
       if (productId) {
         const current = productUpdates.get(productId) || 0;
         productUpdates.set(productId, current + quantity);
       }
     });
 
-    // Sumar productos simples
-    if (sale && sale.items) {
+    // Sumar también items simples (sin lotes) para descontar del padre
+    if (sale?.items) {
       sale.items.forEach(item => {
+        // Si no usó lotes, descontamos directo del padre
         if (!item.batchesUsed || item.batchesUsed.length === 0) {
           const pid = item.parentId || item.id;
-          const current = productUpdates.get(pid) || 0;
-          productUpdates.set(pid, current + item.quantity);
+          if (item.quantity > 0) {
+            const current = productUpdates.get(pid) || 0;
+            productUpdates.set(pid, current + item.quantity);
+          }
         }
       });
     }
 
-    try {
-      // E. EJECUCIÓN (Lecturas y Escrituras)
+    // ✅ MEJORA 7: Abortar temprano si los datos están mal
+    if (validationErrors.length > 0) {
+      console.error('Errores de validación en transacción:', validationErrors);
+      aborted = true;
+      tx.abort(); // Abort manual
+      return;
+    }
 
-      // 1. Procesar Lotes
+    try {
+      // 1. DEDUCCIONES DE LOTES (Stock específico)
       deductions.forEach(({ batchId, quantity }) => {
         if (aborted) return;
+
         const batchReq = batchesStore.get(batchId);
+
         batchReq.onsuccess = () => {
           if (aborted) return;
+
           const batch = batchReq.result;
-          if (!batch || batch.stock < quantity) {
+
+          // ✅ MEJORA 8: Validación de stock en tiempo real (dentro de la transacción)
+          if (!batch) {
+            console.error(`ERROR CRÍTICO: Lote ${batchId} no encontrado.`);
             aborted = true;
             tx.abort();
             return;
           }
+
+          if (batch.stock < quantity) {
+            console.error(`STOCK INSUFICIENTE en lote ${batchId}: Hay ${batch.stock}, se requiere ${quantity}`);
+            aborted = true;
+            tx.abort();
+            return;
+          }
+
+          // Aplicar resta
           batch.stock -= quantity;
-          if (batch.stock <= 0.0001) { batch.stock = 0; batch.isActive = false; }
+
+          // Desactivar si se acaba (limpieza automática)
+          if (batch.stock <= 0.0001) {
+            batch.stock = 0;
+            batch.isActive = false;
+          }
+
           batchesStore.put(batch);
+        };
+
+        batchReq.onerror = () => {
+          aborted = true;
+          tx.abort();
         };
       });
 
-      // 2. Actualizar Productos Padre
+      // 2. ACTUALIZACIÓN DE PRODUCTOS PADRE (Stock global)
       productUpdates.forEach((qtyToDeduct, productId) => {
         if (aborted) return;
+
         const prodReq = productStore.get(productId);
+
         prodReq.onsuccess = () => {
           if (aborted) return;
+
           const product = prodReq.result;
+
           if (product && product.trackStock) {
             product.stock -= qtyToDeduct;
-            if (Math.abs(product.stock) < 0.0001) product.stock = 0;
+
+            if (product.stock < 0.0001) {
+              product.stock = 0;
+            }
+
+            product.updatedAt = new Date().toISOString();
             productStore.put(product);
           }
         };
       });
 
-      // 3. Guardar Venta
+      // 3. GUARDAR VENTA FINAL
       if (sale && !aborted) {
         salesStore.add(sale);
       }
 
     } catch (error) {
-      // Captura errores síncronos en la lógica
+      console.error('Excepción no controlada en transacción:', error);
       aborted = true;
       tx.abort();
     }
@@ -749,50 +857,58 @@ export async function executeSaleTransaction(sale, deductions) {
 
 async function markTransactionComplete(transactionId) {
   try {
-    // Usamos una transacción separada rápida
-    await saveData(STORES.TRANSACTION_LOG, {
-      id: transactionId,
-      status: 'COMPLETED',
-      completedAt: new Date().toISOString()
-      // Nota: saveData hace un merge/put, pero si quieres preservar los datos originales
-      // deberías leer primero. Para eficiencia, aquí solo actualizamos el estado si es simple
-      // o usamos 'readwrite' manual.
-    });
-
-    // Versión manual más segura para preservar payload:
     const db = await initDB();
-    const tx = db.transaction(STORES.TRANSACTION_LOG, 'readwrite');
-    const store = tx.objectStore(STORES.TRANSACTION_LOG);
-    const req = store.get(transactionId);
+    // Nueva transacción corta solo para el log
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORES.TRANSACTION_LOG, 'readwrite');
+      const store = tx.objectStore(STORES.TRANSACTION_LOG);
+      const req = store.get(transactionId);
 
-    req.onsuccess = () => {
-      const data = req.result;
-      if (data) {
-        data.status = 'COMPLETED';
-        data.completedAt = new Date().toISOString();
-        store.put(data);
-      }
-    };
-  } catch (e) { console.error("Error marking tx complete", e); }
+      req.onsuccess = () => {
+        const data = req.result;
+        if (data) {
+          data.status = 'COMPLETED';
+          data.completedAt = new Date().toISOString();
+          store.put(data);
+        }
+        resolve();
+      };
+
+      tx.onerror = () => resolve(); // Si falla el log, no rompemos el flujo principal
+    });
+  } catch (e) {
+    console.error('Error marking tx complete:', e);
+  }
 }
 
 async function markTransactionFailed(transactionId, errorMsg = 'Unknown') {
   try {
     const db = await initDB();
-    const tx = db.transaction(STORES.TRANSACTION_LOG, 'readwrite');
-    const store = tx.objectStore(STORES.TRANSACTION_LOG);
-    const req = store.get(transactionId);
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORES.TRANSACTION_LOG, 'readwrite');
+      const store = tx.objectStore(STORES.TRANSACTION_LOG);
+      const req = store.get(transactionId);
 
-    req.onsuccess = () => {
-      const data = req.result;
-      if (data) {
-        data.status = 'FAILED';
-        data.error = errorMsg;
-        data.failedAt = new Date().toISOString();
-        store.put(data);
-      }
-    };
-  } catch (e) { console.error("Error marking tx failed", e); }
+      req.onsuccess = () => {
+        const data = req.result;
+        // Solo podemos marcarlo como fallido si la transacción principal 
+        // NO hizo rollback del registro inicial "PENDING".
+        // (En IndexedDB, si la transacción aborta, el registro PENDING se borra, 
+        // así que esto es más útil para errores lógicos que no abortan la DB).
+        if (data) {
+          data.status = 'FAILED';
+          data.error = errorMsg;
+          data.failedAt = new Date().toISOString();
+          store.put(data);
+        }
+      };
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch (e) {
+    console.error('Error marking tx failed:', e);
+  }
 }
 
 export async function deleteCategoryCascading(categoryId) {
@@ -1145,11 +1261,11 @@ export function searchProductBySKU(sku) {
 
       request.onsuccess = () => {
         const batch = request.result;
-        
+
         if (batch) {
           // Si encontramos el lote/variante, buscamos al padre
           const prodRequest = menuStore.get(batch.productId);
-          
+
           prodRequest.onsuccess = () => {
             const product = prodRequest.result;
             if (product && product.isActive !== false) {
@@ -1175,7 +1291,7 @@ export function searchProductBySKU(sku) {
           resolve(null); // SKU no existe
         }
       };
-      
+
       request.onerror = (e) => reject(e.target.error);
     });
   });
