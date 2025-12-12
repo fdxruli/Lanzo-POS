@@ -1,5 +1,5 @@
-// src/services/database.js - VERSIÓN CORREGIDA Y ROBUSTA
-
+import { productSchema } from '../schemas/productSchema';
+import { customerSchema } from '../schemas/customerSchema';
 // Incrementamos versión para forzar la creación de las tablas faltantes
 const DB_NAME = 'LanzoDB1';
 const DB_VERSION = 25; // si le vamos a mover a este numero asegurar que tengamos el mismo en el archivo workers/stats.worker.js
@@ -35,6 +35,10 @@ export const STORES = {
   IMAGES: 'images',
 };
 
+const SCHEMAS = {
+  [STORES.MENU]: productSchema,
+  [STORES.CUSTOMERS]: customerSchema,
+};
 // ============================================================
 // SISTEMA DE ERRORES (AUDITORÍA)
 // ============================================================
@@ -234,13 +238,78 @@ export function initDB() {
 // ============================================================
 
 /**
- * Guarda un registro de forma segura, retornando un objeto de resultado estructurado.
+ * Guarda un registro de forma segura, validando datos y retornando resultado.
  */
 export async function saveDataSafe(storeName, data) {
   try {
-    await saveData(storeName, data);
+    // 1. VALIDACIÓN ZOD (NUEVO)
+    const schema = SCHEMAS[storeName];
+    let dataToSave = data;
+
+    if (schema) {
+      // .parse() valida y transforma (ej: strings a números, trim, defaults)
+      // Si falla, lanza un error que cae en el catch de abajo
+      dataToSave = schema.parse(data);
+    }
+
+    // 2. GUARDADO NORMAL
+    await saveData(storeName, dataToSave);
     return { success: true };
+
   } catch (error) {
+    // 3. MANEJO DE ERRORES DE VALIDACIÓN (ZOD)
+    if (error.name === 'ZodError') {
+      console.warn("⚠️ Validación fallida (Zod):", error);
+
+      let message = "Datos inválidos (Revise el formulario)";
+
+      // ESTRATEGIA 1: Intentar leer .errors o .issues (Estándar de Zod)
+      const issues = error.errors || error.issues;
+
+      if (issues && Array.isArray(issues) && issues.length > 0) {
+        const first = issues[0];
+        // .path puede venir vacío, así que lo manejamos seguro
+        const path = first.path ? first.path.join(' > ') : 'Campo desconocido';
+        message = `${path}: ${first.message}`;
+      }
+      // ESTRATEGIA 2: Si falla lo anterior, usamos .format() (Plan de Respaldo)
+      else {
+        try {
+          // Verificamos que la función exista antes de llamarla
+          if (typeof error.format === 'function') {
+            const formatted = error.format();
+
+            // Buscamos la primera llave que tenga errores reales
+            const fieldKey = Object.keys(formatted).find(key =>
+              key !== '_errors' &&
+              formatted[key] &&
+              formatted[key]._errors &&
+              formatted[key]._errors.length > 0
+            );
+
+            if (fieldKey) {
+              message = `${fieldKey}: ${formatted[fieldKey]._errors[0]}`;
+            } else if (formatted._errors && formatted._errors.length > 0) {
+              // Errores generales del objeto
+              message = formatted._errors[0];
+            }
+          }
+        } catch (e) {
+          console.error("Error al procesar el mensaje de validación:", e);
+          // Si todo falla, nos quedamos con el mensaje genérico definido arriba
+        }
+      }
+
+      return {
+        success: false,
+        error: new DatabaseError('VALIDATION_ERROR', message, {
+          originalError: error,
+          actionable: 'CHECK_FORM'
+        })
+      };
+    }
+
+    // Errores normales de Base de Datos
     return {
       success: false,
       error: classifyError(error, storeName, 'saveData')
@@ -248,14 +317,43 @@ export async function saveDataSafe(storeName, data) {
   }
 }
 
+
 /**
  * Guarda múltiples registros de forma segura.
  */
+/**
+ * Guarda múltiples registros de forma segura con validación.
+ */
 export async function saveBulkSafe(storeName, dataArray) {
   try {
-    await saveBulk(storeName, dataArray);
+    const schema = SCHEMAS[storeName];
+    let validArray = dataArray;
+
+    if (schema) {
+      // Validamos cada item del array. Si uno falla, falla todo el bloque (seguridad)
+      // Opcional: Podrías filtrar los inválidos, pero es mejor avisar.
+      validArray = dataArray.map((item, index) => {
+        try {
+          return schema.parse(item);
+        } catch (e) {
+          // Agregamos contexto de índice para saber qué fila falló
+          throw new Error(`Fila ${index + 1}: ${e.errors[0].message} (Campo: ${e.errors[0].path})`);
+        }
+      });
+    }
+
+    await saveBulk(storeName, validArray);
     return { success: true };
+
   } catch (error) {
+    // Si es un error que lanzamos manualmente arriba
+    if (error.message.startsWith('Fila')) {
+      return {
+        success: false,
+        error: new DatabaseError('VALIDATION_ERROR', error.message)
+      };
+    }
+
     return {
       success: false,
       error: classifyError(error, storeName, 'saveBulk')

@@ -13,7 +13,7 @@ import './AboutPage.css';
 const APP_VERSION = 'v2.5.0';
 
 const getWhatsAppLink = (type, data) => {
-  const YOUR_WHATSAPP_NUMBER = import.meta.env.VITE_SUPPORT_PHONE || '521122334455';
+  const YOUR_WHATSAPP_NUMBER = import.meta.env.VITE_SUPPORT_PHONE;
   let message = '';
   if (type === 'bug') {
     message = `🚨 *Reporte de Error - Lanzo POS*\n\n*Acción:* ${data.action}\n*Error:* ${data.error}\n*Dispositivo:* ${data.device}\n`;

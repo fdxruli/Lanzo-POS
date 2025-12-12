@@ -130,9 +130,9 @@ export default function ProductsPage() {
                 const imageId = `img-${Date.now()}`;
                 await saveImageToDB(imageId, productData.image);
                 finalImage = imageId;
-            } 
+            }
             else if (!productData.image && editingProduct?.image) {
-               finalImage = editingProduct.image;
+                finalImage = editingProduct.image;
             }
 
             let valueDifference = 0;
@@ -189,19 +189,23 @@ export default function ProductsPage() {
             if (result.success) {
                 await refreshData();
                 if (valueDifference > 0) await adjustInventoryValue(valueDifference);
-                
+
                 showMessageModal(editingProduct ? '¡Actualizado exitosamente!' : '¡Producto creado exitosamente!');
                 setEditingProduct(null);
-                
+
                 if (productData.productType === 'ingredient') setActiveTab('ingredients');
                 else setActiveTab('view-products');
+
+                return true; // ✅ RETORNA ÉXITO
             } else {
                 handleActionableError(result);
+                return false; // ❌ RETORNA FALLO
             }
 
         } catch (error) {
             console.error("Error crítico:", error);
             showMessageModal(`Error inesperado: ${error.message}`);
+            return false; // ❌ RETORNA FALLO
         } finally {
             setIsLoading(false);
         }
@@ -228,7 +232,7 @@ export default function ProductsPage() {
         if (window.confirm(`¿Eliminar "${product.name}"?`)) {
             try {
                 product.deletedTimestamp = new Date().toISOString();
-                
+
                 // 1. Mover a papelera (Seguro)
                 const resTrash = await saveDataSafe(STORES.DELETED_MENU, product);
                 if (!resTrash.success) {
@@ -247,7 +251,7 @@ export default function ProductsPage() {
                 // (Para simplificar, asumimos que queryByIndex es seguro internamente con executeWithRetry)
                 await refreshData();
                 showMessageModal('Producto eliminado.');
-                
+
             } catch (error) {
                 console.error(error);
                 showMessageModal("Error al eliminar el producto.");
@@ -263,10 +267,10 @@ export default function ProductsPage() {
                 isActive: !(product.isActive !== false),
                 updatedAt: new Date().toISOString()
             };
-            
+
             // GUARDADO SEGURO
             const result = await saveDataSafe(STORES.MENU, updatedProduct);
-            
+
             if (result.success) {
                 await refreshData();
             } else {
