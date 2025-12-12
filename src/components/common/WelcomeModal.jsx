@@ -1,4 +1,3 @@
-// src/components/common/WelcomeModal.jsx
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import ContactModal from './ContactModal';
@@ -10,7 +9,7 @@ const supportFields = [
   { id: 'problem', label: 'Describe tu problema', type: 'textarea' }
 ];
 
-const SUPPORT_PHONE_NUMBER = '521122334455';
+const SUPPORT_PHONE_NUMBER = import.meta.env.VITE_SUPPORT_PHONE;
 
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');

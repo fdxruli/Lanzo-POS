@@ -48,11 +48,11 @@ export default function ProductForm({
     const [isWholesaleModalOpen, setIsWholesaleModalOpen] = useState(false);
     const [minStock, setMinStock] = useState('');
     const [maxStock, setMaxStock] = useState('');
-    
+
     // --- ESTADOS DE PRECIO Y COSTO INTEGRADOS ---
     const [cost, setCost] = useState('');
     const [price, setPrice] = useState('');
-    const [margin, setMargin] = useState(''); 
+    const [margin, setMargin] = useState('');
 
     const [supplier, setSupplier] = useState('');
 
@@ -95,12 +95,12 @@ export default function ProductForm({
             setWholesaleTiers(productToEdit.wholesaleTiers || []);
             setMinStock(productToEdit.minStock || '');
             setMaxStock(productToEdit.maxStock || '');
-            
+
             const pCost = productToEdit.cost || 0;
             const pPrice = productToEdit.price || 0;
             setCost(pCost === 0 ? '' : pCost);
             setPrice(pPrice === 0 ? '' : pPrice);
-            
+
             if (pCost > 0 && pPrice > 0) {
                 const initialMargin = ((pPrice - pCost) / pCost) * 100;
                 setMargin(initialMargin.toFixed(1));
@@ -176,8 +176,8 @@ export default function ProductForm({
         setCategoryId('');
         setDoesTrackStock(true);
         setProductType('sellable'); setRecipe([]); setPrintStation('kitchen'); setPrepTime(''); setModifiers([]);
-        setSaleType('unit'); setWholesaleTiers([]); setMinStock(''); setMaxStock(''); 
-        setCost(''); setPrice(''); setMargin(''); 
+        setSaleType('unit'); setWholesaleTiers([]); setMinStock(''); setMaxStock('');
+        setCost(''); setPrice(''); setMargin('');
         setSupplier('');
         setSustancia(''); setLaboratorio(''); setRequiresPrescription(false); setPresentation('');
         setShelfLife(''); setUnit('kg');
@@ -227,23 +227,13 @@ export default function ProductForm({
         }
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         const finalPrice = parseFloat(price) || 0;
         const finalCost = parseFloat(cost) || 0;
         const finalMinStock = minStock !== '' ? parseFloat(minStock) : null;
         const finalMaxStock = maxStock !== '' ? parseFloat(maxStock) : null;
-
-        if (!name || name.trim().length < 2) {
-            showMessageModal('⚠️ El nombre es obligatorio (mínimo 2 letras).', null, { type: 'error' });
-            return;
-        }
-
-        if (finalPrice < 0) {
-            showMessageModal('⚠️ El precio de venta no puede ser negativo.', null, { type: 'error' });
-            return;
-        }
 
         let finalSaleType = saleType;
         // CORRECCIÓN CRÍTICA: Guardar la unidad SIEMPRE, para que "Manojo" persista.
@@ -252,7 +242,7 @@ export default function ProductForm({
         // Si es farmacia, forzamos unidad estándar
         if (features.hasLabFields && requiresPrescription) {
             finalSaleType = 'unit';
-            finalBulkData = { purchase: { unit: 'pza' } }; 
+            finalBulkData = { purchase: { unit: 'pza' } };
         }
 
         let productData = {
@@ -281,8 +271,13 @@ export default function ProductForm({
             shelfLife,
         };
 
-        onSave(productData, internalEditingProduct);
-        resetForm();
+        // ✅ ESPERAMOS LA CONFIRMACIÓN ANTES DE LIMPIAR
+        const success = await onSave(productData, internalEditingProduct);
+
+        // Solo limpiamos el formulario si el guardado fue exitoso
+        if (success) {
+            resetForm();
+        }
     };
 
     return (
@@ -292,7 +287,7 @@ export default function ProductForm({
                     {internalEditingProduct ? `Editar: ${internalEditingProduct.name}` : 'Añadir Nuevo Producto'}
                 </h3>
 
-                <form id="product-form" onSubmit={handleSubmit}>
+                <form id="product-form" onSubmit={handleSubmit} noValidate>
 
                     <div className="form-group">
                         <label className="form-label">Nombre del Producto *</label>
@@ -309,16 +304,16 @@ export default function ProductForm({
                     </div>
 
                     {/* --- SECCIÓN INTEGRADA DE PRECIOS Y COSTOS --- */}
-                    <div style={{ 
-                        backgroundColor: '#f8fafc', 
-                        padding: '15px', 
-                        borderRadius: '8px', 
-                        border: '1px solid #e2e8f0', 
-                        marginBottom: '20px' 
+                    <div style={{
+                        backgroundColor: '#f8fafc',
+                        padding: '15px',
+                        borderRadius: '8px',
+                        border: '1px solid #e2e8f0',
+                        marginBottom: '20px'
                     }}>
                         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
                             <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                                <label className="form-label" style={{fontSize: '0.85rem'}}>Costo ($)</label>
+                                <label className="form-label" style={{ fontSize: '0.85rem' }}>Costo ($)</label>
                                 <input
                                     type="number" className="form-input"
                                     value={cost} onChange={e => handleCostChange(e.target.value)}
@@ -327,20 +322,20 @@ export default function ProductForm({
                             </div>
 
                             <div className="form-group" style={{ width: '80px', marginBottom: 0 }}>
-                                <label className="form-label" style={{fontSize: '0.85rem', color: 'var(--primary-color)'}}>Ganancia</label>
-                                <div style={{position: 'relative'}}>
+                                <label className="form-label" style={{ fontSize: '0.85rem', color: 'var(--primary-color)' }}>Ganancia</label>
+                                <div style={{ position: 'relative' }}>
                                     <input
                                         type="number" className="form-input"
                                         value={margin} onChange={e => handleMarginChange(e.target.value)}
                                         placeholder="%"
                                         style={{ borderColor: 'var(--primary-color)', textAlign: 'center', paddingRight: '20px' }}
                                     />
-                                    <span style={{position:'absolute', right:'5px', top:'10px', fontSize:'0.8rem', color:'#999'}}>%</span>
+                                    <span style={{ position: 'absolute', right: '5px', top: '10px', fontSize: '0.8rem', color: '#999' }}>%</span>
                                 </div>
                             </div>
 
                             <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                                <label className="form-label" style={{fontSize: '0.85rem'}}>Precio Venta *</label>
+                                <label className="form-label" style={{ fontSize: '0.85rem' }}>Precio Venta *</label>
                                 <input
                                     type="number" className="form-input"
                                     value={price} onChange={e => handlePriceChange(e.target.value)}
