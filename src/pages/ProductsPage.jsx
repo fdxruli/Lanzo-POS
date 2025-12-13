@@ -16,6 +16,7 @@ import BatchManager from '../components/products/BatchManager';
 import DataTransferModal from '../components/products/DataTransferModal';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import DailyPriceModal from '../components/products/DailyPriceModal';
+import { useAppStore } from '../store/useAppStore';
 import './ProductsPage.css';
 
 export default function ProductsPage() {
@@ -23,6 +24,12 @@ export default function ProductsPage() {
     const [activeTab, setActiveTab] = useState('view-products');
 
     const features = useFeatureConfig();
+    const companyProfile = useAppStore(state => state.companyProfile);
+    const isApparel = (() => {
+        const types = companyProfile?.business_type;
+        if (Array.isArray(types)) return types.includes('apparel');
+        return types === 'apparel';
+    })();
 
     // Corrección tipográfica: adjustInventoryValue
     const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
@@ -344,12 +351,12 @@ export default function ProductsPage() {
                     </button>
                 )}
 
-                {features.hasVariants && (
+                {features.hasVariants && isApparel && (
                     <button
                         className={`tab-btn ${activeTab === 'variants-view' ? 'active' : ''}`}
                         onClick={() => setActiveTab('variants-view')}
                     >
-                        👔 Inventario Global (Tallas)
+                        Inventario Global (Tallas)
                     </button>
                 )}
 
@@ -420,7 +427,7 @@ export default function ProductsPage() {
                 )
             }
 
-            {activeTab === 'variants-view' && features.hasVariants && (
+            {activeTab === 'variants-view' && features.hasVariants && isApparel && (
                 <VariantInventoryView />
             )}
 
