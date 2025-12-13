@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
-import { compressImage, lookupBarcodeInAPI, showMessageModal } from '../../services/utils';
+import { useAppStore } from '../../store/useAppStore';
+import { compressImage, lookupBarcodeInAPI, showMessageModal, generateID } from '../../services/utils';
+import { saveDataSafe, saveBatchAndSyncProductSafe } from '../../services/database';
 import ScannerModal from '../common/ScannerModal';
 import './ProductForm.css';
 
@@ -9,6 +11,7 @@ import FruteriaFields from './fieldsets/FruteriaFields';
 import RestauranteFields from './fieldsets/RestauranteFields';
 import AbarrotesFields from './fieldsets/AbarrotesFields';
 import FarmaciaFields from './fieldsets/FarmaciaFIelds';
+import QuickVariantEntry from './QuickVariantEntry';
 
 import RecipeBuilderModal from './RecipeBuilderModal';
 import WholesaleManagerModal from './WholesaleManagerModal';
@@ -24,6 +27,14 @@ export default function ProductForm({
     const [isImageProcessing, setIsImageProcessing] = useState(false);
     const features = useFeatureConfig();
     const navigate = useNavigate();
+
+    const companyProfile = useAppStore(state => state.companyProfile);
+
+    const isApparel = (() => {
+        const types = companyProfile?.businessType;
+        if (Array.isArray(types)) return types.includes('apparel');
+        return types === 'apparel';
+    })();
 
     // --- ESTADOS COMUNES ---
     const [name, setName] = useState('');
@@ -42,6 +53,7 @@ export default function ProductForm({
     const [printStation, setPrintStation] = useState('kitchen');
     const [prepTime, setPrepTime] = useState('');
     const [modifiers, setModifiers] = useState([]);
+    const [quickVariants, setQuickVariants] = useState([]);
 
     const [saleType, setSaleType] = useState('unit');
     const [wholesaleTiers, setWholesaleTiers] = useState([]);
@@ -230,23 +242,54 @@ export default function ProductForm({
     const handleSubmit = async (e) => {
         e.preventDefault();
 
+        // 1. VALIDACIÓN PREVIA (Recetas / Restaurantes)
+        if (features.hasRecipes && productType === 'sellable' && recipe.length === 0) {
+            showMessageModal(
+                '⚠️ Receta Incompleta: Has marcado este producto como "Platillo" pero no has agregado ingredientes. Agrega insumos o cambia el tipo a "Insumo/Venta Simple".',
+                null,
+                { type: 'error' }
+            );
+            return;
+        }
+
+        // 2. PREPARACIÓN DE DATOS NUMÉRICOS
         const finalPrice = parseFloat(price) || 0;
         const finalCost = parseFloat(cost) || 0;
         const finalMinStock = minStock !== '' ? parseFloat(minStock) : null;
         const finalMaxStock = maxStock !== '' ? parseFloat(maxStock) : null;
 
+        // 3. LÓGICA DE TIPO DE VENTA
         let finalSaleType = saleType;
-        // CORRECCIÓN CRÍTICA: Guardar la unidad SIEMPRE, para que "Manojo" persista.
+        // CORRECCIÓN CRÍTICA: Guardar la unidad SIEMPRE (Manojo, Caja, etc.)
         let finalBulkData = { purchase: { unit: unit } };
 
-        // Si es farmacia, forzamos unidad estándar
         if (features.hasLabFields && requiresPrescription) {
             finalSaleType = 'unit';
             finalBulkData = { purchase: { unit: 'pza' } };
         }
 
+        // 4. LÓGICA DE VARIANTES RÁPIDAS (ROPA/CALZADO) 👕👟
+        // Verificamos si el usuario llenó la tabla de variantes (QuickVariantEntry)
+        // Nota: Asegúrate de tener el estado `quickVariants` definido en tu componente
+        const hasQuickVariants = features.hasVariants && typeof quickVariants !== 'undefined' && quickVariants.length > 0;
+
+        // Si hay variantes, activamos forzosamente el control de stock y gestión de lotes
+        const finalTrackStock = hasQuickVariants ? true : doesTrackStock;
+        const finalBatchManagement = hasQuickVariants
+            ? { enabled: true, selectionStrategy: 'fifo' }
+            : (doesTrackStock ? { enabled: true, selectionStrategy: 'fifo' } : { enabled: false });
+
+        // 5. GENERACIÓN DE ID (TRUCO DE VINCULACIÓN) 🪄
+        // Si es nuevo, generamos el ID aquí mismo. Esto es vital para poder usar este ID
+        // al guardar las variantes (hijos) inmediatamente después.
+        const productIdToUse = internalEditingProduct?.id || generateID('prod');
+
+        // Creamos un objeto "falso" de edición para forzar a 'ProductsPage' a usar nuestro ID
+        // en lugar de generar uno nuevo desconectado.
+        const effectiveEditingProduct = internalEditingProduct || { id: productIdToUse, isNew: true };
+
         let productData = {
-            id: internalEditingProduct?.id,
+            id: productIdToUse, // Usamos el ID controlado
             name: name.trim(),
             barcode: barcode.trim(),
             description: description.trim(),
@@ -254,13 +297,13 @@ export default function ProductForm({
             image: imageData,
             location: storageLocation.trim(),
             conversionFactor: conversionFactor,
-            trackStock: doesTrackStock,
-            batchManagement: doesTrackStock ? { enabled: true, selectionStrategy: 'fifo' } : { enabled: false },
+            trackStock: finalTrackStock,       // Actualizado por lógica de variantes
+            batchManagement: finalBatchManagement, // Actualizado por lógica de variantes
             productType: features.hasRecipes ? productType : 'sellable',
             recipe: (features.hasRecipes && productType === 'sellable') ? recipe : [],
             printStation, prepTime, modifiers,
             saleType: finalSaleType,
-            bulkData: finalBulkData, // Ahora siempre lleva la unidad correcta
+            bulkData: finalBulkData,
             wholesaleTiers,
             minStock: finalMinStock,
             maxStock: finalMaxStock,
@@ -269,14 +312,50 @@ export default function ProductForm({
             supplier,
             sustancia, laboratorio, requiresPrescription, presentation,
             shelfLife,
+            // Si es producto nuevo, agregamos fecha de creación manual para que no falte
+            ...(internalEditingProduct ? {} : { createdAt: new Date().toISOString(), stock: 0 })
         };
 
-        // ✅ ESPERAMOS LA CONFIRMACIÓN ANTES DE LIMPIAR
-        const success = await onSave(productData, internalEditingProduct);
+        // 6. GUARDAR PRODUCTO PADRE
+        // Enviamos el producto y nuestro objeto 'effectiveEditingProduct' para mantener el ID
+        const success = await onSave(productData, effectiveEditingProduct);
 
-        // Solo limpiamos el formulario si el guardado fue exitoso
+        // Si falló el guardado del padre, nos detenemos aquí
+        if (!success) return;
+
+        // 7. PROCESAR Y GUARDAR VARIANTES (HIJOS) 📦
+        if (hasQuickVariants) {
+            // Filtramos filas vacías o inválidas
+            const validVariants = quickVariants.filter(v => (v.talla || v.color) && (parseFloat(v.stock) > 0 || v.sku));
+
+            for (const variant of validVariants) {
+                const batchData = {
+                    id: generateID('batch'),
+                    productId: productIdToUse, // ¡Aquí usamos el ID generado en el paso 5!
+                    stock: parseFloat(variant.stock) || 0,
+                    cost: parseFloat(variant.cost) || finalCost, // Hereda costo si falta
+                    price: parseFloat(variant.price) || finalPrice, // Hereda precio si falta
+                    sku: variant.sku || null,
+                    attributes: {
+                        talla: variant.talla || '',
+                        color: variant.color || ''
+                    },
+                    isActive: true,
+                    createdAt: new Date().toISOString(),
+                    notes: 'Ingreso rápido inicial',
+                    trackStock: true
+                };
+
+                // Guardamos cada variante individualmente y sincronizamos stock
+                await saveBatchAndSyncProductSafe(batchData);
+            }
+        }
+
+        // 8. LIMPIEZA FINAL
         if (success) {
             resetForm();
+            // Limpiamos la tabla de variantes rápidas si existe el setter
+            if (typeof setQuickVariants === 'function') setQuickVariants([]);
         }
     };
 
@@ -439,6 +518,18 @@ export default function ProductForm({
                             <button type="button" className="btn btn-secondary" onClick={() => onManageBatches(internalEditingProduct.id)}>
                                 Gestionar {features.hasVariants ? 'Variantes (Tallas/Colores)' : 'Lotes (Stock/Costos)'}
                             </button>
+                        </div>
+                    )}
+
+                    {features.hasVariants && isApparel && (
+                        <div className="module-section" style={{ borderTop: '2px dashed #e5e7eb', marginTop: '15px', paddingTop: '15px' }}>
+                            <h4 className="subtitle" style={{ fontSize: '1rem' }}>Detalles de Ropa / Variantes</h4>
+
+                            <QuickVariantEntry
+                                basePrice={parseFloat(price) || 0}
+                                baseCost={parseFloat(cost) || 0}
+                                onVariantsChange={setQuickVariants}
+                            />
                         </div>
                     )}
 

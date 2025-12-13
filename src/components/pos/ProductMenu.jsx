@@ -134,7 +134,7 @@ export default function ProductMenu({
           type="text"
           id="pos-product-search"
           className="form-input"
-          placeholder="Buscar producto..."
+          placeholder="Buscar por Nombre, Código o SKU"
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
         />

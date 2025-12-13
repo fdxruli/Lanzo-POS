@@ -55,7 +55,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
           type="text"
           id="product-search-input"
           className="form-input"
-          placeholder="Buscar por nombre..."
+          placeholder="Buscar por Nombre, Código o SKU"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -94,6 +94,18 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
                     <div className="product-item-details">
                       <span className="product-item-title" title={item.name}>{item.name}</span>
+
+                      {features.hasVariants && (
+                        <div style={{ fontSize: '0.75rem', color: '#666', fontFamily: 'monospace', marginBottom: '4px', display: 'flex', gap: '5px' }}>
+                          {/* Si tiene gestión de lotes, es un producto padre con variantes */}
+                          {item.batchManagement?.enabled ? (
+                            <span style={{ backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '4px' }}>Variantes Múltiples</span>
+                          ) : (
+                            /* Si no, mostramos el SKU o código de barras simple */
+                            <span>SKU: {item.sku || item.barcode || '---'}</span>
+                          )}
+                        </div>
+                      )}
 
                       {item.sustancia && (
                         <p style={{ color: 'var(--secondary-color)', fontWeight: '500', fontSize: '0.8rem', justifyContent: 'flex-start' }}>
