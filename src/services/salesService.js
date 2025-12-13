@@ -73,20 +73,114 @@ export const processSale = async ({
 
         // --- VALIDACIÓN PREVIA (RECETAS) ---
         if (features.hasRecipes && !ignoreStock) {
-            const missing = validateRecipeStock(itemsToProcess, allProducts);
 
-            if (missing.length > 0) {
-                // Formateamos los detalles
-                const details = missing.map(m =>
-                    `• ${m.productName}: Faltan ${(m.needed - m.available).toFixed(2)} ${m.unit} de ${m.ingredientName}`
+            // 1. Identificar qué productos e insumos necesitamos revisar
+            const uniqueIngredientIds = new Set();
+
+            itemsToProcess.forEach(item => {
+                const realId = item.parentId || item.id;
+                const productDef = allProducts.find(p => p.id === realId);
+
+                if (productDef && productDef.recipe && productDef.recipe.length > 0) {
+                    productDef.recipe.forEach(ing => uniqueIngredientIds.add(ing.ingredientId));
+                } else if (productDef && productDef.trackStock) {
+                    uniqueIngredientIds.add(realId);
+                }
+            });
+
+            // 2. Cargar el STOCK FRESCO desde la Base de Datos
+            const freshStockMap = new Map();
+            if (uniqueIngredientIds.size > 0) {
+                await Promise.all(Array.from(uniqueIngredientIds).map(async (id) => {
+                    const freshProd = await loadData(STORES.MENU, id);
+                    if (freshProd) {
+                        freshStockMap.set(id, freshProd);
+                    }
+                }));
+            }
+
+            // 3. Validar usando un ACUMULADOR (Simulación de consumo)
+            const missingIngredients = [];
+
+            // Creamos un mapa temporal para ir "gastando" el stock mentalmente
+            const simulatedStock = new Map();
+
+            // Inicializamos el simulador con el stock real que acabamos de traer de la BD
+            freshStockMap.forEach((product, id) => {
+                simulatedStock.set(id, product.stock);
+            });
+
+            for (const item of itemsToProcess) {
+                const realId = item.parentId || item.id;
+                const productDef = allProducts.find(p => p.id === realId);
+
+                // A) Si es producto con receta
+                if (productDef && productDef.recipe && productDef.recipe.length > 0) {
+                    for (const ing of productDef.recipe) {
+                        // Si el ingrediente no existe en BD, lo saltamos (o podrías marcar error)
+                        if (!simulatedStock.has(ing.ingredientId)) continue;
+
+                        const currentAvailable = simulatedStock.get(ing.ingredientId);
+                        const totalNeededForThisItem = ing.quantity * item.quantity;
+
+                        if (currentAvailable < totalNeededForThisItem) {
+                            // Falló la validación. Agregamos a la lista de faltantes.
+                            const realIngData = freshStockMap.get(ing.ingredientId);
+
+                            // Evitamos duplicar el mensaje del mismo ingrediente
+                            const alreadyListed = missingIngredients.some(m => m.ingredientName === realIngData.name);
+
+                            if (!alreadyListed) {
+                                missingIngredients.push({
+                                    productName: "Pedido (Acumulado)",
+                                    ingredientName: realIngData.name,
+                                    needed: totalNeededForThisItem,
+                                    available: realIngData.stock, // Mostramos el stock real original
+                                    unit: realIngData.bulkData?.purchase?.unit || 'u'
+                                });
+                            }
+                        } else {
+                            // ÉXITO: Restamos del stock simulado para que el siguiente producto vea menos
+                            simulatedStock.set(ing.ingredientId, currentAvailable - totalNeededForThisItem);
+                        }
+                    }
+                }
+                // B) Si no es receta pero controla stock directo (ej. Refresco)
+                else if (productDef && productDef.trackStock) {
+                    if (simulatedStock.has(realId)) {
+                        const currentAvailable = simulatedStock.get(realId);
+                        const needed = item.quantity;
+
+                        if (currentAvailable < needed) {
+                            const alreadyListed = missingIngredients.some(m => m.ingredientName === productDef.name);
+
+                            if (!alreadyListed) {
+                                missingIngredients.push({
+                                    productName: productDef.name,
+                                    ingredientName: productDef.name,
+                                    needed: needed,
+                                    available: freshStockMap.get(realId).stock,
+                                    unit: 'u'
+                                });
+                            }
+                        } else {
+                            simulatedStock.set(realId, currentAvailable - needed);
+                        }
+                    }
+                }
+            }
+
+            // 4. Si hay faltantes, detenemos el proceso y retornamos error
+            if (missingIngredients.length > 0) {
+                const details = missingIngredients.map(m =>
+                    `• ${m.ingredientName}: Tienes ${m.available.toFixed(2)} ${m.unit} (Insuficiente para cubrir todo el pedido)`
                 ).join('\n');
 
-                // Retornamos un error especial, pero con los datos necesarios para reintentar
                 return {
                     success: false,
                     errorType: 'STOCK_WARNING',
-                    message: `Faltan insumos para esta receta:\n\n${details}\n\n¿Deseas procesar la venta de todos modos?`,
-                    missingData: missing
+                    message: `⚠️ STOCK INSUFICIENTE REAL:\n\n${details}\n\nEl total de ingredientes requeridos para todo el pedido supera lo que tienes en cocina.`,
+                    missingData: missingIngredients
                 };
             }
         }
