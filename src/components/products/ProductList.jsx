@@ -69,7 +69,9 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             {filteredProducts.map(item => {
               const categoryName = categoryMap.get(item.categoryId) || 'Sin categoría';
               const isActive = item.isActive !== false;
-              const { isLowStock, isNearingExpiry } = getProductAlerts(item);
+              
+              // --- CAMBIO AUDITORÍA: Extraemos expiryDays también ---
+              const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
 
               // Lógica de Stock Inteligente
               const isTracked = item.trackStock || item.batchManagement?.enabled;
@@ -156,8 +158,21 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                         </p>
                       </div>
 
-                      {isLowStock && isTracked && item.stock > 0 && <span className="alert-indicator low-stock-indicator">Stock bajo</span>}
-                      {isNearingExpiry && <span className="alert-indicator nearing-expiry-indicator">Próximo a caducar</span>}
+                      {/* --- CAMBIO AUDITORÍA: Alertas visuales detalladas --- */}
+                      
+                      {isLowStock && isTracked && item.stock > 0 && (
+                        <span className="alert-indicator low-stock-indicator">
+                          Stock bajo
+                        </span>
+                      )}
+
+                      {isNearingExpiry && (
+                        <span className="alert-indicator nearing-expiry-indicator">
+                          {expiryDays === 0 ? '⏰ Caduca HOY' : `⏰ Caduca en ${expiryDays} días`}
+                        </span>
+                      )}
+                      
+                      {/* ----------------------------------------------------- */}
                     </div>
                   </div>
 

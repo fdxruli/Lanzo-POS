@@ -128,8 +128,11 @@ export default function ProductForm({
             setPresentation(productToEdit.presentation || '');
 
             setShelfLife(productToEdit.shelfLife || '');
-            // CORRECCIÓN: Cargar la unidad guardada incluso si no es granel (para respetar Manojo)
-            setUnit(productToEdit.bulkData?.purchase?.unit || (productToEdit.saleType === 'unit' ? 'pza' : 'kg'));
+            const savedUnit = productToEdit.bulkData?.purchase?.unit
+                || productToEdit.unit
+                || (productToEdit.saleType === 'unit' ? 'pza' : 'kg');
+
+            setUnit(savedUnit);
 
             setStorageLocation(productToEdit.location || '');
             setConversionFactor(productToEdit.conversionFactor || { enabled: false, purchaseUnit: '', factor: 1 });
@@ -265,7 +268,7 @@ export default function ProductForm({
 
         if (features.hasLabFields && requiresPrescription) {
             finalSaleType = 'unit';
-            finalBulkData = { purchase: { unit: 'pza' } };
+            finalBulkData = { purchase: { unit: unit || 'pza' } };
         }
 
         // 4. LÓGICA DE VARIANTES RÁPIDAS (ROPA/CALZADO) 👕👟

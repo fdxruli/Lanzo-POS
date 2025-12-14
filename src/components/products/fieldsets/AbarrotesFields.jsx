@@ -108,12 +108,12 @@ export default function AbarrotesFields({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <h4 style={{ margin: 0, fontSize: '0.9rem', color: '#1e40af' }}>🔄 Conversión de Compra</h4>
-              
-              <button 
-                type="button" 
+
+              <button
+                type="button"
                 onClick={() => setShowConversionHelp(!showConversionHelp)}
-                style={{ 
-                  background: 'none', border: 'none', cursor: 'pointer', 
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
                   color: showConversionHelp ? 'var(--primary-color)' : '#60a5fa',
                   display: 'flex', alignItems: 'center'
                 }}
@@ -133,38 +133,38 @@ export default function AbarrotesFields({
                   enabled: e.target.checked
                 })}
               />
-              <label htmlFor="enable-conversion" style={{ fontSize: '0.85rem', cursor:'pointer' }}>Activar</label>
+              <label htmlFor="enable-conversion" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>Activar</label>
             </div>
           </div>
 
           {showConversionHelp && (
-            <div style={{ 
-              backgroundColor: 'white', 
-              padding: '12px', 
-              borderRadius: '6px', 
+            <div style={{
+              backgroundColor: 'white',
+              padding: '12px',
+              borderRadius: '6px',
               marginBottom: '15px',
               border: '1px solid #dbeafe',
               fontSize: '0.85rem',
               color: '#1e3a8a',
               animation: 'fadeIn 0.2s ease-out'
             }}>
-              <p style={{marginBottom: '10px', lineHeight:'1.4'}}>
-                <strong>¿Cuándo usar esto?</strong><br/>
+              <p style={{ marginBottom: '10px', lineHeight: '1.4' }}>
+                <strong>¿Cuándo usar esto?</strong><br />
                 Solo si compras en una unidad (Cajas/Bultos) y vendes en otra (Piezas/Kilos) y <u>no quieres contar al recibir</u>.
               </p>
-              
-              <div style={{display:'grid', gap:'10px'}}>
-                <div style={{backgroundColor:'#f0fdf4', padding:'10px', borderRadius:'6px', borderLeft:'4px solid #16a34a'}}>
-                  <strong style={{color:'#166534', display:'block', marginBottom:'2px'}}>✅ SÍ: Ejemplo "Clavos a Granel"</strong>
-                  <span style={{color:'#15803d'}}>
-                    Compras una caja de 25kg, pero vendes piezas sueltas. <br/>
+
+              <div style={{ display: 'grid', gap: '10px' }}>
+                <div style={{ backgroundColor: '#f0fdf4', padding: '10px', borderRadius: '6px', borderLeft: '4px solid #16a34a' }}>
+                  <strong style={{ color: '#166534', display: 'block', marginBottom: '2px' }}>✅ SÍ: Ejemplo "Clavos a Granel"</strong>
+                  <span style={{ color: '#15803d' }}>
+                    Compras una caja de 25kg, pero vendes piezas sueltas. <br />
                     El sistema traduce: <strong>1 Kg = 200 Clavos</strong>.
                   </span>
                 </div>
-                <div style={{backgroundColor:'#fff7ed', padding:'10px', borderRadius:'6px', borderLeft:'4px solid #ea580c'}}>
-                  <strong style={{color:'#c2410c', display:'block', marginBottom:'2px'}}>❌ NO: Ejemplo "Cemento"</strong>
-                  <span style={{color:'#9a3412'}}>
-                    Compras 10 bultos de 50kg y vendes kilos.<br/>
+                <div style={{ backgroundColor: '#fff7ed', padding: '10px', borderRadius: '6px', borderLeft: '4px solid #ea580c' }}>
+                  <strong style={{ color: '#c2410c', display: 'block', marginBottom: '2px' }}>❌ NO: Ejemplo "Cemento"</strong>
+                  <span style={{ color: '#9a3412' }}>
+                    Compras 10 bultos de 50kg y vendes kilos.<br />
                     <strong>Mejor ingresa "500" directo al stock.</strong> Es más claro ver "Quedan 450 kilos" que "Quedan 9.0 bultos".
                   </span>
                 </div>
@@ -200,6 +200,29 @@ export default function AbarrotesFields({
                   }}
                 />
               </div>
+
+              {/* --- NUEVO: PREVISUALIZACIÓN DINÁMICA --- */}
+              <div style={{
+                gridColumn: '1 / -1',
+                marginTop: '5px',
+                padding: '10px',
+                backgroundColor: '#ffffff',
+                border: '1px dashed #3b82f6',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                color: '#1e3a8a',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{ fontSize: '1.2rem' }}>📦</span>
+                <div>
+                  <strong>Ejemplo:</strong> Si ingresas 1 <span style={{ fontWeight: 'bold', textDecoration: 'underline' }}>{conversionFactor.purchaseUnit || '(Unidad de Compra)'}</span>,
+                  el sistema sumará <span style={{ fontWeight: '800', color: 'var(--success-color)', fontSize: '1em' }}>{conversionFactor.factor || 0} {unit}</span> a tu inventario.
+                </div>
+              </div>
+              {/* -------------------------------------- */}
+
             </div>
           )}
         </div>
