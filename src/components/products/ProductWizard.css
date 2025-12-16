@@ -1,0 +1,221 @@
+/* src/components/products/ProductWizard.css */
+
+.product-wizard-container {
+    background-color: var(--card-background-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow-lg);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 500px;
+    animation: slideUp 0.3s ease-out;
+}
+
+/* HEADER PASOS */
+.wizard-header {
+    display: flex;
+    justify-content: space-between;
+    padding: 20px;
+    background-color: var(--light-background);
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    flex: 1;
+    opacity: 0.5;
+    transition: all 0.3s;
+}
+
+.step-indicator.active, .step-indicator.completed {
+    opacity: 1;
+}
+
+.step-icon {
+    width: 35px;
+    height: 35px;
+    background-color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    border: 2px solid var(--border-color);
+    z-index: 2;
+}
+
+.step-indicator.active .step-icon {
+    border-color: var(--primary-color);
+    background-color: rgba(99, 102, 241, 0.1);
+    transform: scale(1.1);
+}
+
+.step-indicator.completed .step-icon {
+    background-color: var(--success-color);
+    border-color: var(--success-color);
+    color: white;
+}
+
+.step-label {
+    font-size: 0.75rem;
+    margin-top: 5px;
+    font-weight: 600;
+}
+
+.step-line {
+    position: absolute;
+    top: 17px;
+    left: 50%;
+    width: 100%;
+    height: 2px;
+    background-color: var(--border-color);
+    z-index: 1;
+}
+
+.step-indicator.completed .step-line {
+    background-color: var(--success-color);
+}
+
+/* CONTENT */
+.wizard-content {
+    flex: 1;
+    padding: 30px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centrado visual */
+}
+
+.wizard-step {
+    width: 100%;
+    max-width: 500px; /* Ancho cómodo para lectura */
+}
+
+.wizard-step h3 {
+    text-align: center;
+    color: var(--primary-color);
+    margin-bottom: 25px;
+    font-size: 1.5rem;
+}
+
+.big-input {
+    font-size: 1.2rem !important;
+    padding: 15px !important;
+}
+
+/* Categorías como pills */
+.category-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.cat-pill {
+    padding: 8px 15px;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.cat-pill.active {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+/* Money Grid */
+.money-grid {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.arrow-separator {
+    font-size: 1.5rem;
+    color: var(--text-light);
+    padding-top: 15px;
+}
+
+.highlight label {
+    color: var(--primary-color);
+    font-weight: bold;
+}
+
+.big-price {
+    font-size: 1.5rem !important;
+    font-weight: bold;
+    color: var(--success-color) !important;
+    text-align: center;
+}
+
+.margin-indicator {
+    text-align: center;
+    padding: 10px;
+    border-radius: 8px;
+    margin-top: 15px;
+    font-size: 0.9rem;
+}
+.margin-indicator.good { background-color: #d1fae5; color: #065f46; }
+.margin-indicator.low { background-color: #fee2e2; color: #991b1b; }
+
+/* Stock */
+.stock-toggle {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: var(--light-background);
+    border-radius: 8px;
+}
+
+.switch-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.stock-input-container {
+    display: flex;
+    gap: 15px;
+    align-items: flex-end;
+}
+
+.big-stock {
+    font-size: 2rem !important;
+    text-align: center;
+    flex: 1;
+}
+
+.stock-unit-selector {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* FOOTER */
+.wizard-footer {
+    padding: 20px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    background-color: var(--card-background-color);
+    border-radius: 0 0 var(--border-radius) var(--border-radius);
+}
+
+.wizard-footer button {
+    min-width: 120px;
+    padding: 12px 20px;
+    font-size: 1rem;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}

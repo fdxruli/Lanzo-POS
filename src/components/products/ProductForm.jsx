@@ -84,6 +84,8 @@ export default function ProductForm({
     const [internalEditingProduct, setInternalEditingProduct] = useState(null);
     const [showSpecificData, setShowSpecificData] = useState(false);
 
+    const [isSaving, setIsSaving] = useState(false);
+
     // --- EFECTO DE CARGA INICIAL ---
     useEffect(() => {
         setInternalEditingProduct(productToEdit);
@@ -245,6 +247,8 @@ export default function ProductForm({
     const handleSubmit = async (e) => {
         e.preventDefault();
 
+        if (isSaving) return;
+
         // 1. VALIDACIÓN PREVIA (Recetas / Restaurantes)
         if (features.hasRecipes && productType === 'sellable' && recipe.length === 0) {
             showMessageModal(
@@ -255,110 +259,122 @@ export default function ProductForm({
             return;
         }
 
-        // 2. PREPARACIÓN DE DATOS NUMÉRICOS
-        const finalPrice = parseFloat(price) || 0;
-        const finalCost = parseFloat(cost) || 0;
-        const finalMinStock = minStock !== '' ? parseFloat(minStock) : null;
-        const finalMaxStock = maxStock !== '' ? parseFloat(maxStock) : null;
+        setIsSaving(true);
 
-        // 3. LÓGICA DE TIPO DE VENTA
-        let finalSaleType = saleType;
-        // CORRECCIÓN CRÍTICA: Guardar la unidad SIEMPRE (Manojo, Caja, etc.)
-        let finalBulkData = { purchase: { unit: unit } };
+        try {
+            // 2. PREPARACIÓN DE DATOS NUMÉRICOS
+            const finalPrice = parseFloat(price) || 0;
+            const finalCost = parseFloat(cost) || 0;
+            const finalMinStock = minStock !== '' ? parseFloat(minStock) : null;
+            const finalMaxStock = maxStock !== '' ? parseFloat(maxStock) : null;
 
-        if (features.hasLabFields && requiresPrescription) {
-            finalSaleType = 'unit';
-            finalBulkData = { purchase: { unit: unit || 'pza' } };
-        }
+            // 3. LÓGICA DE TIPO DE VENTA
+            let finalSaleType = saleType;
+            // CORRECCIÓN CRÍTICA: Guardar la unidad SIEMPRE (Manojo, Caja, etc.)
+            let finalBulkData = { purchase: { unit: unit } };
 
-        // 4. LÓGICA DE VARIANTES RÁPIDAS (ROPA/CALZADO) 👕👟
-        // Verificamos si el usuario llenó la tabla de variantes (QuickVariantEntry)
-        // Nota: Asegúrate de tener el estado `quickVariants` definido en tu componente
-        const hasQuickVariants = features.hasVariants && typeof quickVariants !== 'undefined' && quickVariants.length > 0;
-
-        // Si hay variantes, activamos forzosamente el control de stock y gestión de lotes
-        const finalTrackStock = hasQuickVariants ? true : doesTrackStock;
-        const finalBatchManagement = hasQuickVariants
-            ? { enabled: true, selectionStrategy: 'fifo' }
-            : (doesTrackStock ? { enabled: true, selectionStrategy: 'fifo' } : { enabled: false });
-
-        // 5. GENERACIÓN DE ID (TRUCO DE VINCULACIÓN) 🪄
-        // Si es nuevo, generamos el ID aquí mismo. Esto es vital para poder usar este ID
-        // al guardar las variantes (hijos) inmediatamente después.
-        const productIdToUse = internalEditingProduct?.id || generateID('prod');
-
-        // Creamos un objeto "falso" de edición para forzar a 'ProductsPage' a usar nuestro ID
-        // en lugar de generar uno nuevo desconectado.
-        const effectiveEditingProduct = internalEditingProduct || { id: productIdToUse, isNew: true };
-
-        let productData = {
-            id: productIdToUse, // Usamos el ID controlado
-            name: name.trim(),
-            barcode: barcode.trim(),
-            description: description.trim(),
-            categoryId,
-            image: imageData,
-            location: storageLocation.trim(),
-            conversionFactor: conversionFactor,
-            trackStock: finalTrackStock,       // Actualizado por lógica de variantes
-            batchManagement: finalBatchManagement, // Actualizado por lógica de variantes
-            productType: features.hasRecipes ? productType : 'sellable',
-            recipe: (features.hasRecipes && productType === 'sellable') ? recipe : [],
-            printStation, prepTime, modifiers,
-            saleType: finalSaleType,
-            bulkData: finalBulkData,
-            wholesaleTiers,
-            minStock: finalMinStock,
-            maxStock: finalMaxStock,
-            price: finalPrice,
-            cost: finalCost,
-            supplier,
-            sustancia, laboratorio, requiresPrescription, presentation,
-            shelfLife,
-            // Si es producto nuevo, agregamos fecha de creación manual para que no falte
-            ...(internalEditingProduct ? {} : { createdAt: new Date().toISOString(), stock: 0 })
-        };
-
-        // 6. GUARDAR PRODUCTO PADRE
-        // Enviamos el producto y nuestro objeto 'effectiveEditingProduct' para mantener el ID
-        const success = await onSave(productData, effectiveEditingProduct);
-
-        // Si falló el guardado del padre, nos detenemos aquí
-        if (!success) return;
-
-        // 7. PROCESAR Y GUARDAR VARIANTES (HIJOS) 📦
-        if (hasQuickVariants) {
-            // Filtramos filas vacías o inválidas
-            const validVariants = quickVariants.filter(v => (v.talla || v.color) && (parseFloat(v.stock) > 0 || v.sku));
-
-            for (const variant of validVariants) {
-                const batchData = {
-                    id: generateID('batch'),
-                    productId: productIdToUse, // ¡Aquí usamos el ID generado en el paso 5!
-                    stock: parseFloat(variant.stock) || 0,
-                    cost: parseFloat(variant.cost) || finalCost, // Hereda costo si falta
-                    price: parseFloat(variant.price) || finalPrice, // Hereda precio si falta
-                    sku: variant.sku || null,
-                    attributes: {
-                        talla: variant.talla || '',
-                        color: variant.color || ''
-                    },
-                    isActive: true,
-                    createdAt: new Date().toISOString(),
-                    notes: 'Ingreso rápido inicial',
-                    trackStock: true
-                };
-
-                // Guardamos cada variante individualmente y sincronizamos stock
-                await saveBatchAndSyncProductSafe(batchData);
+            if (features.hasLabFields && requiresPrescription) {
+                finalSaleType = 'unit';
+                finalBulkData = { purchase: { unit: unit || 'pza' } };
             }
-        }
 
-        // 8. LIMPIEZA FINAL
-        if (success) {
-            resetForm();
-            // Limpiamos la tabla de variantes rápidas si existe el setter
-            if (typeof setQuickVariants === 'function') setQuickVariants([]);
+            // 4. LÓGICA DE VARIANTES RÁPIDAS (ROPA/CALZADO) 👕👟
+            // Verificamos si el usuario llenó la tabla de variantes (QuickVariantEntry)
+            // Nota: Asegúrate de tener el estado `quickVariants` definido en tu componente
+            const hasQuickVariants = features.hasVariants && typeof quickVariants !== 'undefined' && quickVariants.length > 0;
+
+            // Si hay variantes, activamos forzosamente el control de stock y gestión de lotes
+            const finalTrackStock = hasQuickVariants ? true : doesTrackStock;
+            const finalBatchManagement = hasQuickVariants
+                ? { enabled: true, selectionStrategy: 'fifo' }
+                : (doesTrackStock ? { enabled: true, selectionStrategy: 'fifo' } : { enabled: false });
+
+            // 5. GENERACIÓN DE ID (TRUCO DE VINCULACIÓN) 🪄
+            // Si es nuevo, generamos el ID aquí mismo. Esto es vital para poder usar este ID
+            // al guardar las variantes (hijos) inmediatamente después.
+            const productIdToUse = internalEditingProduct?.id || generateID('prod');
+
+            // Creamos un objeto "falso" de edición para forzar a 'ProductsPage' a usar nuestro ID
+            // en lugar de generar uno nuevo desconectado.
+            const effectiveEditingProduct = internalEditingProduct || { id: productIdToUse, isNew: true };
+
+            let productData = {
+                id: productIdToUse, // Usamos el ID controlado
+                name: name.trim(),
+                barcode: barcode.trim(),
+                description: description.trim(),
+                categoryId,
+                image: imageData,
+                location: storageLocation.trim(),
+                conversionFactor: conversionFactor,
+                trackStock: finalTrackStock,       // Actualizado por lógica de variantes
+                batchManagement: finalBatchManagement, // Actualizado por lógica de variantes
+                productType: features.hasRecipes ? productType : 'sellable',
+                recipe: (features.hasRecipes && productType === 'sellable') ? recipe : [],
+                printStation, prepTime, modifiers,
+                saleType: finalSaleType,
+                bulkData: finalBulkData,
+                wholesaleTiers,
+                minStock: finalMinStock,
+                maxStock: finalMaxStock,
+                price: finalPrice,
+                cost: finalCost,
+                supplier,
+                sustancia, laboratorio, requiresPrescription, presentation,
+                shelfLife,
+                // Si es producto nuevo, agregamos fecha de creación manual para que no falte
+                ...(internalEditingProduct ? {} : { createdAt: new Date().toISOString(), stock: 0 })
+            };
+
+            // 6. GUARDAR PRODUCTO PADRE
+            // Enviamos el producto y nuestro objeto 'effectiveEditingProduct' para mantener el ID
+            const success = await onSave(productData, effectiveEditingProduct);
+
+            // Si falló el guardado del padre, nos detenemos aquí
+            if (!success) {
+                setIsSaving(false);
+                return;
+            }
+
+            // 7. PROCESAR Y GUARDAR VARIANTES (HIJOS) 📦
+            if (hasQuickVariants) {
+                // Filtramos filas vacías o inválidas
+                const validVariants = quickVariants.filter(v => (v.talla || v.color) && (parseFloat(v.stock) > 0 || v.sku));
+
+                for (const variant of validVariants) {
+                    const batchData = {
+                        id: generateID('batch'),
+                        productId: productIdToUse, // ¡Aquí usamos el ID generado en el paso 5!
+                        stock: parseFloat(variant.stock) || 0,
+                        cost: parseFloat(variant.cost) || finalCost, // Hereda costo si falta
+                        price: parseFloat(variant.price) || finalPrice, // Hereda precio si falta
+                        sku: variant.sku || null,
+                        attributes: {
+                            talla: variant.talla || '',
+                            color: variant.color || ''
+                        },
+                        isActive: true,
+                        createdAt: new Date().toISOString(),
+                        notes: 'Ingreso rápido inicial',
+                        trackStock: true
+                    };
+
+                    // Guardamos cada variante individualmente y sincronizamos stock
+                    await saveBatchAndSyncProductSafe(batchData);
+                }
+            }
+
+            // 8. LIMPIEZA FINAL
+            if (success) {
+                resetForm();
+                // Limpiamos la tabla de variantes rápidas si existe el setter
+                if (typeof setQuickVariants === 'function') setQuickVariants([]);
+            }
+
+        } catch (error) {
+            console.error("Error al guardar el producto:", error);
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -570,7 +586,14 @@ export default function ProductForm({
                     )}
 
                     <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-                        <button type="submit" className="btn btn-save" style={{ flex: 2 }}>Guardar Producto</button>
+                        <button
+                            type="submit"
+                            className="btn btn-save"
+                            style={{ flex: 2, opacity: isSaving ? 0.7 : 1, cursor: isSaving ? 'wait' : 'pointer' }}
+                            disabled={isSaving}
+                        >
+                            {isSaving ? '⏳ Guardando...' : 'Guardar Producto'}
+                        </button>
                         <button type="button" className="btn btn-cancel" style={{ flex: 1 }} onClick={onCancel}>Cancelar</button>
                     </div>
                 </form>
