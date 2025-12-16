@@ -38,6 +38,38 @@ export default function PosPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isMobileOrderOpen, setIsMobileOrderOpen] = useState(false);
 
+  useEffect(() => {
+    if (isMobileOrderOpen) {
+      // A) Cuando se abre el modal, empujamos un estado "falso" al historial
+      window.history.pushState({ modal: 'cart' }, document.title);
+
+      // B) Definimos qué pasa cuando el usuario da "Atrás" (popstate)
+      const handlePopState = () => {
+        // Cerramos el modal
+        setIsMobileOrderOpen(false);
+        // Nota: Como el usuario ya dio atrás, el historial ya se limpió solo.
+      };
+
+      window.addEventListener('popstate', handlePopState);
+
+      // C) Limpieza
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+
+        // D) CASO ESPECIAL: Si el modal se cierra por código (ej. al cobrar),
+        // el estado "falso" sigue en el historial. Debemos regresarlo manualmente
+        // solo si NO fue cerrado por el botón atrás (detectado por history.state).
+        // Sin embargo, para evitar complejidad y bugs, la estrategia más segura 
+        // en PWA simple es solo escuchar. 
+        // Si quieres ser muy estricto:
+        /* if (window.history.state?.modal === 'cart') {
+           window.history.back(); 
+        }
+        */
+      };
+    }
+  }, [isMobileOrderOpen]);
+
   // --- CAMBIO: Usamos useProductStore para buscar ---
   const searchProducts = useProductStore((state) => state.searchProducts);
 

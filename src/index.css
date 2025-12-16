@@ -44,7 +44,7 @@
   --box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 8px rgba(0, 0, 0, 0.02);
   --box-shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.08);
 
-  /* --- ARQUITECTURA DE Z-INDEX (SISTEMA DE CAPAS) --- */
+  /* --- ARQUITECTURA DE Z-INDEX (SISTEMA DE CAPAS CORREGIDO) --- */
   --z-normal: 1;
   --z-navbar: 100;       /* Barra de navegación */
   --z-sticky: 200;       /* Elementos pegajosos (headers de tablas) */
@@ -52,9 +52,13 @@
   --z-backdrop: 900;     /* Fondo oscuro de modales */
   
   /* NIVELES DE MODALES */
-  --z-modal-base: var(--z-modal-low);  /* Modales estándar (Config, Agregar Producto) */
-  --z-modal-high: 1100;  /* Modales secundarios (Payment, Modificadores) */
-  --z-modal-top: var(--z-modal-high);   /* Modales críticos (Scanner, Auditoría, Alertas) */
+  --z-modal-base: 1000;        /* Modales estándar (Bienvenida, Config, Login) */
+  --z-modal-high: 1100;        /* Modales de flujo (Pago, Modificadores, Selector Variantes) */
+  --z-modal-top: 1200;         /* Modales encima de flujo (Scanner, Auditoría, Caja Rápida) */
+  --z-modal-critical: 1300;    /* Modales urgentes/bloqueantes (Receta Médica, Contacto) */
+  
+  /* CAPAS SUPERIORES (Modales sobre Modales) */
+  --z-modal-overlay: 2200;     /* Para QuickAddCustomer, Recetas, Mermas, Importar */
   
   /* CAPA DE NOTIFICACIONES (Siempre encima de todo) */
   --z-toast: 9999;

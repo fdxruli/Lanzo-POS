@@ -1,8 +1,7 @@
 import { productSchema } from '../schemas/productSchema';
 import { customerSchema } from '../schemas/customerSchema';
-// Incrementamos versión para forzar la creación de las tablas faltantes
-const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 25; // si le vamos a mover a este numero asegurar que tengamos el mismo en el archivo workers/stats.worker.js
+import { DB_NAME, DB_VERSION } from '../config/dbConfig.js';
+
 
 // Objeto de conexión
 const dbConnection = {
@@ -1020,16 +1019,20 @@ export async function deleteCategoryCascading(categoryId) {
       tx.oncomplete = () => resolve({ success: true });
       tx.onerror = (e) => reject(e.target.error);
 
+      // 1. Borrar la categoría
       catStore.delete(categoryId);
 
-      const request = menuStore.openCursor();
+      // 2. OPTIMIZACIÓN: Usar el índice para buscar SOLO los productos afectados
+      const index = menuStore.index('categoryId');
+      const range = IDBKeyRange.only(categoryId);
+      const request = index.openCursor(range);
+
       request.onsuccess = (e) => {
         const cursor = e.target.result;
         if (cursor) {
-          if (cursor.value.categoryId === categoryId) {
-            const updated = { ...cursor.value, categoryId: '' };
-            cursor.update(updated);
-          }
+          // Actualizamos solo los que coinciden (el índice garantiza que son estos)
+          const updatedProduct = { ...cursor.value, categoryId: '' };
+          cursor.update(updatedProduct);
           cursor.continue();
         }
       };

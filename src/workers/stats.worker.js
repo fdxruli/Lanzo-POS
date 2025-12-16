@@ -1,5 +1,4 @@
-const DB_NAME = 'LanzoDB1';
-const DB_VERSION = 25; // Debe coincidir con services/database.js
+import { DB_NAME, DB_VERSION } from '../config/dbConfig.js';
 const CHUNK_SIZE = 1000;
 
 let activeDB = null;

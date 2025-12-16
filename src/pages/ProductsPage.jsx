@@ -17,6 +17,7 @@ import DataTransferModal from '../components/products/DataTransferModal';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import DailyPriceModal from '../components/products/DailyPriceModal';
 import { useAppStore } from '../store/useAppStore';
+import ProductWizard from '../components/products/ProductWizard';
 import './ProductsPage.css';
 
 export default function ProductsPage() {
@@ -47,6 +48,7 @@ export default function ProductsPage() {
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showDataTransfer, setShowDataTransfer] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
+    const [isWizardMode, setIsWizardMode] = useState(true);
 
     // Carga inicial
     useEffect(() => {
@@ -130,68 +132,117 @@ export default function ProductsPage() {
         try {
             let finalImage = productData.image;
 
-            // LÓGICA DE IMAGEN LOCAL:
-            // Si viene un archivo (File) nuevo, lo convertimos a Base64 (texto)
-            // para guardarlo en IndexedDB y NO subirlo a Supabase.
+            // Lógica de imagen (se mantiene igual)
             if (productData.image instanceof File) {
                 const imageId = `img-${Date.now()}`;
                 await saveImageToDB(imageId, productData.image);
                 finalImage = imageId;
-            }
-            else if (!productData.image && editingProduct?.image) {
+            } else if (!productData.image && editingProduct?.image) {
                 finalImage = editingProduct.image;
             }
 
             let valueDifference = 0;
             let result;
 
+            // ID que usaremos (si es nuevo, usamos el que trae el wizard o generamos uno)
+            const productId = editingProduct?.id || productData.id || generateID('prod');
+
+            // --- 1. GUARDADO DEL PRODUCTO PADRE ---
+
+            // Preparamos el objeto limpio para guardar en MENU (sin datos temporales del wizard)
+            const baseProductData = {
+                ...productData,
+                id: productId,
+                image: finalImage,
+                updatedAt: new Date().toISOString()
+            };
+
+            // IMPORTANTE: Quitamos 'quickVariants' antes de guardar en la tabla MENU
+            // porque eso no es un campo de la base de datos, es solo un transporte.
+            delete baseProductData.quickVariants;
+
             if (editingProduct && editingProduct.id) {
-                const updatedProduct = {
-                    ...editingProduct,
-                    ...productData,
-                    image: finalImage, // Guardamos la cadena Base64
-                    updatedAt: new Date().toISOString()
-                };
+                // Modo Edición
+                const updatedProduct = { ...editingProduct, ...baseProductData };
                 result = await saveDataSafe(STORES.MENU, updatedProduct);
             } else {
-                const newId = generateID('prod');
+                // Modo Creación (Nuevo)
                 const newProduct = {
-                    ...productData,
-                    id: newId,
-                    stock: 0,
-                    image: finalImage, // Guardamos la cadena Base64
+                    ...baseProductData,
+                    stock: 0, // El stock real se sumará al crear los lotes abajo
                     isActive: true,
                     createdAt: new Date().toISOString(),
                     batchManagement: { enabled: true, selectionStrategy: 'fifo' },
                 };
-
                 result = await saveDataSafe(STORES.MENU, newProduct);
+            }
 
-                if (result.success) {
-                    // Lógica de stock inicial (Igual que antes)
-                    const initialCost = productData.cost ? parseFloat(productData.cost) : 0;
-                    const initialStock = productData.stock ? parseFloat(productData.stock) : 0;
-                    const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
+            // --- 2. PROCESAMIENTO DE STOCK Y VARIANTES (Aquí está la magia) ---
 
-                    if (!isRecipeProduct && initialStock > 0) {
-                        const initialBatch = {
-                            id: `batch-${newId}-initial`,
-                            productId: newId,
-                            cost: initialCost,
-                            price: parseFloat(productData.price) || 0,
-                            stock: initialStock,
-                            createdAt: new Date().toISOString(),
-                            trackStock: true,
-                            isActive: true,
-                            notes: "Stock Inicial",
-                            sku: null,
-                            attributes: null
-                        };
-                        const batchRes = await saveBatchAndSyncProductSafe(initialBatch);
-                        if (batchRes.success) valueDifference = initialCost * initialStock;
+            if (result.success) {
+                const initialCost = parseFloat(productData.cost) || 0;
+                const initialPrice = parseFloat(productData.price) || 0;
+                const initialStock = parseFloat(productData.stock) || 0;
+
+                // Detectamos si vienen variantes del Wizard
+                const hasVariants = productData.quickVariants && productData.quickVariants.length > 0;
+
+                // Caso A: Producto Simple (Sin variantes, con stock inicial declarado)
+                // Solo creamos lote simple si NO es receta y NO tiene variantes
+                const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
+
+                if (!isRecipeProduct && !hasVariants && initialStock > 0) {
+                    const initialBatch = {
+                        id: `batch-${productId}-initial`,
+                        productId: productId,
+                        cost: initialCost,
+                        price: initialPrice,
+                        stock: initialStock,
+                        createdAt: new Date().toISOString(),
+                        trackStock: true,
+                        isActive: true,
+                        notes: "Stock Inicial",
+                        sku: null,
+                        attributes: null
+                    };
+                    const batchRes = await saveBatchAndSyncProductSafe(initialBatch);
+                    if (batchRes.success) valueDifference = initialCost * initialStock;
+                }
+
+                // Caso B: Variantes desde el Wizard (ROPA/CALZADO)  <-- ¡NUEVO CÓDIGO!
+                if (hasVariants) {
+                    for (const variant of productData.quickVariants) {
+                        // Validamos que la variante tenga sentido (talla/color y stock o SKU)
+                        if ((variant.talla || variant.color) && (parseFloat(variant.stock) > 0 || variant.sku)) {
+                            const batchData = {
+                                id: generateID('batch'),
+                                productId: productId,
+                                stock: parseFloat(variant.stock) || 0,
+                                // Si la variante no tiene costo/precio específico, hereda del padre
+                                cost: parseFloat(variant.cost) || initialCost,
+                                price: parseFloat(variant.price) || initialPrice,
+                                sku: variant.sku || null,
+                                attributes: {
+                                    talla: variant.talla || '',
+                                    color: variant.color || ''
+                                },
+                                isActive: true,
+                                createdAt: new Date().toISOString(),
+                                notes: 'Ingreso rápido (Modo Asistido)',
+                                trackStock: true
+                            };
+
+                            // Guardamos y sincronizamos cada variante
+                            const vResult = await saveBatchAndSyncProductSafe(batchData);
+                            if (vResult.success) {
+                                valueDifference += (batchData.cost * batchData.stock);
+                            }
+                        }
                     }
                 }
             }
+
+            // --- 3. FINALIZACIÓN ---
 
             if (result.success) {
                 await refreshData();
@@ -200,19 +251,20 @@ export default function ProductsPage() {
                 showMessageModal(editingProduct ? '¡Actualizado exitosamente!' : '¡Producto creado exitosamente!');
                 setEditingProduct(null);
 
+                // Volvemos a la vista principal
                 if (productData.productType === 'ingredient') setActiveTab('ingredients');
                 else setActiveTab('view-products');
 
-                return true; // ✅ RETORNA ÉXITO
+                return true;
             } else {
                 handleActionableError(result);
-                return false; // ❌ RETORNA FALLO
+                return false;
             }
 
         } catch (error) {
             console.error("Error crítico:", error);
             showMessageModal(`Error inesperado: ${error.message}`);
-            return false; // ❌ RETORNA FALLO
+            return false;
         } finally {
             setIsLoading(false);
         }
@@ -372,16 +424,40 @@ export default function ProductsPage() {
 
             {
                 activeTab === 'add-product' && (
-                    <ProductForm
-                        onSave={handleSaveProduct}
-                        onCancel={() => setActiveTab('view-products')}
-                        productToEdit={editingProduct}
-                        categories={categories}
-                        onOpenCategoryManager={() => setShowCategoryModal(true)}
-                        products={products}
-                        onEdit={handleEditProduct}
-                        onManageBatches={handleManageBatches}
-                    />
+                    <>
+                        {/* Toggle para cambiar entre modos (solo si es nuevo producto) */}
+                        {!editingProduct && (
+                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+                                <div className="theme-toggle-container">
+                                    <label className="theme-radio-label">
+                                        <input type="radio" checked={isWizardMode} onChange={() => setIsWizardMode(true)} />
+                                        <span className="theme-radio-text">✨ Modo Asistido (Fácil)</span>
+                                    </label>
+                                    <label className="theme-radio-label">
+                                        <input type="radio" checked={!isWizardMode} onChange={() => setIsWizardMode(false)} />
+                                        <span className="theme-radio-text">🛠️ Modo Experto</span>
+                                    </label>
+                                </div>
+                            </div>
+                        )}
+
+                        {isWizardMode && !editingProduct ? (
+                            <ProductWizard
+                                onSave={handleSaveProduct}
+                                onCancel={() => setActiveTab('view-products')}
+                                categories={categories}
+                            />
+                        ) : (
+                            <ProductForm
+                                onSave={handleSaveProduct}
+                                onCancel={() => setActiveTab('view-products')}
+                                productToEdit={editingProduct}
+                                categories={categories}
+                                onOpenCategoryManager={() => setShowCategoryModal(true)}
+                            // ... props existentes ...
+                            />
+                        )}
+                    </>
                 )
             }
 
