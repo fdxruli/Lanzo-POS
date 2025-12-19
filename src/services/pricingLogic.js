@@ -11,29 +11,28 @@ export const calculateCompositePrice = (product, quantity) => {
   // Validación básica
   if (!product || quantity <= 0) return product?.price || 0;
 
-  // 1. CASO VARIANTE ESPECÍFICA (Ropa, Zapatos, etc.)
-  // Si ya seleccionó un lote específico, el precio es fijo.
+  // 1. CASO VARIANTE ESPECÍFICA
   if (product.isVariant && product.batchId) {
-    let basePrice = product.price;
+    let basePrice = product.originalPrice ?? product.price;
 
-    // Aplicar mayoreo si existe
     if (product.wholesaleTiers?.length > 0) {
       const tiersDesc = [...product.wholesaleTiers].sort((a, b) => b.min - a.min);
       const tier = tiersDesc.find(t => quantity >= t.min);
-      if (tier) basePrice = tier.price;
+      // CAMBIO AQUÍ: Asegurar que sea número
+      if (tier) basePrice = Number(tier.price);
     }
     return basePrice;
   }
 
-  // 2. CASO PRODUCTO SIMPLE (Sin gestión de lotes)
+  // 2. CASO PRODUCTO SIMPLE
   if (!product.batchManagement?.enabled || !product.activeBatches || product.activeBatches.length === 0) {
-    let basePrice = product.price;
-    
-    // Aplicar mayoreo
+    let basePrice = product.originalPrice ?? product.price;
+
     if (product.wholesaleTiers?.length > 0) {
       const tiersDesc = [...product.wholesaleTiers].sort((a, b) => b.min - a.min);
       const tier = tiersDesc.find(t => quantity >= t.min);
-      if (tier) basePrice = tier.price;
+      // CAMBIO AQUÍ: Asegurar que sea número
+      if (tier) basePrice = Number(tier.price);
     }
     return basePrice;
   }
@@ -45,13 +44,13 @@ export const calculateCompositePrice = (product, quantity) => {
   // Ordenar FIFO estricto (Más antiguo primero)
   // NOTA: Asumimos que activeBatches ya viene ordenado o lo ordenamos aquí.
   // Para pureza, mejor clonar y ordenar.
-  const sortedBatches = [...product.activeBatches].sort((a, b) => 
+  const sortedBatches = [...product.activeBatches].sort((a, b) =>
     new Date(a.createdAt) - new Date(b.createdAt)
   );
 
   for (const batch of sortedBatches) {
     if (remainingQty <= 0) break;
-    if (batch.stock <= 0) continue; 
+    if (batch.stock <= 0) continue;
 
     const takeFromBatch = Math.min(remainingQty, batch.stock);
     totalPriceAccumulated += roundCurrency(takeFromBatch * batch.price);
@@ -60,8 +59,8 @@ export const calculateCompositePrice = (product, quantity) => {
 
   // Si pidieron más de lo que hay, el resto se cobra al precio actual (o del último lote)
   if (remainingQty > 0) {
-    const fallbackPrice = sortedBatches.length > 0 
-      ? sortedBatches[sortedBatches.length - 1].price 
+    const fallbackPrice = sortedBatches.length > 0
+      ? sortedBatches[sortedBatches.length - 1].price
       : product.price;
     totalPriceAccumulated += (remainingQty * fallbackPrice);
   }
@@ -69,11 +68,12 @@ export const calculateCompositePrice = (product, quantity) => {
   // Precio promedio resultante
   const avgPrice = roundCurrency(totalPriceAccumulated / quantity);
 
-  // Aplicar mayoreo sobre el resultado final si corresponde (Override)
+  // Aplicar mayoreo sobre el resultado final (Override)
   if (product.wholesaleTiers?.length > 0) {
     const tiersDesc = [...product.wholesaleTiers].sort((a, b) => b.min - a.min);
     const tier = tiersDesc.find(t => quantity >= t.min);
-    if (tier) return tier.price;
+    // CAMBIO AQUÍ: Asegurar que sea número
+    if (tier) return Number(tier.price);
   }
 
   return avgPrice;
@@ -83,5 +83,5 @@ export const calculateCompositePrice = (product, quantity) => {
  * Calcula el total de una línea de pedido.
  */
 export const calculateLineTotal = (price, quantity) => {
-    return (price || 0) * (quantity || 0);
+  return (price || 0) * (quantity || 0);
 };
