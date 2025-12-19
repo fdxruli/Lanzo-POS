@@ -6,7 +6,9 @@ export default function RestauranteFields({
   printStation, setPrintStation,
   // Nuevos props que necesitaremos pasar desde ProductForm
   prepTime, setPrepTime,
-  modifiers, setModifiers
+  modifiers, setModifiers,
+  // Propiedad para ocultar el selector si ya viene definido por el Wizard
+  hideTypeSelector = false 
 }) {
 
   // Estado local para agregar un nuevo grupo de modificadores rápidamente
@@ -33,7 +35,7 @@ export default function RestauranteFields({
 
   // Función para agregar una opción a un grupo (ej: "Queso" al grupo "Extras")
   const addOptionToGroup = (groupIndex, optionName, price) => {
-    const updated = [...modifiers];
+    const updated = [...(modifiers || [])]; // Aseguramos que sea array
     updated[groupIndex].options.push({
       name: optionName,
       price: parseFloat(price) || 0
@@ -42,7 +44,7 @@ export default function RestauranteFields({
   };
 
   const removeOptionFromGroup = (groupIndex, optionIndex) => {
-    const updated = [...modifiers];
+    const updated = [...(modifiers || [])];
     updated[groupIndex].options.splice(optionIndex, 1);
     setModifiers(updated);
   };
@@ -51,27 +53,30 @@ export default function RestauranteFields({
     <div className="restaurant-fields-container" style={{ animation: 'fadeIn 0.3s' }}>
 
       {/* 1. SELECTOR DE TIPO (VISUALMENTE MEJORADO) */}
-      <div className="form-group product-type-toggle" style={{ backgroundColor: 'var(--light-background)', padding: '10px', borderRadius: '8px' }}>
-        <label className="form-label" style={{ marginBottom: '10px' }}>Tipo de Ítem</label>
-        <div className="theme-toggle-container" style={{ width: '100%', display: 'flex' }}>
-          <label className="theme-radio-label" style={{ flex: 1, textAlign: 'center' }}>
-            <input
-              type="radio" name="productType" value="sellable"
-              checked={productType === 'sellable'}
-              onChange={() => setProductType('sellable')}
-            />
-            <span className="theme-radio-text">🍽️ Platillo (Venta)</span>
-          </label>
-          <label className="theme-radio-label" style={{ flex: 1, textAlign: 'center' }}>
-            <input
-              type="radio" name="productType" value="ingredient"
-              checked={productType === 'ingredient'}
-              onChange={() => setProductType('ingredient')}
-            />
-            <span className="theme-radio-text">🥕 Insumo (Inventario)</span>
-          </label>
+      {/* Solo se muestra si hideTypeSelector es falso (por defecto) */}
+      {!hideTypeSelector && (
+        <div className="form-group product-type-toggle" style={{ backgroundColor: 'var(--light-background)', padding: '10px', borderRadius: '8px' }}>
+          <label className="form-label" style={{ marginBottom: '10px' }}>Tipo de Ítem</label>
+          <div className="theme-toggle-container" style={{ width: '100%', display: 'flex' }}>
+            <label className="theme-radio-label" style={{ flex: 1, textAlign: 'center' }}>
+              <input
+                type="radio" name="productType" value="sellable"
+                checked={productType === 'sellable'}
+                onChange={() => setProductType('sellable')}
+              />
+              <span className="theme-radio-text">🍽️ Platillo (Venta)</span>
+            </label>
+            <label className="theme-radio-label" style={{ flex: 1, textAlign: 'center' }}>
+              <input
+                type="radio" name="productType" value="ingredient"
+                checked={productType === 'ingredient'}
+                onChange={() => setProductType('ingredient')}
+              />
+              <span className="theme-radio-text">🥕 Insumo (Inventario)</span>
+            </label>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 2. OPCIONES PARA PLATILLOS */}
       {productType === 'sellable' && (
@@ -96,7 +101,8 @@ export default function RestauranteFields({
               <label className="form-label">Enviar Comanda a:</label>
               <select
                 className="form-input"
-                value={printStation}
+                /* CORRECCIÓN: Usar 'kitchen' como default si es undefined */
+                value={printStation || 'kitchen'}
                 onChange={(e) => setPrintStation(e.target.value)}
               >
                 <option value="kitchen">🍳 Cocina</option>
@@ -114,7 +120,8 @@ export default function RestauranteFields({
               type="number"
               className="form-input"
               placeholder="Ej: 15"
-              value={prepTime}
+              /* CORRECCIÓN: Usar '' como default para evitar uncontrolled input */
+              value={prepTime || ''}
               onChange={(e) => setPrepTime(e.target.value)}
             />
           </div>

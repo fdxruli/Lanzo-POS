@@ -91,7 +91,7 @@ export default function OrderSummary({ onOpenPayment, isMobileModal, onClose }) 
                       </div>
                     )}
                     {item.notes && <div className="order-item-notes">📝 {item.notes}</div>}
-                    <div className="order-item-price">${item.price.toFixed(2)} {item.saleType === 'bulk' ? ` / ${item.bulkData?.purchase?.unit || 'kg'}` : ''}</div>
+                    <div className="order-item-price">${Number(item.price).toFixed(2)} {item.saleType === 'bulk' ? ` / ${item.bulkData?.purchase?.unit || 'kg'}` : ''}</div>
                   </div>
 
                   {(item.saleType === 'unit' || !item.saleType) ? (

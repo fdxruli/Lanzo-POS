@@ -1,36 +1,29 @@
-:root {
-    --wizard-bg: #ffffff;
-    --wizard-primary: #2563eb; /* Azul moderno */
-    --wizard-secondary: #64748b;
-    --wizard-success: #10b981;
-    --wizard-warning: #f59e0b;
-    --wizard-border: #e2e8f0;
-    --wizard-text-main: #1e293b;
-    --wizard-text-light: #64748b;
-    --wizard-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-}
+/* src/components/products/ProductWizard.css 
+ * Alineado con el sistema de diseño global
+ */
 
+/* ===== CONTENEDOR PRINCIPAL ===== */
 .product-wizard-container {
-    background: var(--wizard-bg);
-    border-radius: 16px;
-    box-shadow: var(--wizard-shadow);
+    background: var(--card-background-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow-lg);
     max-width: 700px;
     margin: 20px auto;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     min-height: 550px;
-    border: 1px solid var(--wizard-border);
+    border: 1px solid var(--border-color);
     animation: slideUp 0.4s ease-out;
 }
 
-/* --- BARRA DE PROGRESO --- */
+/* ===== BARRA DE PROGRESO ===== */
 .wizard-progress-bar {
     display: flex;
     justify-content: space-between;
     padding: 30px 50px;
-    background: #f8fafc;
-    border-bottom: 1px solid var(--wizard-border);
+    background: var(--light-background);
+    border-bottom: 1px solid var(--border-color);
     position: relative;
 }
 
@@ -41,7 +34,7 @@
     left: 60px;
     right: 60px;
     height: 2px;
-    background: #e2e8f0;
+    background: var(--border-color);
     z-index: 1;
     transform: translateY(-13px);
 }
@@ -51,30 +44,30 @@
     z-index: 2;
     width: 32px;
     height: 32px;
-    background: white;
-    border: 2px solid #cbd5e1;
+    background: var(--card-background-color);
+    border: 2px solid var(--border-color);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 600;
-    color: #94a3b8;
+    color: var(--text-light);
     transition: all 0.3s ease;
 }
 
 .progress-dot.active {
-    border-color: var(--wizard-primary);
-    color: var(--wizard-primary);
-    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    box-shadow: 0 0 0 4px rgba(255, 59, 92, 0.1);
 }
 
 .progress-dot.completed {
-    background: var(--wizard-primary);
-    border-color: var(--wizard-primary);
+    background: var(--primary-color);
+    border-color: var(--primary-color);
     color: white;
 }
 
-/* --- CONTENIDO PRINCIPAL --- */
+/* ===== CONTENIDO PRINCIPAL ===== */
 .wizard-main-content {
     padding: 40px;
     flex-grow: 1;
@@ -89,7 +82,7 @@
 .main-icon-circle {
     width: 64px;
     height: 64px;
-    background: #eff6ff;
+    background: rgba(255, 59, 92, 0.1);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -99,11 +92,11 @@
 
 .wizard-welcome h3 {
     font-size: 1.5rem;
-    color: var(--wizard-text-main);
+    color: var(--text-dark);
     margin-bottom: 8px;
 }
 
-/* --- TARJETAS DE SELECCIÓN (ESTRATEGIA) --- */
+/* ===== TARJETAS DE SELECCIÓN ===== */
 .selection-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -112,53 +105,53 @@
 
 .selection-card {
     padding: 24px;
-    border: 2px solid var(--wizard-border);
-    border-radius: 12px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
     cursor: pointer;
     transition: all 0.2s ease;
     text-align: center;
 }
 
 .selection-card:hover {
-    border-color: #94a3b8;
-    background: #f8fafc;
+    border-color: var(--text-light);
+    background: var(--light-background);
 }
 
 .selection-card.selected {
-    border-color: var(--wizard-primary);
-    background: #eff6ff;
-    box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.1);
+    border-color: var(--primary-color);
+    background: rgba(255, 59, 92, 0.05);
+    box-shadow: 0 4px 6px -1px rgba(255, 59, 92, 0.1);
 }
 
 .selection-icon {
     margin-bottom: 15px;
-    color: var(--wizard-primary);
+    color: var(--primary-color);
 }
 
 .selection-title {
     font-weight: 700;
-    color: var(--wizard-text-main);
+    color: var(--text-dark);
     margin-bottom: 5px;
 }
 
 .selection-desc {
     font-size: 0.85rem;
-    color: var(--wizard-text-light);
+    color: var(--text-light);
 }
 
-/* --- INPUTS INTELIGENTES --- */
+/* ===== INPUTS INTELIGENTES ===== */
 .form-input.big-input {
     font-size: 1.25rem;
     padding: 12px 16px;
-    border-radius: 10px;
+    border-radius: var(--border-radius);
     font-weight: 500;
 }
 
 .money-wizard-container {
-    background: #f8fafc;
+    background: var(--light-background);
     padding: 25px;
-    border-radius: 12px;
-    border: 1px solid var(--wizard-border);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
 }
 
 .money-row {
@@ -168,14 +161,14 @@
 }
 
 .highlight-price {
-    border-top: 1px dashed #cbd5e1;
+    border-top: 1px dashed var(--border-color);
     padding-top: 20px;
 }
 
 .big-price-input {
     font-size: 2rem !important;
     font-weight: 800;
-    color: var(--wizard-primary);
+    color: var(--primary-color);
     border: none !important;
     background: transparent !important;
     text-align: center;
@@ -185,9 +178,9 @@
 .input-with-prefix {
     display: flex;
     align-items: center;
-    background: white;
-    border: 1px solid var(--wizard-border);
-    border-radius: 8px;
+    background: var(--card-background-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
     padding: 0 15px;
 }
 
@@ -199,7 +192,7 @@
     font-weight: 600;
 }
 
-/* --- STOCK Y ALERTAS --- */
+/* ===== STOCK Y ALERTAS ===== */
 .stock-wizard-card {
     text-align: center;
 }
@@ -209,7 +202,7 @@
     text-align: center;
     width: 150px;
     border: none;
-    border-bottom: 3px solid var(--wizard-primary);
+    border-bottom: 3px solid var(--primary-color);
     margin-bottom: 10px;
     font-weight: 700;
     outline: none;
@@ -218,9 +211,9 @@
 .alert-config {
     margin: 30px 0;
     padding: 20px;
-    background: #fffbeb;
-    border-radius: 10px;
-    border: 1px solid #fef3c7;
+    background: rgba(255, 184, 0, 0.1);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--warning-color);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -230,16 +223,16 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #92400e;
+    color: var(--text-dark);
     font-weight: 600;
     margin-bottom: 10px;
 }
 
-/* --- ACCIONES --- */
+/* ===== ACCIONES ===== */
 .wizard-actions {
     padding: 25px 40px;
-    background: #f8fafc;
-    border-top: 1px solid var(--wizard-border);
+    background: var(--light-background);
+    border-top: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
 }
@@ -249,12 +242,65 @@
 }
 
 @keyframes shadow-pulse {
-    0% { box-shadow: 0 0 0 0px rgba(16, 185, 129, 0.4); }
-    70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-    100% { box-shadow: 0 0 0 0px rgba(16, 185, 129, 0); }
+    0% { box-shadow: 0 0 0 0px rgba(255, 59, 92, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 59, 92, 0); }
+    100% { box-shadow: 0 0 0 0px rgba(255, 59, 92, 0); }
 }
 
 @keyframes slideUp {
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== SELECTOR DE CATEGORÍA ===== */
+.category-mini-picker {
+    margin-top: 20px;
+}
+
+.category-mini-picker label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: var(--text-dark);
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    .wizard-progress-bar {
+        padding: 20px 15px;
+    }
+
+    .wizard-progress-bar::before {
+        left: 30px;
+        right: 30px;
+    }
+
+    .wizard-main-content {
+        padding: 20px;
+    }
+
+    .wizard-actions {
+        padding: 15px 20px;
+    }
+
+    .selection-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .money-row {
+        flex-direction: column;
+    }
+}
+
+/* ===== MODO OSCURO ===== */
+[data-theme="dark"] .main-icon-circle {
+    background: rgba(255, 59, 92, 0.15);
+}
+
+[data-theme="dark"] .selection-card.selected {
+    background: rgba(255, 59, 92, 0.1);
+}
+
+[data-theme="dark"] .alert-config {
+    background: rgba(255, 184, 0, 0.15);
 }
