@@ -19,8 +19,20 @@ import { startLicenseListener, stopLicenseListener } from '../services/licenseRe
 const _ui_render_config_v2 = import.meta.env.VITE_LICENSE_SALT;
 
 // === HELPERS (Sin cambios) ===
+const stableStringify = (obj) => {
+  if (typeof obj !== 'object' || obj === null) return JSON.stringify(obj);
+  
+  // Ordenamos las llaves alfabéticamente antes de convertir
+  return JSON.stringify(Object.keys(obj).sort().reduce((result, key) => {
+    result[key] = obj[key];
+    return result;
+  }, {}));
+};
+
 const generateSignature = (data) => {
-  const stringData = JSON.stringify(data);
+  // CAMBIO: Usamos stableStringify en lugar de JSON.stringify
+  const stringData = stableStringify(data);
+  
   let hash = 0;
   if (stringData.length === 0) return hash;
   const mixedString = stringData + _ui_render_config_v2;
@@ -45,20 +57,29 @@ const getLicenseFromStorage = async () => {
   if (!isLocalStorageEnabled()) return null;
   const storedString = localStorage.getItem('lanzo_license');
   if (!storedString) return null;
+  
   try {
     const parsedPackage = JSON.parse(storedString);
     if (!parsedPackage.data || !parsedPackage.signature) {
-      localStorage.removeItem('lanzo_license');
-      return null;
+      return null; // Datos incompletos, aquí sí ignoramos
     }
+    
+    // Verificamos la firma
     const expectedSignature = generateSignature(parsedPackage.data);
+    
     if (parsedPackage.signature !== expectedSignature) {
-      console.warn("Integridad comprometida. Limpiando sesión.");
-      localStorage.removeItem('lanzo_license');
-      return null;
+      console.warn("⚠️ La firma local no coincide. Posible actualización de versión.");
+      
+      // CRÍTICO: NO BORRAMOS localStorage.removeItem('lanzo_license') AQUÍ.
+      // Devolvemos los datos "sospechosos" para que initializeApp intente validarlos 
+      // contra el servidor. Si el servidor dice que son válidos, se arreglarán solos.
+      return parsedPackage.data;
     }
+    
     return parsedPackage.data;
   } catch (e) {
+    console.error("Error leyendo licencia local:", e);
+    // Solo borramos si el JSON es ilegible (corrupción real)
     localStorage.removeItem('lanzo_license');
     return null;
   }
@@ -85,87 +106,37 @@ export const useAppStore = create((set, get) => ({
     console.log('🔄 [AppStore] Iniciando aplicación...');
     
     try {
-      // PASO 1: Intentar cargar licencia local
+      // Obtenemos licencia (ahora getLicenseFromStorage no borra si hay error de firma)
       const localLicense = await getLicenseFromStorage();
 
       if (!localLicense?.license_key) {
-        console.log('❌ [AppStore] No hay licencia guardada');
         set({ appStatus: 'unauthenticated' });
         return;
       }
 
-      console.log('📦 [AppStore] Licencia local encontrada:', localLicense.license_key);
-
-      // PASO 2: Decidir estrategia según conectividad
-      const isOnline = navigator.onLine;
-      
-      if (isOnline) {
-        console.log('🌐 [AppStore] Modo ONLINE - Validando con servidor...');
-        
+      // Si tenemos red, validamos con el servidor para confirmar integridad
+      if (navigator.onLine) {
         try {
-          // Sub-Paso A: Intentar validación con timeout personalizado
-          const serverValidation = await Promise.race([
-            revalidateLicense(localLicense.license_key),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('CUSTOM_TIMEOUT')), 5000)
-            )
-          ]);
-
-          console.log('✅ [AppStore] Respuesta del servidor:', serverValidation);
-
-          // Sub-Paso B: Procesar respuesta exitosa del servidor
+          const serverValidation = await revalidateLicense(localLicense.license_key);
+          
           if (serverValidation?.valid !== undefined) {
+            // Si el servidor responde, confiamos en él
+            // _processServerValidation guardará de nuevo los datos, 
+            // CORRIGIENDO cualquier error de firma previo gracias a stableStringify
             await get()._processServerValidation(serverValidation, localLicense);
-            return; // ← Salida exitosa
-          }
-
-        } catch (validationError) {
-          // Sub-Paso C: Manejo de errores de red
-          const errMsg = validationError.message || '';
-          console.warn('⚠️ [AppStore] Fallo validación online:', errMsg);
-
-          // Si es error de RED (no lógico), activar modo offline
-          const isNetworkError = 
-            errMsg === 'CUSTOM_TIMEOUT' ||
-            errMsg === 'VALIDATION_TIMEOUT' ||
-            errMsg.includes('fetch') ||
-            errMsg.includes('Network');
-
-          if (isNetworkError) {
-            console.log('☁️ [AppStore] Activando modo OFFLINE por fallo de red');
-            await get()._processOfflineMode(localLicense);
             return;
           }
-
-          // Si NO es error de red, es algo grave (licencia revocada por servidor)
-          console.error('🚫 [AppStore] Error lógico del servidor, cerrando sesión');
-          clearLicenseFromStorage();
-          set({ appStatus: 'unauthenticated' });
-          return;
+        } catch (validationError) {
+          console.warn('⚠️ Fallo validación online, usando caché local:', validationError);
         }
       } 
       
-      // PASO 3: Modo OFFLINE desde el inicio (sin internet)
-      console.log('📴 [AppStore] Modo OFFLINE - Sin conexión detectada');
+      // Si estamos offline o falló la validación pero tenemos datos locales
       await get()._processOfflineMode(localLicense);
 
     } catch (criticalError) {
-      // PASO 4: Captura de errores CRÍTICOS (DB corrupta, etc.)
-      console.error('💥 [AppStore] Error CRÍTICO en inicialización:', criticalError);
-      
-      // Intentar limpiar y pedir re-login
-      clearLicenseFromStorage();
-      set({ 
-        appStatus: 'unauthenticated',
-        licenseDetails: null 
-      });
-      
-      // Mostrar mensaje al usuario
-      showMessageModal(
-        '⚠️ Ocurrió un error al iniciar la aplicación. Por favor, inicia sesión de nuevo.',
-        null,
-        { type: 'error' }
-      );
+      console.error('💥 Error crítico inicializando:', criticalError);
+      set({ appStatus: 'unauthenticated' });
     }
   },
 
@@ -403,7 +374,9 @@ export const useAppStore = create((set, get) => ({
 
   handleLogin: async (licenseKey) => {
     try {
+      // 1. Intento normal de activación
       const result = await activateLicense(licenseKey);
+      
       if (result.valid) {
         const licenseDataToSave = { ...result.details, valid: true };
         await saveLicenseToStorage(licenseDataToSave);
@@ -411,8 +384,36 @@ export const useAppStore = create((set, get) => ({
         await get()._loadProfile(licenseKey);
         return { success: true };
       }
+      
+      // 2. LÓGICA DE RECUPERACIÓN (NUEVO)
+      // Si falla porque "ya está activo" o "límite alcanzado", pero es ESTE dispositivo
+      const errorMsg = (result.message || '').toLowerCase();
+      if (!result.valid && (errorMsg.includes('limit') || errorMsg.includes('active') || errorMsg.includes('device'))) {
+         
+         console.log("⚠️ Dispositivo ya registrado. Intentando recuperar sesión...");
+         
+         // Intentamos solo validar (revalidateLicense usa el fingerprint del dispositivo)
+         const revalidate = await revalidateLicense(licenseKey);
+         
+         if (revalidate.valid) {
+            console.log("✅ Sesión recuperada exitosamente.");
+            
+            const recoveredData = { 
+              ...revalidate, 
+              license_key: licenseKey, // Aseguramos que la key esté presente
+              valid: true 
+            };
+            
+            await saveLicenseToStorage(recoveredData);
+            set({ licenseDetails: recoveredData });
+            await get()._loadProfile(licenseKey);
+            return { success: true };
+         }
+      }
+
       return { success: false, message: result.message || 'Licencia no válida' };
     } catch (error) {
+      console.error("Error en login:", error);
       return { success: false, message: error.message };
     }
   },
