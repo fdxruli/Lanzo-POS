@@ -17,66 +17,60 @@ export default function LicenseSettings() {
     const licenseDetails = useAppStore((state) => state.licenseDetails);
     const logout = useAppStore((state) => state.logout);
 
-    const [businessType, setBusinessType] = useState([]);
+    const [selectedRubros, setSelectedRubros] = useState([]);
 
-    // --- LÓGICA DINÁMICA DE LICENCIA ---
     const licenseFeatures = licenseDetails?.features || {};
     const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
     const allowedRubrosList = licenseFeatures.allowed_rubros || ['*'];
     const isAllAllowed = allowedRubrosList.includes('*');
 
     useEffect(() => {
-        if (companyProfile) {
-            let types = companyProfile.business_type || [];
-            if (typeof types === 'string') types = types.split(',').map(s => s.trim());
-            setBusinessType(types);
+        if (companyProfile?.business_type) {
+            let types = companyProfile.business_type;
+            if (typeof types === 'string') {
+                types = types.split(',').map(s => s.trim()).filter(Boolean);
+            }
+            setSelectedRubros(Array.isArray(types) ? types : []);
         }
     }, [companyProfile]);
 
-    // --- HANDLER CON BLOQUEO ESTRICTO (Recuperado del original) ---
     const handleRubroToggle = async (rubroId) => {
-        // 1. Validar si el rubro está permitido específicamente por la licencia
         if (!isAllAllowed && !allowedRubrosList.includes(rubroId)) {
-            alert("Tu licencia actual no permite seleccionar este rubro.");
+            alert("⚠️ Tu licencia no incluye acceso a este módulo. Contacta a soporte para ampliarla.");
             return;
         }
 
-        // 2. BLOQUEO ESTRICTO PARA TRIAL (Max 1)
-        // Si la licencia solo permite 1 rubro Y ya tenemos uno seleccionado...
-        if (maxRubrosAllowed === 1 && businessType.length > 0) {
-            // Si intenta tocar el que ya tiene seleccionado (intentar quitarlo)
-            if (businessType.includes(rubroId)) {
-                alert("🔒 El rubro está bloqueado por tu licencia de prueba. No puedes deseleccionarlo.");
-            } else {
-                // Si intenta tocar otro (intentar cambiar)
-                alert("🔒 Tu licencia de prueba está vinculada al rubro seleccionado inicialmente. Contáctanos para cambiarlo.");
-            }
-            return; // Detenemos aquí. No se permite cambio.
-        }
+        const isCurrentlySelected = selectedRubros.includes(rubroId);
 
-        // 3. Comportamiento normal (Multirubro o primera selección)
-        let newTypes = [];
-        if (businessType.includes(rubroId)) {
-            newTypes = businessType.filter(id => id !== rubroId);
-        } else {
-            if (businessType.length >= maxRubrosAllowed) {
-                alert(`Has alcanzado el límite de ${maxRubrosAllowed} rubros permitidos por tu licencia.`);
+        // 1. ESCENARIO: DESELECCIONAR
+        if (isCurrentlySelected) {
+            if (maxRubrosAllowed === 1) {
+                alert("🔒 BLOQUEADO: Tu licencia está vinculada permanentemente a este giro de negocio.\n\nNo puedes cambiar el rubro activo sin renovar o actualizar tu licencia.");
                 return;
             }
-            newTypes = [...businessType, rubroId];
+            const newSelection = selectedRubros.filter(id => id !== rubroId);
+            setSelectedRubros(newSelection);
+            if (companyProfile) await updateCompanyProfile({ ...companyProfile, business_type: newSelection });
+            return;
         }
 
-        setBusinessType(newTypes);
-
-        // Guardar automáticamente en el perfil
-        if (companyProfile) {
-            await updateCompanyProfile({ ...companyProfile, business_type: newTypes });
+        // 2. ESCENARIO: SELECCIONAR
+        if (selectedRubros.length >= maxRubrosAllowed) {
+            if (maxRubrosAllowed === 1) {
+                alert(`🔒 Tu licencia ya tiene un giro activo. No puedes cambiarlo.`);
+            } else {
+                alert(`🛑 Límite alcanzado. Tu licencia permite máximo ${maxRubrosAllowed} giros de negocio.`);
+            }
+            return;
         }
+
+        const newSelection = [...selectedRubros, rubroId];
+        setSelectedRubros(newSelection);
+        if (companyProfile) await updateCompanyProfile({ ...companyProfile, business_type: newSelection });
     };
 
     const renderLicenseInfo = () => {
         if (!licenseDetails || !licenseDetails.valid) return <p>No hay licencia activa.</p>;
-
         return (
             <div className="license-info-container">
                 <div className="license-info">
@@ -86,30 +80,17 @@ export default function LicenseSettings() {
                     </div>
                     <div className="license-detail">
                         <span className="license-label">Estado:</span>
-                        {/* CORRECCIÓN: Usar el estado real dinámico en lugar de texto fijo */}
-                        <span className={
-                            licenseDetails.status === 'active' ? 'license-status-active' :
-                                licenseDetails.status === 'grace_period' ? 'license-status-pending' :
-                                    'license-status-expired'
-                        }>
-                            {licenseDetails.status === 'active' ? 'Activa' :
-                                licenseDetails.status === 'grace_period' ? 'Periodo de Gracia' :
-                                    licenseDetails.status?.toUpperCase() || 'Inactiva'}
+                        <span className={licenseDetails.status === 'active' ? 'license-status-active' : 'license-status-expired'}>
+                            {licenseDetails.status === 'active' ? 'Activa' : (licenseDetails.status || 'Inactiva')}
                         </span>
-                    </div>
-                    <div className="license-detail">
-                        <span className="license-label">Vence:</span>
-                        <span className="license-value">{licenseDetails.expires_at ? new Date(licenseDetails.expires_at).toLocaleDateString() : 'Nunca'}</span>
                     </div>
                     <div className="license-detail">
                         <span className="license-label">Límite de Rubros:</span>
                         <span className="license-value">{maxRubrosAllowed === 999 ? 'Ilimitado' : maxRubrosAllowed}</span>
                     </div>
                 </div>
-
                 <h4 className="device-manager-title">Dispositivos Vinculados</h4>
                 <DeviceManager licenseKey={licenseDetails.license_key} />
-
                 <button className="btn btn-cancel" style={{ width: 'auto', marginTop: '1rem' }} onClick={logout}>
                     Cerrar Sesión en este dispositivo
                 </button>
@@ -119,24 +100,57 @@ export default function LicenseSettings() {
 
     return (
         <div className="company-form-container">
-            <h3 className="subtitle">Configuración de Rubros</h3>
+            <h3 className="subtitle">Configuración de Módulos</h3>
 
-            {/* Mensaje visual de Bloqueo */}
             {maxRubrosAllowed === 1 && (
-                <p style={{ fontSize: '0.9rem', color: 'var(--primary-color)', marginBottom: '10px', backgroundColor: '#eff6ff', padding: '10px', borderRadius: '6px', borderLeft: '4px solid var(--primary-color)' }}>
-                    ℹ️ <strong>Modo Prueba Activado:</strong> El rubro está vinculado a tu licencia y no se puede cambiar aquí.
+                <p style={{ 
+                    fontSize: '0.9rem', 
+                    color: '#155724', 
+                    marginBottom: '15px', 
+                    backgroundColor: '#d4edda', 
+                    padding: '10px', 
+                    borderRadius: '6px', 
+                    borderLeft: '4px solid #28a745' 
+                }}>
+                    🔒 <strong>Licencia Vinculada:</strong> Tu sistema está configurado exclusivamente para el giro seleccionado abajo.
                 </p>
             )}
 
             <div className="rubro-selector-grid">
                 {BUSINESS_RUBROS.map(rubro => {
-                    // Verificar si está permitido por la licencia (General)
-                    const isNotAllowedByLicense = !isAllAllowed && !allowedRubrosList.includes(rubro.id);
+                    const isSelected = selectedRubros.includes(rubro.id);
+                    const isAllowed = isAllAllowed || allowedRubrosList.includes(rubro.id);
+                    const isLimitReached = selectedRubros.length >= maxRubrosAllowed;
+                    const isHardLocked = maxRubrosAllowed === 1; // ¿Es licencia básica?
 
-                    // Verificar si está "Bloqueado" por la regla de Max 1 (Trial)
-                    const isTrialLocked = maxRubrosAllowed === 1 && businessType.length > 0;
+                    // --- LÓGICA DE ESTILOS MEJORADA ---
+                    let opacity = 1;
+                    let cursor = 'pointer';
+                    let borderColor = '#e5e7eb';
+                    let backgroundColor = 'white';
+                    let textColor = 'inherit';
+                    let fontWeight = 'normal';
 
-                    const isSelected = businessType.includes(rubro.id);
+                    if (!isAllowed) {
+                        // No permitido por licencia
+                        opacity = 0.5;
+                        cursor = 'not-allowed';
+                    } else if (isSelected) {
+                        // === SELECCIONADO (ACTIVO) ===
+                        borderColor = 'var(--primary-color)';
+                        backgroundColor = '#f0f9ff'; // Azul muy claro, se ve activo pero limpio
+                        fontWeight = '600'; // Negrita para que resalte
+                        textColor = '#1e3a8a'; // Azul oscuro para contraste
+
+                        if (isHardLocked) {
+                            cursor = 'default'; // Cursor normal, no mano (no clicable)
+                        }
+                    } else if (isLimitReached || isHardLocked) {
+                        // No seleccionado y bloqueado (porque ya hay otro seleccionado o límite lleno)
+                        opacity = 0.6;
+                        cursor = 'not-allowed';
+                        backgroundColor = '#f9fafb'; // Gris muy suave
+                    }
 
                     return (
                         <div
@@ -144,23 +158,29 @@ export default function LicenseSettings() {
                             className={`rubro-box ${isSelected ? 'selected' : ''}`}
                             onClick={() => handleRubroToggle(rubro.id)}
                             style={{
-                                // Opacidad visual: Si no está permitido O si es trial y no es el seleccionado
-                                opacity: (isNotAllowedByLicense || (isTrialLocked && !isSelected)) ? 0.5 : 1,
-                                // Cursor bloqueado
-                                cursor: (isNotAllowedByLicense || isTrialLocked) ? 'not-allowed' : 'pointer',
-                                position: 'relative'
+                                opacity: opacity,
+                                cursor: cursor,
+                                border: isSelected ? `2px solid ${borderColor}` : `1px solid ${borderColor}`,
+                                backgroundColor: backgroundColor,
+                                color: textColor,
+                                fontWeight: fontWeight,
+                                position: 'relative',
+                                transition: 'all 0.2s ease', // Suavizar cambio
+                                transform: isSelected ? 'scale(1.02)' : 'none', // Pequeño "pop" si está seleccionado
+                                boxShadow: isSelected ? '0 2px 5px rgba(0,0,0,0.05)' : 'none'
                             }}
-                            title={isTrialLocked ? "Bloqueado por licencia de prueba" : ""}
+                            title={isSelected && isHardLocked ? "Giro permanente de la licencia" : ""}
                         >
                             {rubro.label}
 
-                            {/* Candado si está bloqueado por licencia general o trial */}
-                            {(isNotAllowedByLicense || (isTrialLocked && !isSelected)) && (
-                                <span style={{ position: 'absolute', top: 2, right: 5, fontSize: '0.9rem' }}>🔒</span>
+                            {/* Iconos */}
+                            {isSelected && (
+                                <span style={{ position: 'absolute', top: 5, right: 8, fontSize: '1rem' }}>
+                                    {isHardLocked ? '🔒' : '✅'}
+                                </span>
                             )}
-                            {/* Candado VERDE si es el seleccionado en modo trial (es fijo) */}
-                            {(isTrialLocked && isSelected) && (
-                                <span style={{ position: 'absolute', top: 2, right: 5, fontSize: '0.9rem' }}>🔒</span>
+                            {(!isSelected && (isLimitReached || !isAllowed || isHardLocked)) && (
+                                <span style={{ position: 'absolute', top: 5, right: 8, fontSize: '1rem', filter: 'grayscale(100%)', opacity: 0.5 }}>🔒</span>
                             )}
                         </div>
                     );
@@ -168,7 +188,9 @@ export default function LicenseSettings() {
             </div>
 
             <small className="form-help-text">
-                Selecciona los giros de tu negocio para activar funciones especiales.
+                {maxRubrosAllowed === 1 
+                    ? "El giro de negocio no puede ser modificado con esta licencia."
+                    : "Selecciona los giros adicionales para activar sus funciones."}
             </small>
 
             <h3 className="subtitle" style={{ marginTop: '2rem' }}>Información de Licencia</h3>

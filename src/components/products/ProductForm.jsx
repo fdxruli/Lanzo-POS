@@ -18,6 +18,17 @@ import WholesaleManagerModal from './WholesaleManagerModal';
 
 const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
 
+// Mapa de nombres legibles para el selector de contexto
+const RUBRO_LABELS = {
+    'food_service': 'Restaurante / Cocina',
+    'abarrotes': 'Abarrotes / Tienda',
+    'farmacia': 'Farmacia',
+    'verduleria/fruteria': 'Frutería',
+    'apparel': 'Ropa y Accesorios',
+    'hardware': 'Ferretería',
+    'otro': 'General'
+};
+
 export default function ProductForm({
     onSave, onCancel, productToEdit, categories, onOpenCategoryManager,
     products, onEdit, onManageBatches
@@ -25,16 +36,28 @@ export default function ProductForm({
 
     const [previewUrl, setPreviewUrl] = useState(null);
     const [isImageProcessing, setIsImageProcessing] = useState(false);
-    const features = useFeatureConfig();
     const navigate = useNavigate();
 
     const companyProfile = useAppStore(state => state.companyProfile);
 
-    const isApparel = (() => {
-        const types = companyProfile?.businessType;
-        if (Array.isArray(types)) return types.includes('apparel');
-        return types === 'apparel';
+    // 1. OBTENER GIROS GLOBALES DE LA EMPRESA
+    const globalBusinessTypes = (() => {
+        const types = companyProfile?.business_type;
+        if (Array.isArray(types)) return types;
+        if (typeof types === 'string') return types.split(',').map(s => s.trim()).filter(Boolean);
+        return ['otro'];
     })();
+
+    // 2. ESTADO DEL CONTEXTO ACTUAL (El rubro activo para ESTE producto)
+    // Inicializamos con el primero de la lista o 'otro'
+    const [activeRubroContext, setActiveRubroContext] = useState(globalBusinessTypes[0] || 'otro');
+
+    // 3. OBTENER FEATURES ESPECÍFICAS DEL CONTEXTO SELECCIONADO
+    // Pasamos el rubro activo al hook para que filtre las funciones
+    const features = useFeatureConfig(activeRubroContext);
+
+    // Lógica auxiliar para UI de ropa (se mantiene igual, pero depende del contexto ahora)
+    const isApparelContext = activeRubroContext === 'apparel';
 
     // --- ESTADOS COMUNES ---
     const [name, setName] = useState('');
@@ -86,10 +109,27 @@ export default function ProductForm({
 
     const [isSaving, setIsSaving] = useState(false);
 
-    // --- EFECTO DE CARGA INICIAL ---
+    // --- EFECTO DE CARGA INICIAL (Con lógica de detección de Rubro) ---
     useEffect(() => {
         setInternalEditingProduct(productToEdit);
         if (productToEdit) {
+            // DETECCIÓN INTELIGENTE DE CONTEXTO
+            // Si el producto ya tiene 'rubroContext' guardado, úsalo.
+            // Si no (producto viejo), intenta adivinar por sus campos.
+            let detectedContext = globalBusinessTypes[0];
+
+            if (productToEdit.rubroContext && globalBusinessTypes.includes(productToEdit.rubroContext)) {
+                detectedContext = productToEdit.rubroContext;
+            } else {
+                // Heurística para productos legacy
+                if (productToEdit.recipe && productToEdit.recipe.length > 0) detectedContext = 'food_service';
+                else if (productToEdit.sustancia || productToEdit.laboratorio) detectedContext = 'farmacia';
+                else if (productToEdit.productType === 'sellable' && productToEdit.shelfLife) detectedContext = 'verduleria/fruteria';
+                // Si no coincide con ninguno específico, se queda con el default (globalBusinessTypes[0])
+            }
+            setActiveRubroContext(detectedContext);
+
+            // Carga de datos normales
             setName(productToEdit.name);
             setBarcode(productToEdit.barcode || '');
             setDescription(productToEdit.description || '');
@@ -145,7 +185,7 @@ export default function ProductForm({
         } else {
             resetForm();
         }
-    }, [productToEdit]);
+    }, [productToEdit]); // NOTA: No incluimos globalBusinessTypes aquí para evitar loops, asumimos que no cambian durante la edición
 
     useEffect(() => {
         if (previewUrl && previewUrl.startsWith('blob:')) {
@@ -153,7 +193,7 @@ export default function ProductForm({
         }
     }, [previewUrl]);
 
-    // --- LÓGICA DE CÁLCULO AUTOMÁTICO ---
+    // --- LÓGICA DE CÁLCULO AUTOMÁTICO (Sin cambios) ---
     const handleCostChange = (val) => {
         setCost(val);
         const numCost = parseFloat(val);
@@ -201,6 +241,7 @@ export default function ProductForm({
         setInternalEditingProduct(null); setShowSpecificData(false);
         setStorageLocation('');
         setConversionFactor({ enabled: false, purchaseUnit: '', factor: 1 });
+        // No reseteamos activeRubroContext intencionalmente para facilitar cargas masivas del mismo tipo
     };
 
     const handleImageChange = async (e) => {
@@ -249,7 +290,7 @@ export default function ProductForm({
 
         if (isSaving) return;
 
-        // 1. VALIDACIÓN PREVIA (Recetas / Restaurantes)
+        // 1. VALIDACIÓN PREVIA (Recetas / Restaurantes) -> Solo si la feature está activa en este contexto
         if (features.hasRecipes && productType === 'sellable' && recipe.length === 0) {
             showMessageModal(
                 '⚠️ Receta Incompleta: Has marcado este producto como "Platillo" pero no has agregado ingredientes. Agrega insumos o cambia el tipo a "Insumo/Venta Simple".',
@@ -270,7 +311,6 @@ export default function ProductForm({
 
             // 3. LÓGICA DE TIPO DE VENTA
             let finalSaleType = saleType;
-            // CORRECCIÓN CRÍTICA: Guardar la unidad SIEMPRE (Manojo, Caja, etc.)
             let finalBulkData = { purchase: { unit: unit } };
 
             if (features.hasLabFields && requiresPrescription) {
@@ -278,40 +318,40 @@ export default function ProductForm({
                 finalBulkData = { purchase: { unit: unit || 'pza' } };
             }
 
-            // 4. LÓGICA DE VARIANTES RÁPIDAS (ROPA/CALZADO) 👕👟
-            // Verificamos si el usuario llenó la tabla de variantes (QuickVariantEntry)
-            // Nota: Asegúrate de tener el estado `quickVariants` definido en tu componente
+            // 4. LÓGICA DE VARIANTES RÁPIDAS (ROPA/CALZADO) 
+            // Validamos contra features del contexto actual
             const hasQuickVariants = features.hasVariants && typeof quickVariants !== 'undefined' && quickVariants.length > 0;
 
-            // Si hay variantes, activamos forzosamente el control de stock y gestión de lotes
             const finalTrackStock = hasQuickVariants ? true : doesTrackStock;
             const finalBatchManagement = hasQuickVariants
                 ? { enabled: true, selectionStrategy: 'fifo' }
                 : (doesTrackStock ? { enabled: true, selectionStrategy: 'fifo' } : { enabled: false });
 
-            // 5. GENERACIÓN DE ID (TRUCO DE VINCULACIÓN) 🪄
-            // Si es nuevo, generamos el ID aquí mismo. Esto es vital para poder usar este ID
-            // al guardar las variantes (hijos) inmediatamente después.
+            // 5. GENERACIÓN DE ID (TRUCO DE VINCULACIÓN)
             const productIdToUse = internalEditingProduct?.id || generateID('prod');
-
-            // Creamos un objeto "falso" de edición para forzar a 'ProductsPage' a usar nuestro ID
-            // en lugar de generar uno nuevo desconectado.
             const effectiveEditingProduct = internalEditingProduct || { id: productIdToUse, isNew: true };
 
             let productData = {
-                id: productIdToUse, // Usamos el ID controlado
+                id: productIdToUse,
                 name: name.trim(),
                 barcode: barcode.trim(),
                 description: description.trim(),
                 categoryId,
                 image: imageData,
                 location: storageLocation.trim(),
+
+                // --- CAMBIO IMPORTANTE: Guardamos el contexto ---
+                rubroContext: activeRubroContext,
+
                 conversionFactor: conversionFactor,
-                trackStock: finalTrackStock,       // Actualizado por lógica de variantes
-                batchManagement: finalBatchManagement, // Actualizado por lógica de variantes
+                trackStock: finalTrackStock,
+                batchManagement: finalBatchManagement,
+
+                // Solo guardamos datos de receta si la feature aplica
                 productType: features.hasRecipes ? productType : 'sellable',
                 recipe: (features.hasRecipes && productType === 'sellable') ? recipe : [],
                 printStation, prepTime, modifiers,
+
                 saleType: finalSaleType,
                 bulkData: finalBulkData,
                 wholesaleTiers,
@@ -322,32 +362,28 @@ export default function ProductForm({
                 supplier,
                 sustancia, laboratorio, requiresPrescription, presentation,
                 shelfLife,
-                // Si es producto nuevo, agregamos fecha de creación manual para que no falte
                 ...(internalEditingProduct ? {} : { createdAt: new Date().toISOString(), stock: 0 })
             };
 
             // 6. GUARDAR PRODUCTO PADRE
-            // Enviamos el producto y nuestro objeto 'effectiveEditingProduct' para mantener el ID
             const success = await onSave(productData, effectiveEditingProduct);
 
-            // Si falló el guardado del padre, nos detenemos aquí
             if (!success) {
                 setIsSaving(false);
                 return;
             }
 
-            // 7. PROCESAR Y GUARDAR VARIANTES (HIJOS) 📦
+            // 7. PROCESAR Y GUARDAR VARIANTES (HIJOS)
             if (hasQuickVariants) {
-                // Filtramos filas vacías o inválidas
                 const validVariants = quickVariants.filter(v => (v.talla || v.color) && (parseFloat(v.stock) > 0 || v.sku));
 
                 for (const variant of validVariants) {
                     const batchData = {
                         id: generateID('batch'),
-                        productId: productIdToUse, // ¡Aquí usamos el ID generado en el paso 5!
+                        productId: productIdToUse,
                         stock: parseFloat(variant.stock) || 0,
-                        cost: parseFloat(variant.cost) || finalCost, // Hereda costo si falta
-                        price: parseFloat(variant.price) || finalPrice, // Hereda precio si falta
+                        cost: parseFloat(variant.cost) || finalCost,
+                        price: parseFloat(variant.price) || finalPrice,
                         sku: variant.sku || null,
                         attributes: {
                             talla: variant.talla || '',
@@ -358,8 +394,6 @@ export default function ProductForm({
                         notes: 'Ingreso rápido inicial',
                         trackStock: true
                     };
-
-                    // Guardamos cada variante individualmente y sincronizamos stock
                     await saveBatchAndSyncProductSafe(batchData);
                 }
             }
@@ -367,7 +401,6 @@ export default function ProductForm({
             // 8. LIMPIEZA FINAL
             if (success) {
                 resetForm();
-                // Limpiamos la tabla de variantes rápidas si existe el setter
                 if (typeof setQuickVariants === 'function') setQuickVariants([]);
             }
 
@@ -384,6 +417,49 @@ export default function ProductForm({
                 <h3 className="subtitle">
                     {internalEditingProduct ? `Editar: ${internalEditingProduct.name}` : 'Añadir Nuevo Producto'}
                 </h3>
+
+                {/* --- NUEVO: SELECTOR DE CONTEXTO --- */}
+                {/* Solo se muestra si la empresa tiene más de 1 rubro configurado */}
+                {globalBusinessTypes.length > 1 && (
+                    <div style={{
+                        marginBottom: '20px',
+                        padding: '12px',
+                        backgroundColor: '#f0f9ff',
+                        borderRadius: '8px',
+                        border: '1px solid #bae6fd'
+                    }}>
+                        <label style={{
+                            display: 'block',
+                            fontSize: '0.85rem',
+                            color: '#0369a1',
+                            marginBottom: '8px',
+                            fontWeight: 'bold'
+                        }}>
+                            ¿A qué área pertenece este producto?
+                        </label>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            {globalBusinessTypes.map(rubro => (
+                                <button
+                                    key={rubro}
+                                    type="button"
+                                    onClick={() => setActiveRubroContext(rubro)}
+                                    style={{
+                                        padding: '6px 14px',
+                                        borderRadius: '20px',
+                                        border: activeRubroContext === rubro ? '2px solid #0284c7' : '1px solid #cbd5e1',
+                                        backgroundColor: activeRubroContext === rubro ? 'white' : '#f1f5f9',
+                                        color: activeRubroContext === rubro ? '#0284c7' : '#64748b',
+                                        fontWeight: activeRubroContext === rubro ? 'bold' : 'normal',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {RUBRO_LABELS[rubro] || rubro}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <form id="product-form" onSubmit={handleSubmit} noValidate>
 
@@ -477,10 +553,11 @@ export default function ProductForm({
                         </div>
                     </div>
 
-                    {/* --- MÓDULOS ESPECÍFICOS --- */}
+                    {/* --- MÓDULOS ESPECÍFICOS (Controlados por 'features' que ya está filtrado por Rubro) --- */}
 
                     {features.hasRecipes && (
-                        <div className="module-section">
+                        <div className="module-section" style={{ borderTop: '2px solid #fdba74', marginTop: '15px', paddingTop: '15px', position: 'relative' }}>
+                            <span style={{ position: 'absolute', top: '-12px', left: '10px', background: '#fff7ed', padding: '0 5px', fontSize: '0.8rem', color: '#ea580c', fontWeight: 'bold' }}>🍽️ Módulo Restaurante</span>
                             <RestauranteFields
                                 productType={productType} setProductType={setProductType}
                                 onManageRecipe={() => setIsRecipeModalOpen(true)}
@@ -492,7 +569,8 @@ export default function ProductForm({
                     )}
 
                     {features.hasLabFields && (
-                        <div className="module-section" style={{ borderTop: '2px dashed #e5e7eb', marginTop: '15px', paddingTop: '15px' }}>
+                        <div className="module-section" style={{ borderTop: '2px solid #60a5fa', marginTop: '15px', paddingTop: '15px', position: 'relative' }}>
+                            <span style={{ position: 'absolute', top: '-12px', left: '10px', background: '#eff6ff', padding: '0 5px', fontSize: '0.8rem', color: '#2563eb', fontWeight: 'bold' }}>💊 Módulo Farmacia</span>
                             <FarmaciaFields
                                 sustancia={sustancia} setSustancia={setSustancia}
                                 laboratorio={laboratorio} setLaboratorio={setLaboratorio}
@@ -503,7 +581,8 @@ export default function ProductForm({
                     )}
 
                     {features.hasDailyPricing && (
-                        <div className="module-section" style={{ borderTop: '2px dashed #e5e7eb', marginTop: '15px', paddingTop: '15px' }}>
+                        <div className="module-section" style={{ borderTop: '2px solid #86efac', marginTop: '15px', paddingTop: '15px', position: 'relative' }}>
+                            <span style={{ position: 'absolute', top: '-12px', left: '10px', background: '#f0fdf4', padding: '0 5px', fontSize: '0.8rem', color: '#16a34a', fontWeight: 'bold' }}>🍏 Módulo Frescos</span>
                             <FruteriaFields
                                 saleType={saleType} setSaleType={setSaleType}
                                 shelfLife={shelfLife} setShelfLife={setShelfLife}
@@ -540,7 +619,8 @@ export default function ProductForm({
                         </div>
                     )}
 
-                    {features.hasVariants && isApparel && (
+                    {/* Quick Variant Entry - Solo visible si features tiene variantes Y es contexto de ropa */}
+                    {features.hasVariants && isApparelContext && (
                         <div className="module-section" style={{ borderTop: '2px dashed #e5e7eb', marginTop: '15px', paddingTop: '15px' }}>
                             <h4 className="subtitle" style={{ fontSize: '1rem' }}>Detalles de Ropa / Variantes</h4>
 
