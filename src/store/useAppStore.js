@@ -20,19 +20,46 @@ const _ui_render_config_v2 = import.meta.env.VITE_LICENSE_SALT;
 
 // === HELPERS (Sin cambios) ===
 const stableStringify = (obj) => {
-  if (typeof obj !== 'object' || obj === null) return JSON.stringify(obj);
-  
-  // Ordenamos las llaves alfabéticamente antes de convertir
-  return JSON.stringify(Object.keys(obj).sort().reduce((result, key) => {
-    result[key] = obj[key];
+  // Caso base: Primitivos y null
+  if (typeof obj !== 'object' || obj === null) {
+    return JSON.stringify(obj);
+  }
+
+  // Caso especial: Arrays (mantener orden original)
+  if (Array.isArray(obj)) {
+    // Procesamos cada elemento del array recursivamente
+    return JSON.stringify(obj.map(item =>
+      typeof item === 'object' && item !== null
+        ? JSON.parse(stableStringify(item)) // Recursión en objetos anidados
+        : item
+    ));
+  }
+
+  // Caso principal: Objetos
+  // 1. Ordenamos las claves alfabéticamente
+  const sortedKeys = Object.keys(obj).sort();
+
+  // 2. Reconstruimos el objeto con claves ordenadas
+  const sortedObj = sortedKeys.reduce((result, key) => {
+    const value = obj[key];
+
+    // 🔑 RECURSIÓN: Si el valor es un objeto/array, lo procesamos también
+    if (typeof value === 'object' && value !== null) {
+      result[key] = JSON.parse(stableStringify(value));
+    } else {
+      result[key] = value;
+    }
+
     return result;
-  }, {}));
+  }, {});
+
+  return JSON.stringify(sortedObj);
 };
 
 const generateSignature = (data) => {
   // CAMBIO: Usamos stableStringify en lugar de JSON.stringify
   const stringData = stableStringify(data);
-  
+
   let hash = 0;
   if (stringData.length === 0) return hash;
   const mixedString = stringData + _ui_render_config_v2;
@@ -57,25 +84,25 @@ const getLicenseFromStorage = async () => {
   if (!isLocalStorageEnabled()) return null;
   const storedString = localStorage.getItem('lanzo_license');
   if (!storedString) return null;
-  
+
   try {
     const parsedPackage = JSON.parse(storedString);
     if (!parsedPackage.data || !parsedPackage.signature) {
       return null; // Datos incompletos, aquí sí ignoramos
     }
-    
+
     // Verificamos la firma
     const expectedSignature = generateSignature(parsedPackage.data);
-    
+
     if (parsedPackage.signature !== expectedSignature) {
       console.warn("⚠️ La firma local no coincide. Posible actualización de versión.");
-      
+
       // CRÍTICO: NO BORRAMOS localStorage.removeItem('lanzo_license') AQUÍ.
       // Devolvemos los datos "sospechosos" para que initializeApp intente validarlos 
       // contra el servidor. Si el servidor dice que son válidos, se arreglarán solos.
       return parsedPackage.data;
     }
-    
+
     return parsedPackage.data;
   } catch (e) {
     console.error("Error leyendo licencia local:", e);
@@ -104,7 +131,7 @@ export const useAppStore = create((set, get) => ({
   // === 🔧 FUNCIÓN CORREGIDA CON MANEJO DE ERRORES ROBUSTO ===
   initializeApp: async () => {
     console.log('🔄 [AppStore] Iniciando aplicación...');
-    
+
     try {
       // Obtenemos licencia (ahora getLicenseFromStorage no borra si hay error de firma)
       const localLicense = await getLicenseFromStorage();
@@ -118,7 +145,7 @@ export const useAppStore = create((set, get) => ({
       if (navigator.onLine) {
         try {
           const serverValidation = await revalidateLicense(localLicense.license_key);
-          
+
           if (serverValidation?.valid !== undefined) {
             // Si el servidor responde, confiamos en él
             // _processServerValidation guardará de nuevo los datos, 
@@ -129,8 +156,8 @@ export const useAppStore = create((set, get) => ({
         } catch (validationError) {
           console.warn('⚠️ Fallo validación online, usando caché local:', validationError);
         }
-      } 
-      
+      }
+
       // Si estamos offline o falló la validación pero tenemos datos locales
       await get()._processOfflineMode(localLicense);
 
@@ -143,17 +170,17 @@ export const useAppStore = create((set, get) => ({
   // === 🆕 HELPER: Procesar Validación Exitosa del Servidor ===
   _processServerValidation: async (serverValidation, localLicense) => {
     const now = new Date();
-    const graceEnd = serverValidation.grace_period_ends 
-      ? new Date(serverValidation.grace_period_ends) 
+    const graceEnd = serverValidation.grace_period_ends
+      ? new Date(serverValidation.grace_period_ends)
       : null;
 
     const isWithinGracePeriod = graceEnd && graceEnd > now;
 
     // A) Verificar si la licencia está bloqueada (sin gracia)
-    if (!serverValidation.valid && 
-        serverValidation.reason !== 'offline_grace' && 
-        !isWithinGracePeriod) {
-      
+    if (!serverValidation.valid &&
+      serverValidation.reason !== 'offline_grace' &&
+      !isWithinGracePeriod) {
+
       console.warn('🚫 [AppStore] Licencia inválida según servidor');
       clearLicenseFromStorage();
       set({
@@ -166,7 +193,7 @@ export const useAppStore = create((set, get) => ({
 
     // B) Licencia válida O en período de gracia
     let finalStatus = serverValidation.reason || 'active';
-    
+
     if (!serverValidation.valid && isWithinGracePeriod) {
       finalStatus = 'grace_period';
       console.log('⏰ [AppStore] Licencia en PERÍODO DE GRACIA');
@@ -194,9 +221,9 @@ export const useAppStore = create((set, get) => ({
   // === 🆕 HELPER: Procesar Modo Offline ===
   _processOfflineMode: async (localLicense) => {
     // A) Verificar expiración del caché local (30 días)
-    if (localLicense.localExpiry && 
-        normalizeDate(localLicense.localExpiry) <= new Date()) {
-      
+    if (localLicense.localExpiry &&
+      normalizeDate(localLicense.localExpiry) <= new Date()) {
+
       console.warn('🕐 [AppStore] Caché local expirado (30 días)');
       clearLicenseFromStorage();
       set({ appStatus: 'unauthenticated' });
@@ -206,11 +233,11 @@ export const useAppStore = create((set, get) => ({
     // B) Calcular estado basado en fechas locales
     let localStatus = localLicense.status || 'active';
     const now = new Date();
-    const expiryDate = localLicense.expires_at 
-      ? new Date(localLicense.expires_at) 
+    const expiryDate = localLicense.expires_at
+      ? new Date(localLicense.expires_at)
       : null;
-    const graceDate = localLicense.grace_period_ends 
-      ? new Date(localLicense.grace_period_ends) 
+    const graceDate = localLicense.grace_period_ends
+      ? new Date(localLicense.grace_period_ends)
       : null;
 
     // C) Verificar si expiró localmente
@@ -246,7 +273,7 @@ export const useAppStore = create((set, get) => ({
     if (licenseKey && navigator.onLine) {
       try {
         const profileResult = await getBusinessProfile(licenseKey);
-        
+
         if (profileResult.success && profileResult.data) {
           companyData = {
             id: 'company',
@@ -256,7 +283,7 @@ export const useAppStore = create((set, get) => ({
             logo: profileResult.data.logo_url || profileResult.data.logo,
             business_type: profileResult.data.business_type
           };
-          
+
           // Guardar en DB local
           await saveData(STORES.COMPANY, companyData);
         }
@@ -296,7 +323,7 @@ export const useAppStore = create((set, get) => ({
       console.log('⏳ [Realtime] Ya hay inicialización en progreso');
       return;
     }
-    
+
     if (!state.licenseDetails?.license_key) {
       console.warn('⚠️ [Realtime] No hay licencia para monitorear');
       return;
@@ -376,7 +403,7 @@ export const useAppStore = create((set, get) => ({
     try {
       // 1. Intento normal de activación
       const result = await activateLicense(licenseKey);
-      
+
       if (result.valid) {
         const licenseDataToSave = { ...result.details, valid: true };
         await saveLicenseToStorage(licenseDataToSave);
@@ -384,31 +411,31 @@ export const useAppStore = create((set, get) => ({
         await get()._loadProfile(licenseKey);
         return { success: true };
       }
-      
+
       // 2. LÓGICA DE RECUPERACIÓN (NUEVO)
       // Si falla porque "ya está activo" o "límite alcanzado", pero es ESTE dispositivo
       const errorMsg = (result.message || '').toLowerCase();
       if (!result.valid && (errorMsg.includes('limit') || errorMsg.includes('active') || errorMsg.includes('device'))) {
-         
-         console.log("⚠️ Dispositivo ya registrado. Intentando recuperar sesión...");
-         
-         // Intentamos solo validar (revalidateLicense usa el fingerprint del dispositivo)
-         const revalidate = await revalidateLicense(licenseKey);
-         
-         if (revalidate.valid) {
-            console.log("✅ Sesión recuperada exitosamente.");
-            
-            const recoveredData = { 
-              ...revalidate, 
-              license_key: licenseKey, // Aseguramos que la key esté presente
-              valid: true 
-            };
-            
-            await saveLicenseToStorage(recoveredData);
-            set({ licenseDetails: recoveredData });
-            await get()._loadProfile(licenseKey);
-            return { success: true };
-         }
+
+        console.log("⚠️ Dispositivo ya registrado. Intentando recuperar sesión...");
+
+        // Intentamos solo validar (revalidateLicense usa el fingerprint del dispositivo)
+        const revalidate = await revalidateLicense(licenseKey);
+
+        if (revalidate.valid) {
+          console.log("✅ Sesión recuperada exitosamente.");
+
+          const recoveredData = {
+            ...revalidate,
+            license_key: licenseKey, // Aseguramos que la key esté presente
+            valid: true
+          };
+
+          await saveLicenseToStorage(recoveredData);
+          set({ licenseDetails: recoveredData });
+          await get()._loadProfile(licenseKey);
+          return { success: true };
+        }
       }
 
       return { success: false, message: result.message || 'Licencia no válida' };
@@ -516,14 +543,14 @@ export const useAppStore = create((set, get) => ({
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
 
         const now = new Date();
-        const graceEnd = serverCheck.grace_period_ends 
-          ? new Date(serverCheck.grace_period_ends) 
+        const graceEnd = serverCheck.grace_period_ends
+          ? new Date(serverCheck.grace_period_ends)
           : null;
         const isWithinGracePeriod = graceEnd && graceEnd > now;
 
-        if (serverCheck?.valid === false && 
-            serverCheck.reason !== 'offline_grace' && 
-            !isWithinGracePeriod) {
+        if (serverCheck?.valid === false &&
+          serverCheck.reason !== 'offline_grace' &&
+          !isWithinGracePeriod) {
           await logout();
           return false;
         }
