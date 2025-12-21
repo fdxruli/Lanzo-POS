@@ -1,5 +1,4 @@
-// NUEVO ARCHIVO: src/hooks/useFeatureConfig.js
-
+// src/hooks/useFeatureConfig.js
 import { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
 
@@ -47,48 +46,54 @@ const FEATURE_TIERS = {
   // ... 'bulk', 'expiry', 'lots', 'minmax', 'sku', 'waste' se quedan como 'free'
 };
 
-
 /**
- * Hook que lee los rubros seleccionados por el usuario y su licencia,
- * y devuelve un objeto booleano con TODAS las características combinadas
- * y permitidas que necesita.
+ * Hook que lee los rubros seleccionados y devuelve las características activas.
+ * * @param {string|null} specificRubro - (Opcional) Si se define, calcula features SOLO para este rubro.
+ * Si se omite, combina las features de TODOS los rubros activos.
  */
-export function useFeatureConfig() {
-  // 1. Obtiene los rubros seleccionados por el usuario
+export function useFeatureConfig(specificRubro = null) {
+  // 1. Obtiene los rubros seleccionados por la empresa
   const businessTypes = useAppStore((state) => state.companyProfile?.business_type) || [];
-
+  
   // 2. Obtiene los detalles de la licencia del usuario
   const licenseDetails = useAppStore((state) => state.licenseDetails);
 
-  const features = useMemo(() => {
-
-    let types = businessTypes;
-
-    if (!Array.isArray(types)) {
-      if (typeof types === 'string') {
-        types = types.split(',').map(s => s.trim()).filter(Boolean)
-      } else {
-        types = [];
-      }
+  const config = useMemo(() => {
+    // A. Normalizar rubros de la empresa a un array
+    let companyRubros = [];
+    if (Array.isArray(businessTypes)) {
+      companyRubros = businessTypes;
+    } else if (typeof businessTypes === 'string') {
+      companyRubros = businessTypes.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    
+    // Si no hay nada configurado, fallback a 'otro'
+    if (companyRubros.length === 0) {
+      companyRubros = ['otro'];
     }
 
-    if (types.length === 0) {
-      console.warn('No hay rubros configurados, usando configuración básica');
-      types = ['otro'];
+    // B. Determinar qué rubros vamos a evaluar en esta llamada
+    let typesToEvaluate = [];
+
+    if (specificRubro) {
+      // Si el componente pide un contexto específico (ej. "estoy en modo Restaurante")
+      // verificamos que la empresa realmente tenga ese rubro activado por seguridad.
+      const hasAccess = companyRubros.includes(specificRubro);
+      typesToEvaluate = hasAccess ? [specificRubro] : [];
+    } else {
+      // Si no se especifica (ej. menú principal), usamos TODOS los rubros (Unión de características)
+      typesToEvaluate = companyRubros;
     }
 
-    // Usamos un Set para que las 'features' no se repitan
+    // Usamos Sets para evitar duplicados
     const enabledFeatures = new Set();
-
-    // Un Set para rastrear las features bloqueadas por licencia
     const lockedFeatures = new Set();
 
     // Asumimos 'free' si no hay licencia, o 'pro' si la licencia es válida
-    // (A futuro, tu `licenseDetails` podría traer un campo `tier: 'pro'`)
     const licenseTier = (licenseDetails && licenseDetails.valid) ? 'pro' : 'free';
 
-    // 3. Itera sobre cada rubro que el usuario seleccionó
-    businessTypes.forEach(rubro => {
+    // 3. Itera sobre los rubros a evaluar
+    typesToEvaluate.forEach(rubro => {
       const featuresForRubro = RUBRO_FEATURES[rubro];
 
       if (featuresForRubro) {
@@ -104,37 +109,41 @@ export function useFeatureConfig() {
             enabledFeatures.add(feature);
           } else if (requiredTier === 'pro' && licenseTier === 'free') {
             // No, el usuario es 'free' pero necesita 'pro'.
-            // Añadir a la lista de bloqueadas.
+            // Añadir a la lista de bloqueadas para mostrarlas con candado si es necesario.
             lockedFeatures.add(feature);
           }
         });
       }
     });
 
-    // 7. Convierte los Sets en un objeto booleano fácil de usar
+    // 7. Retorna el objeto de configuración
     return {
+      // --- Metadatos de Contexto ---
+      // Útil para saber si debemos mostrar el selector de rubros en la UI
+      hasMultipleRubros: companyRubros.length > 1,
+      activeRubros: typesToEvaluate,
+
       // --- Inventario General ---
-      hasBulk: enabledFeatures.has('bulk'),           // Venta a granel
+      hasBulk: enabledFeatures.has('bulk'),           // Venta a granel / Peso
       hasExpiry: enabledFeatures.has('expiry'),       // Caducidad
-      hasMinMax: enabledFeatures.has('minmax'),     // Stock Mín/Máx
+      hasMinMax: enabledFeatures.has('minmax'),       // Stock Mín/Máx
       hasWaste: enabledFeatures.has('waste'),         // Merma
 
       // --- Rubros Específicos (Gratuitos) ---
       hasLots: enabledFeatures.has('lots'),           // Lotes (costo/precio múltiple)
-      hasSKU: enabledFeatures.has('sku'),             // SKU (como campo gratuito)
+      hasSKU: enabledFeatures.has('sku'),             // SKU adicional
 
       // --- Rubros Específicos (Potencialmente de Pago) ---
       hasSuppliers: enabledFeatures.has('suppliers'),   // Proveedores
-      hasLabFields: enabledFeatures.has('lab_fields'),// Campos de Farmacia
-      hasVariants: enabledFeatures.has('variants'),   // Variantes (Talla, Color, Modelo)
-      hasRecipes: enabledFeatures.has('recipes'),     // Recetas
-      hasModifiers: enabledFeatures.has('modifiers'), // Modificadores (extra queso)
-      hasKDS: enabledFeatures.has('kds'),
-      hasWholesale: enabledFeatures.has('wholesale'), // Mayoreo
-      hasDailyPricing: enabledFeatures.has('daily_pricing'), // Precios diarios
+      hasLabFields: enabledFeatures.has('lab_fields'),  // Campos de Farmacia
+      hasVariants: enabledFeatures.has('variants'),     // Variantes (Talla, Color, Modelo)
+      hasRecipes: enabledFeatures.has('recipes'),       // Recetas / Ingredientes
+      hasModifiers: enabledFeatures.has('modifiers'),   // Modificadores (extra queso)
+      hasKDS: enabledFeatures.has('kds'),               // Pantalla de Cocina
+      hasWholesale: enabledFeatures.has('wholesale'),   // Mayoreo
+      hasDailyPricing: enabledFeatures.has('daily_pricing'), // Precios diarios (Frutería)
 
-      // --- Información de Licencia (para la UI) ---
-      // Devuelve true si la feature está bloqueada
+      // --- Información de Bloqueo (para mostrar candados en la UI) ---
       isRecipesLocked: lockedFeatures.has('recipes'),
       isModifiersLocked: lockedFeatures.has('modifiers'),
       isVariantsLocked: lockedFeatures.has('variants'),
@@ -143,7 +152,7 @@ export function useFeatureConfig() {
       isLabFieldsLocked: lockedFeatures.has('lab_fields'),
       isDailyPricingLocked: lockedFeatures.has('daily_pricing'),
     };
-  }, [businessTypes, licenseDetails]); // Se recalcula si cambian los rubros o la licencia
+  }, [businessTypes, licenseDetails, specificRubro]); // Se recalcula si cambia algo relevante
 
-  return features;
+  return config;
 }
