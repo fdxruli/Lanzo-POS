@@ -123,25 +123,15 @@ export const activateLicense = async function (licenseKey) {
     }
 };
 
-// ✅ REVALIDACIÓN ROBUSTA CON TIMEOUT MANUAL
-// src/services/supabase.js
-
-// ... (El resto de tus imports y helpers como getStableDeviceId se mantienen igual)
-
-// ✅ REVALIDACIÓN ROBUSTA CON TIMEOUT MANUAL Y PRIORIDAD DE SERVIDOR
 export const revalidateLicense = async function (licenseKeyProp) {
-    // 1. Configurar un Timeout de 8 segundos (tiempo justo para redes lentas)
     const timeoutMs = 8000;
     let timeoutId;
 
     const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => {
-            reject(new Error('VALIDATION_TIMEOUT'));
-        }, timeoutMs);
+        timeoutId = setTimeout(() => reject(new Error('VALIDATION_TIMEOUT')), timeoutMs);
     });
 
     try {
-        // 2. Obtener clave de licencia (desde argumento o storage)
         let storedLicense = null;
         try {
             const ls = localStorage.getItem('lanzo_license');
@@ -149,86 +139,86 @@ export const revalidateLicense = async function (licenseKeyProp) {
         } catch (e) { }
 
         const licenseKey = licenseKeyProp || storedLicense?.license_key;
-
         if (!licenseKey) {
             clearTimeout(timeoutId);
             return { valid: false, reason: 'no_license_key' };
         }
 
-        // 3. Verificación PREVIA de conexión
-        // Si el navegador dice que no hay internet, ni intentamos el fetch
+        // ✅ MEJORA 1: Verificar ANTES si hay red
         if (!navigator.onLine) {
             throw new Error("OFFLINE_PRECHECK");
         }
 
         const deviceFingerprint = await getStableDeviceId();
-
-        // 4. Intentar validar con el servidor (compite contra el timeout)
-        const validationPromise = supabaseClient.rpc(
-            'verify_device_license', {
+        const validationPromise = supabaseClient.rpc('verify_device_license', {
             license_key_param: licenseKey,
             device_fingerprint_param: deviceFingerprint
         });
 
-        // Promise.race ganará quien termine primero (la respuesta o el timeout)
         const { data, error } = await Promise.race([validationPromise, timeoutPromise]);
-
         clearTimeout(timeoutId);
 
-        // Si Supabase devuelve error técnico (ej. error 500, error de sintaxis), lanzamos excepción
-        if (error) throw error;
+        // ✅ MEJORA 2: Si Supabase da error TÉCNICO (no lógico), activar modo offline
+        if (error) {
+            // Errores técnicos: 500, timeout, conexión perdida
+            const isTechnicalError =
+                error.code === 'PGRST301' || // Error de conexión Postgres
+                error.message?.includes('fetch') ||
+                error.message?.includes('network');
 
-        // 5. ÉXITO DEL SERVIDOR:
-        // Aquí es donde corregimos el problema. Si el servidor respondió, 
-        // devolvemos SU verdad, aunque sea { valid: false }.
-        // NO activamos el catch ni el modo offline.
-        if (!data.valid) {
-            console.warn("⛔ Servidor: Licencia no válida o expirada:", data.reason);
-        } else {
-            console.log("✅ Servidor: Licencia válida.");
+            if (isTechnicalError) {
+                throw new Error('NETWORK_ERROR'); // Forzar modo offline
+            }
+
+            // Si es error lógico (ej: "device not found"), retornar tal cual
+            throw error;
+        }
+
+        // ✅ MEJORA 3: SOLO retornamos la respuesta del servidor si es exitosa
+        // Si data.valid === false, es porque la licencia REALMENTE expiró
+        if (!data.valid && data.reason !== 'offline_grace') {
+            console.warn("⛔ Servidor confirmó: Licencia inválida:", data.reason);
         }
 
         return data;
 
     } catch (error) {
         clearTimeout(timeoutId);
-
-        // 6. DIAGNÓSTICO DE ERROR (Solo usamos caché si es culpa de la RED)
-        const errorMessage = error.message || '';
-
-        console.warn('⚠️ Fallo al validar con servidor:', errorMessage);
+        console.warn('⚠️ Error validando licencia:', error.message);
 
         const isNetworkError =
-            errorMessage === 'VALIDATION_TIMEOUT' ||
-            errorMessage === 'OFFLINE_PRECHECK' ||
-            errorMessage.includes('fetch') ||
-            errorMessage.includes('network') ||
-            errorMessage.includes('Failed to fetch');
+            error.message === 'VALIDATION_TIMEOUT' ||
+            error.message === 'OFFLINE_PRECHECK' ||
+            error.message === 'NETWORK_ERROR' ||
+            error.message?.includes('fetch');
 
-        // Si es error de RED, activamos el "Modo Gracia Offline"
+        // ✅ MEJORA 4: Solo activar modo offline si es ERROR DE RED
         if (isNetworkError) {
-            console.log('☁️ Activando modo offline por falta de conexión...');
+            console.log('☁️ Modo offline activado por problema de conexión');
 
-            // Intentar cargar caché local
             let storedLicense = null;
             try {
                 const ls = localStorage.getItem('lanzo_license');
                 if (ls) storedLicense = JSON.parse(ls)?.data;
             } catch (e) { }
 
-            if (storedLicense && storedLicense.license_key) {
+            if (storedLicense?.license_key) {
                 return {
                     ...storedLicense,
-                    valid: true, // Asumimos válido temporalmente porque no podemos comprobar
-                    reason: 'offline_grace', // Marcador especial para la UI
-                    is_fallback: true
+                    valid: true, // ← CRUCIAL: Asumimos válida temporalmente
+                    reason: 'offline_grace',
+                    is_fallback: true,
+                    last_check_failed: new Date().toISOString()
                 };
             }
         }
 
-        // Si es otro tipo de error (ej. base de datos corrupta, error lógico)
-        // o si no hay caché, devolvemos fallo.
-        return { valid: false, reason: 'error_unknown', details: errorMessage };
+        // Si no hay caché O el error es lógico (no de red), fallar
+        return {
+            valid: false,
+            reason: isNetworkError ? 'no_cached_license' : 'server_rejected',
+            details: error.message
+        };
     }
 };
 

@@ -127,9 +127,16 @@ export const useAppStore = create((set, get) => ({
   gracePeriodEnds: null,
   companyProfile: null,
   licenseDetails: null,
+  _isInitilizing: false,
 
   // === 🔧 FUNCIÓN CORREGIDA CON MANEJO DE ERRORES ROBUSTO ===
   initializeApp: async () => {
+    if (get()._isInitializing) {
+      console.warn('⏳ initializeApp ya está en ejecución, saltando...');
+      return;
+    }
+
+    set({ _isInitializing: true });
     console.log('🔄 [AppStore] Iniciando aplicación...');
 
     try {
@@ -141,29 +148,31 @@ export const useAppStore = create((set, get) => ({
         return;
       }
 
+      const isRecentlyLoaded = sessionStorage.getItem('Lanzo_app_loaded');
+
       // Si tenemos red, validamos con el servidor para confirmar integridad
-      if (navigator.onLine) {
+      if (navigator.onLine && !isRecentlyLoaded) {
         try {
           const serverValidation = await revalidateLicense(localLicense.license_key);
 
           if (serverValidation?.valid !== undefined) {
-            // Si el servidor responde, confiamos en él
-            // _processServerValidation guardará de nuevo los datos, 
-            // CORRIGIENDO cualquier error de firma previo gracias a stableStringify
             await get()._processServerValidation(serverValidation, localLicense);
+            sessionStorage.setItem('lanzo_app_loaded', Date.now().toString());
+            set({ _isInitializing: false });
             return;
           }
         } catch (validationError) {
-          console.warn('⚠️ Fallo validación online, usando caché local:', validationError);
+          console.warn('⚠️ Validación falló, usando caché:', validationError);
         }
       }
 
       // Si estamos offline o falló la validación pero tenemos datos locales
       await get()._processOfflineMode(localLicense);
+      set({ _isInitializing: false });
 
     } catch (criticalError) {
       console.error('💥 Error crítico inicializando:', criticalError);
-      set({ appStatus: 'unauthenticated' });
+      set({ appStatus: 'unauthenticated', _isInitializing: false });
     }
   },
 

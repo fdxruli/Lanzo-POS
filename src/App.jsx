@@ -95,28 +95,44 @@ function App() {
 
   useEffect(() => {
     const handleVisibilityChange = async () => {
-      // Si el usuario vuelve a la pestaña y está "visible"
       if (document.visibilityState === 'visible') {
-        console.log("👁️ Pestaña activa: Reiniciando conexiones...");
+        console.log("👁️ Pestaña activa: Reconectando sistemas...");
 
-        // 1. Forzar reconexión de BD si se cerró
+        // ✅ 1. Forzar reconexión de IndexedDB
         try {
-          // Importa 'initDB' de database.js y llámalo aquí
-          // await initDB(); 
-        } catch (e) { console.warn("Reconexión BD:", e); }
+          const { initDB } = await import('./services/database'); // ← AÑADIR IMPORT
+          await initDB();
+          console.log("✅ BD reconectada");
+        } catch (e) {
+          console.warn("⚠️ Reconexión BD falló:", e);
+        }
 
-        // 2. Si usas Supabase Realtime, reinicia la suscripción
-        // stopRealtimeSecurity();
-        // startRealtimeSecurity();
+        // ✅ 2. Reiniciar seguridad en tiempo real (si estaba activa)
+        const { licenseDetails, realtimeSubscription } = useAppStore.getState();
 
-        // 3. Opcional: Forzar un repintado ligero si se siente trabado
-        // (Un simple cambio de estado dummy puede reactivar React)
+        if (licenseDetails?.license_key && !realtimeSubscription) {
+          console.log("🔄 Reiniciando escucha de seguridad...");
+          stopRealtimeSecurity();
+          await new Promise(r => setTimeout(r, 500)); // Esperar limpieza
+          startRealtimeSecurity();
+        }
+
+        // ✅ 3. Revalidar licencia SOLO si llevamos más de 5 minutos inactivos
+        const lastActive = sessionStorage.getItem('lanzo_last_active');
+        const now = Date.now();
+
+        if (!lastActive || (now - parseInt(lastActive)) > 300000) { // 5 min
+          console.log("⏰ Verificando licencia tras inactividad prolongada...");
+          await useAppStore.getState().verifySessionIntegrity();
+        }
+
+        sessionStorage.setItem('lanzo_last_active', now.toString());
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, []);
+  }, [startRealtimeSecurity, stopRealtimeSecurity]); // ← AÑADIR DEPENDENCIAS
 
   if (isDuplicate) {
     return (

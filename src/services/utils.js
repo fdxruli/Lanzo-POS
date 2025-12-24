@@ -60,7 +60,7 @@ export const fileToBase64 = (file) => {
  */
 export const compressImage = (
   file,
-  targetSize = 300, // 300px es perfecto para tarjetas de POS
+  targetSize = 150, // 300px es perfecto para tarjetas de POS
   quality = 0.6     // 60% calidad en WebP es muy ligero y se ve bien
 ) => {
   return new Promise((resolve, reject) => {
