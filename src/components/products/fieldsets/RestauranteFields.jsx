@@ -8,7 +8,7 @@ export default function RestauranteFields({
   prepTime, setPrepTime,
   modifiers, setModifiers,
   // Propiedad para ocultar el selector si ya viene definido por el Wizard
-  hideTypeSelector = false 
+  hideTypeSelector = false
 }) {
 
   // Estado local para agregar un nuevo grupo de modificadores rápidamente
@@ -115,15 +115,24 @@ export default function RestauranteFields({
 
           {/* Tiempo de Preparación */}
           <div className="form-group" style={{ marginTop: '10px' }}>
-            <label className="form-label">Tiempo Promedio de Preparación (min)</label>
-            <input
-              type="number"
-              className="form-input"
-              placeholder="Ej: 15"
-              /* CORRECCIÓN: Usar '' como default para evitar uncontrolled input */
-              value={prepTime || ''}
-              onChange={(e) => setPrepTime(e.target.value)}
-            />
+            <label className="form-label">Tiempo Promedio de Preparación</label>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <span style={{ position: 'absolute', left: '10px', fontSize: '1.2rem' }}>⏱️</span>
+              <input
+                type="number"
+                className="form-input"
+                placeholder="Ej: 15"
+                style={{ paddingLeft: '35px' }} // Espacio para el icono
+                value={prepTime || ''}
+                onChange={(e) => setPrepTime(e.target.value)}
+              />
+              <span style={{ marginLeft: '10px', color: '#64748b', fontSize: '0.9rem' }}>minutos</span>
+            </div>
+            {prepTime > 20 && (
+              <small style={{ color: '#eab308', display: 'block', marginTop: '5px' }}>
+                ⚠️ Este es un tiempo de espera considerable para comida rápida.
+              </small>
+            )}
           </div>
 
           {/* 3. GESTOR DE MODIFICADORES (NUEVO) */}
