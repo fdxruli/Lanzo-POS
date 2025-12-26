@@ -13,6 +13,9 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
   const loadMoreProducts = useProductStore((state) => state.loadMoreProducts);
   const hasMoreProducts = useProductStore((state) => state.hasMoreProducts);
   const isGlobalLoading = useProductStore((state) => state.isLoading);
+  
+  // ✅ CORRECCIÓN 1: Importamos la función de búsqueda global
+  const searchGlobal = useProductStore((state) => state.searchProducts);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showWaste, setShowWaste] = useState(false);
@@ -64,7 +67,12 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             className="modern-search-input"
             placeholder="Buscar por nombre, código o SKU..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            // ✅ CORRECCIÓN 2: Conectamos el input con la búsqueda en BD
+            onChange={(e) => {
+              const val = e.target.value;
+              setSearchTerm(val);
+              searchGlobal(val); 
+            }}
           />
         </div>
       </div>
