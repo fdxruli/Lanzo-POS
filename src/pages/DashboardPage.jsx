@@ -15,6 +15,7 @@ import RecycleBin from '../components/dashboard/RecycleBin';
 import BusinessTips from '../components/dashboard/BusinessTips';
 import WasteHistory from '../components/dashboard/WasteHistory';
 import RestockSuggestions from '../components/dashboard/RestockSuggestion';
+import ExpirationAlert from '../components/dashboard/ExpirationAlert'; // ✅ Componente de Alerta
 
 import { loadData, STORES } from '../services/database';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
@@ -22,7 +23,7 @@ import './DashboardPage.css';
 
 export default function DashboardPage() {
   const [customers, setCustomers] = useState([]);
-  const [activeTab, setActiveTab] = useState('stats');
+  const [activeTab, setActiveTab] = useState('stats'); // Pestaña inicial
   const navigate = useNavigate();
   const features = useFeatureConfig();
 
@@ -85,16 +86,21 @@ export default function DashboardPage() {
           Estadísticas Clave
         </button>
 
-        {/* ------------------------------------------------------------------
-            2. AGREGAR EL BOTÓN DE LA PESTAÑA AQUÍ
-            (Puedes usar features.hasMinMax para ocultarlo si el negocio no usa stock)
-           ------------------------------------------------------------------ */}
+        {/* ✅ CAMBIO: Ahora el botón "Caducidad" se muestra SIEMPRE, 
+            eliminamos la condición {features.hasLots && ...} */}
+        <button
+             className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`}
+             onClick={() => setActiveTab('expiration')}
+        >
+             Caducidad
+        </button>
+
         {features.hasMinMax && (
             <button
               className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`}
               onClick={() => setActiveTab('restock')}
             >
-              📦 Reabastecimiento
+              Reabastecimiento
             </button>
         )}
 
@@ -126,9 +132,12 @@ export default function DashboardPage() {
         <StatsGrid stats={stats} />
       )}
 
-      {/* ------------------------------------------------------------------
-          3. RENDERIZAR EL COMPONENTE AQUÍ
-         ------------------------------------------------------------------ */}
+      {/* ✅ CAMBIO: Renderizamos el componente sin restricción de features */}
+      {activeTab === 'expiration' && (
+        <ExpirationAlert />
+      )}
+
+      {/* PESTAÑA: REABASTECIMIENTO */}
       {activeTab === 'restock' && (
         <RestockSuggestions />
       )}

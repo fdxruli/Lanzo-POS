@@ -46,15 +46,18 @@ export const productSchema = z.object({
   }).optional(),
 
   // Arrays (Recetas, Modificadores, Mayoreo)
-  recipe: z.array(z.any()).optional(), // Puedes detallar más si quieres
+  recipe: z.array(z.any()).optional(), 
   modifiers: z.array(z.any()).optional(),
   wholesaleTiers: z.array(z.any()).optional(),
 
-  // Farmacia
+  // Farmacia y Datos Extendidos
   sustancia: z.string().optional().nullable(),
   laboratorio: z.string().optional().nullable(),
   requiresPrescription: z.boolean().optional(),
   presentation: z.string().optional().nullable(),
+  
+  // ✅ NUEVO CAMPO AGREGADO: Para validar el input de "Caducidad / Vida Útil"
+  shelfLife: z.string().optional().nullable(), 
 
   // Fechas (Como strings ISO)
   createdAt: z.string().optional(),
