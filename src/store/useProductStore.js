@@ -12,7 +12,7 @@ import {
 
 export const useProductStore = create((set, get) => ({
   menu: [],
-  rawProducts: [], // Mantenido por compatibilidad
+  rawProducts: [], // Mantenido por compatibilidad con BatchManager
   categories: [],
   batchesCache: new Map(),
   isLoading: false,
@@ -30,23 +30,31 @@ export const useProductStore = create((set, get) => ({
     }
     set({ isLoading: true });
     try {
+      let results = [];
       // Intento 1: Buscar por código de barras (Búsqueda exacta y rápida)
       const byCode = await searchProductByBarcode(query);
       if (byCode) {
-        set({ menu: [byCode], isLoading: false, hasMoreProducts: false });
-        return;
+        results = [byCode];
+      } else {
+        // Intento 2: Buscar por SKU
+        const bySKU = await searchProductBySKU(query);
+        if (bySKU) {
+          results = [bySKU];
+        } else {
+          // Intento 3: Buscar por nombre en la BD (Búsqueda parcial)
+          results = await searchProductsInDB(query);
+        }
       }
 
-      // Intento 2: Buscar por SKU (Para variantes específicas de ropa/ferretería)
-      const bySKU = await searchProductBySKU(query);
-      if (bySKU) {
-        set({ menu: [bySKU], isLoading: false, hasMoreProducts: false });
-        return;
-      }
+      // --- CORRECCIÓN 1: Actualizamos rawProducts también ---
+      // Esto hace que BatchManager vea los resultados de la búsqueda
+      set({ 
+        menu: results, 
+        rawProducts: results, 
+        isLoading: false, 
+        hasMoreProducts: false 
+      });
 
-      // Intento 3: Buscar por nombre en la BD (Búsqueda parcial)
-      const results = await searchProductsInDB(query);
-      set({ menu: results, isLoading: false, hasMoreProducts: false });
     } catch (error) {
       console.error("Error en búsqueda:", error);
       set({ isLoading: false });
@@ -57,15 +65,14 @@ export const useProductStore = create((set, get) => ({
   loadInitialProducts: async () => {
     set({ isLoading: true });
     try {
-      // Carga paralela de productos y categorías para optimizar tiempo
       const [productsPage, categories] = await Promise.all([
         loadDataPaginated(STORES.MENU, { limit: 50, offset: 0 }),
-        loadDataPaginated(STORES.CATEGORIES) // Cargamos categorías base
+        loadDataPaginated(STORES.CATEGORIES)
       ]);
 
       set({
         menu: productsPage,
-        rawProducts: productsPage,
+        rawProducts: productsPage, // Sincronizado
         categories: categories || [],
         menuPage: 1,
         hasMoreProducts: productsPage.length === 50,
@@ -93,12 +100,16 @@ export const useProductStore = create((set, get) => ({
         return;
       }
 
-      // --- CORRECCIÓN: Filtrar duplicados antes de agregar ---
-      const existingIds = new Set(menu.map(p => p.id));
-      const uniqueNextPage = nextPage.filter(p => !existingIds.has(p.id));
+      // --- CORRECCIÓN 2: Filtrar duplicados ---
+      // Esto arregla el error de que el botón de editar no sirva después del item 50
+      const currentIds = new Set(menu.map(p => p.id));
+      const uniqueNextPage = nextPage.filter(p => !currentIds.has(p.id));
+
+      const newFullList = [...menu, ...uniqueNextPage];
 
       set({
-        menu: [...menu, ...uniqueNextPage],
+        menu: newFullList,
+        rawProducts: newFullList, // --- CORRECCIÓN 3: Sincronizar rawProducts ---
         menuPage: menuPage + 1,
         hasMoreProducts: nextPage.length === menuPageSize
       });
@@ -110,7 +121,6 @@ export const useProductStore = create((set, get) => ({
   // --- GESTIÓN DE LOTES ---
   loadBatchesForProduct: async (productId) => {
     const { batchesCache } = get();
-    // Cargamos lotes específicos desde la BD
     const batches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', productId);
 
     const newCache = new Map(batchesCache);
@@ -125,23 +135,19 @@ export const useProductStore = create((set, get) => ({
     set({ categories: cats || [] });
   },
 
-  // --- FUNCIONALIDAD 1: PRODUCTOS CON STOCK BAJO (Reabastecimiento) ---
+  // --- FUNCIONALIDAD 1: STOCK BAJO ---
   getLowStockProducts: () => {
     const { menu } = get();
-
-    // Filtramos productos activos, que controlan stock y están bajo el mínimo
-    return menu.filter(p =>
+    return menu.filter(p => 
       p.isActive !== false &&
-      p.trackStock &&
-      p.minStock > 0 &&
+      p.trackStock && 
+      p.minStock > 0 && 
       p.stock <= p.minStock
     ).map(p => {
-      const targetStock = p.maxStock && p.maxStock > p.minStock
-        ? p.maxStock
+      const targetStock = p.maxStock && p.maxStock > p.minStock 
+        ? p.maxStock 
         : (p.minStock * 2);
-
       const deficit = targetStock - p.stock;
-
       return {
         id: p.id,
         name: p.name,
@@ -155,28 +161,19 @@ export const useProductStore = create((set, get) => ({
     });
   },
 
-  // --- FUNCIONALIDAD 2: ALERTAS DE CADUCIDAD (MEJORADA) ---
-  /**
-   * Obtiene tanto LOTES como PRODUCTOS DIRECTOS que están por vencer.
-   * @param {number} daysThreshold - Días de anticipación para la alerta (default 30)
-   */
+  // --- FUNCIONALIDAD 2: CADUCIDAD ---
   getExpiringProducts: async (daysThreshold = 30) => {
     try {
-      // 1. Cargamos TODOS los datos necesarios en paralelo (Lotes y Productos)
-      // Necesitamos cargar todos los productos de todos modos para obtener nombres,
-      // así que aprovechamos para buscar 'shelfLife' ahí.
       const [allBatches, allProducts] = await Promise.all([
         loadData(STORES.PRODUCT_BATCHES),
         loadData(STORES.MENU)
       ]);
-
+      
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-
       const thresholdDate = new Date(today);
       thresholdDate.setDate(thresholdDate.getDate() + daysThreshold);
 
-      // 2. Procesar LOTES (Lógica existente)
       const batchAlerts = allBatches
         .filter(batch => {
           if (!batch.expiryDate || batch.stock <= 0) return false;
@@ -185,56 +182,42 @@ export const useProductStore = create((set, get) => ({
         })
         .map(batch => {
           const product = allProducts.find(p => p.id === batch.productId);
-          const productName = product ? product.name : `Producto ID: ${batch.productId}`;
-          const expDate = new Date(batch.expiryDate);
-          const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-
+          const diffDays = Math.ceil((new Date(batch.expiryDate) - today) / (1000 * 60 * 60 * 24));
           return {
             id: batch.id,
             productId: batch.productId,
-            productName: productName,
+            productName: product ? product.name : `Producto ID: ${batch.productId}`,
             stock: batch.stock,
             expiryDate: batch.expiryDate,
             daysRemaining: diffDays,
-            batchSku: batch.sku || 'Lote', // En la columna SKU saldrá el código del lote
+            batchSku: batch.sku || 'Lote',
             location: batch.location || ''
           };
         });
 
-      // 3. Procesar PRODUCTOS SIMPLES (Nueva lógica: shelfLife)
       const productAlerts = allProducts
         .filter(p => {
-          // Debe tener shelfLife, estar activo, y fecha válida
-          if (!p.shelfLife || !p.isActive) return false;
-
-          // Si controla stock, ignoramos si ya no hay (opcional, para no alertar basura)
-          if (p.trackStock && p.stock <= 0) return false;
-
-          const expDate = new Date(p.shelfLife);
-          if (isNaN(expDate.getTime())) return false; // Fecha inválida
-
-          return expDate <= thresholdDate;
+            if (!p.shelfLife || !p.isActive) return false;
+            if (p.trackStock && p.stock <= 0) return false;
+            const expDate = new Date(p.shelfLife);
+            if (isNaN(expDate.getTime())) return false;
+            return expDate <= thresholdDate;
         })
         .map(p => {
-          const expDate = new Date(p.shelfLife);
-          const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-
-          return {
-            id: p.id, // Usamos ID del producto
-            productId: p.id,
-            productName: p.name,
-            stock: p.stock,
-            expiryDate: p.shelfLife,
-            daysRemaining: diffDays,
-            batchSku: 'General', // Etiqueta visual para indicar que no es un lote específico
-            location: p.location || ''
-          };
+            const diffDays = Math.ceil((new Date(p.shelfLife) - today) / (1000 * 60 * 60 * 24));
+            return {
+                id: p.id,
+                productId: p.id,
+                productName: p.name,
+                stock: p.stock,
+                expiryDate: p.shelfLife,
+                daysRemaining: diffDays,
+                batchSku: 'General',
+                location: p.location || ''
+            };
         });
 
-      // 4. Combinar y Ordenar por urgencia
-      const report = [...batchAlerts, ...productAlerts];
-      return report.sort((a, b) => a.daysRemaining - b.daysRemaining);
-
+      return [...batchAlerts, ...productAlerts].sort((a, b) => a.daysRemaining - b.daysRemaining);
     } catch (error) {
       console.error("Error verificando caducidades:", error);
       return [];
