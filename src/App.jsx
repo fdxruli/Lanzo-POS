@@ -9,6 +9,7 @@ import NavigationGuard from './components/common/NavigationGuard';
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
 import SetupModal from './components/common/SetupModal';
+import ReconnectionBanner from './components/common/ReconnectionBanner';
 import { useSalesStore } from './store/useSalesStore';
 import { useSingleInstance } from './hooks/useSingleInstance';
 
@@ -94,45 +95,109 @@ function App() {
   }, [appStatus, startRealtimeSecurity, stopRealtimeSecurity]);
 
   useEffect(() => {
+    let isReconnecting = false;
+
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
-        console.log("👁️ Pestaña activa: Reconectando sistemas...");
-
-        // ✅ 1. Forzar reconexión de IndexedDB
-        try {
-          const { initDB } = await import('./services/database'); // ← AÑADIR IMPORT
-          await initDB();
-          console.log("✅ BD reconectada");
-        } catch (e) {
-          console.warn("⚠️ Reconexión BD falló:", e);
+        // Prevenir múltiples reconexiones simultáneas
+        if (isReconnecting) {
+          console.log("⏳ Reconexión ya en progreso...");
+          return;
         }
 
-        // ✅ 2. Reiniciar seguridad en tiempo real (si estaba activa)
+        isReconnecting = true;
+        console.log("👁️ Pestaña activa: Reconectando sistemas...");
+
+        try {
+          // ✅ 1. Forzar reconexión de IndexedDB con retry
+          const { initDB, closeDB } = await import('./services/database');
+          
+          // Cerrar conexión antigua si existe
+          closeDB();
+          await new Promise(r => setTimeout(r, 300));
+          
+          // Intentar reconectar con timeout
+          const dbPromise = initDB();
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('DB_TIMEOUT')), 5000)
+          );
+          
+          await Promise.race([dbPromise, timeoutPromise]);
+          console.log("✅ BD reconectada");
+          
+        } catch (e) {
+          console.error("❌ Reconexión BD falló:", e);
+          
+          // Si falla después de múltiples intentos, recargamos
+          if (e.message === 'DB_TIMEOUT' || e.name === 'InvalidStateError') {
+            console.error("💥 BD irrecuperable, recargando aplicación...");
+            window.location.reload();
+            return;
+          }
+        }
+
+        // ✅ 2. Verificar que la UI esté lista antes de continuar
+        if (appStatus !== 'ready') {
+          console.log("⚠️ App no está ready, saltando reconexión de servicios");
+          isReconnecting = false;
+          return;
+        }
+
+        // ✅ 3. Reiniciar seguridad en tiempo real (si estaba activa)
         const { licenseDetails, realtimeSubscription } = useAppStore.getState();
 
         if (licenseDetails?.license_key && !realtimeSubscription) {
           console.log("🔄 Reiniciando escucha de seguridad...");
-          stopRealtimeSecurity();
-          await new Promise(r => setTimeout(r, 500)); // Esperar limpieza
-          startRealtimeSecurity();
+          try {
+            stopRealtimeSecurity();
+            await new Promise(r => setTimeout(r, 500));
+            startRealtimeSecurity();
+          } catch (e) {
+            console.warn("⚠️ Error reiniciando seguridad:", e);
+          }
         }
 
-        // ✅ 3. Revalidar licencia SOLO si llevamos más de 5 minutos inactivos
+        // ✅ 4. Revalidar licencia SOLO si llevamos más de 5 minutos inactivos
         const lastActive = sessionStorage.getItem('lanzo_last_active');
         const now = Date.now();
 
-        if (!lastActive || (now - parseInt(lastActive)) > 300000) { // 5 min
+        if (!lastActive || (now - parseInt(lastActive)) > 300000) {
           console.log("⏰ Verificando licencia tras inactividad prolongada...");
-          await useAppStore.getState().verifySessionIntegrity();
+          try {
+            await useAppStore.getState().verifySessionIntegrity();
+          } catch (e) {
+            console.warn("⚠️ Error verificando sesión:", e);
+          }
         }
 
         sessionStorage.setItem('lanzo_last_active', now.toString());
+        isReconnecting = false;
+        
+      } else if (document.visibilityState === 'hidden') {
+        // ✅ 5. NUEVO: Limpiar recursos al salir (opcional pero recomendado)
+        console.log("🌙 Pestaña oculta: Preparando para suspensión...");
+        sessionStorage.setItem('lanzo_last_active', Date.now().toString());
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [startRealtimeSecurity, stopRealtimeSecurity]); // ← AÑADIR DEPENDENCIAS
+    
+    // ✅ 6. NUEVO: Manejo de eventos de navegador (Android/iOS)
+    const handlePageShow = (event) => {
+      // Si la página viene del caché del navegador (BFCache), forzamos reconexión
+      if (event.persisted) {
+        console.log("🔄 Página restaurada desde BFCache, reconectando...");
+        handleVisibilityChange();
+      }
+    };
+    
+    window.addEventListener('pageshow', handlePageShow);
+    
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [appStatus, startRealtimeSecurity, stopRealtimeSecurity]);
 
   if (isDuplicate) {
     return (
@@ -168,6 +233,7 @@ function App() {
     case 'ready':
       return (
         <Suspense fallback={<Layout><PageLoader /></Layout>}>
+          <ReconnectionBanner />
           <NavigationGuard />
           <ErrorBoundary>
             <Routes>
