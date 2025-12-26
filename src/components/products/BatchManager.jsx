@@ -346,9 +346,9 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  // --- LÓGICA DE BÚSQUEDA ---
   useEffect(() => {
     // Evitamos buscar si el searchTerm es igual al nombre del producto seleccionado
-    // (esto pasa cuando seleccionas un producto y el input se llena con su nombre)
     const selectedProd = rawProducts.find(p => p.id === selectedProductId);
     if (selectedProd && searchTerm === selectedProd.name) return;
 
@@ -356,31 +356,29 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
       if (searchTerm.trim().length >= 2) {
         searchProducts(searchTerm);
       } else if (searchTerm === '') {
-        // Opcional: Si borras, restaurar lista, aunque en este modal 
-        // a veces es mejor dejar la lista quieta hasta que escriban.
         if (!selectedProductId) loadInitialProducts();
       }
-    }, 500); return () => clearTimeout(timer);
+    }, 500); 
+    
+    return () => clearTimeout(timer);
   }, [searchTerm, selectedProductId]);
 
-  // Modificamos filteredProducts para que muestre lo que hay en el store (rawProducts)
-  // ya que searchProducts actualizará rawProducts/menu.
-  const filteredProducts = useMemo(() => {
-    // Simplemente devolvemos los productos del store, ya que el store 
-    // ahora contiene solo los resultados de la búsqueda.
-    // Limitamos a 10 para no saturar el dropdown.
-    return rawProducts.slice(0, 10);
-  }, [rawProducts]);
-
-  // Sincronizar buscador
+  // --- CORRECCIÓN CRÍTICA AQUÍ ---
+  // Sincronizar buscador solo cuando seleccionamos un producto.
+  // IMPORTANTE: Hemos quitado el 'else { setSearchTerm("") }' y la dependencia de 'rawProducts' en el reseteo
+  // para evitar que el input se borre cuando llegan los resultados de la búsqueda.
   useEffect(() => {
     if (selectedProductId) {
       const prod = rawProducts.find(p => p.id === selectedProductId);
       if (prod) setSearchTerm(prod.name);
-    } else {
-      setSearchTerm('');
     }
-  }, [selectedProductId, rawProducts]);
+    // NOTA: No ponemos 'else { setSearchTerm("") }' aquí. 
+    // Dejamos que el usuario controle el borrado manual para buscar otro.
+  }, [selectedProductId, rawProducts]); 
+
+  const filteredProducts = useMemo(() => {
+    return rawProducts.slice(0, 10);
+  }, [rawProducts]);
 
   const selectedProduct = useMemo(() => {
     return rawProducts.find(p => p.id === selectedProductId);
@@ -430,8 +428,6 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     try {
       // Si el producto no tenía activado el manejo de lotes, lo activamos
       if (selectedProduct && !selectedProduct.batchManagement?.enabled) {
-        // Esto podría hacerse dentro de saveBatchAndSyncProduct también, 
-        // pero está bien dejarlo explícito aquí.
         const updatedProduct = {
           ...selectedProduct,
           batchManagement: { enabled: true, selectionStrategy: 'fifo' }
@@ -439,8 +435,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
         await saveDataSafe(STORES.MENU, updatedProduct);
       }
 
-      // AQUÍ ESTÁ EL CAMBIO CLAVE:
-      // En lugar de saveData(STORES.PRODUCT_BATCHES...), usamos la función sincronizada.
+      // Guardar y Sincronizar
       const result = await saveBatchAndSyncProductSafe(batchData);
 
       const updatedBatches = await loadBatchesForProduct(selectedProductId);
@@ -508,7 +503,6 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
               {filteredProducts.map(p => (
                 <div key={p.id} className="product-suggestion-item" onMouseDown={() => handleSelectProduct(p)}>
                   <span className="suggestion-name">{p.name}</span>
-                  {/* --- RECUPERADO: Muestra el stock para referencia rápida --- */}
                   <span className="suggestion-meta">Stock: {p.stock || 0}</span>
                 </div>
               ))}
