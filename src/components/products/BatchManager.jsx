@@ -330,11 +330,11 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
 export default function BatchManager({ selectedProductId, onProductSelect }) {
   const features = useFeatureConfig();
 
-  // --- CAMBIO: Usamos useProductStore y useStatsStore ---
   const rawProducts = useProductStore((state) => state.rawProducts);
-  const menu = useProductStore((state) => state.menu);
-  const searchProducts = useProductStore((state) => state.searchProducts); // ✅ CORRECCIÓN: Traemos la función de búsqueda
+  // ✅ FIX 1: Traemos la función de búsqueda
+  const searchProducts = useProductStore((state) => state.searchProducts);
   const refreshData = useProductStore((state) => state.loadInitialProducts); 
+  const menu = useProductStore((state) => state.menu);
   const loadBatchesForProduct = useProductStore((state) => state.loadBatchesForProduct);
   const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
 
@@ -345,32 +345,26 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Sincronizar buscador con el producto seleccionado externo
+  // Sincronizar buscador
   useEffect(() => {
     if (selectedProductId) {
-      // Intentamos encontrarlo en menu (resultados de búsqueda) o rawProducts (caché)
+      // ✅ FIX 2: Buscamos en 'menu' (lo que está en pantalla/búsqueda) en vez de rawProducts
       const prod = menu.find(p => p.id === selectedProductId) || rawProducts.find(p => p.id === selectedProductId);
       if (prod) setSearchTerm(prod.name);
     } else {
       setSearchTerm('');
     }
-  }, [selectedProductId, rawProducts, menu]);
+  }, [selectedProductId, menu, rawProducts]);
 
-  // ✅ CORRECCIÓN: Lista filtrada basada en 'menu' (Resultados de búsqueda global)
-  const filteredProducts = useMemo(() => {
-    if (!searchTerm) return [];
-    // Si el menú tiene resultados, los usamos directamente (la búsqueda ya filtró)
-    // Limitamos a 10 para no saturar la UI
-    return menu.slice(0, 10);
-  }, [searchTerm, menu]);
+  // ✅ FIX 3: Usamos 'menu' para filtrar resultados, ya que 'searchProducts' actualiza 'menu'
+  // Eliminamos 'filteredProducts' calculado localmente y usamos 'menu' directamente en el render.
 
-  // ✅ CORRECCIÓN: Búsqueda robusta del producto seleccionado
   const selectedProduct = useMemo(() => {
-    // Busca primero en el 'menu' actual (resultados recientes) y luego en 'rawProducts'
+    // ✅ FIX 4: Buscamos en 'menu' primero
     return menu.find(p => p.id === selectedProductId) || rawProducts.find(p => p.id === selectedProductId);
   }, [selectedProductId, menu, rawProducts]);
 
-  // Cargar lotes cuando cambia el producto seleccionado
+  // Cargar lotes
   useEffect(() => {
     const fetchBatches = async () => {
       if (selectedProductId) {
@@ -399,14 +393,6 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   const totalStock = productBatches.reduce((sum, b) => sum + b.stock, 0);
   const inventoryValue = productBatches.reduce((sum, b) => sum + (b.cost * b.stock), 0);
 
-  // Manejador del Input de Búsqueda
-  const handleSearchChange = (e) => {
-    const val = e.target.value;
-    setSearchTerm(val);
-    searchProducts(val); // ✅ CORRECCIÓN: Dispara búsqueda en BD
-    setShowSuggestions(true);
-  };
-
   const handleSelectProduct = (product) => {
     setSearchTerm(product.name);
     onProductSelect(product.id);
@@ -415,7 +401,6 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
 
   const handleSaveBatch = async (batchData) => {
     try {
-      // Si el producto no tenía activado el manejo de lotes, lo activamos
       if (selectedProduct && !selectedProduct.batchManagement?.enabled) {
         const updatedProduct = {
           ...selectedProduct,
@@ -424,12 +409,13 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
         await saveDataSafe(STORES.MENU, updatedProduct);
       }
 
-      const result = await saveBatchAndSyncProductSafe(batchData);
+      await saveBatchAndSyncProductSafe(batchData);
 
       const updatedBatches = await loadBatchesForProduct(selectedProductId);
       setLocalBatches(updatedBatches);
 
       await refreshData();
+
       showMessageModal('✅ Lote guardado y stock total actualizado.');
 
     } catch (error) {
@@ -451,7 +437,6 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     if (window.confirm('¿Eliminar este registro permanentemente?')) {
       try {
         const batchValue = batch.cost * batch.stock;
-
         await deleteDataSafe(STORES.PRODUCT_BATCHES, batch.id);
 
         if (batchValue > 0) {
@@ -465,7 +450,6 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     }
   };
 
-  // Formato de fecha seguro
   const formatDate = (iso) => iso ? new Date(iso).toLocaleDateString() : '-';
 
   return (
@@ -476,35 +460,36 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
           <input
             type="text"
             className="form-input product-search-input"
-            placeholder="Buscar producto por nombre..."
+            placeholder="Buscar producto..."
             value={searchTerm}
-            onChange={handleSearchChange} /* ✅ Usamos el nuevo handler */
+            onChange={(e) => { 
+              const val = e.target.value;
+              setSearchTerm(val); 
+              // ✅ FIX 5: Disparamos la búsqueda en BD al escribir
+              searchProducts(val); 
+              setShowSuggestions(true); 
+            }}
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
           />
-          {searchTerm && <button className="btn-clear-search" onClick={() => { setSearchTerm(''); onProductSelect(null); searchProducts(''); }}>×</button>}
+          {searchTerm && <button className="btn-clear-search" onClick={() => { setSearchTerm(''); onProductSelect(null); }}>×</button>}
 
+          {/* ✅ FIX 6: Mostramos 'menu' (resultados de búsqueda) en vez de filteredProducts */}
           {showSuggestions && searchTerm && (
             <div className="product-suggestions-list">
-              {filteredProducts.map(p => (
+              {menu.slice(0, 10).map(p => (
                 <div key={p.id} className="product-suggestion-item" onMouseDown={() => handleSelectProduct(p)}>
                   <span className="suggestion-name">{p.name}</span>
                   <span className="suggestion-meta">Stock: {p.stock || 0}</span>
                 </div>
               ))}
-              {/* Mensaje si no hay resultados */}
-              {filteredProducts.length === 0 && (
-                <div className="product-suggestion-item" style={{ cursor: 'default', color: '#888' }}>
-                  Sin resultados...
-                </div>
-              )}
             </div>
           )}
         </div>
       </div>
 
       {!selectedProduct && !isLoadingBatches && (
-        <p style={{ textAlign: 'center', color: '#888', marginTop: '20px' }}>Selecciona un producto para gestionar sus lotes.</p>
+        <p style={{ textAlign: 'center', color: '#888', marginTop: '20px' }}>Selecciona un producto para comenzar.</p>
       )}
 
       {selectedProduct && (
@@ -555,20 +540,13 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
                     </td>
                   </tr>
                 ))}
-                {productBatches.length === 0 && (
-                  <tr>
-                    <td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
-                      No hay lotes registrados. Agrega uno para sumar stock.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {isModalOpen && selectedProduct && (
+      {isModalOpen && (
         <BatchForm
           product={selectedProduct}
           batchToEdit={batchToEdit}
