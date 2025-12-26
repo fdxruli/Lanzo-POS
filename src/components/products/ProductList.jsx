@@ -24,7 +24,9 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
   const filteredProducts = useMemo(() => {
     return products.filter(item =>
-      item.name.toLowerCase().includes(searchTerm.toLowerCase())
+      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.barcode?.includes(searchTerm) ||
+      item.sku?.includes(searchTerm)
     );
   }, [products, searchTerm]);
 
@@ -43,159 +45,151 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
   };
 
   if (isLoading && products.length === 0) {
-    return <div style={{ padding: '20px', textAlign: 'center' }}>Cargando productos...</div>;
+    return (
+      <div className="loader-container">
+        <div className="spinner"></div>
+        <p>Cargando inventario...</p>
+      </div>
+    );
   }
 
   return (
     <div className="product-list-container">
-      <h3 className="subtitle">Lista de Productos</h3>
-
-      <div className="search-container">
-        <input
-          type="text"
-          id="product-search-input"
-          className="form-input"
-          placeholder="Buscar por Nombre, Código o SKU"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+      <div className="product-list-header">
+        <h3 className="subtitle">Inventario de Productos</h3>
+        <div className="search-wrapper">
+          <span className="search-icon">🔍</span>
+          <input
+            type="text"
+            className="modern-search-input"
+            placeholder="Buscar por nombre, código o SKU..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
       </div>
 
       {filteredProducts.length === 0 ? (
-        <div className="empty-message">No hay productos {searchTerm && 'que coincidan'}.</div>
+        <div className="empty-state">
+          <div className="empty-icon">📦</div>
+          <h3>No se encontraron productos</h3>
+          <p>{searchTerm ? `No hay resultados para "${searchTerm}"` : 'Agrega productos para comenzar'}</p>
+        </div>
       ) : (
         <>
-          <div id="product-list" className="product-list">
+          <div className="product-grid">
             {filteredProducts.map(item => {
-              const categoryName = categoryMap.get(item.categoryId) || 'Sin categoría';
+              const categoryName = categoryMap.get(item.categoryId) || 'General';
               const isActive = item.isActive !== false;
               
-              // --- CAMBIO AUDITORÍA: Extraemos expiryDays también ---
+              // Análisis de alertas
               const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
-
-              // Lógica de Stock Inteligente
               const isTracked = item.trackStock || item.batchManagement?.enabled;
-
-              // CORRECCIÓN: Leemos la unidad guardada, si no existe usamos 'pza' como fallback
               const unitLabel = item.bulkData?.purchase?.unit || (item.saleType === 'bulk' ? 'kg' : 'pza');
 
-              const itemClasses = [
-                'product-item',
-                isLowStock ? 'low-stock-warning' : '',
-                isNearingExpiry ? 'nearing-expiry-warning' : ''
-              ].filter(Boolean).join(' ');
+              // Clases dinámicas para la tarjeta
+              let cardStatusClass = '';
+              if (isNearingExpiry) cardStatusClass = 'card-critical';
+              else if (isLowStock) cardStatusClass = 'card-warning';
 
               return (
-                <div key={item.id} className={itemClasses}>
-                  <div className={`product-status-badge ${isActive ? 'active' : 'inactive'}`}>
-                    {isActive ? 'Activo' : 'Inactivo'}
-                  </div>
-
-                  <div className="product-item-info">
-                    <LazyImage src={item.image} alt={item.name} />
-
-                    <div className="product-item-details">
-                      <span className="product-item-title" title={item.name}>{item.name}</span>
-
-                      {features.hasVariants && (
-                        <div style={{ fontSize: '0.75rem', color: '#666', fontFamily: 'monospace', marginBottom: '4px', display: 'flex', gap: '5px' }}>
-                          {/* Si tiene gestión de lotes, es un producto padre con variantes */}
-                          {item.batchManagement?.enabled ? (
-                            <span style={{ backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '4px' }}>Variantes Múltiples</span>
-                          ) : (
-                            /* Si no, mostramos el SKU o código de barras simple */
-                            <span>SKU: {item.sku || item.barcode || '---'}</span>
-                          )}
-                        </div>
-                      )}
-
-                      {item.sustancia && (
-                        <p style={{ color: 'var(--secondary-color)', fontWeight: '500', fontSize: '0.8rem', justifyContent: 'flex-start' }}>
-                          💊 {item.sustancia}
-                        </p>
-                      )}
-
-                      {item.location && (
-                        <div style={{
-                          fontSize: '0.75rem',
-                          backgroundColor: '#f1f5f9',
-                          color: '#475569',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          display: 'inline-block',
-                          marginTop: '2px',
-                          border: '1px solid #cbd5e1'
-                        }}>
-                          📍 {item.location}
-                        </div>
-                      )}
-
-                      <p style={{ color: '#666', fontSize: '0.8rem', justifyContent: 'flex-start' }}>{categoryName}</p>
-
-                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        <p>
-                          <strong>Precio:</strong>
-                          <span className="product-price-highlight">${item.price?.toFixed(2)}</span>
-                        </p>
-                        <p>
-                          <span style={{ color: 'var(--text-light)' }}>Costo:</span>
-                          <span>${item.cost?.toFixed(2)}</span>
-                        </p>
-
-                        <p style={{ marginTop: '2px' }}>
-                          <strong>Existencia:</strong>
-                          {isTracked ? (
-                            item.stock > 0 ? (
-                              <span style={{ fontWeight: 'bold', color: isLowStock ? 'var(--warning-color)' : 'var(--text-dark)' }}>
-                                {item.stock} <small style={{ fontSize: '0.75em', textTransform: 'uppercase' }}>{unitLabel}</small>
-                              </span>
-                            ) : (
-                              <span style={{ color: 'var(--error-color)', fontWeight: 'bold', fontSize: '0.9rem' }}>AGOTADO</span>
-                            )
-                          ) : (
-                            <span style={{ fontStyle: 'italic', color: '#999', fontSize: '0.8rem' }}>Sin control</span>
-                          )}
-                        </p>
-                      </div>
-
-                      {/* --- CAMBIO AUDITORÍA: Alertas visuales detalladas --- */}
-                      
-                      {isLowStock && isTracked && item.stock > 0 && (
-                        <span className="alert-indicator low-stock-indicator">
-                          Stock bajo
-                        </span>
-                      )}
-
-                      {isNearingExpiry && (
-                        <span className="alert-indicator nearing-expiry-indicator">
-                          {expiryDays === 0 ? '⏰ Caduca HOY' : `⏰ Caduca en ${expiryDays} días`}
-                        </span>
-                      )}
-                      
-                      {/* ----------------------------------------------------- */}
+                <div key={item.id} className={`product-card ${cardStatusClass} ${!isActive ? 'card-inactive' : ''}`}>
+                  
+                  {/* --- Cabecera de Tarjeta --- */}
+                  <div className="card-header">
+                    <div className="card-image-wrapper">
+                      <LazyImage src={item.image} alt={item.name} />
+                      <span className={`status-badge ${isActive ? 'status-active' : 'status-inactive'}`}>
+                        {isActive ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </div>
+                    
+                    <div className="card-title-section">
+                      <h4 className="product-name" title={item.name}>{item.name}</h4>
+                      <span className="product-category">{categoryName}</span>
                     </div>
                   </div>
 
-                  <div className="product-item-controls">
-                    <button
-                      className={`btn-toggle-status ${isActive ? 'btn-deactivate' : 'btn-activate'}`}
+                  {/* --- Cuerpo de Información --- */}
+                  <div className="card-body">
+                    
+                    {/* Sección de Alertas Visibles */}
+                    {(isLowStock || isNearingExpiry) && (
+                      <div className="alert-box">
+                        {isNearingExpiry && (
+                          <div className="alert-item alert-expiry">
+                            <span className="alert-icon">⏰</span>
+                            <span>{expiryDays === 0 ? 'Caduca HOY' : `Caduca en ${expiryDays} días`}</span>
+                          </div>
+                        )}
+                        {isLowStock && isTracked && item.stock > 0 && (
+                          <div className="alert-item alert-stock">
+                            <span className="alert-icon">⚠️</span>
+                            <span>Stock Bajo ({item.stock} {unitLabel})</span>
+                          </div>
+                        )}
+                        {isTracked && item.stock <= 0 && (
+                          <div className="alert-item alert-empty">
+                            <span className="alert-icon">🚫</span>
+                            <span>AGOTADO</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Metadatos (Tags) */}
+                    <div className="meta-tags">
+                      {item.sku && <span className="tag">SKU: {item.sku}</span>}
+                      {item.sustancia && <span className="tag tag-blue">💊 {item.sustancia}</span>}
+                      {item.location && <span className="tag tag-gray">📍 {item.location}</span>}
+                      {item.batchManagement?.enabled && <span className="tag tag-purple">🔢 Lotes</span>}
+                    </div>
+
+                    {/* Datos Económicos */}
+                    <div className="stats-row">
+                      <div className="stat-group">
+                        <span className="stat-label">Precio</span>
+                        <span className="stat-value price">${item.price?.toFixed(2)}</span>
+                      </div>
+                      <div className="stat-group">
+                        <span className="stat-label">Costo</span>
+                        <span className="stat-value">${item.cost?.toFixed(2)}</span>
+                      </div>
+                      <div className="stat-group">
+                        <span className="stat-label">Existencia</span>
+                        {isTracked ? (
+                           <span className={`stat-value ${item.stock <= 0 ? 'text-error' : ''}`}>
+                             {item.stock} <small>{unitLabel}</small>
+                           </span>
+                        ) : (
+                          <span className="stat-value infinite">∞</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* --- Footer de Acciones --- */}
+                  <div className="card-footer">
+                     <button
+                      className={`icon-btn ${isActive ? 'btn-disable' : 'btn-enable'}`}
                       onClick={() => onToggleStatus(item)}
-                      title={isActive ? "Desactivar" : "Activar"}
+                      title={isActive ? "Desactivar Producto" : "Activar Producto"}
                     >
-                      {isActive ? 'Desactivar' : 'Activar'}
+                      {isActive ? '🛑' : '✅'}
                     </button>
 
                     {features.hasWaste && isActive && (
-                      <button className="btn-waste" onClick={() => handleOpenWaste(item)} title="Registrar Merma">
-                        Merma
+                      <button className="icon-btn btn-waste" onClick={() => handleOpenWaste(item)} title="Registrar Merma">
+                        🗑️ Merma
                       </button>
                     )}
 
-                    <button className="edit-product-btn" onClick={() => onEdit(item)} title="Editar">
+                    <div className="action-spacer"></div>
+
+                    <button className="icon-btn btn-edit" onClick={() => onEdit(item)} title="Editar">
                       ✏️
                     </button>
-
-                    <button className="delete-product-btn" onClick={() => onDelete(item)} title="Eliminar">
+                    <button className="icon-btn btn-delete" onClick={() => onDelete(item)} title="Eliminar">
                       🗑️
                     </button>
                   </div>
@@ -205,25 +199,15 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
           </div>
 
           {!searchTerm && hasMoreProducts && (
-            <div style={{ textAlign: 'center', marginTop: '20px', paddingBottom: '20px' }}>
+            <div className="load-more-container">
               <button
-                className="btn btn-secondary"
+                className="btn-load-more"
                 onClick={() => loadMoreProducts()}
                 disabled={isGlobalLoading}
-                style={{ minWidth: '200px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}
               >
-                {isGlobalLoading ? (
-                  <>
-                    <div className="spinner-loader small" style={{ borderWidth: '2px', width: '16px', height: '16px' }}></div>
-                    Cargando...
-                  </>
-                ) : (
-                  '⬇️ Cargar más productos'
-                )}
+                {isGlobalLoading ? 'Cargando...' : '⬇️ Cargar más productos'}
               </button>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: '5px' }}>
-                Mostrando {products.length} productos
-              </p>
+              <p className="count-label">Mostrando {products.length} productos</p>
             </div>
           )}
         </>
