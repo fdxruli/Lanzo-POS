@@ -427,17 +427,41 @@ export default function ProductsPage() {
                     <>
                         {/* Toggle para cambiar entre modos (solo si es nuevo producto) */}
                         {!editingProduct && (
-                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-                                <div className="theme-toggle-container">
-                                    <label className="theme-radio-label">
-                                        <input type="radio" checked={isWizardMode} onChange={() => setIsWizardMode(true)} />
-                                        <span className="theme-radio-text">✨ Modo Asistido (Fácil)</span>
-                                    </label>
-                                    <label className="theme-radio-label">
-                                        <input type="radio" checked={!isWizardMode} onChange={() => setIsWizardMode(false)} />
-                                        <span className="theme-radio-text">🛠️ Modo Experto</span>
-                                    </label>
-                                </div>
+                            <div className="mode-selection-container">
+
+                                {/* Opción 1: Modo Asistido */}
+                                <label className={`mode-card ${isWizardMode ? 'selected' : ''}`}>
+                                    <input
+                                        type="radio"
+                                        name="product-mode" // Importante: mismo name para agruparlos
+                                        checked={isWizardMode}
+                                        onChange={() => setIsWizardMode(true)}
+                                        className="mode-radio"
+                                    />
+                                    <div className="mode-icon">✨</div>
+                                    <div className="mode-content">
+                                        <div className="mode-title">Modo Asistido</div>
+                                        <div className="mode-description">Guía paso a paso para principiantes.</div>
+                                    </div>
+                                    <div className="mode-check-indicator"></div>
+                                </label>
+
+                                {/* Opción 2: Modo Experto */}
+                                <label className={`mode-card ${!isWizardMode ? 'selected' : ''}`}>
+                                    <input
+                                        type="radio"
+                                        name="product-mode"
+                                        checked={!isWizardMode}
+                                        onChange={() => setIsWizardMode(false)}
+                                        className="mode-radio"
+                                    />
+                                    <div className="mode-icon">🛠️</div>
+                                    <div className="mode-content">
+                                        <div className="mode-title">Modo Experto</div>
+                                        <div className="mode-description">Control total de inventario y opciones.</div>
+                                    </div>
+                                    <div className="mode-check-indicator"></div>
+                                </label>
                             </div>
                         )}
 
