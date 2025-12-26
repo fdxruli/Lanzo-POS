@@ -1,0 +1,70 @@
+/* src/pages/DashboardPage.css */
+
+/* ===== LAYOUT GENERAL ===== */
+.dashboard-grid {
+  display: grid;
+  /* Uso de auto-fit para que sea responsive automáticamente */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+
+.dashboard-grid-condensed {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-lg);
+}
+
+/* ===== CONTENEDORES DE PANELES ===== */
+.dashboard-stats-container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+  border: 1px solid var(--border-color);
+}
+
+/* ===== MEDIA QUERIES ===== */
+@media (min-width: 1024px) {
+  .dashboard-grid-condensed {
+    grid-template-columns: 3fr 1fr;
+    /* Historial ancho, Papelera angosta */
+  }
+}
+
+.data-warning-banner {
+  background-color: #fff7ed; /* Naranja muy suave (papaya) */
+  border: 1px solid #fdba74; /* Borde naranja */
+  border-left: 5px solid #f97316; /* Borde izquierdo grueso para destacar */
+  color: #9a3412; /* Texto naranja oscuro */
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem; /* Espacio antes de las tablas */
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.data-warning-banner strong {
+  color: #c2410c;
+  font-weight: 700;
+}
+
+.data-warning-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+/* Modo Oscuro */
+[data-theme="dark"] .data-warning-banner {
+  background-color: #2a1b12; /* Fondo oscuro naranja */
+  border-color: #7c2d12;
+  color: #fdba74;
+}
+[data-theme="dark"] .data-warning-banner strong {
+  color: #ffedd5;
+}

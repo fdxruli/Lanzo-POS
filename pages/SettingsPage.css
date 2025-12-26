@@ -1,0 +1,299 @@
+/*
+ * Estilos para SettingsPage.jsx
+ * Mobile-first approach
+ */
+
+/* ===== ESTILOS BASE PARA MÓVIL ===== */
+
+.company-form-container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+}
+
+.company-form {
+  margin-bottom: var(--spacing-xl);
+}
+
+/* ===== ESTILOS PARA COPIA DE SEGURIDAD ===== */
+
+.backup-container {
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-lg);
+  background-color: var(--light-background);
+  border-radius: var(--border-radius);
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+}
+
+.backup-container .form-help-text {
+  margin-bottom: var(--spacing-md);
+  color: var(--text-light);
+}
+
+.backup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.backup-actions .btn {
+  max-width: 300px;
+}
+
+.backup-divider {
+  border: none;
+  border-top: 1px solid #e5e7eb; /* TODO: Usar variable */
+  margin: var(--spacing-lg) 0;
+}
+
+/* ===== ESTILOS DE LICENCIA ===== */
+
+.license-info-container {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: var(--light-background);
+  border-radius: 8px;
+  border-left: 4px solid var(--primary-color);
+}
+
+/* Contenedor para los detalles de la licencia */
+.license-info {
+  margin-bottom: var(--spacing-lg);
+}
+
+.license-detail {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e9ecef; /* TODO: Usar variable */
+}
+
+.license-label {
+  font-weight: bold;
+  color: var(--text-color);
+}
+
+.license-value {
+  color: var(--text-dark);
+}
+
+.license-status-active {
+  color: var(--success-color);
+  font-weight: bold;
+}
+
+.license-status-expired {
+  color: var(--error-color);
+  font-weight: bold;
+}
+
+.license-status-pending {
+  color: var(--warning-color);
+  font-weight: bold;
+}
+
+.device-manager-tittle{
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  margin-bottom: var(--spacing-lg);
+  margin-bottom: 0;
+}
+
+/* ===== ESTILOS DEL SELECTOR DE TEMA ===== */
+
+.theme-toggle-container {
+  display: flex;
+  gap: var(--spacing-sm);
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-xs);
+  max-width: fit-content;
+}
+
+.theme-radio-label {
+  display: block;
+  position: relative;
+  cursor: pointer;
+}
+
+.theme-radio-label input[type="radio"] {
+  /* Ocultar el radio button real */
+  opacity: 0;
+  position: fixed;
+  width: 0;
+}
+
+.theme-radio-text {
+  display: block;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+  transition: var(--transition);
+  color: var(--text-light);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Estilo del texto cuando el input está checked */
+.theme-radio-label input[type="radio"]:checked + .theme-radio-text {
+  background-color: var(--card-background-color);
+  color: var(--text-dark);
+  box-shadow: var(--box-shadow);
+}
+
+/* Feedback visual en hover */
+.theme-radio-label input[type="radio"]:not(:checked) + .theme-radio-text:hover {
+  color: var(--text-dark);
+}
+
+/* ===== MEDIA QUERIES PARA TABLETS Y ESCRITORIO ===== */
+
+/* Tablets y escritorio (>= 768px) */
+@media (min-width: 768px) {
+  .backup-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.form-help-text {
+  display: block;
+  margin-top: var(--spacing-xs);
+  font-size: 0.875rem;
+  color: var(--text-light);
+}
+
+/* Estilo para inputs deshabilitados */
+.form-input:disabled {
+  background-color: var(--light-background);
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Grid de Rubros */
+.rubro-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+
+.rubro-box {
+  padding: var(--spacing-md);
+  border: 2px solid #e5e7eb; /* Variable de borde */
+  border-radius: var(--border-radius-sm);
+  text-align: center;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  background-color: var(--card-background-color);
+  color: var(--text-color);
+  user-select: none; /* Evita que se seleccione el texto al hacer clic rápido */
+}
+
+.rubro-box:hover {
+  border-color: var(--secondary-color);
+  color: var(--secondary-color);
+}
+
+.rubro-box.selected {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Ajustes para modo oscuro (si usas variables, esto es automático, 
+   pero por si acaso el borde hardcoded necesita ajuste) */
+[data-theme="dark"] .rubro-box {
+  border-color: #374151;
+}
+[data-theme="dark"] .rubro-box:hover {
+  border-color: var(--secondary-color);
+}
+
+/* ===== ESTILOS NUEVOS: MANTENIMIENTO INTEGRADO ===== */
+
+.maintenance-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.maintenance-tool-card {
+  /* Usamos el fondo suave del sistema en lugar de blanco/transparente */
+  background-color: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 12px; /* Más redondeado acorde al sistema */
+  padding: 15px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.maintenance-tool-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow);
+  /* Borde sutil del color primario al pasar el mouse */
+  border-color: rgba(123, 97, 255, 0.3); 
+}
+
+.tool-info h4 {
+  margin: 0 0 6px 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tool-info p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-light);
+  line-height: 1.5;
+}
+
+/* Ajuste de botones para que se vean uniformes */
+.maintenance-tool-card .btn {
+  width: 100%;
+  justify-content: center;
+  padding: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+/* MEDIA QUERY ESCRITORIO */
+@media (min-width: 768px) {
+  .maintenance-tool-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .tool-info {
+    flex: 1;
+    padding-right: 30px;
+  }
+
+  .maintenance-tool-card .btn {
+    width: auto;
+    min-width: 200px; /* Ancho fijo para alineación perfecta */
+    flex-shrink: 0;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
