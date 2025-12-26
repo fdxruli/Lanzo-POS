@@ -1,4 +1,4 @@
-// src/components/common/ScannerModal.jsx - VERSIÓN OPTIMIZADA
+// src/components/common/ScannerModal.jsx - VERSIÓN CORREGIDA (Memory Leak Fix)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useZxing } from 'react-zxing';
 import { useOrderStore } from '../../store/useOrderStore';
@@ -9,16 +9,16 @@ import './ScannerModal.css';
 const CAMERA_CONSTRAINTS = {
   video: {
     facingMode: 'environment',
-    width: { ideal: 1280 }, // Reducido de 1920 (menos procesamiento)
+    width: { ideal: 1280 }, // Reducido de 1920
     height: { ideal: 720 }, // Reducido de 1080
-    frameRate: { ideal: 24, max: 30 } // 24fps es suficiente y más ligero
+    frameRate: { ideal: 24, max: 30 }
   },
   audio: false
 };
 
-// ✅ OPTIMIZACIÓN 2: Hints simplificados (solo códigos comunes)
+// ✅ OPTIMIZACIÓN 2: Hints simplificados
 const SCAN_HINTS = new Map([
-  [2, ['EAN_13', 'EAN_8', 'CODE_128', 'QR_CODE']] // Removimos formatos raros
+  [2, ['EAN_13', 'EAN_8', 'CODE_128', 'QR_CODE']]
 ]);
 
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
@@ -39,14 +39,14 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   // ✅ OPTIMIZACIÓN 3: Cache de stream de cámara
   const cameraStreamRef = useRef(null);
 
-  // ✅ OPTIMIZACIÓN 4: Configuración de ZXing MÁS LIGERA
+  // ✅ OPTIMIZACIÓN 4: Configuración de ZXing
   const { ref } = useZxing({
     paused: !isScanning,
     onDecodeResult(result) {
       const code = result.getText();
       const now = Date.now();
 
-      // Debounce: 1 segundo (reducido de 1.5s para ser más ágil)
+      // Debounce: 1 segundo
       if (
         lastScannedRef.current.code === code &&
         now - lastScannedRef.current.time < 1000
@@ -60,7 +60,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
       processingRef.current = true;
       scanCountRef.current++;
 
-      // MODO 1: Escaneo simple (solo devolver código)
+      // MODO 1: Escaneo simple
       if (onScanSuccess) {
         if (navigator.vibrate) navigator.vibrate(50);
         onScanSuccess(code);
@@ -68,7 +68,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         return;
       }
 
-      // MODO 2: Punto de Venta (Carrito temporal)
+      // MODO 2: Punto de Venta
       setIsScanning(false);
 
       if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
@@ -81,7 +81,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         setIsScanning(true);
         processingRef.current = false;
         setScanFeedback('');
-      }, 500); // Reducido de 600ms
+      }, 500);
     },
     onError(error) {
       console.error('Error ZXing:', error);
@@ -90,10 +90,10 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     },
     constraints: CAMERA_CONSTRAINTS,
     hints: SCAN_HINTS,
-    timeBetweenDecodingAttempts: 150, // Aumentado de 100ms para reducir carga de CPU
+    timeBetweenDecodingAttempts: 150,
   });
 
-  // Limpieza al desmontar
+  // Limpieza al desmontar (seguridad adicional)
   useEffect(() => {
     return () => {
       lastScannedRef.current = { code: null, time: 0 };
@@ -108,18 +108,26 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     };
   }, []);
 
-  // ✅ OPTIMIZACIÓN 6: Apertura de cámara INMEDIATA (sin delay artificial)
+  // ✅ FIX: Memory Leak Solucionado + Apertura Inmediata
   useEffect(() => {
+    let mounted = true;
+
     if (show) {
       setIsScanning(false);
       setCameraError(null);
       lastScannedRef.current = { code: null, time: 0 };
       processingRef.current = false;
 
-      // Solicitar permisos INMEDIATAMENTE (sin setTimeout)
       (async () => {
         try {
           const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
+          
+          if (!mounted) {
+            // Si el componente se desmontó mientras cargaba, liberar inmediatamente
+            console.log('🛑 [Scanner] Modal cerrado durante carga, liberando stream.');
+            stream.getTracks().forEach(track => track.stop());
+            return;
+          }
           
           // Guardamos el stream para reutilizarlo
           cameraStreamRef.current = stream;
@@ -127,6 +135,8 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           // Activamos el escáner
           setIsScanning(true);
         } catch (error) {
+          if (!mounted) return;
+
           console.error('Error accediendo a cámara:', error);
           if (error.name === 'NotAllowedError') {
             setCameraError('❌ Permiso de cámara denegado.');
@@ -137,20 +147,21 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           }
         }
       })();
+    }
 
-      return () => {
-        setIsScanning(false);
-        // El stream se liberará en el useEffect de limpieza global
-      };
-    } else {
+    return () => {
+      mounted = false;
       setIsScanning(false);
       
-      // Liberar cámara al cerrar modal
+      // ✅ CRÍTICO: Liberar cámara SIEMPRE al desmontar o cambiar 'show' a false
       if (cameraStreamRef.current) {
-        cameraStreamRef.current.getTracks().forEach(track => track.stop());
+        cameraStreamRef.current.getTracks().forEach(track => {
+          track.stop();
+        });
         cameraStreamRef.current = null;
+        console.log('📷 [Scanner] Cámara liberada correctamente');
       }
-    }
+    };
   }, [show]);
 
   const processScannedCode = async (code) => {
@@ -160,7 +171,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         let finalPrice = 0;
         let finalCost = 0;
 
-        // Si el producto usa gestión de lotes, obtener precio/costo del lote activo
+        // Si el producto usa gestión de lotes
         if (product.batchManagement?.enabled) {
           try {
             const activeBatches = await queryBatchesByProductIdAndActive(product.id, true);
