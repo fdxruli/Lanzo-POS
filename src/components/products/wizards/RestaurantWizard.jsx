@@ -1,24 +1,87 @@
 // src/components/products/wizards/RestaurantWizard.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useProductLogic } from '../../../hooks/useProductLogic';
-import { ChefHat, ArrowLeft, Check, ChevronRight, FileText, Printer, Clock } from 'lucide-react';
+import { 
+    ChefHat, ArrowLeft, Check, ChevronRight, FileText, 
+    Printer, Clock, AlertTriangle, Box, ShieldAlert, Utensils
+} from 'lucide-react';
 import RestauranteFields from '../fieldsets/RestauranteFields';
 import '../ProductWizard.css';
 import { showMessageModal } from '../../../services/utils';
 
 export default function RestaurantWizard({ onSave, onCancel, categories }) {
-    // Inicializamos lógica de producto
-    const { data, setField, updatePriceLogic } = useProductLogic({ unit: 'pza', trackStock: false });
+    // Inicializamos lógica de producto con valores seguros
+    const { data, setField, updatePriceLogic } = useProductLogic({ 
+        unit: 'pza', 
+        trackStock: false, // Por defecto asumimos platillo (no stock directo, sino receta)
+        productType: 'sellable'
+    });
     
-    // Ahora tenemos 4 pasos (el 4 es el Resumen)
     const [step, setStep] = useState(1);
+
+    // Efecto: Ajustar configuración técnica al cambiar el tipo de producto
+    useEffect(() => {
+        if (data.productType === 'ingredient') {
+            setField('trackStock', true); // Insumos SIEMPRE controlan stock
+            setField('price', 0);         // Insumos NO tienen precio de venta al público
+            setField('printStation', null); 
+        } else {
+            // Si es platillo, por defecto no trackea stock (usa receta), pero el usuario puede cambiarlo
+            // Mantenemos trackStock como estaba o false
+        }
+    }, [data.productType]);
 
     // Helper para obtener nombre de categoría
     const categoryName = useMemo(() => {
         if (!data.categoryId) return 'Sin Categoría';
-        const cat = categories.find(c => c.id == data.categoryId); // Doble igual para comparar string/number
+        const cat = categories.find(c => c.id == data.categoryId); 
         return cat ? cat.name : 'Desconocida';
     }, [data.categoryId, categories]);
+
+    // --- VALIDACIONES ROBUSTAS ---
+    const validateStep = (currentStep) => {
+        // Validación Paso 2: Datos Básicos
+        if (currentStep === 2) {
+            if (!data.name || data.name.trim().length < 2) { 
+                showMessageModal('Por favor, asigna un nombre descriptivo al producto.'); 
+                return false; 
+            }
+
+            // Reglas para Platillos de Venta
+            if (data.productType === 'sellable') {
+                const price = parseFloat(data.price) || 0;
+                const cost = parseFloat(data.cost) || 0;
+
+                if (price <= 0) {
+                    showMessageModal('El Precio de Venta debe ser mayor a $0.00');
+                    return false;
+                }
+
+                // Hardening: Prevención de Pérdidas
+                if (cost > 0 && price < cost) {
+                    const confirmLoss = window.confirm(
+                        `⚠️ ALERTA DE PÉRDIDA\n\n` +
+                        `El precio de venta ($${price}) es MENOR al costo ($${cost}).\n` +
+                        `¿Realmente deseas registrar este producto con pérdidas?`
+                    );
+                    if (!confirmLoss) return false;
+                }
+            }
+        }
+        
+        // Validación Paso 3 (Solo para Insumos): Stock
+        if (currentStep === 3 && data.productType === 'ingredient') {
+             // Opcional: Validar que el stock inicial no sea negativo
+             if (data.stock < 0) {
+                 showMessageModal('El stock inicial no puede ser negativo.');
+                 return false;
+             }
+        }
+
+        return true;
+    };
+
+    // --- RENDERIZADO DE PASOS ---
 
     // PASO 1: TIPO DE PRODUCTO
     const renderStep1 = () => (
@@ -28,37 +91,43 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
                     <ChefHat size={40} />
                 </div>
                 <h3>Cocina Digital</h3>
-                <p>¿Qué vamos a cocinar hoy?</p>
+                <p>Define la naturaleza del ítem.</p>
             </div>
 
             <div className="selection-grid">
                 <div
                     className={`selection-card ${data.productType === 'sellable' ? 'selected' : ''}`}
-                    onClick={() => setField('productType', 'sellable')}
+                    onClick={() => {
+                        setField('productType', 'sellable');
+                        setField('trackStock', false); // Reset a comportamiento platillo
+                    }}
                 >
-                    <div className="selection-icon">🍽️</div>
+                    <div className="selection-icon"><Utensils size={24}/></div>
                     <div className="selection-title">Platillo de Menú</div>
-                    <div className="selection-desc">Hamburguesas, Tacos, Bebidas preparadas.</div>
+                    <div className="selection-desc">Hamburguesas, Tacos, Bebidas para vender.</div>
                 </div>
                 <div
                     className={`selection-card ${data.productType === 'ingredient' ? 'selected' : ''}`}
-                    onClick={() => setField('productType', 'ingredient')}
+                    onClick={() => {
+                        setField('productType', 'ingredient');
+                        setField('unit', 'kg'); // Default sugerido para insumos
+                    }}
                 >
-                    <div className="selection-icon">🥕</div>
-                    <div className="selection-title">Insumo / Ingrediente</div>
-                    <div className="selection-desc">Carne cruda, Tomates, Pan (Control de stock).</div>
+                    <div className="selection-icon"><Box size={24}/></div>
+                    <div className="selection-title">Insumo / Stock</div>
+                    <div className="selection-desc">Carne, Verduras, Desechables (Costo interno).</div>
                 </div>
             </div>
         </div>
     );
 
-    // PASO 2: DATOS BÁSICOS
+    // PASO 2: DATOS BÁSICOS (ADAPTABLE)
     const renderStep2 = () => (
         <div className="wizard-step animate-fade-in">
             <h3>Detalles del {data.productType === 'sellable' ? 'Platillo' : 'Insumo'}</h3>
 
             <div className="form-group">
-                <label>Nombre en Comanda *</label>
+                <label>Nombre {data.productType === 'sellable' ? 'en Comanda' : 'del Insumo'} *</label>
                 <input
                     className="form-input big-input"
                     placeholder={data.productType === 'sellable' ? "Ej: Hamburguesa Especial" : "Ej: Carne Molida Premium"}
@@ -70,36 +139,78 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
 
             <div className="money-wizard-container">
                 {data.productType === 'sellable' ? (
-                    <div className="form-group highlight-price" style={{ width: '100%' }}>
-                        <label>Precio de Venta</label>
-                        <div className="input-with-prefix">
-                            <span>$</span>
-                            <input
-                                type="number"
-                                className="big-price-input"
-                                value={data.price}
-                                onChange={e => updatePriceLogic('price', e.target.value)}
-                                placeholder="0.00"
-                            />
+                    // VISTA PARA PLATILLOS (Foco en Precio Venta)
+                    <>
+                        <div className="form-group highlight-price" style={{ flex: 2 }}>
+                            <label>Precio de Venta</label>
+                            <div className="input-with-prefix">
+                                <span>$</span>
+                                <input
+                                    type="number"
+                                    className="big-price-input"
+                                    value={data.price}
+                                    onChange={e => updatePriceLogic('price', e.target.value)}
+                                    placeholder="0.00"
+                                />
+                            </div>
                         </div>
-                    </div>
+                        <div className="form-group" style={{ flex: 1, opacity: 0.8 }}>
+                            <label>Costo (Opcional)</label>
+                            <div className="input-with-prefix">
+                                <span>$</span>
+                                <input
+                                    type="number"
+                                    value={data.cost}
+                                    onChange={e => updatePriceLogic('cost', e.target.value)}
+                                    placeholder="0.00"
+                                />
+                            </div>
+                        </div>
+                    </>
                 ) : (
-                    <div className="form-group">
-                        <label>Costo de Compra (Por {data.unit || 'Unidad'})</label>
-                        <div className="input-with-prefix">
-                            <span>$</span>
-                            <input
-                                type="number"
-                                value={data.cost}
-                                onChange={e => updatePriceLogic('cost', e.target.value)}
-                                placeholder="0.00"
-                            />
+                    // VISTA PARA INSUMOS (Foco en Costo y Unidad)
+                    <>
+                        <div className="form-group highlight-price" style={{ flex: 2 }}>
+                            <label>Costo de Compra</label>
+                            <div className="input-with-prefix">
+                                <span>$</span>
+                                <input
+                                    type="number"
+                                    className="big-price-input"
+                                    value={data.cost}
+                                    onChange={e => updatePriceLogic('cost', e.target.value)}
+                                    placeholder="0.00"
+                                />
+                            </div>
                         </div>
-                    </div>
+                        <div className="form-group" style={{ flex: 1 }}>
+                            <label>Unidad de Medida</label>
+                            <select 
+                                className="form-input" 
+                                value={data.unit} 
+                                onChange={e => setField('unit', e.target.value)}
+                                style={{ height: '50px' }} // Igualar altura visual
+                            >
+                                <option value="pza">Pieza (Unidad)</option>
+                                <option value="kg">Kilogramo (Kg)</option>
+                                <option value="lt">Litro (Lt)</option>
+                                <option value="g">Gramo (g)</option>
+                                <option value="ml">Mililitro (ml)</option>
+                            </select>
+                        </div>
+                    </>
                 )}
             </div>
 
-            <div className="form-group">
+            {/* Alerta de Pérdida en Tiempo Real */}
+            {data.productType === 'sellable' && parseFloat(data.price) > 0 && parseFloat(data.cost) > parseFloat(data.price) && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg flex items-center gap-2 mt-2 animate-pulse">
+                    <ShieldAlert size={18} />
+                    <span className="font-bold text-sm">CUIDADO: El precio es menor al costo.</span>
+                </div>
+            )}
+
+            <div className="form-group mt-4">
                 <label>Categoría</label>
                 <select className="form-input" value={data.categoryId} onChange={e => setField('categoryId', e.target.value)}>
                     <option value="">Seleccione...</option>
@@ -109,33 +220,81 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
         </div>
     );
 
-    // PASO 3: CONFIGURACIÓN AVANZADA
-    const renderStep3 = () => (
-        <div className="wizard-step animate-fade-in">
-            <h3>Configuración de Cocina</h3>
-            {data.productType === 'sellable' && (
-                <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '15px' }}>
-                    Personaliza la impresión y los extras.
-                </p>
-            )}
+    // PASO 3: CONFIGURACIÓN ESPECÍFICA (La gran mejora UX)
+    const renderStep3 = () => {
+        if (data.productType === 'sellable') {
+            return (
+                <div className="wizard-step animate-fade-in">
+                    <h3>Experiencia de Cocina</h3>
+                    <p className="text-sm text-gray-500 mb-4">Configura cómo se comporta este platillo en las comandas.</p>
 
-            <RestauranteFields
-                productType={data.productType}
-                setProductType={(val) => setField('productType', val)}
-                hideTypeSelector={true} // Ocultamos selector porque ya se eligió en paso 1
-                
-                printStation={data.printStation}
-                setPrintStation={(val) => setField('printStation', val)}
-                prepTime={data.prepTime}
-                setPrepTime={(val) => setField('prepTime', val)}
-                modifiers={data.modifiers}
-                setModifiers={(val) => setField('modifiers', val)}
-                onManageRecipe={() => showMessageModal('Podrás editar la receta detallada después de guardar.')}
-            />
-        </div>
-    );
+                    <RestauranteFields
+                        productType={data.productType}
+                        setProductType={(val) => setField('productType', val)}
+                        hideTypeSelector={true} // Ya se eligió en Step 1
+                        
+                        printStation={data.printStation}
+                        setPrintStation={(val) => setField('printStation', val)}
+                        prepTime={data.prepTime}
+                        setPrepTime={(val) => setField('prepTime', val)}
+                        modifiers={data.modifiers}
+                        setModifiers={(val) => setField('modifiers', val)}
+                        onManageRecipe={() => showMessageModal('Podrás configurar la receta detallada (ingredientes) una vez guardado el producto.')}
+                    />
+                </div>
+            );
+        } else {
+            // Si es INSUMO, mostramos Configuración de Inventario en lugar de Impresoras
+            return (
+                <div className="wizard-step animate-fade-in">
+                    <h3>Control de Inventario</h3>
+                    <p className="text-sm text-gray-500 mb-4">Define los niveles de stock para tus alertas de compra.</p>
 
-    // PASO 4: RESUMEN FINAL (NUEVO)
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
+                        <div className="flex items-center gap-2 mb-2 text-blue-700 font-semibold">
+                            <Box size={20} />
+                            <span>Stock Actual</span>
+                        </div>
+                        <div className="input-with-prefix bg-white">
+                            <input 
+                                type="number" 
+                                className="form-input text-lg font-bold text-blue-800"
+                                value={data.stock} 
+                                onChange={e => setField('stock', e.target.value)}
+                                placeholder="0" 
+                            />
+                            <span className="text-gray-500 font-medium px-3">{data.unit}</span>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="form-group">
+                            <label>Stock Mínimo (Alerta)</label>
+                            <input 
+                                type="number" 
+                                className="form-input" 
+                                value={data.minStock || ''} 
+                                onChange={e => setField('minStock', e.target.value)}
+                                placeholder="Ej: 5" 
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Stock Máximo (Ideal)</label>
+                            <input 
+                                type="number" 
+                                className="form-input" 
+                                value={data.maxStock || ''} 
+                                onChange={e => setField('maxStock', e.target.value)}
+                                placeholder="Ej: 50" 
+                            />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+    };
+
+    // PASO 4: RESUMEN FINAL
     const renderStep4 = () => (
         <div className="wizard-step animate-fade-in">
             <div className="wizard-welcome">
@@ -143,68 +302,71 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
                     <FileText size={40} />
                 </div>
                 <h3>¡Todo listo!</h3>
-                <p>Revisa la información antes de crear el producto.</p>
+                <p>Confirma los datos antes de crear.</p>
             </div>
 
-            <div className="summary-card" style={{ 
-                backgroundColor: '#f9fafb', 
-                border: '1px solid #e5e7eb', 
-                borderRadius: '12px', 
-                padding: '20px',
-                marginTop: '10px',
-                textAlign: 'left'
-            }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '15px', borderBottom: '1px dashed #ccc', paddingBottom: '15px' }}>
+            <div className="summary-card bg-white border border-gray-200 rounded-xl p-5 mt-2 text-left shadow-sm">
+                <div className="flex justify-between items-start border-b border-dashed border-gray-300 pb-4 mb-4">
                     <div>
-                        <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#1f2937' }}>{data.name || 'Sin Nombre'}</h2>
-                        <span className="badge" style={{ backgroundColor: '#ffedd5', color: '#c2410c', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', marginTop: '5px', display: 'inline-block' }}>
-                            {data.productType === 'sellable' ? 'Platillo de Venta' : 'Insumo Interno'}
+                        <h2 className="text-xl font-bold text-gray-800 m-0">{data.name || 'Sin Nombre'}</h2>
+                        <span className={`badge inline-block mt-1 px-2 py-1 rounded text-xs font-bold ${data.productType === 'sellable' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {data.productType === 'sellable' ? 'VENTA / MENÚ' : 'INSUMO / STOCK'}
                         </span>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                        <span style={{ display: 'block', fontSize: '0.9rem', color: '#6b7280' }}>
-                            {data.productType === 'sellable' ? 'Precio' : 'Costo'}
+                    <div className="text-right">
+                        <span className="text-xs text-gray-500 block">
+                            {data.productType === 'sellable' ? 'Precio Público' : 'Costo Unitario'}
                         </span>
-                        <strong style={{ fontSize: '1.5rem', color: '#059669' }}>
+                        <strong className={`text-2xl ${data.productType === 'sellable' ? 'text-emerald-600' : 'text-gray-700'}`}>
                             ${parseFloat(data.productType === 'sellable' ? data.price : data.cost || 0).toFixed(2)}
                         </strong>
                     </div>
                 </div>
 
-                <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', fontSize: '0.95rem' }}>
+                <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
                     <div>
-                        <strong style={{ color: '#6b7280' }}>Categoría:</strong>
-                        <div style={{ marginTop: '2px' }}>{categoryName}</div>
+                        <strong>Categoría:</strong> {categoryName}
                     </div>
                     
-                    {data.productType === 'sellable' && (
+                    {data.productType === 'sellable' ? (
                         <>
                             <div>
-                                <strong style={{ color: '#6b7280' }}><Printer size={14} style={{ marginRight: 4 }}/>Impresión:</strong>
-                                <div style={{ marginTop: '2px', textTransform: 'capitalize' }}>
-                                    {data.printStation === 'none' ? 'No Imprimir' : (data.printStation || 'Cocina')}
-                                </div>
+                                <strong><Printer size={14} className="inline mr-1"/>Impresión:</strong> 
+                                {data.printStation === 'none' ? ' No' : (data.printStation || 'Cocina')}
                             </div>
                             <div>
-                                <strong style={{ color: '#6b7280' }}><Clock size={14} style={{ marginRight: 4 }}/>Tiempo Prep:</strong>
-                                <div style={{ marginTop: '2px' }}>
-                                    {data.prepTime ? `${data.prepTime} min` : 'No definido'}
+                                <strong><Clock size={14} className="inline mr-1"/>Prep:</strong> 
+                                {data.prepTime ? `${data.prepTime} min` : 'N/A'}
+                            </div>
+                            {/* Alerta si no se configuró costo */}
+                            {(!data.cost || parseFloat(data.cost) === 0) && (
+                                <div className="col-span-2 text-xs text-orange-600 bg-orange-50 p-1 rounded mt-1">
+                                    ⚠️ No has definido costo. El margen será 100%.
                                 </div>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <div>
+                                <strong>Stock Inicial:</strong> {data.stock || 0} {data.unit}
+                            </div>
+                            <div>
+                                <strong>Alerta Mínima:</strong> {data.minStock || 'N/A'}
                             </div>
                         </>
                     )}
                 </div>
 
                 {data.modifiers && data.modifiers.length > 0 && (
-                    <div style={{ marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '15px' }}>
-                        <strong style={{ color: '#6b7280', display: 'block', marginBottom: '8px' }}>Extras / Modificadores:</strong>
-                        <ul style={{ paddingLeft: '20px', margin: 0, color: '#4b5563' }}>
+                    <div className="mt-4 pt-3 border-t border-gray-100">
+                        <strong className="text-xs text-gray-500 block mb-1">Modificadores Activos:</strong>
+                        <div className="flex flex-wrap gap-2">
                             {data.modifiers.map((mod, idx) => (
-                                <li key={idx}>
-                                    {mod.name} <small>({mod.options?.length || 0} opciones)</small>
-                                </li>
+                                <span key={idx} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-200">
+                                    {mod.name}
+                                </span>
                             ))}
-                        </ul>
+                        </div>
                     </div>
                 )}
             </div>
@@ -213,7 +375,6 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
 
     return (
         <div className="product-wizard-container theme-restaurant">
-            {/* Barra de progreso actualizada a 4 pasos */}
             <div className="wizard-progress-bar">
                 {[1, 2, 3, 4].map(s => (
                     <div key={s} className={`progress-dot ${step >= s ? 'active' : ''} bg-orange-500`}>
@@ -238,17 +399,13 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
                     <button className="btn btn-cancel" onClick={onCancel}>Cancelar</button>
                 )}
 
-                {/* Si no estamos en el paso final, mostramos "Siguiente" */}
                 {step < 4 ? (
                     <button className="btn btn-primary bg-orange-600 hover:bg-orange-700" onClick={() => {
-                        // Validación simple del paso 2
-                        if (step === 2 && !data.name) return showMessageModal('Por favor, asigna un nombre al producto.');
-                        setStep(step + 1);
+                        if (validateStep(step)) setStep(step + 1);
                     }}>
                         Siguiente <ChevronRight size={16} />
                     </button>
                 ) : (
-                    // Solo en el paso 4 mostramos Guardar
                     <button className="btn btn-save pulse bg-green-600" onClick={() => onSave(data)}>
                         ✅ Confirmar y Crear
                     </button>

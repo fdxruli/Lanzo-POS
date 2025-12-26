@@ -1,35 +1,53 @@
 // src/components/products/wizards/GroceryWizard.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useProductLogic } from '../../../hooks/useProductLogic';
 import { useFeatureConfig } from '../../../hooks/useFeatureConfig';
 import { 
     Barcode, ArrowLeft, Check, ChevronRight, Scale, Box, 
-    FileText, Users, ChevronDown, ChevronUp, Trash2, Plus, AlertTriangle
+    FileText, Users, ChevronDown, ChevronUp, Trash2, ShieldAlert, Pill, AlertTriangle
 } from 'lucide-react';
 import ScannerModal from '../../common/ScannerModal';
-import FarmaciaFields from '../fieldsets/FarmaciaFIelds';
-import '../ProductWizard.css';
+import '../ProductWizard.css'; // Asegúrate de que este CSS exista o usa estilos en línea como fallback
 import { showMessageModal } from '../../../services/utils';
 
 export default function GroceryWizard({ onSave, onCancel, categories, mainRubro }) {
-    const { data, setField, updatePriceLogic } = useProductLogic({ trackStock: true });
-    const { hasExpiry, hasWholesale, hasLabFields } = useFeatureConfig();
+    // 1. OBTENER CONFIGURACIÓN DEL RUBRO ACTUAL
+    // 'hasBulk' nos dice si este negocio permite venta a granel.
+    const { 
+        hasExpiry, 
+        hasWholesale, 
+        hasBulk, 
+        activeRubros 
+    } = useFeatureConfig(mainRubro);
+
+    // LÓGICA INTELIGENTE: Si el negocio NO tiene 'bulk' (ej. Farmacia, Ropa), forzamos modo Unitario.
+    const forceUnitMode = !hasBulk;
+    const isPharmacy = activeRubros.includes('farmacia');
+
+    // 2. INICIALIZAR LÓGICA CON RESTRICCIONES
+    // Si forceUnitMode es true, inicializamos directamente como 'unit'/'pza'.
+    const { data, setField, updatePriceLogic } = useProductLogic({ 
+        trackStock: true,
+        saleType: forceUnitMode ? 'unit' : 'unit', 
+        unit: forceUnitMode ? 'pza' : 'pza'
+    });
 
     const [step, setStep] = useState(1);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
     const [margin, setMargin] = useState(''); 
     const [showWholesale, setShowWholesale] = useState(false);
 
-    // Helpers
+    // Helpers UI
     const categoryName = useMemo(() => {
         if (!data.categoryId) return 'General';
         const cat = categories.find(c => c.id == data.categoryId);
         return cat ? cat.name : 'Desconocida';
     }, [data.categoryId, categories]);
 
-    // Lógica de Margen (Recalcula Precio basado en Costo + %)
+    // --- MANEJO DE PRECIOS AUTOMÁTICO ---
     const handleCostChange = (val) => {
         updatePriceLogic('cost', val);
+        // UX: Si ya hay margen definido, actualizar precio en tiempo real
         if (val && margin) {
             const cost = parseFloat(val);
             const price = cost * (1 + (parseFloat(margin) / 100));
@@ -59,34 +77,58 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
         }
     };
 
-    // Validación "Next Step"
+    // --- VALIDACIÓN ESTRICTA (HARDENING) ---
     const validateStep = (currentStep) => {
-        if (currentStep === 2) {
-            if (!data.name) { showMessageModal('El nombre es obligatorio'); return false; }
+        // PASO 1: Validación básica (usualmente el código de barras es opcional, pero si lo ponen, ok)
+        if (currentStep === 1) {
+            // Si quieres obligar a tener código, descomenta esto:
+            // if (!data.barcode) { showMessageModal('El código es recomendado.'); return true; } 
         }
+
+        // PASO 2: Datos Básicos
+        if (currentStep === 2) {
+            if (!data.name || data.name.trim().length < 2) { 
+                showMessageModal('El nombre es obligatorio y debe ser descriptivo.'); 
+                return false; 
+            }
+        }
+
+        // PASO 3: Financiero (CRÍTICO - PREVENCIÓN DE PÉRDIDAS)
         if (currentStep === 3) {
             const price = parseFloat(data.price) || 0;
             const cost = parseFloat(data.cost) || 0;
 
-            if (price <= 0) { showMessageModal('Define un precio de venta válido'); return false; }
+            // Regla 1: Precio Cero
+            if (price <= 0) { 
+                showMessageModal('El precio de venta debe ser mayor a $0.00'); 
+                return false; 
+            }
             
-            // Critical Loss Check
+            // Regla 2: Vender bajo costo
             if (cost > 0 && price < cost) {
-                if(!window.confirm(`⚠️ ADVERTENCIA DE PÉRDIDA\n\nEl precio ($${price}) es menor al costo ($${cost}).\n¿Seguro que deseas continuar?`)) return false;
+                // Confirmación nativa bloqueante y agresiva para evitar clicks accidentales
+                const confirmLoss = window.confirm(
+                    `🛑 ALERTA DE SEGURIDAD FINANCIERA 🛑\n\n` +
+                    `Estás configurando un precio de venta ($${price}) MENOR al costo de compra ($${cost}).\n` +
+                    `Esto generará PÉRDIDAS directas en cada venta.\n\n` +
+                    `¿Estás absolutamente seguro de proceder con esta configuración?`
+                );
+                if (!confirmLoss) return false;
             }
 
-            // Wholesale Integrity Check
-            if (data.wholesaleTiers?.length > 0 && cost > 0) {
+            // Regla 3: Integridad de Mayoreo
+            if (hasWholesale && data.wholesaleTiers?.length > 0 && cost > 0) {
                 const badTier = data.wholesaleTiers.find(t => parseFloat(t.price) < cost);
                 if (badTier) {
-                    if(!window.confirm(`⚠️ ERROR EN MAYOREO\n\nTienes un precio de mayoreo ($${badTier.price}) por debajo del costo ($${cost}).\n¿Deseas permitirlo?`)) return false;
+                    showMessageModal(`❌ Error Crítico en Mayoreo:\n\nTienes un precio de mayoreo ($${badTier.price}) que está por debajo del costo ($${cost}).\n\nPor favor corrige la tabla de mayoreo antes de continuar.`);
+                    return false;
                 }
             }
         }
         return true;
     };
 
-    // CRUD Mayoreo Simple
+    // --- CRUD Mayoreo Simple ---
     const addWholesaleTier = () => {
         const currentTiers = data.wholesaleTiers || [];
         setField('wholesaleTiers', [...currentTiers, { min: 0, price: 0 }]);
@@ -104,46 +146,57 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
         setField('wholesaleTiers', newTiers);
     };
 
-    // ... (Steps 1, 2 son idénticos al original, solo cambio Step 3 y 4) ...
+    // --- RENDERS DE PASOS ---
 
     const renderStep1 = () => (
         <div className="wizard-step animate-fade-in">
              <div className="wizard-welcome">
-                <div className="main-icon-circle bg-blue-100 text-blue-600">
-                    <Barcode size={40} />
+                {/* UI Adaptativa: Muestra píldora si es farmacia, código de barras si es general */}
+                <div className={`main-icon-circle ${isPharmacy ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
+                    {isPharmacy ? <Pill size={40} /> : <Barcode size={40} />}
                 </div>
-                <h3>Alta Rápida</h3>
+                <h3>{isPharmacy ? 'Alta de Medicamento' : 'Alta Rápida'}</h3>
                 <p>Comencemos escaneando el producto.</p>
             </div>
+
             <div className="scan-focus-area" style={{marginBottom: '20px'}}>
                 <div className="input-with-button">
                     <input 
                         className="form-input big-input text-center" 
                         placeholder="Escanea o escribe código..."
                         value={data.barcode}
-                        onChange={e => setField('barcode', e.target.value.trim())} // Sanitización básica
+                        onChange={e => setField('barcode', e.target.value.trim())} 
                         onKeyDown={(e) => e.key === 'Enter' && setStep(2)}
                         autoFocus
                     />
                     <button className="btn-scan-inline" onClick={() => setIsScannerOpen(true)}>📷</button>
                 </div>
             </div>
-             <div className="selection-grid mini-grid">
-                <div 
-                    className={`selection-card ${data.saleType === 'unit' ? 'selected' : ''}`}
-                    onClick={() => { setField('saleType', 'unit'); setField('unit', 'pza'); }}
-                >
-                    <div className="selection-icon"><Box size={20}/></div>
-                    <div className="selection-title">Por Pieza</div>
+
+            {/* LÓGICA INTELIGENTE: Si forceUnitMode es true, ocultamos la selección y mostramos un badge */}
+            {forceUnitMode ? (
+                <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-center gap-2 text-gray-500 text-sm">
+                    <Box size={18} />
+                    <span>Modo Estándar: <strong>Venta por Unidad / Pieza</strong></span>
                 </div>
-                <div 
-                    className={`selection-card ${data.saleType === 'bulk' ? 'selected' : ''}`}
-                    onClick={() => { setField('saleType', 'bulk'); setField('unit', 'kg'); }}
-                >
-                    <div className="selection-icon"><Scale size={20}/></div>
-                    <div className="selection-title">A Granel (Kg/Lt)</div>
+            ) : (
+                <div className="selection-grid mini-grid">
+                    <div 
+                        className={`selection-card ${data.saleType === 'unit' ? 'selected' : ''}`}
+                        onClick={() => { setField('saleType', 'unit'); setField('unit', 'pza'); }}
+                    >
+                        <div className="selection-icon"><Box size={20}/></div>
+                        <div className="selection-title">Por Pieza</div>
+                    </div>
+                    <div 
+                        className={`selection-card ${data.saleType === 'bulk' ? 'selected' : ''}`}
+                        onClick={() => { setField('saleType', 'bulk'); setField('unit', 'kg'); }}
+                    >
+                        <div className="selection-icon"><Scale size={20}/></div>
+                        <div className="selection-title">A Granel (Kg/Lt)</div>
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 
@@ -151,10 +204,10 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
         <div className="wizard-step animate-fade-in">
             <h3>Datos del Producto</h3>
             <div className="form-group">
-                <label>Nombre Comercial *</label>
+                <label>Nombre {isPharmacy ? 'del Medicamento' : 'Comercial'} *</label>
                 <input 
                     className="form-input big-input" 
-                    placeholder="Ej: Coca Cola 600ml"
+                    placeholder={isPharmacy ? "Ej: Paracetamol 500mg" : "Ej: Coca Cola 600ml"}
                     value={data.name} 
                     onChange={e => setField('name', e.target.value)} 
                     autoFocus
@@ -171,9 +224,9 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                 <div className="form-group" style={{marginTop:'10px'}}>
                     <label>Caducidad (Opcional)</label>
                     <input type="date" className="form-input" value={data.expiryDate || ''} onChange={e => setField('expiryDate', e.target.value)} />
+                    {isPharmacy && <small className="text-blue-500 mt-1 block text-xs">ℹ️ Para medicamentos controlados, recuerda registrar el Lote más adelante.</small>}
                 </div>
             )}
-             {/* Farmacia Fields se mantendrían igual si rubro=='farmacia' */}
         </div>
     );
 
@@ -194,7 +247,7 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                     <label style={{color: '#2563eb'}}>Margen %</label>
                     <div className="input-with-prefix">
                         <span style={{color:'#2563eb'}}>%</span>
-                        <input type="number" className="form-input" style={{color:'#2563eb', fontWeight:'bold'}} value={margin} onChange={e => handleMarginChange(e.target.value)} placeholder="25" />
+                        <input type="number" className="form-input" style={{color:'#2563eb', fontWeight:'bold'}} value={margin} onChange={e => handleMarginChange(e.target.value)} placeholder="30" />
                     </div>
                 </div>
 
@@ -210,8 +263,11 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                             placeholder="0.00" 
                         />
                     </div>
-                    {parseFloat(data.price) < parseFloat(data.cost) && (
-                        <small style={{color:'red', display:'block'}}>⚠️ Menor al costo</small>
+                    {/* Alerta Visual Inmediata (Feedback Rápido) */}
+                    {parseFloat(data.price) > 0 && parseFloat(data.price) < parseFloat(data.cost) && (
+                        <div className="flex items-center gap-1 text-red-600 text-xs mt-1 font-bold animate-pulse">
+                            <ShieldAlert size={14}/> <span>PRECIO BAJO COSTO</span>
+                        </div>
                     )}
                 </div>
             </div>
@@ -248,13 +304,14 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                                         <div className="flex-1">
                                             <input 
                                                 type="number" 
-                                                className={`form-input h-8 text-sm ${isBelowCost ? 'border-red-500 bg-red-50' : ''}`} 
+                                                className={`form-input h-8 text-sm ${isBelowCost ? 'border-red-500 bg-red-50 text-red-700' : ''}`} 
                                                 placeholder="$ Precio" 
                                                 value={tier.price} 
                                                 onChange={e => updateWholesaleTier(idx, 'price', e.target.value)} 
                                             />
                                         </div>
                                         <button className="text-red-400 hover:text-red-600" onClick={() => removeWholesaleTier(idx)}><Trash2 size={16} /></button>
+                                        {isBelowCost && <AlertTriangle size={16} className="text-red-500" title="Precio menor al costo" />}
                                     </div>
                                 );
                             })}
@@ -286,7 +343,9 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                     </div>
                     <div className="text-right">
                         <span className="text-xs text-slate-500 block">Precio Venta</span>
-                        <strong className="text-2xl text-emerald-600">${parseFloat(data.price).toFixed(2)}</strong>
+                        <strong className={`text-2xl ${parseFloat(data.price) < parseFloat(data.cost) ? 'text-red-600' : 'text-emerald-600'}`}>
+                            ${parseFloat(data.price).toFixed(2)}
+                        </strong>
                     </div>
                 </div>
                 
@@ -296,6 +355,13 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                     <div><strong className="text-slate-500">Stock:</strong> {data.stock} {data.unit}</div>
                     <div><strong className="text-slate-500">Categoría:</strong> {categoryName}</div>
                 </div>
+
+                {/* Advertencia final si hay precios peligrosos permitidos */}
+                {parseFloat(data.price) < parseFloat(data.cost) && (
+                    <div className="mt-3 p-2 bg-red-100 border border-red-300 rounded text-red-700 text-xs font-bold text-center">
+                        ⚠️ ATENCIÓN: Este producto se venderá con PÉRDIDA.
+                    </div>
+                )}
 
                 {data.wholesaleTiers?.length > 0 && (
                      <div className="mt-3 pt-3 border-t border-slate-200">
@@ -314,7 +380,7 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
     );
 
     return (
-        <div className="product-wizard-container theme-retail">
+        <div className={`product-wizard-container theme-${mainRubro}`}>
             <div className="wizard-progress-bar">
                 {[1, 2, 3, 4].map(s => (
                     <div key={s} className={`progress-dot ${step >= s ? 'active' : ''} bg-blue-500`}>

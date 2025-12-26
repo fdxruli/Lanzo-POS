@@ -96,12 +96,14 @@ export default function CommonProductFields({
             </div>
 
             {/* SECCIÓN DE PRECIOS INTEGRADA */}
-            <div style={{ backgroundColor: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+            <div className="theme-group-container">
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
                     <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                         <label className="form-label" style={{ fontSize: '0.85rem' }}>Costo ($)</label>
                         <input type="number" className="form-input" value={cost} onChange={e => handleCostChange(e.target.value)} placeholder="0.00" min="0" step="0.01" />
                     </div>
+
+                    {/* ... (input de margen igual) ... */}
                     <div className="form-group" style={{ width: '80px', marginBottom: 0, position: 'relative' }}>
                         <label className="form-label" style={{ fontSize: '0.85rem', color: 'var(--primary-color)' }}>Ganancia %</label>
                         <input
@@ -118,13 +120,13 @@ export default function CommonProductFields({
                                 borderWidth: '2px'
                             }}
                         />
-                        {/* Pequeño indicador visual tipo "punto" */}
                         <div style={{
                             position: 'absolute', right: '5px', top: '35px',
                             width: '8px', height: '8px', borderRadius: '50%',
                             backgroundColor: getMarginColor(margin)
                         }}></div>
                     </div>
+
                     <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                         <label className="form-label" style={{ fontSize: '0.85rem' }}>Precio Venta *</label>
                         <input type="number" className="form-input" value={price} onChange={e => handlePriceChange(e.target.value)} required placeholder="0.00" min="0" step="0.01" style={{ fontWeight: 'bold', fontSize: '1.1rem' }} />
@@ -132,16 +134,24 @@ export default function CommonProductFields({
                 </div>
             </div>
 
-            {/* INTERRUPTOR DE STOCK */}
-            <div className="form-group-checkbox"
-                style={{ backgroundColor: doesTrackStock ? '#f0fdf4' : '#f3f4f6', padding: '12px', borderRadius: '8px', border: `1px solid ${doesTrackStock ? '#bbf7d0' : '#d1d5db'}`, display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', marginTop: '10px' }}
+            {/* INTERRUPTOR DE STOCK (Estilo CSS limpio) */}
+            <div
+                className={`stock-switch-container ${doesTrackStock ? 'active' : ''}`}
                 onClick={() => setDoesTrackStock(!doesTrackStock)}
             >
-                <div style={{ width: '44px', height: '24px', backgroundColor: doesTrackStock ? 'var(--success-color)' : '#9ca3af', borderRadius: '20px', position: 'relative', transition: 'all 0.3s' }}>
-                    <div style={{ width: '18px', height: '18px', backgroundColor: 'white', borderRadius: '50%', position: 'absolute', top: '3px', left: doesTrackStock ? '23px' : '3px', transition: 'all 0.3s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></div>
+                <div
+                    className="stock-track"
+                    style={{ backgroundColor: doesTrackStock ? 'var(--success-color)' : '#9ca3af' }}
+                >
+                    <div
+                        className="stock-thumb"
+                        style={{ left: doesTrackStock ? '23px' : '3px' }}
+                    ></div>
                 </div>
                 <div>
-                    <span style={{ fontWeight: 'bold', display: 'block', color: 'var(--text-dark)' }}>{doesTrackStock ? 'Controlar Inventario' : 'Venta Libre (Sin Stock)'}</span>
+                    <span style={{ fontWeight: 'bold', display: 'block', color: 'var(--text-dark)' }}>
+                        {doesTrackStock ? 'Controlar Inventario' : 'Venta Libre (Sin Stock)'}
+                    </span>
                 </div>
             </div>
 
