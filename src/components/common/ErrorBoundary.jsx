@@ -189,7 +189,7 @@ ${errorInfo ? errorInfo.componentStack.substring(0, 400) : 'No disponible'}...
                     <p style={{ margin: 0, color: '#3b82f6', fontSize: '0.9rem', lineHeight: '1.4' }}>
                       Puedes ir directamente al Punto de Venta para continuar tu trabajo. 
                       <strong style={{ display: 'block', marginTop: '4px' }}>
-                        ⚠️ Por favor, evita regresar a esta sección conflictiva hasta que Soporte te indique.
+                        ⚠️ Por favor, evita regresar a esta sección conflictiva hasta que Soporte lo arregle.
                       </strong>
                     </p>
                   </div>
