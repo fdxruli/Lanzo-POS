@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
-import { isLocalStorageEnabled, normalizeDate, showMessageModal, safeLocalStorageSet} from '../services/utils';
+import { isLocalStorageEnabled, normalizeDate, showMessageModal, safeLocalStorageSet } from '../services/utils';
 
 import {
   activateLicense,
@@ -62,18 +62,18 @@ const generateSignature = (data) => {
 const saveLicenseToStorage = async (licenseData) => {
   if (!isLocalStorageEnabled()) return;
   const dataToStore = { ...licenseData };
-  
+
   // Aseguramos que siempre tenga localExpiry al guardar
   if (!dataToStore.localExpiry) {
     dataToStore.localExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   }
-  
+
   const signature = generateSignature(dataToStore);
   const packageToStore = { data: dataToStore, signature };
   const saved = safeLocalStorageSet('lanzo_license', JSON.stringify(packageToStore));
-  
+
   if (!saved) {
-     console.warn("No se pudo persistir la licencia por falta de espacio.");
+    console.warn("No se pudo persistir la licencia por falta de espacio.");
   }
 };
 
@@ -92,13 +92,18 @@ const getLicenseFromStorage = async () => {
 
     if (parsedPackage.signature !== expectedSignature) {
       console.warn("⚠️ La firma local no coincide. Posible actualización de versión.");
+      // NOTA: Esto está bien, permitimos que pase la data aunque la firma falle
+      // para soportar actualizaciones donde cambia el algoritmo de firma.
       return parsedPackage.data;
     }
 
     return parsedPackage.data;
   } catch (e) {
     console.error("Error leyendo licencia local:", e);
-    localStorage.removeItem('lanzo_license');
+    // === CAMBIO: NO BORRAR AQUI ===
+    // localStorage.removeItem('lanzo_license'); <--- COMENTAR O BORRAR ESTA LÍNEA
+    // Si borramos aquí, un error tonto de lectura desloguea al usuario.
+    // Mejor retornar null y pedir login, pero los datos siguen ahí por si acaso.
     return null;
   }
 };
@@ -173,18 +178,32 @@ export const useAppStore = create((set, get) => ({
 
     const isWithinGracePeriod = graceEnd && graceEnd > now;
 
+    const FATAL_REASONS = ['banned', 'deleted', 'revoked', 'device_limit_reached', 'expired_subscription'];
+
     if (!serverValidation.valid &&
       serverValidation.reason !== 'offline_grace' &&
       !isWithinGracePeriod) {
 
-      console.warn('🚫 [AppStore] Licencia inválida según servidor');
-      clearLicenseFromStorage();
-      set({
-        appStatus: 'unauthenticated',
-        licenseDetails: null,
-        licenseStatus: serverValidation.reason || 'invalid'
-      });
-      return;
+      // Verificamos si es un error fatal antes de borrar
+      if (FATAL_REASONS.includes(serverValidation.reason)) {
+        console.warn('🚫 [AppStore] Licencia revocada fatalmente:', serverValidation.reason);
+        clearLicenseFromStorage();
+        set({
+          appStatus: 'unauthenticated',
+          licenseDetails: null,
+          licenseStatus: serverValidation.reason || 'invalid'
+        });
+        return;
+      } else {
+        // === FALLO SUAVE (SOFT FAIL) ===
+        // Si el servidor dice "invalid" pero no es fatal (ej. error de formato tras update),
+        // ignoramos al servidor y mantenemos la sesión local (Modo Offline forzado).
+        console.warn('⚠️ [AppStore] Validación fallida (posible error post-update). Manteniendo sesión local.');
+
+        // Tratamos la licencia como si estuviéramos offline
+        await get()._processOfflineMode(localLicense);
+        return;
+      }
     }
 
     let finalStatus = serverValidation.reason || 'active';
@@ -222,17 +241,17 @@ export const useAppStore = create((set, get) => ({
     // Esto evita que licencias antiguas funcionen para siempre
     if (!localLicense.localExpiry) {
       console.log("⚠️ [AppStore] localExpiry faltante, generando basado en activación...");
-      
+
       // Si no hay activated_at, usamos NOW como último recurso (menos seguro pero funcional)
       // Si hay activated_at, calculamos 30 días desde esa fecha original.
-      const baseDate = localLicense.activated_at 
-        ? new Date(localLicense.activated_at) 
+      const baseDate = localLicense.activated_at
+        ? new Date(localLicense.activated_at)
         : now;
-      
+
       const expiryDate = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000);
-      
+
       localLicense.localExpiry = expiryDate.toISOString();
-      
+
       // Actualizamos el storage para futuros chequeos
       await saveLicenseToStorage(localLicense);
     }
