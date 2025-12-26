@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -295,3 +295,4 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
     </div>
   );
 }
+
