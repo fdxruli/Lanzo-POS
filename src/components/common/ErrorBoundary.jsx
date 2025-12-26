@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageCircle, RefreshCw, AlertTriangle, ShieldCheck, Copy } from 'lucide-react';
+import { MessageCircle, RefreshCw, AlertTriangle, ShieldCheck, Store, ArrowRightCircle } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 
 class ErrorBoundary extends React.Component {
@@ -30,6 +30,39 @@ class ErrorBoundary extends React.Component {
   handleReset = () => {
     this.setState({ hasError: false, error: null, errorInfo: null });
     // Opcional: Aquí podrías intentar limpiar partes específicas del estado global si fuera necesario
+  }
+
+  // Nueva función MEJORADA: Limpia Service Workers y Cache antes de redirigir
+  // Esto soluciona el error de "Manifest Syntax Error" y la pérdida de estilos (Dark Mode)
+  handleGoToPos = async () => {
+    try {
+      console.log("🧹 Iniciando limpieza de emergencia antes de ir al POS...");
+
+      // 1. Desregistrar Service Workers (Soluciona el error del Manifest/PWA corrupto)
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+          console.log("Service Worker desregistrado.");
+        }
+      }
+
+      // 2. Limpiar Caché del navegador (Asegura que se carguen los estilos y scripts frescos)
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(
+          cacheNames.map(name => {
+            console.log(`Borrando caché: ${name}`);
+            return caches.delete(name);
+          })
+        );
+      }
+    } catch (e) {
+      console.warn("No se pudo completar la limpieza de caché, redirigiendo de todas formas...", e);
+    } finally {
+      // 3. Redirigir forzando carga desde el servidor
+      window.location.href = '/';
+    }
   }
 
   handleReport = () => {
@@ -74,6 +107,10 @@ ${errorInfo ? errorInfo.componentStack.substring(0, 400) : 'No disponible'}...
 
   render() {
     if (this.state.hasError) {
+      // Determinamos si el error ocurrió fuera del POS (Home) para mostrar la opción de volver
+      const currentPath = window.location.pathname;
+      const isPosPage = currentPath === '/' || currentPath === '';
+
       return (
         <div style={{ 
           minHeight: '100vh', 
@@ -130,8 +167,60 @@ ${errorInfo ? errorInfo.componentStack.substring(0, 400) : 'No disponible'}...
               marginBottom: '24px' 
             }}>
               No te preocupes, <strong>no es un error tuyo</strong>. <br/>
-              Probablemente se deba a una actualización reciente del sistema o una interrupción temporal.
+              Ha ocurrido un problema técnico en esta sección.
             </p>
+
+            {/* SECCIÓN NUEVA: Sugerencia de ir al POS si no estamos en él */}
+            {!isPosPage && (
+              <div style={{
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: '12px',
+                padding: '16px',
+                marginBottom: '24px',
+                textAlign: 'left'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
+                  <Store className="text-blue-600" size={24} style={{ minWidth: '24px' }} />
+                  <div>
+                    <h4 style={{ margin: '0 0 4px 0', color: '#1e40af', fontSize: '1rem' }}>
+                      ¿Necesitas seguir vendiendo?
+                    </h4>
+                    <p style={{ margin: 0, color: '#3b82f6', fontSize: '0.9rem', lineHeight: '1.4' }}>
+                      Puedes ir directamente al Punto de Venta para continuar tu trabajo. 
+                      <strong style={{ display: 'block', marginTop: '4px' }}>
+                        ⚠️ Por favor, evita regresar a esta sección conflictiva hasta que Soporte te indique.
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={this.handleGoToPos}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px',
+                    backgroundColor: '#2563eb', // Blue-600
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '0.95rem',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1d4ed8'}
+                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
+                >
+                  <ArrowRightCircle size={18} />
+                  Ir al Punto de Venta ahora
+                </button>
+              </div>
+            )}
 
             <div style={{
               display: 'flex',
