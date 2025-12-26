@@ -1,8 +1,18 @@
 // src/store/useOrderStore.jsx
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware'; // <--- Importante
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { calculateCompositePrice } from '../services/pricingLogic';
-import { roundCurrency } from '../services/utils';
+import { roundCurrency, safeLocalStorageSet } from '../services/utils';
+
+const safeStorage = {
+  getItem: (name) => localStorage.getItem(name),
+  setItem: (name, value) => {
+    // Usamos nuestra función protegida. 
+    // Si falla, retorna false, pero Zustand no crashea.
+    safeLocalStorageSet(name, value);
+  },
+  removeItem: (name) => localStorage.removeItem(name),
+};
 
 export const useOrderStore = create(
   persist(
@@ -99,6 +109,7 @@ export const useOrderStore = create(
     }),
     {
       name: 'lanzo-cart-storage', // Nombre único en LocalStorage para no mezclar datos
+      storage: createJSONStorage(() => safeStorage),
       partialize: (state) => ({ order: state.order }), // Solo persistimos el array 'order'
     }
   )

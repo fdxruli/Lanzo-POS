@@ -5,18 +5,13 @@ import { supabaseClient } from './supabase';
 let activeChannel = null;
 let reconnectTimer = null;
 let isConnecting = false;
+let isReconnecting = false; // NUEVO: Estado para controlar el periodo de espera
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY = 3000;
 
 /**
  * Inicia la escucha en tiempo real para cambios en la licencia y el dispositivo.
- * @param {string} licenseKey - La clave de licencia a monitorear.
- * @param {string} deviceFingerprint - El ID único del dispositivo actual.
- * @param {object} callbacks - Funciones a ejecutar cuando ocurran eventos.
- * @param {function} callbacks.onLicenseChanged - (newData) => void
- * @param {function} callbacks.onDeviceChanged - (newData) => void
- * @returns {object} El canal de suscripción (para poder desuscribirse después).
  */
 export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) => {
   if (!licenseKey || !deviceFingerprint) {
@@ -24,14 +19,16 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
     return null;
   }
 
-  if (isConnecting) {
-    console.warn("[Realtime] Ya hay una conexión en progreso, espere...");
-    return null;
+  // CORRECCIÓN: Bloquear si está conectando O reconectando (esperando timeout)
+  if (isConnecting || isReconnecting) {
+    console.warn("[Realtime] Ya hay una operación de conexión en progreso, retornando canal actual.");
+    return activeChannel;
   }
 
-  // Limpiar canal previo si existe
+  // Limpiar canal previo si existe (para evitar duplicados forzados)
   if (activeChannel) {
     console.warn("[Realtime] Limpiando canal existente antes de crear uno nuevo.");
+    // No esperamos el async aquí para no bloquear, pero el lock de isConnecting protege
     stopLicenseListener(activeChannel);
   }
 
@@ -77,9 +74,9 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       },
       (payload) => {
         if (!payload.new) return;
-        console.log("🔔 [Realtime] UPDATE detectado en DISPOSITIVO:", payload.new);
         
         if (payload.new.is_active === false) {
+          console.log("🔔 [Realtime] DISPOSITIVO BLOQUEADO detectado");
           if (callbacks.onDeviceChanged) {
             try {
               callbacks.onDeviceChanged({ status: 'banned', data: payload.new });
@@ -110,10 +107,12 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       }
     )
     .subscribe((status, err) => {
-      isConnecting = false;
+      // Nota: isConnecting se gestiona dentro de cada estado para mayor precisión
 
       if (status === 'SUBSCRIBED') {
         console.log("✅ [Realtime] Conexión establecida y segura.");
+        isConnecting = false;
+        isReconnecting = false;
         activeChannel = channel;
         reconnectAttempts = 0;
         
@@ -124,36 +123,46 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       } 
       else if (status === 'CHANNEL_ERROR') {
         console.error("❌ [Realtime] Error en la conexión WebSocket:", err);
+        isConnecting = false; // La conexión falló, ya no estamos "conectando" activamente
         activeChannel = null;
         
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimer) {
+        // CORRECCIÓN: Usar isReconnecting para evitar loops paralelos
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimer && !isReconnecting) {
           const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
           reconnectAttempts++;
+          isReconnecting = true; // Activar lock de reconexión
           
           console.log(`🔄 [Realtime] Reintentando conexión en ${delay}ms (intento ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
           
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
+            isReconnecting = false; // Liberar lock justo antes de intentar de nuevo
             startLicenseListener(licenseKey, deviceFingerprint, callbacks);
           }, delay);
         } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
           console.error("❌ [Realtime] Máximo de reintentos alcanzado. Se requiere intervención manual.");
+          isReconnecting = false;
         }
       }
       else if (status === 'CLOSED') {
         console.warn("⚠️ [Realtime] Canal cerrado.");
-        activeChannel = null;
+        if (activeChannel === channel) activeChannel = null;
+        isConnecting = false;
+        isReconnecting = false;
       }
       else if (status === 'TIMED_OUT') {
         console.warn("⏱️ [Realtime] Timeout de conexión.");
+        isConnecting = false;
         activeChannel = null;
         
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimer) {
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimer && !isReconnecting) {
           const delay = BASE_RECONNECT_DELAY;
           reconnectAttempts++;
+          isReconnecting = true;
           
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
+            isReconnecting = false;
             startLicenseListener(licenseKey, deviceFingerprint, callbacks);
           }, delay);
         }
@@ -165,13 +174,18 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
 
 /**
  * Detiene la escucha y limpia la conexión.
- * @param {object} channel - El objeto canal retornado por startLicenseListener.
  */
 export const stopLicenseListener = async (channel) => {
+  // Limpiar timer si existe
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+
+  // Importante: Resetear banderas de estado para permitir futuras conexiones manuales
+  isConnecting = false;
+  isReconnecting = false;
+  reconnectAttempts = 0;
 
   if (channel) {
     console.log("🔕 [Realtime] Desconectando WebSocket...");
@@ -185,14 +199,10 @@ export const stopLicenseListener = async (channel) => {
   if (activeChannel === channel) {
     activeChannel = null;
   }
-
-  isConnecting = false;
-  reconnectAttempts = 0;
 };
 
 /**
  * Limpieza global: desconecta todos los canales activos.
- * Útil para llamar en logout o unmount de la app.
  */
 export const cleanupAllChannels = async () => {
   if (reconnectTimer) {
@@ -204,19 +214,21 @@ export const cleanupAllChannels = async () => {
     await stopLicenseListener(activeChannel);
   }
 
+  // Asegurar reseteo total
   isConnecting = false;
+  isReconnecting = false;
   reconnectAttempts = 0;
   console.log("🧹 [Realtime] Limpieza completa ejecutada.");
 };
 
 /**
  * Obtiene el estado actual de la conexión.
- * @returns {object} Estado de la conexión
  */
 export const getConnectionStatus = () => {
   return {
     isActive: activeChannel !== null,
     isConnecting,
+    isReconnecting, // Agregado al reporte de estado
     reconnectAttempts,
     channelId: activeChannel?.topic || null
   };

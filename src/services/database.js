@@ -34,6 +34,8 @@ export const STORES = {
   IMAGES: 'images',
 };
 
+const MAX_SEARCH_RESULTS = 100;
+
 const SCHEMAS = {
   [STORES.MENU]: productSchema,
   [STORES.CUSTOMERS]: customerSchema,
@@ -617,36 +619,32 @@ export function searchProductByBarcode(barcode) {
   });
 }
 
-export function searchProductsInDB(term) {
+export function searchProductsInDB(term, limit = MAX_SEARCH_RESULTS) {
   return executeWithRetry(async () => {
     const db = await initDB();
+    const results = [];
+
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORES.MENU], 'readonly');
       const store = tx.objectStore(STORES.MENU);
-
-      // --- CORRECCIÓN: Si falta el índice, mejor fallar o usar búsqueda básica por nombre ---
-      if (!store.indexNames.contains('name_lower')) {
-        console.warn("⚠️ Índice 'name_lower' faltante. Búsqueda degradada.");
-        // En este caso excepcional, podríamos permitir getAll() si el catálogo es pequeño,
-        // PERO lo ideal es forzar el uso del índice.
-        // Si decides mantener el fallback aquí, ponle un límite duro:
-        const req = store.getAll(null, 500); // Límite de 500 para no matar el navegador
-        req.onsuccess = () => {
-          // ... lógica de filtrado manual ...
-          resolve([]);
-        };
-        return;
-      }
-
       const index = store.index('name_lower');
+
       const lowerTerm = term.toLowerCase();
       const range = IDBKeyRange.bound(lowerTerm, lowerTerm + '\uffff');
-      const request = index.getAll(range, 60);
+      const request = index.openCursor(range); // ✅ Usar cursor en lugar de getAll
 
-      request.onsuccess = () => {
-        const results = (request.result || []).filter(p => p.isActive !== false);
-        resolve(results.slice(0, 50));
+      request.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && results.length < limit) {
+          if (cursor.value.isActive !== false) {
+            results.push(cursor.value);
+          }
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
       };
+
       request.onerror = (e) => reject(e.target.error);
     });
   });
@@ -892,8 +890,8 @@ export async function executeSaleTransaction(sale, deductions) {
 
           if (batch.stock < quantity) {
             console.error(`STOCK INSUFICIENTE en lote ${batchId}: Hay ${batch.stock}, se requiere ${quantity}`);
-            aborted = true;
-            tx.abort();
+            aborted = true; // Marca para detener otras iteraciones
+            tx.abort();     // Cancela TODA la venta (rollback automático)
             return;
           }
 

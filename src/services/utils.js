@@ -334,3 +334,66 @@ export const tryEnablePersistence = async () => {
   }
   return false;
 };
+
+/**
+ * Guarda en LocalStorage de forma segura, manejando errores de cuota llena.
+ * Intenta limpiar caché vieja y reintentar antes de rendirse.
+ * @param {string} key - La clave a guardar.
+ * @param {string} value - El valor (string) a guardar.
+ * @returns {boolean} - true si se guardó, false si falló.
+ */
+export const safeLocalStorageSet = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    // 1. Detectar variantes de error de cuota (Chrome, Firefox, Safari)
+    const isQuotaError = error && (
+      error.name === 'QuotaExceededError' ||
+      error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      error.code === 22 ||
+      error.message?.toLowerCase().includes('quota')
+    );
+
+    if (isQuotaError) {
+      console.warn('💾 LocalStorage lleno. Intentando limpieza de emergencia...');
+
+      // 2. Estrategia: Borrar keys no críticas (cachés, flags temporales)
+      // Agrega aquí cualquier key que sea seguro borrar
+      const keysToClean = [
+        'lanzo_last_active', 
+        'retry-lazy-refreshed', 
+        'lanzo-test',
+        'loglevel',
+        'debug'
+      ];
+      
+      keysToClean.forEach(k => {
+        if (k !== key) { // No borrar lo que estamos intentando guardar si colisiona
+          try { localStorage.removeItem(k); } catch (e) { /* ignorar */ }
+        }
+      });
+
+      // 3. Reintentar Guardado
+      try {
+        localStorage.setItem(key, value);
+        console.log('✅ Espacio recuperado. Guardado exitoso.');
+        return true;
+      } catch (retryError) {
+        // 4. Fallo definitivo: Avisar al usuario usando tu modal existente
+        console.error("❌ Fallo crítico: Memoria llena irrecoverable.");
+        
+        showMessageModal(
+          '⚠️ ALERTA DE MEMORIA\n\nEl navegador no tiene espacio para guardar datos. Es posible que pierdas tu sesión si recargas.\n\nPor favor, borra datos de navegación antiguos.',
+          null, 
+          { type: 'error' }
+        );
+        return false;
+      }
+    }
+    
+    // Otros errores (ej. Modo Incógnito estricto en Safari a veces bloquea setItem completamente)
+    console.error("Error de acceso a LocalStorage:", error);
+    return false;
+  }
+};

@@ -1,6 +1,7 @@
 // src/services/supabase.js
 import { createClient } from "@supabase/supabase-js";
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
+import { safeLocalStorageSet } from './utils';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -39,12 +40,12 @@ async function getStableDeviceId() {
         const fp = await FingerprintJS.load();
         const result = await fp.get();
         const newId = result.visitorId;
-        localStorage.setItem(STORAGE_KEY, newId);
+        safeLocalStorageSet(STORAGE_KEY, newId);
         return newId;
     } catch (error) {
         console.error("Error generando fingerprint, usando fallback UUID", error);
         const fallbackId = `fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        localStorage.setItem(STORAGE_KEY, fallbackId);
+        safeLocalStorageSet(STORAGE_KEY, fallbackId);
         return fallbackId;
     }
 }
@@ -78,7 +79,7 @@ function registerFailedAttempt() {
     if (newAttempts >= MAX_ATTEMPTS) {
         newData.lockedUntil = new Date().getTime() + LOCKOUT_TIME;
     }
-    localStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(newData));
+    safeLocalStorageSet(RATE_LIMIT_KEY, JSON.stringify(newData));
 }
 
 function resetRateLimit() {
@@ -106,7 +107,7 @@ export const activateLicense = async function (licenseKey) {
 
         if (data && data.success) {
             resetRateLimit();
-            localStorage.setItem('fp', deviceFingerprint);
+            safeLocalStorageSet('fp', deviceFingerprint);
             return { valid: true, message: data.message, details: data.details };
         } else {
             registerFailedAttempt();
@@ -317,7 +318,7 @@ export const createFreeTrial = async function () {
         if (error) throw error;
 
         if (data && data.success) {
-            localStorage.setItem('fp', deviceFingerprint);
+            safeLocalStorageSet('fp', deviceFingerprint);
             const licenseData = data.details || data;
             return { success: true, details: licenseData };
         } else {
