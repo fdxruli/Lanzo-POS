@@ -5,7 +5,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useProductStore } from '../../store/useProductStore';
 import { useStatsStore } from '../../store/useStatsStore';
 
-import { saveDataSafe, saveBatchAndSyncProductSafe, deleteDataSafe, STORES, queryByIndex } from '../../services/database';
+import { saveDataSafe, saveBatchAndSyncProductSafe, deleteDataSafe, saveData, STORES, deleteData, queryByIndex, saveBatchAndSyncProduct } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useCaja } from '../../hooks/useCaja';
@@ -330,10 +330,9 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
 export default function BatchManager({ selectedProductId, onProductSelect }) {
   const features = useFeatureConfig();
 
+  // --- CAMBIO: Usamos useProductStore y useStatsStore ---
   const rawProducts = useProductStore((state) => state.rawProducts);
-  // ✅ FIX 1: Traemos la función de búsqueda
-  const searchProducts = useProductStore((state) => state.searchProducts);
-  const refreshData = useProductStore((state) => state.loadInitialProducts); 
+  const refreshData = useProductStore((state) => state.loadInitialProducts); // Ojo: loadAllData ya no existe
   const menu = useProductStore((state) => state.menu);
   const loadBatchesForProduct = useProductStore((state) => state.loadBatchesForProduct);
   const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
@@ -348,21 +347,22 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   // Sincronizar buscador
   useEffect(() => {
     if (selectedProductId) {
-      // ✅ FIX 2: Buscamos en 'menu' (lo que está en pantalla/búsqueda) en vez de rawProducts
-      const prod = menu.find(p => p.id === selectedProductId) || rawProducts.find(p => p.id === selectedProductId);
+      const prod = rawProducts.find(p => p.id === selectedProductId);
       if (prod) setSearchTerm(prod.name);
     } else {
       setSearchTerm('');
     }
-  }, [selectedProductId, menu, rawProducts]);
+  }, [selectedProductId, rawProducts]);
 
-  // ✅ FIX 3: Usamos 'menu' para filtrar resultados, ya que 'searchProducts' actualiza 'menu'
-  // Eliminamos 'filteredProducts' calculado localmente y usamos 'menu' directamente en el render.
+  const filteredProducts = useMemo(() => {
+    if (!searchTerm) return [];
+    const lower = searchTerm.toLowerCase();
+    return rawProducts.filter(p => p.name.toLowerCase().includes(lower)).slice(0, 10);
+  }, [searchTerm, rawProducts]);
 
   const selectedProduct = useMemo(() => {
-    // ✅ FIX 4: Buscamos en 'menu' primero
-    return menu.find(p => p.id === selectedProductId) || rawProducts.find(p => p.id === selectedProductId);
-  }, [selectedProductId, menu, rawProducts]);
+    return rawProducts.find(p => p.id === selectedProductId);
+  }, [selectedProductId, rawProducts]);
 
   // Cargar lotes
   useEffect(() => {
@@ -399,9 +399,17 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     setShowSuggestions(false);
   }
 
+  const handleActionableError = (result) => {
+    const { message } = result.error;
+    showMessageModal(message);
+  };
+
   const handleSaveBatch = async (batchData) => {
     try {
+      // Si el producto no tenía activado el manejo de lotes, lo activamos
       if (selectedProduct && !selectedProduct.batchManagement?.enabled) {
+        // Esto podría hacerse dentro de saveBatchAndSyncProduct también, 
+        // pero está bien dejarlo explícito aquí.
         const updatedProduct = {
           ...selectedProduct,
           batchManagement: { enabled: true, selectionStrategy: 'fifo' }
@@ -409,11 +417,14 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
         await saveDataSafe(STORES.MENU, updatedProduct);
       }
 
-      await saveBatchAndSyncProductSafe(batchData);
+      // AQUÍ ESTÁ EL CAMBIO CLAVE:
+      // En lugar de saveData(STORES.PRODUCT_BATCHES...), usamos la función sincronizada.
+      const result = await saveBatchAndSyncProductSafe(batchData);
 
       const updatedBatches = await loadBatchesForProduct(selectedProductId);
       setLocalBatches(updatedBatches);
 
+      // Refrescamos la lista global de productos para ver el nuevo stock total en la tabla
       await refreshData();
 
       showMessageModal('✅ Lote guardado y stock total actualizado.');
@@ -437,7 +448,8 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     if (window.confirm('¿Eliminar este registro permanentemente?')) {
       try {
         const batchValue = batch.cost * batch.stock;
-        await deleteDataSafe(STORES.PRODUCT_BATCHES, batch.id);
+
+        const result = await deleteDataSafe(STORES.PRODUCT_BATCHES, batch.id);
 
         if (batchValue > 0) {
           await adjustInventoryValue(-batchValue);
@@ -450,6 +462,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     }
   };
 
+  // Formato de fecha seguro
   const formatDate = (iso) => iso ? new Date(iso).toLocaleDateString() : '-';
 
   return (
@@ -462,24 +475,18 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
             className="form-input product-search-input"
             placeholder="Buscar producto..."
             value={searchTerm}
-            onChange={(e) => { 
-              const val = e.target.value;
-              setSearchTerm(val); 
-              // ✅ FIX 5: Disparamos la búsqueda en BD al escribir
-              searchProducts(val); 
-              setShowSuggestions(true); 
-            }}
+            onChange={(e) => { setSearchTerm(e.target.value); setShowSuggestions(true); }}
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
           />
           {searchTerm && <button className="btn-clear-search" onClick={() => { setSearchTerm(''); onProductSelect(null); }}>×</button>}
 
-          {/* ✅ FIX 6: Mostramos 'menu' (resultados de búsqueda) en vez de filteredProducts */}
           {showSuggestions && searchTerm && (
             <div className="product-suggestions-list">
-              {menu.slice(0, 10).map(p => (
+              {filteredProducts.map(p => (
                 <div key={p.id} className="product-suggestion-item" onMouseDown={() => handleSelectProduct(p)}>
                   <span className="suggestion-name">{p.name}</span>
+                  {/* --- RECUPERADO: Muestra el stock para referencia rápida --- */}
                   <span className="suggestion-meta">Stock: {p.stock || 0}</span>
                 </div>
               ))}

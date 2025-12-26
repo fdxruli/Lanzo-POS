@@ -45,7 +45,7 @@ export default function ReconnectionBanner() {
     
     try {
       // Cerrar y reabrir BD
-      const { closeDB, initDB } = await import('../services/database');
+      const { closeDB, initDB } = await import('../../services/database');
       closeDB();
       
       await new Promise(r => setTimeout(r, 500));

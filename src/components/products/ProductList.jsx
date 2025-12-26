@@ -7,16 +7,13 @@ import WasteModal from './WasteModal';
 import './ProductList.css';
 
 export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus }) {
+  // 1. Obtenemos la configuración del negocio (Farmacia, Abarrotes, etc.)
   const features = useFeatureConfig();
 
-  // --- STORE ---
   const refreshData = useProductStore((state) => state.loadInitialProducts);
   const loadMoreProducts = useProductStore((state) => state.loadMoreProducts);
   const hasMoreProducts = useProductStore((state) => state.hasMoreProducts);
   const isGlobalLoading = useProductStore((state) => state.isLoading);
-  
-  // ✅ CORRECCIÓN 1: Importamos la búsqueda global para buscar en toda la BD
-  const searchGlobal = useProductStore((state) => state.searchProducts);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showWaste, setShowWaste] = useState(false);
@@ -26,12 +23,12 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
     return new Map(categories.map(cat => [cat.id, cat.name]));
   }, [categories]);
 
-  // Filtro local visual (para resaltar coincidencias rápidas sobre los resultados que traiga la BD)
   const filteredProducts = useMemo(() => {
     return products.filter(item =>
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.barcode?.includes(searchTerm) ||
-      item.sku?.includes(searchTerm)
+      (item.sustancia && item.sustancia.toLowerCase().includes(searchTerm.toLowerCase()))
     );
   }, [products, searchTerm]);
 
@@ -49,6 +46,12 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
     await refreshData();
   };
 
+  const calculateMargin = (price, cost) => {
+    if (!cost || cost <= 0 || !price) return null;
+    const margin = ((price - cost) / price) * 100;
+    return margin.toFixed(1);
+  };
+
   if (isLoading && products.length === 0) {
     return (
       <div className="loader-container">
@@ -60,21 +63,20 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
   return (
     <div className="product-list-container">
-      <div className="product-list-header">
-        <h3 className="subtitle">Inventario de Productos</h3>
-        <div className="search-wrapper">
-          <span className="search-icon">🔍</span>
+      {/* --- Header --- */}
+      <div className="list-header">
+        <div className="title-group">
+          <h3 className="subtitle">Inventario</h3>
+          <span className="product-count">{filteredProducts.length} productos</span>
+        </div>
+        
+        <div className="search-box">
+          <i className="search-icon">🔍</i>
           <input
             type="text"
-            className="modern-search-input"
-            placeholder="Buscar por nombre, código o SKU..."
+            placeholder={features.hasLabFields ? "Buscar: Nombre, SKU, Sustancia..." : "Buscar: Nombre, SKU, Código..."}
             value={searchTerm}
-            // ✅ CORRECCIÓN 2: Al escribir, buscamos en el servidor, no solo en la lista local
-            onChange={(e) => {
-              const val = e.target.value;
-              setSearchTerm(val);
-              searchGlobal(val); 
-            }}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
       </div>
@@ -83,153 +85,192 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
         <div className="empty-state">
           <div className="empty-icon">📦</div>
           <h3>No se encontraron productos</h3>
-          <p>{searchTerm ? `No hay resultados para "${searchTerm}"` : 'Agrega productos para comenzar'}</p>
+          <p>Intenta ajustar tu búsqueda o agrega nuevo inventario.</p>
         </div>
       ) : (
-        <>
-          <div className="product-grid">
-            {filteredProducts.map(item => {
-              const categoryName = categoryMap.get(item.categoryId) || 'General';
-              const isActive = item.isActive !== false;
-              
-              // Análisis de alertas
-              const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
-              const isTracked = item.trackStock || item.batchManagement?.enabled;
-              const unitLabel = item.bulkData?.purchase?.unit || (item.saleType === 'bulk' ? 'kg' : 'pza');
+        <div className="product-grid">
+          {filteredProducts.map(item => {
+            const categoryName = categoryMap.get(item.categoryId) || 'General';
+            const isActive = item.isActive !== false;
+            
+            // --- Lógica de Alertas ---
+            const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
+            const isTracked = item.trackStock || item.batchManagement?.enabled;
+            
+            // Unidad de medida: Solo mostramos 'kg/g' si el negocio soporta Granel (features.hasBulk)
+            // Si es Farmacia (forceUnitMode), siempre será 'pza' o nada.
+            const unitLabel = features.hasBulk 
+                ? (item.bulkData?.purchase?.unit || (item.saleType === 'bulk' ? 'kg' : 'pza')) 
+                : (item.saleType === 'bulk' ? 'kg' : 'pza');
 
-              // Clases dinámicas para la tarjeta
-              let cardStatusClass = '';
-              if (isNearingExpiry) cardStatusClass = 'card-critical';
-              else if (isLowStock) cardStatusClass = 'card-warning';
+            // --- Cálculos Financieros ---
+            const margin = calculateMargin(item.price, item.cost);
 
-              return (
-                <div key={item.id} className={`product-card ${cardStatusClass} ${!isActive ? 'card-inactive' : ''}`}>
-                  
-                  {/* --- Cabecera de Tarjeta --- */}
-                  <div className="card-header">
-                    <div className="card-image-wrapper">
-                      <LazyImage src={item.image} alt={item.name} />
-                      <span className={`status-badge ${isActive ? 'status-active' : 'status-inactive'}`}>
-                        {isActive ? 'Activo' : 'Inactivo'}
-                      </span>
+            // --- Lógica de Visualización Condicional (Contexto del Rubro) ---
+            // Solo mostrar ubicación si existe Y tiene dato (evita campo vacío en Farmacia)
+            const showLocation = item.location && item.location.trim() !== '';
+            
+            // Solo mostrar Stock Min/Max si el rubro lo soporta (ej. Ferretería) Y el producto rastrea stock
+            const showMinMax = features.hasMinMax && isTracked;
+            
+            // Solo mostrar datos médicos si el rubro es Farmacia
+            const showPharmacyDetails = features.hasLabFields && (item.sustancia || item.laboratorio);
+
+            // Solo mostrar código de barras si tiene uno
+            const showBarcode = item.barcode && item.barcode.trim() !== '';
+
+            // Estilos de borde
+            let borderClass = '';
+            if (features.hasExpiry && isNearingExpiry) borderClass = 'border-critical'; // Solo si rubro maneja caducidad
+            else if (isLowStock) borderClass = 'border-warning';
+
+            return (
+              <div key={item.id} className={`product-card-complex ${borderClass} ${!isActive ? 'opacity-dim' : ''}`}>
+                
+                {/* 1. Cabecera */}
+                <div className="complex-header">
+                  <div className="img-area">
+                    <LazyImage src={item.image} alt={item.name} />
+                    <span className={`status-dot ${isActive ? 'status-active' : 'status-inactive'}`}></span>
+                  </div>
+                  <div className="title-area">
+                    <div className="title-top">
+                      <h4 title={item.name}>{item.name}</h4>
                     </div>
-                    
-                    <div className="card-title-section">
-                      <h4 className="product-name" title={item.name}>{item.name}</h4>
-                      <span className="product-category">{categoryName}</span>
+                    <div className="sub-meta">
+                      <span className="category-badge">{categoryName}</span>
+                      {/* SKU es útil en casi todos, pero vital en Ferretería/Ropa */}
+                      {features.hasSKU && item.sku && <span className="sku-badge">SKU: {item.sku}</span>}
                     </div>
                   </div>
-
-                  {/* --- Cuerpo de Información --- */}
-                  <div className="card-body">
-                    
-                    {/* Sección de Alertas Visibles */}
-                    {(isLowStock || isNearingExpiry) && (
-                      <div className="alert-box">
-                        {isNearingExpiry && (
-                          <div className="alert-item alert-expiry">
-                            <span className="alert-icon">⏰</span>
-                            <span>{expiryDays === 0 ? 'Caduca HOY' : `Caduca en ${expiryDays} días`}</span>
-                          </div>
-                        )}
-                        {isLowStock && isTracked && item.stock > 0 && (
-                          <div className="alert-item alert-stock">
-                            <span className="alert-icon">⚠️</span>
-                            <span>Stock Bajo ({item.stock} {unitLabel})</span>
-                          </div>
-                        )}
-                        {isTracked && item.stock <= 0 && (
-                          <div className="alert-item alert-empty">
-                            <span className="alert-icon">🚫</span>
-                            <span>AGOTADO</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Metadatos (Tags) */}
-                    <div className="meta-tags">
-                      {item.sku && <span className="tag">SKU: {item.sku}</span>}
-                      {item.sustancia && <span className="tag tag-blue">💊 {item.sustancia}</span>}
-                      {item.location && <span className="tag tag-gray">📍 {item.location}</span>}
-                      {item.batchManagement?.enabled && <span className="tag tag-purple">🔢 Lotes</span>}
-                    </div>
-
-                    {/* Datos Económicos */}
-                    <div className="stats-row">
-                      <div className="stat-group">
-                        <span className="stat-label">Precio</span>
-                        <span className="stat-value price">${item.price?.toFixed(2)}</span>
-                      </div>
-                      <div className="stat-group">
-                        <span className="stat-label">Costo</span>
-                        <span className="stat-value">${item.cost?.toFixed(2)}</span>
-                      </div>
-                      <div className="stat-group">
-                        <span className="stat-label">Existencia</span>
-                        {isTracked ? (
-                           <span className={`stat-value ${item.stock <= 0 ? 'text-error' : ''}`}>
-                             {item.stock} <small>{unitLabel}</small>
-                           </span>
-                        ) : (
-                          <span className="stat-value infinite">∞</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* --- Footer de Acciones --- */}
-                  <div className="card-footer">
-                     <button
-                      className={`icon-btn ${isActive ? 'btn-disable' : 'btn-enable'}`}
-                      onClick={() => onToggleStatus(item)}
-                      title={isActive ? "Desactivar Producto" : "Activar Producto"}
-                    >
-                      {isActive ? '🛑' : '✅'}
-                    </button>
-
-                    {features.hasWaste && isActive && (
-                      <button className="icon-btn btn-waste" onClick={() => handleOpenWaste(item)} title="Registrar Merma">
-                        🗑️ Merma
-                      </button>
-                    )}
-
-                    <div className="action-spacer"></div>
-
-                    <button className="icon-btn btn-edit" onClick={() => onEdit(item)} title="Editar">
-                      ✏️
-                    </button>
-                    <button className="icon-btn btn-delete" onClick={() => onDelete(item)} title="Eliminar">
-                      🗑️
-                    </button>
+                  <div className="actions-area">
+                     <button className="icon-btn" onClick={() => onEdit(item)} title="Editar">✏️</button>
+                     <button className="icon-btn" onClick={() => onDelete(item)} title="Eliminar">🗑️</button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
 
-          {/* Botón "Cargar Más" solo visible si NO estamos buscando (para no mezclar resultados de búsqueda con paginación) */}
-          {!searchTerm && hasMoreProducts && (
-            <div className="load-more-container">
-              <button
-                className="btn-load-more"
-                onClick={() => loadMoreProducts()}
-                disabled={isGlobalLoading}
-              >
-                {isGlobalLoading ? 'Cargando...' : '⬇️ Cargar más productos'}
-              </button>
-              <p className="count-label">Mostrando {products.length} productos</p>
-            </div>
-          )}
-        </>
+                {/* 2. Banner de Alertas (Contextual) */}
+                <div className="alert-section-wrapper">
+                    {features.hasExpiry && isNearingExpiry && (
+                      <div className="alert-banner alert-red">
+                        📅 Caduca: {expiryDays === 0 ? 'HOY' : `${expiryDays} días`}
+                      </div>
+                    )}
+                    {isLowStock && isTracked && (
+                      <div className="alert-banner alert-orange">
+                        ⚠️ Stock Bajo ({item.stock} {showMinMax ? `≤ ${item.minStock}` : ''})
+                      </div>
+                    )}
+                </div>
+
+                {/* 3. Métricas Principales */}
+                <div className="main-stats">
+                  <div className="stat-block">
+                    <span className="stat-label">Precio</span>
+                    <span className="stat-value price">${item.price?.toFixed(2)}</span>
+                  </div>
+                  <div className="stat-block">
+                    <span className="stat-label">Stock</span>
+                    <span className={`stat-value stock ${item.stock <= 0 ? 'text-red' : ''}`}>
+                      {isTracked ? item.stock : '∞'} 
+                      {/* Solo mostrar unidad pequeña si el negocio maneja granel/unidades mixtas */}
+                      {features.hasBulk && <small>{unitLabel}</small>}
+                    </span>
+                  </div>
+                  <div className="stat-block">
+                     <span className="stat-label">Margen</span>
+                     <span className={`stat-value ${margin > 30 ? 'text-success' : 'text-muted'}`}>
+                        {margin ? `${margin}%` : '--'}
+                     </span>
+                  </div>
+                </div>
+
+                {/* 4. Grilla de Detalles (Solo lo que importa al Rubro) */}
+                <div className="details-table">
+                  
+                  {/* Fila A: Farmacia (Prioridad Alta) */}
+                  {showPharmacyDetails && (
+                    <div className="detail-row full-width pharmacy-row">
+                      <div className="pharmacy-content">
+                        {item.sustancia && <span className="ph-substance">💊 {item.sustancia}</span>}
+                        {item.presentation && <span className="ph-pres">({item.presentation})</span>}
+                        {item.laboratorio && <span className="ph-lab">{item.laboratorio}</span>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Fila B: Logística / Ferretería */}
+                  {showMinMax && (
+                    <div className="detail-row">
+                       <span className="dt-label">Mín/Máx:</span>
+                       <span className="dt-value">{item.minStock || 0} / {item.maxStock || '∞'}</span>
+                    </div>
+                  )}
+
+                  {showLocation && (
+                    <div className="detail-row">
+                      <span className="dt-label">Ubicación:</span>
+                      <span className="dt-value">📍 {item.location}</span>
+                    </div>
+                  )}
+
+                  {showBarcode && (
+                    <div className="detail-row full-width">
+                       <span className="dt-label">Código:</span>
+                       <span className="dt-value monospace">{item.barcode}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. Footer con Badges de Features Activos */}
+                <div className="complex-footer">
+                  <div className="feature-badges">
+                    {/* Solo mostramos badges de features ACTIVOS en el config */}
+                    {features.hasWholesale && item.wholesaleTiers?.length > 0 && (
+                        <span className="feat-badge purple">Mayoreo</span>
+                    )}
+                    {features.hasRecipes && item.recipe?.length > 0 && (
+                        <span className="feat-badge blue">Receta</span>
+                    )}
+                    {features.hasLots && item.batchManagement?.enabled && (
+                        <span className="feat-badge orange">Lotes</span>
+                    )}
+                    {/* Tipo de producto es universal */}
+                    {item.productType === 'ingredient' && (
+                        <span className="feat-badge gray">Insumo</span>
+                    )}
+                  </div>
+
+                  <div className="footer-actions">
+                     <button 
+                        className={`mini-toggle ${isActive ? 'active' : ''}`}
+                        onClick={() => onToggleStatus(item)}
+                      >
+                        {isActive ? 'ACTIVO' : 'OFF'}
+                      </button>
+                      
+                      {features.hasWaste && isActive && (
+                        <button className="mini-btn-waste" onClick={() => handleOpenWaste(item)} title="Registrar Merma">
+                          📉
+                        </button>
+                      )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      <WasteModal
-        show={showWaste}
-        onClose={handleCloseWaste}
-        product={productForWaste}
-        onConfirm={handleWasteConfirmed}
-      />
+      {!searchTerm && hasMoreProducts && (
+        <div className="pagination-container">
+          <button className="btn-load-more" onClick={() => loadMoreProducts()} disabled={isGlobalLoading}>
+            {isGlobalLoading ? 'Cargando...' : '⬇️ Ver más productos'}
+          </button>
+        </div>
+      )}
+
+      <WasteModal show={showWaste} onClose={handleCloseWaste} product={productForWaste} onConfirm={handleWasteConfirmed} />
     </div>
   );
 }

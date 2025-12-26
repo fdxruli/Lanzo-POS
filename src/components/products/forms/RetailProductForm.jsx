@@ -49,7 +49,7 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                 );
                 if (!confirmLoss) return false;
             }
-            
+
             // Caso B: Margen peligrosamente bajo (< 10%)
             const margin = ((price - cost) / cost) * 100;
             if (margin < 10 && price >= cost) {
@@ -77,7 +77,7 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
 
         // 4. Reglas de Abarrotes / Granel
         if (saleType === 'bulk' && price <= 0) {
-             showMessageModal('Datos Incompletos', 'Los productos a granel deben tener un precio por Kilo/Litro válido.');
+            showMessageModal('Datos Incompletos', 'Los productos a granel deben tener un precio por Kilo/Litro válido.');
             return false;
         }
         if (conversionFactor.enabled && (!conversionFactor.purchaseUnit || conversionFactor.factor <= 1)) {
@@ -101,11 +101,11 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                     showMessageModal('Variantes Incompletas', `Tienes ${incompleteVariants.length} variante(s) sin Talla o Color.`);
                     return false;
                 }
-                
+
                 // Validación de precios en variantes
                 const badVariant = quickVariants.find(v => (parseFloat(v.price) || price) < (parseFloat(v.cost) || cost));
                 if (badVariant) {
-                    if(!window.confirm(`⚠️ Una variante (${badVariant.color} ${badVariant.talla}) tiene precio menor al costo. ¿Continuar?`)) return false;
+                    if (!window.confirm(`⚠️ Una variante (${badVariant.color} ${badVariant.talla}) tiene precio menor al costo. ¿Continuar?`)) return false;
                 }
             }
         }
@@ -115,7 +115,7 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!validateRetailRules()) return; // Detener si falla la validación
-        
+
         if (common.isSaving) return;
         common.setIsSaving(true);
 
@@ -138,7 +138,7 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                 minStock: minStock !== '' ? parseFloat(minStock) : null,
                 maxStock: maxStock !== '' ? parseFloat(maxStock) : null,
                 supplier,
-                wholesaleTiers: wholesaleTiers.map(t => ({...t, min: parseFloat(t.min), price: parseFloat(t.price)})), // Asegurar tipos
+                wholesaleTiers: wholesaleTiers.map(t => ({ ...t, min: parseFloat(t.min), price: parseFloat(t.price) })), // Asegurar tipos
                 conversionFactor,
                 shelfLife,
                 batchManagement: finalBatchManagement,
@@ -159,9 +159,9 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                         cost: parseFloat(variant.cost) || commonData.cost,
                         price: parseFloat(variant.price) || commonData.price,
                         sku: variant.sku || null,
-                        attributes: { 
-                            talla: variant.talla.toUpperCase(), 
-                            color: variant.color 
+                        attributes: {
+                            talla: variant.talla.toUpperCase(),
+                            color: variant.color
                         },
                         isActive: true,
                         createdAt: new Date().toISOString(),
@@ -183,15 +183,15 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
         <>
             <form onSubmit={handleSubmit}>
                 {isApparel && (
-                    <div className="info-box-purple" style={{ marginBottom: '15px', display:'flex', alignItems:'center', gap:'10px' }}>
-                        <span style={{fontSize:'1.5rem'}}>🛍️</span>
+                    <div className="info-box-purple" style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '1.5rem' }}>🛍️</span>
                         <div>
-                            <strong>Modo Boutique Activo:</strong><br/>
+                            <strong>Modo Boutique Activo:</strong><br />
                             Define el <u>Estilo General</u> arriba y usa la tabla inferior para desglosar <strong>Tallas y Colores</strong>.
                         </div>
                     </div>
                 )}
-                
+
                 <CommonProductFields common={common} categories={categories} onOpenCategoryManager={onOpenCategoryManager} />
 
                 {/* Módulo Frescos */}
@@ -218,6 +218,8 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                             showBulk={features.hasBulk}
                             showWholesale={features.hasWholesale}
                             showStockAlerts={features.hasMinMax}
+                            shelfLife={shelfLife}
+                            setShelfLife={setShelfLife}
                         />
                     </div>
                 )}
@@ -225,10 +227,10 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                 {/* Módulo Ropa - Tabla Mejorada */}
                 {isApparel && features.hasVariants && (
                     <div className="module-section" style={{ marginTop: '20px' }}>
-                         <QuickVariantEntry 
-                            basePrice={parseFloat(common.price) || 0} 
-                            baseCost={parseFloat(common.cost) || 0} 
-                            onVariantsChange={setQuickVariants} 
+                        <QuickVariantEntry
+                            basePrice={parseFloat(common.price) || 0}
+                            baseCost={parseFloat(common.cost) || 0}
+                            onVariantsChange={setQuickVariants}
                         />
                     </div>
                 )}
