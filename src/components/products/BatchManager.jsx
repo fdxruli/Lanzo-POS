@@ -332,6 +332,8 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
 
   // --- CAMBIO: Usamos useProductStore y useStatsStore ---
   const rawProducts = useProductStore((state) => state.rawProducts);
+  const searchProducts = useProductStore((state) => state.searchProducts);
+  const loadInitialProducts = useProductStore((state) => state.loadInitialProducts);
   const refreshData = useProductStore((state) => state.loadInitialProducts); // Ojo: loadAllData ya no existe
   const menu = useProductStore((state) => state.menu);
   const loadBatchesForProduct = useProductStore((state) => state.loadBatchesForProduct);
@@ -344,6 +346,32 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  useEffect(() => {
+    // Evitamos buscar si el searchTerm es igual al nombre del producto seleccionado
+    // (esto pasa cuando seleccionas un producto y el input se llena con su nombre)
+    const selectedProd = rawProducts.find(p => p.id === selectedProductId);
+    if (selectedProd && searchTerm === selectedProd.name) return;
+
+    const timer = setTimeout(() => {
+      if (searchTerm.trim().length >= 2) {
+        searchProducts(searchTerm);
+      } else if (searchTerm === '') {
+        // Opcional: Si borras, restaurar lista, aunque en este modal 
+        // a veces es mejor dejar la lista quieta hasta que escriban.
+        if (!selectedProductId) loadInitialProducts();
+      }
+    }, 500); return () => clearTimeout(timer);
+  }, [searchTerm, selectedProductId]);
+
+  // Modificamos filteredProducts para que muestre lo que hay en el store (rawProducts)
+  // ya que searchProducts actualizará rawProducts/menu.
+  const filteredProducts = useMemo(() => {
+    // Simplemente devolvemos los productos del store, ya que el store 
+    // ahora contiene solo los resultados de la búsqueda.
+    // Limitamos a 10 para no saturar el dropdown.
+    return rawProducts.slice(0, 10);
+  }, [rawProducts]);
+
   // Sincronizar buscador
   useEffect(() => {
     if (selectedProductId) {
@@ -353,12 +381,6 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
       setSearchTerm('');
     }
   }, [selectedProductId, rawProducts]);
-
-  const filteredProducts = useMemo(() => {
-    if (!searchTerm) return [];
-    const lower = searchTerm.toLowerCase();
-    return rawProducts.filter(p => p.name.toLowerCase().includes(lower)).slice(0, 10);
-  }, [searchTerm, rawProducts]);
 
   const selectedProduct = useMemo(() => {
     return rawProducts.find(p => p.id === selectedProductId);
