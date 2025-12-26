@@ -9,12 +9,13 @@ import './ProductList.css';
 export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus }) {
   const features = useFeatureConfig();
 
+  // --- STORE ---
   const refreshData = useProductStore((state) => state.loadInitialProducts);
   const loadMoreProducts = useProductStore((state) => state.loadMoreProducts);
   const hasMoreProducts = useProductStore((state) => state.hasMoreProducts);
   const isGlobalLoading = useProductStore((state) => state.isLoading);
   
-  // ✅ CORRECCIÓN 1: Importamos la función de búsqueda global
+  // ✅ CORRECCIÓN 1: Importamos la búsqueda global para buscar en toda la BD
   const searchGlobal = useProductStore((state) => state.searchProducts);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,6 +26,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
     return new Map(categories.map(cat => [cat.id, cat.name]));
   }, [categories]);
 
+  // Filtro local visual (para resaltar coincidencias rápidas sobre los resultados que traiga la BD)
   const filteredProducts = useMemo(() => {
     return products.filter(item =>
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -67,7 +69,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             className="modern-search-input"
             placeholder="Buscar por nombre, código o SKU..."
             value={searchTerm}
-            // ✅ CORRECCIÓN 2: Conectamos el input con la búsqueda en BD
+            // ✅ CORRECCIÓN 2: Al escribir, buscamos en el servidor, no solo en la lista local
             onChange={(e) => {
               const val = e.target.value;
               setSearchTerm(val);
@@ -206,6 +208,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             })}
           </div>
 
+          {/* Botón "Cargar Más" solo visible si NO estamos buscando (para no mezclar resultados de búsqueda con paginación) */}
           {!searchTerm && hasMoreProducts && (
             <div className="load-more-container">
               <button
