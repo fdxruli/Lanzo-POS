@@ -93,8 +93,12 @@ export const useProductStore = create((set, get) => ({
         return;
       }
 
+      // --- CORRECCIÓN: Filtrar duplicados antes de agregar ---
+      const existingIds = new Set(menu.map(p => p.id));
+      const uniqueNextPage = nextPage.filter(p => !existingIds.has(p.id));
+
       set({
-        menu: [...menu, ...nextPage],
+        menu: [...menu, ...uniqueNextPage],
         menuPage: menuPage + 1,
         hasMoreProducts: nextPage.length === menuPageSize
       });
@@ -124,18 +128,18 @@ export const useProductStore = create((set, get) => ({
   // --- FUNCIONALIDAD 1: PRODUCTOS CON STOCK BAJO (Reabastecimiento) ---
   getLowStockProducts: () => {
     const { menu } = get();
-    
+
     // Filtramos productos activos, que controlan stock y están bajo el mínimo
-    return menu.filter(p => 
+    return menu.filter(p =>
       p.isActive !== false &&
-      p.trackStock && 
-      p.minStock > 0 && 
+      p.trackStock &&
+      p.minStock > 0 &&
       p.stock <= p.minStock
     ).map(p => {
-      const targetStock = p.maxStock && p.maxStock > p.minStock 
-        ? p.maxStock 
+      const targetStock = p.maxStock && p.maxStock > p.minStock
+        ? p.maxStock
         : (p.minStock * 2);
-        
+
       const deficit = targetStock - p.stock;
 
       return {
@@ -165,7 +169,7 @@ export const useProductStore = create((set, get) => ({
         loadData(STORES.PRODUCT_BATCHES),
         loadData(STORES.MENU)
       ]);
-      
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
@@ -200,31 +204,31 @@ export const useProductStore = create((set, get) => ({
       // 3. Procesar PRODUCTOS SIMPLES (Nueva lógica: shelfLife)
       const productAlerts = allProducts
         .filter(p => {
-            // Debe tener shelfLife, estar activo, y fecha válida
-            if (!p.shelfLife || !p.isActive) return false;
-            
-            // Si controla stock, ignoramos si ya no hay (opcional, para no alertar basura)
-            if (p.trackStock && p.stock <= 0) return false;
+          // Debe tener shelfLife, estar activo, y fecha válida
+          if (!p.shelfLife || !p.isActive) return false;
 
-            const expDate = new Date(p.shelfLife);
-            if (isNaN(expDate.getTime())) return false; // Fecha inválida
+          // Si controla stock, ignoramos si ya no hay (opcional, para no alertar basura)
+          if (p.trackStock && p.stock <= 0) return false;
 
-            return expDate <= thresholdDate;
+          const expDate = new Date(p.shelfLife);
+          if (isNaN(expDate.getTime())) return false; // Fecha inválida
+
+          return expDate <= thresholdDate;
         })
         .map(p => {
-            const expDate = new Date(p.shelfLife);
-            const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+          const expDate = new Date(p.shelfLife);
+          const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
 
-            return {
-                id: p.id, // Usamos ID del producto
-                productId: p.id,
-                productName: p.name,
-                stock: p.stock,
-                expiryDate: p.shelfLife,
-                daysRemaining: diffDays,
-                batchSku: 'General', // Etiqueta visual para indicar que no es un lote específico
-                location: p.location || ''
-            };
+          return {
+            id: p.id, // Usamos ID del producto
+            productId: p.id,
+            productName: p.name,
+            stock: p.stock,
+            expiryDate: p.shelfLife,
+            daysRemaining: diffDays,
+            batchSku: 'General', // Etiqueta visual para indicar que no es un lote específico
+            location: p.location || ''
+          };
         });
 
       // 4. Combinar y Ordenar por urgencia
