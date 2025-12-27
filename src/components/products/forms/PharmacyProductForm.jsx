@@ -3,6 +3,7 @@ import { useProductCommon } from '../../../hooks/useProductCommon';
 import CommonProductFields from './CommonProductFields';
 import FarmaciaFields from '../fieldsets/FarmaciaFIelds';
 import { generateID } from '../../../services/utils';
+import Logger from '../../../services/Logger';
 
 export default function PharmacyProductForm({ onSave, onCancel, productToEdit, categories, onOpenCategoryManager, activeRubroContext, features }) {
     const common = useProductCommon(productToEdit);
@@ -58,7 +59,7 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
 
             await onSave(payload, productToEdit || { id: productId, isNew: true });
         } catch (error) {
-            console.error(error);
+            Logger.error(error);
             alert("Error al guardar producto farmacéutico");
         } finally {
             common.setIsSaving(false);

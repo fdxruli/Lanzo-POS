@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getImageFromDB } from '../../services/database';
+import Logger from '../../services/Logger';
 
 export default function LazyImage({ src, alt, className = '', style = {}, ...props }) {
     const [objectUrl, setObjectUrl] = useState(null);
@@ -45,7 +46,7 @@ export default function LazyImage({ src, alt, className = '', style = {}, ...pro
                     setObjectUrl(url);
                 }
             } catch (e) {
-                console.error("Error cargando imagen:", e);
+                Logger.error("Error cargando imagen:", e);
             }
         };
 

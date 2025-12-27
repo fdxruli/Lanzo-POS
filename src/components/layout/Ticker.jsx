@@ -4,6 +4,7 @@ import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore'; 
 import { getProductAlerts } from '../../services/utils';
 import './Ticker.css';
+import Logger from '../../services/Logger';
 
 const promotionalMessages = [
   "🚀 ¡Potencia tu negocio con Lanzo POS!",
@@ -81,7 +82,7 @@ export default function Ticker() {
   // Log para debug (solo en desarrollo)
   useEffect(() => {
     if (import.meta.env.DEV) {
-      console.log('[Ticker Debug]', {
+      Logger.log('[Ticker Debug]', {
         licenseStatus,
         gracePeriodEnds,
         isGracePeriod: licenseStatus === 'grace_period',
@@ -149,7 +150,7 @@ export default function Ticker() {
       
       return { messages: alerts, isPriority: false };
     } catch (error) {
-      console.error('Error generando alertas:', error);
+      Logger.error('Error generando alertas:', error);
       return { messages: promotionalMessages, isPriority: false };
     }
   }, [licenseStatus, gracePeriodEnds, licenseDetails, menu, isLoading]);

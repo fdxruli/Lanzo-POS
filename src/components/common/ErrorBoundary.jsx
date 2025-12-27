@@ -1,6 +1,7 @@
 import React from 'react';
 import { MessageCircle, RefreshCw, AlertTriangle, ShieldCheck, Store, ArrowRightCircle } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import Logger from '../../services/Logger';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -19,7 +20,7 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     // También puedes registrar el error en un servicio de reporte de errores
-    console.error("🔥 Error crítico capturado:", error, errorInfo);
+    Logger.error("🔥 Error crítico capturado:", error, errorInfo);
     this.setState({ errorInfo });
   }
 
@@ -36,14 +37,14 @@ class ErrorBoundary extends React.Component {
   // Esto soluciona el error de "Manifest Syntax Error" y la pérdida de estilos (Dark Mode)
   handleGoToPos = async () => {
     try {
-      console.log("🧹 Iniciando limpieza de emergencia antes de ir al POS...");
+      Logger.log("🧹 Iniciando limpieza de emergencia antes de ir al POS...");
 
       // 1. Desregistrar Service Workers (Soluciona el error del Manifest/PWA corrupto)
       if ('serviceWorker' in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
         for (const registration of registrations) {
           await registration.unregister();
-          console.log("Service Worker desregistrado.");
+          Logger.log("Service Worker desregistrado.");
         }
       }
 
@@ -52,13 +53,13 @@ class ErrorBoundary extends React.Component {
         const cacheNames = await caches.keys();
         await Promise.all(
           cacheNames.map(name => {
-            console.log(`Borrando caché: ${name}`);
+            Logger.log(`Borrando caché: ${name}`);
             return caches.delete(name);
           })
         );
       }
     } catch (e) {
-      console.warn("No se pudo completar la limpieza de caché, redirigiendo de todas formas...", e);
+      Logger.warn("No se pudo completar la limpieza de caché, redirigiendo de todas formas...", e);
     } finally {
       // 3. Redirigir forzando carga desde el servidor
       window.location.href = '/';

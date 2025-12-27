@@ -11,6 +11,7 @@ import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useCaja } from '../../hooks/useCaja';
 import { generateID } from '../../services/utils';
 import './BatchManager.css';
+import Logger from '../../services/Logger';
 
 /**
  * Formulario Optimizado (Compatible con Ropa, Farmacia y Restaurante)
@@ -393,7 +394,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
           const batches = await loadBatchesForProduct(selectedProductId);
           setLocalBatches(Array.isArray(batches) ? batches : []);
         } catch (error) {
-          console.error("Error cargando lotes:", error);
+          Logger.error("Error cargando lotes:", error);
           setLocalBatches([]);
         } finally {
           setIsLoadingBatches(false);
@@ -447,7 +448,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
       showMessageModal('✅ Lote guardado y stock total actualizado.');
 
     } catch (error) {
-      console.error(error);
+      Logger.error(error);
       showMessageModal(`Error: ${error.message}`);
     }
   };
@@ -475,7 +476,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
         const updatedBatches = await loadBatchesForProduct(selectedProductId);
         setLocalBatches(updatedBatches);
         refreshData();
-      } catch (error) { console.error(error); }
+      } catch (error) { Logger.error(error); }
     }
   };
 

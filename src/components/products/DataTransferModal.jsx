@@ -5,6 +5,7 @@ import { downloadInventorySmart, processImport, downloadFile, generatePharmacyRe
 import { showMessageModal } from '../../services/utils';
 import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
+import Logger from '../../services/Logger';
 
 export default function DataTransferModal({ show, onClose, onRefresh }) {
   const [activeTab, setActiveTab] = useState('export');
@@ -24,7 +25,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
 
       showMessageModal('✅ Archivo de inventario generado correctamente.');
     } catch (error) {
-      console.error(error);
+      Logger.error(error);
       showMessageModal('Error al generar la exportación.');
     } finally {
       setIsLoading(false);
@@ -46,7 +47,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
         showMessageModal('✅ Libro de Control generado correctamente.');
       }
     } catch (error) {
-      console.error(error);
+      Logger.error(error);
       showMessageModal('Error al generar reporte: ' + error.message);
     } finally {
       setIsLoading(false);
@@ -80,7 +81,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
           showMessageModal('No se encontraron productos válidos en el archivo.');
         }
       } catch (error) {
-        console.error(error);
+        Logger.error(error);
         showMessageModal(`Error crítico al importar: ${error.message}`);
       } finally {
         setIsLoading(false);

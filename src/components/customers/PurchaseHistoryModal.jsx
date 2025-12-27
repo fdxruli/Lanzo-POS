@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { loadData, queryByIndex, STORES } from '../../services/database';
 import './PurchaseHistoryModal.css';
+import Logger from '../../services/Logger';
 
 export default function PurchaseHistoryModal({ show, onClose, customer }) {
   const [sales, setSales] = useState([]);
@@ -22,7 +23,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
 
           setSales(sortedSales);
         } catch (error) {
-          console.error("Error cargando historial:", error);
+          Logger.error("Error cargando historial:", error);
         } finally {
           setLoading(false);
         }

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 // CAMBIO: Importamos el store correcto
 import { useProductStore } from '../../store/useProductStore';
 import './ProductModifiersModal.css'; 
+import Logger from '../../services/Logger';
 
 export default function VariantSelectorModal({ show, onClose, product, onConfirm }) {
   const [batches, setBatches] = useState([]);
@@ -22,7 +23,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
           const available = (productBatches || []).filter(b => b.isActive && b.stock > 0);
           setBatches(available);
         } catch (error) {
-          console.error("Error cargando variantes:", error);
+          Logger.error("Error cargando variantes:", error);
         } finally {
           setLoading(false);
         }

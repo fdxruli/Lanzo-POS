@@ -5,6 +5,7 @@ import { compressImage } from '../../services/utils';
 import LazyImage from './LazyImage';
 import { ChevronDown, CheckCircle, Lock } from 'lucide-react'; 
 import './SetupModal.css';
+import Logger from '../../services/Logger';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -105,7 +106,7 @@ export default function SetupModal() {
         setLogoPreview(URL.createObjectURL(compressedFile));
         setLogoData(compressedFile);
       } catch (error) {
-        console.error("Error imagen:", error);
+        Logger.error("Error imagen:", error);
       }
     }
   };

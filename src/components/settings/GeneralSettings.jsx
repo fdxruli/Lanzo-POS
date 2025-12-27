@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
+import Logger from '../../services/Logger';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -66,7 +67,7 @@ export default function GeneralSettings() {
         // Guardamos directamente al cambiar la imagen
         await updateProfileWrapper({ logo: compressedFile });
       } catch (error) {
-        console.error("Error imagen:", error);
+        Logger.error("Error imagen:", error);
       } finally {
         setIsProcessingLogo(false);
       }
@@ -84,7 +85,7 @@ export default function GeneralSettings() {
       };
       await updateCompanyProfile(dataToSave);
     } catch (error) {
-      console.error(error);
+      Logger.error(error);
       alert("Error al guardar.");
     }
   };

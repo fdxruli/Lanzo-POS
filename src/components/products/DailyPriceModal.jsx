@@ -3,6 +3,7 @@ import { saveData, saveBulkSafe, STORES } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
 // 1. IMPORTAR STORE PARA OBTENER CATEGORÍAS
 import { useProductStore } from '../../store/useProductStore';
+import Logger from '../../services/Logger';
 
 export default function DailyPriceModal({ show, onClose, products, onRefresh }) {
     const [editedProducts, setEditedProducts] = useState({});
@@ -59,7 +60,7 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
             setEditedProducts({});
             onClose();
         } else {
-            console.error(result.error);
+            Logger.error(result.error);
             showMessageModal(`Error al actualizar precios: ${result.error?.message}`);
         }
     };

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { downloadBackupSmart } from '../../services/dataTransfer';
 import { useProductStore } from '../../store/useProductStore';
 import './MessageModal.css';
+import Logger from '../../services/Logger';
 
 export default function BackupReminder() {
   const [show, setShow] = useState(false);
@@ -61,7 +62,7 @@ export default function BackupReminder() {
       localStorage.removeItem('backup_postponed_until');
       setShow(false);
     } catch (error) {
-      console.error(error);
+      Logger.error(error);
       alert("Error al generar respaldo. Intenta de nuevo.");
     }
   };

@@ -7,6 +7,7 @@ import QuickVariantEntry from '../QuickVariantEntry';
 import WholesaleManagerModal from '../WholesaleManagerModal';
 import { generateID, showMessageModal } from '../../../services/utils'; // Importamos showMessageModal
 import { saveBatchAndSyncProductSafe } from '../../../services/database';
+import Logger from '../../../services/Logger';
 
 export default function RetailProductForm({ onSave, onCancel, productToEdit, categories, onOpenCategoryManager, activeRubroContext, features, onManageBatches }) {
     const common = useProductCommon(productToEdit);
@@ -172,7 +173,7 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                 }
             }
         } catch (error) {
-            console.error("Error saving product:", error);
+            Logger.error("Error saving product:", error);
             showMessageModal('Error Técnico', error.message, { type: 'error' });
         } finally {
             common.setIsSaving(false);

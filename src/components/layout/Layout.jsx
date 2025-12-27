@@ -14,6 +14,7 @@ import { Toaster } from 'react-hot-toast';
 // 1. IMPORTAR APP STORE
 import { useAppStore } from '../../store/useAppStore'; 
 import './Layout.css';
+import Logger from '../../services/Logger';
 
 function Layout() {
   const loadStats = useStatsStore(state => state.loadStats);
@@ -25,7 +26,7 @@ function Layout() {
   const initializeApp = useAppStore(state => state.initializeApp);
 
   useEffect(() => {
-    console.log("🚀 Inicializando Stores modulares...");
+    Logger.log("🚀 Inicializando Stores modulares...");
     loadStats();
     loadProducts();
     loadSales();
@@ -41,7 +42,7 @@ function Layout() {
         
         // ...y el momento actual acaba de superar la fecha de vencimiento
         if (now > expires) {
-           console.log("🕒 El tiempo de licencia ha expirado. Re-verificando estado...");
+           Logger.log("🕒 El tiempo de licencia ha expirado. Re-verificando estado...");
            // Forzamos al store a re-evaluar. 
            // Gracias al Paso 1, esto activará el modo gracia en vez de bloquear.
            initializeApp(); 

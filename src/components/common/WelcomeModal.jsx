@@ -3,6 +3,7 @@ import { useAppStore } from '../../store/useAppStore';
 import ContactModal from './ContactModal';
 import { sendWhatsAppMessage } from '../../services/utils';
 import './WelcomeModal.css';
+import Logger from '../../services/Logger';
 
 const supportFields = [
   { id: 'name', label: 'Tu Nombre', type: 'input' },
@@ -66,7 +67,7 @@ export default function WelcomeModal() {
         }
         // Si es success, el store probablemente redirige o cierra el modal
     } catch (error) {
-        console.error("Error al validar licencia:", error);
+        Logger.error("Error al validar licencia:", error);
         setErrorMessage('❌ Error de conexión: No se pudo verificar la licencia. Intenta de nuevo.');
     } finally {
         setIsLoading(false);
@@ -93,7 +94,7 @@ export default function WelcomeModal() {
         }
     } catch (error) {
         // Manejamos errores CRÍTICOS (ej: Failed to fetch / Timeouts)
-        console.error("Error crítico en Trial:", error);
+        Logger.error("Error crítico en Trial:", error);
         
         if (error.message && (error.message.includes('fetch') || error.message.includes('Network'))) {
             setErrorMessage('❌ Error de Red: No pudimos conectar con el servidor. Verifica tu conexión.');

@@ -4,6 +4,7 @@ import { useZxing } from 'react-zxing';
 import { useOrderStore } from '../../store/useOrderStore';
 import { searchProductByBarcode, queryBatchesByProductIdAndActive } from '../../services/database';
 import './ScannerModal.css';
+import Logger from '../../services/Logger';
 
 // ✅ OPTIMIZACIÓN 1: Configuración de cámara SIMPLIFICADA
 const CAMERA_CONSTRAINTS = {
@@ -84,7 +85,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
       }, 500);
     },
     onError(error) {
-      console.error('Error ZXing:', error);
+      Logger.error('Error ZXing:', error);
       setCameraError('Error al leer códigos. Verifica permisos de cámara.');
       processingRef.current = false;
     },
@@ -124,7 +125,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           
           if (!mounted) {
             // Si el componente se desmontó mientras cargaba, liberar inmediatamente
-            console.log('🛑 [Scanner] Modal cerrado durante carga, liberando stream.');
+            Logger.log('🛑 [Scanner] Modal cerrado durante carga, liberando stream.');
             stream.getTracks().forEach(track => track.stop());
             return;
           }
@@ -137,7 +138,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         } catch (error) {
           if (!mounted) return;
 
-          console.error('Error accediendo a cámara:', error);
+          Logger.error('Error accediendo a cámara:', error);
           if (error.name === 'NotAllowedError') {
             setCameraError('❌ Permiso de cámara denegado.');
           } else if (error.name === 'NotFoundError') {
@@ -159,7 +160,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           track.stop();
         });
         cameraStreamRef.current = null;
-        console.log('📷 [Scanner] Cámara liberada correctamente');
+        Logger.log('📷 [Scanner] Cámara liberada correctamente');
       }
     };
   }, [show]);
@@ -187,7 +188,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
               finalCost = parseFloat(product.cost) || 0;
             }
           } catch (batchError) {
-            console.warn("Error cargando lotes, usando precio base:", batchError);
+            Logger.warn("Error cargando lotes, usando precio base:", batchError);
             finalPrice = parseFloat(product.price) || 0;
             finalCost = parseFloat(product.cost) || 0;
           }
@@ -219,12 +220,12 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
         setScanFeedback(`✅ ${safeProduct.name} - $${finalPrice.toFixed(2)}`);
       } else {
-        console.warn(`Código ${code} no encontrado.`);
+        Logger.warn(`Código ${code} no encontrado.`);
         setScanFeedback(`⚠️ No encontrado: ${code}`);
         setTimeout(() => setScanFeedback(''), 2000);
       }
     } catch (error) {
-      console.error('Error procesando código:', error);
+      Logger.error('Error procesando código:', error);
       setScanFeedback('❌ Error al buscar producto');
       setTimeout(() => setScanFeedback(''), 2000);
     }

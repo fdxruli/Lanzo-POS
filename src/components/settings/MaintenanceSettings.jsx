@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStatsStore } from '../../store/useStatsStore';
 import { loadData, saveBulkSafe, STORES, archiveOldData } from '../../services/database';
+import Logger from '../../services/Logger';
 
 export default function MaintenanceSettings() {
   const loadStats = useStatsStore((state) => state.loadStats);
@@ -53,7 +54,7 @@ export default function MaintenanceSettings() {
         alert("✅ No se encontraron discrepancias de costos.");
       }
     } catch (e) {
-      console.error(e);
+      Logger.error(e);
       alert("Error al recalcular: " + e.message);
     }
     finally { setIsProcessing(false); }
@@ -108,7 +109,7 @@ export default function MaintenanceSettings() {
         alert("✅ El inventario ya está perfectamente sincronizado.");
       }
     } catch (e) {
-      console.error(e);
+      Logger.error(e);
       alert("Error al sincronizar: " + e.message);
     }
     finally { setIsProcessing(false); }
@@ -130,7 +131,7 @@ export default function MaintenanceSettings() {
         alert("No hay ventas antiguas para archivar.");
       }
     } catch (e) {
-      console.error(e);
+      Logger.error(e);
       alert("Error al archivar.");
     }
   };

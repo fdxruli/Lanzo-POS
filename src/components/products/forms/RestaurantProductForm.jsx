@@ -4,6 +4,7 @@ import CommonProductFields from './CommonProductFields';
 import RestauranteFields from '../fieldsets/RestauranteFields';
 import RecipeBuilderModal from '../RecipeBuilderModal';
 import { generateID, showMessageModal, roundCurrency } from '../../../services/utils';
+import Logger from '../../../services/Logger';
 
 export default function RestaurantProductForm({ onSave, onCancel, productToEdit, categories, onOpenCategoryManager, activeRubroContext }) {
     const common = useProductCommon(productToEdit);
@@ -36,7 +37,7 @@ export default function RestaurantProductForm({ onSave, onCancel, productToEdit,
             // Solo actualizamos si hay una diferencia significativa para evitar loops
             // Asumimos que common expone setCost (parte del hook useProductCommon)
             if (common.cost !== totalRecipeCost) {
-                console.log("🔄 Sincronizando costo desde receta:", totalRecipeCost);
+                Logger.log("🔄 Sincronizando costo desde receta:", totalRecipeCost);
                 if(common.setCost) common.setCost(roundCurrency(totalRecipeCost));
             }
         }
@@ -96,7 +97,7 @@ export default function RestaurantProductForm({ onSave, onCancel, productToEdit,
 
             await onSave(payload, productToEdit || { id: productId, isNew: true });
         } catch (error) {
-            console.error(error);
+            Logger.error(error);
             showMessageModal('Error al guardar', error.message, { type: 'error' });
         } finally {
             common.setIsSaving(false);

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
+import Logger from '../../services/Logger';
 
 export default function VariantInventoryView() {
   const [items, setItems] = useState([]);
@@ -51,7 +52,7 @@ export default function VariantInventoryView() {
       
       setItems(flatList);
     } catch (error) {
-      console.error("Error cargando vista de variantes:", error);
+      Logger.error("Error cargando vista de variantes:", error);
     } finally {
       setLoading(false);
     }

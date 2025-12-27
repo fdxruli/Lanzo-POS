@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Logger from '../../services/Logger';
 
 export default function ReconnectionBanner() {
   const [showBanner, setShowBanner] = useState(false);
@@ -58,7 +59,7 @@ export default function ReconnectionBanner() {
       alert('✅ Conexión restaurada correctamente');
       
     } catch (error) {
-      console.error('Error reconectando:', error);
+      Logger.error('Error reconectando:', error);
       
       // Si falla, ofrecemos recargar
       if (confirm('La reconexión falló. ¿Recargar la página? (Se guardarán tus datos)')) {

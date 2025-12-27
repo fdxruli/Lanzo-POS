@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { loadData, saveData, STORES } from '../../services/database';
 import QuickAddCustomerModal from './QuickAddCustomerModal';
 import './PaymentModal.css';
+import Logger from '../../services/Logger';
 
 export default function PaymentModal({ show, onClose, onConfirm, total }) {
   // Estado local para este modal
@@ -117,7 +118,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
         // Nota: No desbloqueamos aquí con setIsSubmitting(false) porque
         // si tiene éxito, el modal se desmontará/cerrará desde el padre.
     } catch (error) {
-        console.error("Error al procesar pago:", error);
+        Logger.error("Error al procesar pago:", error);
         // Solo si falla y el modal sigue abierto, desbloqueamos para reintentar
         setIsSubmitting(false); 
     }
