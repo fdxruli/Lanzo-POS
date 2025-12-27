@@ -295,5 +295,3 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
     </div>
   );
 }
-
-
