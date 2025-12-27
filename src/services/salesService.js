@@ -8,6 +8,7 @@ import {
 } from './database';
 import { useStatsStore } from '../store/useStatsStore';
 import { roundCurrency, sendWhatsAppMessage } from './utils';
+import Logger from './Logger';
 
 const validateRecipeStock = (orderItems, allProducts) => {
     const missingIngredients = [];
@@ -65,7 +66,7 @@ export const processSale = async ({
     tempPrescriptionData,
     ignoreStock = false
 }) => {
-    console.time('Service:ProcessSale');
+    Logger.time('Service:ProcessSale');
 
     try {
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
@@ -379,11 +380,11 @@ export const processSale = async ({
             await sendReceiptWhatsApp(sale, processedItems, paymentData, total, companyName, features);
         }
 
-        console.timeEnd('Service:ProcessSale');
+        Logger.timeEnd('Service:ProcessSale');
         return { success: true, saleId: sale.timestamp };
 
     } catch (error) {
-        console.error('Service Error:', error);
+        Logger.error('Service Error:', error);
         return { success: false, message: error.message };
     }
 };
@@ -427,7 +428,7 @@ async function sendReceiptWhatsApp(sale, items, paymentData, total, companyName,
             sendWhatsAppMessage(customer.phone, receiptText);
         }
     } catch (error) {
-        console.error("Error enviando ticket:", error);
+        Logger.error("Error enviando ticket:", error);
     }
 }
 

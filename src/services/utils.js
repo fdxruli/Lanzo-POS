@@ -164,7 +164,7 @@ export const isLocalStorageEnabled = () => {
     localStorage.removeItem(testKey);
     return value === testValue;
   } catch (e) {
-    console.error('LocalStorage error:', e);
+    Logger.error('LocalStorage error:', e);
     return false;
   }
 };
@@ -257,7 +257,7 @@ export function sendWhatsAppMessage(phone, message) {
  * @returns {Promise<object>} Un objeto con { success: true, product: {...} } o { success: false, error: "..." }
  */
 export async function lookupBarcodeInAPI(barcode) {
-  console.log(`Buscando API para: ${barcode}`);
+  Logger.log(`Buscando API para: ${barcode}`);
 
   // Usamos la v2 de la API, pidiendo solo los campos que necesitamos
   const url = `https://world.openfoodfacts.org/api/v2/product/${barcode}?fields=product_name,image_front_url,brands`;
@@ -271,7 +271,7 @@ export async function lookupBarcodeInAPI(barcode) {
     // Primero, revisamos si es un 404. Esto no es un error,
     // es un resultado: "no encontrado".
     if (response.status === 404) {
-      console.log('Producto no encontrado en OpenFoodFacts (404).');
+      Logger.log('Producto no encontrado en OpenFoodFacts (404).');
       return { success: false, error: 'Producto no encontrado' };
     }
 
@@ -295,16 +295,16 @@ export async function lookupBarcodeInAPI(barcode) {
         brand: product.brands || '',
       };
 
-      console.log('Producto encontrado:', productData);
+      Logger.log('Producto encontrado:', productData);
       return { success: true, product: productData };
 
     } else {
       // La API respondió OK, pero el producto no estaba (status: 0)
-      console.log('Producto no encontrado en OpenFoodFacts (status 0).');
+      Logger.log('Producto no encontrado en OpenFoodFacts (status 0).');
       return { success: false, error: 'Producto no encontrado' };
     }
   } catch (error) { // Esto ahora solo captura errores REALES (ej. sin internet)
-    console.error('Error al llamar a la API de OpenFoodFacts:', error);
+    Logger.error('Error al llamar a la API de OpenFoodFacts:', error);
     return { success: false, error: `Error de red: ${error.message}` };
   }
 }
@@ -324,12 +324,12 @@ export const tryEnablePersistence = async () => {
       const isPersisted = await navigator.storage.persisted();
       if (!isPersisted) {
         const result = await navigator.storage.persist();
-        console.log(`Solicitud de persistencia: ${result ? 'CONCEDIDA ✅' : 'DENEGADA ⚠️'}`);
+        Logger.log(`Solicitud de persistencia: ${result ? 'CONCEDIDA ✅' : 'DENEGADA ⚠️'}`);
         return result;
       }
       return true; // Ya estaba persistente
     } catch (error) {
-      console.error("Error solicitando persistencia:", error);
+      Logger.error("Error solicitando persistencia:", error);
       return false;
     }
   }
@@ -357,7 +357,7 @@ export const safeLocalStorageSet = (key, value) => {
     );
 
     if (isQuotaError) {
-      console.warn('💾 LocalStorage lleno. Intentando limpieza de emergencia...');
+      Logger.warn('💾 LocalStorage lleno. Intentando limpieza de emergencia...');
 
       // 2. Estrategia: Borrar keys no críticas (cachés, flags temporales)
       // Agrega aquí cualquier key que sea seguro borrar
@@ -378,11 +378,11 @@ export const safeLocalStorageSet = (key, value) => {
       // 3. Reintentar Guardado
       try {
         localStorage.setItem(key, value);
-        console.log('✅ Espacio recuperado. Guardado exitoso.');
+        Logger.log('✅ Espacio recuperado. Guardado exitoso.');
         return true;
       } catch (retryError) {
         // 4. Fallo definitivo: Avisar al usuario usando tu modal existente
-        console.error("❌ Fallo crítico: Memoria llena irrecoverable.");
+        Logger.error("❌ Fallo crítico: Memoria llena irrecoverable.");
         
         showMessageModal(
           '⚠️ ALERTA DE MEMORIA\n\nEl navegador no tiene espacio para guardar datos. Es posible que pierdas tu sesión si recargas.\n\nPor favor, borra datos de navegación antiguos.',
@@ -394,7 +394,7 @@ export const safeLocalStorageSet = (key, value) => {
     }
     
     // Otros errores (ej. Modo Incógnito estricto en Safari a veces bloquea setItem completamente)
-    console.error("Error de acceso a LocalStorage:", error);
+    Logger.error("Error de acceso a LocalStorage:", error);
     return false;
   }
 };

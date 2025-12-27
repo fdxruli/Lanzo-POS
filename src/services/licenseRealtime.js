@@ -1,6 +1,7 @@
 // src/services/licenseRealtime.js
 
 import { supabaseClient } from './supabase';
+import Logger from './Logger';
 
 let activeChannel = null;
 let reconnectTimer = null;
@@ -15,25 +16,25 @@ const BASE_RECONNECT_DELAY = 3000;
  */
 export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) => {
   if (!licenseKey || !deviceFingerprint) {
-    console.warn("[Realtime] Faltan datos para iniciar la conexión WebSocket.");
+    Logger.warn("[Realtime] Faltan datos para iniciar la conexión WebSocket.");
     return null;
   }
 
   // CORRECCIÓN: Bloquear si está conectando O reconectando (esperando timeout)
   if (isConnecting || isReconnecting) {
-    console.warn("[Realtime] Ya hay una operación de conexión en progreso, retornando canal actual.");
+    Logger.warn("[Realtime] Ya hay una operación de conexión en progreso, retornando canal actual.");
     return activeChannel;
   }
 
   // Limpiar canal previo si existe (para evitar duplicados forzados)
   if (activeChannel) {
-    console.warn("[Realtime] Limpiando canal existente antes de crear uno nuevo.");
+    Logger.warn("[Realtime] Limpiando canal existente antes de crear uno nuevo.");
     // No esperamos el async aquí para no bloquear, pero el lock de isConnecting protege
     stopLicenseListener(activeChannel);
   }
 
   isConnecting = true;
-  console.log(`📡 [Realtime] Conectando WebSocket para licencia: ${licenseKey}...`);
+  Logger.log(`📡 [Realtime] Conectando WebSocket para licencia: ${licenseKey}...`);
 
   const channelId = `security-room-${licenseKey}-${Date.now()}`;
   
@@ -54,12 +55,12 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       },
       (payload) => {
         if (!payload.new) return;
-        console.log("🔔 [Realtime] Cambio detectado en LICENCIA:", payload.new);
+        Logger.log("🔔 [Realtime] Cambio detectado en LICENCIA:", payload.new);
         if (callbacks.onLicenseChanged) {
           try {
             callbacks.onLicenseChanged(payload.new);
           } catch (err) {
-            console.error("[Realtime] Error en callback onLicenseChanged:", err);
+            Logger.error("[Realtime] Error en callback onLicenseChanged:", err);
           }
         }
       }
@@ -76,12 +77,12 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
         if (!payload.new) return;
         
         if (payload.new.is_active === false) {
-          console.log("🔔 [Realtime] DISPOSITIVO BLOQUEADO detectado");
+          Logger.log("🔔 [Realtime] DISPOSITIVO BLOQUEADO detectado");
           if (callbacks.onDeviceChanged) {
             try {
               callbacks.onDeviceChanged({ status: 'banned', data: payload.new });
             } catch (err) {
-              console.error("[Realtime] Error en callback onDeviceChanged:", err);
+              Logger.error("[Realtime] Error en callback onDeviceChanged:", err);
             }
           }
         }
@@ -96,12 +97,12 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
         filter: `device_fingerprint=eq.${deviceFingerprint}`
       },
       (payload) => {
-        console.log("🔔 [Realtime] DELETE detectado en DISPOSITIVO:", payload);
+        Logger.log("🔔 [Realtime] DELETE detectado en DISPOSITIVO:", payload);
         if (callbacks.onDeviceChanged) {
           try {
             callbacks.onDeviceChanged({ status: 'deleted', data: payload.old });
           } catch (err) {
-            console.error("[Realtime] Error en callback onDeviceChanged:", err);
+            Logger.error("[Realtime] Error en callback onDeviceChanged:", err);
           }
         }
       }
@@ -110,7 +111,7 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       // Nota: isConnecting se gestiona dentro de cada estado para mayor precisión
 
       if (status === 'SUBSCRIBED') {
-        console.log("✅ [Realtime] Conexión establecida y segura.");
+        Logger.log("✅ [Realtime] Conexión establecida y segura.");
         isConnecting = false;
         isReconnecting = false;
         activeChannel = channel;
@@ -122,7 +123,7 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
         }
       } 
       else if (status === 'CHANNEL_ERROR') {
-        console.error("❌ [Realtime] Error en la conexión WebSocket:", err);
+        Logger.error("❌ [Realtime] Error en la conexión WebSocket:", err);
         isConnecting = false; // La conexión falló, ya no estamos "conectando" activamente
         activeChannel = null;
         
@@ -132,7 +133,7 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
           reconnectAttempts++;
           isReconnecting = true; // Activar lock de reconexión
           
-          console.log(`🔄 [Realtime] Reintentando conexión en ${delay}ms (intento ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+          Logger.log(`🔄 [Realtime] Reintentando conexión en ${delay}ms (intento ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
           
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
@@ -140,18 +141,18 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
             startLicenseListener(licenseKey, deviceFingerprint, callbacks);
           }, delay);
         } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-          console.error("❌ [Realtime] Máximo de reintentos alcanzado. Se requiere intervención manual.");
+          Logger.error("❌ [Realtime] Máximo de reintentos alcanzado. Se requiere intervención manual.");
           isReconnecting = false;
         }
       }
       else if (status === 'CLOSED') {
-        console.warn("⚠️ [Realtime] Canal cerrado.");
+        Logger.warn("⚠️ [Realtime] Canal cerrado.");
         if (activeChannel === channel) activeChannel = null;
         isConnecting = false;
         isReconnecting = false;
       }
       else if (status === 'TIMED_OUT') {
-        console.warn("⏱️ [Realtime] Timeout de conexión.");
+        Logger.warn("⏱️ [Realtime] Timeout de conexión.");
         isConnecting = false;
         activeChannel = null;
         
@@ -188,11 +189,11 @@ export const stopLicenseListener = async (channel) => {
   reconnectAttempts = 0;
 
   if (channel) {
-    console.log("🔕 [Realtime] Desconectando WebSocket...");
+    Logger.log("🔕 [Realtime] Desconectando WebSocket...");
     try {
       await supabaseClient.removeChannel(channel);
     } catch (err) {
-      console.warn("[Realtime] Error al remover canal:", err);
+      Logger.warn("[Realtime] Error al remover canal:", err);
     }
   }
 
@@ -218,7 +219,7 @@ export const cleanupAllChannels = async () => {
   isConnecting = false;
   isReconnecting = false;
   reconnectAttempts = 0;
-  console.log("🧹 [Realtime] Limpieza completa ejecutada.");
+  Logger.log("🧹 [Realtime] Limpieza completa ejecutada.");
 };
 
 /**

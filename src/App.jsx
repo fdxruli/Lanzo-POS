@@ -121,7 +121,7 @@ function App() {
       if (document.visibilityState === 'visible') {
         if (isReconnecting) return;
         isReconnecting = true;
-        console.log("👁️ Pestaña activa: Verificando salud del sistema...");
+        Logger.log("👁️ Pestaña activa: Verificando salud del sistema...");
 
         try {
           // Importamos dinámicamente para no cargar módulos si no es necesario
@@ -153,11 +153,11 @@ function App() {
           });
 
           await healthCheckPromise;
-          console.log("✅ Conexión a BD verificada y activa.");
+          Logger.log("✅ Conexión a BD verificada y activa.");
 
         } catch (error) {
-          console.warn("⚠️ Conexión inestable detectada:", error.message);
-          console.log("🔄 Ejecutando reinicio forzado de BD...");
+          Logger.warn("⚠️ Conexión inestable detectada:", error.message);
+          Logger.log("🔄 Ejecutando reinicio forzado de BD...");
 
           // --- PASO 3: REINICIO FORZADO (SOLO SI FALLÓ LO ANTERIOR) ---
           try {
@@ -171,9 +171,9 @@ function App() {
 
             // 3. Re-iniciamos desde cero
             await initDB();
-            console.log("✅ BD recuperada exitosamente tras reinicio.");
+            Logger.log("✅ BD recuperada exitosamente tras reinicio.");
           } catch (retryError) {
-            console.error("💥 Error crítico recuperando BD:", retryError);
+            Logger.error("💥 Error crítico recuperando BD:", retryError);
             // Último recurso: si todo falla, sugerir recarga al usuario o forzarla
             // window.location.reload(); 
           }
@@ -186,7 +186,7 @@ function App() {
 
           // Solo reiniciamos el listener de seguridad si tenemos licencia y no hay subscripción activa
           if (licenseDetails?.license_key && !realtimeSubscription) {
-            console.log("📡 Reactivando servicios de seguridad...");
+            Logger.log("📡 Reactivando servicios de seguridad...");
             stopRealtimeSecurity(); // Por precaución
             startRealtimeSecurity();
           }
@@ -195,7 +195,7 @@ function App() {
           const lastActive = sessionStorage.getItem('lanzo_last_active');
           const now = Date.now();
           if (!lastActive || (now - parseInt(lastActive)) > 300000) { // 5 minutos
-            useAppStore.getState().verifySessionIntegrity().catch(console.warn);
+            useAppStore.getState().verifySessionIntegrity().catch(Logger.warn);
           }
         }
 
@@ -211,7 +211,7 @@ function App() {
     // Manejo de BFCache (Back-Forward Cache) para móviles
     const handlePageShow = (event) => {
       if (event.persisted) {
-        console.log("🔄 Restaurado desde caché, verificando...");
+        Logger.log("🔄 Restaurado desde caché, verificando...");
         handleVisibilityChange();
       }
     };

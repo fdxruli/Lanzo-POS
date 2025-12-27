@@ -8,6 +8,7 @@ import {
   STORES
 } from '../services/database';
 import { useStatsStore } from './useStatsStore';
+import Logger from '../services/Logger';
 
 export const useSalesStore = create((set, get) => ({
   sales: [],
@@ -112,7 +113,7 @@ export const useSalesStore = create((set, get) => ({
       }
 
     } catch (error) {
-      console.error("Error eliminar venta:", error);
+      Logger.error("Error eliminar venta:", error);
       alert("Ocurrió un error al intentar eliminar la venta.");
     }
   }

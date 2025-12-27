@@ -8,6 +8,7 @@ import {
   streamAllDataToJSONL
 } from './database';
 import { generateID } from './utils';
+import Logger from './Logger';
 
 // Encabezados para el CSV de Inventario
 const CSV_HEADERS = [
@@ -87,7 +88,7 @@ export const downloadInventorySmart = async () => {
     return true;
 
   } catch (error) {
-    console.error("Error en exportación inteligente:", error);
+    Logger.error("Error en exportación inteligente:", error);
     throw error;
   }
 };
@@ -144,7 +145,7 @@ export const downloadSalesSmart = async () => {
 
     return true;
   } catch (error) {
-    console.error("Error exportando ventas:", error);
+    Logger.error("Error exportando ventas:", error);
     throw error;
   }
 };
@@ -254,7 +255,7 @@ export const processImport = async (csvContent) => {
     if (result.success) {
       successCount = productsToSave.length;
     } else {
-      console.error("Error importando productos:", result.error);
+      Logger.error("Error importando productos:", result.error);
       errors.push(`FATAL: No se pudieron guardar los productos. ${result.error.message}`);
       // Si fallan los productos, no intentamos guardar los lotes para evitar inconsistencia
       return { success: false, importedCount: 0, errors };
@@ -266,7 +267,7 @@ export const processImport = async (csvContent) => {
     const batchResult = await saveBulkSafe(STORES.PRODUCT_BATCHES, batchesToSave);
 
     if (!batchResult.success) {
-      console.error("Error importando lotes:", batchResult.error);
+      Logger.error("Error importando lotes:", batchResult.error);
       errors.push(`ADVERTENCIA: Los productos se crearon, pero falló el registro de stock inicial (Lotes). Error: ${batchResult.error.message}`);
     }
   }
@@ -375,7 +376,7 @@ export const downloadBackupSmart = async () => {
       return true; // Éxito
     } catch (err) {
       if (err.name === 'AbortError') return false; // Usuario canceló
-      console.warn("FS API falló, usando fallback Blob...", err);
+      Logger.warn("FS API falló, usando fallback Blob...", err);
       // Si falla, pasamos a la Estrategia B
     }
   }

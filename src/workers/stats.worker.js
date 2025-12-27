@@ -1,5 +1,6 @@
 import { DB_NAME, DB_VERSION } from '../config/dbConfig.js';
 const CHUNK_SIZE = 1000;
+import Logger from '../services/Logger.js';
 
 let activeDB = null;
 
@@ -115,7 +116,7 @@ self.onmessage = async (e) => {
       }
 
       default:
-        console.warn(`[Worker] Tipo de mensaje desconocido: ${e.data.type}`);
+        Logger.warn(`[Worker] Tipo de mensaje desconocido: ${e.data.type}`);
         break;
     }
   } catch (error) {

@@ -19,6 +19,7 @@ import DailyPriceModal from '../components/products/DailyPriceModal';
 import { useAppStore } from '../store/useAppStore';
 import ProductWizard from '../components/products/ProductWizard';
 import './ProductsPage.css';
+import Logger from '../services/Logger';
 
 export default function ProductsPage() {
     const [showDailyPrice, setShowDailyPrice] = useState(false);
@@ -119,7 +120,7 @@ export default function ProductsPage() {
             if (error.name === 'DatabaseError') {
                 handleActionableError({ error });
             } else {
-                console.error("Error eliminando categoría:", error);
+                Logger.error("Error eliminando categoría:", error);
                 showMessageModal(`Error: ${error.message}`);
             }
         } finally {
@@ -262,7 +263,7 @@ export default function ProductsPage() {
             }
 
         } catch (error) {
-            console.error("Error crítico:", error);
+            Logger.error("Error crítico:", error);
             showMessageModal(`Error inesperado: ${error.message}`);
             return false;
         } finally {
@@ -312,7 +313,7 @@ export default function ProductsPage() {
                 showMessageModal('Producto eliminado.');
 
             } catch (error) {
-                console.error(error);
+                Logger.error(error);
                 showMessageModal("Error al eliminar el producto.");
             }
         }

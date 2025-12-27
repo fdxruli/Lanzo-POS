@@ -123,7 +123,7 @@ function isConnectionValid(db) {
     testTransaction.abort();
     return true;
   } catch (error) {
-    console.warn('Conexión inválida detectada:', error.name);
+    Logger.warn('Conexión inválida detectada:', error.name);
     return false;
   }
 }
@@ -152,7 +152,7 @@ export function initDB() {
         tx.abort(); // Si no falla al crearla, está viva. Abortamos para no gastar.
         return resolve(dbConnection.instance);
       } catch (error) {
-        console.warn("⚠️ Conexión IDB perdida en segundo plano. Reconectando...", error);
+        Logger.warn("⚠️ Conexión IDB perdida en segundo plano. Reconectando...", error);
         dbConnection.instance = null; // Forzamos reconexión
       }
     }
@@ -198,7 +198,7 @@ export function initDB() {
           if (tempDb.objectStoreNames.contains(storeName)) {
             const store = tx.objectStore(storeName);
             if (!store.indexNames.contains(indexName)) {
-              console.log(`Creando índice: ${indexName} en ${storeName}`);
+              Logger.log(`Creando índice: ${indexName} en ${storeName}`);
               store.createIndex(indexName, keyPath, options);
             }
           }
@@ -261,7 +261,7 @@ export async function saveDataSafe(storeName, data) {
   } catch (error) {
     // 3. MANEJO DE ERRORES DE VALIDACIÓN (ZOD)
     if (error.name === 'ZodError') {
-      console.warn("⚠️ Validación fallida (Zod):", error);
+      Logger.warn("⚠️ Validación fallida (Zod):", error);
 
       let message = "Datos inválidos (Revise el formulario)";
 
@@ -426,7 +426,7 @@ async function executeWithRetry(operation, maxRetries = 3) {
         'InvalidStateError', 'NotFoundError', 'TransactionInactiveError', 'UnknownError'
       ];
       if (recoverableErrors.includes(error.name)) {
-        console.warn(`🔄 Reintento ${attempt}/${maxRetries} por: ${error.name}`);
+        Logger.warn(`🔄 Reintento ${attempt}/${maxRetries} por: ${error.name}`);
         dbConnection.instance = null;
         await new Promise(resolve => setTimeout(resolve, 200 * attempt));
       } else {
@@ -507,7 +507,7 @@ export function queryByIndex(storeName, indexName, value, limit = 100) {
 
       if (!objectStore.indexNames.contains(indexName)) {
         // Fallback si no existe índice: devolver array vacío o buscar manual (aquí devolvemos vacío para no crashear)
-        console.warn(`Índice '${indexName}' no encontrado en '${storeName}'. Retornando vacío.`);
+        Logger.warn(`Índice '${indexName}' no encontrado en '${storeName}'. Retornando vacío.`);
         resolve([]);
         return;
       }
@@ -531,7 +531,7 @@ export function queryBatchesByProductIdAndActive(productId, isActive = true) {
 
       // ✅ SOLUCIÓN ROBUSTA: Verificamos existencia del índice
       if (!objectStore.indexNames.contains('productId')) {
-        console.warn("⚠️ Índice 'productId' no encontrado. Usando búsqueda manual (fallback).");
+        Logger.warn("⚠️ Índice 'productId' no encontrado. Usando búsqueda manual (fallback).");
 
         // Plan B: Búsqueda manual (más lenta, pero segura)
         const request = objectStore.openCursor();
@@ -732,7 +732,7 @@ export async function executeSaleTransaction(sale, deductions) {
   });
 
   if (existingSale) {
-    console.warn('⚠️ Venta duplicada detectada e ignorada:', sale.id);
+    Logger.warn('⚠️ Venta duplicada detectada e ignorada:', sale.id);
     return {
       success: false,
       error: new Error('DUPLICATE_SALE'),
@@ -809,7 +809,7 @@ export async function executeSaleTransaction(sale, deductions) {
       // ✅ MEJORA 4: Marcar log como completado en una nueva transacción ligera
       // Esto se hace "fire and forget" para no bloquear la UI
       markTransactionComplete(transactionId).catch(err =>
-        console.warn('No se pudo actualizar el estado del log:', err)
+        Logger.warn('No se pudo actualizar el estado del log:', err)
       );
 
       resolve({ success: true, transactionId });
@@ -1206,7 +1206,7 @@ export async function archiveOldData(monthsToKeep = 6) {
         // Terminó la iteración.
         // Aquí deberías guardar 'salesToArchive' en un JSON y descargarlo
         if (salesToArchive.length > 0) {
-          console.log(`Archivando ${salesToArchive.length} ventas antiguas...`);
+          Logger.log(`Archivando ${salesToArchive.length} ventas antiguas...`);
           // Retornamos los datos para que la UI los descargue
           resolve(salesToArchive);
         } else {
@@ -1273,7 +1273,7 @@ export async function recoverPendingTransactions() {
     // Verificamos si la tabla existe antes de intentar abrir la transacción.
     // Esto evita el "NotFoundError" si la actualización de versión apenas está ocurriendo.
     if (!db.objectStoreNames.contains(STORES.TRANSACTION_LOG)) {
-      console.warn("⚠️ La tabla 'transaction_log' aún no está disponible. Saltando recuperación inicial.");
+      Logger.warn("⚠️ La tabla 'transaction_log' aún no está disponible. Saltando recuperación inicial.");
       return;
     }
 
@@ -1286,13 +1286,13 @@ export async function recoverPendingTransactions() {
     request.onsuccess = async () => {
       const pending = request.result;
       if (pending && pending.length > 0) {
-        console.warn(`⚠️ Detectadas ${pending.length} transacciones incompletas.`);
+        Logger.warn(`⚠️ Detectadas ${pending.length} transacciones incompletas.`);
 
         // Procesar las que son viejas (> 1 minuto)
         for (const log of pending) {
           const age = Date.now() - new Date(log.timestamp).getTime();
           if (age > 60000) {
-            console.log(`Marcando transacción ${log.id} como FALLIDA (Timeout post-reinicio)`);
+            Logger.log(`Marcando transacción ${log.id} como FALLIDA (Timeout post-reinicio)`);
             await markTransactionFailed(log.id, 'Stale transaction found on startup');
           }
         }
@@ -1300,7 +1300,7 @@ export async function recoverPendingTransactions() {
     };
   } catch (error) {
     // Si falla (ej. base de datos bloqueada), solo lo registramos y no rompemos la app
-    console.warn("Recuperación de transacciones omitida por estado de BD:", error.name);
+    Logger.warn("Recuperación de transacciones omitida por estado de BD:", error.name);
   }
 }
 
@@ -1323,7 +1323,7 @@ export async function checkStorageQuota() {
     const percentUsed = (usage / quota) * 100;
     const remainingMB = (quota - usage) / (1024 * 1024);
 
-    console.log(`💾 Estado de Disco: ${(usage / 1024 / 1024).toFixed(2)}MB usados de ${(quota / 1024 / 1024).toFixed(2)}MB (${percentUsed.toFixed(1)}%)`);
+    Logger.log(`💾 Estado de Disco: ${(usage / 1024 / 1024).toFixed(2)}MB usados de ${(quota / 1024 / 1024).toFixed(2)}MB (${percentUsed.toFixed(1)}%)`);
 
     // UMBRAL DE ALERTA: 80%
     if (percentUsed > 80) {
@@ -1355,7 +1355,7 @@ export function searchProductBySKU(sku) {
 
       // Verificación de seguridad
       if (!batchStore.indexNames.contains('sku')) {
-        console.warn("Índice SKU no encontrado");
+        Logger.warn("Índice SKU no encontrado");
         resolve(null);
         return;
       }

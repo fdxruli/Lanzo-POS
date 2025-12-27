@@ -10,6 +10,7 @@ import PrescriptionModal from '../components/pos/PrescriptionModal';
 import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
 import { processSale } from '../services/salesService';
+import Logger from '../services/Logger';
 
 // --- CAMBIOS: Importamos los nuevos stores especializados ---
 import { useProductStore } from '../store/useProductStore';
@@ -102,7 +103,7 @@ export default function PosPage() {
         // Cargamos los productos iniciales
         await refreshData();
       } catch (error) {
-        console.error("Error cargando datos:", error);
+        Logger.error("Error cargando datos:", error);
       }
     };
     loadExtras();
@@ -232,7 +233,7 @@ export default function PosPage() {
 
     } catch (error) {
       // --- ERROR NO CONTROLADO (CRASH) ---
-      console.error('Error crítico en UI:', error);
+      Logger.error('Error crítico en UI:', error);
       showMessageModal(`Error inesperado: ${error.message}`);
     } finally {
       setIsProcessing(false);

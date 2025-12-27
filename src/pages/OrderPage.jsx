@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { loadData, saveDataSafe, STORES, getOrdersSince } from '../services/database';
 import { showMessageModal } from '../services/utils';
 import './OrderPage.css';
+import Logger from '../services/Logger';
 
 export default function OrdersPage() {
     const [orders, setOrders] = useState([]);
@@ -35,7 +36,7 @@ export default function OrdersPage() {
             filteredOrders.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             setOrders(filteredOrders);
         } catch (error) {
-            console.error("Error cargando pedidos:", error);
+            Logger.error("Error cargando pedidos:", error);
         } finally {
             setIsLoading(false);
         }

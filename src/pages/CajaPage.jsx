@@ -4,6 +4,7 @@ import AuditModal from '../components/common/AuditModal';
 import { showMessageModal } from '../services/utils';
 import { downloadBackupSmart } from '../services/dataTransfer';
 import './CajaPage.css';
+import Logger from '../services/Logger';
 
 // --- Componente Local: Modal para corregir el fondo inicial ---
 const EditInitialModal = ({ show, onClose, onSave, currentAmount }) => {
@@ -132,7 +133,7 @@ export default function CajaPage() {
       await downloadBackupSmart(); // <--- Cambio aquí
       showMessageModal("✅ Respaldo generado correctamente.");
     } catch (e) {
-      console.error(e);
+      Logger.error(e);
       showMessageModal("Error al respaldar.", null, { type: 'error' });
     } finally {
       setIsBackupLoading(false);

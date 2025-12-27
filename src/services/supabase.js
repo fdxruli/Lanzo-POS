@@ -1,7 +1,7 @@
 // src/services/supabase.js
 import { createClient } from "@supabase/supabase-js";
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
-import { safeLocalStorageSet } from './utils';
+import { safeLocalStorageSet, checkInternetConnection } from './utils';
 import { loadData, saveData, STORES } from './database';
 import Logger from "./Logger";
 
@@ -49,7 +49,7 @@ export async function getStableDeviceId() {
             dbId = record.value;
         }
     } catch (e) {
-        console.warn("⚠️ No se pudo leer identidad de BD (posiblemente primer uso):", e);
+        Logger.warn("⚠️ No se pudo leer identidad de BD (posiblemente primer uso):", e);
     }
 
     // --- LÓGICA DE RECONCILIACIÓN ---
@@ -57,7 +57,7 @@ export async function getStableDeviceId() {
     // CASO 1: Coincidencia perfecta o recuperación cruzada
     if (dbId && lsId) {
         if (dbId !== lsId) {
-            console.warn("⚠️ Conflicto de identidad detectado. IndexedDB tiene prioridad.");
+            Logger.warn("⚠️ Conflicto de identidad detectado. IndexedDB tiene prioridad.");
             // IDB es más difícil de borrar, así que confiamos en él y reparamos LocalStorage
             safeLocalStorageSet(STORAGE_KEY, dbId);
             return dbId;
@@ -67,17 +67,17 @@ export async function getStableDeviceId() {
 
     // CASO 2: Usuario borró cookies (localStorage vacío) pero BD sigue viva
     if (dbId && !lsId) {
-        console.log("♻️ Identidad recuperada desde IndexedDB.");
+        Logger.log("♻️ Identidad recuperada desde IndexedDB.");
         safeLocalStorageSet(STORAGE_KEY, dbId);
         return dbId;
     }
 
     // CASO 3: BD vacía o corrupta, pero LocalStorage vivo (Raro, pero posible)
     if (lsId && !dbId) {
-        console.log("💾 Respaldando identidad existente en IndexedDB...");
+        Logger.log("💾 Respaldando identidad existente en IndexedDB...");
         try {
             await saveData(STORES.SYNC_CACHE, { key: STORAGE_KEY, value: lsId });
-        } catch (e) { console.warn("Fallo respaldo ID:", e); }
+        } catch (e) { Logger.warn("Fallo respaldo ID:", e); }
         return lsId;
     }
 
@@ -93,12 +93,12 @@ export async function getStableDeviceId() {
         try {
             await saveData(STORES.SYNC_CACHE, { key: STORAGE_KEY, value: newId });
         } catch (e) {
-            console.warn("⚠️ No se pudo persistir el ID nuevo en DB:", e);
+            Logger.warn("⚠️ No se pudo persistir el ID nuevo en DB:", e);
         }
 
         return newId;
     } catch (error) {
-        console.error("Error crítico generando fingerprint, usando fallback UUID", error);
+        Logger.error("Error crítico generando fingerprint, usando fallback UUID", error);
         const fallbackId = `fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         safeLocalStorageSet(STORAGE_KEY, fallbackId);
         return fallbackId;
@@ -254,14 +254,14 @@ export const revalidateLicense = async function (licenseKeyProp) {
         // ✅ MEJORA 3: SOLO retornamos la respuesta del servidor si es exitosa
         // Si data.valid === false, es porque la licencia REALMENTE expiró
         if (!data.valid && data.reason !== 'offline_grace') {
-            console.warn("⛔ Servidor confirmó: Licencia inválida:", data.reason);
+            Logger.warn("⛔ Servidor confirmó: Licencia inválida:", data.reason);
         }
 
         return data;
 
     } catch (error) {
         clearTimeout(timeoutId);
-        console.warn('⚠️ Error validando licencia:', error.message);
+        Logger.warn('⚠️ Error validando licencia:', error.message);
 
         const isNetworkError =
             error.message === 'VALIDATION_TIMEOUT' ||
@@ -316,7 +316,7 @@ export const saveBusinessProfile = async function (licenseKey, profileData) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error guardando perfil:', error);
+        Logger.error('Error guardando perfil:', error);
         return { success: false, message: error.message };
     }
 };
@@ -331,7 +331,7 @@ export const getBusinessProfile = async function (licenseKey) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error obteniendo perfil:', error);
+        Logger.error('Error obteniendo perfil:', error);
         return { success: false, message: error.message };
     }
 };
@@ -362,13 +362,13 @@ export const uploadFile = async function (file, type = 'product') {
         return data.publicUrl;
 
     } catch (error) {
-        console.error('Error subiendo archivo:', error);
+        Logger.error('Error subiendo archivo:', error);
         return null;
     }
 };
 
 export const deactivateCurrentDevice = async () => {
-    console.warn("Desactivación manual pendiente de implementación en backend anónimo.");
+    Logger.warn("Desactivación manual pendiente de implementación en backend anónimo.");
     return { success: true };
 };
 
@@ -405,7 +405,7 @@ export const createFreeTrial = async function () {
     } catch (error) {
         const isRateLimit = error.message && error.message.includes('Demasiados intentos');
         if (!isRateLimit) {
-            console.error('❌ Error creando trial:', error);
+            Logger.error('❌ Error creando trial:', error);
             registerFailedAttempt();
         }
         return { success: false, error: error.message };
@@ -434,7 +434,7 @@ export const deactivateDeviceById = async function (deviceId) {
         return data;
 
     } catch (error) {
-        console.error('Error deactivating device:', error);
+        Logger.error('Error deactivating device:', error);
         return { success: false, message: error.message };
     }
 };

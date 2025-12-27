@@ -1,6 +1,7 @@
 // src/pages/DashboardPage.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Logger from '../services/Logger';
 
 // --- STORES ---
 import { useStatsStore } from '../store/useStatsStore';
@@ -51,13 +52,13 @@ export default function DashboardPage() {
       const customersData = await loadData(STORES.CUSTOMERS);
       setCustomers(customersData || []);
     } catch (error) {
-      console.error("Error cargando clientes:", error);
+      Logger.error("Error cargando clientes:", error);
       setCustomers([]);
     }
   };
 
   useEffect(() => {
-    console.log("🔄 Actualizando Dashboard...");
+    Logger.log("🔄 Actualizando Dashboard...");
     loadStats();
     loadRecentSales();
     loadCustomers();

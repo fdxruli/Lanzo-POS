@@ -9,6 +9,7 @@ import {
   STORES,
   searchProductBySKU
 } from '../services/database';
+import Logger from '../services/Logger';
 
 export const useProductStore = create((set, get) => ({
   menu: [],
@@ -56,7 +57,7 @@ export const useProductStore = create((set, get) => ({
       });
 
     } catch (error) {
-      console.error("Error en búsqueda:", error);
+      Logger.error("Error en búsqueda:", error);
       set({ isLoading: false });
     }
   },
@@ -79,7 +80,7 @@ export const useProductStore = create((set, get) => ({
         isLoading: false
       });
     } catch (error) {
-      console.error("Error loading products:", error);
+      Logger.error("Error loading products:", error);
       set({ isLoading: false });
     }
   },
@@ -114,7 +115,7 @@ export const useProductStore = create((set, get) => ({
         hasMoreProducts: nextPage.length === menuPageSize
       });
     } catch (error) {
-      console.error("Error paginando:", error);
+      Logger.error("Error paginando:", error);
     }
   },
 
@@ -219,7 +220,7 @@ export const useProductStore = create((set, get) => ({
 
       return [...batchAlerts, ...productAlerts].sort((a, b) => a.daysRemaining - b.daysRemaining);
     } catch (error) {
-      console.error("Error verificando caducidades:", error);
+      Logger.error("Error verificando caducidades:", error);
       return [];
     }
   }

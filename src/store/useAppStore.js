@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
 import { isLocalStorageEnabled, normalizeDate, showMessageModal, safeLocalStorageSet } from '../services/utils';
+import Logger from '../services/Logger';
 
 import {
   activateLicense,
@@ -73,7 +74,7 @@ const saveLicenseToStorage = async (licenseData) => {
   const saved = safeLocalStorageSet('lanzo_license', JSON.stringify(packageToStore));
 
   if (!saved) {
-    console.warn("No se pudo persistir la licencia por falta de espacio.");
+    Logger.warn("No se pudo persistir la licencia por falta de espacio.");
   }
 };
 
@@ -91,7 +92,7 @@ const getLicenseFromStorage = async () => {
     const expectedSignature = generateSignature(parsedPackage.data);
 
     if (parsedPackage.signature !== expectedSignature) {
-      console.warn("⚠️ La firma local no coincide. Posible actualización de versión.");
+      Logger.warn("⚠️ La firma local no coincide. Posible actualización de versión.");
       // NOTA: Esto está bien, permitimos que pase la data aunque la firma falle
       // para soportar actualizaciones donde cambia el algoritmo de firma.
       return parsedPackage.data;
@@ -99,7 +100,7 @@ const getLicenseFromStorage = async () => {
 
     return parsedPackage.data;
   } catch (e) {
-    console.error("Error leyendo licencia local:", e);
+    Logger.error("Error leyendo licencia local:", e);
     // === CAMBIO: NO BORRAR AQUI ===
     // localStorage.removeItem('lanzo_license'); <--- COMENTAR O BORRAR ESTA LÍNEA
     // Si borramos aquí, un error tonto de lectura desloguea al usuario.
@@ -128,12 +129,12 @@ export const useAppStore = create((set, get) => ({
   // === initializeApp ===
   initializeApp: async () => {
     if (get()._isInitializing) {
-      console.warn('⏳ initializeApp ya está en ejecución, saltando...');
+      Logger.warn('⏳ initializeApp ya está en ejecución, saltando...');
       return;
     }
 
     set({ _isInitializing: true });
-    console.log('🔄 [AppStore] Iniciando aplicación...');
+    Logger.log('🔄 [AppStore] Iniciando aplicación...');
 
     try {
       const localLicense = await getLicenseFromStorage();
@@ -156,7 +157,7 @@ export const useAppStore = create((set, get) => ({
             return;
           }
         } catch (validationError) {
-          console.warn('⚠️ Validación falló, usando caché:', validationError);
+          Logger.warn('⚠️ Validación falló, usando caché:', validationError);
         }
       }
 
@@ -164,7 +165,7 @@ export const useAppStore = create((set, get) => ({
       set({ _isInitializing: false });
 
     } catch (criticalError) {
-      console.error('💥 Error crítico inicializando:', criticalError);
+      Logger.error('💥 Error crítico inicializando:', criticalError);
       set({ appStatus: 'unauthenticated', _isInitializing: false });
     }
   },
@@ -186,7 +187,7 @@ export const useAppStore = create((set, get) => ({
 
       // Verificamos si es un error fatal antes de borrar
       if (FATAL_REASONS.includes(serverValidation.reason)) {
-        console.warn('🚫 [AppStore] Licencia revocada fatalmente:', serverValidation.reason);
+        Logger.warn('🚫 [AppStore] Licencia revocada fatalmente:', serverValidation.reason);
         clearLicenseFromStorage();
         set({
           appStatus: 'unauthenticated',
@@ -198,7 +199,7 @@ export const useAppStore = create((set, get) => ({
         // === FALLO SUAVE (SOFT FAIL) ===
         // Si el servidor dice "invalid" pero no es fatal (ej. error de formato tras update),
         // ignoramos al servidor y mantenemos la sesión local (Modo Offline forzado).
-        console.warn('⚠️ [AppStore] Validación fallida (posible error post-update). Manteniendo sesión local.');
+        Logger.warn('⚠️ [AppStore] Validación fallida (posible error post-update). Manteniendo sesión local.');
 
         // Tratamos la licencia como si estuviéramos offline
         await get()._processOfflineMode(localLicense);
@@ -210,7 +211,7 @@ export const useAppStore = create((set, get) => ({
 
     if (!serverValidation.valid && isWithinGracePeriod) {
       finalStatus = 'grace_period';
-      console.log('⏰ [AppStore] Licencia en PERÍODO DE GRACIA');
+      Logger.log('⏰ [AppStore] Licencia en PERÍODO DE GRACIA');
     }
 
     const finalLicenseData = {
@@ -238,44 +239,51 @@ export const useAppStore = create((set, get) => ({
     const now = new Date();
 
     // A) Sanear/Generar localExpiry si falta (Retrocompatibilidad crítica)
-    // Esto evita que licencias antiguas funcionen para siempre
     if (!localLicense.localExpiry) {
       console.log("⚠️ [AppStore] localExpiry faltante, generando basado en activación...");
 
-      // Si no hay activated_at, usamos NOW como último recurso (menos seguro pero funcional)
-      // Si hay activated_at, calculamos 30 días desde esa fecha original.
       const baseDate = localLicense.activated_at
         ? new Date(localLicense.activated_at)
         : now;
 
       const expiryDate = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000);
-
       localLicense.localExpiry = expiryDate.toISOString();
 
-      // Actualizamos el storage para futuros chequeos
       await saveLicenseToStorage(localLicense);
     }
 
+    // ✅ CORRECCIÓN: Convertir ambas fechas a milisegundos para comparación confiable
+    const localExpiryTime = new Date(localLicense.localExpiry).getTime();
+    const nowTime = now.getTime();
+
     // B) Validación Estricta de Expiración
-    if (normalizeDate(localLicense.localExpiry) <= now) {
+    if (localExpiryTime <= nowTime) {
       console.warn('🕐 [AppStore] Caché local expirado (30 días sin conexión)');
+      console.warn(`Fecha de expiración: ${localLicense.localExpiry}`);
+      console.warn(`Fecha actual: ${now.toISOString()}`);
       clearLicenseFromStorage();
       set({ appStatus: 'unauthenticated' });
       return;
     }
 
+    // Agregar log informativo sobre días restantes
+    const daysRemaining = Math.floor((localExpiryTime - nowTime) / (1000 * 60 * 60 * 24));
+    console.log(`✅ [AppStore] Modo offline válido. Días restantes: ${daysRemaining}`);
+
     // C) Calcular estado basado en fechas locales
     let localStatus = localLicense.status || 'active';
+
+    // Convertir fechas de licencia también a timestamps
     const expiryDate = localLicense.expires_at
-      ? new Date(localLicense.expires_at)
+      ? new Date(localLicense.expires_at).getTime()
       : null;
     const graceDate = localLicense.grace_period_ends
-      ? new Date(localLicense.grace_period_ends)
+      ? new Date(localLicense.grace_period_ends).getTime()
       : null;
 
     // D) Verificar si expiró localmente (fecha de suscripción, no de caché offline)
-    if (expiryDate && expiryDate < now) {
-      if (graceDate && graceDate > now) {
+    if (expiryDate && expiryDate < nowTime) {
+      if (graceDate && graceDate > nowTime) {
         localStatus = 'grace_period';
         console.log('⏰ [AppStore] Licencia en PERÍODO DE GRACIA (offline)');
       } else {
@@ -318,7 +326,7 @@ export const useAppStore = create((set, get) => ({
           await saveData(STORES.COMPANY, companyData);
         }
       } catch (e) {
-        console.warn('⚠️ [AppStore] Fallo carga perfil online:', e);
+        Logger.warn('⚠️ [AppStore] Fallo carga perfil online:', e);
       }
     }
 
@@ -326,17 +334,17 @@ export const useAppStore = create((set, get) => ({
       try {
         companyData = await loadData(STORES.COMPANY, 'company');
       } catch (e) {
-        console.warn('⚠️ [AppStore] Fallo carga perfil local:', e);
+        Logger.warn('⚠️ [AppStore] Fallo carga perfil local:', e);
       }
     }
 
     set({ companyProfile: companyData });
 
     if (companyData && (companyData.name || companyData.business_name)) {
-      console.log('✅ [AppStore] Aplicación lista (ready)');
+      Logger.log('✅ [AppStore] Aplicación lista (ready)');
       set({ appStatus: 'ready' });
     } else {
-      console.log('⚙️ [AppStore] Requiere configuración inicial');
+      Logger.log('⚙️ [AppStore] Requiere configuración inicial');
       set({ appStatus: 'setup_required' });
     }
   },
@@ -345,18 +353,18 @@ export const useAppStore = create((set, get) => ({
     const state = get();
 
     if (state._isInitializingSecurity) {
-      console.log('⏳ [Realtime] Ya hay inicialización en progreso');
+      Logger.log('⏳ [Realtime] Ya hay inicialización en progreso');
       return;
     }
 
     if (!state.licenseDetails?.license_key) {
-      console.warn('⚠️ [Realtime] No hay licencia para monitorear');
+      Logger.warn('⚠️ [Realtime] No hay licencia para monitorear');
       return;
     }
 
     const deviceFingerprint = localStorage.getItem('lanzo_device_id');
     if (!deviceFingerprint) {
-      console.warn('⚠️ [Realtime] No hay fingerprint del dispositivo');
+      Logger.warn('⚠️ [Realtime] No hay fingerprint del dispositivo');
       return;
     }
 
@@ -373,13 +381,13 @@ export const useAppStore = create((set, get) => ({
         deviceFingerprint,
         {
           onLicenseChanged: async (newLicenseData) => {
-            console.log("🔔 [Realtime] Cambio en licencia detectado");
+            Logger.log("🔔 [Realtime] Cambio en licencia detectado");
             await get().verifySessionIntegrity();
           },
 
           onDeviceChanged: (event) => {
             if (event.status === 'banned' || event.status === 'deleted') {
-              console.warn('🚫 [Realtime] Dispositivo revocado');
+              Logger.warn('🚫 [Realtime] Dispositivo revocado');
               showMessageModal(
                 '🚫 ACCESO REVOCADO: Dispositivo desactivado.',
                 () => {
@@ -394,10 +402,10 @@ export const useAppStore = create((set, get) => ({
       );
 
       set({ realtimeSubscription: channel });
-      console.log('✅ [Realtime] Seguridad iniciada');
+      Logger.log('✅ [Realtime] Seguridad iniciada');
 
     } catch (error) {
-      console.error('❌ [Realtime] Error inicializando seguridad:', error);
+      Logger.error('❌ [Realtime] Error inicializando seguridad:', error);
       set({ realtimeSubscription: null });
     } finally {
       set({ _isInitializingSecurity: false });
@@ -413,9 +421,9 @@ export const useAppStore = create((set, get) => ({
 
     try {
       await stopLicenseListener(realtimeSubscription);
-      console.log('🔕 [Realtime] Seguridad detenida');
+      Logger.log('🔕 [Realtime] Seguridad detenida');
     } catch (err) {
-      console.warn('⚠️ [Realtime] Error deteniendo listener:', err);
+      Logger.warn('⚠️ [Realtime] Error deteniendo listener:', err);
     } finally {
       set({
         realtimeSubscription: null,
@@ -439,12 +447,12 @@ export const useAppStore = create((set, get) => ({
       const errorMsg = (result.message || '').toLowerCase();
       if (!result.valid && (errorMsg.includes('limit') || errorMsg.includes('active') || errorMsg.includes('device'))) {
 
-        console.log("⚠️ Dispositivo ya registrado. Intentando recuperar sesión...");
+        Logger.log("⚠️ Dispositivo ya registrado. Intentando recuperar sesión...");
 
         const revalidate = await revalidateLicense(licenseKey);
 
         if (revalidate.valid) {
-          console.log("✅ Sesión recuperada exitosamente.");
+          Logger.log("✅ Sesión recuperada exitosamente.");
 
           const recoveredData = {
             ...revalidate,
@@ -461,7 +469,7 @@ export const useAppStore = create((set, get) => ({
 
       return { success: false, message: result.message || 'Licencia no válida' };
     } catch (error) {
-      console.error("Error en login:", error);
+      Logger.error("Error en login:", error);
       return { success: false, message: error.message };
     }
   },
@@ -505,7 +513,7 @@ export const useAppStore = create((set, get) => ({
 
       set({ companyProfile: companyData, appStatus: 'ready' });
     } catch (error) {
-      console.error('Error en setup:', error);
+      Logger.error('Error en setup:', error);
     }
   },
 
@@ -523,7 +531,7 @@ export const useAppStore = create((set, get) => ({
       await saveData(STORES.COMPANY, companyData);
       set({ companyProfile: companyData });
     } catch (error) {
-      console.error('Error actualizando perfil:', error);
+      Logger.error('Error actualizando perfil:', error);
     }
   },
 
@@ -537,7 +545,7 @@ export const useAppStore = create((set, get) => ({
         await deactivateCurrentDevice(licenseDetails.license_key);
       }
     } catch (error) {
-      console.warn('Error desactivando dispositivo:', error);
+      Logger.warn('Error desactivando dispositivo:', error);
     }
 
     clearLicenseFromStorage();
@@ -598,7 +606,7 @@ export const useAppStore = create((set, get) => ({
         await saveLicenseToStorage(updatedDetails);
 
       } catch (error) {
-        console.warn("Verificación fallida, manteniendo sesión offline:", error);
+        Logger.warn("Verificación fallida, manteniendo sesión offline:", error);
       }
     }
 

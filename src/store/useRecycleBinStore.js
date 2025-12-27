@@ -6,6 +6,7 @@ import {
   executeSaleTransactionSafe, 
   STORES 
 } from '../services/database';
+import Logger from '../services/Logger';
 
 export const useRecycleBinStore = create((set, get) => ({
   deletedItems: [],
@@ -46,7 +47,7 @@ export const useRecycleBinStore = create((set, get) => ({
                 let existingBatch = await loadData(STORES.PRODUCT_BATCHES, batchRecord.batchId);
 
                 if (!existingBatch) {
-                  console.warn(`Resucitando lote eliminado: ${batchRecord.batchId}`);
+                  Logger.warn(`Resucitando lote eliminado: ${batchRecord.batchId}`);
                   existingBatch = {
                     id: batchRecord.batchId,
                     productId: prod.parentId || prod.id,
@@ -82,7 +83,7 @@ export const useRecycleBinStore = create((set, get) => ({
             alert("✅ Pedido restaurado y stock descontado nuevamente.");
         } else {
             // Manejo de error controlado
-            console.error(txResult.error);
+            Logger.error(txResult.error);
             const msg = txResult.error?.message || "Error desconocido en transacción";
             alert(`⚠️ No se pudo restaurar: ${msg}`);
             return;
@@ -117,7 +118,7 @@ export const useRecycleBinStore = create((set, get) => ({
       await get().loadRecycleBin();
 
     } catch (error) {
-      console.error("Error crítico al restaurar:", error);
+      Logger.error("Error crítico al restaurar:", error);
       alert("Error inesperado al intentar restaurar el elemento.");
     }
   }

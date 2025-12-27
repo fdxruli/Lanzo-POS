@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { showMessageModal, roundCurrency, generateID } from '../services/utils';
 import { loadDataPaginated, saveDataSafe, STORES, initDB } from '../services/database';
+import Logger from '../services/Logger';
 
 export function useCaja() {
   const [cajaActual, setCajaActual] = useState(null);
@@ -84,7 +85,7 @@ export function useCaja() {
 
       // 2. SI NO HAY CAJA ABIERTA -> LA CREAMOS AUTOMÁTICAMENTE
       if (!cajaActiva) {
-        console.log("🔄 Sistema inteligente: Iniciando nuevo turno automáticamente...");
+        Logger.log("🔄 Sistema inteligente: Iniciando nuevo turno automáticamente...");
         cajaActiva = await autoAbrirCaja(ultimaCaja);
         // Actualizamos la lista local añadiendo la nueva al principio
         cajasRecientes.unshift(cajaActiva);
@@ -100,7 +101,7 @@ export function useCaja() {
       setHistorialCajas(cajasRecientes.filter(c => c.id !== cajaActiva.id));
 
     } catch (error) {
-      console.error("Error al cargar estado de caja:", error);
+      Logger.error("Error al cargar estado de caja:", error);
       setError(error.message || "Error al cargar la caja.");
     } finally {
       setIsLoading(false);

@@ -8,6 +8,8 @@ import { useCaja } from '../hooks/useCaja';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useNavigate } from 'react-router-dom';
+import Logger from '../services/Logger';
+
 import {
   saveDataSafe,
   deleteDataSafe,
@@ -46,7 +48,7 @@ export default function CustomersPage() {
       setPage(1);
       setHasMore(data.length === PAGE_SIZE);
     } catch (error) {
-      console.error("Error cargando clientes:", error);
+      Logger.error("Error cargando clientes:", error);
     } finally {
       setLoading(false);
     }
@@ -69,7 +71,7 @@ export default function CustomersPage() {
         setHasMore(false);
       }
     } catch (error) {
-      console.error("Error paginando:", error);
+      Logger.error("Error paginando:", error);
     } finally {
       setLoading(false);
     }
@@ -118,7 +120,7 @@ export default function CustomersPage() {
       showMessageModal('¡Cliente guardado con éxito!');
 
     } catch (error) {
-      console.error('Error al guardar cliente:', error);
+      Logger.error('Error al guardar cliente:', error);
       showMessageModal('Error inesperado al guardar cliente.');
     }
   };
@@ -234,7 +236,7 @@ export default function CustomersPage() {
       }
 
     } catch (error) {
-      console.error('Error crítico en abono:', error);
+      Logger.error('Error crítico en abono:', error);
       showMessageModal(`Error al procesar: ${error.message}`);
       // ✅ MEJORA CRÍTICA: Aseguramos que el modal se cierre si hay error de sistema
       handleCloseModals();
@@ -342,7 +344,7 @@ ${itemsString}
       sendWhatsAppMessage(customer.phone, message);
 
     } catch (error) {
-      console.error("Error al generar mensaje de WhatsApp:", error);
+      Logger.error("Error al generar mensaje de WhatsApp:", error);
       showMessageModal('Error al generar el mensaje. Abriendo chat simple.');
       sendWhatsAppMessage(customer.phone, '');
     } finally {
