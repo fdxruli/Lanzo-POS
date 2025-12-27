@@ -3,6 +3,7 @@
 // 1. Importa la nueva función 'show' de tu store
 import { showMessage } from '../store/useMessageStore';
 import toast from 'react-hot-toast';
+import Logger from './Logger';
 
 /**
  * Muestra un mensaje al usuario.
@@ -394,6 +395,45 @@ export const safeLocalStorageSet = (key, value) => {
     
     // Otros errores (ej. Modo Incógnito estricto en Safari a veces bloquea setItem completamente)
     console.error("Error de acceso a LocalStorage:", error);
+    return false;
+  }
+};
+
+/**
+ * Verificación ROBUSTA de conexión a Internet.
+ * navigator.onLine solo verifica conexión a la red local (LAN/Router),
+ * no salida real a internet (WAN).
+ * * Estrategia: "Ping" ligero a un recurso de alta disponibilidad.
+ * @returns {Promise<boolean>}
+ */
+export const checkInternetConnection = async () => {
+  // 1. Primer filtro rápido: Si el navegador sabe que no hay red, creéle.
+  if (!navigator.onLine) {
+    return false;
+  }
+
+  // 2. Verificación real (Ping Fetch)
+  try {
+    // Usamos 'no-store' para que no nos engañe la caché del navegador.
+    // Usamos un timeout corto (5000ms) para no congelar la UX.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    // Hacemos ping a la propia URL del sitio (si está hosteado) o un CDN confiable.
+    // Usar la favicon de Google es un truco común, o un endpoint de tu API "health".
+    // Aquí usamos un HEAD request para descargar lo menos posible.
+    // NOTA: Asegúrate de que la URL permita CORS o usa 'no-cors' (opaco).
+    await fetch('https://www.google.com/favicon.ico', { 
+      method: 'HEAD', 
+      mode: 'no-cors', 
+      cache: 'no-store',
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    return true; // Si no lanzó error, hay salida.
+  } catch (error) {
+    Logger.warn('⚠️ Check de internet fallido:', error.message);
     return false;
   }
 };

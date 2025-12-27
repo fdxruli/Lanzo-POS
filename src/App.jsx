@@ -4,6 +4,7 @@ import { Routes, Route } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import NavigationGuard from './components/common/NavigationGuard';
+import Logger from './services/Logger';
 
 // --- COMPONENTES CRÍTICOS (Eager Loading) ---
 import Layout from './components/layout/Layout';
@@ -13,51 +14,69 @@ import ReconnectionBanner from './components/common/ReconnectionBanner';
 import { useSalesStore } from './store/useSalesStore';
 import { useSingleInstance } from './hooks/useSingleInstance';
 
+const MAX_RETRIES = 3;
+const RETRY_SESSION_KEY = 'lazy_retry_count';
+
 // --- FUNCIÓN "LAZY" INTELIGENTE ---
-const lazyRetry = (importFn) => {
+const lazyRetry = (importFn, componentName = 'Component') => {
   return lazy(async () => {
     try {
       const component = await importFn();
-      window.sessionStorage.removeItem('retry-lazy-refreshed');
+      // Si carga con éxito, limpiamos el contador de errores
+      window.sessionStorage.removeItem(RETRY_SESSION_KEY);
       return component;
     } catch (error) {
-      // --- CÓDIGO CORREGIDO ---
+      Logger.error(`Error cargando módulo ${componentName}:`, error);
 
-      // 1. Validación estricta de conexión
-      if (!navigator.onLine) {
-        console.warn("Offline: No se puede cargar el módulo.");
-        // Retornamos un componente "dummy" para evitar el crash
-        return {
-          default: () => (
-            <div style={{ padding: '20px', textAlign: 'center' }}>
-              <h3>📡 Sin conexión</h3>
-              <p>No se puede cargar esta sección sin internet.</p>
-            </div>
-          )
-        };
-      }
+      // 1. Obtener intentos actuales
+      const currentRetries = parseInt(window.sessionStorage.getItem(RETRY_SESSION_KEY) || '0', 10);
 
-      // 2. Lógica de reintento existente
-      const hasRefreshed = window.sessionStorage.getItem('retry-lazy-refreshed');
-      if (!hasRefreshed) {
-        window.sessionStorage.setItem('retry-lazy-refreshed', 'true');
+      // 2. Si no hemos excedido el máximo, recargamos
+      if (currentRetries < MAX_RETRIES) {
+        window.sessionStorage.setItem(RETRY_SESSION_KEY, (currentRetries + 1).toString());
+        Logger.warn(`Reintentando carga (${currentRetries + 1}/${MAX_RETRIES})...`);
         window.location.reload();
+        // Retornamos promesa infinita para que React espere al reload
         return new Promise(() => { });
       }
 
-      throw error;
+      // 3. SI EXCEDIMOS: Rendirse elegantemente (NO recargar más)
+      Logger.error("Máximo de reintentos alcanzado. Mostrando UI de error.");
+      window.sessionStorage.removeItem(RETRY_SESSION_KEY); // Limpiar para el futuro
+
+      // Retornamos un componente de error visual en lugar de romper la app
+      return {
+        default: () => (
+          <div style={{ 
+            height: '100vh', display: 'flex', flexDirection: 'column', 
+            alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center' 
+          }}>
+            <h2 style={{fontSize: '2rem'}}>⚠️</h2>
+            <h3>Error de conexión</h3>
+            <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
+            <p style={{fontSize: '0.9rem', color: '#666'}}>Verifica tu internet.</p>
+            <button 
+              className="btn btn-primary" 
+              style={{marginTop: '1rem'}}
+              onClick={() => window.location.reload()}
+            >
+              Intentar de nuevo manualmente
+            </button>
+          </div>
+        )
+      };
     }
   });
 };
 
-const PosPage = lazyRetry(() => import('./pages/PosPage'));
-const CajaPage = lazyRetry(() => import('./pages/CajaPage'));
-const OrdersPage = lazyRetry(() => import('./pages/OrderPage'));
-const ProductsPage = lazyRetry(() => import('./pages/ProductsPage'));
-const CustomersPage = lazyRetry(() => import('./pages/CustomersPage'));
-const DashboardPage = lazyRetry(() => import('./pages/DashboardPage'));
-const SettingsPage = lazyRetry(() => import('./pages/SettingsPage'));
-const AboutPage = lazyRetry(() => import('./pages/AboutPage'));
+const PosPage = lazyRetry(() => import('./pages/PosPage'), 'PosPage');
+const CajaPage = lazyRetry(() => import('./pages/CajaPage'), 'CajaPage');
+const OrdersPage = lazyRetry(() => import('./pages/OrderPage'), 'OrdersPage');
+const ProductsPage = lazyRetry(() => import('./pages/ProductsPage'), 'ProductsPage');
+const CustomersPage = lazyRetry(() => import('./pages/CustomersPage'), 'CustomersPage');
+const DashboardPage = lazyRetry(() => import('./pages/DashboardPage'), 'DashboardPage');
+const SettingsPage = lazyRetry(() => import('./pages/SettingsPage'), 'SettingsPage');
+const AboutPage = lazyRetry(() => import('./pages/AboutPage'), 'AboutPage');
 
 const PageLoader = () => (
   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '50vh', gap: '1rem' }}>
@@ -98,101 +117,106 @@ function App() {
     let isReconnecting = false;
 
     const handleVisibilityChange = async () => {
+      // Si la pestaña pasa a ser visible y no estamos ya intentando reconectar
       if (document.visibilityState === 'visible') {
-        // Prevenir múltiples reconexiones simultáneas
-        if (isReconnecting) {
-          console.log("⏳ Reconexión ya en progreso...");
-          return;
-        }
-
+        if (isReconnecting) return;
         isReconnecting = true;
-        console.log("👁️ Pestaña activa: Reconectando sistemas...");
+        console.log("👁️ Pestaña activa: Verificando salud del sistema...");
 
         try {
-          // ✅ 1. Forzar reconexión de IndexedDB con retry
-          const { initDB, closeDB } = await import('./services/database');
-          
-          // Cerrar conexión antigua si existe
-          closeDB();
-          await new Promise(r => setTimeout(r, 300));
-          
-          // Intentar reconectar con timeout
-          const dbPromise = initDB();
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('DB_TIMEOUT')), 5000)
-          );
-          
-          await Promise.race([dbPromise, timeoutPromise]);
-          console.log("✅ BD reconectada");
-          
-        } catch (e) {
-          console.error("❌ Reconexión BD falló:", e);
-          
-          // Si falla después de múltiples intentos, recargamos
-          if (e.message === 'DB_TIMEOUT' || e.name === 'InvalidStateError') {
-            console.error("💥 BD irrecuperable, recargando aplicación...");
-            window.location.reload();
-            return;
-          }
-        }
+          // Importamos dinámicamente para no cargar módulos si no es necesario
+          const { initDB, closeDB, STORES } = await import('./services/database');
 
-        // ✅ 2. Verificar que la UI esté lista antes de continuar
-        if (appStatus !== 'ready') {
-          console.log("⚠️ App no está ready, saltando reconexión de servicios");
-          isReconnecting = false;
-          return;
-        }
+          // --- PASO 1: VERIFICACIÓN SUAVE (SOFT CHECK) ---
+          // Intentamos obtener la instancia. initDB() internamente ya verifica isConnectionValid.
+          // Si la conexión está sana, esto devuelve la instancia inmediatamente sin cerrar nada.
+          const dbInstance = await initDB();
 
-        // ✅ 3. Reiniciar seguridad en tiempo real (si estaba activa)
-        const { licenseDetails, realtimeSubscription } = useAppStore.getState();
+          // --- PASO 2: PING DE SALUD (HEALTH CHECK) ---
+          // A veces la instancia existe pero está "congelada". Hacemos una lectura trivial.
+          // Usamos una promesa con timeout para no quedarnos esperando eternamente.
+          const healthCheckPromise = new Promise((resolve, reject) => {
+            try {
+              const tx = dbInstance.transaction([STORES.MENU], 'readonly');
+              const store = tx.objectStore(STORES.MENU);
+              // Leemos algo ligero o simplemente contamos (count es muy rápido)
+              const request = store.count();
 
-        if (licenseDetails?.license_key && !realtimeSubscription) {
-          console.log("🔄 Reiniciando escucha de seguridad...");
+              request.onsuccess = () => resolve(true);
+              request.onerror = () => reject(new Error("PING_FAILED"));
+
+              // Si tarda más de 2 seg, asumimos que la conexión está muerta
+              setTimeout(() => reject(new Error("PING_TIMEOUT")), 2000);
+            } catch (e) {
+              reject(e);
+            }
+          });
+
+          await healthCheckPromise;
+          console.log("✅ Conexión a BD verificada y activa.");
+
+        } catch (error) {
+          console.warn("⚠️ Conexión inestable detectada:", error.message);
+          console.log("🔄 Ejecutando reinicio forzado de BD...");
+
+          // --- PASO 3: REINICIO FORZADO (SOLO SI FALLÓ LO ANTERIOR) ---
           try {
-            stopRealtimeSecurity();
+            const { closeDB, initDB } = await import('./services/database');
+
+            // 1. Cerramos explícitamente porque confirmamos que está rota
+            closeDB();
+
+            // 2. Esperamos un momento para que el navegador libere el lock
             await new Promise(r => setTimeout(r, 500));
+
+            // 3. Re-iniciamos desde cero
+            await initDB();
+            console.log("✅ BD recuperada exitosamente tras reinicio.");
+          } catch (retryError) {
+            console.error("💥 Error crítico recuperando BD:", retryError);
+            // Último recurso: si todo falla, sugerir recarga al usuario o forzarla
+            // window.location.reload(); 
+          }
+        }
+
+        // --- RESTAURACIÓN DE SERVICIOS (LÓGICA EXISTENTE) ---
+        // Verificamos estado de la app antes de reiniciar servicios realtime
+        if (appStatus === 'ready') {
+          const { licenseDetails, realtimeSubscription } = useAppStore.getState();
+
+          // Solo reiniciamos el listener de seguridad si tenemos licencia y no hay subscripción activa
+          if (licenseDetails?.license_key && !realtimeSubscription) {
+            console.log("📡 Reactivando servicios de seguridad...");
+            stopRealtimeSecurity(); // Por precaución
             startRealtimeSecurity();
-          } catch (e) {
-            console.warn("⚠️ Error reiniciando seguridad:", e);
+          }
+
+          // Validación de sesión tras inactividad prolongada (existente)
+          const lastActive = sessionStorage.getItem('lanzo_last_active');
+          const now = Date.now();
+          if (!lastActive || (now - parseInt(lastActive)) > 300000) { // 5 minutos
+            useAppStore.getState().verifySessionIntegrity().catch(console.warn);
           }
         }
 
-        // ✅ 4. Revalidar licencia SOLO si llevamos más de 5 minutos inactivos
-        const lastActive = sessionStorage.getItem('lanzo_last_active');
-        const now = Date.now();
-
-        if (!lastActive || (now - parseInt(lastActive)) > 300000) {
-          console.log("⏰ Verificando licencia tras inactividad prolongada...");
-          try {
-            await useAppStore.getState().verifySessionIntegrity();
-          } catch (e) {
-            console.warn("⚠️ Error verificando sesión:", e);
-          }
-        }
-
-        sessionStorage.setItem('lanzo_last_active', now.toString());
         isReconnecting = false;
-        
-      } else if (document.visibilityState === 'hidden') {
-        // ✅ 5. NUEVO: Limpiar recursos al salir (opcional pero recomendado)
-        console.log("🌙 Pestaña oculta: Preparando para suspensión...");
+      } else {
+        // Cuando se oculta, guardamos timestamp para calcular inactividad después
         sessionStorage.setItem('lanzo_last_active', Date.now().toString());
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    
-    // ✅ 6. NUEVO: Manejo de eventos de navegador (Android/iOS)
+
+    // Manejo de BFCache (Back-Forward Cache) para móviles
     const handlePageShow = (event) => {
-      // Si la página viene del caché del navegador (BFCache), forzamos reconexión
       if (event.persisted) {
-        console.log("🔄 Página restaurada desde BFCache, reconectando...");
+        console.log("🔄 Restaurado desde caché, verificando...");
         handleVisibilityChange();
       }
     };
-    
     window.addEventListener('pageshow', handlePageShow);
-    
+
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener('pageshow', handlePageShow);

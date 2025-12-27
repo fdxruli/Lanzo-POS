@@ -1,6 +1,7 @@
 import { productSchema } from '../schemas/productSchema';
 import { customerSchema } from '../schemas/customerSchema';
 import { DB_NAME, DB_VERSION } from '../config/dbConfig.js';
+import Logger from './Logger.js';
 
 
 // Objeto de conexión
@@ -99,7 +100,7 @@ function classifyError(error, storeName, operation) {
   }
 
   // Log técnico para depuración
-  console.error(`[DB_ERROR:${errorCode}] Store: ${storeName} | Op: ${operation}`, {
+  Logger.error(`[DB_ERROR:${errorCode}] Store: ${storeName} | Op: ${operation}`, {
     originalError: error,
     message: errMsg
   });
@@ -173,13 +174,13 @@ export function initDB() {
         dbConnection.instance = event.target.result;
         dbConnection.isOpening = false;
         res(dbConnection.instance);
-        recoverPendingTransactions().catch(console.error);
+        recoverPendingTransactions().catch(Logger.error);
       };
 
       // ✅ PASO 2: Aquí aplicamos la solución de la auditoría
       request.onupgradeneeded = (event) => {
         const tempDb = event.target.result;
-        console.log('Actualizando BD a la versión', DB_VERSION);
+        Logger.log('Actualizando BD a la versión', DB_VERSION);
 
         // 1. Crear almacenes si no existen
         Object.values(STORES).forEach(storeName => {
@@ -296,7 +297,7 @@ export async function saveDataSafe(storeName, data) {
             }
           }
         } catch (e) {
-          console.error("Error al procesar el mensaje de validación:", e);
+          Logger.error("Error al procesar el mensaje de validación:", e);
           // Si todo falla, nos quedamos con el mensaje genérico definido arriba
         }
       }
@@ -717,7 +718,7 @@ export async function processBatchDeductions(deductions) {
 
 export async function executeSaleTransaction(sale, deductions) {
   const db = await initDB();
-  const TRANSACTION_TIMEOUT = 15000; // 15 segundos máximo
+  const TRANSACTION_TIMEOUT = 60000;
 
   // ✅ MEJORA 1: Validación de idempotencia (Lectura rápida previa)
   // Verifica si la venta ya existe antes de abrir la transacción pesada de escritura
@@ -740,7 +741,7 @@ export async function executeSaleTransaction(sale, deductions) {
   }
 
   return new Promise((resolve, reject) => {
-    // Abrimos transacción "readwrite" en todos los stores afectados
+    // Abrimos transacción "readwrite"
     const tx = db.transaction(
       [STORES.SALES, STORES.PRODUCT_BATCHES, STORES.MENU, STORES.TRANSACTION_LOG],
       'readwrite'
@@ -754,18 +755,22 @@ export async function executeSaleTransaction(sale, deductions) {
     let aborted = false;
     let completed = false;
 
-    // ✅ MEJORA 2: ID de transacción único para trazabilidad
     const transactionId = `tx-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
-    // Timeout de seguridad: Si la DB no responde, abortamos para liberar recursos
+    // Timeout de seguridad
     const timeoutId = setTimeout(() => {
       if (!completed && !aborted) {
-        console.error('⏱️ Transacción excedió timeout (15s)');
+        Logger.error('⏱️ Transacción excedió timeout (60s) - Abortando...');
         aborted = true;
         try {
-          tx.abort();
+          // Verificamos estado antes de abortar para evitar errores de consola
+          if (tx.error) {
+            Logger.warn('La transacción ya tenía error, no es necesario abortar.');
+          } else {
+            tx.abort();
+          }
         } catch (e) {
-          console.warn('Intento de abortar falló (quizás ya cerró):', e);
+          Logger.warn('Intento de abortar falló (quizás ya cerró):', e);
         }
         reject(new Error('TRANSACTION_TIMEOUT'));
       }
@@ -812,7 +817,7 @@ export async function executeSaleTransaction(sale, deductions) {
 
     tx.onerror = (e) => {
       clearTimeout(timeoutId);
-      console.error('❌ Error crítico en transacción:', e.target.error);
+      Logger.error('❌ Error crítico en transacción:', e.target.error);
 
       // Intentamos registrar el fallo (si es posible)
       markTransactionFailed(transactionId, e.target.error.message);
@@ -862,7 +867,7 @@ export async function executeSaleTransaction(sale, deductions) {
 
     // ✅ MEJORA 7: Abortar temprano si los datos están mal
     if (validationErrors.length > 0) {
-      console.error('Errores de validación en transacción:', validationErrors);
+      Logger.error('Errores de validación en transacción:', validationErrors);
       aborted = true;
       tx.abort(); // Abort manual
       return;
@@ -882,14 +887,14 @@ export async function executeSaleTransaction(sale, deductions) {
 
           // ✅ MEJORA 8: Validación de stock en tiempo real (dentro de la transacción)
           if (!batch) {
-            console.error(`ERROR CRÍTICO: Lote ${batchId} no encontrado.`);
+            Logger.error(`ERROR CRÍTICO: Lote ${batchId} no encontrado.`);
             aborted = true;
             tx.abort();
             return;
           }
 
           if (batch.stock < quantity) {
-            console.error(`STOCK INSUFICIENTE en lote ${batchId}: Hay ${batch.stock}, se requiere ${quantity}`);
+            Logger.error(`STOCK INSUFICIENTE en lote ${batchId}: Hay ${batch.stock}, se requiere ${quantity}`);
             aborted = true; // Marca para detener otras iteraciones
             tx.abort();     // Cancela TODA la venta (rollback automático)
             return;
@@ -943,7 +948,7 @@ export async function executeSaleTransaction(sale, deductions) {
       }
 
     } catch (error) {
-      console.error('Excepción no controlada en transacción:', error);
+      Logger.error('Excepción no controlada en transacción:', error);
       aborted = true;
       tx.abort();
     }
@@ -972,7 +977,7 @@ async function markTransactionComplete(transactionId) {
       tx.onerror = () => resolve(); // Si falla el log, no rompemos el flujo principal
     });
   } catch (e) {
-    console.error('Error marking tx complete:', e);
+    Logger.error('Error marking tx complete:', e);
   }
 }
 
@@ -1002,7 +1007,7 @@ async function markTransactionFailed(transactionId, errorMsg = 'Unknown') {
       tx.onerror = () => resolve();
     });
   } catch (e) {
-    console.error('Error marking tx failed:', e);
+    Logger.error('Error marking tx failed:', e);
   }
 }
 
@@ -1054,7 +1059,7 @@ export async function saveBatchAndSyncProduct(batchData) {
     if (!batchStore.indexNames.contains('productId')) {
       // Si no existe el índice, detenemos todo. Esto obliga al desarrollador a revisar initDB.
       // No vale la pena intentar escanear todo el almacén en una transacción de escritura crítica.
-      console.error("🔥 ERROR CRÍTICO: Falta índice 'productId' en product_batches");
+      Logger.error("🔥 ERROR CRÍTICO: Falta índice 'productId' en product_batches");
       tx.abort();
       reject(new Error("DB_CORRUPTION_MISSING_INDEX: productId"));
       return;
@@ -1331,7 +1336,7 @@ export async function checkStorageQuota() {
     return { warning: false };
 
   } catch (error) {
-    console.error("Error verificando cuota de disco:", error);
+    Logger.error("Error verificando cuota de disco:", error);
     return { warning: false };
   }
 }

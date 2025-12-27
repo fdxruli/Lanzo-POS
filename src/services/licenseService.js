@@ -1,7 +1,7 @@
 // src/services/licenseService.js
 import { supabaseClient } from './supabase';
 import { loadData, saveData, STORES } from './database';
-import FingerprintJS from '@fingerprintjs/fingerprintjs';
+import Logger from './Logger';
 
 // --- CORRECCIÓN CRÍTICA DE IDENTIDAD ---
 // Esta función ahora se asegura de usar EL MISMO ID que tiene 'supabase.js'
@@ -34,10 +34,11 @@ export const getLicenseDevicesSmart = async (licenseKey) => {
     const CACHE_KEY = `devices_${licenseKey}`;
 
     try {
-        // 1. Verificar conexión primero
-        if (!navigator.onLine) throw new Error("OFFLINE_MODE");
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) throw new Error("OFFLINE_MODE");
 
-        const deviceFingerprint = await getStableFingerprint();
+        // USAR LA FUNCIÓN IMPORTADA (Unificada y Robusta)
+        const deviceFingerprint = await getStableDeviceId(); 
 
         // 2. Llamada a Supabase
         const { data, error } = await supabaseClient.rpc('get_license_devices_anon', {
@@ -66,7 +67,7 @@ export const getLicenseDevicesSmart = async (licenseKey) => {
         }
 
     } catch (error) {
-        console.warn("⚠️ Error de red o servidor, buscando en caché...", error.message);
+        Logger.warn("⚠️ Error de red o servidor, buscando en caché...", error.message);
 
         // 3. Fallback: Leer de IndexedDB
         const cachedRecord = await loadData(STORES.SYNC_CACHE, CACHE_KEY);
@@ -96,12 +97,14 @@ export const getLicenseDevicesSmart = async (licenseKey) => {
  * Desactivar dispositivo (Requiere Internet obligatoriamente)
  */
 export const deactivateDeviceSmart = async (deviceId, licenseKey) => {
-    if (!navigator.onLine) {
-        return { success: false, message: "Necesitas conexión a internet para desactivar dispositivos." };
+    const isOnline = await checkInternetConnection();
+    if (!isOnline) {
+        return { success: false, message: "Necesitas conexión a internet real para desactivar dispositivos." };
     }
 
     try {
-        const deviceFingerprint = await getStableFingerprint();
+        // USAR LA FUNCIÓN IMPORTADA AQUÍ TAMBIÉN
+        const deviceFingerprint = await getStableDeviceId();
 
         const { data, error } = await supabaseClient.rpc('deactivate_device_anon', {
             device_id_param: deviceId,
@@ -110,8 +113,6 @@ export const deactivateDeviceSmart = async (deviceId, licenseKey) => {
         });
 
         if (error) throw error;
-        
-        // Si desactivamos con éxito, forzamos actualización del caché en la siguiente lectura
         return data; 
 
     } catch (error) {

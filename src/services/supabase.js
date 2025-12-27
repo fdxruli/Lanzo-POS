@@ -2,6 +2,8 @@
 import { createClient } from "@supabase/supabase-js";
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { safeLocalStorageSet } from './utils';
+import { loadData, saveData, STORES } from './database';
+import Logger from "./Logger";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -31,19 +33,72 @@ function getFriendlyDeviceName(userAgent) {
     return `${browser} en ${os}`;
 }
 
-async function getStableDeviceId() {
+export async function getStableDeviceId() {
     const STORAGE_KEY = 'lanzo_device_id';
-    let existingId = localStorage.getItem(STORAGE_KEY);
-    if (existingId) return existingId;
 
+    // A. Intentar leer de LocalStorage (Memoria rápida)
+    let lsId = localStorage.getItem(STORAGE_KEY);
+
+    // B. Intentar leer de IndexedDB (Memoria persistente)
+    let dbId = null;
+    try {
+        // Buscamos en la caché de sincronización
+        const record = await loadData(STORES.SYNC_CACHE, STORAGE_KEY);
+        // Asumimos que guardaremos el ID en la propiedad 'value'
+        if (record && record.value) {
+            dbId = record.value;
+        }
+    } catch (e) {
+        console.warn("⚠️ No se pudo leer identidad de BD (posiblemente primer uso):", e);
+    }
+
+    // --- LÓGICA DE RECONCILIACIÓN ---
+
+    // CASO 1: Coincidencia perfecta o recuperación cruzada
+    if (dbId && lsId) {
+        if (dbId !== lsId) {
+            console.warn("⚠️ Conflicto de identidad detectado. IndexedDB tiene prioridad.");
+            // IDB es más difícil de borrar, así que confiamos en él y reparamos LocalStorage
+            safeLocalStorageSet(STORAGE_KEY, dbId);
+            return dbId;
+        }
+        return dbId; // Todo correcto
+    }
+
+    // CASO 2: Usuario borró cookies (localStorage vacío) pero BD sigue viva
+    if (dbId && !lsId) {
+        console.log("♻️ Identidad recuperada desde IndexedDB.");
+        safeLocalStorageSet(STORAGE_KEY, dbId);
+        return dbId;
+    }
+
+    // CASO 3: BD vacía o corrupta, pero LocalStorage vivo (Raro, pero posible)
+    if (lsId && !dbId) {
+        console.log("💾 Respaldando identidad existente en IndexedDB...");
+        try {
+            await saveData(STORES.SYNC_CACHE, { key: STORAGE_KEY, value: lsId });
+        } catch (e) { console.warn("Fallo respaldo ID:", e); }
+        return lsId;
+    }
+
+    // CASO 4: Dispositivo totalmente nuevo (Generación)
     try {
         const fp = await FingerprintJS.load();
         const result = await fp.get();
         const newId = result.visitorId;
+
+        // Guardamos en AMBOS lugares
         safeLocalStorageSet(STORAGE_KEY, newId);
+
+        try {
+            await saveData(STORES.SYNC_CACHE, { key: STORAGE_KEY, value: newId });
+        } catch (e) {
+            console.warn("⚠️ No se pudo persistir el ID nuevo en DB:", e);
+        }
+
         return newId;
     } catch (error) {
-        console.error("Error generando fingerprint, usando fallback UUID", error);
+        console.error("Error crítico generando fingerprint, usando fallback UUID", error);
         const fallbackId = `fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         safeLocalStorageSet(STORAGE_KEY, fallbackId);
         return fallbackId;
@@ -90,7 +145,19 @@ function resetRateLimit() {
 
 export const activateLicense = async function (licenseKey) {
     try {
+        // 1. Verificación Estricta de Red
+        // A diferencia de revalidar, ACTIVAR requiere internet obligatoriamente.
+        // No gastamos intentos de rate limit si ni siquiera hay red.
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) {
+            return {
+                valid: false,
+                message: "No tienes conexión a internet. La activación requiere estar en línea."
+            };
+        }
+
         checkRateLimit();
+
         const deviceFingerprint = await getStableDeviceId();
         const friendlyName = getFriendlyDeviceName(navigator.userAgent);
         const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
@@ -103,6 +170,7 @@ export const activateLicense = async function (licenseKey) {
             device_info_param: deviceInfo
         });
 
+        // Si es error técnico de Supabase (500, etc)
         if (error) throw error;
 
         if (data && data.success) {
@@ -110,16 +178,23 @@ export const activateLicense = async function (licenseKey) {
             safeLocalStorageSet('fp', deviceFingerprint);
             return { valid: true, message: data.message, details: data.details };
         } else {
+            // El servidor respondió, pero rechazó la activación (ej. licencia tope alcanzado)
             registerFailedAttempt();
             return { valid: false, message: data.error || 'Error de activación.' };
         }
 
     } catch (error) {
         const isRateLimit = error.message && error.message.includes('Demasiados intentos');
+
         if (!isRateLimit) {
-            console.error('❌ Error activando licencia:', error);
+            // Usamos el Logger para no ensuciar consola en producción
+            Logger.error('❌ Error activando licencia:', error);
+
+            // Solo registramos intento fallido si fue un error lógico o de servidor,
+            // no si fue un error de validación local o desconexión.
             registerFailedAttempt();
         }
+
         return { valid: false, message: error.message };
     }
 };
@@ -146,7 +221,8 @@ export const revalidateLicense = async function (licenseKeyProp) {
         }
 
         // ✅ MEJORA 1: Verificar ANTES si hay red
-        if (!navigator.onLine) {
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) {
             throw new Error("OFFLINE_PRECHECK");
         }
 
@@ -195,7 +271,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
 
         // ✅ MEJORA 4: Solo activar modo offline si es ERROR DE RED
         if (isNetworkError) {
-            console.log('☁️ Modo offline activado por problema de conexión');
+            Logger.log('☁️ Modo offline activado por problema de conexión');
 
             let storedLicense = null;
             try {
