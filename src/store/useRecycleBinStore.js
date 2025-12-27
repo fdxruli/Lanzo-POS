@@ -3,7 +3,6 @@ import {
   loadData, 
   saveDataSafe, 
   deleteDataSafe, 
-  executeSaleTransactionSafe, 
   STORES 
 } from '../services/database';
 import Logger from '../services/Logger';
@@ -12,114 +11,180 @@ export const useRecycleBinStore = create((set, get) => ({
   deletedItems: [],
   isLoading: false,
 
+  // --- CARGAR DATOS ---
   loadRecycleBin: async () => {
     set({ isLoading: true });
     try {
+      // Cargamos todo desde las tiendas de "papelera"
       const [delMenu, delCust, delSales, delCats] = await Promise.all([
         loadData(STORES.DELETED_MENU),
         loadData(STORES.DELETED_CUSTOMERS),
         loadData(STORES.DELETED_SALES),
         loadData(STORES.DELETED_CATEGORIES)
       ]);
+      
+      // Mapeamos para la vista unificada
       const allMovements = [
-        ...delMenu.map(p => ({ ...p, type: 'Producto', uniqueId: p.id, mainLabel: p.name })),
-        ...delCust.map(c => ({ ...c, type: 'Cliente', uniqueId: c.id, name: c.name })),
-        ...delSales.map(s => ({ ...s, type: 'Pedido', uniqueId: s.timestamp, name: `Pedido $${s.total}` })),
+        ...(delMenu || []).map(p => ({ ...p, type: 'Producto', uniqueId: p.id, mainLabel: p.name })),
+        ...(delCust || []).map(c => ({ ...c, type: 'Cliente', uniqueId: c.id, mainLabel: c.name })),
+        ...(delSales || []).map(s => ({ ...s, type: 'Pedido', uniqueId: s.timestamp, mainLabel: `Pedido $${s.total}` })),
         ...(delCats || []).map(c => ({ ...c, type: 'Categoría', uniqueId: c.id, mainLabel: c.name }))
       ];
-      allMovements.sort((a, b) => new Date(b.deletedTimestamp) - new Date(a.deletedTimestamp));
+      
+      // Ordenar: Más reciente primero
+      allMovements.sort((a, b) => new Date(b.deletedTimestamp || 0) - new Date(a.deletedTimestamp || 0));
+      
       set({ deletedItems: allMovements, isLoading: false });
-    } catch (e) { set({ isLoading: false }); }
+    } catch (e) { 
+      Logger.error("Error cargando papelera", e);
+      set({ isLoading: false }); 
+    }
   },
 
+  // --- RESTAURAR ITEM (Devolver a la vida) ---
   restoreItem: async (item) => {
+    set({ isLoading: true });
     try {
-      // === CASO ESPECIAL: RESTAURAR VENTA (PEDIDO) ===
-      if (item.type === 'Pedido') {
-        const sale = item;
-        const batchesToDeduct = [];
+      // Copia profunda y limpieza de metadatos de borrado
+      const itemToRestore = structuredClone(item);
+      delete itemToRestore.deletedTimestamp;
+      delete itemToRestore.deletedReason;
+      delete itemToRestore.originalStore;
+      delete itemToRestore.type;
+      delete itemToRestore.uniqueId;
+      delete itemToRestore.mainLabel;
 
-        // A) Reconstruir lotes (Lógica existente...)
-        if (sale.items) {
-          for (const prod of sale.items) {
-            if (prod.batchesUsed) {
-              for (const batchRecord of prod.batchesUsed) {
-                let existingBatch = await loadData(STORES.PRODUCT_BATCHES, batchRecord.batchId);
+      let targetStore = '';
+      let trashStore = '';
+      let key = item.id;
 
-                if (!existingBatch) {
-                  Logger.warn(`Resucitando lote eliminado: ${batchRecord.batchId}`);
-                  existingBatch = {
-                    id: batchRecord.batchId,
-                    productId: prod.parentId || prod.id,
-                    stock: batchRecord.quantity,
-                    cost: batchRecord.cost,
-                    price: prod.price,
-                    createdAt: new Date().toISOString(),
-                    isActive: true,
-                    notes: "Lote restaurado automáticamente desde Papelera"
-                  };
-                  // REFACTORIZADO: Guardado seguro del lote resucitado
-                  await saveDataSafe(STORES.PRODUCT_BATCHES, existingBatch);
-                }
-
-                batchesToDeduct.push({
-                  batchId: batchRecord.batchId,
-                  quantity: batchRecord.quantity
-                });
-              }
-            }
-          }
-        }
-
-        const { type, uniqueId, mainLabel, subLabel, deletedTimestamp, ...cleanSale } = sale;
-
-        // C) Ejecutar Transacción Atómica SAFE
-        // Ya no usamos try/catch para la transacción, evaluamos el .success
-        const txResult = await executeSaleTransactionSafe(cleanSale, batchesToDeduct);
-
-        if (txResult.success) {
-            // Si la venta se restauró, borramos de la papelera de forma segura
-            await deleteDataSafe(STORES.DELETED_SALES, sale.timestamp);
-            alert("✅ Pedido restaurado y stock descontado nuevamente.");
-        } else {
-            // Manejo de error controlado
-            Logger.error(txResult.error);
-            const msg = txResult.error?.message || "Error desconocido en transacción";
-            alert(`⚠️ No se pudo restaurar: ${msg}`);
-            return;
-        }
-
-      }
-      // === CASO ESTÁNDAR (Clientes, Productos, Categorías) ===
-      else {
-        const itemToRestore = { ...item };
-        delete itemToRestore.deletedTimestamp;
-        const { type, uniqueId, mainLabel, subLabel, ...cleanItem } = itemToRestore;
-
-        let saveResult = { success: false };
-        let deleteResult = { success: false };
-
-        if (item.type === 'Producto') {
-          saveResult = await saveDataSafe(STORES.MENU, cleanItem);
-          if(saveResult.success) deleteResult = await deleteDataSafe(STORES.DELETED_MENU, item.id);
-        } else if (item.type === 'Cliente') {
-          saveResult = await saveDataSafe(STORES.CUSTOMERS, cleanItem);
-          if(saveResult.success) deleteResult = await deleteDataSafe(STORES.DELETED_CUSTOMERS, item.id);
-        } else if (item.type === 'Categoría') {
-          saveResult = await saveDataSafe(STORES.CATEGORIES, cleanItem);
-          if(saveResult.success) deleteResult = await deleteDataSafe(STORES.DELETED_CATEGORIES, item.id);
-        }
-
-        if (!saveResult.success) {
-            alert(`Error al restaurar: ${saveResult.error?.message}`);
-        }
+      switch (item.type) {
+        case 'Producto':
+          targetStore = STORES.MENU;
+          trashStore = STORES.DELETED_MENU;
+          itemToRestore.isActive = true; 
+          break;
+        case 'Cliente':
+          targetStore = STORES.CUSTOMERS;
+          trashStore = STORES.DELETED_CUSTOMERS;
+          break;
+        case 'Categoría':
+          targetStore = STORES.CATEGORIES;
+          trashStore = STORES.DELETED_CATEGORIES;
+          break;
+        case 'Pedido':
+          targetStore = STORES.SALES;
+          trashStore = STORES.DELETED_SALES;
+          key = item.id || item.timestamp;
+          itemToRestore.restoredFromTrash = true;
+          itemToRestore.restoredDate = new Date().toISOString();
+          break;
+        default:
+            throw new Error("Tipo desconocido para restaurar");
       }
 
-      await get().loadRecycleBin();
+      // 1. Guardar en tienda original
+      const saveResult = await saveDataSafe(targetStore, itemToRestore);
+      
+      if (saveResult.success) {
+        // 2. Si tuvo éxito, borrar de la papelera
+        await deleteDataSafe(trashStore, key);
+        
+        // 3. Recargar papelera
+        await get().loadRecycleBin();
+        
+        if(item.type === 'Pedido') {
+            alert("✅ Pedido devuelto al historial.");
+        }
+      } else {
+        alert(`Error al restaurar: ${saveResult.error?.message}`);
+      }
 
     } catch (error) {
-      Logger.error("Error crítico al restaurar:", error);
-      alert("Error inesperado al intentar restaurar el elemento.");
+      Logger.error("Error restaurando:", error);
+      alert("Error inesperado al restaurar.");
+    } finally {
+        set({ isLoading: false });
+    }
+  },
+
+  // --- ELIMINAR PERMANENTEMENTE (Liberar espacio) ---
+  permanentlyDelete: async (item) => {
+    // Confirmación extra de seguridad debería hacerse en el componente (UI), 
+    // pero aquí ejecutamos la acción.
+    set({ isLoading: true });
+    try {
+        let trashStore = '';
+        let key = item.id;
+
+        // Identificar de qué tienda de basura borrar
+        switch (item.type) {
+            case 'Producto': trashStore = STORES.DELETED_MENU; break;
+            case 'Cliente': trashStore = STORES.DELETED_CUSTOMERS; break;
+            case 'Categoría': trashStore = STORES.DELETED_CATEGORIES; break;
+            case 'Pedido': 
+                trashStore = STORES.DELETED_SALES; 
+                key = item.id || item.timestamp;
+                break;
+            default: throw new Error("Tipo desconocido para eliminar");
+        }
+
+        // Borrar definitivamente de la BD
+        await deleteDataSafe(trashStore, key);
+        
+        // Actualizar estado local (más rápido que recargar todo)
+        set(state => ({
+            deletedItems: state.deletedItems.filter(i => 
+                // Comparamos por ID o Timestamp según el caso para asegurar unicidad
+                (i.id !== item.id) && (i.timestamp !== item.timestamp)
+            )
+        }));
+
+    } catch (error) {
+        Logger.error("Error eliminando permanentemente", error);
+        alert("Error al eliminar el archivo permanentemente.");
+    } finally {
+        set({ isLoading: false });
+    }
+  },
+
+  // --- VACIAR PAPELERA (Borrar todo) ---
+  emptyBin: async () => {
+    set({ isLoading: true });
+    try {
+        const { deletedItems } = get();
+        if (deletedItems.length === 0) return;
+
+        // Creamos una lista de promesas para borrar todo en paralelo
+        const deletePromises = deletedItems.map(item => {
+            let trashStore = '';
+            let key = item.id;
+
+            switch (item.type) {
+                case 'Producto': trashStore = STORES.DELETED_MENU; break;
+                case 'Cliente': trashStore = STORES.DELETED_CUSTOMERS; break;
+                case 'Categoría': trashStore = STORES.DELETED_CATEGORIES; break;
+                case 'Pedido': 
+                    trashStore = STORES.DELETED_SALES; 
+                    key = item.id || item.timestamp;
+                    break;
+                default: return Promise.resolve(); // Ignorar desconocidos
+            }
+
+            return deleteDataSafe(trashStore, key);
+        });
+
+        // Ejecutar todas las eliminaciones
+        await Promise.all(deletePromises);
+
+        // Limpiar estado
+        set({ deletedItems: [] });
+        
+    } catch (error) {
+        Logger.error("Error vaciando papelera", error);
+        alert("Hubo un problema al intentar vaciar la papelera.");
+    } finally {
+        set({ isLoading: false });
     }
   }
 }));

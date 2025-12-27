@@ -1,57 +1,146 @@
 /* src/pages/DashboardPage.css */
 
-/* ===== LAYOUT GENERAL ===== */
+/* ======================================================
+   LAYOUT PRINCIPAL
+   ====================================================== */
+
+/* Grid para las tarjetas de estadísticas superiores */
 .dashboard-grid {
   display: grid;
-  /* Uso de auto-fit para que sea responsive automáticamente */
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--spacing-lg);
   margin-bottom: var(--spacing-xl);
 }
 
-.dashboard-grid-condensed {
+/* Contenedor de carga centrado */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem;
+  min-height: 50vh;
+  text-align: center;
+}
+
+.loading-container p {
+  margin-top: var(--spacing-md);
+  color: var(--text-light);
+  font-size: 1.1rem;
+}
+
+/* ======================================================
+   SECCIÓN: HISTORIAL Y PAPELERA (NUEVO DISEÑO)
+   ====================================================== */
+
+/* Grid asimétrico: Historial (Principal) + Papelera (Lateral) */
+.history-layout-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--spacing-lg);
+  grid-template-columns: 1fr; /* SIEMPRE 1 COLUMNA (Uno arriba, otro abajo) */
+  gap: 2rem; /* Un poco más de espacio entre el de arriba y el de abajo */
+  margin-bottom: 2rem;
+  align-items: start; /* Alineación al inicio */
 }
 
-/* ===== CONTENEDORES DE PANELES ===== */
-.dashboard-stats-container {
-  background-color: var(--card-background-color);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-lg);
-  box-shadow: var(--box-shadow);
-  border: 1px solid var(--border-color);
+/* ======================================================
+   COMPONENTES: PANELES / TARJETAS
+   ====================================================== */
+
+/* Estilo base de tarjeta (hereda variables del sistema) */
+.dashboard-panel {
+  background: var(--card-background-color, #ffffff);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border-color, #e5e7eb);
+  
+  /* Flexbox vertical para que el contenido ocupe todo el alto disponible */
+  display: flex;
+  flex-direction: column; 
+  height: 100%; 
+  
+  overflow: hidden; /* Mantiene bordes redondeados y contiene desbordes */
+  transition: transform 0.2s ease;
 }
 
-/* ===== MEDIA QUERIES ===== */
-@media (min-width: 1024px) {
-  .dashboard-grid-condensed {
-    grid-template-columns: 3fr 1fr;
-    /* Historial ancho, Papelera angosta */
-  }
+.dashboard-panel:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow-lg);
 }
+
+/* Headers de los paneles */
+.panel-header {
+  flex: 0 0 auto; /* No encoger ni estirar */
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-color, #eff0f2);
+  background-color: #f9fafb;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+/* Cuerpo del panel */
+.panel-body {
+  flex: 1 1 auto; /* Ocupa el espacio restante */
+  padding: 1.5rem;
+  position: relative;
+  
+  /* Habilitar scroll interno si el contenido es muy grande */
+  overflow-x: auto; 
+  overflow-y: visible;
+}
+
+/* --- Variantes de Paneles --- */
+
+/* Panel Historial (Azul / Seguro) */
+.history-panel {
+  border-top: 4px solid #3B82F6; /* Azul informativo */
+}
+
+/* Panel Papelera (Rojo / Peligro) */
+.recycle-panel {
+  border-top: 4px solid var(--error-color); /* Rojo definido en variables */
+}
+
+/* Cambia el color del título en la papelera para destacar advertencia */
+.recycle-panel .panel-header h3 {
+  color: var(--error-color);
+}
+
+/* ======================================================
+   BANNER DE ADVERTENCIA (DATA WARNING)
+   ====================================================== */
 
 .data-warning-banner {
-  background-color: #fff7ed; /* Naranja muy suave (papaya) */
-  border: 1px solid #fdba74; /* Borde naranja */
-  border-left: 5px solid #f97316; /* Borde izquierdo grueso para destacar */
-  color: #9a3412; /* Texto naranja oscuro */
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 1.5rem; /* Espacio antes de las tablas */
+  background-color: #FFF7ED; /* Fondo naranja muy claro */
+  border: 1px solid #FDBA74; /* Borde naranja suave */
+  border-left: 5px solid #F97316; /* Borde de acento izquierdo */
+  color: #9A3412; /* Texto naranja oscuro */
+  
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+  margin-bottom: var(--spacing-lg);
+  
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--spacing-md);
+  
   font-size: 0.95rem;
   line-height: 1.5;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-  animation: fadeIn 0.3s ease-in-out;
-}
-
-.data-warning-banner strong {
-  color: #c2410c;
-  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(249, 115, 22, 0.1);
+  animation: fadeIn 0.4s ease-out;
 }
 
 .data-warning-icon {
@@ -59,12 +148,63 @@
   line-height: 1;
 }
 
-/* Modo Oscuro */
-[data-theme="dark"] .data-warning-banner {
-  background-color: #2a1b12; /* Fondo oscuro naranja */
-  border-color: #7c2d12;
-  color: #fdba74;
+.data-warning-banner strong {
+  color: #C2410C;
+  font-weight: 700;
+  display: block;
+  margin-bottom: 4px;
 }
-[data-theme="dark"] .data-warning-banner strong {
-  color: #ffedd5;
+
+/* Botón de enlace dentro del banner */
+.link-button {
+  background: none;
+  border: none;
+  text-decoration: underline;
+  color: #C2410C;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+  font-size: inherit;
+  transition: opacity 0.2s;
+}
+
+.link-button:hover {
+  opacity: 0.8;
+}
+
+/* --- Adaptación a MODO OSCURO del Banner --- */
+[data-theme="dark"] .data-warning-banner {
+  background-color: #431407; /* Fondo café oscuro */
+  border-color: #7C2D12;
+  border-left-color: #EA580C;
+  color: #FDBA74; /* Texto naranja claro */
+}
+
+[data-theme="dark"] .data-warning-banner strong,
+[data-theme="dark"] .link-button {
+  color: #FFEDD5;
+}
+
+[data-theme="dark"] .panel-header {
+  background-color: rgba(255, 255, 255, 0.03); /* Ligero tinte claro en dark mode */
+}
+
+/* ======================================================
+   UTILIDADES Y ANIMACIONES
+   ====================================================== */
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out forwards;
+}
+
+@keyframes fadeIn {
+  from { 
+    opacity: 0; 
+    transform: translateY(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
 }

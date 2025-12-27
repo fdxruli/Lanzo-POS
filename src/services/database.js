@@ -677,6 +677,55 @@ export function deleteData(storeName, key) {
   });
 }
 
+/**
+ * Mueve un registro a la papelera de reciclaje de forma atómica.
+ * @param {string} sourceStore - La tienda original (ej: STORES.MENU)
+ * @param {string} trashStore - La tienda de basura (ej: STORES.DELETED_MENU)
+ * @param {string|number} key - El ID del elemento
+ * @param {string} reason - Razón de la eliminación (opcional)
+ */
+export async function recycleData(sourceStore, trashStore, key, reason = "Eliminado por usuario") {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    // Abrimos transacción que abarca ambas tiendas
+    const tx = db.transaction([sourceStore, trashStore], 'readwrite');
+    const source = tx.objectStore(sourceStore);
+    const trash = tx.objectStore(trashStore);
+
+    let itemToRecycle = null;
+
+    tx.oncomplete = () => resolve({ success: true });
+    tx.onerror = (e) => reject(e.target.error);
+
+    // 1. Obtener el item
+    const getReq = source.get(key);
+
+    getReq.onsuccess = () => {
+      itemToRecycle = getReq.result;
+
+      if (!itemToRecycle) {
+        // Si no existe, abortamos sin error (ya estaba borrado)
+        resolve({ success: false, message: "Item no encontrado" });
+        return;
+      }
+
+      // 2. Preparar el objeto para la papelera (Metadata de Auditoría)
+      const deletedItem = {
+        ...itemToRecycle,
+        deletedTimestamp: new Date().toISOString(),
+        deletedReason: reason,
+        originalStore: sourceStore // Para saber de dónde vino
+      };
+
+      // 3. Guardar en Papelera
+      trash.put(deletedItem);
+
+      // 4. Borrar del origen
+      source.delete(key);
+    };
+  });
+}
+
 export const saveBulk = async (storeName, data) => saveData(storeName, data);
 
 export function closeDB() {

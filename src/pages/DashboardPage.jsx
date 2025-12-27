@@ -16,7 +16,7 @@ import RecycleBin from '../components/dashboard/RecycleBin';
 import BusinessTips from '../components/dashboard/BusinessTips';
 import WasteHistory from '../components/dashboard/WasteHistory';
 import RestockSuggestions from '../components/dashboard/RestockSuggestion';
-import ExpirationAlert from '../components/dashboard/ExpirationAlert'; // ✅ Componente de Alerta
+import ExpirationAlert from '../components/dashboard/ExpirationAlert';
 
 import { loadData, STORES } from '../services/database';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
@@ -24,7 +24,7 @@ import './DashboardPage.css';
 
 export default function DashboardPage() {
   const [customers, setCustomers] = useState([]);
-  const [activeTab, setActiveTab] = useState('stats'); // Pestaña inicial
+  const [activeTab, setActiveTab] = useState('stats');
   const navigate = useNavigate();
   const features = useFeatureConfig();
 
@@ -70,15 +70,16 @@ export default function DashboardPage() {
 
   if (isStatsLoading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4rem' }}>
+      <div className="loading-container">
         <div className="spinner-loader"></div>
-        <p style={{ marginTop: '1rem', color: '#666' }}>Analizando ventas e inventario...</p>
+        <p>Analizando ventas e inventario...</p>
       </div>
     );
   }
 
   return (
     <>
+      {/* --- PESTAÑAS DE NAVEGACIÓN --- */}
       <div className="tabs-container" id="sales-tabs">
         <button
           className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
@@ -87,8 +88,6 @@ export default function DashboardPage() {
           Estadísticas Clave
         </button>
 
-        {/* ✅ CAMBIO: Ahora el botón "Caducidad" se muestra SIEMPRE, 
-            eliminamos la condición {features.hasLots && ...} */}
         <button
              className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`}
              onClick={() => setActiveTab('expiration')}
@@ -111,12 +110,14 @@ export default function DashboardPage() {
         >
           Historial y Papelera
         </button>
+        
         <button
           className={`tab-btn ${activeTab === 'tips' ? 'active' : ''}`}
           onClick={() => setActiveTab('tips')}
         >
-          Consejos para tu Negocio
+          Consejos
         </button>
+        
         {features.hasWaste && (
           <button
             className={`tab-btn ${activeTab === 'waste' ? 'active' : ''}`}
@@ -128,63 +129,78 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* PESTAÑA: ESTADÍSTICAS */}
+      {/* --- CONTENIDO DE LAS PESTAÑAS --- */}
+
+      {/* 1. ESTADÍSTICAS */}
       {activeTab === 'stats' && (
         <StatsGrid stats={stats} />
       )}
 
-      {/* ✅ CAMBIO: Renderizamos el componente sin restricción de features */}
+      {/* 2. CADUCIDAD */}
       {activeTab === 'expiration' && (
         <ExpirationAlert />
       )}
 
-      {/* PESTAÑA: REABASTECIMIENTO */}
+      {/* 3. REABASTECIMIENTO */}
       {activeTab === 'restock' && (
         <RestockSuggestions />
       )}
 
-      {/* PESTAÑA: HISTORIAL Y PAPELERA */}
+      {/* 4. HISTORIAL Y PAPELERA (MEJORADO) */}
       {activeTab === 'history' && (
-        <>
+        <div className="tab-content fade-in">
+          {/* Banner de Advertencia */}
           <div className="data-warning-banner">
             <span className="data-warning-icon">💾</span>
             <div>
               <strong>Importante: Tus datos viven en este dispositivo.</strong>
-              <p style={{ margin: '4px 0 0 0' }}>
-                Lanzo POS guarda toda la información en el navegador. Si borras el historial o las "cookies", podrías perder tus registros.
-                <br />
+              <p>
                 Te recomendamos hacer una <strong>Copia de Seguridad</strong> semanalmente.
                 <button
-                  onClick={() => navigate('/productos')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    textDecoration: 'underline',
-                    color: 'inherit',
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    padding: 0,
-                    marginLeft: '5px'
-                  }}
+                  onClick={() => navigate('/settings')} 
+                  className="link-button"
                 >
                   Ir a Respaldar ahora →
                 </button>
               </p>
             </div>
           </div>
-          <div className="dashboard-grid-condensed">
-            <SalesHistory sales={sales} onDeleteSale={deleteSale} />
-            <RecycleBin items={deletedItems} onRestoreItem={restoreItem} />
+
+          {/* Grid Principal: Historial (Izquierda) + Papelera (Derecha) */}
+          <div className="history-layout-grid">
+            
+            {/* Sección Principal: Historial */}
+            <section className="dashboard-panel history-panel">
+              <div className="panel-header">
+                <h3>📊 Historial de Movimientos</h3>
+                <span className="panel-subtitle">Registro de ventas recientes</span>
+              </div>
+              <div className="panel-body">
+                <SalesHistory sales={sales} onDeleteSale={deleteSale} />
+              </div>
+            </section>
+
+            {/* Sección Lateral: Papelera */}
+            <section className="dashboard-panel recycle-panel">
+              <div className="panel-header danger-theme">
+                <h3>🗑️ Papelera</h3>
+                <span className="panel-subtitle">Elementos eliminados</span>
+              </div>
+              <div className="panel-body">
+                <RecycleBin items={deletedItems} onRestoreItem={restoreItem} />
+              </div>
+            </section>
+
           </div>
-        </>
+        </div>
       )}
 
-      {/* PESTAÑA: CONSEJOS */}
+      {/* 5. CONSEJOS */}
       {activeTab === 'tips' && (
         <BusinessTips sales={sales} menu={menu} customers={customers} />
       )}
 
-      {/* PESTAÑA: MERMAS */}
+      {/* 6. MERMAS */}
       {activeTab === 'waste' && features.hasWaste && (
         <WasteHistory logs={wasteLogs} />
       )}

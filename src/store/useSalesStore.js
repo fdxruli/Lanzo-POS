@@ -5,7 +5,8 @@ import {
   saveDataSafe,
   deleteDataSafe,
   loadDataPaginated,
-  STORES
+  STORES,
+  recycleData
 } from '../services/database';
 import { useStatsStore } from './useStatsStore';
 import Logger from '../services/Logger';
@@ -31,90 +32,57 @@ export const useSalesStore = create((set, get) => ({
   },
 
   deleteSale: async (timestamp) => {
-    if (!window.confirm('¿Restaurar stock y eliminar venta de forma permanente?')) return;
+    
+    // 1. Confirmación honesta (Auditoría)
+    const confirmMessage = '¿Mover esta venta a la Papelera?\n\nNOTA: Esto solo la elimina del historial visible. NO devuelve los productos al inventario.';
+    if (!window.confirm(confirmMessage)) return;
+
+    set({ isLoading: true });
 
     try {
-      // 1. Encontrar la venta
-      let saleToDelete = get().sales.find(s => s.timestamp === timestamp);
-      if (!saleToDelete) {
-        const allSales = await loadData(STORES.SALES);
-        saleToDelete = allSales.find(s => s.timestamp === timestamp);
-      }
+      // 2. BUSCAR LA VENTA PRIMERO
+      // Necesitamos el objeto completo para obtener su 'id' real (Key de la BD)
+      // y también para asegurarnos de que existe antes de intentar moverla.
+      const currentSales = get().sales;
+      const saleFound = currentSales.find(s => s.timestamp === timestamp);
 
-      if (!saleToDelete) {
-        alert("No se encontró la venta para eliminar.");
+      if (!saleFound) {
+        alert("⚠️ No se encontró la venta. Intenta recargar la página.");
+        set({ isLoading: false });
         return;
       }
 
-      // 2. Restaurar Stock
-      let restoredInventoryValue = 0;
-      let saleProfit = 0;
-      let itemsCount = 0;
+      // 3. RECICLAR USANDO EL ID
+      // Aunque la UI usa timestamp, la base de datos usa 'id'.
+      // Usamos saleFound.id para asegurar que le pegamos al registro correcto.
+      const result = await recycleData(
+        STORES.SALES,          // Origen
+        STORES.DELETED_SALES,  // Destino
+        saleFound.id,          // <--- AQUI ESTÁ LA CLAVE: Usamos el ID real
+        "Eliminado manualmente desde Historial" 
+      );
 
-      for (const item of saleToDelete.items) {
-        itemsCount += (item.quantity || 0);
+      if (result.success) {
+        // 4. ACTUALIZAR UI
+        // Filtramos usando timestamp porque es lo que tenemos a mano y es único
+        const updatedSales = currentSales.filter(s => s.timestamp !== timestamp);
+        
+        set({ 
+          sales: updatedSales,
+          isLoading: false 
+        });
 
-        const itemCost = item.cost || 0;
-        const itemTotal = item.price * item.quantity;
-        const itemProfit = itemTotal - (itemCost * item.quantity);
-        saleProfit += itemProfit;
-
-        // Restaurar lotes
-        if (item.batchesUsed) {
-          for (const batchInfo of item.batchesUsed) {
-            const batch = await loadData(STORES.PRODUCT_BATCHES, batchInfo.batchId);
-            if (batch) {
-              batch.stock += batchInfo.quantity;
-              batch.isActive = true;
-              // CAMBIO: saveDataSafe
-              await saveDataSafe(STORES.PRODUCT_BATCHES, batch);
-
-              restoredInventoryValue += (batch.cost * batchInfo.quantity);
-            }
-          }
-        }
-      }
-
-      // 3. Ajustar Valor de Inventario
-      await useStatsStore.getState().adjustInventoryValue(restoredInventoryValue);
-
-      // 4. Restar de Estadísticas Diarias
-      const dateKey = new Date(saleToDelete.timestamp).toISOString().split('T')[0];
-      const dailyStat = await loadData(STORES.DAILY_STATS, dateKey);
-
-      if (dailyStat) {
-        dailyStat.revenue -= saleToDelete.total;
-        dailyStat.profit -= saleProfit;
-        dailyStat.orders -= 1;
-        dailyStat.itemsSold -= itemsCount;
-
-        if (dailyStat.revenue < 0) dailyStat.revenue = 0;
-        if (dailyStat.profit < 0) dailyStat.profit = 0;
-
-        // CAMBIO: saveDataSafe
-        await saveDataSafe(STORES.DAILY_STATS, dailyStat);
-      }
-
-      // 5. Mover a Papelera y Borrar
-      saleToDelete.deletedTimestamp = new Date().toISOString();
-      // CAMBIO: saveDataSafe
-      await saveDataSafe(STORES.DELETED_SALES, saleToDelete);
-
-      // CAMBIO: deleteDataSafe
-      const deleteResult = await deleteDataSafe(STORES.SALES, timestamp);
-
-      if (deleteResult.success) {
-        // 6. Recargar UI solo si hubo éxito
-        get().loadRecentSales();
-        useStatsStore.getState().loadStats();
-        alert("✅ Venta eliminada, stock restaurado y estadísticas actualizadas.");
+        alert("✅ Venta movida a la papelera (Auditoría).");
       } else {
-        alert(`Error al eliminar: ${deleteResult.error?.message}`);
+        console.warn("Fallo reciclaje:", result);
+        alert("No se pudo mover a la papelera. Revisa la consola.");
+        set({ isLoading: false });
       }
 
     } catch (error) {
-      Logger.error("Error eliminar venta:", error);
-      alert("Ocurrió un error al intentar eliminar la venta.");
+      Logger.error("Error crítico al eliminar venta:", error);
+      alert("Ocurrió un error inesperado.");
+      set({ isLoading: false });
     }
   }
 }));

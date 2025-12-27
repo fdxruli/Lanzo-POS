@@ -15,7 +15,8 @@ import {
   deleteDataSafe,
   loadDataPaginated,
   loadData,
-  STORES
+  STORES,
+  recycleData
 } from '../services/database';
 
 export default function CustomersPage() {
@@ -133,30 +134,38 @@ export default function CustomersPage() {
   const handleDeleteCustomer = async (customerId) => {
     if (window.confirm('¿Seguro que quieres eliminar este cliente?')) {
       const customer = customers.find(c => c.id === customerId);
+
+      // Validación de negocio (Deuda)
       if (customer && customer.debt > 0) {
         showMessageModal('No se puede eliminar un cliente con deuda pendiente.');
         return;
       }
 
-      if (customer) {
-        const deletedCustomer = {
-          ...customer,
-          deletedTimestamp: new Date().toISOString()
-        };
-        const trashResult = await saveDataSafe(STORES.DELETED_CUSTOMERS, deletedCustomer);
-        if (!trashResult.success) {
-          handleActionableError(trashResult);
-          return;
-        }
-      }
+      setLoading(true); // Opcional: mostrar spinner rápido
 
-      const deleteResult = await deleteDataSafe(STORES.CUSTOMERS, customerId);
-      if (!deleteResult.success) {
-        handleActionableError(deleteResult);
-        return;
+      try {
+        // --- USANDO LA NUEVA LÓGICA CENTRALIZADA ---
+        const result = await recycleData(
+          STORES.CUSTOMERS,           // Origen
+          STORES.DELETED_CUSTOMERS,   // Destino (Papelera)
+          customerId,                 // ID
+          "Eliminado desde Directorio" // Razón para auditoría
+        );
+
+        if (result.success) {
+          // Éxito: Recargar la lista
+          loadInitialCustomers();
+          showMessageModal('Cliente enviado a la papelera.');
+        } else {
+          // Error
+          showMessageModal(`No se pudo eliminar: ${result.message}`);
+        }
+      } catch (error) {
+        Logger.error("Error eliminando cliente:", error);
+        showMessageModal('Error inesperado al eliminar.');
+      } finally {
+        setLoading(false);
       }
-      loadInitialCustomers();
-      showMessageModal('Cliente eliminado.');
     }
   };
 
