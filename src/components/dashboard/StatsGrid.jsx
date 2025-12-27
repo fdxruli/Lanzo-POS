@@ -5,10 +5,12 @@ import {
   CreditCard, 
   DollarSign, 
   Package, 
-  Activity
+  Activity,
+  Ticket
 } from 'lucide-react';
 import { useSalesStore } from '../../store/useSalesStore';
 import './StatsGrid.css';
+import Ticker from '../layout/Ticker';
 
 export default function StatsGrid({ stats }) {
   const sales = useSalesStore((state) => state.sales);
@@ -136,7 +138,7 @@ export default function StatsGrid({ stats }) {
         <div className="stat-card-modern small-card">
           <div className="card-header-small">
             <span className="card-label">Promedio x Venta</span>
-            <CreditCard size={18} className="text-gray" />
+            <Ticket size={18} className="text-gray" />
           </div>
           <div className="card-value-small">{formatCurrency(metrics.avgTicket)}</div>
           <small className="text-muted">Gasto por cliente</small>

@@ -250,3 +250,108 @@
 [data-theme="dark"] .strategy-content p {
   color: var(--text-dark);
 }
+
+/* --- NUEVO: COLUMNA DE ACCIONES --- */
+.action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-action {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: transparent;
+  font-size: 1.1rem;
+}
+
+.btn-action:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Colores por acción */
+.btn-action.edit {
+  color: var(--secondary-color); /* Azul/Morado */
+  background-color: rgba(123, 97, 255, 0.1);
+}
+.btn-action.edit:hover {
+  border-color: var(--secondary-color);
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.btn-action.delete {
+  color: var(--error-color); /* Rojo */
+  background-color: rgba(255, 59, 92, 0.1);
+}
+.btn-action.delete:hover {
+  border-color: var(--error-color);
+  background-color: var(--error-color);
+  color: white;
+}
+
+.btn-action.ignore {
+  color: var(--text-light); /* Gris */
+  background-color: var(--light-background);
+}
+.btn-action.ignore:hover {
+  border-color: var(--text-dark);
+  color: var(--text-dark);
+}
+
+/* --- MINI MODAL DE EDICIÓN (Integrado) --- */
+.mini-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  animation: fadeIn 0.2s ease-out;
+}
+
+[data-theme="dark"] .mini-modal-overlay {
+  background-color: rgba(15, 23, 42, 0.8);
+}
+
+.mini-modal {
+  background-color: var(--card-background-color);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  width: 300px;
+  text-align: center;
+  animation: scaleUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.mini-modal h4 {
+  margin-top: 0;
+  color: var(--text-dark);
+}
+
+.date-input-group {
+  margin: 15px 0;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scaleUp { from { transform: scale(0.9); } to { transform: scale(1); } }

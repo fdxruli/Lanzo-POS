@@ -1,151 +1,305 @@
 /* src/components/dashboard/RecycleBin.css */
 
-.movement-history-container {
-  margin-top: 0; /* Ajuste para el dashboard */
+.recycle-bin-container {
   background-color: var(--card-background-color);
-  border-radius: 16px;
-  padding: 1.5rem;
+  border-radius: var(--border-radius);
   box-shadow: var(--box-shadow);
+  padding: var(--spacing-lg);
+  height: 100%;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  max-height: 500px; /* Límite de altura */
+  gap: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
-.bin-header {
+/* --- HEADER --- */
+.recycle-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px dashed var(--border-color);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
 }
 
-.bin-count {
-  background-color: var(--light-background);
-  color: var(--text-light);
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.movement-history-list {
-  overflow-y: auto;
-  flex: 1;
-  padding-right: 5px;
-}
-
-.movement-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px;
-  margin-bottom: 8px;
-  background-color: var(--light-background);
-  border-radius: 12px;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-}
-
-.movement-item:hover {
-  background-color: white;
-  border-color: var(--border-color);
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-}
-
-[data-theme="dark"] .movement-item:hover {
-  background-color: #2d3748;
-}
-
-.movement-content {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.item-icon-circle {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background-color: var(--card-background-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-.item-main-text {
-  font-weight: 600;
+.recycle-header h2 {
+  font-size: 1.25rem;
   color: var(--text-dark);
-  font-size: 0.95rem;
-  line-height: 1.2;
-}
-
-.item-sub-text {
+  margin: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.75rem;
+  gap: 0.75rem;
+}
+
+/* --- ACCIONES Y BUSCADOR --- */
+.recycle-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.recycle-search {
+  position: relative;
+  width: 280px;
+}
+
+.recycle-search input {
+  width: 100%;
+  padding: 10px 15px 10px 40px; /* Espacio para el icono */
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--light-background);
+  color: var(--text-dark);
+  font-size: 0.9rem;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.recycle-search input:focus {
+  border-color: var(--primary-color);
+  background-color: var(--card-background-color);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1); /* Ajusta si tienes var RGB, si no usa primary con opacidad */
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--text-light);
-  margin-top: 2px;
+  pointer-events: none;
 }
 
-.item-badge {
+/* Botón "Vaciar Todo" */
+.btn-empty-bin {
+  background-color: rgba(255, 59, 92, 0.1); /* Rojo suave transparente */
+  color: var(--error-color);
+  border: 1px solid transparent;
+  padding: 8px 16px;
+  border-radius: var(--border-radius-sm);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.btn-empty-bin:hover:not(:disabled) {
+  background-color: var(--error-color);
+  color: white;
+  box-shadow: 0 4px 12px rgba(255, 59, 92, 0.25);
+}
+
+.btn-empty-bin:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --- TABLA --- */
+.recycle-table-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--card-background-color);
+}
+
+.recycle-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.9rem;
+}
+
+.recycle-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: var(--light-background);
+}
+
+.recycle-table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: 600;
+  color: var(--text-light);
   text-transform: uppercase;
-  font-size: 0.65rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.recycle-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-color);
+  vertical-align: middle;
+  transition: background-color 0.2s;
+}
+
+.recycle-table tr:last-child td {
+  border-bottom: none;
+}
+
+.recycle-table tr:hover td {
+  background-color: var(--light-background);
+}
+
+/* --- BADGES (Etiquetas) --- */
+.badge {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
   font-weight: 700;
-  background-color: rgba(0,0,0,0.05);
-  padding: 1px 4px;
-  border-radius: 4px;
+  text-transform: uppercase;
+  display: inline-block;
+  letter-spacing: 0.02em;
 }
 
-[data-theme="dark"] .item-badge {
-  background-color: rgba(255,255,255,0.1);
+/* Usando colores del sistema pero con fondo suave */
+.badge-product { 
+  background-color: rgba(59, 130, 246, 0.15); /* Azul */
+  color: #3b82f6; 
 }
 
-.btn-restore-icon {
-  background-color: transparent;
-  color: var(--success-color);
-  border: 1px solid var(--success-color);
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+.badge-customer { 
+  background-color: rgba(16, 185, 129, 0.15); /* Verde (Success) */
+  color: var(--success-color); 
+}
+
+.badge-sale { 
+  background-color: rgba(123, 97, 255, 0.15); /* Púrpura (Secondary) */
+  color: var(--secondary-color); 
+}
+
+.badge-default { 
+  background-color: var(--light-background); 
+  color: var(--text-light); 
+}
+
+/* --- ACCIONES EN FILA --- */
+.action-group {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
-.btn-restore-icon:hover {
-  background-color: var(--success-color);
+/* Botón Restaurar */
+.btn-restore {
+  background-color: rgba(123, 97, 255, 0.1); /* Fondo lila suave siempre visible */
+  color: #7B61FF;                            /* Color púrpura fijo */
+  border: 1px solid rgba(123, 97, 255, 0.2);
+}
+
+.btn-restore:hover:not(:disabled) {
+  background-color: #7B61FF;                 /* Fondo sólido al pasar mouse */
   color: white;
-  transform: rotate(-90deg); /* Efecto de "deshacer" */
+  transform: translateY(-2px);
+  box-shadow: 0 2px 5px rgba(123, 97, 255, 0.3);
 }
 
-/* Colores de Iconos */
-.icon-blue { color: #3b82f6; }
-.icon-green { color: #10b981; }
-.icon-orange { color: #f59e0b; }
-.icon-purple { color: #8b5cf6; }
+/* Botón Eliminar Permanente */
+.btn-delete-forever {
+  background-color: #f1f5f9;                 /* Fondo gris suave siempre visible */
+  color: #64748b;                            /* Color gris oscuro fijo */
+  border: 1px solid #e2e8f0;
+}
 
-/* Estado Vacío */
-.recycle-empty-message {
-  flex: 1;
+.btn-delete-forever:hover:not(:disabled) {
+  background-color: #fee2e2;                 /* Fondo rojo suave al pasar mouse */
+  color: #ef4444;                            /* Rojo intenso */
+  border-color: #fecaca;
+}
+
+.btn-icon svg {
+  width: 20px !important;    /* Forzar ancho */
+  height: 20px !important;   /* Forzar alto */
+  stroke-width: 2px !important; /* Grosor de línea */
+  display: block !important;
+  fill: none !important;     /* Asegurar que no tenga relleno sólido */
+}
+
+/* 2. Forzar el color de las líneas (stroke) para el botón Restaurar */
+.btn-restore svg {
+  stroke: #7B61FF !important; /* Color Púrpura */
+}
+
+.btn-restore:hover svg {
+  stroke: #ffffff !important; /* Blanco al pasar el mouse */
+}
+
+/* 3. Forzar el color de las líneas (stroke) para el botón Eliminar */
+.btn-delete-forever svg {
+  stroke: #64748b !important; /* Color Gris */
+}
+
+.btn-delete-forever:hover svg {
+  stroke: #ef4444 !important; /* Rojo al pasar el mouse */
+}
+
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(100%);
+}
+
+/* --- ESTADO VACÍO --- */
+.empty-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex-direction: column;
+  height: 300px;
   color: var(--text-light);
-  font-style: italic;
-  opacity: 0.7;
+  gap: 1rem;
+  text-align: center;
 }
 
-.recycle-empty-message::before {
-  content: '🍃';
-  font-size: 2.5rem;
-  margin-bottom: 10px;
-  filter: grayscale(100%);
-  opacity: 0.5;
+.empty-state-icon {
+  color: var(--border-color);
+  margin-bottom: 0.5rem;
+}
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .recycle-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .recycle-search {
+    width: 100%;
+  }
+
+  .recycle-table th:nth-child(2), /* Ocultar tipo en móviles */
+  .recycle-table td:nth-child(2),
+  .recycle-table th:nth-child(3), /* Ocultar fecha en móviles muy pequeños si es necesario */
+  .recycle-table td:nth-child(3) {
+      display: none; 
+  }
+  
+  /* Mostrar columnas esenciales */
+  @media (min-width: 480px) {
+      .recycle-table th:nth-child(3),
+      .recycle-table td:nth-child(3) {
+          display: table-cell;
+      }
+  }
 }
