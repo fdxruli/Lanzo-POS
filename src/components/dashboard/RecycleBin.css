@@ -48,7 +48,7 @@
 
 .recycle-search input {
   width: 100%;
-  padding: 10px 15px 10px 40px; /* Espacio para el icono */
+  padding: 10px 15px 10px 40px;
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
   background-color: var(--light-background);
@@ -61,7 +61,7 @@
 .recycle-search input:focus {
   border-color: var(--primary-color);
   background-color: var(--card-background-color);
-  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1); /* Ajusta si tienes var RGB, si no usa primary con opacidad */
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
 }
 
 .search-icon {
@@ -75,7 +75,7 @@
 
 /* Botón "Vaciar Todo" */
 .btn-empty-bin {
-  background-color: rgba(255, 59, 92, 0.1); /* Rojo suave transparente */
+  background-color: rgba(255, 59, 92, 0.1);
   color: var(--error-color);
   border: 1px solid transparent;
   padding: 8px 16px;
@@ -161,19 +161,18 @@
   letter-spacing: 0.02em;
 }
 
-/* Usando colores del sistema pero con fondo suave */
 .badge-product { 
-  background-color: rgba(59, 130, 246, 0.15); /* Azul */
+  background-color: rgba(59, 130, 246, 0.15);
   color: #3b82f6; 
 }
 
 .badge-customer { 
-  background-color: rgba(16, 185, 129, 0.15); /* Verde (Success) */
+  background-color: rgba(16, 185, 129, 0.15);
   color: var(--success-color); 
 }
 
 .badge-sale { 
-  background-color: rgba(123, 97, 255, 0.15); /* Púrpura (Secondary) */
+  background-color: rgba(123, 97, 255, 0.15);
   color: var(--secondary-color); 
 }
 
@@ -199,17 +198,33 @@
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  padding: 0;
+}
+
+/* ===================================================
+   🔧 CORRECCIÓN CRÍTICA DE ICONOS
+   ================================================ */
+
+/* Resetear estilos conflictivos de SVG */
+.btn-icon svg {
+  width: 18px !important;
+  height: 18px !important;
+  stroke-width: 2.5px !important;
+  /* ✅ QUITAR fill:none - Esta era la causa del problema */
+  fill: currentColor !important;
+  stroke: currentColor !important;
+  display: block !important;
 }
 
 /* Botón Restaurar */
 .btn-restore {
-  background-color: rgba(123, 97, 255, 0.1); /* Fondo lila suave siempre visible */
-  color: #7B61FF;                            /* Color púrpura fijo */
+  background-color: rgba(123, 97, 255, 0.1);
+  color: #7B61FF;
   border: 1px solid rgba(123, 97, 255, 0.2);
 }
 
 .btn-restore:hover:not(:disabled) {
-  background-color: #7B61FF;                 /* Fondo sólido al pasar mouse */
+  background-color: #7B61FF;
   color: white;
   transform: translateY(-2px);
   box-shadow: 0 2px 5px rgba(123, 97, 255, 0.3);
@@ -217,41 +232,15 @@
 
 /* Botón Eliminar Permanente */
 .btn-delete-forever {
-  background-color: #f1f5f9;                 /* Fondo gris suave siempre visible */
-  color: #64748b;                            /* Color gris oscuro fijo */
+  background-color: #f1f5f9;
+  color: #64748b;
   border: 1px solid #e2e8f0;
 }
 
 .btn-delete-forever:hover:not(:disabled) {
-  background-color: #fee2e2;                 /* Fondo rojo suave al pasar mouse */
-  color: #ef4444;                            /* Rojo intenso */
+  background-color: #fee2e2;
+  color: #ef4444;
   border-color: #fecaca;
-}
-
-.btn-icon svg {
-  width: 20px !important;    /* Forzar ancho */
-  height: 20px !important;   /* Forzar alto */
-  stroke-width: 2px !important; /* Grosor de línea */
-  display: block !important;
-  fill: none !important;     /* Asegurar que no tenga relleno sólido */
-}
-
-/* 2. Forzar el color de las líneas (stroke) para el botón Restaurar */
-.btn-restore svg {
-  stroke: #7B61FF !important; /* Color Púrpura */
-}
-
-.btn-restore:hover svg {
-  stroke: #ffffff !important; /* Blanco al pasar el mouse */
-}
-
-/* 3. Forzar el color de las líneas (stroke) para el botón Eliminar */
-.btn-delete-forever svg {
-  stroke: #64748b !important; /* Color Gris */
-}
-
-.btn-delete-forever:hover svg {
-  stroke: #ef4444 !important; /* Rojo al pasar el mouse */
 }
 
 .btn-icon:disabled {
@@ -288,14 +277,13 @@
     width: 100%;
   }
 
-  .recycle-table th:nth-child(2), /* Ocultar tipo en móviles */
+  .recycle-table th:nth-child(2),
   .recycle-table td:nth-child(2),
-  .recycle-table th:nth-child(3), /* Ocultar fecha en móviles muy pequeños si es necesario */
+  .recycle-table th:nth-child(3),
   .recycle-table td:nth-child(3) {
       display: none; 
   }
   
-  /* Mostrar columnas esenciales */
   @media (min-width: 480px) {
       .recycle-table th:nth-child(3),
       .recycle-table td:nth-child(3) {
