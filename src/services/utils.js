@@ -437,3 +437,13 @@ export const checkInternetConnection = async () => {
     return false;
   }
 };
+
+export const getStableDeviceId = () => {
+  let deviceId = localStorage.getItem('lanzo_device_id');
+  if (!deviceId) {
+    // Generar un ID simple si no existe
+    deviceId = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+    localStorage.setItem('lanzo_device_id', deviceId);
+  }
+  return deviceId;
+};

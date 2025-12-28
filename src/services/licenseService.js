@@ -2,6 +2,7 @@
 import { supabaseClient } from './supabase';
 import { loadData, saveData, STORES } from './database';
 import Logger from './Logger';
+import { checkInternetConnection, getStableDeviceId} from './utils';
 
 // --- CORRECCIÓN CRÍTICA DE IDENTIDAD ---
 // Esta función ahora se asegura de usar EL MISMO ID que tiene 'supabase.js'
