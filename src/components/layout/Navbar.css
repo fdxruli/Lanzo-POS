@@ -160,14 +160,29 @@
 
 .btn-close-drawer {
   background: var(--light-background);
-  border: none;
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-dark);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.btn-close-drawer:hover {
+  background: var(--error-color);
+  color: white;
+  border-color: var(--error-color);
+  transform: rotate(90deg);
+}
+
+.btn-close-drawer:active {
+  transform: rotate(90deg) scale(0.95);
 }
 
 .drawer-links {

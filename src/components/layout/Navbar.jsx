@@ -23,7 +23,7 @@ function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const companyProfile = useAppStore((state) => state.companyProfile);
   const features = useFeatureConfig();
-  
+
   // Obtenemos la ubicación actual para saber en qué página estamos
   const location = useLocation();
   const isAboutPage = location.pathname === '/acerca-de';
@@ -86,12 +86,15 @@ function Navbar() {
       {/* ==============================================
           3. MENÚ LATERAL DESLIZABLE (DRAWER)
          ============================================== */}
-      <div className={`mobile-drawer-overlay ${isMobileMenuOpen ? 'open' : ''}`} onClick={closeMenu}></div>
       <div className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="drawer-header">
           <h3>Menú Principal</h3>
-          <button onClick={closeMenu} className="btn-close-drawer">
-            <X size={24} /> 
+          <button
+            onClick={closeMenu}
+            className="btn-close-drawer"
+            aria-label="Cerrar menú"
+          >
+            <X size={20} strokeWidth={2.5} />
           </button>
         </div>
         <div className="drawer-links">
