@@ -85,6 +85,12 @@ export default function LicenseSettings() {
                         </span>
                     </div>
                     <div className="license-detail">
+                        <span className="license-label">Dispositivos Permitidos:</span>
+                        <span className="license-value">
+                            {licenseDetails.max_devices ? `${licenseDetails.max_devices} Dispositivo(s)` : '1'}
+                        </span>
+                    </div>
+                    <div className="license-detail">
                         <span className="license-label">Límite de Rubros:</span>
                         <span className="license-value">{maxRubrosAllowed === 999 ? 'Ilimitado' : maxRubrosAllowed}</span>
                     </div>
@@ -103,14 +109,14 @@ export default function LicenseSettings() {
             <h3 className="subtitle">Configuración de Módulos</h3>
 
             {maxRubrosAllowed === 1 && (
-                <p style={{ 
-                    fontSize: '0.9rem', 
-                    color: '#155724', 
-                    marginBottom: '15px', 
-                    backgroundColor: '#d4edda', 
-                    padding: '10px', 
-                    borderRadius: '6px', 
-                    borderLeft: '4px solid #28a745' 
+                <p style={{
+                    fontSize: '0.9rem',
+                    color: '#155724',
+                    marginBottom: '15px',
+                    backgroundColor: '#d4edda',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    borderLeft: '4px solid #28a745'
                 }}>
                     🔒 <strong>Licencia Vinculada:</strong> Tu sistema está configurado exclusivamente para el giro seleccionado abajo.
                 </p>
@@ -188,7 +194,7 @@ export default function LicenseSettings() {
             </div>
 
             <small className="form-help-text">
-                {maxRubrosAllowed === 1 
+                {maxRubrosAllowed === 1
                     ? "El giro de negocio no puede ser modificado con esta licencia."
                     : "Selecciona los giros adicionales para activar sus funciones."}
             </small>
