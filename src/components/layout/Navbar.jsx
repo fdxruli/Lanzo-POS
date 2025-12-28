@@ -1,4 +1,3 @@
-// src/components/layout/Navbar.jsx
 import React, { useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
@@ -24,7 +23,7 @@ function Navbar() {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const features = useFeatureConfig();
 
-  // Obtenemos la ubicación actual para saber en qué página estamos
+  // Obtenemos la ubicación actual
   const location = useLocation();
   const isAboutPage = location.pathname === '/acerca-de';
 
@@ -38,6 +37,13 @@ function Navbar() {
     { to: '/configuracion', label: 'Configuración', icon: <Settings size={20} /> },
     { to: '/acerca-de', label: 'Acerca de', icon: <Info size={20} /> },
   ];
+
+  // Lógica para saber si estamos en una sección que pertenece al menú lateral
+  // Esto hará que el botón "Menú" se ilumine cuando estemos en Clientes, Configuración, etc.
+  const isSectionFromMenu = drawerLinks.some(link => location.pathname.startsWith(link.to));
+
+  // Función helper para clases de escritorio (para no repetir código)
+  const getDesktopClass = ({ isActive }) => `nav-link ${isActive ? 'active' : ''}`;
 
   return (
     <>
@@ -77,7 +83,14 @@ function Navbar() {
           <span>Ventas</span>
         </NavLink>
 
-        <button className={`bottom-nav-item ${isMobileMenuOpen ? 'active' : ''}`} onClick={toggleMenu}>
+        {/* BOTÓN MENÚ:
+            Se ilumina si el menú está abierto (isMobileMenuOpen) 
+            O si estamos navegando dentro de una sección del menú (isSectionFromMenu)
+        */}
+        <button 
+          className={`bottom-nav-item ${isMobileMenuOpen || isSectionFromMenu ? 'active' : ''}`} 
+          onClick={toggleMenu}
+        >
           <Menu size={22} />
           <span>Menú</span>
         </button>
@@ -124,19 +137,42 @@ function Navbar() {
         </div>
 
         <div className="sidebar-links">
-          <NavLink to="/" className="nav-link" end> <Store size={20} /> Punto de Venta</NavLink>
-          <NavLink to="/caja" className="nav-link"> <Inbox size={20} /> Caja</NavLink>
+          {/* Aquí aplicamos la corrección: className dinámico */}
+          <NavLink to="/" className={getDesktopClass} end> 
+            <Store size={20} /> Punto de Venta
+          </NavLink>
+          
+          <NavLink to="/caja" className={getDesktopClass}> 
+            <Inbox size={20} /> Caja
+          </NavLink>
+          
           {features.hasKDS && (
-            <NavLink to="/pedidos" className="nav-link"> <ChefHat size={20} /> Pedidos-Rest.</NavLink>
+            <NavLink to="/pedidos" className={getDesktopClass}> 
+              <ChefHat size={20} /> Pedidos-Rest.
+            </NavLink>
           )}
-          <NavLink to="/productos" className="nav-link"> <Package size={20} /> Productos</NavLink>
-          <NavLink to="/clientes" className="nav-link"> <Users size={20} /> Clientes</NavLink>
-          <NavLink to="/ventas" className="nav-link"> <TrendingUp size={20} /> Ventas y Reportes</NavLink>
+          
+          <NavLink to="/productos" className={getDesktopClass}> 
+            <Package size={20} /> Productos
+          </NavLink>
+          
+          <NavLink to="/clientes" className={getDesktopClass}> 
+            <Users size={20} /> Clientes
+          </NavLink>
+          
+          <NavLink to="/ventas" className={getDesktopClass}> 
+            <TrendingUp size={20} /> Ventas y Reportes
+          </NavLink>
 
           <div className="sidebar-divider"></div>
 
-          <NavLink to="/configuracion" className="nav-link"> <Settings size={20} /> Configuración</NavLink>
-          <NavLink to="/acerca-de" className="nav-link"> <Info size={20} /> Acerca de</NavLink>
+          <NavLink to="/configuracion" className={getDesktopClass}> 
+            <Settings size={20} /> Configuración
+          </NavLink>
+          
+          <NavLink to="/acerca-de" className={getDesktopClass}> 
+            <Info size={20} /> Acerca de
+          </NavLink>
         </div>
       </nav>
     </>
