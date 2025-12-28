@@ -116,12 +116,19 @@
   letter-spacing: 1px;
 }
 
+.actions-card {
+  /* Asegura que haya espacio interno alrededor de todo el contenido */
+  padding: 20px; 
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* Centra verticalmente si sobra espacio */
+}
+
 .actions-grid {
   display: grid;
-  gap: 1rem;
-  grid-template-columns: 1fr;
-  height: 100%;
-  align-content: center;
+  grid-template-columns: 1fr 1fr; /* Dos columnas iguales */
+  gap: 15px; /* Espacio vital entre los botones (fila y columna) */
+  margin-top: 15px; /* Separa los botones del título "Control de Efectivo" */
 }
 
 /* -------------------------------------------------------
@@ -130,21 +137,15 @@
 */
 
 /* Botón Auditar (Principal) */
-.btn-audit {
-  /* Fondo por defecto (Modo Claro: Negro/Gris Oscuro) */
-  background-color: #1F2937; 
-  color: white;
-  border: 1px solid transparent;
-  padding: 1.2rem;
-  font-size: 1.1rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-weight: 700;
-  transition: all 0.2s;
+.btn-audit.full-width {
+  grid-column: span 2;
+  padding: 12px;
+  font-weight: bold;
+}
+
+.half-width {
+  grid-column: span 1;
+  padding: 12px;
 }
 
 .btn-audit:hover {
