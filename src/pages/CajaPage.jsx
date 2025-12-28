@@ -260,7 +260,7 @@ export default function CajaPage() {
         <h3 className="subtitle">Movimientos del Turno</h3>
         <div id="caja-movements-list">
           {movimientosCaja.length === 0 ? (
-            <p className="empty-message" style={{ textAlign: 'center', color: '#999', fontStyle: 'italic' }}>No hay movimientos manuales.</p>
+            <p style={{ textAlign: 'center', color: '#999', fontStyle: 'italic' }}>No hay movimientos manuales.</p>
           ) : (
             movimientosCaja.map(mov => (
               <div key={mov.id} className="movement-item" style={{
@@ -284,7 +284,7 @@ export default function CajaPage() {
       <div id="caja-history-container" className="caja-card sales-history-container">
         <h3 className="subtitle">Historial de Cortes</h3>
         {historialCajas.length === 0 ? (
-          <p className="empty-message">No hay historial.</p>
+          <p style={{ textAlign: 'center', color: '#999', padding: '20px' }}>No hay historial.</p>
         ) : (
           <div className="history-list" style={{ maxHeight: '300px', overflowY: 'auto' }}>
             {historialCajas.map(c => (
