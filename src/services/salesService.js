@@ -216,17 +216,34 @@ export const processSale = async ({
             const realProductId = orderItem.parentId || orderItem.id;
             const product = allProducts.find(p => p.id === realProductId);
 
-            // Detectar si tiene receta
-            const hasRecipe = features.hasRecipes && product?.recipe && product.recipe.length > 0;
+            // CORRECCIÓN DE SEGURIDAD:
+            // Validamos si tiene receta DIRECTAMENTE en el producto, ignorando flags globales riesgosos.
+            const hasRecipe = product?.recipe && product.recipe.length > 0;
+            const isTracked = product?.trackStock;
 
-            // Si no trackea stock Y NO tiene receta, saltamos.
-            if (!product || (product.trackStock === false && !hasRecipe)) continue;
+            // Si no trackea stock Y no tiene receta, no necesitamos cargar lotes
+            if (!product || (!isTracked && !hasRecipe)) continue;
 
-            const itemsToDeduct = hasRecipe
-                ? product.recipe
-                : [{ ingredientId: realProductId, quantity: 1 }];
+            // A) Si es Platillo con Receta
+            if (hasRecipe) {
+                product.recipe.forEach(component => {
+                    // Verificamos que el ingrediente tenga ID válido
+                    if (component.ingredientId) {
+                        uniqueProductIds.add(component.ingredientId);
+                    }
+                });
 
-            itemsToDeduct.forEach(component => uniqueProductIds.add(component.ingredientId));
+                // LÓGICA FUTURA PARA MODIFICADORES (Preparado para cuando tus modificadores tengan IDs)
+                if (orderItem.modifiers && Array.isArray(orderItem.modifiers)) {
+                    orderItem.modifiers.forEach(mod => {
+                        if (mod.ingredientId) uniqueProductIds.add(mod.ingredientId);
+                    });
+                }
+            }
+            // B) Si es Producto normal (Refresco, etc.)
+            else {
+                uniqueProductIds.add(realProductId);
+            }
         }
 
         // Cargar lotes de la BD (solo para los que trackean stock)
@@ -257,12 +274,11 @@ export const processSale = async ({
             const realProductId = orderItem.parentId || orderItem.id;
             const product = allProducts.find(p => p.id === realProductId);
 
-            // 🟢 CORRECCIÓN: Definir hasRecipe AQUÍ TAMBIÉN para usarlo en la condición
-            const hasRecipe = features.hasRecipes && product?.recipe && product.recipe.length > 0;
+            // DETECCIÓN SEGURA: ¿Es receta?
+            const hasRecipe = product?.recipe && product.recipe.length > 0;
 
-            // Definir 'quantityToDeduct'
-            let quantityToDeduct = orderItem.quantity; // Valor por defecto
-
+            // Factor de conversión (si existe)
+            let quantityToDeduct = orderItem.quantity;
             if (product && product.conversionFactor?.enabled) {
                 const factor = parseFloat(product.conversionFactor.factor);
                 if (!isNaN(factor) && factor > 0) {
@@ -270,44 +286,85 @@ export const processSale = async ({
                 }
             }
 
-            // CAMBIO CLAVE: Si no trackea stock Y NO tiene receta, procesamos como venta libre simple
+            // CASO 1: PRODUCTO SIN CONTROL DE STOCK (Y SIN RECETA)
+            // (Ej. Servicio, o Platillo mal configurado sin ingredientes)
             if (!product || (product.trackStock === false && !hasRecipe)) {
                 processedItems.push({
                     ...orderItem,
-                    image: null,
-                    base64: null,
-                    cost: orderItem.cost || 0, // Usamos el costo simple registrado
-                    batchesUsed: [], // Sin lotes
-                    stockDeducted: 0 // No descontamos nada
+                    image: null, base64: null,
+                    cost: orderItem.cost || 0,
+                    batchesUsed: [],
+                    stockDeducted: 0
                 });
-                continue; // Saltamos al siguiente ítem
+                continue;
             }
 
-            // Definir qué descontar: ¿La receta o el producto mismo?
-            const itemsToDeduct = hasRecipe
-                ? product.recipe
-                : [{ ingredientId: realProductId, quantity: 1 }];
+            // CASO 2: DETERMINAR QUÉ DESCONTAR
+            // Lista de cosas a restar del inventario para ESTE item
+            const itemsToDeductList = [];
 
+            if (hasRecipe) {
+                // A) Es receta: Agregamos los ingredientes
+                product.recipe.forEach(ing => {
+                    // PROTECCIÓN CONTRA FANTASMAS: Si el ingrediente no tiene ID, lo saltamos
+                    if (ing.ingredientId) {
+                        itemsToDeductList.push({
+                            targetId: ing.ingredientId,
+                            neededQty: ing.quantity * quantityToDeduct // Cantidad Receta * Cantidad Vendida
+                        });
+                    }
+                });
+
+                // B) Agregamos Modificadores (Si tuvieran IDs vinculados)
+                if (orderItem.modifiers && Array.isArray(orderItem.modifiers)) {
+                    orderItem.modifiers.forEach(mod => {
+                        // Solo descontamos si el modificador tiene un ID de insumo vinculado
+                        if (mod.ingredientId && mod.quantity) {
+                            itemsToDeductList.push({
+                                targetId: mod.ingredientId,
+                                neededQty: (mod.quantity || 1) * quantityToDeduct
+                            });
+                        }
+                    });
+                }
+
+            } else {
+                // C) Es producto directo (Retail/Insumo directo)
+                itemsToDeductList.push({
+                    targetId: realProductId,
+                    neededQty: quantityToDeduct
+                });
+            }
+
+            // PROCESO DE DESCUENTO (FIFO)
             let itemTotalCost = 0;
             const itemBatchesUsed = [];
 
-            for (const component of itemsToDeduct) {
-                let requiredQty = component.quantity * quantityToDeduct;
-                const targetId = component.ingredientId;
+            for (const component of itemsToDeductList) {
+                let requiredQty = component.neededQty;
+                const targetId = component.targetId;
+
+                // Obtenemos los lotes del mapa que cargamos antes
                 const batches = batchesMap.get(targetId) || [];
 
+                // Intentamos descontar de los lotes disponibles
                 for (const batch of batches) {
-                    if (requiredQty <= 0.0001) break;
-                    if (batch.stock <= 0) continue;
+                    if (requiredQty <= 0.0001) break; // Ya cubrimos la necesidad
+                    if (batch.stock <= 0) continue;   // Lote vacío
 
                     const toDeduct = Math.min(requiredQty, batch.stock);
+
+                    // Registramos la operación para la BD
                     batchesToDeduct.push({
                         batchId: batch.id,
                         quantity: toDeduct,
                         productId: targetId
                     });
+
+                    // Descuento en memoria (para que el siguiente item no use este stock)
                     batch.stock -= toDeduct;
 
+                    // Registro para el reporte de venta
                     itemBatchesUsed.push({
                         batchId: batch.id,
                         ingredientId: targetId,
@@ -318,22 +375,29 @@ export const processSale = async ({
                     itemTotalCost += roundCurrency(batch.cost * toDeduct);
                     requiredQty -= toDeduct;
                 }
-                // Costo fallback si faltó stock
+
+                // SI FALTA STOCK (Stock Negativo Virtual para Costos)
+                // Si se acabó el stock de lotes, calculamos el costo restante usando el costo base del producto
                 if (requiredQty > 0.0001) {
                     const originalProduct = allProducts.find(p => p.id === targetId);
+
+                    // PROTECCIÓN: Si el producto fue borrado (undefined), costo 0 para no romper cálculo
                     const fallbackCost = originalProduct?.cost || 0;
+
                     itemTotalCost += (fallbackCost * requiredQty);
+
+                    // Nota: Aquí no restamos stock negativo a la BD porque 'batchesToDeduct' solo tiene IDs de lotes existentes.
+                    // El sistema de inventario no soporta negativos en lotes, pero la venta procede.
                 }
             }
 
+            // CALCULAR COSTO PROMEDIO FINAL DEL ITEM VENDIDO
             const calculatedAvgCost = orderItem.quantity > 0 ? roundCurrency(itemTotalCost / orderItem.quantity) : 0;
-            const finalSafeCost = (isNaN(calculatedAvgCost) || calculatedAvgCost === null) ? 0 : parseFloat(calculatedAvgCost);
 
             processedItems.push({
                 ...orderItem,
-                image: null,
-                base64: null,
-                cost: finalSafeCost,
+                image: null, base64: null,
+                cost: calculatedAvgCost,
                 batchesUsed: itemBatchesUsed,
                 stockDeducted: quantityToDeduct
             });

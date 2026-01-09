@@ -47,17 +47,17 @@ const lazyRetry = (importFn, componentName = 'Component') => {
       // Retornamos un componente de error visual en lugar de romper la app
       return {
         default: () => (
-          <div style={{ 
-            height: '100vh', display: 'flex', flexDirection: 'column', 
-            alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center' 
+          <div style={{
+            height: '100vh', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center'
           }}>
-            <h2 style={{fontSize: '2rem'}}>⚠️</h2>
+            <h2 style={{ fontSize: '2rem' }}>⚠️</h2>
             <h3>Error de conexión</h3>
             <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
-            <p style={{fontSize: '0.9rem', color: '#666'}}>Verifica tu internet.</p>
-            <button 
-              className="btn btn-primary" 
-              style={{marginTop: '1rem'}}
+            <p style={{ fontSize: '0.9rem', color: '#666' }}>Verifica tu internet.</p>
+            <button
+              className="btn btn-primary"
+              style={{ marginTop: '1rem' }}
               onClick={() => window.location.reload()}
             >
               Intentar de nuevo manualmente
@@ -249,10 +249,18 @@ function App() {
       );
 
     case 'unauthenticated':
-      return <WelcomeModal />;
+      return (
+        <ErrorBoundary>
+          <WelcomeModal />
+        </ErrorBoundary>
+      );
 
     case 'setup_required':
-      return <SetupModal />;
+      return (
+        <ErrorBoundary>
+          <SetupModal />
+        </ErrorBoundary>
+      );
 
     case 'ready':
       return (

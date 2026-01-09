@@ -108,19 +108,17 @@
 .mode-selection-container {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  /* MÓVIL: Uno al lado del otro */
   gap: 12px;
-  /* Espacio entre tarjetas */
-
-  /* MARGENES LATERALES MEJORADOS */
+  
   width: 100%;
   max-width: 800px;
-  margin: 0 auto 25px auto;
-  /* Centrado y con margen inferior */
-  padding: 0 10px;
-  /* Un poco de "aire" a los costados para que no pegue al borde */
+  
+  /* CAMBIO: Quitamos el margin-bottom fijo y el padding lateral 
+     ya que el Layout ahora se encarga de los bordes. */
+  margin: 0 auto 20px auto; 
+  padding: 0; 
+  
   box-sizing: border-box;
-  /* Asegura que el padding no rompa el ancho */
 }
 
 .mode-card {
