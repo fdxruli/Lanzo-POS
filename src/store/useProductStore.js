@@ -193,15 +193,19 @@ export const useProductStore = create((set, get) => ({
     }
   },
 
-  // --- GESTIÓN DE LOTES ---
+  // --- GESTIÓN DE LOTES (SIN CACHÉ OBSOLETO) ---
   loadBatchesForProduct: async (productId) => {
-    const { batchesCache } = get();
+    // 🔧 CORRECCIÓN CRÍTICA: NO usar caché para lotes
+    // Los lotes cambian constantemente con las ventas, así que SIEMPRE
+    // debemos leer desde la BD para tener datos frescos.
+
     const batches = await queryByIndex(STORES.PRODUCT_BATCHES, 'productId', productId);
 
-    const newCache = new Map(batchesCache);
+    // Opcional: Actualizar caché solo para referencia, pero NO lo usamos como fuente de verdad
+    const newCache = new Map(get().batchesCache);
     newCache.set(productId, batches);
-
     set({ batchesCache: newCache });
+
     return batches;
   },
 
