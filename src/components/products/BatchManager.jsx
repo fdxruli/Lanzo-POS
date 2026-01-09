@@ -359,8 +359,8 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
       } else if (searchTerm === '') {
         if (!selectedProductId) loadInitialProducts();
       }
-    }, 500); 
-    
+    }, 500);
+
     return () => clearTimeout(timer);
   }, [searchTerm, selectedProductId]);
 
@@ -375,7 +375,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     }
     // NOTA: No ponemos 'else { setSearchTerm("") }' aquí. 
     // Dejamos que el usuario controle el borrado manual para buscar otro.
-  }, [selectedProductId, rawProducts]); 
+  }, [selectedProductId, rawProducts]);
 
   const filteredProducts = useMemo(() => {
     return rawProducts.slice(0, 10);
@@ -385,12 +385,13 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     return rawProducts.find(p => p.id === selectedProductId);
   }, [selectedProductId, rawProducts]);
 
-  // Cargar lotes
+  // Cargar lotes (CON AUTO-REFRESH)
   useEffect(() => {
     const fetchBatches = async () => {
       if (selectedProductId) {
         setIsLoadingBatches(true);
         try {
+          // 🔧 CORRECCIÓN: Forzamos recarga desde BD, no desde caché del store
           const batches = await loadBatchesForProduct(selectedProductId);
           setLocalBatches(Array.isArray(batches) ? batches : []);
         } catch (error) {
@@ -403,7 +404,22 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
         setLocalBatches([]);
       }
     };
+
+    // Carga inicial
     fetchBatches();
+
+    // 🆕 AUTO-REFRESH: Escuchar cambios en la pestaña (Cuando el usuario vuelve después de hacer una venta)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && selectedProductId) {
+        fetchBatches();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [selectedProductId, loadBatchesForProduct]);
 
   const productBatches = useMemo(() => {
@@ -523,9 +539,26 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
               Lotes/Variantes: {productBatches.length} <br />
               <span style={{ color: 'var(--text-light)', fontSize: '0.9rem' }}>Stock Total: {totalStock} | Valor: ${inventoryValue.toFixed(2)}</span>
             </h4>
-            <button className="btn btn-save" onClick={() => { setBatchToEdit(null); setIsModalOpen(true); }}>
-              + Nuevo Ingreso
-            </button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {/* 🆕 BOTÓN DE ACTUALIZAR */}
+              <button
+                className="btn btn-secondary"
+                onClick={async () => {
+                  setIsLoadingBatches(true);
+                  const freshBatches = await loadBatchesForProduct(selectedProductId);
+                  setLocalBatches(freshBatches);
+                  setIsLoadingBatches(false);
+                }}
+                disabled={isLoadingBatches}
+                title="Actualizar stock desde la base de datos"
+              >
+                🔄 {isLoadingBatches ? 'Actualizando...' : 'Actualizar'}
+              </button>
+
+              <button className="btn btn-save" onClick={() => { setBatchToEdit(null); setIsModalOpen(true); }}>
+                + Nuevo Ingreso
+              </button>
+            </div>
           </div>
 
           <div style={{ overflowX: 'auto' }}>

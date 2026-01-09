@@ -55,12 +55,21 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
         // Aplanamos las opciones seleccionadas para guardarlas en el item del pedido
         const allSelectedModifiers = Object.values(selectedOptions).flat();
 
+        // 🔧 CORRECCIÓN: Aseguramos que cada modificador preserve su ingredientId
+        const cleanedModifiers = allSelectedModifiers.map(mod => ({
+            name: mod.name,
+            price: mod.price,
+            // ⚠️ CRÍTICO: Preservar el ingredientId si existe
+            ingredientId: mod.ingredientId || null,
+            quantity: mod.quantity || 1  // Por defecto 1 unidad
+        }));
+
         // Construimos el objeto final
         const modifiedProduct = {
             ...product,
             price: finalPrice, // Precio actualizado
             originalPrice: finalPrice, // Importante para el store
-            selectedModifiers: allSelectedModifiers, // Guardamos qué eligió para el ticket/cocina
+            selectedModifiers: cleanedModifiers, // ✅ Ahora con ingredientId preservado
             notes: note,
             // TRUCO: Generamos un ID único para que el carrito no agrupe 
             // este producto con otros que tengan diferentes modificadores.

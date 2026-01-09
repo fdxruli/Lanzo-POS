@@ -219,11 +219,18 @@ export default function RestauranteFields({
                           // Capturamos los valores por ID
                           const nameInput = document.getElementById(`opt-name-${idx}`);
                           const priceInput = document.getElementById(`opt-price-${idx}`);
-                          const ingInput = document.getElementById(`opt-ing-${idx}`); // Capturamos el select
+                          const ingInput = document.getElementById(`opt-ing-${idx}`);
 
                           if (nameInput.value) {
-                            // Pasamos el valor del ingrediente a la función
-                            addOptionToGroup(idx, nameInput.value, priceInput.value, ingInput.value);
+                            // ⚠️ CORRECCIÓN CRÍTICA: Guardamos el ingredientId como string o null
+                            const linkedIngredientId = ingInput.value || null;
+
+                            addOptionToGroup(
+                              idx,
+                              nameInput.value,
+                              priceInput.value,
+                              linkedIngredientId  // Ahora pasa correctamente
+                            );
 
                             // Limpiamos los campos
                             nameInput.value = '';
