@@ -318,10 +318,11 @@ export const processSale = async ({
                 // B) Agregamos Modificadores (Si tuvieran IDs vinculados)
                 if (orderItem.modifiers && Array.isArray(orderItem.modifiers)) {
                     orderItem.modifiers.forEach(mod => {
-                        // Solo descontamos si el modificador tiene un ID de insumo vinculado
-                        if (mod.ingredientId && mod.quantity) {
+                        // Validamos solo que tenga ID (quitamos el chequeo de cantidad obligatoria)
+                        if (mod.ingredientId) {
                             itemsToDeductList.push({
                                 targetId: mod.ingredientId,
+                                // Si quantity es undefined o 0, usamos 1 por defecto
                                 neededQty: (mod.quantity || 1) * quantityToDeduct
                             });
                         }
