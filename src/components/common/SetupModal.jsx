@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
 import LazyImage from './LazyImage';
-import { ChevronDown, CheckCircle, Lock } from 'lucide-react'; 
+import { ChevronDown, CheckCircle, Lock, Loader2 } from 'lucide-react'; // [Modificado] Agregamos Loader2
 import './SetupModal.css';
 import Logger from '../../services/Logger';
 
@@ -21,6 +21,9 @@ const BUSINESS_RUBROS = [
 export default function SetupModal() {
   const handleSetup = useAppStore((state) => state.handleSetup);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+
+  // [Nuevo] Estado para controlar la carga
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     // Si la licencia NO permite todo ("*") y solo hay 1 rubro permitido...
@@ -46,14 +49,8 @@ export default function SetupModal() {
   // LÓGICA DE LICENCIA DINÁMICA (MEJORADA)
   // ============================================================
   
-  // 1. Obtener configuración de features desde la licencia
-  // Si no existen features (licencias viejas), asumimos defaults restrictivos (1 rubro, todos permitidos)
   const licenseFeatures = licenseDetails?.features || {};
-  
-  // 2. Definir límite máximo (Default 1 si no viene definido)
   const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
-  
-  // 3. Definir rubros permitidos (Si es ["*"] o undefined, permite todos)
   const allowedRubrosList = licenseFeatures.allowed_rubros || ['*'];
   const isAllAllowed = allowedRubrosList.includes('*');
 
@@ -61,38 +58,28 @@ export default function SetupModal() {
   const isStep1Complete = useMemo(() => name.trim().length > 0, [name]);
 
   const handleSectionToggle = (section) => {
-    // Si intentan abrir la sección 2 sin completar la 1, no hacemos nada
     if (section === 'type' && !isStep1Complete) return; 
     setActiveSection(activeSection === section ? '' : section);
   };
 
-  // --- LÓGICA DE SELECCIÓN CORREGIDA ---
   const handleTypeClick = (value) => {
     setError('');
     
-    // VALIDACIÓN PREVIA: ¿La licencia permite este rubro específico?
     if (!isAllAllowed && !allowedRubrosList.includes(value)) {
         setError("Tu licencia no incluye acceso a este rubro específico.");
         return;
     }
     
     setSelectedTypes(prev => {
-      // 1. Si ya está seleccionado, lo quitamos (Toggle Off)
       if (prev.includes(value)) {
         return prev.filter(t => t !== value);
       }
-
-      // 2. Si el límite es 1, funciona como Radio Button (Reemplaza la selección anterior)
       if (maxRubrosAllowed === 1) {
         return [value];
       }
-
-      // 3. Modo Multi: Si no hemos llegado al límite, agregamos (Checkbox behavior)
       if (prev.length < maxRubrosAllowed) {
         return [...prev, value];
       }
-      
-      // 4. Si excedió el límite en modo normal, mostramos error
       setError(`Tu licencia permite máximo ${maxRubrosAllowed} rubros.`);
       return prev;
     });
@@ -111,32 +98,44 @@ export default function SetupModal() {
     }
   };
 
-  const handleSubmit = (e) => {
+  // [Modificado] Convertimos a async para manejar la espera
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (selectedTypes.length === 0) {
       setError('⚠️ Debes seleccionar al menos un rubro para finalizar.');
-      // Si están en el paso 1 y le dan Enter, nos aseguramos que vean el error del paso 2
       if (activeSection !== 'type') setActiveSection('type');
       return;
     }
 
-    handleSetup({
-      name,
-      phone,
-      address,
-      logo: logoData,
-      business_type: selectedTypes
-    });
+    // Iniciamos estado de carga
+    setIsSubmitting(true);
+    setError(''); // Limpiar errores previos
+
+    try {
+      // Esperamos a que el store termine el proceso (subida de archivos + guardado en DB)
+      await handleSetup({
+        name,
+        phone,
+        address,
+        logo: logoData,
+        business_type: selectedTypes
+      });
+      // Nota: Si es exitoso, el appStatus cambiará en el store y este componente probablemente se desmonte.
+    } catch (err) {
+      Logger.error("Error en submit setup:", err);
+      setError("Ocurrió un error al guardar. Intenta de nuevo.");
+    } finally {
+      // Si falla o termina, quitamos el loading (si el componente sigue montado)
+      setIsSubmitting(false);
+    }
   };
 
-  // Botón "Siguiente" dentro del Paso 1
   const handleContinue = (e) => {
     e.preventDefault(); 
     if (isStep1Complete) {
       setActiveSection('type');
     } else {
-        // Feedback visual si intentan avanzar sin nombre
         const nameInput = document.getElementById('setup-name-input');
         if(nameInput) nameInput.focus();
     }
@@ -154,7 +153,7 @@ export default function SetupModal() {
           
           {/* --- ACORDEÓN 1: INFORMACIÓN --- */}
           <div className={`accordion-item ${activeSection === 'info' ? 'open' : ''} ${isStep1Complete ? 'completed' : ''}`}>
-            <div className="accordion-header" onClick={() => handleSectionToggle('info')}>
+            <div className="accordion-header" onClick={() => !isSubmitting && handleSectionToggle('info')}>
               <div className="header-title">
                 <span className="step-number">1</span>
                 <span>Información General</span>
@@ -178,6 +177,7 @@ export default function SetupModal() {
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Ej: Mi Tiendita" 
                     autoFocus 
+                    disabled={isSubmitting} // Deshabilitar inputs
                   />
                 </div>
 
@@ -186,17 +186,21 @@ export default function SetupModal() {
                     <label className="form-label">Teléfono</label>
                     <input className="form-input" type="tel"
                       value={phone} onChange={(e) => setPhone(e.target.value)}
-                      placeholder="Ej: 961..." />
+                      placeholder="Ej: 961..." 
+                      disabled={isSubmitting}
+                    />
                   </div>
                   <div className="form-group logo-group">
                     <label className="form-label">Logo</label>
                     <div className="mini-logo-upload">
-                        <label htmlFor="logo-upload" className="logo-preview-wrapper">
+                        <label htmlFor="logo-upload" className={`logo-preview-wrapper ${isSubmitting ? 'disabled' : ''}`}>
                             <LazyImage src={logoPreview} alt="Logo" />
-                            <div className="overlay">📷</div>
+                            {!isSubmitting && <div className="overlay">📷</div>}
                         </label>
                         <input id="logo-upload" type="file" accept="image/*" 
-                            onChange={handleImageChange} style={{display:'none'}} />
+                            onChange={handleImageChange} style={{display:'none'}} 
+                            disabled={isSubmitting}
+                        />
                     </div>
                   </div>
                 </div>
@@ -205,7 +209,9 @@ export default function SetupModal() {
                   <label className="form-label">Dirección</label>
                   <textarea className="form-textarea" rows="2"
                     value={address} onChange={(e) => setAddress(e.target.value)}
-                    placeholder="Dirección del local..." />
+                    placeholder="Dirección del local..." 
+                    disabled={isSubmitting}
+                  />
                 </div>
 
                 <div className="step-actions">
@@ -213,7 +219,7 @@ export default function SetupModal() {
                     type="button" 
                     className="btn btn-primary btn-next" 
                     onClick={handleContinue}
-                    disabled={!isStep1Complete}
+                    disabled={!isStep1Complete || isSubmitting}
                   >
                     Continuar
                   </button>
@@ -222,9 +228,9 @@ export default function SetupModal() {
             )}
           </div>
 
-          {/* --- ACORDEÓN 2: RUBROS (BLOQUEADO HASTA PASO 1) --- */}
+          {/* --- ACORDEÓN 2: RUBROS --- */}
           <div className={`accordion-item ${activeSection === 'type' ? 'open' : ''} ${!isStep1Complete ? 'locked' : ''}`}>
-            <div className="accordion-header" onClick={() => handleSectionToggle('type')}>
+            <div className="accordion-header" onClick={() => !isSubmitting && handleSectionToggle('type')}>
               <div className="header-title">
                 <span className="step-number">2</span>
                 <span>Giro del Negocio</span>
@@ -237,7 +243,7 @@ export default function SetupModal() {
             {activeSection === 'type' && (
               <div className="accordion-body">
                 <p className="rubro-intro">
-                  Selecciona a qué se dedica tu empresa. Esto activará funciones especiales (recetas, tallas, caducidad, etc.).
+                  Selecciona a qué se dedica tu empresa. Esto activará funciones especiales.
                 </p>
 
                 {maxRubrosAllowed === 1 && (
@@ -246,9 +252,8 @@ export default function SetupModal() {
                   </div>
                 )}
 
-                <div className="rubro-grid">
+                <div className={`rubro-grid ${isSubmitting ? 'disabled-grid' : ''}`}>
                   {BUSINESS_RUBROS.map(rubro => {
-                    // Verificar visualmente si está bloqueado por licencia
                     const isLockedByLicense = !isAllAllowed && !allowedRubrosList.includes(rubro.id);
                     const isSelected = selectedTypes.includes(rubro.id);
 
@@ -256,8 +261,9 @@ export default function SetupModal() {
                       <div
                         key={rubro.id}
                         className={`rubro-card ${isSelected ? 'selected' : ''} ${isLockedByLicense ? 'disabled' : ''}`}
-                        onClick={() => !isLockedByLicense && handleTypeClick(rubro.id)}
-                        style={isLockedByLicense ? { opacity: 0.5, cursor: 'not-allowed', filter: 'grayscale(1)' } : {}}
+                        // Bloquear clicks si está enviando
+                        onClick={() => !isLockedByLicense && !isSubmitting && handleTypeClick(rubro.id)}
+                        style={isLockedByLicense || isSubmitting ? { opacity: 0.5, cursor: 'not-allowed', filter: isLockedByLicense ? 'grayscale(1)' : 'none' } : {}}
                         title={isLockedByLicense ? "No incluido en tu licencia" : ""}
                       >
                         <span className="rubro-icon">{rubro.icon}</span>
@@ -271,8 +277,21 @@ export default function SetupModal() {
                 {error && <div className="error-message">{error}</div>}
 
                 <div className="step-actions end">
-                  <button type="submit" className="btn btn-save btn-finish">
-                    ¡Finalizar y Empezar! 🚀
+                  {/* [Modificado] Botón con estado de carga */}
+                  <button 
+                    type="submit" 
+                    className="btn btn-save btn-finish"
+                    disabled={isSubmitting} // Importante: Deshabilitar para evitar doble clic
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="animate-spin" size={20} />
+                        Configurando...
+                      </>
+                    ) : (
+                      '¡Finalizar y Empezar! 🚀'
+                    )}
                   </button>
                 </div>
               </div>

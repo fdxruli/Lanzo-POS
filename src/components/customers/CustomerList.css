@@ -3,10 +3,22 @@
 /* Contenedor de la Grid */
 .customer-list {
   display: grid;
-  /* Tarjetas responsivas: mínimo 300px, si cabe más se estiran */
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  
+  /* CAMBIO: Reducir el minmax de 320px a 100% o algo menor (ej. 260px) 
+     para que en móviles ocupe todo el ancho disponible sin romperse */
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  
   gap: var(--spacing-lg);
   padding-bottom: var(--spacing-xl);
+  
+  /* Asegura que ocupe el ancho disponible */
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .customer-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Diseño de la Tarjeta */

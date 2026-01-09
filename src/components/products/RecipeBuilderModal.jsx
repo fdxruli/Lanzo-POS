@@ -14,7 +14,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
   // Filtramos sobre 'menu' para obtener solo los insumos activos
   const availableIngredients = useMemo(() => {
     return menu.filter(p => p.productType === 'ingredient' && p.isActive !== false);
-  }, [menu]); 
+  }, [menu]);
 
   // Estado local de la receta
   const [recipeItems, setRecipeItems] = useState([]);
@@ -172,16 +172,28 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
                   </td>
                 </tr>
               ) : (
-                recipeItems.map((item, idx) => (
-                  <tr key={idx}>
-                    <td>{item.name}</td>
-                    <td>{item.quantity} {item.unit}</td>
-                    <td>${(item.estimatedCost || 0).toFixed(2)}</td>
-                    <td>
-                      <button className="btn-icon-remove" onClick={() => handleRemove(item.ingredientId)}>🗑️</button>
-                    </td>
-                  </tr>
-                ))
+                recipeItems.map((item, idx) => {
+                  // VERIFICACIÓN: ¿Existe el ingrediente en el menú actual?
+                  const originalIngredient = menu.find(p => p.id === item.ingredientId);
+                  const isMissing = !originalIngredient;
+
+                  return (
+                    <tr key={idx} style={{ backgroundColor: isMissing ? '#fff0f0' : 'transparent' }}>
+                      <td>
+                        {item.name}
+                        {isMissing && <span style={{ color: 'red', fontSize: '0.8em', display: 'block' }}>⚠️ (Insumo eliminado)</span>}
+                      </td>
+                      <td>{item.quantity} {item.unit}</td>
+                      <td>
+                        {/* Si falta el insumo, el costo estimado no se puede calcular con precisión actualizada */}
+                        ${(isMissing ? (item.estimatedCost || 0) : (originalIngredient.cost * item.quantity)).toFixed(2)}
+                      </td>
+                      <td>
+                        <button className="btn-icon-remove" onClick={() => handleRemove(item.ingredientId)}>🗑️</button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -71,6 +71,12 @@ export default function RestaurantProductForm({ onSave, onCancel, productToEdit,
             return;
         }
 
+        const emptyOpcion = modifiers.some(m => m.options.some(opt => !opt.name || opt.name.trim() === ''));
+        if (emptyOpcion) {
+            showMessageModal('⚠️ Opción Vacía', 'Una de las opciones de tus modificadores no tiene nombre. Por favor revísalo.', { type: 'error' });
+            return;
+        }
+
         common.setIsSaving(true);
         try {
             const commonData = common.getCommonData();

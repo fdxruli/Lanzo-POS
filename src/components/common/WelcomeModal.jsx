@@ -4,6 +4,7 @@ import ContactModal from './ContactModal';
 import { sendWhatsAppMessage } from '../../services/utils';
 import './WelcomeModal.css';
 import Logger from '../../services/Logger';
+import { getStableDeviceId } from '../../services/supabase';
 
 const supportFields = [
   { id: 'name', label: 'Tu Nombre', type: 'input' },
@@ -24,7 +25,7 @@ export default function WelcomeModal() {
   useEffect(() => {
     const handleOnline = () => {
         setIsOnline(true);
-        setErrorMessage(''); // Limpiar error si vuelve la red
+        setErrorMessage('');
     };
     const handleOffline = () => {
         setIsOnline(false);
@@ -32,6 +33,19 @@ export default function WelcomeModal() {
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    const prewarmIdenty = async () => {
+      try {
+        await getStableDeviceId();
+        Logger.info("Identificador de dispositivo pre-cargado correctamente.");
+      } catch (error) {
+        Logger.error("Error al pre-cargar el identificador de dispositivo, (se intentará de nuevo al dar clic):", error);
+      }
+    };
+
+    if(navigator.onLine) {
+      prewarmIdenty();
+    }
 
     return () => {
       window.removeEventListener('online', handleOnline);

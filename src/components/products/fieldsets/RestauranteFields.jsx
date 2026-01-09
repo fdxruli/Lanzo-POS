@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useProductStore } from '../../../store/useProductStore';
 
 export default function RestauranteFields({
   productType, setProductType,
@@ -34,11 +35,12 @@ export default function RestauranteFields({
   };
 
   // Función para agregar una opción a un grupo (ej: "Queso" al grupo "Extras")
-  const addOptionToGroup = (groupIndex, optionName, price) => {
-    const updated = [...(modifiers || [])]; // Aseguramos que sea array
+  const addOptionToGroup = (groupIndex, optionName, price, ingredientId = null) => {
+    const updated = [...(modifiers || [])];
     updated[groupIndex].options.push({
       name: optionName,
-      price: parseFloat(price) || 0
+      price: parseFloat(price) || 0,
+      ingredientId: ingredientId // <--- Guardamos el ID para descontar inventario
     });
     setModifiers(updated);
   };
@@ -48,6 +50,12 @@ export default function RestauranteFields({
     updated[groupIndex].options.splice(optionIndex, 1);
     setModifiers(updated);
   };
+
+  // 1. Traemos solo el menú (referencia estable)
+  const menu = useProductStore(state => state.menu);
+
+  // 2. Filtramos durante el renderizado (esto no causa bucles)
+  const ingredientList = menu.filter(p => p.productType === 'ingredient' && p.isActive !== false);
 
   return (
     <div className="restaurant-fields-container" style={{ animation: 'fadeIn 0.3s' }}>
@@ -106,9 +114,6 @@ export default function RestauranteFields({
                 onChange={(e) => setPrintStation(e.target.value)}
               >
                 <option value="kitchen">🍳 Cocina</option>
-                <option value="bar">🍹 Barra / Bebidas</option>
-                <option value="dessert">🍰 Postres</option>
-                <option value="none">🚫 No Imprimir</option>
               </select>
             </div>
           </div>
@@ -170,19 +175,67 @@ export default function RestauranteFields({
                   </div>
 
                   {/* Agregar Opción al Grupo */}
-                  <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
-                    <input id={`opt-name-${idx}`} type="text" className="form-input" placeholder="Opción (ej: Roja)" style={{ padding: '5px', fontSize: '0.9rem' }} />
-                    <input id={`opt-price-${idx}`} type="number" className="form-input" placeholder="$ Extra" style={{ width: '80px', padding: '5px', fontSize: '0.9rem' }} />
-                    <button type="button" className="btn btn-help" style={{ margin: 0, padding: '0 10px' }} onClick={() => {
-                      const nameInput = document.getElementById(`opt-name-${idx}`);
-                      const priceInput = document.getElementById(`opt-price-${idx}`);
-                      if (nameInput.value) {
-                        addOptionToGroup(idx, nameInput.value, priceInput.value);
-                        nameInput.value = '';
-                        priceInput.value = '';
-                        nameInput.focus();
-                      }
-                    }}>+</button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px', padding: '10px', backgroundColor: '#fff', borderRadius: '5px' }}>
+
+                    {/* Fila 1: Nombre y Precio */}
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <input
+                        id={`opt-name-${idx}`}
+                        type="text"
+                        className="form-input"
+                        placeholder="Opción (ej: Queso Extra)"
+                        style={{ padding: '5px', fontSize: '0.9rem', flex: 1 }}
+                      />
+                      <input
+                        id={`opt-price-${idx}`}
+                        type="number"
+                        className="form-input"
+                        placeholder="$ Extra"
+                        style={{ width: '80px', padding: '5px', fontSize: '0.9rem' }}
+                      />
+                    </div>
+
+                    {/* Fila 2: Selector de Insumo (Funcionalidad Restaurada) */}
+                    <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                      <select
+                        id={`opt-ing-${idx}`} // ID único por grupo
+                        className="form-input"
+                        style={{ fontSize: '0.85rem', flex: 1, color: '#444' }}
+                      >
+                        <option value="">-- Solo Texto (No descuenta stock) --</option>
+                        {ingredientList.map(ing => (
+                          <option key={ing.id} value={ing.id}>
+                            {ing.name} (Stock: {ing.stock})
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Botón de Agregar corregido */}
+                      <button
+                        type="button"
+                        className="btn btn-help"
+                        style={{ margin: 0, padding: '0 15px', height: '35px' }}
+                        onClick={() => {
+                          // Capturamos los valores por ID
+                          const nameInput = document.getElementById(`opt-name-${idx}`);
+                          const priceInput = document.getElementById(`opt-price-${idx}`);
+                          const ingInput = document.getElementById(`opt-ing-${idx}`); // Capturamos el select
+
+                          if (nameInput.value) {
+                            // Pasamos el valor del ingrediente a la función
+                            addOptionToGroup(idx, nameInput.value, priceInput.value, ingInput.value);
+
+                            // Limpiamos los campos
+                            nameInput.value = '';
+                            priceInput.value = '';
+                            ingInput.value = '';
+                            nameInput.focus();
+                          }
+                        }}
+                      >
+                        + Agregar
+                      </button>
+                    </div>
                   </div>
 
                   {/* Lista de Opciones del Grupo */}
