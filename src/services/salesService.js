@@ -27,8 +27,17 @@ const validateRecipeStock = (orderItems, allProducts) => {
             for (const ing of product.recipe) {
                 const ingredientProd = allProducts.find(p => p.id === ing.ingredientId);
 
-                // Si el insumo no existe (fue borrado), lo saltamos
-                if (!ingredientProd) continue;
+                // AHORA: Detectamos insumo fantasma y bloqueamos
+                if (!ingredientProd) {
+                    missingIngredients.push({
+                        productName: product.name,
+                        ingredientName: `ERROR CRÍTICO: Insumo ID ${ing.ingredientId} no existe (Fue borrado)`,
+                        needed: 0,
+                        available: 0,
+                        unit: 'ERROR'
+                    });
+                    continue; 
+                }
 
                 // Cantidad total necesaria: (Cant. en receta) * (Cant. vendida)
                 const totalNeeded = ing.quantity * item.quantity;
