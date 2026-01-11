@@ -248,9 +248,20 @@ export default function RestauranteFields({
                   {/* Lista de Opciones del Grupo */}
                   <ul style={{ paddingLeft: '20px', margin: 0 }}>
                     {group.options.map((opt, optIdx) => (
-                      <li key={optIdx} style={{ fontSize: '0.9rem', color: 'var(--text-color)', marginBottom: '4px' }}>
-                        {opt.name} {opt.price > 0 && <span style={{ color: 'var(--success-color)', fontWeight: 'bold' }}>(+${opt.price})</span>}
-                        <button type="button" style={{ marginLeft: '10px', color: '#999', border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => removeOptionFromGroup(idx, optIdx)}>x</button>
+                      <li key={optIdx} style={{ fontSize: '0.9rem', color: 'var(--text-color)', marginBottom: '4px', display: 'flex', alignItems: 'center' }}>
+
+                        {/* Nombre y Precio */}
+                        <span>{opt.name} {opt.price > 0 && <span style={{ color: 'var(--success-color)', fontWeight: 'bold' }}>(+${opt.price})</span>}</span>
+
+                        {/* --- CORRECCIÓN NUEVA: Alerta visual si cobra pero no descuenta --- */}
+                        {opt.price > 0 && !opt.ingredientId && (
+                          <span title="⚠️ Cobra precio pero NO descuenta inventario (¿Es un servicio?)" style={{ marginLeft: '8px', cursor: 'help', fontSize: '1.2rem' }}>
+                            ⚠️
+                          </span>
+                        )}
+                        {/* ---------------------------------------------------------------- */}
+
+                        <button type="button" style={{ marginLeft: 'auto', color: '#999', border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => removeOptionFromGroup(idx, optIdx)}>x</button>
                       </li>
                     ))}
                   </ul>
