@@ -89,10 +89,10 @@ export default function DashboardPage() {
         </button>
 
         <button
-             className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`}
-             onClick={() => setActiveTab('expiration')}
+          className={`tab-btn ${activeTab === 'tips' ? 'active' : ''}`}
+          onClick={() => setActiveTab('tips')}
         >
-             Caducidad
+          Consejos Lan
         </button>
 
         {features.hasMinMax && (
@@ -110,12 +110,12 @@ export default function DashboardPage() {
         >
           Historial y Papelera
         </button>
-        
+
         <button
-          className={`tab-btn ${activeTab === 'tips' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tips')}
+             className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`}
+             onClick={() => setActiveTab('expiration')}
         >
-          Consejos
+             Caducidad
         </button>
         
         {features.hasWaste && (
@@ -136,17 +136,12 @@ export default function DashboardPage() {
         <StatsGrid stats={stats} />
       )}
 
-      {/* 2. CADUCIDAD */}
-      {activeTab === 'expiration' && (
-        <ExpirationAlert />
-      )}
-
-      {/* 3. REABASTECIMIENTO */}
+      {/* 2. REABASTECIMIENTO */}
       {activeTab === 'restock' && (
         <RestockSuggestions />
       )}
 
-      {/* 4. HISTORIAL Y PAPELERA (MEJORADO) */}
+      {/* 3. HISTORIAL Y PAPELERA (MEJORADO) */}
       {activeTab === 'history' && (
         <div className="tab-content fade-in">
           {/* Banner de Advertencia */}
@@ -195,9 +190,14 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 5. CONSEJOS */}
+      {/* 4. CONSEJOS */}
       {activeTab === 'tips' && (
         <BusinessTips sales={sales} menu={menu} customers={customers} />
+      )}
+
+      {/* 5. CADUCIDAD */}
+      {activeTab === 'expiration' && (
+        <ExpirationAlert />
       )}
 
       {/* 6. MERMAS */}

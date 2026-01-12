@@ -105,7 +105,9 @@ export const processSale = async ({
                 // C) NUEVO: Recogemos IDs de los Modificadores (Extras)
                 if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
                     item.selectedModifiers.forEach(mod => {
-                        if (mod.ingredientId) uniqueIngredientIds.add(mod.ingredientId);
+                        if (mod.ingredientId && mod.ingredientId.trim() !== '') {
+                            uniqueIngredientIds.add(mod.ingredientId);
+                        }
                     });
                 }
             });
