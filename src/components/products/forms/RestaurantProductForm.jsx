@@ -82,12 +82,23 @@ export default function RestaurantProductForm({ onSave, onCancel, productToEdit,
             const commonData = common.getCommonData();
             const productId = productToEdit?.id || generateID('prod');
 
+            let finalRecipe = recipe;
+            let finalStock = commonData.stock;
+
+            if(productType === 'ingredient') {
+                // Insumos no usan receta
+                finalRecipe = [];
+            } else {
+                finalStock = 0; // Platillos no manejan stock directo
+            }
+
             const payload = {
                 id: productId,
                 ...commonData,
+                stock: finalStock,
                 rubroContext: activeRubroContext,
                 productType,
-                recipe,
+                recipe: finalRecipe,
                 printStation,
                 prepTime,
                 modifiers,

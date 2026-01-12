@@ -223,7 +223,7 @@ export default function RestauranteFields({
 
                           if (nameInput.value) {
                             // ⚠️ CORRECCIÓN CRÍTICA: Guardamos el ingredientId como string o null
-                            const linkedIngredientId = ingInput.value || null;
+                            const linkedIngredientId = ingInput.value.trim() || '';
 
                             addOptionToGroup(
                               idx,

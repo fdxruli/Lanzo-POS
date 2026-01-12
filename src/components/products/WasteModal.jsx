@@ -4,12 +4,13 @@ import { saveDataSafe, STORES } from '../../services/database';
 import { generateID, showMessageModal, roundCurrency } from '../../services/utils';
 // --- CAMBIO: Usamos el store correcto (Estadísticas) ---
 import { useStatsStore } from '../../store/useStatsStore';
+import { useProductStore } from '../../store/useProductStore';
 
 export default function WasteModal({ show, onClose, product, onConfirm }) {
     const [quantity, setQuantity] = useState('');
     const [reason, setReason] = useState('caducado'); // caducado, dañado, etc.
     const [notes, setNotes] = useState('');
-
+    const menu = useProductStore(state => state.menu);
     // --- CAMBIO: Usamos el hook del store de estadísticas ---
     const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
 
@@ -24,49 +25,103 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
             return;
         }
 
-        if (qty > product.stock) {
-            alert("No puedes mermar más de lo que tienes en stock.");
-            return;
+        // --- LÓGICA INTELIGENTE DE MERMA ---
+        let totalCostLoss = 0;
+        let wasteDetails = '';
+
+        // CASO A: Es un Platillo con Receta (Explosión de Insumos)
+        if (product.productType === 'sellable' && product.recipe && product.recipe.length > 0) {
+
+            // Confirmación extra porque esto afectará varios productos
+            if (!window.confirm(`Al mermar este platillo se descontarán sus ingredientes del inventario.\n¿Confirmar merma de ${qty} ${product.name}?`)) {
+                return;
+            }
+
+            const ingredientsToUpdate = [];
+
+            // 1. Calcular descuentos necesarios
+            for (const item of product.recipe) {
+                const ingredient = menu.find(p => p.id === item.ingredientId);
+
+                if (ingredient) {
+                    const amountNeeded = item.quantity * qty;
+
+                    // Validación de Stock del Ingrediente (Opcional: permitir negativo si ya se tiró)
+                    // Aquí decidimos permitir que se vaya a negativo para reflejar la realidad: la comida se tiró.
+
+                    const newStock = (ingredient.stock || 0) - amountNeeded;
+                    const itemCost = (ingredient.cost || 0) * amountNeeded;
+
+                    ingredientsToUpdate.push({
+                        ...ingredient,
+                        stock: newStock,
+                        updatedAt: new Date().toISOString()
+                    });
+
+                    totalCostLoss += itemCost;
+                    wasteDetails += `${ingredient.name} (-${amountNeeded.toFixed(3)} ${item.unit}), `;
+                }
+            }
+
+            // 2. Aplicar descuentos en Base de Datos
+            // (Lo hacemos secuencial para asegurar integridad)
+            try {
+                await Promise.all(ingredientsToUpdate.map(ing => saveDataSafe(STORES.MENU, ing)));
+            } catch (error) {
+                alert("Error al descontar ingredientes: " + error.message);
+                return;
+            }
+
+        }
+        // CASO B: Es un Insumo o Producto Directo (Descuento Simple)
+        else {
+            if (qty > product.stock) {
+                alert("No puedes mermar más de lo que tienes en stock.");
+                return;
+            }
+
+            const updatedProduct = {
+                ...product,
+                stock: product.stock - qty,
+                updatedAt: new Date().toISOString()
+            };
+
+            const prodResult = await saveDataSafe(STORES.MENU, updatedProduct);
+            if (!prodResult.success) {
+                alert(`Error al actualizar stock: ${prodResult.error?.message}`);
+                return;
+            }
+
+            totalCostLoss = (product.cost || 0) * qty;
+            wasteDetails = 'Descuento directo de inventario';
         }
 
-        // 1. Descontar del inventario directamente (Stock global)
-        const updatedProduct = {
-            ...product,
-            stock: product.stock - qty,
-            updatedAt: new Date().toISOString()
-        };
-
-        const prodResult = await saveDataSafe(STORES.MENU, updatedProduct);
-        if (!prodResult.success) {
-            alert(`Error al actualizar stock: ${prodResult.error?.message}`);
-            return;
-        }
-
+        // --- REGISTRO DE LA MERMA (LOG) ---
         const wasteRecord = {
             id: generateID('waste'),
             productId: product.id,
             productName: product.name,
             quantity: qty,
-            unit: product.bulkData?.purchase?.unit || 'u',
-            costAtTime: product.cost || 0,
-            lossAmount: roundCurrency((product.cost || 0) * qty),
+            unit: product.bulkData?.purchase?.unit || (product.productType === 'sellable' ? 'orden' : 'u'),
+            costAtTime: totalCostLoss / qty, // Costo unitario promedio de esta merma
+            lossAmount: roundCurrency(totalCostLoss),
             reason: reason,
-            notes: notes,
+            notes: `${notes} [Detalles: ${wasteDetails}]`,
             timestamp: new Date().toISOString()
         };
 
         const wasteResult = await saveDataSafe(STORES.WASTE, wasteRecord);
 
         if (!wasteResult.success) {
-            alert(`Advertencia: El stock se descontó pero falló el registro de merma: ${wasteResult.error?.message}`);
-            // Aun así continuamos porque el stock es lo crítico
+            alert(`Advertencia: Inventario actualizado pero falló el registro de historial.`);
         }
 
-        const lossAmount = (product.cost || 0) * qty;
-        await adjustInventoryValue(-lossAmount);
-        showMessageModal(`✅ Merma registrada. Stock actualizado.\nPérdida estimada: $${lossAmount.toFixed(2)}`);
+        // Actualizar valor financiero global
+        await adjustInventoryValue(-totalCostLoss);
 
-        onConfirm();
+        showMessageModal(`✅ Merma registrada.\nSe descontaron los insumos correctamente.\nPérdida: $${totalCostLoss.toFixed(2)}`);
+
+        onConfirm(); // Recargar lista
         onClose();
         setQuantity(''); setNotes('');
     };
@@ -94,6 +149,9 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
                             <option value="dañado">🤕 Se aplastó / Dañado</option>
                             <option value="robo">🕵️ Robo / Faltante</option>
                             <option value="degustacion">😋 Degustación / Regalo</option>
+                            <option value="quemado">🔥 Se quemó en cocina</option>
+                            <option value="error_pedido">❌ Error en pedido / Cliente lo rechazó</option>
+                            <option value="contaminacion">⚠️ Contaminación cruzada</option>
                         </select>
                     </div>
 

@@ -23,6 +23,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
   const [selectedIngredientId, setSelectedIngredientId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState('');
+  const [useSmallUnit, setUseSmallUnit] = useState(false);
 
   // Cargar receta existente al abrir
   useEffect(() => {
@@ -41,12 +42,16 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
   const handleIngredientSelect = (e) => {
     const id = e.target.value;
     setSelectedIngredientId(id);
+    setUseSmallUnit(false);
 
     const ingredient = availableIngredients.find(i => i.id === id);
-    if (ingredient && ingredient.saleType === 'bulk') {
-      setUnit(ingredient.bulkData?.purchase?.unit || 'kg');
+    if (ingredient) {
+      const baseUnit = ingredient.unit || 'bulk'
+        ? (ingredient.bulkData?.purchase?.unit || 'kg')
+        : 'pza';
+      setUnit(baseUnit);
     } else {
-      setUnit('pza');
+      setUnit('');
     }
   };
 
@@ -67,10 +72,19 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     // Usamos el costo actual del ingrediente (que viene del lote activo en 'menu')
     const currentCost = ingredient.cost || 0;
 
+    let finalQuantity = parseFloat(quantity);
+    let finalUnit = unit;
+    let contMultiplier = finalQuantity;
+
+    if (useSmallUnit) {
+      // Convertir a unidad pequeña según bulkData
+      finalQuantity = finalQuantity / 1000;
+    }
+
     const newItem = {
       ingredientId: ingredient.id,
       name: ingredient.name,
-      quantity: parseFloat(quantity),
+      quantity: finalQuantity,
       unit: unit,
       estimatedCost: roundCurrency(currentCost * parseFloat(quantity))
     };
@@ -128,26 +142,46 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
             </div>
 
             <div className="form-group" style={{ flex: 1 }}>
-              <label>Cantidad</label>
+              <label>
+                Cantidad
+                {/* Label dinámico para guiar al usuario */}
+                {useSmallUnit ? <small style={{ color: 'green' }}> (en {unit === 'kg' ? 'gramos' : 'mililitros'})</small> : ''}
+              </label>
               <input
                 type="number"
                 className="form-input"
                 placeholder="0.00"
-                step="0.01"
+                step={useSmallUnit ? "1" : "0.001"} // Pasos enteros para gramos, decimales para kilos
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
               />
             </div>
 
-            <div className="form-group" style={{ flex: 0.8 }}>
+            <div className="form-group" style={{ flex: 0.8, display: 'flex', flexDirection: 'column' }}>
               <label>Unidad</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="kg/lt"
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-              />
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={unit}
+                  disabled // BLOQUEADO: No dejar editar manualmente para evitar errores
+                  style={{ backgroundColor: '#f3f4f6', color: '#666', width: '60px' }}
+                />
+
+                {/* Solo mostramos el convertidor si es KG o LT */}
+                {(unit === 'kg' || unit === 'lt') && (
+                  <label className="toggle-switch" style={{ cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={useSmallUnit}
+                      onChange={(e) => setUseSmallUnit(e.target.checked)}
+                      style={{ marginRight: '4px' }}
+                    />
+                    <span>Usar {unit === 'kg' ? 'gr' : 'ml'}</span>
+                  </label>
+                )}
+              </div>
             </div>
 
             <button type="button" className="btn btn-add-ing" onClick={handleAdd}>+</button>
