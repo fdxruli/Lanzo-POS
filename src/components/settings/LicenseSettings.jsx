@@ -69,6 +69,20 @@ export default function LicenseSettings() {
         if (companyProfile) await updateCompanyProfile({ ...companyProfile, business_type: newSelection });
     };
 
+    // --- NUEVA FUNCIÓN PARA CONFIRMAR EL LOGOUT ---
+    const handleLogout = () => {
+        const confirmMessage = "⚠️ ADVERTENCIA DE SEGURIDAD ⚠️\n\n" +
+            "¿Estás seguro de que deseas cerrar sesión en este dispositivo?\n\n" +
+            "Ten en cuenta lo siguiente:\n" +
+            "1. Es posible que NO puedas volver a activar la misma licencia si ya está vinculada a este equipo.\n" +
+            "2. Probablemente NO se generará una nueva licencia de prueba porque este dispositivo ya tiene historial de uso.\n\n" +
+            "¿Deseas continuar de todos modos?";
+
+        if (window.confirm(confirmMessage)) {
+            logout(); // Solo se ejecuta si el usuario da click en "Aceptar"
+        }
+    };
+
     const renderLicenseInfo = () => {
         if (!licenseDetails || !licenseDetails.valid) return <p>No hay licencia activa.</p>;
         return (
@@ -97,7 +111,13 @@ export default function LicenseSettings() {
                 </div>
                 <h4 className="device-manager-title">Dispositivos Vinculados</h4>
                 <DeviceManager licenseKey={licenseDetails.license_key} />
-                <button className="btn btn-cancel" style={{ width: 'auto', marginTop: '1rem' }} onClick={logout}>
+                
+                {/* BOTÓN ACTUALIZADO */}
+                <button 
+                    className="btn btn-cancel" 
+                    style={{ width: 'auto', marginTop: '1rem' }} 
+                    onClick={handleLogout}
+                >
                     Cerrar Sesión en este dispositivo
                 </button>
             </div>
@@ -127,9 +147,8 @@ export default function LicenseSettings() {
                     const isSelected = selectedRubros.includes(rubro.id);
                     const isAllowed = isAllAllowed || allowedRubrosList.includes(rubro.id);
                     const isLimitReached = selectedRubros.length >= maxRubrosAllowed;
-                    const isHardLocked = maxRubrosAllowed === 1; // ¿Es licencia básica?
+                    const isHardLocked = maxRubrosAllowed === 1; 
 
-                    // --- LÓGICA DE ESTILOS MEJORADA ---
                     let opacity = 1;
                     let cursor = 'pointer';
                     let borderColor = '#e5e7eb';
@@ -138,24 +157,21 @@ export default function LicenseSettings() {
                     let fontWeight = 'normal';
 
                     if (!isAllowed) {
-                        // No permitido por licencia
                         opacity = 0.5;
                         cursor = 'not-allowed';
                     } else if (isSelected) {
-                        // === SELECCIONADO (ACTIVO) ===
                         borderColor = 'var(--primary-color)';
-                        backgroundColor = '#f0f9ff'; // Azul muy claro, se ve activo pero limpio
-                        fontWeight = '600'; // Negrita para que resalte
-                        textColor = '#1e3a8a'; // Azul oscuro para contraste
+                        backgroundColor = '#f0f9ff'; 
+                        fontWeight = '600'; 
+                        textColor = '#1e3a8a'; 
 
                         if (isHardLocked) {
-                            cursor = 'default'; // Cursor normal, no mano (no clicable)
+                            cursor = 'default'; 
                         }
                     } else if (isLimitReached || isHardLocked) {
-                        // No seleccionado y bloqueado (porque ya hay otro seleccionado o límite lleno)
                         opacity = 0.6;
                         cursor = 'not-allowed';
-                        backgroundColor = '#f9fafb'; // Gris muy suave
+                        backgroundColor = '#f9fafb'; 
                     }
 
                     return (
@@ -171,15 +187,14 @@ export default function LicenseSettings() {
                                 color: textColor,
                                 fontWeight: fontWeight,
                                 position: 'relative',
-                                transition: 'all 0.2s ease', // Suavizar cambio
-                                transform: isSelected ? 'scale(1.02)' : 'none', // Pequeño "pop" si está seleccionado
+                                transition: 'all 0.2s ease', 
+                                transform: isSelected ? 'scale(1.02)' : 'none', 
                                 boxShadow: isSelected ? '0 2px 5px rgba(0,0,0,0.05)' : 'none'
                             }}
                             title={isSelected && isHardLocked ? "Giro permanente de la licencia" : ""}
                         >
                             {rubro.label}
 
-                            {/* Iconos */}
                             {isSelected && (
                                 <span style={{ position: 'absolute', top: 5, right: 8, fontSize: '1rem' }}>
                                     {isHardLocked ? '🔒' : '✅'}

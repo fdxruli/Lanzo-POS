@@ -1,37 +1,64 @@
 // src/components/common/MessageModal.jsx
 import React from 'react';
-import { useMessageStore } from '../../store/useMessageStore';
+import { useMessageStore } from '../../store/useMessageStore'; //
 import './MessageModal.css';
 
 export default function MessageModal() {
-  // 1. Conectamos al store
-  const { isOpen, message, onConfirm, options, hide } = useMessageStore();
+  // Obtenemos estado y acciones del store
+  const { isOpen, message, onConfirm, options = {}, hide } = useMessageStore();
 
   if (!isOpen) {
     return null;
   }
 
+  // --- LÓGICA DE SEGURIDAD ---
+  // Por defecto (si no se especifica), el modal se puede cancelar y cerrar.
+  // Pero si options.showCancel es false, ocultamos el botón.
+  // Si options.isDismissible es false, bloqueamos el clic fuera.
+  const showCancel = options.showCancel !== false;     
+  const isDismissible = options.isDismissible !== false; 
+
   const confirmMode = typeof onConfirm === 'function';
 
-  // 2. Manejadores de botones que llaman a 'hide'
+  // Manejar confirmación
   const handleConfirm = () => {
+    // Primero ejecutamos la acción (ej. logout)
+    if (onConfirm) onConfirm();
+    // Luego ocultamos (aunque si es logout, la app se desmontará antes)
     hide();
-    onConfirm();
   };
 
+  // Manejar acción extra (botón secundario opcional)
   const handleExtraAction = () => {
     hide();
-    options.extraButton.action();
+    if (options.extraButton?.action) options.extraButton.action();
   };
 
-  // 3. HTML de tu 'message-modal' original
+  // Manejar clic en el fondo oscuro
+  const handleBackdropClick = () => {
+    if (isDismissible) {
+      hide();
+    }
+  };
+
   return (
-    <div id="message-modal" className="modal" style={{ display: 'flex' }}>
-      <div className="modal-content">
-        <h2 className="modal-title">Mensaje</h2>
-        <p id="modal-message" className="modal-message">{message}</p>
+    <div 
+      id="message-modal" 
+      className="modal" 
+      style={{ display: 'flex' }}
+      onClick={handleBackdropClick} // Interceptamos clic fuera
+    >
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <h2 className={`modal-title ${options.type || ''}`}>
+            {options.title || 'Mensaje'}
+        </h2>
+        
+        <p id="modal-message" className="modal-message" style={{ whiteSpace: 'pre-line' }}>
+            {message}
+        </p>
         
         <div className="modal-buttons">
+          {/* Botón Extra Opcional */}
           {options.extraButton && (
             <button className="btn btn-secondary" onClick={handleExtraAction}>
               {options.extraButton.text}
@@ -40,18 +67,22 @@ export default function MessageModal() {
 
           {confirmMode ? (
             <>
+              {/* BOTÓN CONFIRMAR (Siempre visible, ej: "Cerrar Sesión Ahora") */}
               <button className="btn btn-confirm" onClick={handleConfirm}>
-                {/* --- ¡AQUÍ ESTÁ LA CORRECCIÓN! --- */}
                 {options.confirmButtonText || 'Sí, continuar'}
               </button>
-              <button className="btn btn-cancel" onClick={hide}>
-                Cancelar
-              </button>
+
+              {/* BOTÓN CANCELAR (Solo si showCancel es true) */}
+              {showCancel && (
+                <button className="btn btn-cancel" onClick={hide}>
+                  Cancelar
+                </button>
+              )}
             </>
           ) : (
+            // Modo alerta simple
             <button className="btn btn-modal" onClick={hide}>
-              {/* (Opcional) Corregir aquí también para consistencia */}
-              {options.confirmButtonText || 'Aceptar'}
+              Aceptar
             </button>
           )}
         </div>
