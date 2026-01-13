@@ -72,8 +72,21 @@ export const calculateCompositePrice = (product, quantity) => {
   if (product.wholesaleTiers?.length > 0) {
     const tiersDesc = [...product.wholesaleTiers].sort((a, b) => b.min - a.min);
     const tier = tiersDesc.find(t => quantity >= t.min);
-    // CAMBIO AQUÍ: Asegurar que sea número
-    if (tier) return Number(tier.price);
+
+    if (tier) {
+      const tierPrice = Number(tier.price);
+      const replacementCost = Number(product.cost || 0);
+
+      // VALIDACIÓN DE SEGURIDAD (Solo afecta si el producto tiene costo definido)
+      // Si el precio de mayoreo es MENOR al costo de compra, ignoramos el mayoreo
+      // y cobramos el precio promedio calculado (avgPrice) para evitar pérdidas.
+      if (replacementCost > 0 && tierPrice < replacementCost) {
+        // Opcional: Podrías retornar replacementCost, pero avgPrice es más seguro para el margen.
+        return avgPrice;
+      }
+
+      return tierPrice;
+    }
   }
 
   return avgPrice;

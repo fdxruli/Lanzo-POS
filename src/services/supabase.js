@@ -367,9 +367,49 @@ export const uploadFile = async function (file, type = 'product') {
     }
 };
 
-export const deactivateCurrentDevice = async () => {
-    Logger.warn("Desactivación manual pendiente de implementación en backend anónimo.");
-    return { success: true };
+export const deactivateCurrentDevice = async (licenseKey) => {
+    try {
+        // A. Obtenemos la huella digital actual
+        const fingerprint = await getStableDeviceId();
+
+        // B. Buscamos en el servidor cuál es el ID de ESTE dispositivo
+        // Reutilizamos la RPC que ya usas para listar dispositivos
+        const { data: result, error: fetchError } = await supabaseClient.rpc('get_license_devices_anon', {
+            license_key_param: licenseKey,
+            current_fingerprint_param: fingerprint
+        });
+
+        if (fetchError || !result?.success) {
+            Logger.warn("No se pudo obtener lista de dispositivos para logout:", fetchError);
+            return { success: true }; // Fallamos "suavemente" para permitir salir localmente
+        }
+
+        // Buscamos el dispositivo que coincida con nuestra huella y esté marcado como actual
+        const myDevice = result.data.find(d => d.is_current_device || d.fingerprint === fingerprint);
+
+        if (myDevice) {
+            Logger.log(`🔒 Cerrando sesión en servidor para dispositivo: ${myDevice.device_name}`);
+
+            // C. Llamamos a la RPC de desactivación
+            const { error: deactivateError } = await supabaseClient.rpc('deactivate_device_anon', {
+                device_id_param: myDevice.device_id,
+                license_key_param: licenseKey,
+                requester_fingerprint_param: fingerprint
+            });
+
+            if (deactivateError) throw deactivateError;
+
+            return { success: true };
+        } else {
+            Logger.warn("Dispositivo no encontrado en la lista remota, cerrando localmente.");
+            return { success: true };
+        }
+
+    } catch (error) {
+        Logger.error('Error en deactivateCurrentDevice:', error);
+        // Retornamos true para no atrapar al usuario en un bucle si falla el internet
+        return { success: true, error: error.message };
+    }
 };
 
 export const createFreeTrial = async function () {

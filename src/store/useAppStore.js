@@ -386,18 +386,31 @@ export const useAppStore = create((set, get) => ({
           },
 
           onDeviceChanged: (event) => {
-            if (event.status === 'banned' || event.status === 'deleted') {
-              Logger.warn('🚫 [Realtime] Dispositivo revocado');
-              showMessageModal(
-                '🚫 ACCESO REVOCADO: Dispositivo desactivado.',
-                () => {
-                  get().logout();
-                  window.location.reload();
-                },
-                { type: 'error', confirmButtonText: 'Cerrar Sesión' }
-              );
+                if (event.status === 'banned' || event.status === 'deleted') {
+                    Logger.warn('🚫 [Realtime] Dispositivo revocado');
+                    
+                    showMessageModal(
+                        '🚫 ACCESO REVOCADO: Tu dispositivo ha sido desactivado remotamente.',
+                        async () => { // Hacemos esta función ASYNC
+                            try {
+                                // 1. Intentamos cerrar sesión limpiamente y ESPERAMOS
+                                await get().logout(); 
+                            } catch (e) {
+                                console.error(e);
+                            } finally {
+                                // 2. Solo después de intentar, recargamos
+                                window.location.reload();
+                            }
+                        },
+                        { 
+                            type: 'error', 
+                            confirmButtonText: 'Entendido, salir',
+                            showCancel: false, // Importante: que no puedan cancelar
+                            isDismissible: false // Importante: que no puedan cerrar clicando fuera
+                        }
+                    );
+                }
             }
-          }
         }
       );
 

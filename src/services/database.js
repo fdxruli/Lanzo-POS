@@ -228,6 +228,9 @@ export function initDB() {
 
         // C. CAJAS: Para encontrar la caja abierta actual sin recorrer todo el historial
         ensureIndex(STORES.CAJAS, 'estado', 'estado', { unique: false });
+
+        // D. CADUCIDAD: Para dashboard ultra-rapido
+        ensureIndex(STORES.PRODUCT_BATCHES, 'expiryDate', 'expiryDate', { unique: false });
       };
     });
 
@@ -1443,6 +1446,45 @@ export function searchProductBySKU(sku) {
         } else {
           resolve(null); // SKU no existe
         }
+      };
+
+      request.onerror = (e) => reject(e.target.error);
+    });
+  });
+}
+
+/**
+ * Obtiene lotes que vencen antes de una fecha límite.
+ * Optimizado con índice para no cargar toda la BD.
+ */
+export function getExpiringBatchesInRange(limitDateIsoString) {
+  return executeWithRetry(async () => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORES.PRODUCT_BATCHES], 'readonly');
+      const store = tx.objectStore(STORES.PRODUCT_BATCHES);
+
+      // Verificamos si existe el índice (por si el usuario olvidó subir versión DB)
+      if (!store.indexNames.contains('expiryDate')) {
+        Logger.warn('⚠️ Índice expiryDate no encontrado. Usando fallback lento.');
+        // Fallback: Devolver todo (Lento, pero funciona mientras actualizan)
+        const allReq = store.getAll();
+        allReq.onsuccess = () => resolve(allReq.result || []);
+        return;
+      }
+
+      const index = store.index('expiryDate');
+      // Rango: Desde el inicio de los tiempos hasta la fecha límite
+      const range = IDBKeyRange.upperBound(limitDateIsoString);
+
+      const request = index.getAll(range);
+
+      request.onsuccess = () => {
+        // Filtramos aquí stock > 0 y active para asegurar limpieza
+        // Es rápido porque ya solo tenemos los lotes con fecha "peligrosa"
+        const rawResults = request.result || [];
+        const validResults = rawResults.filter(b => b.stock > 0 && b.isActive !== false);
+        resolve(validResults);
       };
 
       request.onerror = (e) => reject(e.target.error);

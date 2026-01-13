@@ -39,6 +39,85 @@ export default function PosPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isMobileOrderOpen, setIsMobileOrderOpen] = useState(false);
 
+  const scanProductFast = useProductStore((state) => state.scanProductFast);
+  const { setOrder, order: currentOrder } = useOrderStore();
+
+  useEffect(() => {
+    let buffer = '';
+    let lastKeyTime = Date.now();
+
+    const handleKeyDown = async (e) => {
+      // Ignorar si el usuario está escribiendo en un input (buscador, cantidad, etc.)
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      const char = e.key;
+      const currentTime = Date.now();
+
+      // Si pasa mucho tiempo entre teclas (más de 100ms), reiniciamos (asumimos tipeo manual lento)
+      if (currentTime - lastKeyTime > 100) {
+        buffer = '';
+      }
+      lastKeyTime = currentTime;
+
+      if (char === 'Enter') {
+        if (buffer.length > 2) { // Mínimo 3 caracteres para evitar enter accidentales
+          e.preventDefault(); // Evitar submit de formularios
+          await processBarcode(buffer);
+        }
+        buffer = '';
+      } else if (char.length === 1) {
+        // Solo agregamos caracteres imprimibles
+        buffer += char;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // 3. FUNCIÓN DE PROCESAMIENTO (Sin parpadeos)
+  const processBarcode = async (code) => {
+    // Feedback visual opcional (sonido o toast)
+    // const audio = new Audio('/beep.mp3'); audio.play().catch(() => {}); 
+
+    const product = await scanProductFast(code);
+
+    if (product) {
+      // AGREGAR AL CARRITO (Lógica duplicada de ScannerModal pero necesaria aquí)
+      const currentOrderState = useOrderStore.getState().order; // Leemos estado fresco
+      const newOrder = [...currentOrderState];
+
+      const existingItem = newOrder.find(item => item.id === product.id);
+
+      if (existingItem) {
+        // Si es unitario, sumamos 1
+        if (existingItem.saleType === 'unit' || !existingItem.saleType) {
+          existingItem.quantity += 1;
+        } else {
+          // Si es granel, quizás quieras abrir el modal, 
+          // pero en modo turbo asumimos +1 unidad o kg por defecto
+          showMessageModal(`Producto a granel detectado: ${product.name}. Ajusta la cantidad manualmente.`);
+          return;
+        }
+      } else {
+        // Nuevo item
+        newOrder.push({
+          ...product,
+          quantity: 1,
+          saleType: product.saleType || 'unit'
+        });
+      }
+
+      // Actualizamos el carrito de una sola vez
+      useOrderStore.getState().setOrder(newOrder);
+
+      // Feedback sutil
+      // console.log("Producto agregado:", product.name);
+    } else {
+      showMessageModal(`⚠️ Producto no encontrado: ${code}`, null, { type: 'error', duration: 1500 });
+    }
+  };
+
   useEffect(() => {
     if (isMobileOrderOpen) {
       // A) Cuando se abre el modal, empujamos un estado "falso" al historial

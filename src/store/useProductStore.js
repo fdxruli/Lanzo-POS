@@ -9,7 +9,9 @@ import {
   STORES,
   searchProductBySKU,
   recycleData,
-  saveDataSafe
+  saveDataSafe,
+  getExpiringBatchesInRange,
+  queryBatchesByProductIdAndActive
 } from '../services/database';
 import Logger from '../services/Logger';
 
@@ -61,6 +63,55 @@ export const useProductStore = create((set, get) => ({
     } catch (error) {
       Logger.error("Error en búsqueda:", error);
       set({ isLoading: false });
+    }
+  },
+
+  scanProductFast: async (barcode) => {
+    if (!barcode) return null;
+
+    try {
+      // A. Búsqueda Principal
+      let product = await searchProductByBarcode(barcode);
+
+      // B. Fallback: Búsqueda por SKU (Variantes)
+      if (!product) {
+        product = await searchProductBySKU(barcode);
+      }
+
+      if (!product) return null;
+
+      // C. LÓGICA DE LOTES (FIFO) - Centralizada aquí
+      // Si el producto gestiona lotes, buscamos el precio del lote más antiguo
+      if (product.batchManagement?.enabled) {
+        try {
+          // Traemos lotes activos
+          const activeBatches = await queryBatchesByProductIdAndActive(product.id, true);
+
+          if (activeBatches && activeBatches.length > 0) {
+            // Ordenar FIFO (Primero en entrar, primero en salir)
+            activeBatches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+            const currentBatch = activeBatches[0];
+
+            // Inyectamos el precio y costo del lote real
+            return {
+              ...product,
+              price: parseFloat(currentBatch.price) || product.price,
+              cost: parseFloat(currentBatch.cost) || product.cost,
+              batchId: currentBatch.id, // Importante para descontar stock correctamente
+              stock: currentBatch.stock // Stock visual del lote
+            };
+          }
+        } catch (batchError) {
+          Logger.warn("Error resolviendo lote en FastScan:", batchError);
+        }
+      }
+
+      // Si no hay lotes o falló, devolvemos el producto base
+      return product;
+
+    } catch (error) {
+      Logger.error("Error en Fast Scan:", error);
+      return null;
     }
   },
 
@@ -243,44 +294,48 @@ export const useProductStore = create((set, get) => ({
   // --- FUNCIONALIDAD 2: CADUCIDAD ---
   getExpiringProducts: async (daysThreshold = 30) => {
     try {
-      const [allBatches, allProducts] = await Promise.all([
-        loadData(STORES.PRODUCT_BATCHES),
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Calculamos fecha límite (Hoy + 30 días)
+      const thresholdDate = new Date(today);
+      thresholdDate.setDate(thresholdDate.getDate() + daysThreshold);
+      const thresholdIso = thresholdDate.toISOString();
+
+      // 1. CARGA INTELIGENTE: Solo lotes en riesgo y lista de productos (para nombres)
+      const [riskBatches, allProducts] = await Promise.all([
+        getExpiringBatchesInRange(thresholdIso), // <--- La magia de velocidad ocurre aquí
         loadData(STORES.MENU)
       ]);
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const thresholdDate = new Date(today);
-      thresholdDate.setDate(thresholdDate.getDate() + daysThreshold);
+      // 2. Mapeo de Lotes (Batches)
+      const batchAlerts = riskBatches.map(batch => {
+        const product = allProducts.find(p => p.id === batch.productId);
+        const expDate = new Date(batch.expiryDate);
+        const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
 
-      const batchAlerts = allBatches
-        .filter(batch => {
-          if (!batch.expiryDate || batch.stock <= 0) return false;
-          const expDate = new Date(batch.expiryDate);
-          return expDate <= thresholdDate;
-        })
-        .map(batch => {
-          const product = allProducts.find(p => p.id === batch.productId);
-          const diffDays = Math.ceil((new Date(batch.expiryDate) - today) / (1000 * 60 * 60 * 24));
-          return {
-            id: batch.id,
-            productId: batch.productId,
-            productName: product ? product.name : `Producto ID: ${batch.productId}`,
-            stock: batch.stock,
-            expiryDate: batch.expiryDate,
-            daysRemaining: diffDays,
-            batchSku: batch.sku || 'Lote',
-            location: batch.location || ''
-          };
-        });
+        return {
+          id: batch.id,
+          productId: batch.productId,
+          productName: product ? product.name : `Producto Eliminado (${batch.sku || '?'})`,
+          stock: batch.stock,
+          expiryDate: batch.expiryDate,
+          daysRemaining: diffDays,
+          batchSku: batch.sku || 'Lote',
+          location: batch.location || (product?.location || ''),
+          type: 'Lote'
+        };
+      });
 
+      // 3. Mapeo de Productos Simples (Sin Lotes)
+      // Estos son pocos, así que el filtro en memoria está bien
       const productAlerts = allProducts
         .filter(p => {
           if (!p.shelfLife || !p.isActive) return false;
           if (p.trackStock && p.stock <= 0) return false;
           const expDate = new Date(p.shelfLife);
           if (isNaN(expDate.getTime())) return false;
-          return expDate <= thresholdDate;
+          return expDate <= thresholdDate; // Comparación de fechas
         })
         .map(p => {
           const diffDays = Math.ceil((new Date(p.shelfLife) - today) / (1000 * 60 * 60 * 24));
@@ -292,11 +347,14 @@ export const useProductStore = create((set, get) => ({
             expiryDate: p.shelfLife,
             daysRemaining: diffDays,
             batchSku: 'General',
-            location: p.location || ''
+            location: p.location || '',
+            type: 'Producto'
           };
         });
 
+      // Unir y ordenar por urgencia
       return [...batchAlerts, ...productAlerts].sort((a, b) => a.daysRemaining - b.daysRemaining);
+
     } catch (error) {
       Logger.error("Error verificando caducidades:", error);
       return [];
