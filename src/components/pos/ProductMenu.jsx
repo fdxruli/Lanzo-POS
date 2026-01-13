@@ -16,6 +16,7 @@ export default function ProductMenu({
   onSearchChange,
   onOpenScanner
 }) {
+  const addSmartItem = useOrderStore((state) => state.addSmartItem);
   const addItemToOrder = useOrderStore((state) => state.addItem);
   const features = useFeatureConfig();
 
@@ -55,39 +56,59 @@ export default function ProductMenu({
   }, [products, displayLimit]);
 
   // --- HANDLERS ---
+  // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO ---
   const handleProductClick = (product, isOutOfStock) => {
-    // 1. Lógica de Variantes (Prioridad alta)
-    const useVariants = features.hasVariants && product.batchManagement?.enabled;
+    // 1. Seguridad: Si no hay stock visual, no hacemos nada (aunque addSmartItem también valida)
+    if (isOutOfStock) return;
 
-    if (useVariants) {
-      setSelectedProductForVariant(product); 
-      setVariantModalOpen(true);             
-      return;
-    }
-
-    // 2. Lógica de Modificadores (Extras/Receta)
+    // 2. Lógica para Restaurantes (Modificadores / Extras)
+    // Si el producto tiene extras configurados (ej. "Con queso", "Término medio"), 
+    // abrimos el modal obligatoriamente.
     if (features.hasModifiers && product.modifiers && product.modifiers.length > 0) {
       setSelectedProductForMod(product);     
       setModModalOpen(true);                 
-      return;
+      return; // Detenemos aquí, el modal se encargará de agregar
     }
 
+    // 3. Preparar producto limpio
+    // (Opcional: Si usas mayoreo, aseguramos que pase la estructura correcta)
     const cleanProduct = {
       ...product,
       wholesaleTiers: features.hasWholesale ? product.wholesaleTiers : []
     };
 
-    addItemToOrder(cleanProduct);
+    // 4. ACCIÓN PRINCIPAL (Smart Add)
+    // Esta función busca automáticamente el lote más antiguo (FIFO) en segundo plano
+    // y agrega el producto al carrito.
+    addSmartItem(cleanProduct);
+
+    
+
+    // 6. Feedback Visual para GRANEL
+    // Si es producto por peso (Jamón, Azúcar, Tortillas), avisamos al cajero
+    // que debe verificar/ajustar la cantidad.
+    if (product.saleType === 'bulk') {
+      // Usamos el modal nativo del sistema para que sea consistente con el Scanner
+      showMessageModal(
+        `⚖️ Producto a Granel: ${product.name}`,
+        null, // No requerimos acción al cerrar
+        { type: 'warning', duration: 3000 } // Que dure un poco más para ser visto
+      );
+    } 
+    // Nota: Para productos normales no mostramos Toast aquí para no saturar 
+    // la pantalla visualmente en ventas rápidas manuales, el sonido es suficiente confirmación.
   };
 
   const handleConfirmVariants = (variantItem) => {
-    addItemToOrder(variantItem);
+    // Como ya viene el lote seleccionado del modal, addSmartItem 
+    // detectará que ya trae batchId y lo pasará directo. Es seguro.
+    addSmartItem(variantItem); 
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
   }
 
   const handleConfirmModifiers = (customizedProduct) => {
-    addItemToOrder(customizedProduct);
+    addSmartItem(customizedProduct);
     setModModalOpen(false);
     setSelectedProductForMod(null);
   }
