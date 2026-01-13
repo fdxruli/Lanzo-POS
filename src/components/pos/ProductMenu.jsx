@@ -1,11 +1,36 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
-import { getProductAlerts } from '../../services/utils';
+import { getProductAlerts, showMessageModal } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import VariantSelectorModal from './VariantSelectorModal';
 import './ProductMenu.css';
+
+const playBeep = (freq = 1200, type = 'sine') => {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return; 
+    
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = type; 
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {
+    console.warn("Audio error", e);
+  }
+};
 
 export default function ProductMenu({
   products,
@@ -82,7 +107,8 @@ export default function ProductMenu({
     // y agrega el producto al carrito.
     addSmartItem(cleanProduct);
 
-    
+    // 5. Feedback Sonoro
+    playBeep(1200, 'sine');
 
     // 6. Feedback Visual para GRANEL
     // Si es producto por peso (Jamón, Azúcar, Tortillas), avisamos al cajero
