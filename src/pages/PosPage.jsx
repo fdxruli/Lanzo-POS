@@ -23,6 +23,32 @@ import { useDebounce } from '../hooks/useDebounce';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './PosPage.css';
 
+const playBeep = (freq = 1200, type = 'sine') => {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return; // Navegador muy viejo
+
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = type; // 'sine' es suave, 'square' es tipo videojuego retro
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+    // Volumen bajo y corto para no molestar
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {
+    console.warn("Audio no disponible", e);
+  }
+};
+
 export default function PosPage() {
   const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
   const features = useFeatureConfig();
@@ -41,6 +67,14 @@ export default function PosPage() {
 
   const scanProductFast = useProductStore((state) => state.scanProductFast);
   const { setOrder, order: currentOrder } = useOrderStore();
+
+  const [toastMsg, setToastMsg] = useState(null);
+
+  // [NUEVO] Helper para mostrar el toast que se borra solo a los 2 segundos
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 2000);
+  };
 
   useEffect(() => {
     let buffer = '';
@@ -75,45 +109,38 @@ export default function PosPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // 3. FUNCIÓN DE PROCESAMIENTO (Sin parpadeos)
+  // 3. FUNCIÓN DE PROCESAMIENTO MEJORADA
   const processBarcode = async (code) => {
-    // Feedback visual opcional (sonido o toast)
-    // const audio = new Audio('/beep.mp3'); audio.play().catch(() => {}); 
-
     const product = await scanProductFast(code);
 
     if (product) {
-      // AGREGAR AL CARRITO (Lógica duplicada de ScannerModal pero necesaria aquí)
-      const currentOrderState = useOrderStore.getState().order; // Leemos estado fresco
-      const newOrder = [...currentOrderState];
+      // 1. Sonido de éxito inmediato
+      playBeep(1000, 'sine');
 
-      const existingItem = newOrder.find(item => item.id === product.id);
+      // 2. Agregar al carrito (Inteligente/Silencioso)
+      await useOrderStore.getState().addSmartItem(product);
 
-      if (existingItem) {
-        // Si es unitario, sumamos 1
-        if (existingItem.saleType === 'unit' || !existingItem.saleType) {
-          existingItem.quantity += 1;
-        } else {
-          // Si es granel, quizás quieras abrir el modal, 
-          // pero en modo turbo asumimos +1 unidad o kg por defecto
-          showMessageModal(`Producto a granel detectado: ${product.name}. Ajusta la cantidad manualmente.`);
-          return;
-        }
+      // 3. Lógica de Feedback (Mensajes)
+      if (product.saleType === 'bulk') {
+        // CASO GRANEL: Usamos el Modal Bloqueante (showMessageModal)
+        // porque ES NECESARIO que el cajero se detenga a pesar/ajustar.
+        showMessageModal(
+          `⚖️ Producto a Granel: ${product.name}`,
+          null, // sin callback
+          { type: 'warning', duration: 4000 } // Duración un poco más larga
+        );
+        // Opcional: Sonido diferente para advertencia
+        setTimeout(() => playBeep(500, 'square'), 150);
+
       } else {
-        // Nuevo item
-        newOrder.push({
-          ...product,
-          quantity: 1,
-          saleType: product.saleType || 'unit'
-        });
+        // CASO NORMAL: Usamos Toast NO Bloqueante
+        // Esto permite seguir escaneando rápido sin cerrar ventanas.
+        showToast(`✅ Agregado: ${product.name}`);
       }
 
-      // Actualizamos el carrito de una sola vez
-      useOrderStore.getState().setOrder(newOrder);
-
-      // Feedback sutil
-      // console.log("Producto agregado:", product.name);
     } else {
+      // Error: Sonido grave y modal de error
+      playBeep(200, 'sawtooth'); // Sonido de error
       showMessageModal(`⚠️ Producto no encontrado: ${code}`, null, { type: 'error', duration: 1500 });
     }
   };
@@ -389,6 +416,27 @@ export default function PosPage() {
               onClose={() => setIsMobileOrderOpen(false)}
             />
           </div>
+        </div>
+      )}
+
+      {/* [NUEVO] Componente visual del Toast */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed',
+          bottom: '80px', // Encima del botón de "Ver pedido"
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          color: 'white',
+          padding: '10px 20px',
+          borderRadius: '30px',
+          zIndex: 10010,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          fontSize: '0.9rem',
+          fontWeight: '500',
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          {toastMsg}
         </div>
       )}
 
