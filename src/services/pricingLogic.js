@@ -44,9 +44,14 @@ export const calculateCompositePrice = (product, quantity) => {
   // Ordenar FIFO estricto (Más antiguo primero)
   // NOTA: Asumimos que activeBatches ya viene ordenado o lo ordenamos aquí.
   // Para pureza, mejor clonar y ordenar.
-  const sortedBatches = [...product.activeBatches].sort((a, b) =>
-    new Date(a.createdAt) - new Date(b.createdAt)
-  );
+  const strategy = product.batchManagement?.selectionStrategy || 'fifo';
+
+  const sortedBatches = [...product.activeBatches].sort((a, b) => {
+    if (strategy === 'feFo' && a.expiryDate && b.expiryDate) {
+      return new Date(a.expiryDate) - new Date(b.expiryDate); // Ordenar por caducidad
+    }
+    return new Date(a.createdAt) - new Date(b.createdAt); // Fallback a FIFO
+  });
 
   for (const batch of sortedBatches) {
     if (remainingQty <= 0) break;

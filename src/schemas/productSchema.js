@@ -1,4 +1,3 @@
-// src/schemas/productSchema.js
 import { z } from 'zod';
 
 export const productSchema = z.object({
@@ -7,14 +6,15 @@ export const productSchema = z.object({
   name: z.string().min(1, "El nombre no puede estar vacío").trim(),
   barcode: z.string().trim().optional().or(z.literal('')),
   description: z.string().optional().or(z.literal('')),
+  rubroContext: z.string().optional(),
   
   // Relaciones y Multimedia
   categoryId: z.string().optional().or(z.literal('')),
-  image: z.any().optional(), // Acepta string (ID/URL) o null
+  image: z.any().optional(), 
   location: z.string().optional(),
 
-  // Precios y Costos (Coerce convierte strings a números automáticamente)
-  price: z.coerce.number().min(0, "El precio no puede ser negativo").default(0),
+  // Precios y Costos
+  price: z.coerce.number().min(0).default(0),
   cost: z.coerce.number().min(0).default(0),
   
   // Stock e Inventario
@@ -28,8 +28,7 @@ export const productSchema = z.object({
   productType: z.enum(['sellable', 'ingredient']).default('sellable'),
   saleType: z.enum(['unit', 'bulk']).default('unit'),
   
-  // Objetos Complejos (Features)
-  // Usamos .passthrough() o definimos su estructura si queremos ser estrictos
+  // Objetos Complejos
   bulkData: z.object({
     purchase: z.object({ unit: z.string().optional() }).optional()
   }).optional(),
@@ -45,22 +44,31 @@ export const productSchema = z.object({
     selectionStrategy: z.string().optional()
   }).optional(),
 
-  // Arrays (Recetas, Modificadores, Mayoreo)
   recipe: z.array(z.any()).optional(), 
   modifiers: z.array(z.any()).optional(),
   wholesaleTiers: z.array(z.any()).optional(),
 
-  // Farmacia y Datos Extendidos
+  // --- CORRECCIÓN FARMACIA ---
+  // Agregamos los campos exactos que envía PharmacyProductForm.jsx
+  
+  // 1. Tipo de Prescripción (Vital para que no se resetee a OTC)
+  prescriptionType: z.enum(['otc', 'antibiotic', 'controlled']).optional(),
+
+  // 2. Datos Específicos (Nombres en inglés como los envía el formulario)
+  activeSubstance: z.string().optional(),
+  laboratory: z.string().optional(),
+  
+  // Mantenemos compatibilidad con versiones anteriores o backups (Nombres en español)
   sustancia: z.string().optional().nullable(),
   laboratorio: z.string().optional().nullable(),
   requiresPrescription: z.boolean().optional(),
   presentation: z.string().optional().nullable(),
   
-  // ✅ NUEVO CAMPO AGREGADO: Para validar el input de "Caducidad / Vida Útil"
+  // Caducidad
   shelfLife: z.string().optional().nullable(), 
 
-  // Fechas (Como strings ISO)
+  // Fechas
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
-  deletedTimestamp: z.string().optional() // Para la papelera
+  deletedTimestamp: z.string().optional()
 });

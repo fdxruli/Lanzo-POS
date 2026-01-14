@@ -243,7 +243,10 @@ export default function PosPage() {
     setIsMobileOrderOpen(false);
 
     const itemsRequiring = features.hasLabFields
-      ? itemsToProcess.filter(item => item.requiresPrescription)
+      ? itemsToProcess.filter(item =>
+        item.requiresPrescription ||
+        (item.prescriptionType && item.prescriptionType !== 'otc')
+      )
       : [];
 
     if (itemsRequiring.length > 0) {
