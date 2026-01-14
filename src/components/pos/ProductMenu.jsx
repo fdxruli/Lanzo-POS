@@ -81,48 +81,60 @@ export default function ProductMenu({
   }, [products, displayLimit]);
 
   // --- HANDLERS ---
-  // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO ---
+  // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (ADAPTABLE POR RUBRO) ---
   const handleProductClick = (product, isOutOfStock) => {
-    // 1. Seguridad: Si no hay stock visual, no hacemos nada (aunque addSmartItem también valida)
+    // 0. Seguridad de Stock
     if (isOutOfStock) return;
 
-    // 2. Lógica para Restaurantes (Modificadores / Extras)
-    // Si el producto tiene extras configurados (ej. "Con queso", "Término medio"), 
-    // abrimos el modal obligatoriamente.
+    // ---------------------------------------------------------
+    // CASO 1: BOUTIQUE / ROPA / ZAPATERÍA
+    // Si el negocio maneja variantes (features.hasVariants es true) 
+    // Y el producto tiene gestión de lotes/tallas activada.
+    // ---------------------------------------------------------
+    if (features.hasVariants && product.batchManagement?.enabled) {
+      setSelectedProductForVariant(product); 
+      setVariantModalOpen(true);             
+      return; // Detenemos aquí, el usuario debe elegir la talla en el modal
+    }
+
+    // ---------------------------------------------------------
+    // CASO 2: RESTAURANTE
+    // Si el negocio maneja modificadores (features.hasModifiers es true)
+    // Y el producto tiene ingredientes extra configurados.
+    // ---------------------------------------------------------
     if (features.hasModifiers && product.modifiers && product.modifiers.length > 0) {
       setSelectedProductForMod(product);     
       setModModalOpen(true);                 
-      return; // Detenemos aquí, el modal se encargará de agregar
+      return; // Detenemos aquí, el usuario elige los extras
     }
 
-    // 3. Preparar producto limpio
-    // (Opcional: Si usas mayoreo, aseguramos que pase la estructura correcta)
+    // ---------------------------------------------------------
+    // CASO 3: ABARROTES / FARMACIA / GENERAL (Venta Rápida)
+    // Aquí caen todos los demás. Incluyendo Farmacia (la receta se pide al cobrar, no al agregar).
+    // ---------------------------------------------------------
+    
+    // Preparamos el producto (limpieza de datos)
     const cleanProduct = {
       ...product,
       wholesaleTiers: features.hasWholesale ? product.wholesaleTiers : []
     };
 
-    // 4. ACCIÓN PRINCIPAL (Smart Add)
-    // Esta función busca automáticamente el lote más antiguo (FIFO) en segundo plano
-    // y agrega el producto al carrito.
+    // ACCIÓN INTELIGENTE (Smart Add)
+    // Busca el lote más antiguo (FIFO) automáticamente y agrega.
     addSmartItem(cleanProduct);
 
-    // 5. Feedback Sonoro
-    playBeep(1200, 'sine');
+    // FEEDBACK SONORO (Éxito)
+    playBeep(1000, 'sine');
 
-    // 6. Feedback Visual para GRANEL
-    // Si es producto por peso (Jamón, Azúcar, Tortillas), avisamos al cajero
-    // que debe verificar/ajustar la cantidad.
+    // FEEDBACK VISUAL (Solo para Granel)
+    // Si vendes jamón, queso, clavos o cualquier cosa por peso/medida.
     if (product.saleType === 'bulk') {
-      // Usamos el modal nativo del sistema para que sea consistente con el Scanner
       showMessageModal(
         `⚖️ Producto a Granel: ${product.name}`,
-        null, // No requerimos acción al cerrar
-        { type: 'warning', duration: 3000 } // Que dure un poco más para ser visto
+        null, 
+        { type: 'warning', duration: 3000 }
       );
-    } 
-    // Nota: Para productos normales no mostramos Toast aquí para no saturar 
-    // la pantalla visualmente en ventas rápidas manuales, el sonido es suficiente confirmación.
+    }
   };
 
   const handleConfirmVariants = (variantItem) => {
@@ -249,7 +261,7 @@ export default function ProductMenu({
                     </div>
                   )}
 
-                  {features.hasLabFields && item.requiresPrescription && !isOutOfStock && (
+                  {features.hasLabFields && (item.requiresPrescription || (item.prescriptionType && item.prescriptionType !== 'otc')) && !isOutOfStock && (
                     <div className="prescription-badge" style={{
                       position: 'absolute',
                       top: (hasModifiers || hasVariants) ? '30px' : '5px',
