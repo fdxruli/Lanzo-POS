@@ -210,6 +210,7 @@ export function initDB() {
         ensureIndex(STORES.MENU, 'categoryId', 'categoryId', { unique: false });
         ensureIndex(STORES.PRODUCT_BATCHES, 'productId', 'productId', { unique: false });
         ensureIndex(STORES.PRODUCT_BATCHES, 'sku', 'sku', { unique: false });
+        ensureIndex(STORES.PRODUCT_BATCHES, 'productId_isActive', ['productId', 'isActive'], { unique: false });
         ensureIndex(STORES.SALES, 'timestamp', 'timestamp', { unique: true });
         ensureIndex(STORES.SALES, 'customerId', 'customerId', { unique: false }); // Básico existente
         ensureIndex(STORES.MOVIMIENTOS_CAJA, 'caja_id', 'caja_id', { unique: false });
@@ -532,43 +533,35 @@ export function queryBatchesByProductIdAndActive(productId, isActive = true) {
       const transaction = dbInstance.transaction([STORES.PRODUCT_BATCHES], 'readonly');
       const objectStore = transaction.objectStore(STORES.PRODUCT_BATCHES);
 
-      // ✅ SOLUCIÓN ROBUSTA: Verificamos existencia del índice
-      if (!objectStore.indexNames.contains('productId')) {
-        Logger.warn("⚠️ Índice 'productId' no encontrado. Usando búsqueda manual (fallback).");
+      // 1. Usar el Nuevo Índice Compuesto (Velocidad O(1))
+      if (objectStore.indexNames.contains('productId_isActive')) {
+        const index = objectStore.index('productId_isActive');
+        // Buscamos EXACTAMENTE: [ID_PRODUCTO, TRUE]
+        const range = IDBKeyRange.only([productId, isActive ? 1 : 0]); 
+        // Nota: IndexedDB a veces prefiere 1/0 sobre true/false en arrays compuestos, 
+        // pero si guardas booleanos, usa [productId, isActive] tal cual.
+        // Si tienes problemas, prueba IDBKeyRange.only([productId, isActive]);
+        
+        const request = index.getAll([productId, isActive]);
 
-        // Plan B: Búsqueda manual (más lenta, pero segura)
-        const request = objectStore.openCursor();
-        const results = [];
-
-        request.onsuccess = (e) => {
-          const cursor = e.target.result;
-          if (cursor) {
-            const batch = cursor.value;
-            // Filtro manual en memoria
-            if (batch.productId === productId && Boolean(batch.isActive) === Boolean(isActive)) {
-              results.push(batch);
-            }
-            cursor.continue();
-          } else {
-            resolve(results);
-          }
+        request.onsuccess = () => {
+            resolve(request.result || []);
         };
         request.onerror = (e) => reject(e.target.error);
-        return; // Detenemos aquí para no ejecutar el código del Plan A
+      } 
+      // 2. Fallback (Compatibilidad si el usuario no recargó la app para actualizar DB)
+      else if (objectStore.indexNames.contains('productId')) {
+        const index = objectStore.index('productId');
+        const request = index.getAll(IDBKeyRange.only(productId));
+        request.onsuccess = () => {
+          const all = request.result || [];
+          resolve(all.filter(b => Boolean(b.isActive) === Boolean(isActive)));
+        };
+        request.onerror = (e) => reject(e.target.error);
+      } else {
+         // Fallback manual extremo...
+         resolve([]); 
       }
-
-      // Plan A: Usar índice (Rápido)
-      const index = objectStore.index('productId');
-      const range = IDBKeyRange.only(productId);
-      const request = index.getAll(range);
-
-      request.onsuccess = () => {
-        const batches = request.result || [];
-        // Filtramos isActive en memoria (es muy rápido ya que tenemos pocos lotes por producto)
-        const filtered = batches.filter(b => Boolean(b.isActive) === Boolean(isActive));
-        resolve(filtered);
-      };
-      request.onerror = (e) => reject(e.target.error);
     });
   });
 }
