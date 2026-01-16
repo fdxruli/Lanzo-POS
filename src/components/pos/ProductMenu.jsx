@@ -1,3 +1,4 @@
+// src/components/pos/ProductMenu.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
 import { getProductAlerts, showMessageModal } from '../../services/utils';
@@ -5,6 +6,7 @@ import LazyImage from '../common/LazyImage';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import VariantSelectorModal from './VariantSelectorModal';
+import { queryBatchesByProductIdAndActive } from '../../services/database'; // ✅ IMPORTAR
 import './ProductMenu.css';
 
 const playBeep = (freq = 1200, type = 'sine') => {
@@ -53,6 +55,10 @@ export default function ProductMenu({
   const [variantModalOpen, setVariantModalOpen] = useState(false);
   const [selectedProductForVariant, setSelectedProductForVariant] = useState(null);
 
+  // ✅ NUEVO: Caché para saber qué productos SÍ tienen variantes reales
+  const [productsWithVariants, setProductsWithVariants] = useState(new Set());
+  const [isCheckingVariants, setIsCheckingVariants] = useState(false);
+
   // --- INFINITE SCROLL ---
   const [displayLimit, setDisplayLimit] = useState(50);
   const scrollContainerRef = useRef(null);
@@ -80,54 +86,84 @@ export default function ProductMenu({
     return products.slice(0, displayLimit);
   }, [products, displayLimit]);
 
-  // --- HANDLERS ---
-  // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (ADAPTABLE POR RUBRO) ---
+  // ✅ NUEVO: Verificar qué productos tienen variantes reales
+  useEffect(() => {
+    const checkVariants = async () => {
+      if (!features.hasVariants) return;
+      
+      setIsCheckingVariants(true);
+      const withVariants = new Set();
+
+      // Solo verificamos productos que tienen batchManagement habilitado
+      const candidates = visibleProducts.filter(p => p.batchManagement?.enabled);
+
+      // Verificamos en paralelo (máximo 10 a la vez para no saturar)
+      const chunks = [];
+      for (let i = 0; i < candidates.length; i += 10) {
+        chunks.push(candidates.slice(i, i + 10));
+      }
+
+      for (const chunk of chunks) {
+        await Promise.all(
+          chunk.map(async (product) => {
+            try {
+              const batches = await queryBatchesByProductIdAndActive(product.id, true);
+              // Si tiene al menos 1 lote activo con stock, entonces SÍ tiene variantes
+              if (batches && batches.length > 0) {
+                withVariants.add(product.id);
+              }
+            } catch (error) {
+              console.warn(`Error verificando variantes de ${product.id}:`, error);
+            }
+          })
+        );
+      }
+
+      setProductsWithVariants(withVariants);
+      setIsCheckingVariants(false);
+    };
+
+    checkVariants();
+  }, [visibleProducts, features.hasVariants]);
+
+  // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (CORREGIDO) ---
   const handleProductClick = (product, isOutOfStock) => {
     // 0. Seguridad de Stock
     if (isOutOfStock) return;
 
     // ---------------------------------------------------------
     // CASO 1: BOUTIQUE / ROPA / ZAPATERÍA
-    // Si el negocio maneja variantes (features.hasVariants es true) 
-    // Y el producto tiene gestión de lotes/tallas activada.
+    // ✅ CORRECCIÓN: Ahora verificamos si realmente tiene variantes
     // ---------------------------------------------------------
-    if (features.hasVariants && product.batchManagement?.enabled) {
+    if (features.hasVariants && 
+        product.batchManagement?.enabled && 
+        productsWithVariants.has(product.id)) { // ✅ VALIDACIÓN REAL
+      
       setSelectedProductForVariant(product); 
       setVariantModalOpen(true);             
-      return; // Detenemos aquí, el usuario debe elegir la talla en el modal
+      return;
     }
 
     // ---------------------------------------------------------
     // CASO 2: RESTAURANTE
-    // Si el negocio maneja modificadores (features.hasModifiers es true)
-    // Y el producto tiene ingredientes extra configurados.
     // ---------------------------------------------------------
     if (features.hasModifiers && product.modifiers && product.modifiers.length > 0) {
       setSelectedProductForMod(product);     
       setModModalOpen(true);                 
-      return; // Detenemos aquí, el usuario elige los extras
+      return;
     }
 
     // ---------------------------------------------------------
     // CASO 3: ABARROTES / FARMACIA / GENERAL (Venta Rápida)
-    // Aquí caen todos los demás. Incluyendo Farmacia (la receta se pide al cobrar, no al agregar).
     // ---------------------------------------------------------
-    
-    // Preparamos el producto (limpieza de datos)
     const cleanProduct = {
       ...product,
       wholesaleTiers: features.hasWholesale ? product.wholesaleTiers : []
     };
 
-    // ACCIÓN INTELIGENTE (Smart Add)
-    // Busca el lote más antiguo (FIFO) automáticamente y agrega.
     addSmartItem(cleanProduct);
-
-    // FEEDBACK SONORO (Éxito)
     playBeep(1000, 'sine');
 
-    // FEEDBACK VISUAL (Solo para Granel)
-    // Si vendes jamón, queso, clavos o cualquier cosa por peso/medida.
     if (product.saleType === 'bulk') {
       showMessageModal(
         `⚖️ Producto a Granel: ${product.name}`,
@@ -138,8 +174,6 @@ export default function ProductMenu({
   };
 
   const handleConfirmVariants = (variantItem) => {
-    // Como ya viene el lote seleccionado del modal, addSmartItem 
-    // detectará que ya trae batchId y lo pasará directo. Es seguro.
     addSmartItem(variantItem); 
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
@@ -151,16 +185,13 @@ export default function ProductMenu({
     setSelectedProductForMod(null);
   }
 
-  // --- CORRECCIÓN AQUÍ ---
   const renderStockInfo = (item) => {
-    // Verificamos si tiene trackStock explícito O si tiene gestión de lotes habilitada (importados por CSV)
     const isTracking = item.trackStock || item.batchManagement?.enabled;
 
     if (!isTracking) return <div className="stock-info no-stock-label" style={{color:'#999'}}>---</div>;
     
     const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
     
-    // Mostramos stock si es mayor a 0, de lo contrario AGOTADO
     return item.stock > 0
       ? <div className="stock-info">Stock: {item.stock}{unit}</div>
       : <div className="stock-info out-of-stock-label">AGOTADO</div>;
@@ -227,7 +258,11 @@ export default function ProductMenu({
             visibleProducts.map((item) => {
               const { isLowStock, isNearingExpiry, isOutOfStock } = getProductAlerts(item);
               const hasModifiers = features.hasModifiers && item.modifiers && item.modifiers.length > 0;
-              const hasVariants = features.hasVariants && item.batchManagement?.enabled;
+              
+              // ✅ CORRECCIÓN CRÍTICA: Solo mostrar badge si tiene variantes REALES
+              const hasVariants = features.hasVariants && 
+                                  item.batchManagement?.enabled && 
+                                  productsWithVariants.has(item.id);
 
               const itemClasses = ['menu-item', isLowStock ? 'low-stock-warning' : '', isNearingExpiry ? 'nearing-expiry-warning' : '', isOutOfStock ? 'out-of-stock' : ''].filter(Boolean).join(' ');
 
@@ -249,18 +284,21 @@ export default function ProductMenu({
                 >
                   {isOutOfStock && <div className="stock-overlay">Agotado</div>}
 
+                  {/* Badge de Modificadores (Restaurante) */}
                   {hasModifiers && !isOutOfStock && (
                     <div className="modifier-badge" style={{ position: 'absolute', top: '5px', left: '5px', background: 'var(--primary-color)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', zIndex: 2 }}>
                       ✨ Extras
                     </div>
                   )}
 
+                  {/* ✅ Badge de Variantes (SOLO si tiene variantes reales) */}
                   {hasVariants && !isOutOfStock && (
                     <div className="modifier-badge" style={{ position: 'absolute', top: '5px', left: '5px', background: 'var(--secondary-color)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', zIndex: 2 }}>
                       🎨 Opciones
                     </div>
                   )}
 
+                  {/* Badge de Receta Médica (Farmacia) */}
                   {features.hasLabFields && (item.requiresPrescription || (item.prescriptionType && item.prescriptionType !== 'otc')) && !isOutOfStock && (
                     <div className="prescription-badge" style={{
                       position: 'absolute',
