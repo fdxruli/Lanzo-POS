@@ -210,7 +210,7 @@ export default function LicenseSettings() {
 
             <small className="form-help-text">
                 {maxRubrosAllowed === 1
-                    ? "El giro de negocio no puede ser modificado con esta licencia."
+                    ? "El giro de negocio no puede ser modificado con esta licencia. Contacta a soporte si necesitas cambiar de rubro"
                     : "Selecciona los giros adicionales para activar sus funciones."}
             </small>
 

@@ -1,43 +1,62 @@
 // src/components/common/MessageModal.jsx
-import React from 'react';
-import { useMessageStore } from '../../store/useMessageStore'; //
+import React, { useState } from 'react'; // <--- Agregamos useState
+import { useMessageStore } from '../../store/useMessageStore';
 import './MessageModal.css';
 
 export default function MessageModal() {
-  // Obtenemos estado y acciones del store
   const { isOpen, message, onConfirm, options = {}, hide } = useMessageStore();
+  
+  // --- ESTADO LOCAL PARA EL TOAST DE ALERTA ---
+  const [toastMsg, setToastMsg] = useState(null);
 
   if (!isOpen) {
     return null;
   }
 
-  // --- LÓGICA DE SEGURIDAD ---
-  // Por defecto (si no se especifica), el modal se puede cancelar y cerrar.
-  // Pero si options.showCancel es false, ocultamos el botón.
-  // Si options.isDismissible es false, bloqueamos el clic fuera.
+  // Lógica de seguridad: Si showCancel es false, isDismissible también es false por defecto
   const showCancel = options.showCancel !== false;     
-  const isDismissible = options.isDismissible !== false; 
+  const isDismissible = options.isDismissible !== undefined 
+      ? options.isDismissible 
+      : showCancel; 
 
   const confirmMode = typeof onConfirm === 'function';
 
-  // Manejar confirmación
+  // Helper para mostrar el mensajito temporal
+  const showLocalToast = (text) => {
+    setToastMsg(text);
+    // Se borra a los 2 segundos
+    setTimeout(() => setToastMsg(null), 2000);
+  };
+
   const handleConfirm = () => {
-    // Primero ejecutamos la acción (ej. logout)
     if (onConfirm) onConfirm();
-    // Luego ocultamos (aunque si es logout, la app se desmontará antes)
     hide();
   };
 
-  // Manejar acción extra (botón secundario opcional)
   const handleExtraAction = () => {
     hide();
     if (options.extraButton?.action) options.extraButton.action();
   };
 
-  // Manejar clic en el fondo oscuro
+  // --- MANEJO DEL CLIC AFUERA (CON EFECTOS) ---
   const handleBackdropClick = () => {
     if (isDismissible) {
       hide();
+    } else {
+      // 1. EFECTO VISUAL: Temblor (Shake)
+      const modalContent = document.querySelector('.modal-content');
+      if (modalContent) {
+        // Pequeño zoom y regreso rápido para simular golpe
+        modalContent.style.transition = 'transform 0.1s';
+        modalContent.style.transform = 'scale(1.02)';
+        
+        setTimeout(() => {
+            modalContent.style.transform = 'scale(1)';
+        }, 100);
+      }
+
+      // 2. FEEDBACK VISUAL: Mostrar Toast
+      showLocalToast('⚠️ Selecciona una opción para continuar');
     }
   };
 
@@ -46,7 +65,7 @@ export default function MessageModal() {
       id="message-modal" 
       className="modal" 
       style={{ display: 'flex' }}
-      onClick={handleBackdropClick} // Interceptamos clic fuera
+      onClick={handleBackdropClick} 
     >
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <h2 className={`modal-title ${options.type || ''}`}>
@@ -58,7 +77,6 @@ export default function MessageModal() {
         </p>
         
         <div className="modal-buttons">
-          {/* Botón Extra Opcional */}
           {options.extraButton && (
             <button className="btn btn-secondary" onClick={handleExtraAction}>
               {options.extraButton.text}
@@ -67,12 +85,10 @@ export default function MessageModal() {
 
           {confirmMode ? (
             <>
-              {/* BOTÓN CONFIRMAR (Siempre visible, ej: "Cerrar Sesión Ahora") */}
               <button className="btn btn-confirm" onClick={handleConfirm}>
                 {options.confirmButtonText || 'Sí, continuar'}
               </button>
 
-              {/* BOTÓN CANCELAR (Solo si showCancel es true) */}
               {showCancel && (
                 <button className="btn btn-cancel" onClick={hide}>
                   Cancelar
@@ -80,13 +96,35 @@ export default function MessageModal() {
               )}
             </>
           ) : (
-            // Modo alerta simple
             <button className="btn btn-modal" onClick={hide}>
               Aceptar
             </button>
           )}
         </div>
       </div>
+
+      {/* --- RENDERIZADO DEL TOAST --- */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed',
+          bottom: '15%', // Un poco más arriba para que se note sobre el modal
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          color: 'white',
+          padding: '12px 24px',
+          borderRadius: '30px',
+          zIndex: 20005, // IMPORTANTE: Mayor que el z-index del modal (20000)
+          boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
+          fontSize: '0.95rem',
+          fontWeight: '500',
+          animation: 'fadeIn 0.2s ease-out',
+          pointerEvents: 'none', // Para que no interfiera con clics
+          whiteSpace: 'nowrap'
+        }}>
+          {toastMsg}
+        </div>
+      )}
     </div>
   );
 }

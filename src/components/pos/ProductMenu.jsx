@@ -212,13 +212,13 @@ export default function ProductMenu({
           {visibleProducts.length === 0 ? (
             (products.length === 0 && !searchTerm && !selectedCategoryId) ? (
               <div className="menu-empty-state">
-                <div className="empty-icon">📦</div>
+                <div className="empty-icon"></div>
                 <p>No hay productos registrados.</p>
                 <small>Ve a la sección <strong>Productos</strong> para crear tu inventario.</small>
               </div>
             ) : (
               <div className="menu-empty-state">
-                <div className="empty-icon">🔍</div>
+                <div className="empty-icon"></div>
                 <p>No hay coincidencias.</p>
                 <small>Intenta con otro nombre o escanea el código.</small>
               </div>

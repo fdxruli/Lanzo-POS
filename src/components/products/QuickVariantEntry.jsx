@@ -1,10 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
-export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChange }) {
-  const [rows, setRows] = useState([
-    { id: Date.now(), talla: '', color: '', sku: '', stock: '', cost: baseCost, price: basePrice }
-  ]);
+export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChange, initialData = [] }) {
+  const [rows, setRows] = useState(() => {
+    if (initialData && initialData.length > 0) {
+      return initialData;
+    }
+    return [{ id: Date.now(), talla: '', color: '', sku: '', stock: '', cost: baseCost, price: basePrice }];
+  });
+
   const [quickColor, setQuickColor] = useState('');
+
+  useEffect(() => {
+    if (initialData && initialData.length > 0) {
+        setRows(initialData);
+    }
+  }, [initialData]);
 
   // --- ANÁLISIS EN TIEMPO REAL (DUPLICADOS Y ERRORES) ---
   // Memorizamos esto para no recalcular en cada render innecesario
@@ -76,8 +86,8 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
     if (!talla && !color) return;
     const c = color ? color.substring(0, 3).toUpperCase() : 'GEN';
     const t = talla ? talla.toUpperCase() : 'U';
-    const rnd = Math.floor(Math.random() * 10000); // 4 dígitos para menos colisiones
-    const sku = `${c}-${t}-${rnd}`.replace(/\s+/g, '');
+    const rnd = Date.now().toString().slice(-6); // Últimos 6 dígitos del tiempo
+const sku = `${c}-${t}-${rnd}`.toUpperCase().replace(/\s+/g, '');
     updateRow(id, 'sku', sku);
   };
 
@@ -99,10 +109,10 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
   const totalStock = rows.reduce((acc, row) => acc + (parseFloat(row.stock) || 0), 0);
 
   return (
-    <div className="quick-variant-container" style={{ marginTop: '15px', border: '1px solid #e2e8f0', borderRadius: '12px', backgroundColor: '#fff', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+    <div className="quick-variant-container" style={{ marginTop: '15px', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
       
       {/* HEADER & TOOLS */}
-      <div style={{ padding: '15px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+      <div style={{ padding: '15px', borderBottom: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
           <h4 style={{ margin: 0, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
             👕 Variantes y Tallas

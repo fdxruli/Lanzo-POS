@@ -1,4 +1,3 @@
-// src/components/products/WholesaleManagerModal.jsx
 import React, { useState, useEffect } from 'react';
 import { showMessageModal } from '../../services/utils';
 import './WholesaleManagerModal.css';
@@ -10,7 +9,12 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
 
   useEffect(() => {
     if (show) {
-      setLocalTiers([...(tiers || [])].sort((a, b) => a.min - b.min));
+      // Corrección de seguridad: Aseguramos que los valores sean números
+      const safeTiers = (tiers || []).map(t => ({
+        min: Number(t.min),
+        price: Number(t.price)
+      }));
+      setLocalTiers(safeTiers.sort((a, b) => a.min - b.min));
       setMinQty('');
       setPrice('');
     }
@@ -30,7 +34,8 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
     }
 
     const newTier = { min: qty, price: p };
-    const updated = localTiers.filter(t => t.min !== qty); // Evita duplicados de cantidad
+    // Evita duplicados de cantidad
+    const updated = localTiers.filter(t => t.min !== qty); 
     updated.push(newTier);
     
     setLocalTiers(updated.sort((a, b) => a.min - b.min));
@@ -39,31 +44,27 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
   };
 
   const handleRemove = (min) => {
-    // Filtramos la lista para quitar el elemento seleccionado
     const updated = localTiers.filter(t => t.min !== min);
     setLocalTiers(updated);
   };
 
   const handleSave = () => {
     onSave(localTiers);
-    // --- CAMBIO AQUÍ ---
-    // Mostramos un mensaje sutil o alerta para recordar guardar el producto principal
-    // O simplemente cerramos, pero confiamos en que el botón ahora es más claro.
     onClose();
   };
 
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 2200 }}>
-      <div className="modal-content" style={{ maxWidth: '500px' }}>
+    <div className="modal" style={{ zIndex: 9999 }}>
+      <div className="modal-content">
         <h2 className="modal-title">Precios de Mayoreo</h2>
         <p className="modal-subtitle">Precio Base actual: ${basePrice || '0.00'}</p>
 
-        {/* ... (Formulario de ingreso igual que antes) ... */}
-        <div className="wholesale-form-row" style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginBottom: '1rem' }}>
-          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-            <label style={{fontSize: '0.85rem'}}>A partir de (Cant.)</label>
+        {/* Formulario de ingreso */}
+        <div className="wholesale-form-row">
+          <div className="form-group">
+            <label>A partir de (Cant.)</label>
             <input 
               type="number" 
               className="form-input" 
@@ -72,8 +73,8 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
               onChange={(e) => setMinQty(e.target.value)}
             />
           </div>
-          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-            <label style={{fontSize: '0.85rem'}}>Nuevo Precio ($)</label>
+          <div className="form-group">
+            <label>Nuevo Precio ($)</label>
             <input 
               type="number" 
               className="form-input" 
@@ -82,33 +83,33 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
               onChange={(e) => setPrice(e.target.value)}
             />
           </div>
-          <button type="button" className="btn btn-save" style={{ marginBottom: 0, width: 'auto' }} onClick={handleAdd}>
+          <button type="button" className="btn btn-save" onClick={handleAdd}>
             +
           </button>
         </div>
 
         {/* Lista de reglas */}
-        <div className="tiers-list" style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '8px' }}>
+        <div className="tiers-list">
           {localTiers.length === 0 ? (
-            <p style={{ padding: '1rem', textAlign: 'center', color: '#999' }}>No hay reglas definidas.</p>
+            <p className="empty-tiers-message">No hay reglas definidas.</p>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ backgroundColor: '#f9f9f9' }}>
+            <table className="tiers-table">
+              <thead>
                 <tr>
-                  <th style={{ padding: '8px', textAlign: 'left' }}>Cantidad Mín.</th>
-                  <th style={{ padding: '8px', textAlign: 'left' }}>Precio Unitario</th>
-                  <th style={{ padding: '8px', width: '50px' }}></th>
+                  <th>Cantidad Mín.</th>
+                  <th>Precio Unitario</th>
+                  <th style={{ width: '50px' }}></th>
                 </tr>
               </thead>
               <tbody>
                 {localTiers.map((tier) => (
-                  <tr key={tier.min} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '8px' }}>{tier.min}+</td>
-                    <td style={{ padding: '8px', fontWeight: 'bold', color: 'var(--success-color)' }}>${tier.price.toFixed(2)}</td>
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
+                  <tr key={tier.min}>
+                    <td>{tier.min}+</td>
+                    <td className="price-cell">${Number(tier.price).toFixed(2)}</td>
+                    <td style={{ textAlign: 'center' }}>
                       <button 
-                        type="button" /* Importante: type button para no enviar forms */
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-color)' }}
+                        type="button"
+                        className="btn-delete-tier"
                         onClick={() => handleRemove(tier.min)}
                       >
                         🗑️
@@ -121,14 +122,14 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
           )}
         </div>
 
-        {/* --- CAMBIO EN EL FOOTER --- */}
-        <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-           <p style={{fontSize: '0.8rem', color: 'var(--text-light)', fontStyle: 'italic', textAlign: 'center'}}>
+        {/* Footer */}
+        <div className="modal-actions-container">
+           <p className="footer-note">
              * Recuerda hacer clic en <strong>"Guardar Producto"</strong> al salir para aplicar los cambios.
            </p>
-           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+           <div className="modal-actions">
             <button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button>
-            <button type="button" className="btn btn-save" onClick={handleSave}>Aplicar Reglas</button>
+            <button type="button" className="btn btn-save" onClick={handleSave}>Aplicar</button>
           </div>
         </div>
 

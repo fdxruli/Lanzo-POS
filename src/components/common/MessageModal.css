@@ -1,8 +1,7 @@
 /* src/components/common/MessageModal.css */
 
 #message-modal {
-  z-index: var(--z-toast) !important;
-  /* El más alto */
+  z-index: 20000 !important;
 }
 
 .modal-message {
@@ -44,12 +43,19 @@
 @media (min-width: 600px) {
   .modal-buttons {
     flex-direction: row;
-    justify-content: flex-end;
+    justify-content: flex-end; /* Alineados a la derecha */
+    align-items: center;       /* Asegura que estén centrados verticalmente */
   }
 
   .modal-buttons button {
     width: auto;
     min-width: 120px;
+  }
+
+  .btn-secondary {
+    order: 1;
+    margin-top: 0; /* IMPORTANTE: Quitar el margen de móvil para que no se vea caído */
+    margin-right: auto; /* Opcional: Empuja el botón extra a la extrema izquierda para separarlo del grupo de acción */
   }
 
   .btn-confirm {

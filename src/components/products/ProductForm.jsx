@@ -32,7 +32,18 @@ export default function ProductForm(props) {
 
     // 2. DETERMINAR EL CONTEXTO INICIAL
     // Si se está editando, respetar el contexto guardado, si no, usar el primero de la lista global
-    const initialContext = props.productToEdit?.rubroContext || globalBusinessTypes[0] || 'otro';
+    const initialContext = useMemo(() => {
+        const savedContext = props.productToEdit?.rubroContext;
+        
+        // Verificamos si el rubro con el que se creó el producto AÚN existe en la configuración actual
+        if (savedContext && globalBusinessTypes.includes(savedContext)) {
+            return savedContext;
+        }
+        
+        // Si es nuevo, o si el rubro guardado ya no es válido para la empresa actual, usar el predeterminado
+        return globalBusinessTypes[0] || 'otro';
+    }, [props.productToEdit, globalBusinessTypes]);
+
     const [activeRubroContext, setActiveRubroContext] = useState(initialContext);
 
     // 3. OBTENER FEATURES DEL CONTEXTO

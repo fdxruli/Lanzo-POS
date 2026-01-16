@@ -2,8 +2,8 @@
 
 /* Ajustes específicos para el contenido de este modal */
 .modal-content {
-  /* Reutilizamos estilos base, pero aseguramos el ancho máximo */
   max-width: 550px;
+  /* El fondo y color de texto ya se heredan de las variables globales */
 }
 
 .modal-subtitle {
@@ -11,22 +11,23 @@
   color: var(--text-light);
   margin-bottom: var(--spacing-lg);
   padding-bottom: var(--spacing-sm);
-  border-bottom: 1px solid var(--light-background);
+  border-bottom: 1px solid var(--border-color); /* Usamos variable global */
 }
 
-/* Fila del formulario de ingreso (Input Cantidad + Input Precio + Botón) */
+/* Fila del formulario */
 .wholesale-form-row {
   display: flex;
   gap: var(--spacing-md);
   align-items: flex-end;
   margin-bottom: var(--spacing-lg);
-  background-color: var(--light-background);
+  background-color: var(--light-background); /* Se adapta auto a oscuro */
   padding: var(--spacing-md);
   border-radius: var(--border-radius-sm);
+  border: 1px solid var(--border-color); /* Borde sutil */
 }
 
 .wholesale-form-row .form-group {
-  margin-bottom: 0; /* Quitamos el margen inferior default */
+  margin-bottom: 0;
   flex: 1;
 }
 
@@ -35,12 +36,13 @@
   margin-bottom: 4px;
   display: block;
   font-weight: 600;
+  color: var(--text-dark); /* Color adaptativo */
 }
 
 /* Botón de agregar (+) */
 .wholesale-form-row .btn-save {
-  width: 42px; /* Cuadrado */
-  height: 42px; /* Altura igual a los inputs estándar */
+  width: 42px;
+  height: 42px;
   margin-bottom: 0;
   padding: 0;
   display: flex;
@@ -51,23 +53,24 @@
   flex-shrink: 0;
 }
 
-/* Contenedor de la lista de reglas */
+/* Contenedor de la lista */
 .tiers-list {
   max-height: 250px;
   overflow-y: auto;
-  border: 1px solid var(--light-background);
+  border: 1px solid var(--border-color); /* Variable global */
   border-radius: var(--border-radius-sm);
-  background-color: var(--card-background-color);
+  background-color: var(--card-background-color); /* Fondo correcto en dark mode */
 }
 
+/* Tabla */
 .tiers-table {
   width: 100%;
   border-collapse: collapse;
 }
 
 .tiers-table th {
-  background-color: var(--light-background);
-  color: var(--text-light);
+  background-color: var(--light-background); /* Gris claro en light, gris oscuro en dark */
+  color: var(--text-dark); /* Texto visible en ambos modos */
   font-size: 0.85rem;
   text-transform: uppercase;
   font-weight: 600;
@@ -80,8 +83,8 @@
 
 .tiers-table td {
   padding: var(--spacing-sm);
-  border-bottom: 1px solid var(--light-background);
-  color: var(--text-dark);
+  border-bottom: 1px solid var(--border-color); /* Variable global */
+  color: var(--text-color);
   font-size: 0.95rem;
 }
 
@@ -94,6 +97,7 @@
   color: var(--success-color);
 }
 
+/* Botón eliminar */
 .btn-delete-tier {
   background: none;
   border: none;
@@ -106,7 +110,7 @@
 }
 
 .btn-delete-tier:hover {
-  background-color: rgba(239, 68, 68, 0.1); /* Rojo muy suave */
+  background-color: rgba(255, 59, 92, 0.1);
   color: var(--error-color);
 }
 
@@ -118,32 +122,76 @@
   font-style: italic;
 }
 
+/* Footer y Notas */
+.modal-actions-container {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.footer-note {
+  font-size: 0.8rem; 
+  color: var(--text-light);
+  font-style: italic; 
+  text-align: center;
+}
+
 /* Footer de acciones */
 .modal-actions {
-  margin-top: var(--spacing-lg);
   display: flex;
-  gap: var(--spacing-md);
+  gap: 10px;
   justify-content: flex-end;
-  border-top: 1px solid var(--light-background);
-  padding-top: var(--spacing-md);
+  /* Opcional: si quieres una línea separadora arriba */
+  /* border-top: 1px solid var(--border-color); */
+  /* padding-top: var(--spacing-md); */
 }
 
-.modal-actions .btn {
-  width: auto; /* Botones con ancho automático */
-  min-width: 100px;
+/* 1. Estilo base forzado para AMBOS botones dentro del modal */
+.modal-actions button {
+  height: 42px;           /* Altura fija idéntica para ambos */
+  min-width: 110px;       /* Ancho mínimo igual */
+  padding: 0 20px;
   margin-bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  line-height: 1;
+  border-radius: var(--border-radius-sm);
+  box-shadow: none;       /* Reseteamos sombras para evitar diferencias */
 }
 
-/* --- Ajustes para Modo Oscuro --- */
-[data-theme="dark"] .wholesale-form-row {
-  background-color: #1f2937; /* Un poco más claro que el fondo negro */
-}
-
-[data-theme="dark"] .tiers-table th {
-  background-color: #1f2937;
+/* 2. Ajuste para el botón Cancelar (que tiene borde visible) */
+.modal-actions .btn-cancel {
+  border: 1px solid var(--border-color);
+  background-color: transparent;
   color: var(--text-light);
 }
 
-[data-theme="dark"] .tiers-table td {
-  border-bottom-color: #374151;
+.modal-actions .btn-cancel:hover {
+  background-color: var(--light-background);
+  color: var(--text-dark);
+}
+
+/* 3. Ajuste para el botón Guardar (Borde transparente para igualar tamaño) */
+.modal-actions .btn-save {
+  /* Truco: Borde transparente de 1px para ocupar el mismo espacio que 'cancelar' */
+  border: 1px solid transparent; 
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.modal-actions .btn-save:hover {
+  background-color: var(--primary-hover);
+}
+
+/* --- Ajustes Específicos para Modo Oscuro (Si alguna variable no cubre todo) --- */
+/* Ya casi todo debería estar cubierto por las variables globales, 
+   pero reforzamos si quieres un contraste específico */
+
+[data-theme="dark"] .tiers-table th {
+  /* Opcional: Si quieres que el header sea un pelín más oscuro que el light-background estándar */
+  background-color: rgba(255, 255, 255, 0.05); 
+  color: var(--text-dark);
 }

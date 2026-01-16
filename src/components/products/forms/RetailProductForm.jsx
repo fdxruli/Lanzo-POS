@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useProductCommon } from '../../../hooks/useProductCommon';
 import CommonProductFields from './CommonProductFields';
 import AbarrotesFields from '../fieldsets/AbarrotesFields';
@@ -6,7 +6,7 @@ import FruteriaFields from '../fieldsets/FruteriaFields';
 import QuickVariantEntry from '../QuickVariantEntry';
 import WholesaleManagerModal from '../WholesaleManagerModal';
 import { generateID, showMessageModal } from '../../../services/utils'; // Importamos showMessageModal
-import { saveBatchAndSyncProductSafe } from '../../../services/database';
+import { saveBatchAndSyncProductSafe, queryBatchesByProductIdAndActive } from '../../../services/database';
 import Logger from '../../../services/Logger';
 
 export default function RetailProductForm({ onSave, onCancel, productToEdit, categories, onOpenCategoryManager, activeRubroContext, features, onManageBatches }) {
@@ -22,6 +22,39 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
     const [wholesaleTiers, setWholesaleTiers] = useState(productToEdit?.wholesaleTiers || []);
     const [isWholesaleModalOpen, setIsWholesaleModalOpen] = useState(false);
     const [conversionFactor, setConversionFactor] = useState(productToEdit?.conversionFactor || { enabled: false, purchaseUnit: '', factor: 1 });
+    const [existingVariants, setExistingVariants] = useState([]);
+
+
+    useEffect(() => {
+        const loadVariants = async () => {
+            // Solo cargamos si estamos editando, es ropa y tiene ID
+            if (productToEdit?.id && activeRubroContext === 'apparel') {
+                try {
+                    const batches = await queryBatchesByProductIdAndActive(productToEdit.id);
+
+                    if (batches.length > 0) {
+                        // Transformamos el formato de la BD al formato visual de la tabla
+                        const formattedRows = batches.map(b => ({
+                            id: b.id, // IMPORTANTE: Guardamos el ID real de la BD
+                            talla: b.attributes?.talla || '',
+                            color: b.attributes?.color || '',
+                            sku: b.sku || '',
+                            stock: b.stock || 0,
+                            cost: b.cost || common.cost,
+                            price: b.price || common.price
+                        }));
+
+                        setExistingVariants(formattedRows);
+                        setQuickVariants(formattedRows); // Sincronizamos el estado del formulario también
+                    }
+                } catch (error) {
+                    console.error("Error cargando variantes:", error);
+                }
+            }
+        };
+
+        loadVariants();
+    }, [productToEdit?.id, activeRubroContext]);
 
     // Estado para Ropa (Variantes rápidas)
     const [quickVariants, setQuickVariants] = useState([]);
@@ -124,6 +157,23 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
             const commonData = common.getCommonData();
             const productId = productToEdit?.id || generateID('prod');
 
+            // Cálculo de stock final considerando variantes rápidas
+            let totalVariantStock = 0;
+            if (isApparel && quickVariants.length > 0) {
+                totalVariantStock = quickVariants.reduce((sum, variant) => {
+                    return sum + (parseFloat(variant.stock) || 0);
+                }, 0);
+
+                // Si las variantes suman algo, forzamos que el sistema rastree inventario
+                if (totalVariantStock > 0) {
+                    commonData.trackStock = true;
+                }
+            }
+
+            const initialDbStock = (isApparel && quickVariants.length > 0)
+                ? 0
+                : commonData.stock;
+
             // Configuración de variantes
             const hasQuickVariants = isApparel && quickVariants.length > 0;
             const finalBatchManagement = hasQuickVariants
@@ -133,6 +183,7 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
             const payload = {
                 id: productId,
                 ...commonData,
+                stock: initialDbStock,
                 rubroContext: activeRubroContext,
                 saleType,
                 unit,
@@ -151,25 +202,71 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
             const success = await onSave(payload, productToEdit || { id: productId, isNew: true });
 
             if (success && hasQuickVariants) {
-                const validVariants = quickVariants.filter(v => (v.talla && v.color));
-                for (const variant of validVariants) {
-                    const batchData = {
-                        id: generateID('batch'),
-                        productId: productId,
-                        stock: parseFloat(variant.stock) || 0,
-                        cost: parseFloat(variant.cost) || commonData.cost,
-                        price: parseFloat(variant.price) || commonData.price,
-                        sku: variant.sku || null,
-                        attributes: {
-                            talla: variant.talla.toUpperCase(),
-                            color: variant.color
-                        },
-                        isActive: true,
-                        createdAt: new Date().toISOString(),
-                        notes: 'Ingreso rápido Boutique',
-                        trackStock: true
-                    };
-                    await saveBatchAndSyncProductSafe(batchData);
+                // Bloque TRY/CATCH exclusivo para la creación de variantes
+                try {
+                    const validVariants = quickVariants.filter(v => (v.talla && v.color));
+
+                    // 1. PREPARAMOS TODAS LAS PROMESAS (En paralelo, no secuencial)
+                    // Esto crea un array de operaciones pendientes sin ejecutarlas una por una bloqueando el hilo.
+                    const batchPromises = validVariants.map(variant => {
+
+                        // DETECTAR SI ES EDICIÓN O CREACIÓN
+                        // Los IDs temporales de la interfaz son números (Date.now()), los de la BD son Strings (UUIDs)
+                        const isNewVariant = typeof variant.id === 'number';
+                        const finalId = isNewVariant ? generateID('batch') : variant.id;
+
+                        // LÓGICA DE SKU (Tu corrección anterior)
+                        let finalSku = variant.sku;
+                        if (!finalSku) {
+                            const c = variant.color ? variant.color.substring(0, 3).toUpperCase() : 'GEN';
+                            const t = variant.talla ? variant.talla.toUpperCase() : 'U';
+                            const rnd = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+                            finalSku = `${c}-${t}-${rnd}`.toUpperCase().replace(/\s+/g, '');
+                        }
+
+                        const batchData = {
+                            id: finalId, // <--- USAMOS EL ID CORRECTO (EXISTENTE O NUEVO)
+                            productId: productId,
+                            stock: parseFloat(variant.stock) || 0,
+                            cost: parseFloat(variant.cost) || commonData.cost,
+                            price: parseFloat(variant.price) || commonData.price,
+                            sku: finalSku,
+                            attributes: {
+                                talla: variant.talla.toUpperCase(),
+                                color: variant.color
+                            },
+                            isActive: true,
+                            createdAt: isNewVariant ? new Date().toISOString() : undefined, // Mantener fecha original si existe (la BD lo maneja si es undefined en update, o puedes cargarla)
+                            // Nota: Si database.js usa put(), reemplazará todo el objeto. 
+                            // Idealmente deberías hacer un merge si es update, pero para este caso, aseguramos re-escribir los datos frescos.
+                            trackStock: true
+                        };
+
+                        // Si es update, es mejor conservar el createdAt original si lo tienes, 
+                        // pero database.js put() suele sobreescribir. 
+                        // Si necesitas preservar la fecha de creación exacta, deberías traerla en el map del Paso 2.
+
+                        return saveBatchAndSyncProductSafe(batchData);
+                    });
+
+                    // 2. EJECUCIÓN ATÓMICA (Simulada)
+                    // Esperamos a que TODAS se guarden. Si una falla, el catch lo atrapa.
+                    await Promise.all(batchPromises);
+
+                    // Opcional: Log de éxito
+                    Logger.info(`Creadas ${batchPromises.length} variantes para producto ${productId}`);
+
+                } catch (variantError) {
+                    // 3. GESTIÓN DE ERRORES ESPECÍFICA
+                    // El producto padre YA SE GUARDÓ, así que no podemos decir simplemente "Error".
+                    // Debemos advertir que la "extensión" de tallas falló.
+                    Logger.error("Error crítico guardando variantes:", variantError);
+
+                    showMessageModal(
+                        '⚠️ Atención: Guardado Parcial',
+                        'El producto principal se creó correctamente, pero hubo un error generando algunas tallas o colores.\n\nPor favor ve a la pestaña "Inventario" de este producto para verificar qué variantes faltan.',
+                        { type: 'warning' }
+                    );
                 }
             }
         } catch (error) {
@@ -232,6 +329,7 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                             basePrice={parseFloat(common.price) || 0}
                             baseCost={parseFloat(common.cost) || 0}
                             onVariantsChange={setQuickVariants}
+                            initialData={existingVariants}
                         />
                     </div>
                 )}

@@ -62,16 +62,30 @@ export default function OrderSummary({ onOpenPayment, isMobileModal, onClose }) 
               return (
                 <div key={item.id} className={itemClasses}>
                   <div className="order-item-info">
-                    {/* ... (Nombre, precio, notas igual) ... */}
                     <div className="order-item-header">
-                      <span className="order-item-name">{item.name}</span>
+                      <span className="order-item-name">
+                        {item.name}
+
+                        {/* Agregamos el icono AQUÍ, dentro de tu span original para que herede la alineación */}
+                        {item.priceWarning && (
+                          <span
+                            title="⚠️ Precio de Mayoreo bloqueado por Costo Alto"
+                            style={{
+                              marginLeft: '8px',
+                              cursor: 'help',
+                              fontSize: '0.9em' /* Un poco más chico que el texto para que se vea elegante */
+                            }}
+                          >
+                            🛡️
+                          </span>
+                        )}
+                      </span>
                       {item.exceedsStock && (
                         <div className="stock-error-container">
                           <div className="stock-error-text">
                             <strong>⚠️ Stock Insuficiente</strong>
                             <span>Solo quedan <b>{item.stock}</b> disponibles.</span>
                           </div>
-
                           {/* Botón inteligente para ajustar automáticamente al máximo */}
                           <button
                             className="btn-fix-stock"
@@ -91,7 +105,14 @@ export default function OrderSummary({ onOpenPayment, isMobileModal, onClose }) 
                       </div>
                     )}
                     {item.notes && <div className="order-item-notes">📝 {item.notes}</div>}
-                    <div className="order-item-price">${Number(item.price).toFixed(2)} {item.saleType === 'bulk' ? ` / ${item.bulkData?.purchase?.unit || 'kg'}` : ''}</div>
+                    <div className="order-item-price">
+                      <span style={{
+                        color: item.priceWarning ? '#d97706' : 'inherit',
+                        fontWeight: item.priceWarning ? 'bold' : 'inherit'
+                      }}>
+                        ${(item.price * (item.quantity || 1)).toFixed(2)}
+                      </span>
+                    </div>
                   </div>
 
                   {(item.saleType === 'unit' || !item.saleType) ? (
