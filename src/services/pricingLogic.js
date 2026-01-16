@@ -98,6 +98,40 @@ export const calculateCompositePrice = (product, quantity) => {
 };
 
 /**
+ * [NUEVO] Validador de Reglas de Negocio (Detective de Precios)
+ * Verifica si aplicar mayoreo causaría pérdidas sin alterar el cálculo real.
+ */
+export const validateWholesaleCondition = (product, quantity) => {
+  // 1. Si no hay producto o no tiene reglas de mayoreo, todo OK.
+  if (!product || !product.wholesaleTiers || product.wholesaleTiers.length === 0) {
+    return { status: 'ok' };
+  }
+
+  // 2. Buscamos qué regla de mayoreo aplicaría por cantidad
+  const tiersDesc = [...product.wholesaleTiers].sort((a, b) => b.min - a.min);
+  const tier = tiersDesc.find(t => quantity >= t.min);
+
+  if (tier) {
+    const tierPrice = Number(tier.price);
+    const replacementCost = Number(product.cost || 0);
+
+    // 3. LA REGLA DE ORO: Si hay costo definido y el precio mayoreo es menor... ¡ALERTA!
+    // Esto protege Ferretería (acero sube de precio) y Abarrotes.
+    if (replacementCost > 0 && tierPrice < replacementCost) {
+      return {
+        status: 'conflict',
+        reason: 'below_cost',
+        tierPrice: tierPrice,      // Precio que el cliente quería
+        cost: replacementCost,     // Costo real actual
+        safePrice: product.price   // Precio regular (seguro)
+      };
+    }
+  }
+
+  return { status: 'ok' };
+};
+
+/**
  * Calcula el total de una línea de pedido.
  */
 export const calculateLineTotal = (price, quantity) => {
