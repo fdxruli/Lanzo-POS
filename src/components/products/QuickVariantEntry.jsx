@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import './QuickVariantEntry.css';
 
 export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChange, initialData = [] }) {
   const [rows, setRows] = useState(() => {
@@ -10,22 +11,25 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
 
   const [quickColor, setQuickColor] = useState('');
 
+  // RASTREO DE LOTES ACTIVOS: { 'key-del-boton': [id1, id2, id3] }
+  const [activeBatches, setActiveBatches] = useState({});
+
+  const [showAllCategories, setShowAllCategories] = useState(false);
+
   useEffect(() => {
     if (initialData && initialData.length > 0) {
-        setRows(initialData);
+      setRows(initialData);
     }
   }, [initialData]);
 
-  // --- ANÁLISIS EN TIEMPO REAL (DUPLICADOS Y ERRORES) ---
-  // Memorizamos esto para no recalcular en cada render innecesario
+  // --- ANÁLISIS EN TIEMPO REAL (DUPLICADOS) ---
   const rowAnalysis = useMemo(() => {
     const seen = new Set();
     const duplicates = new Set();
-    
+
     rows.forEach(row => {
-      // Clave compuesta normalizada para detectar duplicados
-      const key = `${row.color.trim().toLowerCase()}-${row.talla.trim().toLowerCase()}`;
-      if (key !== '-' && key !== '') { // Ignorar filas vacías
+      const key = `${row.color ? row.color.trim().toLowerCase() : ''}-${row.talla ? row.talla.trim().toLowerCase() : ''}`;
+      if (key !== '-' && key !== '' && row.talla && row.color) {
         if (seen.has(key)) {
           duplicates.add(key);
         } else {
@@ -37,12 +41,12 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
     return { duplicates };
   }, [rows]);
 
-  // Sincronización con el padre
+  // Sincronización
   useEffect(() => {
     onVariantsChange(rows);
   }, [rows, onVariantsChange]);
 
-  // --- LÓGICA CRUD ---
+  // --- CRUD ---
   const updateRow = (id, field, value) => {
     setRows(prev => prev.map(row => {
       if (row.id === id) return { ...row, [field]: value };
@@ -51,7 +55,14 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
   };
 
   const removeRow = (id) => {
-    setRows(prev => prev.filter(r => r.id !== id));
+    setRows(prev => {
+      const newRows = prev.filter(r => r.id !== id);
+      // Si borramos todo manual, dejamos una fila vacía para no romper la UI
+      if (newRows.length === 0) {
+        return [{ id: Date.now(), talla: '', color: '', sku: '', stock: '', cost: baseCost, price: basePrice }];
+      }
+      return newRows;
+    });
   };
 
   const addEmptyRow = () => {
@@ -63,22 +74,52 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
     ]);
   };
 
-  // --- GENERADORES Y HERRAMIENTAS ---
-  const addSizeRun = (sizesArray) => {
-    const newRows = sizesArray.map((size, index) => ({
-      id: Date.now() + index + Math.random(),
-      talla: size,
-      color: quickColor || '', 
-      sku: '',
-      stock: 1, 
-      cost: baseCost,
-      price: basePrice
-    }));
+  // --- LOGICA TOGGLE (MARCAR/DESMARCAR) ---
+  const toggleSizeRun = (batchKey, sizesArray) => {
+    // Si ya está activo, lo quitamos (UNDO)
+    if (activeBatches[batchKey]) {
+      const idsToRemove = activeBatches[batchKey];
 
-    if (rows.length === 1 && !rows[0].talla && !rows[0].color) {
-      setRows(newRows);
+      setRows(prev => {
+        const remaining = prev.filter(row => !idsToRemove.includes(row.id));
+        // Si nos quedamos sin filas, restaurar la fila vacía inicial
+        if (remaining.length === 0) {
+          return [{ id: Date.now(), talla: '', color: '', sku: '', stock: '', cost: baseCost, price: basePrice }];
+        }
+        return remaining;
+      });
+
+      // Quitamos del estado de activos
+      setActiveBatches(prev => {
+        const next = { ...prev };
+        delete next[batchKey];
+        return next;
+      });
+
     } else {
-      setRows(prev => [...prev, ...newRows]);
+      // Si no está activo, lo agregamos
+      const newRows = sizesArray.map((size, index) => ({
+        id: Date.now() + index + Math.random(),
+        talla: size,
+        color: quickColor || '',
+        sku: '',
+        stock: 1,
+        cost: baseCost,
+        price: basePrice
+      }));
+
+      const newIds = newRows.map(r => r.id);
+
+      setRows(prev => {
+        // Si solo hay una fila vacía (estado inicial), la reemplazamos
+        if (prev.length === 1 && !prev[0].talla && !prev[0].color) {
+          return newRows;
+        }
+        return [...prev, ...newRows];
+      });
+
+      // Marcamos como activo guardando los IDs generados
+      setActiveBatches(prev => ({ ...prev, [batchKey]: newIds }));
     }
   };
 
@@ -86,12 +127,11 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
     if (!talla && !color) return;
     const c = color ? color.substring(0, 3).toUpperCase() : 'GEN';
     const t = talla ? talla.toUpperCase() : 'U';
-    const rnd = Date.now().toString().slice(-6); // Últimos 6 dígitos del tiempo
-const sku = `${c}-${t}-${rnd}`.toUpperCase().replace(/\s+/g, '');
+    const rnd = Date.now().toString().slice(-6);
+    const sku = `${c}-${t}-${rnd}`.toUpperCase().replace(/\s+/g, '');
     updateRow(id, 'sku', sku);
   };
 
-  // Aplica el precio/costo base a TODAS las filas
   const syncColumn = (field, value) => {
     if (!window.confirm(`¿Aplicar $${value} a todas las variantes?`)) return;
     setRows(prev => prev.map(r => ({ ...r, [field]: value })));
@@ -99,215 +139,236 @@ const sku = `${c}-${t}-${rnd}`.toUpperCase().replace(/\s+/g, '');
 
   // --- CALCULADORA DE MARGEN VISUAL ---
   const getMarginColor = (cost, price) => {
-    if (!cost || !price || parseFloat(cost) === 0) return '#cbd5e1'; // Gris
+    if (!cost || !price || parseFloat(cost) === 0) return 'var(--text-light)';
     const m = ((parseFloat(price) - parseFloat(cost)) / parseFloat(cost)) * 100;
-    if (m < 15) return '#ef4444'; // Rojo
-    if (m < 30) return '#eab308'; // Amarillo
-    return '#22c55e'; // Verde
+    if (m < 15) return 'var(--error-color)';
+    if (m < 30) return 'var(--warning-color)';
+    return 'var(--success-color)';
   };
 
   const totalStock = rows.reduce((acc, row) => acc + (parseFloat(row.stock) || 0), 0);
 
+  // Helper para estilo de botón activo
+  const getBtnStyle = (key) => activeBatches[key]
+    ? { backgroundColor: '#2c3e50', color: 'white', borderColor: '#2c3e50' } // Estilo "Activo"
+    : {};
+
   return (
-    <div className="quick-variant-container" style={{ marginTop: '15px', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-      
+    <div className="quick-variant-container">
+
       {/* HEADER & TOOLS */}
-      <div style={{ padding: '15px', borderBottom: '1px solid #e2e8f0' }}>
+      <div className="qv-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <h4 style={{ margin: 0, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h4 className="qv-title">
             👕 Variantes y Tallas
-            <span style={{ fontSize: '0.8rem', backgroundColor: '#e0e7ff', color: '#4338ca', padding: '2px 8px', borderRadius: '10px' }}>
+            <span className="qv-badge">
               Total Pzas: {totalStock}
             </span>
           </h4>
         </div>
 
-        {/* SPEED BAR */}
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: 'white', padding: '5px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-            <span style={{ fontSize: '0.9rem', color: '#64748b' }}>🎨 Color Lote:</span>
-            <input 
-              type="text" 
-              placeholder="Ej: Negro" 
+        {/* TOOLBAR */}
+        <div className="qv-toolbar" style={{ flexWrap: 'wrap', gap: '15px', alignItems: 'flex-start' }}>
+
+          {/* SECCIÓN 1: CONFIGURACIÓN BÁSICA (Color) */}
+          <div className="qv-input-group" style={{ minWidth: '150px' }}>
+            <span className="qv-label">🎨 Color Lote:</span>
+            <input
+              type="text"
+              className="qv-color-input"
+              placeholder="Ej: Negro"
               value={quickColor}
               onChange={(e) => setQuickColor(e.target.value)}
-              style={{ border: 'none', outline: 'none', width: '90px', fontWeight: 'bold', color: '#0f172a' }}
             />
           </div>
-          
-          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Agregar Curva:</span>
-          
-          <div className="btn-group" style={{ display: 'flex', gap: '5px' }}>
-            <button type="button" className="btn-xs" style={btnStyle} onClick={() => addSizeRun(['CH', 'M', 'G'])}>CH-M-G</button>
-            <button type="button" className="btn-xs" style={btnStyle} onClick={() => addSizeRun(['CH', 'M', 'G', 'XL'])}>+ XL</button>
-            <button type="button" className="btn-xs" style={btnStyle} onClick={() => addSizeRun(['23', '24', '25', '26'])}>👠 23-26</button>
-            <button type="button" className="btn-xs" style={btnStyle} onClick={() => addSizeRun(['27', '28', '29', '30'])}>👞 27-30</button>
+
+          {/* SECCIÓN 2: BOTONERAS DE TALLAS */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+
+            <div className="btn-group">
+              <small style={{ width: '100%', color: 'var(--text-light)', fontSize: '0.7rem', fontWeight: 'bold' }}>Camisas/Blusas:</small>
+              <button type="button" className="btn-xs" style={getBtnStyle('top-xs')} onClick={() => toggleSizeRun('top-xs', ['XS', 'S', 'M', 'L'])}>XS - L</button>
+              <button type="button" className="btn-xs" style={getBtnStyle('top-s')} onClick={() => toggleSizeRun('top-s', ['S', 'M', 'L', 'XL'])}>S - XL</button>
+              <button type="button" className="btn-xs" style={getBtnStyle('top-m')} onClick={() => toggleSizeRun('top-m', ['M', 'L', 'XL', '2XL'])}>M - 2XL</button>
+              <button type="button" className="btn-xs" style={getBtnStyle('top-plus')} onClick={() => toggleSizeRun('top-plus', ['XL', '2XL', '3XL', '4XL'])}>Plus</button>
+            </div>
+
+            <button
+              type="button"
+              className="btn-toggle-categories"
+              onClick={() => setShowAllCategories(!showAllCategories)}
+            >
+              {showAllCategories ? '▲ Ocultar otras categorías' : '▼ Ver Pantalones, Niños y Calzado'}
+            </button>
+
+            {/* ÁREA COLAPSABLE */}
+            {showAllCategories && (
+              <div className="qv-collapsible-area">
+                {/* BOTTOMS / JEANS HOMBRE */}
+                <div className="btn-group">
+                  <small style={{ width: '100%', color: 'var(--text-light)', fontSize: '0.7rem', fontWeight: 'bold' }}>Hombre:</small>
+                  <button type="button" className="btn-xs" style={getBtnStyle('man-28')} onClick={() => toggleSizeRun('man-28', ['28', '30', '32', '34'])}>28-34</button>
+                  <button type="button" className="btn-xs" style={getBtnStyle('man-30')} onClick={() => toggleSizeRun('man-30', ['30', '32', '34', '36', '38'])}>30-38</button>
+                  <button type="button" className="btn-xs" style={getBtnStyle('man-32')} onClick={() => toggleSizeRun('man-32', ['32', '34', '36', '38', '40'])}>32-40</button>
+                </div>
+
+                {/* BOTTOMS / JEANS DAMA */}
+                <div className="btn-group">
+                  <small style={{ width: '100%', color: 'var(--text-light)', fontSize: '0.7rem', fontWeight: 'bold' }}>Dama:</small>
+                  <button type="button" className="btn-xs" style={getBtnStyle('lady-3')} onClick={() => toggleSizeRun('lady-3', ['3', '5', '7', '9', '11'])}>3-11</button>
+                  <button type="button" className="btn-xs" style={getBtnStyle('lady-5')} onClick={() => toggleSizeRun('lady-5', ['5', '7', '9', '11', '13'])}>5-13</button>
+                  <button type="button" className="btn-xs" style={getBtnStyle('lady-7')} onClick={() => toggleSizeRun('lady-7', ['7', '9', '11', '13', '15'])}>7-15</button>
+                  <button type="button" className="btn-xs" style={getBtnStyle('uni')} onClick={() => toggleSizeRun('uni', ['UNITALLA'])}>Unitalla</button>
+                </div>
+
+                {/* NIÑOS */}
+                <div className="btn-group">
+                  <small style={{ width: '100%', color: 'var(--text-light)', fontSize: '0.7rem', fontWeight: 'bold' }}>Niños:</small>
+                  <button type="button" className="btn-xs" style={getBtnStyle('kids-baby')} onClick={() => toggleSizeRun('kids-baby', ['3M', '6M', '9M', '12M', '18M', '24M'])}>Bebés</button>
+                  <button type="button" className="btn-xs" style={getBtnStyle('kids-todd')} onClick={() => toggleSizeRun('kids-todd', ['2', '4', '6', '8', '10'])}>2-10 Años</button>
+                  <button type="button" className="btn-xs" style={getBtnStyle('kids-teen')} onClick={() => toggleSizeRun('kids-teen', ['10', '12', '14', '16'])}>Junior</button>
+                </div>
+
+                {/* CALZADO */}
+                <div className="btn-group">
+                  <small style={{ width: '100%', color: 'var(--text-light)', fontSize: '0.7rem', fontWeight: 'bold' }}>Calzado:</small>
+                  <button type="button" className="btn-xs" style={getBtnStyle('shoe-w')} onClick={() => toggleSizeRun('shoe-w', ['22', '23', '24', '25', '26'])}>👠 22-26</button>
+                  <button type="button" className="btn-xs" style={getBtnStyle('shoe-m')} onClick={() => toggleSizeRun('shoe-m', ['25', '26', '27', '28', '29'])}>👞 25-29</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
-      
-      {/* TABLA INTELIGENTE */}
-      <div style={{ overflowX: 'auto', maxHeight: '350px', overflowY: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-          <thead style={{ position: 'sticky', top: 0, backgroundColor: 'white', zIndex: 10, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-            <tr style={{ textAlign: 'left', color: '#64748b' }}>
-              <th style={thStyle}>Color *</th>
-              <th style={thStyle}>Talla *</th>
-              <th style={thStyle}>Stock</th>
-              <th style={thStyle}>
-                Costo 
-                <button type="button" onClick={() => syncColumn('cost', baseCost)} title="Aplicar Costo Base a todos" style={miniBtnStyle}>⬇</button>
+
+      {/* TABLA SCROLLEABLE */}
+      <div className="qv-table-wrapper">
+        <table className="qv-table">
+          <thead>
+            <tr>
+              <th>Color *</th>
+              <th>Talla *</th>
+              <th style={{ width: '80px' }}>Stock</th>
+              <th style={{ minWidth: '100px' }}>
+                Costo
+                <button type="button" className="btn-icon sync" onClick={() => syncColumn('cost', baseCost)} title="Aplicar Costo Base a todos">⬇</button>
               </th>
-              <th style={thStyle}>
+              <th style={{ minWidth: '100px' }}>
                 Precio
-                <button type="button" onClick={() => syncColumn('price', basePrice)} title="Aplicar Precio Base a todos" style={miniBtnStyle}>⬇</button>
+                <button type="button" className="btn-icon sync" onClick={() => syncColumn('price', basePrice)} title="Aplicar Precio Base a todos">⬇</button>
               </th>
-              <th style={thStyle}>SKU / Auto</th>
-              <th style={{...thStyle, width: '30px'}}></th>
+              <th>SKU / Auto</th>
+              <th style={{ width: '40px' }}></th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => {
-                // Lógica de Validación Visual por fila
-                const key = `${row.color.trim().toLowerCase()}-${row.talla.trim().toLowerCase()}`;
-                const isDuplicate = key !== '-' && rowAnalysis.duplicates.has(key);
-                const isMissingData = !row.color || !row.talla;
-                
-                return (
-                  <tr key={row.id} style={{ 
-                      borderBottom: '1px solid #f1f5f9',
-                      backgroundColor: isDuplicate ? '#fef3c7' : 'transparent' // Amarillo si es duplicado
-                  }}>
-                    {/* COLOR */}
-                    <td style={{padding: '8px'}}>
-                      <input 
-                        type="text" 
-                        className="form-input-compact" 
-                        placeholder="Color"
-                        value={row.color}
-                        onChange={(e) => updateRow(row.id, 'color', e.target.value)}
-                        style={!row.color ? { borderColor: '#fca5a5' } : {}}
+            {rows.map((row) => {
+              const key = `${row.color ? row.color.trim().toLowerCase() : ''}-${row.talla ? row.talla.trim().toLowerCase() : ''}`;
+              const isDuplicate = key !== '-' && rowAnalysis.duplicates.has(key);
+
+              return (
+                <tr key={row.id} className={isDuplicate ? 'qv-row-duplicate' : ''}>
+                  {/* COLOR */}
+                  <td className="qv-cell">
+                    <input
+                      type="text"
+                      className="form-input-compact"
+                      placeholder="Color"
+                      value={row.color}
+                      onChange={(e) => updateRow(row.id, 'color', e.target.value)}
+                      style={!row.color ? { borderColor: 'var(--error-color)' } : {}}
+                    />
+                    {isDuplicate && <div style={{ fontSize: '0.7rem', color: 'var(--warning-color)', marginTop: '2px' }}>⚠️ Duplicado</div>}
+                  </td>
+
+                  {/* TALLA */}
+                  <td className="qv-cell">
+                    <input
+                      type="text"
+                      className="form-input-compact"
+                      placeholder="Talla"
+                      value={row.talla}
+                      onChange={(e) => updateRow(row.id, 'talla', e.target.value)}
+                      style={!row.talla ? { borderColor: 'var(--error-color)' } : {}}
+                    />
+                  </td>
+
+                  {/* STOCK */}
+                  <td className="qv-cell">
+                    <input
+                      type="number"
+                      className="form-input-compact"
+                      placeholder="0"
+                      value={row.stock}
+                      min="0"
+                      onChange={(e) => updateRow(row.id, 'stock', e.target.value)}
+                      style={{ textAlign: 'center', fontWeight: 'bold', color: row.stock > 0 ? 'var(--success-color)' : 'var(--text-light)' }}
+                    />
+                  </td>
+
+                  {/* COSTO */}
+                  <td className="qv-cell">
+                    <input
+                      type="number"
+                      className="form-input-compact"
+                      value={row.cost}
+                      onChange={(e) => updateRow(row.id, 'cost', e.target.value)}
+                    />
+                  </td>
+
+                  {/* PRECIO CON INDICADOR DE MARGEN */}
+                  <td className="qv-cell" style={{ position: 'relative' }}>
+                    <input
+                      type="number"
+                      className="form-input-compact"
+                      value={row.price}
+                      onChange={(e) => updateRow(row.id, 'price', e.target.value)}
+                      style={{ fontWeight: 'bold' }}
+                    />
+                    <div style={{
+                      position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                      width: '8px', height: '8px', borderRadius: '50%',
+                      backgroundColor: getMarginColor(row.cost, row.price),
+                      boxShadow: '0 0 0 2px var(--card-background-color)',
+                      pointerEvents: 'none'
+                    }}></div>
+                  </td>
+
+                  {/* SKU */}
+                  <td className="qv-cell">
+                    <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        className="form-input-compact"
+                        placeholder="Auto"
+                        value={row.sku}
+                        onChange={(e) => updateRow(row.id, 'sku', e.target.value)}
+                        style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}
                       />
-                      {isDuplicate && <div style={{fontSize: '0.7rem', color: '#b45309'}}>⚠️ Duplicado</div>}
-                    </td>
+                      {(!row.sku && row.talla && row.color) && (
+                        <button type="button" className="btn-icon gen" onClick={() => generateSKU(row.id, row.talla, row.color)} title="Generar SKU">⚡</button>
+                      )}
+                    </div>
+                  </td>
 
-                    {/* TALLA */}
-                    <td style={{padding: '8px'}}>
-                      <input 
-                        type="text" 
-                        className="form-input-compact" 
-                        placeholder="Talla"
-                        value={row.talla}
-                        onChange={(e) => updateRow(row.id, 'talla', e.target.value)}
-                        style={!row.talla ? { borderColor: '#fca5a5' } : {}}
-                      />
-                    </td>
-
-                    {/* STOCK */}
-                    <td style={{padding: '8px'}}>
-                      <input 
-                        type="number" 
-                        className="form-input-compact" 
-                        placeholder="0"
-                        value={row.stock}
-                        min="0"
-                        onChange={(e) => updateRow(row.id, 'stock', e.target.value)}
-                        style={{ textAlign: 'center', fontWeight: 'bold', color: row.stock > 0 ? '#166534' : '#cbd5e1' }}
-                      />
-                    </td>
-
-                    {/* COSTO */}
-                    <td style={{padding: '8px', width: '80px'}}>
-                         <input 
-                            type="number" 
-                            className="form-input-compact" 
-                            value={row.cost}
-                            onChange={(e) => updateRow(row.id, 'cost', e.target.value)}
-                         />
-                    </td>
-
-                    {/* PRECIO CON INDICADOR DE MARGEN */}
-                    <td style={{padding: '8px', width: '90px', position: 'relative'}}>
-                        <input 
-                            type="number" 
-                            className="form-input-compact" 
-                            value={row.price}
-                            onChange={(e) => updateRow(row.id, 'price', e.target.value)}
-                            style={{ fontWeight: 'bold' }}
-                         />
-                         <div style={{
-                             position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
-                             width: '6px', height: '6px', borderRadius: '50%',
-                             backgroundColor: getMarginColor(row.cost, row.price),
-                             pointerEvents: 'none'
-                         }}></div>
-                    </td>
-
-                    {/* SKU */}
-                    <td style={{padding: '8px'}}>
-                      <div style={{display:'flex', gap:'5px', alignItems:'center'}}>
-                        <input 
-                          type="text" 
-                          className="form-input-compact" 
-                          placeholder="Auto"
-                          value={row.sku}
-                          onChange={(e) => updateRow(row.id, 'sku', e.target.value)}
-                          style={{ fontSize:'0.75rem', color: '#475569' }}
-                        />
-                         {(!row.sku && row.talla && row.color) && (
-                            <button type="button" onClick={() => generateSKU(row.id, row.talla, row.color)} style={{border:'none', background:'none', cursor:'pointer', fontSize:'1rem', padding:'0'}} title="Generar SKU">⚡</button>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* DELETE */}
-                    <td style={{padding: '8px', textAlign:'center'}}>
-                      <button type="button" onClick={() => removeRow(row.id)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight:'bold', fontSize: '1.2rem' }}>×</button>
-                    </td>
-                  </tr>
-                );
+                  {/* DELETE */}
+                  <td className="qv-cell" style={{ textAlign: 'center' }}>
+                    <button type="button" className="btn-icon delete" onClick={() => removeRow(row.id)}>×</button>
+                  </td>
+                </tr>
+              );
             })}
           </tbody>
         </table>
       </div>
 
-      <button 
-        type="button" 
-        onClick={addEmptyRow} 
-        style={{ 
-            width: '100%', padding: '12px', fontSize: '0.9rem', 
-            background: '#f8fafc', color: '#3b82f6', border: 'none', borderTop:'1px solid #e2e8f0',
-            cursor: 'pointer', fontWeight: '600', transition: 'background 0.2s'
-        }}
-        onMouseOver={(e) => e.target.style.background = '#f1f5f9'}
-        onMouseOut={(e) => e.target.style.background = '#f8fafc'}
+      <button
+        type="button"
+        className="btn-add-row"
+        onClick={addEmptyRow}
       >
         + Agregar Variante Manual
       </button>
     </div>
   );
 }
-
-// Estilos auxiliares
-const btnStyle = {
-    padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px',
-    border: '1px solid #cbd5e1', backgroundColor: 'white', cursor: 'pointer', color: '#334155'
-};
-const miniBtnStyle = {
-    marginLeft: '5px', border: 'none', background: 'none', cursor: 'pointer', color: '#3b82f6', fontSize: '0.9rem'
-};
-const thStyle = {
-    padding: '10px 8px', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', color: '#64748b'
-};
-
-// Inyección de estilos CSS
-const styleSheet = document.createElement("style");
-styleSheet.innerText = `
-  .form-input-compact {
-    width: 100%; padding: 6px 8px; border: 1px solid #e2e8f0; borderRadius: 6px; fontSize: 0.9rem; transition: all 0.2s;
-  }
-  .form-input-compact:focus {
-    border-color: #3b82f6; outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-  }
-`;
-document.head.appendChild(styleSheet);

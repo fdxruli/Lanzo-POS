@@ -60,6 +60,11 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
     const [quickVariants, setQuickVariants] = useState([]);
     const isApparel = activeRubroContext === 'apparel';
 
+    const hasActiveVariants = quickVariants.some(v =>
+        (v.talla && v.talla.trim() !== '') ||
+        (v.color && v.color.trim() !== '')
+    )
+
     // --- LÓGICA DE VALIDACIÓN ROBUSTA (A PRUEBA DE ERRORES) ---
     const validateRetailRules = () => {
         const price = parseFloat(common.price) || 0;
@@ -121,25 +126,38 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
 
         // 5. Reglas estrictas de BOUTIQUE / ROPA
         if (isApparel && features.hasVariants) {
-            const hasVariants = quickVariants.length > 0;
-            const hasStock = common.doesTrackStock ? parseFloat(common.getCommonData().stock || 0) > 0 : true;
 
-            if (!hasVariants && !hasStock && common.doesTrackStock) {
-                showMessageModal('Sin Inventario', 'No has agregado existencias. Por favor agrega variantes (Tallas/Colores) en la tabla inferior o define un stock inicial.');
-                return false;
-            }
+            // ESCENARIO A: El usuario SÍ quiere variantes (escribió algo en la tabla)
+            if (hasActiveVariants) {
+                // Aquí sí somos estrictos: si empezó a escribir, debe terminar
+                const incompleteVariants = quickVariants.filter(v =>
+                    (v.talla || v.color) && (!v.talla || !v.color)
+                );
 
-            if (hasVariants) {
-                const incompleteVariants = quickVariants.filter(v => !v.talla || !v.color);
                 if (incompleteVariants.length > 0) {
-                    showMessageModal('Variantes Incompletas', `Tienes ${incompleteVariants.length} variante(s) sin Talla o Color.`);
+                    showMessageModal('Variantes Incompletas', `Tienes filas con datos a medias. Por favor define Talla Y Color, o elimina la fila.`);
                     return false;
                 }
 
                 // Validación de precios en variantes
-                const badVariant = quickVariants.find(v => (parseFloat(v.price) || price) < (parseFloat(v.cost) || cost));
+                const badVariant = quickVariants.find(v =>
+                    (v.talla && v.color) && // Solo revisar filas completas
+                    ((parseFloat(v.price) || price) < (parseFloat(v.cost) || cost))
+                );
+
                 if (badVariant) {
-                    if (!window.confirm(`⚠️ Una variante (${badVariant.color} ${badVariant.talla}) tiene precio menor al costo. ¿Continuar?`)) return false;
+                    if (!window.confirm(`⚠️ La variante (${badVariant.color} ${badVariant.talla}) tiene precio menor al costo. ¿Continuar?`)) return false;
+                }
+            }
+
+            // ESCENARIO B: NO hay variantes (producto único/unitalla)
+            else {
+                // Validamos el stock GLOBAL como un producto normal
+                const hasGlobalStock = common.doesTrackStock ? parseFloat(common.getCommonData().stock || 0) > 0 : true;
+
+                if (!hasGlobalStock && common.doesTrackStock) {
+                    showMessageModal('Sin Inventario', 'No has agregado existencias. \n\nComo no definiste Variantes (Talla/Color), debes ingresar el Stock en el campo general "Cantidad Inicial".');
+                    return false;
                 }
             }
         }
@@ -170,14 +188,14 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                 }
             }
 
-            const initialDbStock = (isApparel && quickVariants.length > 0)
+            const initialDbStock = (isApparel && hasActiveVariants)
                 ? 0
                 : commonData.stock;
 
             // Configuración de variantes
             const hasQuickVariants = isApparel && quickVariants.length > 0;
-            const finalBatchManagement = hasQuickVariants
-                ? { enabled: true, selectionStrategy: 'fifo' } // Ropa siempre usa lotes si hay variantes
+            const finalBatchManagement = (isApparel && hasActiveVariants)
+                ? { enabled: true, selectionStrategy: 'fifo' } 
                 : (commonData.trackStock ? { enabled: true, selectionStrategy: 'fifo' } : { enabled: false });
 
             const payload = {
@@ -196,12 +214,12 @@ export default function RetailProductForm({ onSave, onCancel, productToEdit, cat
                 batchManagement: finalBatchManagement,
                 bulkData: { purchase: { unit: unit } },
                 productType: 'sellable',
-                ...(productToEdit ? {} : { createdAt: new Date().toISOString(), stock: 0 })
+                ...(productToEdit ? {} : { createdAt: new Date().toISOString() })
             };
 
             const success = await onSave(payload, productToEdit || { id: productId, isNew: true });
 
-            if (success && hasQuickVariants) {
+            if (success && isApparel && hasActiveVariants) {
                 // Bloque TRY/CATCH exclusivo para la creación de variantes
                 try {
                     const validVariants = quickVariants.filter(v => (v.talla && v.color));
