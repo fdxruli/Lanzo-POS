@@ -199,7 +199,7 @@ export default function GeneralSettings() {
             maxWidth: '100%' // Asegura que no rompa el layout
         }}>
             <Info size={14} style={{flexShrink: 0}}/> 
-            <span>Los datos registrados se bloquearán al guardar. Si requite actualizar sus datos contacte a soporte</span>
+            <span>Los datos registrados se bloquearán al guardar. Si requiere actualizar sus datos contacte a soporte</span>
         </div>
       </div>
 
