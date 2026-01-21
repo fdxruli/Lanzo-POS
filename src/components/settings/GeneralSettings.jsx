@@ -193,13 +193,13 @@ export default function GeneralSettings() {
             display: 'flex', 
             alignItems: 'center', 
             gap: '5px',
-            backgroundColor: 'var(--bg-light, #f8f9fa)', // Un fondo suave ayuda a diferenciarlo
+            backgroundColor: 'var(--bg-light)', // Un fondo suave ayuda a diferenciarlo
             padding: '4px 8px',
             borderRadius: '4px',
             maxWidth: '100%' // Asegura que no rompa el layout
         }}>
             <Info size={14} style={{flexShrink: 0}}/> 
-            <span>Los datos registrados se bloquearán al guardar. Si requite actualizar sus datos contacte a soporte</span>
+            <span>Los datos registrados se bloquearán al guardar. Si requiere actualizar sus datos contacte a soporte</span>
         </div>
       </div>
 

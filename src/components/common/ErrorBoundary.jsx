@@ -356,7 +356,7 @@ ${errorInfo ? errorInfo.componentStack.substring(0, 400) : 'No disponible'}...
           </div>
           
           <p style={{ marginTop: '24px', color: '#94a3b8', fontSize: '0.85rem' }}>
-            Lanzo POS System v{import.meta.env.VITE_APP_VERSION || '2.0'}
+            Lanzo POS System v{import.meta.env.VITE_APP_VERSION}
           </p>
         </div>
       );
