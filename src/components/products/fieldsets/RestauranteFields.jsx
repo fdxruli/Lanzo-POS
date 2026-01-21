@@ -175,7 +175,18 @@ export default function RestauranteFields({
                   </div>
 
                   {/* Agregar Opción al Grupo */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px', padding: '10px', backgroundColor: '#fff', borderRadius: '5px' }}>
+                  <div style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '5px', 
+                      marginBottom: '5px', 
+                      padding: '10px', 
+                      // CORRECCIÓN: Usar variable del tema en lugar de #fff
+                      backgroundColor: 'var(--card-background-color)', 
+                      borderRadius: '5px',
+                      // Opcional: Agregar borde sutil para que resalte sobre el fondo claro también
+                      border: '1px solid var(--border-color)'
+                  }}>
 
                     {/* Fila 1: Nombre y Precio */}
                     <div style={{ display: 'flex', gap: '5px' }}>
@@ -200,7 +211,8 @@ export default function RestauranteFields({
                       <select
                         id={`opt-ing-${idx}`} // ID único por grupo
                         className="form-input"
-                        style={{ fontSize: '0.85rem', flex: 1, color: '#444' }}
+                        // CORRECCIÓN: Eliminado 'color: #444' para que herede el color del tema
+                        style={{ fontSize: '0.85rem', flex: 1 }} 
                       >
                         <option value="">-- Solo Texto (No descuenta stock) --</option>
                         {ingredientList.map(ing => (

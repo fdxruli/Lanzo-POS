@@ -1,0 +1,204 @@
+/* src/components/common/RenewalModal.css */
+
+/* --- OVERLAY --- */
+.renewal-overlay {
+  position: fixed;
+  inset: 0; /* Top, Right, Bottom, Left: 0 */
+  background-color: rgba(15, 23, 42, 0.85); /* Un poco más azulado oscuro acorde al tema */
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center; /* Centrado vertical */
+  justify-content: center; /* Centrado horizontal */
+  z-index: var(--z-modal-critical); /* Capa 1300 según tu index.css */
+  padding: var(--spacing-md);
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* --- CARD --- */
+.renewal-card {
+  background-color: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow-lg);
+  width: 100%;
+  max-width: 420px; /* Ancho máximo cómodo para lectura */
+  padding: var(--spacing-xl);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  animation: slideUpModal 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* --- HEADER --- */
+.renewal-header {
+  margin-bottom: var(--spacing-lg);
+}
+
+.status-icon-container {
+  width: 64px;
+  height: 64px;
+  background-color: rgba(255, 59, 92, 0.1); /* --error-color con opacidad */
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--spacing-md);
+}
+
+.lock-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.renewal-header h2 {
+  font-size: 1.5rem;
+  color: var(--text-dark);
+  margin-bottom: var(--spacing-xs);
+}
+
+.renewal-header p {
+  color: var(--text-light);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* --- INFO BOX --- */
+.renewal-details {
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.detail-label {
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+.detail-value {
+  color: var(--text-dark);
+  font-weight: 600;
+  text-align: right;
+}
+
+.detail-value.mono {
+  font-family: monospace;
+  letter-spacing: 0.5px;
+  background: rgba(0,0,0,0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Estado de error específico dentro de la lista */
+.detail-row.error .detail-value {
+  color: var(--error-color);
+}
+
+/* --- MENSAJES --- */
+.promo-text {
+  color: var(--success-color);
+  font-size: 0.9rem;
+  margin-bottom: var(--spacing-md);
+  display: block;
+}
+
+.renewal-error {
+  background-color: rgba(255, 59, 92, 0.1);
+  color: var(--error-color);
+  padding: var(--spacing-sm);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.85rem;
+  margin-bottom: var(--spacing-md);
+  text-align: left;
+  border: 1px solid rgba(255, 59, 92, 0.2);
+}
+
+/* --- ACCIONES --- */
+.renewal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+/* Botón full width override */
+.btn-full {
+  width: 100%;
+  padding: 14px; /* Un poco más touch-friendly */
+  font-size: 1rem;
+}
+
+/* Estilo para el link secundario */
+.btn-link-subtle {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  font-size: 0.85rem;
+  text-decoration: none;
+  padding: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  transition: color 0.2s;
+}
+
+.btn-link-subtle:hover {
+  color: var(--primary-color);
+  text-decoration: underline;
+  background: none;
+  box-shadow: none;
+}
+
+/* --- ANIMACIONES --- */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUpModal {
+  from { 
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Loader spinner simple */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin 1s ease-in-out infinite;
+  margin-right: 8px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- MEDIA QUERIES (Mobile First Ajustes) --- */
+@media (min-width: 640px) {
+  .renewal-card {
+    padding: 2.5rem; /* Más aire en desktop */
+  }
+}

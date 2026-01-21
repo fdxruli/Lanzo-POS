@@ -1,149 +1,399 @@
 /* src/components/pos/ProductModifiersModal.css */
 
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
 .modal-content.modifiers-modal {
-    max-width: 600px;
-    max-height: 90vh;
+    width: 100%;
+    max-width: 650px;
+    height: 85vh;
+    max-height: 800px;
     display: flex;
     flex-direction: column;
     padding: 0;
+    background: var(--card-background-color);
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
     overflow: hidden;
 }
 
-/* Header fijo */
+/* --- HEADER --- */
 .modifiers-header {
-    padding: 20px;
-    background-color: var(--light-background);
+    padding: 20px 24px;
+    background-color: var(--background-color);
     border-bottom: 1px solid var(--border-color);
 }
 
-.modifiers-header .modal-title {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--text-dark);
-}
-
-.base-price-label {
-    margin: 5px 0 0 0;
-    color: var(--text-light);
-    font-size: 0.9rem;
-}
-
-/* Cuerpo scrolleable */
-.modifiers-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px;
-}
-
-.modifier-group {
-    margin-bottom: 25px;
-}
-
-.modifier-group-title {
-    font-size: 1.1rem;
-    margin-bottom: 10px;
-    color: var(--text-dark);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.badge-required {
-    background-color: var(--primary-color);
-    color: white;
-    font-size: 0.7rem;
-    padding: 2px 6px;
-    border-radius: 4px;
-    text-transform: uppercase;
-}
-
-.modifier-options-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 10px;
-}
-
-/* Tarjetas de opción estilo botón */
-.modifier-option-card {
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 12px;
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    transition: all 0.2s;
-    background-color: var(--card-background-color);
-}
-
-.modifier-option-card:hover {
-    border-color: var(--secondary-color);
-}
-
-.modifier-option-card.selected {
-    background-color: rgba(123, 97, 255, 0.1);
-    /* Color secundario suave */
-    border-color: var(--secondary-color);
-    box-shadow: 0 0 0 2px var(--secondary-color);
-}
-
-.opt-name {
-    font-weight: 500;
-    color: var(--text-dark);
-}
-
-.opt-price {
-    font-size: 0.85rem;
-    color: var(--success-color);
-    font-weight: 700;
-    margin-top: 4px;
-}
-
-/* Footer fijo */
-.modifiers-footer {
-    padding: 20px;
-    border-top: 1px solid var(--border-color);
-    background-color: var(--card-background-color);
+.header-top {
     display: flex;
     justify-content: space-between;
     align-items: center;
 }
 
-.price-summary {
+.modal-title {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: var(--text-light);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    display: flex; /* Para centrar el icono */
+}
+.close-btn:hover {
+    background-color: rgba(0,0,0,0.05);
+    color: var(--danger-color);
+}
+
+.product-description {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    margin: 8px 0 0 0;
+    line-height: 1.4;
+}
+
+.base-price-badge {
+    margin-top: 12px;
+    display: inline-block;
+    font-size: 0.85rem;
+    color: var(--text-medium);
+    background-color: rgba(0,0,0,0.04);
+    padding: 4px 10px;
+    border-radius: 20px;
+}
+.base-price-badge span {
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+/* --- BODY --- */
+.modifiers-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    background-color: #f8fafc; /* Color de fondo muy suave para el cuerpo */
+}
+
+/* Dark mode adjustment */
+[data-theme="dark"] .modifiers-body {
+    background-color: var(--background-color);
+}
+
+.modifier-group {
+    background: var(--card-background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+}
+
+/* Feedback visual: Grupo Requerido vs Completado */
+.modifier-group.group-pending {
+    border-left: 4px solid var(--warning-color);
+    background-color: rgba(255, 152, 0, 0.02);
+}
+.modifier-group.group-completed {
+    border-left: 4px solid var(--success-color);
+}
+
+.modifier-group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.group-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-dark);
+}
+
+.group-instruction {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    font-style: italic;
+}
+
+/* Badges */
+.badge-required, .badge-completed, .badge-optional {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.badge-required {
+    background-color: rgba(255, 152, 0, 0.15);
+    color: var(--warning-color);
+}
+
+.badge-completed {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: var(--success-color);
+}
+
+.badge-optional {
+    background-color: rgba(0,0,0,0.05);
+    color: var(--text-light);
+}
+
+/* Grid de Opciones */
+.modifier-options-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+}
+
+.modifier-option-card {
+    position: relative;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    cursor: pointer;
+    background-color: var(--card-background-color);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 70px;
+}
+
+.modifier-option-card:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+.modifier-option-card.selected {
+    border-color: var(--primary-color);
+    background-color: rgba(123, 97, 255, 0.08);
+    box-shadow: 0 0 0 1px var(--primary-color);
+}
+
+.hidden-input {
+    display: none;
+}
+
+.opt-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    width: 100%;
+}
+
+.opt-name {
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--text-dark);
+    line-height: 1.2;
+}
+
+.check-icon {
+    color: var(--primary-color);
+    background: white;
+    border-radius: 50%;
+    padding: 1px;
+    display: flex;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.opt-price {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-medium);
+    margin-top: 6px;
+    display: block;
+}
+
+.opt-price.free {
+    color: var(--success-color);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+}
+
+.modifier-option-card.selected .opt-price {
+    color: var(--primary-color);
+}
+
+.notes-section {
+    margin-top: 30px;
+}
+
+.form-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--text-dark);
+    margin-bottom: 8px;
+}
+
+/* --- FOOTER --- */
+.modifiers-footer {
+    background-color: var(--card-background-color);
+    border-top: 1px solid var(--border-color);
+    padding: 0;
     display: flex;
     flex-direction: column;
 }
 
-.final-price {
-    font-size: 1.5rem;
+/* Sumario de items seleccionados */
+.selection-summary {
+    background-color: rgba(0,0,0,0.02);
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.summary-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-light);
+    text-transform: uppercase;
+}
+
+.summary-tags {
+    display: flex;
+    gap: 8px;
+}
+
+.summary-tag {
+    font-size: 0.8rem;
+    background-color: white;
+    border: 1px solid var(--border-color);
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--text-dark);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.tiny-price {
+    font-size: 0.7rem;
+    color: var(--text-light);
+}
+
+/* Fila inferior de acciones */
+.footer-bottom-row {
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.price-summary-container {
+    display: flex;
+    flex-direction: column;
+}
+
+.label-total {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+}
+
+.final-price-display {
+    font-size: 1.6rem;
     font-weight: 800;
     color: var(--primary-color);
+    line-height: 1;
 }
 
-.modifiers-footer .actions {
+.actions-container {
     display: flex;
-    gap: 10px;
+    gap: 12px;
 }
 
-/* Dark Mode Fixes */
-[data-theme="dark"] .modifier-option-card {
-    background-color: #1e293b;
-    border-color: #475569;
-}
-
-[data-theme="dark"] .modifier-option-card.selected {
-    background-color: rgba(123, 97, 255, 0.2);
-}
-
-/*esto es parte del archivo VariantSelectorModal*/
-.variant-empty-state {
-    text-align: center;
-    padding: 40px 20px;
+.btn-ghost {
+    background: none;
+    border: 1px solid transparent;
     color: var(--text-light);
-    font-style: italic;
-    width: 100%;
-    background-color: rgba(0,0,0,0.02);
+    padding: 8px 16px;
+    font-weight: 500;
+    cursor: pointer;
     border-radius: 8px;
-    border: 1px dashed var(--border-color);
+    transition: all 0.2s;
+}
+.btn-ghost:hover {
+    background-color: rgba(0,0,0,0.05);
+    color: var(--text-dark);
+}
+
+.btn-primary-action {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.2s;
+    box-shadow: 0 4px 10px rgba(123, 97, 255, 0.3);
+}
+
+.btn-primary-action:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 12px rgba(123, 97, 255, 0.4);
+}
+
+.btn-primary-action.disabled {
+    background-color: var(--border-color);
+    color: var(--text-light);
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+.btn-price-tag {
+    background-color: rgba(255,255,255,0.2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+/* Dark Mode Specifics */
+[data-theme="dark"] .summary-tag {
+    background-color: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+}
+[data-theme="dark"] .check-icon {
+    background-color: #2d3748;
 }

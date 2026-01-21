@@ -20,9 +20,7 @@ export default function RestaurantProductForm({ onSave, onCancel, productToEdit,
     // LOGICA INTELIGENTE 1: Configuración de Stock según Tipo
     useEffect(() => {
         if (!productToEdit) {
-            if (productType === 'sellable') {
-                common.setDoesTrackStock(false); // Platillo: No stock directo, usa receta
-            } else if (productType === 'ingredient') {
+            if (productType === 'ingredient') {
                 common.setDoesTrackStock(true);  // Insumo: Sí stock directo
             }
         }
@@ -50,10 +48,10 @@ export default function RestaurantProductForm({ onSave, onCancel, productToEdit,
         // --- VALIDACIONES DE ROBUSTEZ ---
 
         // 1. Receta Vacía en Platillos
-        if (productType === 'sellable' && recipe.length === 0) {
+        /*if (productType === 'sellable' && recipe.length === 0) {
             showMessageModal('⚠️ Receta Vacía', 'Un platillo de venta debe tener al menos un ingrediente o insumo para descontar inventario.', { type: 'error' });
             return;
-        }
+        }*/
 
         // 2. Alerta de Rentabilidad Negativa (Loss Prevention)
         const currentPrice = parseFloat(common.price) || 0;
@@ -89,7 +87,7 @@ export default function RestaurantProductForm({ onSave, onCancel, productToEdit,
                 // Insumos no usan receta
                 finalRecipe = [];
             } else {
-                finalStock = 0; // Platillos no manejan stock directo
+                finalStock = recipe.length > 0 ? 0 : commonData.stock;
             }
 
             const payload = {

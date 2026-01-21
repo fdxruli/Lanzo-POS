@@ -47,9 +47,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
       setStock(batchToEdit.stock);
       setNotes(batchToEdit.notes || '');
       setLocation(batchToEdit.location || '');
-      if (features.hasLots) {
         setExpiryDate(batchToEdit.expiryDate ? batchToEdit.expiryDate.split('T')[0] : '');
-      }
       if (features.hasVariants) {
         setSku(batchToEdit.sku || '');
         const attrs = batchToEdit.attributes || {};
@@ -161,7 +159,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
       trackStock: nStock > 0,
       isActive: nStock > 0,
       createdAt: isEditing ? batchToEdit.createdAt : new Date().toISOString(),
-      expiryDate: (features.hasLots && expiryDate) ? expiryDate : null,
+      expiryDate: expiryDate ? expiryDate : null,
       sku: finalSku,
       attributes: features.hasVariants ? {
         talla: attribute1,
@@ -275,12 +273,15 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
             />
           </div>
 
-          {features.hasLots && (
-            <div className="form-group">
-              <label>Fecha Caducidad</label>
-              <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="form-input" />
-            </div>
-          )}
+          <div className="form-group">
+  <label>Fecha Caducidad (Opcional)</label>
+  <input 
+    type="date" 
+    value={expiryDate} 
+    onChange={(e) => setExpiryDate(e.target.value)} 
+    className="form-input" 
+  />
+</div>
 
           <div className="form-group">
             <label>Notas</label>
@@ -444,12 +445,23 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   const handleSaveBatch = async (batchData) => {
     try {
       // Si el producto no tenía activado el manejo de lotes, lo activamos
-      if (selectedProduct && !selectedProduct.batchManagement?.enabled) {
+      if (selectedProduct && (!selectedProduct.trackStock || !selectedProduct.batchManagement?.enabled)) {
+        
         const updatedProduct = {
           ...selectedProduct,
-          batchManagement: { enabled: true, selectionStrategy: 'fifo' }
+          trackStock: true, // <--- CRUCIAL: Activamos el "switch" principal para el POS
+          batchManagement: { 
+            ...(selectedProduct.batchManagement || {}),
+            enabled: true, 
+            selectionStrategy: 'fifo' 
+          }
         };
+
+        // Guardamos la actualización del producto ANTES de guardar el lote
         await saveDataSafe(STORES.MENU, updatedProduct);
+        
+        // Actualizamos el producto en el store local para que la UI refleje el cambio
+        useProductStore.getState().loadInitialProducts(); 
       }
 
       // Guardar y Sincronizar
