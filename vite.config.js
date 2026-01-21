@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa'; // <--- 1. IMPORTACIÓN NUEVA
+import { VitePWA } from 'vite-plugin-pwa';
+import packageJson from './package.json';
 
 export default defineConfig({
   plugins: [
@@ -39,6 +40,10 @@ export default defineConfig({
       }
     })
   ],
+
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
+  },
   
   build: {
     target: 'esnext', 

@@ -1,11 +1,11 @@
 {
   "name": "lanzo-pos-react",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node bump-version.js && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest"
