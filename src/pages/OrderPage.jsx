@@ -1,40 +1,89 @@
-// src/pages/OrdersPage.jsx
-import React, { useState, useEffect } from 'react';
-import { loadData, saveDataSafe, STORES, getOrdersSince } from '../services/database';
+// src/pages/OrderPage.jsx
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { saveDataSafe, STORES, getOrdersSince } from '../services/database';
 import { showMessageModal } from '../services/utils';
-import './OrderPage.css';
 import Logger from '../services/Logger';
+import './OrderPage.css';
+
+// Componente para el Temporizador Individual de cada Ticket
+const TicketTimer = ({ timestamp, status }) => {
+    const [elapsed, setElapsed] = useState(0);
+
+    useEffect(() => {
+        const calculateTime = () => {
+            const start = new Date(timestamp).getTime();
+            const now = new Date().getTime();
+            return Math.floor((now - start) / 60000); // Minutos
+        };
+
+        setElapsed(calculateTime());
+        // Actualizar cada 30 segundos para no sobrecargar
+        const interval = setInterval(() => setElapsed(calculateTime()), 30000);
+        return () => clearInterval(interval);
+    }, [timestamp]);
+
+    // Definir urgencia (Semáforo)
+    let urgencyClass = 'time-fresh';
+    if (status === 'pending') {
+        if (elapsed > 10) urgencyClass = 'time-warning'; // Más de 10 min
+        if (elapsed > 20) urgencyClass = 'time-critical'; // Más de 20 min
+    }
+
+    return (
+        <div className={`ticket-timer ${urgencyClass}`}>
+            ⏰ {elapsed} min
+        </div>
+    );
+};
 
 export default function OrdersPage() {
     const [orders, setOrders] = useState([]);
     const [filter, setFilter] = useState('pending');
     const [isLoading, setIsLoading] = useState(true);
+    
+    // Referencia para detectar nuevos pedidos y sonar la campana
+    const prevOrdersLength = useRef(0);
+    const audioPlayer = useRef(null);
+
+    // Sonido de campana
+    const NOTIFICATION_SOUND = "https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"; 
 
     const fetchOrders = async () => {
         try {
-            // Calculamos la fecha de ayer (hace 24 horas)
             const yesterday = new Date();
             yesterday.setHours(yesterday.getHours() - 24);
             const isoDate = yesterday.toISOString();
 
-            // --- CAMBIO CRÍTICO ---
-            // ANTES: const allSales = await loadData(STORES.SALES); (Cargaba TODO)
-            // AHORA: Solo cargamos lo que necesitamos
             const activeOrders = await getOrdersSince(isoDate);
 
-            // El resto de tu lógica de filtrado se mantiene igual, 
-            // pero ahora trabaja sobre un array pequeño (ej. 50 items) en lugar de miles.
-            const filteredOrders = activeOrders.filter(sale => {
-                const status = sale.fulfillmentStatus || 'completed';
+            // Ordenar: Los más viejos primero (FIFO - First In, First Out)
+            activeOrders.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-                if (filter === 'all') return true; // Ya viene filtrado por fecha desde la BD
+            // --- LÓGICA DINÁMICA DE SECCIONES (AUTOPILOT) ---
+            const pendingCount = activeOrders.filter(o => (o.fulfillmentStatus || 'pending') === 'pending').length;
+            const readyCount = activeOrders.filter(o => o.fulfillmentStatus === 'ready').length;
 
-                // Ocultamos 'cancelled' y 'completed' de las vistas activas
-                return status === filter;
-            });
+            // 1. DETECCIÓN DE SONIDO (Solo si aumentan los pendientes)
+            if (pendingCount > prevOrdersLength.current && prevOrdersLength.current !== 0) {
+                playNotificationSound();
+            }
+            prevOrdersLength.current = pendingCount;
 
-            filteredOrders.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-            setOrders(filteredOrders);
+            // 2. CAMBIO AUTOMÁTICO DE PESTAÑA (PRIORIDAD: COCINA > ENTREGA > HISTORIAL)
+            // "Si tenemos comandas nuevas que nos aparezca en cocina"
+            if (pendingCount > 0) {
+                setFilter('pending');
+            } 
+            // "Si ya tenemos todo listo... que se nos muestre entrega"
+            else if (readyCount > 0) {
+                setFilter('ready');
+            } 
+            // "Si no tenemos información... que se nos muestre historial"
+            else {
+                setFilter('history');
+            }
+
+            setOrders(activeOrders);
         } catch (error) {
             Logger.error("Error cargando pedidos:", error);
         } finally {
@@ -42,144 +91,231 @@ export default function OrdersPage() {
         }
     };
 
+    const playNotificationSound = () => {
+        if (audioPlayer.current) {
+            audioPlayer.current.play().catch(e => console.log("Interacción requerida para audio"));
+        }
+    };
+
     useEffect(() => {
         fetchOrders();
-        const interval = setInterval(fetchOrders, 15000);
+        const interval = setInterval(fetchOrders, 10000); // Polling cada 10s
         return () => clearInterval(interval);
-    }, [filter]);
+    }, []);
 
     const handleAdvanceStatus = async (order) => {
         const nextStatus = order.fulfillmentStatus === 'pending' ? 'ready' : 'completed';
+        
+        // Optimistic UI Update
+        const updatedOrders = orders.map(o => 
+            o.timestamp === order.timestamp ? { ...o, fulfillmentStatus: nextStatus } : o
+        );
+        setOrders(updatedOrders); // Actualizamos estado local inmediatamente
+
+        // Re-evaluamos la navegación dinámica inmediatamente para que no espere 10s
+        // (Opcional: Si prefieres que espere al siguiente refresh, quita este bloque,
+        // pero para UX fluida es mejor que si terminas el último plato, te lleve a entrega/historial al instante)
+        const pendingCount = updatedOrders.filter(o => (o.fulfillmentStatus || 'pending') === 'pending').length;
+        const readyCount = updatedOrders.filter(o => o.fulfillmentStatus === 'ready').length;
+        
+        if (pendingCount > 0) setFilter('pending');
+        else if (readyCount > 0) setFilter('ready');
+        else setFilter('history');
+
         const updatedOrder = { ...order, fulfillmentStatus: nextStatus };
-
-        // CAMBIO: saveDataSafe
         const result = await saveDataSafe(STORES.SALES, updatedOrder);
 
-        if (result.success) {
-            if (filter !== 'all') {
-                setOrders(prev => prev.filter(o => o.timestamp !== order.timestamp));
-            } else {
-                fetchOrders();
-            }
-        } else {
-            showMessageModal(`Error al actualizar: ${result.error?.message}`);
+        if (!result.success) {
+            showMessageModal(`Error al guardar: ${result.error?.message}`);
+            fetchOrders(); // Revertir si falló
         }
     };
 
-    // --- NUEVA FUNCIÓN: CANCELAR PEDIDO ---
     const handleCancelOrder = async (order) => {
-        if (!window.confirm('¿Seguro que deseas CANCELAR este pedido?')) return;
-
+        if (!window.confirm('¿Cancelar comanda definitivamente?')) return;
+        
         const updatedOrder = { ...order, fulfillmentStatus: 'cancelled' };
-
-        // CAMBIO: saveDataSafe
         const result = await saveDataSafe(STORES.SALES, updatedOrder);
-
+        
         if (result.success) {
-            if (filter !== 'all') {
-                setOrders(prev => prev.filter(o => o.timestamp !== order.timestamp));
-            } else {
-                fetchOrders();
-            }
-            showMessageModal('Pedido cancelado.');
-        } else {
-            showMessageModal(`Error al cancelar: ${result.error?.message}`);
+            fetchOrders(); // Esto disparará la lógica dinámica nuevamente
+            showMessageModal('Pedido cancelado', null, { type: 'success' });
         }
     };
 
-    const getStatusLabel = (status) => {
-        switch (status) {
-            case 'pending': return '🔥 Cocinando';
-            case 'ready': return '✅ Listo para Entrega';
-            case 'completed': return 'Entregado';
-            case 'cancelled': return '❌ Cancelado'; // Etiqueta nueva
-            default: return 'Completado';
-        }
-    };
+    // --- LÓGICA DE FILTRADO VISUAL ---
+    const displayedOrders = useMemo(() => {
+        return orders.filter(order => {
+            const status = order.fulfillmentStatus || 'pending';
+            if (filter === 'all') return true;
+            if (filter === 'history') return status === 'completed' || status === 'cancelled';
+            return status === filter;
+        });
+    }, [orders, filter]);
+
+    // --- RESUMEN DE PRODUCCIÓN ---
+    const productionSummary = useMemo(() => {
+        if (filter !== 'pending') return null;
+        
+        const summary = {};
+        displayedOrders.forEach(order => {
+            order.items.forEach(item => {
+                const key = item.name;
+                summary[key] = (summary[key] || 0) + (item.quantity || 1);
+            });
+        });
+
+        return Object.entries(summary)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 5);
+    }, [displayedOrders, filter]);
+
 
     return (
-        <div className="orders-page-container">
-            <div className="orders-header">
-                <div className="orders-filters">
-                    <button className={`filter-btn ${filter === 'pending' ? 'active' : ''}`} onClick={() => setFilter('pending')}>Pendientes</button>
-                    <button className={`filter-btn ${filter === 'ready' ? 'active' : ''}`} onClick={() => setFilter('ready')}>Listos</button>
-                    {/* Botón opcional para ver cancelados si quisieras */}
-                    <button className={`filter-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>Todos (24h)</button>
-                    <button className="btn-refresh" onClick={fetchOrders}>🔄</button>
+        <div className="kds-container">
+            {/* Elemento de Audio Oculto */}
+            <audio ref={audioPlayer} src={NOTIFICATION_SOUND} />
+
+            {/* HEADER DE CONTROL */}
+            <div className="kds-header">
+                <div className="kds-tabs">
+                    <button 
+                        className={`kds-tab ${filter === 'pending' ? 'active pending' : ''}`} 
+                        onClick={() => setFilter('pending')}
+                    >
+                        🔥 Cocina ({orders.filter(o => (o.fulfillmentStatus||'pending') === 'pending').length})
+                    </button>
+                    <button 
+                        className={`kds-tab ${filter === 'ready' ? 'active ready' : ''}`} 
+                        onClick={() => setFilter('ready')}
+                    >
+                        ✅ Entrega ({orders.filter(o => o.fulfillmentStatus === 'ready').length})
+                    </button>
+                    <button 
+                        className={`kds-tab ${filter === 'history' ? 'active history' : ''}`} 
+                        onClick={() => setFilter('history')}
+                    >
+                        📜 Historial
+                    </button>
                 </div>
+                
+                <button className="kds-refresh-btn" onClick={fetchOrders}>🔄</button>
             </div>
 
-            {isLoading ? (
-                <div className="loader-container">Cargando pedidos...</div>
-            ) : (
-                <div className="orders-grid">
-                    {orders.length === 0 ? (
-                        <div className="empty-kitchen">
-                            <h3>🎉 Todo tranquilo</h3>
-                            <p>No hay pedidos en este estado.</p>
+            {/* BARRA DE RESUMEN DE PRODUCCIÓN (Solo en vista Cocina) */}
+            {productionSummary && productionSummary.length > 0 && (
+                <div className="production-bar">
+                    <span className="prod-title">A PRODUCIR:</span>
+                    {productionSummary.map(([name, count]) => (
+                        <div key={name} className="prod-badge">
+                            <span className="prod-count">{count}</span>
+                            <span className="prod-name">{name}</span>
                         </div>
-                    ) : (
-                        orders.map(order => (
-                            <div key={order.timestamp} className={`order-card status-${order.fulfillmentStatus || 'completed'}`}>
-                                <div className="order-card-header">
-                                    <span className="order-time">
-                                        {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                    <span className="order-id">#{order.timestamp.slice(-4)}</span>
-                                </div>
-
-                                {order.customerId && (
-                                    <div className="order-customer">👤 Cliente Registrado</div>
-                                )}
-
-                                <ul className="order-items-list">
-                                    {order.items.map((item, idx) => (
-                                        <li key={idx} className="order-item-line">
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-                                                <span>{item.quantity}x {item.name}</span>
-                                            </div>
-                                            {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                                                <div className="kitchen-modifiers">
-                                                    {item.selectedModifiers.map(m => m.name).join(', ')}
-                                                </div>
-                                            )}
-                                            {item.notes && <div className="kitchen-notes">📝 {item.notes}</div>}
-                                        </li>
-                                    ))}
-                                </ul>
-
-                                <div className="order-card-footer">
-                                    <div className="status-indicator">
-                                        {getStatusLabel(order.fulfillmentStatus || 'pending')}
-                                    </div>
-
-                                    {/* BOTONES DE ACCIÓN */}
-                                    {order.fulfillmentStatus !== 'completed' && order.fulfillmentStatus !== 'cancelled' && (
-                                        <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                                            {/* Botón de Cancelar (pequeño y rojo) */}
-                                            <button
-                                                className="btn-cancel-order"
-                                                onClick={() => handleCancelOrder(order)}
-                                                title="Cancelar Pedido"
-                                            >
-                                                ✖
-                                            </button>
-
-                                            {/* Botón de Avanzar (grande) */}
-                                            <button
-                                                className="btn-advance-order"
-                                                onClick={() => handleAdvanceStatus(order)}
-                                            >
-                                                {order.fulfillmentStatus === 'pending' ? 'Marcar LISTO' : 'Entregar'}
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))
-                    )}
+                    ))}
                 </div>
             )}
+
+            {/* GRID DE TICKETS */}
+            <div className="kds-grid">
+                {isLoading && <div className="kds-loading">Conectando con meseros...</div>}
+                
+                {!isLoading && displayedOrders.length === 0 && (
+                    <div className="kds-empty">
+                        <div className="empty-icon">
+                            {filter === 'pending' ? '👨‍🍳' : filter === 'ready' ? '✅' : '📜'}
+                        </div>
+                        <h3>
+                            {filter === 'pending' ? 'Cocina despejada' : 
+                             filter === 'ready' ? 'Todo entregado' : 'Sin historial reciente'}
+                        </h3>
+                        <p>
+                            {filter === 'pending' ? 'Esperando nuevas comandas...' : 
+                             filter === 'ready' ? 'No hay pedidos esperando entrega.' : 'Las comandas de las últimas 24h aparecerán aquí.'}
+                        </p>
+                    </div>
+                )}
+
+                {displayedOrders.map(order => (
+                    <div key={order.timestamp} className={`kds-ticket status-${order.fulfillmentStatus || 'pending'}`}>
+                        
+                        {/* ENCABEZADO DEL TICKET */}
+                        <div className="ticket-header">
+                            <div className="ticket-info">
+                                <span className="ticket-id">#{order.timestamp.slice(-4)}</span>
+                                <span className="ticket-customer">
+                                    {order.customerId ? '👤 Cliente' : '🛒 Mostrador'}
+                                </span>
+                            </div>
+                            <TicketTimer timestamp={order.timestamp} status={order.fulfillmentStatus || 'pending'} />
+                        </div>
+
+                        {/* NOTAS GENERALES */}
+                        {order.notes && (
+                            <div className="ticket-global-note">
+                                ⚠️ {order.notes}
+                            </div>
+                        )}
+
+                        {/* LISTA DE ITEMS */}
+                        <div className="ticket-body">
+                            {order.items.map((item, idx) => (
+                                <div key={idx} className="ticket-item">
+                                    <div className="item-main">
+                                        <span className="item-qty">{item.quantity}</span>
+                                        <span className="item-name">{item.name}</span>
+                                    </div>
+                                    
+                                    {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                                        <div className="item-modifiers">
+                                            {item.selectedModifiers.map((m, i) => (
+                                                <span key={i} className="modifier-tag">{m.name}</span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    
+                                    {item.notes && <div className="item-note">📝 {item.notes}</div>}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* FOOTER Y ACCIONES */}
+                        <div className="ticket-footer">
+                            <div className="ticket-meta">
+                                {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+
+                            <div className="ticket-actions">
+                                {filter === 'pending' && (
+                                    <>
+                                        <button 
+                                            className="btn-kds-cancel" 
+                                            onClick={() => handleCancelOrder(order)}
+                                            title="Cancelar"
+                                        >
+                                            ✕
+                                        </button>
+                                        <button 
+                                            className="btn-kds-action advance" 
+                                            onClick={() => handleAdvanceStatus(order)}
+                                        >
+                                            ¡LISTO!
+                                        </button>
+                                    </>
+                                )}
+                                
+                                {filter === 'ready' && (
+                                    <button 
+                                        className="btn-kds-action deliver" 
+                                        onClick={() => handleAdvanceStatus(order)}
+                                    >
+                                        ENTREGADO
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }

@@ -9,6 +9,7 @@ import Logger from './services/Logger';
 // --- COMPONENTES CRÍTICOS (Eager Loading) ---
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
+import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
 import ReconnectionBanner from './components/common/ReconnectionBanner';
 import { useSalesStore } from './store/useSalesStore';
@@ -259,6 +260,15 @@ function App() {
       return (
         <ErrorBoundary>
           <SetupModal />
+        </ErrorBoundary>
+      );
+    
+    case 'locked_renewal':
+      return (
+        <ErrorBoundary>
+          <div style={{ position: 'relative', height: '100vh', overflow: 'hidden' }}>
+            <RenewalModal />
+          </div>
         </ErrorBoundary>
       );
 

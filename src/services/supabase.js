@@ -10,6 +10,26 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabaseClient = createClient(supabaseUrl, supabaseKey);
 
+async function getSecureCredentials() {
+    try {
+        const record = await loadData(STORES.SYNC_CACHE, 'device_security_token');
+        return record ? record.value : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function setSecureCredentials(newToken) {
+    try {
+        await saveData(STORES.SYNC_CACHE, {
+            key: 'device_security_token',
+            value: newToken
+        });
+    } catch (e) {
+        Logger.warn("No se pudo guardar el token de seguridad:", e);
+    }
+}
+
 // --- Helpers ---
 
 function getFriendlyDeviceName(userAgent) {
@@ -176,6 +196,19 @@ export const activateLicense = async function (licenseKey) {
         if (data && data.success) {
             resetRateLimit();
             safeLocalStorageSet('fp', deviceFingerprint);
+
+            // --- AGREGAR ESTO URGENTEMENTE ---
+            // Si tu RPC de activación devuelve el token, guárdalo YA.
+            // Si el token viene en data.device_security_token o data.details.token:
+            const initialToken = data.device_security_token || (data.details && data.details.token);
+            
+            if (initialToken) {
+                await setSecureCredentials(initialToken);
+            } else {
+                Logger.warn("⚠️ Advertencia: El servidor no devolvió un token inicial tras activar.");
+            }
+            // ---------------------------------
+
             return { valid: true, message: data.message, details: data.details };
         } else {
             // El servidor respondió, pero rechazó la activación (ej. licencia tope alcanzado)
@@ -220,39 +253,44 @@ export const revalidateLicense = async function (licenseKeyProp) {
             return { valid: false, reason: 'no_license_key' };
         }
 
-        // ✅ MEJORA 1: Verificar ANTES si hay red
         const isOnline = await checkInternetConnection();
         if (!isOnline) {
             throw new Error("OFFLINE_PRECHECK");
         }
 
         const deviceFingerprint = await getStableDeviceId();
-        const validationPromise = supabaseClient.rpc('verify_device_license', {
-            license_key_param: licenseKey,
-            device_fingerprint_param: deviceFingerprint
+
+        // 🟢 NUEVO 1: Recuperamos el token secreto de IndexedDB antes de llamar al servidor
+        const securityToken = await getSecureCredentials();
+
+        // 🟢 NUEVO 2: Cambiamos el nombre de la función y los parámetros
+        // Nota: Los parámetros ahora deben coincidir con tu SQL (p_license_key, etc.)
+        const validationPromise = supabaseClient.rpc('verify_device_license_unified', {
+            p_license_key: licenseKey,           // Antes: license_key_param
+            p_device_fingerprint: deviceFingerprint, // Antes: device_fingerprint_param
+            p_security_token: securityToken || null  // ¡El nuevo ingrediente secreto!
         });
 
         const { data, error } = await Promise.race([validationPromise, timeoutPromise]);
         clearTimeout(timeoutId);
 
-        // ✅ MEJORA 2: Si Supabase da error TÉCNICO (no lógico), activar modo offline
         if (error) {
-            // Errores técnicos: 500, timeout, conexión perdida
             const isTechnicalError =
-                error.code === 'PGRST301' || // Error de conexión Postgres
+                error.code === 'PGRST301' ||
                 error.message?.includes('fetch') ||
                 error.message?.includes('network');
 
             if (isTechnicalError) {
-                throw new Error('NETWORK_ERROR'); // Forzar modo offline
+                throw new Error('NETWORK_ERROR');
             }
-
-            // Si es error lógico (ej: "device not found"), retornar tal cual
             throw error;
         }
 
-        // ✅ MEJORA 3: SOLO retornamos la respuesta del servidor si es exitosa
-        // Si data.valid === false, es porque la licencia REALMENTE expiró
+        // 🟢 NUEVO 3: Si el servidor nos da un nuevo token, lo guardamos inmediatamente (Rotación)
+        if (data && data.new_security_token) {
+            await setSecureCredentials(data.new_security_token);
+        }
+
         if (!data.valid && data.reason !== 'offline_grace') {
             Logger.warn("⛔ Servidor confirmó: Licencia inválida:", data.reason);
         }
@@ -260,6 +298,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
         return data;
 
     } catch (error) {
+        // ... (Todo el bloque catch se queda IGUAL para mantener el modo offline) ...
         clearTimeout(timeoutId);
         Logger.warn('⚠️ Error validando licencia:', error.message);
 
@@ -269,7 +308,6 @@ export const revalidateLicense = async function (licenseKeyProp) {
             error.message === 'NETWORK_ERROR' ||
             error.message?.includes('fetch');
 
-        // ✅ MEJORA 4: Solo activar modo offline si es ERROR DE RED
         if (isNetworkError) {
             Logger.log('☁️ Modo offline activado por problema de conexión');
 
@@ -282,7 +320,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
             if (storedLicense?.license_key) {
                 return {
                     ...storedLicense,
-                    valid: true, // ← CRUCIAL: Asumimos válida temporalmente
+                    valid: true,
                     reason: 'offline_grace',
                     is_fallback: true,
                     last_check_failed: new Date().toISOString()
@@ -290,7 +328,6 @@ export const revalidateLicense = async function (licenseKeyProp) {
             }
         }
 
-        // Si no hay caché O el error es lógico (no de red), fallar
         return {
             valid: false,
             reason: isNetworkError ? 'no_cached_license' : 'server_rejected',

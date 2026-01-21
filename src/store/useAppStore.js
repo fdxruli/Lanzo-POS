@@ -1,9 +1,8 @@
-// src/store/useAppStore.js - VERSIÓN CORREGIDA (Fix Expiración Offline)
-
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
 import { isLocalStorageEnabled, normalizeDate, showMessageModal, safeLocalStorageSet } from '../services/utils';
 import Logger from '../services/Logger';
+import { renewLicenseService } from '../services/licenseService';
 
 import {
   activateLicense,
@@ -18,6 +17,10 @@ import {
 import { startLicenseListener, stopLicenseListener } from '../services/licenseRealtime';
 
 const _ui_render_config_v2 = import.meta.env.VITE_LICENSE_SALT;
+
+const FATAL_REASONS = ['banned', 'deleted', 'revoked', 'device_limit_reached','license_not_found', 'invalid_license', 'invalid'];
+
+const RENEWAL_REASONS = ['expired_subscription', 'LICENSE_EXPIRED', 'license_expired'];
 
 // === HELPERS (Sin cambios) ===
 const stableStringify = (obj) => {
@@ -170,6 +173,49 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
+  // === Renovar licencia ===
+  renewLicense: async () => {
+    const { licenseDetails } = get();
+    if (!licenseDetails?.license_key) {
+        return { success: false, message: 'No hay licencia para renovar' };
+    }
+
+    Logger.log("📡 Solicitando renovación de licencia...");
+
+    // Llamamos al servicio real
+    const result = await renewLicenseService(licenseDetails.license_key);
+
+    if (result.success) {
+        Logger.log("✅ Renovación exitosa. Actualizando estado local...");
+
+        // Construimos el objeto actualizado
+        const updatedLicense = {
+            ...licenseDetails,
+            expires_at: result.newExpiry, // Actualizamos fecha
+            status: result.status,        // Actualizamos estado (active)
+            valid: true,
+            // Importante: Renovamos el caché offline también
+            localExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        };
+
+        // 1. Actualizar estado en memoria (React reacciona aquí)
+        set({
+            licenseDetails: updatedLicense,
+            licenseStatus: result.status, // 'active'
+            appStatus: 'ready',           // Desbloquea la pantalla
+            gracePeriodEnds: null         // Limpiamos cualquier gracia previa
+        });
+
+        // 2. Persistir en disco (Para que F5 no bloquee de nuevo)
+        await saveLicenseToStorage(updatedLicense);
+
+        return { success: true, message: result.message };
+    } else {
+        Logger.warn("⚠️ Fallo la renovación:", result.message);
+        return { success: false, message: result.message };
+    }
+},
+
   // === _processServerValidation ===
   _processServerValidation: async (serverValidation, localLicense) => {
     const now = new Date();
@@ -178,8 +224,6 @@ export const useAppStore = create((set, get) => ({
       : null;
 
     const isWithinGracePeriod = graceEnd && graceEnd > now;
-
-    const FATAL_REASONS = ['banned', 'deleted', 'revoked', 'device_limit_reached', 'expired_subscription'];
 
     if (!serverValidation.valid &&
       serverValidation.reason !== 'offline_grace' &&
@@ -195,7 +239,18 @@ export const useAppStore = create((set, get) => ({
           licenseStatus: serverValidation.reason || 'invalid'
         });
         return;
-      } else {
+      } 
+      else if (RENEWAL_REASONS.includes(serverValidation.reason)) {
+         Logger.warn('🔒 [AppStore] Licencia expirada. Bloqueando pantalla...');
+         await get()._loadProfile(localLicense.license_key);
+         set({
+            appStatus: 'locked_renewal', 
+            licenseStatus: 'expired',
+            licenseDetails: { ...localLicense, valid: false, status: 'expired' } 
+         });
+         return;
+      }
+       else {
         // === FALLO SUAVE (SOFT FAIL) ===
         // Si el servidor dice "invalid" pero no es fatal (ej. error de formato tras update),
         // ignoramos al servidor y mantenemos la sesión local (Modo Offline forzado).
@@ -576,29 +631,72 @@ export const useAppStore = create((set, get) => ({
   },
 
   verifySessionIntegrity: async () => {
+    // 1. Obtenemos estado actual y funciones auxiliares
     const { licenseDetails, logout } = get();
 
+    // 2. Validación básica: Si no hay llave, no hay sesión que verificar
     if (!licenseDetails?.license_key) return false;
 
+    // 3. Solo verificamos con el servidor si hay conexión estable
+    // (Si no hay internet, confiamos en la validación offline que se hizo al inicio)
     if (navigator.onLine) {
       try {
+        Logger.log("🛡️ Verificando integridad de sesión con servidor...");
+        
+        // Llamada a Supabase
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
 
+        // Cálculos de fechas para periodo de gracia
         const now = new Date();
         const graceEnd = serverCheck.grace_period_ends
           ? new Date(serverCheck.grace_period_ends)
           : null;
+        
+        // Es válido si el servidor dice TRUE o si estamos dentro del tiempo de gracia
         const isWithinGracePeriod = graceEnd && graceEnd > now;
+        const isTechnicallyValid = serverCheck.valid || isWithinGracePeriod;
 
-        if (serverCheck?.valid === false &&
-          serverCheck.reason !== 'offline_grace' &&
-          !isWithinGracePeriod) {
+        // === LÓGICA DE DETECCIÓN DE PROBLEMAS ===
+
+        // CASO A: La licencia NO es válida y NO estamos en gracia
+        if (!isTechnicallyValid && serverCheck.reason !== 'offline_grace') {
+
+          // A.1: ¿Es por falta de pago (Expirada)? -> BLOQUEAR PANTALLA
+          if (RENEWAL_REASONS.includes(serverCheck.reason)) {
+            Logger.log("🔒 [Integrity] Licencia expirada. Activando pantalla de renovación.");
+
+            const expiredDetails = {
+              ...licenseDetails,
+              ...serverCheck,
+              valid: false,
+              status: 'expired'
+            };
+
+            // 1. Actualizamos estado para mostrar RenewalModal inmediatamente
+            set({
+              appStatus: 'locked_renewal',
+              licenseStatus: 'expired',
+              licenseDetails: expiredDetails,
+              gracePeriodEnds: null // Se acabó la gracia
+            });
+
+            // 2. Guardamos en disco para que si recarga (F5), siga bloqueado y no vaya al Welcome
+            await saveLicenseToStorage(expiredDetails);
+
+            return false; // La sesión ya no es válida para operar
+          }
+
+          // A.2: ¿Es un motivo fatal (Ban, Robo, Dispositivo eliminado)? -> CERRAR SESIÓN
+          Logger.warn("🚫 [Integrity] Fallo fatal de seguridad:", serverCheck.reason);
           await logout();
           return false;
         }
 
-        let newStatus = serverCheck.status || serverCheck.reason;
+        // === CASO B: TODO CORRECTO (O en gracia) ===
+        
+        let newStatus = serverCheck.status || serverCheck.reason || 'active';
 
+        // Ajuste visual para el estado de gracia
         if (isWithinGracePeriod && !serverCheck.valid) {
           newStatus = 'grace_period';
         }
@@ -607,22 +705,32 @@ export const useAppStore = create((set, get) => ({
           ...licenseDetails,
           ...serverCheck,
           status: newStatus,
-          valid: serverCheck.valid || isWithinGracePeriod
+          valid: isTechnicallyValid
         };
 
-        set({
-          licenseStatus: newStatus,
-          gracePeriodEnds: serverCheck.grace_period_ends,
-          licenseDetails: updatedDetails
-        });
+        // Actualizamos el store y localStorage solo si cambiaron datos críticos
+        // (para evitar re-renders innecesarios en React)
+        const hasChanges = 
+            JSON.stringify(licenseDetails.valid) !== JSON.stringify(updatedDetails.valid) ||
+            licenseDetails.status !== updatedDetails.status;
 
-        await saveLicenseToStorage(updatedDetails);
+        if (hasChanges) {
+          Logger.log(`✅ [Integrity] Sesión actualizada. Estado: ${newStatus}`);
+          set({
+            licenseStatus: newStatus,
+            gracePeriodEnds: serverCheck.grace_period_ends,
+            licenseDetails: updatedDetails
+          });
+          await saveLicenseToStorage(updatedDetails);
+        }
 
       } catch (error) {
-        Logger.warn("Verificación fallida, manteniendo sesión offline:", error);
+        // Fall-back: Si falla la red o el servidor da error 500 durante la verificación,
+        // NO cerramos la sesión del usuario. Asumimos que "sigue siendo válida" hasta nuevo aviso.
+        Logger.warn("⚠️ Verificación de integridad falló (error red/server), manteniendo sesión:", error);
       }
     }
 
-    return true;
-  }
+    return true; // La sesión se mantiene viva
+  },
 }));

@@ -1,278 +1,373 @@
-/* src/pages/OrdersPage.css */
+/* src/pages/OrderPage.css */
 
-.orders-page-container {
-    padding: var(--spacing-lg);
-    background-color: var(--background-color);
-    min-height: 100vh;
+/* No redefinimos :root aquí para no romper el tema global. 
+   Usamos las variables de index.css */
+
+.kds-container {
+  padding: var(--spacing-md);
+  background-color: var(--background-color);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  transition: background-color var(--theme-transition-duration) ease;
 }
 
-.orders-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacing-xl);
-    flex-wrap: wrap;
-    gap: 1rem;
+/* --- HEADER Y TABS --- */
+.kds-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--card-background-color);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  border: 1px solid var(--border-color);
+  transition: all var(--theme-transition-duration) ease;
 }
 
-.orders-filters {
-    display: flex;
-    gap: 10px;
-    background: var(--card-background-color);
-    padding: 5px;
-    border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
+.kds-tabs {
+  display: flex;
+  gap: var(--spacing-sm);
+  overflow-x: auto;
 }
 
-.filter-btn {
-    background: transparent;
-    border: none;
-    padding: 8px 16px;
-    border-radius: var(--border-radius-sm);
-    font-weight: 600;
-    color: var(--text-light);
-    cursor: pointer;
+.kds-tab {
+  padding: 10px 20px;
+  font-size: 1rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  background-color: var(--light-background);
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
-.filter-btn.active {
-    background-color: var(--primary-color);
-    color: white;
+.kds-tab:hover {
+  color: var(--text-dark);
+  background-color: var(--border-color); /* Un poco más oscuro que light-bg */
 }
 
-.btn-refresh {
-    background: none;
-    border: none;
-    font-size: 1.2rem;
-    cursor: pointer;
-    padding: 0 10px;
+.kds-tab.active {
+  color: #fff; /* Texto blanco para resaltar sobre el color fuerte */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* Grid de Tarjetas tipo Kanban */
-.orders-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: var(--spacing-lg);
-    align-items: start;
-    /* Para que no se estiren las alturas */
+/* Colores específicos para tabs activas basados en variables globales */
+.kds-tab.active.pending { 
+  background-color: var(--secondary-color); 
+  border-color: var(--secondary-color);
+}
+.kds-tab.active.ready { 
+  background-color: var(--success-color); 
+  border-color: var(--success-color);
+}
+.kds-tab.active.history { 
+  background-color: var(--text-light); 
+  border-color: var(--text-light);
 }
 
-.order-card {
-    background-color: var(--card-background-color);
-    border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow-lg);
-    overflow: hidden;
-    border-top: 6px solid var(--text-light);
-    /* Default */
-    animation: slideIn 0.3s ease-out;
-    display: flex;
-    flex-direction: column;
+.kds-refresh-btn {
+  background-color: var(--light-background);
+  border: 1px solid var(--border-color);
+  color: var(--text-dark);
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
 }
 
-/* Colores por estado */
-.order-card.status-pending {
-    border-top-color: var(--warning-color);
-    /* Naranja para pendiente */
-    background-color: #fff;
+.kds-refresh-btn:hover {
+  background-color: var(--secondary-color);
+  color: white;
+  transform: rotate(180deg);
 }
 
-.order-card.status-ready {
-    border-top-color: var(--success-color);
-    /* Verde para listo */
-    background-color: #f0fdf4;
-    /* Fondo muy leve verde */
+/* --- BARRA DE RESUMEN DE PRODUCCIÓN --- */
+.production-bar {
+  background-color: var(--card-background-color);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius);
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  overflow-x: auto;
+  white-space: nowrap;
+  border: 1px solid var(--border-color);
+  border-left: 5px solid var(--warning-color);
+  box-shadow: var(--box-shadow);
+  transition: background-color var(--theme-transition-duration) ease;
 }
 
-.order-card.status-completed {
-    border-top-color: var(--text-light);
-    opacity: 0.7;
+.prod-title {
+  color: var(--warning-color);
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.5px;
 }
 
-/* Contenido de la tarjeta */
-.order-card-header {
-    padding: 15px;
-    display: flex;
-    justify-content: space-between;
-    background-color: rgba(0, 0, 0, 0.03);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+.prod-badge {
+  background-color: var(--light-background);
+  padding: 6px 14px;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-dark);
+  border: 1px solid var(--border-color);
 }
 
-.order-time {
-    font-size: 1.2rem;
-    font-weight: 800;
-    color: var(--text-dark);
+.prod-count {
+  font-weight: bold;
+  background-color: var(--warning-color);
+  color: #000; /* Negro para contraste con amarillo */
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
 }
 
-.order-id {
-    font-family: monospace;
-    font-weight: bold;
-    color: var(--text-light);
-    background: rgba(0, 0, 0, 0.1);
-    padding: 2px 6px;
-    border-radius: 4px;
+.prod-name {
+  font-weight: 500;
 }
 
-.order-customer {
-    padding: 5px 15px;
-    font-size: 0.85rem;
-    color: var(--secondary-color);
-    font-weight: 600;
-    background-color: rgba(123, 97, 255, 0.05);
+/* --- GRID SYSTEM --- */
+.kds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing-lg);
+  align-items: start;
 }
 
-.order-items-list {
-    list-style: none;
-    padding: 15px;
-    margin: 0;
-    flex-grow: 1;
+.kds-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-light);
+  margin-top: 50px;
+  padding: var(--spacing-xl);
+  background: var(--card-background-color);
+  border-radius: var(--border-radius);
+  border: 2px dashed var(--border-color);
 }
+.empty-icon { font-size: 4rem; margin-bottom: 1rem; display: block;}
 
-.order-item-line {
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
-}
-
-.order-item-line:last-child {
-    border-bottom: none;
-    margin-bottom: 0;
-}
-
-.kitchen-modifiers {
-    font-size: 0.9rem;
-    color: var(--text-color);
-    margin-top: 4px;
-    padding-left: 10px;
-    border-left: 3px solid var(--secondary-color);
-}
-
-.kitchen-notes {
-    background-color: #fff3cd;
-    /* Amarillo nota */
-    color: #856404;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    margin-top: 5px;
-    font-weight: 600;
-    display: inline-block;
-}
-
-/* Footer con botón de acción */
-.order-card-footer {
-    padding: 15px;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    background-color: rgba(0, 0, 0, 0.01);
-}
-
-.status-indicator {
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-align: center;
-    color: var(--text-light);
-}
-
-.btn-advance-order {
-    width: 100%;
-    padding: 12px;
-    border: none;
-    border-radius: var(--border-radius-sm);
-    font-weight: 700;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: transform 0.1s;
-}
-
-/* Estado Cancelado */
-.order-card.status-cancelled {
-    border-top-color: var(--error-color);
-    opacity: 0.6;
-    background-color: #fef2f2;
-}
-
-/* Botón Cancelar (Cuadrado pequeño) */
-.btn-cancel-order {
-    width: 42px;
-    /* Cuadrado */
-    flex-shrink: 0;
-    background-color: transparent;
-    border: 2px solid var(--error-color);
-    color: var(--error-color);
-    border-radius: var(--border-radius-sm);
-    font-size: 1.2rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-}
-
-.btn-cancel-order:hover {
-    background-color: var(--error-color);
-    color: white;
-}
-
-/* Ajustar el botón de avanzar para que conviva con el de cancelar */
-.btn-advance-order {
-    flex-grow: 1;
-    /* Ocupa el resto del espacio */
-}
-
-/* Botón Pendiente -> Listo */
-.status-pending .btn-advance-order {
-    background-color: var(--success-color);
-    color: white;
-    box-shadow: 0 4px 6px rgba(0, 196, 140, 0.3);
-}
-
-/* Botón Listo -> Entregado */
-.status-ready .btn-advance-order {
-    background-color: var(--text-dark);
-    color: white;
-}
-
-.btn-advance-order:active {
-    transform: scale(0.98);
-}
-
-.empty-kitchen {
-    grid-column: 1 / -1;
-    text-align: center;
-    padding: 50px;
-    color: var(--text-light);
+/* --- TICKET CARD DESIGN --- */
+.kds-ticket {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  box-shadow: var(--box-shadow);
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.3s ease-out;
+  border: 1px solid var(--border-color);
+  border-top-width: 6px;
+  transition: all var(--theme-transition-duration) ease;
 }
 
 @keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* Dark Mode Adjustments */
-[data-theme="dark"] .order-card {
-    background-color: #1e293b;
+/* Borders based on global status colors */
+.kds-ticket.status-pending { border-top-color: var(--secondary-color); }
+.kds-ticket.status-ready { border-top-color: var(--success-color); }
+.kds-ticket.status-cancelled { border-top-color: var(--error-color); opacity: 0.75; }
+
+/* Header */
+.ticket-header {
+  padding: var(--spacing-md);
+  background-color: var(--light-background); /* Diferenciación sutil */
+  border-bottom: 1px dashed var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-[data-theme="dark"] .order-card.status-pending {
-    background-color: #1e293b;
-    /* Mantener oscuro */
-    border-top-color: var(--warning-color);
+.ticket-id {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-dark);
+  display: block;
 }
 
-[data-theme="dark"] .order-time {
-    color: #f8fafc;
+.ticket-customer {
+  font-size: 0.8rem;
+  color: var(--text-light);
+  text-transform: uppercase;
+  font-weight: 600;
 }
 
-[data-theme="dark"] .kitchen-notes {
-    background-color: #422006;
-    color: #fcd34d;
+/* Timer Logic - Mapeado a variables globales */
+.ticket-timer {
+  font-weight: bold;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: white;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Aquí seguimos usando colores semánticos pero vinculados a las variables */
+.time-fresh { background-color: var(--success-color); }
+.time-warning { background-color: var(--warning-color); color: #000; animation: pulse 2s infinite; }
+.time-critical { background-color: var(--error-color); animation: pulse 1s infinite; }
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+/* Body */
+.ticket-body {
+  padding: 0;
+  flex-grow: 1;
+}
+
+.ticket-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--light-background); /* Borde muy sutil interno */
+}
+.ticket-item:last-child { border-bottom: none; }
+
+.item-main {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.item-qty {
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: var(--primary-color); /* Destacamos la cantidad con el color primario */
+  min-width: 25px;
+}
+
+.item-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  line-height: 1.4;
+}
+
+/* Modifiers & Notes */
+.item-modifiers {
+  margin-top: 6px;
+  margin-left: 38px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modifier-tag {
+  background-color: var(--light-background);
+  color: var(--text-color);
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  font-weight: 600;
+}
+
+.item-note {
+  margin-top: 6px;
+  margin-left: 38px;
+  font-size: 0.85rem;
+  color: var(--warning-color);
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ticket-global-note {
+  margin: 10px;
+  padding: 8px;
+  background-color: rgba(255, 184, 0, 0.1); /* Transparencia sobre warning */
+  border: 1px solid var(--warning-color);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-dark); /* Texto oscuro para legibilidad */
+  font-weight: 600;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+/* Footer & Actions */
+.ticket-footer {
+  padding: var(--spacing-md);
+  background-color: var(--light-background); /* Igual que header para efecto sandwich */
+  border-top: 1px solid var(--border-color);
+}
+
+.ticket-meta {
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--text-light);
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.ticket-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-kds-action {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-kds-action:active { transform: scale(0.97); }
+
+.btn-kds-action.advance {
+  background-color: var(--secondary-color);
+  color: white;
+  box-shadow: 0 4px 10px rgba(123, 97, 255, 0.3);
+}
+.btn-kds-action.advance:hover { filter: brightness(1.1); }
+
+.btn-kds-action.deliver {
+  background-color: var(--success-color);
+  color: white;
+  box-shadow: 0 4px 10px rgba(0, 196, 140, 0.3);
+}
+
+.btn-kds-cancel {
+  width: 48px;
+  background-color: transparent;
+  color: var(--text-light);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-kds-cancel:hover {
+  background-color: rgba(255, 59, 92, 0.1);
+  color: var(--error-color);
+  border-color: var(--error-color);
 }

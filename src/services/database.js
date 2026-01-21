@@ -533,34 +533,36 @@ export function queryBatchesByProductIdAndActive(productId, isActive = true) {
       const transaction = dbInstance.transaction([STORES.PRODUCT_BATCHES], 'readonly');
       const objectStore = transaction.objectStore(STORES.PRODUCT_BATCHES);
 
-      // 1. Usar el Nuevo Índice Compuesto (Velocidad O(1))
-      if (objectStore.indexNames.contains('productId_isActive')) {
-        const index = objectStore.index('productId_isActive');
-        // Buscamos EXACTAMENTE: [ID_PRODUCTO, TRUE]
-        const range = IDBKeyRange.only([productId, isActive ? 1 : 0]); 
-        // Nota: IndexedDB a veces prefiere 1/0 sobre true/false en arrays compuestos, 
-        // pero si guardas booleanos, usa [productId, isActive] tal cual.
-        // Si tienes problemas, prueba IDBKeyRange.only([productId, isActive]);
-        
-        const request = index.getAll([productId, isActive]);
+      // 0. Validación de seguridad
+      if (!productId) {
+        resolve([]);
+        return;
+      }
 
-        request.onsuccess = () => {
-            resolve(request.result || []);
-        };
-        request.onerror = (e) => reject(e.target.error);
-      } 
-      // 2. Fallback (Compatibilidad si el usuario no recargó la app para actualizar DB)
-      else if (objectStore.indexNames.contains('productId')) {
+      // 1. ESTRATEGIA SEGURA (Compatibilidad Universal)
+      // Usamos el índice 'productId' (String) que es 100% seguro y filtramos en memoria.
+      // Esto evita el error de "Invalid Key" con los booleanos.
+      
+      if (objectStore.indexNames.contains('productId')) {
         const index = objectStore.index('productId');
         const request = index.getAll(IDBKeyRange.only(productId));
+        
         request.onsuccess = () => {
-          const all = request.result || [];
-          resolve(all.filter(b => Boolean(b.isActive) === Boolean(isActive)));
+          const allBatches = request.result || [];
+          // Filtrado en memoria (Rápido y robusto)
+          const validBatches = allBatches.filter(b => Boolean(b.isActive) === Boolean(isActive));
+          resolve(validBatches);
         };
+        
         request.onerror = (e) => reject(e.target.error);
       } else {
-         // Fallback manual extremo...
-         resolve([]); 
+        // Fallback final de emergencia (si no existiera índice)
+        const request = objectStore.getAll();
+        request.onsuccess = () => {
+           const all = request.result || [];
+           resolve(all.filter(b => b.productId === productId && Boolean(b.isActive) === Boolean(isActive)));
+        };
+        request.onerror = (e) => reject(e.target.error);
       }
     });
   });

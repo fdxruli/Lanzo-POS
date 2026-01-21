@@ -120,3 +120,47 @@ export const deactivateDeviceSmart = async (deviceId, licenseKey) => {
         return { success: false, message: error.message };
     }
 };
+
+export const renewLicenseService = async (licenseKey) => {
+    try {
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) {
+            return { 
+                success: false, 
+                message: "No tienes conexión a internet. Conéctate para renovar." 
+            };
+        }
+
+        const deviceFingerprint = await getStableDeviceId();
+
+        // Llamada a la función SQL que acabamos de crear
+        const { data, error } = await supabaseClient.rpc('renew_license_free', {
+            license_key_param: licenseKey,
+            device_fingerprint_param: deviceFingerprint
+        });
+
+        if (error) throw error;
+
+        // Estandarizamos la respuesta para el Store
+        if (data && data.success) {
+            return {
+                success: true,
+                message: data.message,
+                newExpiry: data.new_expiry, // Fecha que viene de SQL
+                status: data.status         // 'active'
+            };
+        } else {
+            return {
+                success: false,
+                message: data.message || "No se pudo renovar la licencia."
+            };
+        }
+
+    } catch (error) {
+        Logger.error('❌ Error renovando licencia:', error);
+        return { 
+            success: false, 
+            message: error.message || "Error de conexión al renovar." 
+        };
+    }
+};
