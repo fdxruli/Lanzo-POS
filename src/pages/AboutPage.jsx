@@ -10,7 +10,7 @@ import Logo from '../components/common/Logo';
 import ContactModal from '../components/common/ContactModal';
 import './AboutPage.css';
 
-const APP_VERSION = 'v2.5.0';
+const APP_VERSION = `v${import.meta.env.VITE_APP_VERSION}`;
 
 const getWhatsAppLink = (type, data) => {
   const YOUR_WHATSAPP_NUMBER = import.meta.env.VITE_SUPPORT_PHONE;
