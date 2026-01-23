@@ -1,59 +1,53 @@
-/* ==============================================
-   ESTILO FORMAL - TERMS & CONDITIONS
-   Mobile-First | Dark/Light Mode | Professional
-   ✅ CORREGIDO: z-index ahora usa el sistema de capas
-============================================== */
-
-/* Overlay con un desenfoque más fuerte para aislar la atención */
+/* --- Overlay: El fondo oscuro que cubre toda la pantalla --- */
 .terms-modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(5px);
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6); /* Fondo semitransparente */
+  backdrop-filter: blur(4px); /* Efecto borroso moderno */
+  z-index: 9999; /* Siempre encima de todo */
+  
+  /* ESTO SOLUCIONA TU PROBLEMA DE CENTRADO: */
   display: flex;
-  justify-content: center;
-  align-items: flex-end; /* En móvil, empieza desde abajo */
-  z-index: var(--z-modal-critical); /* ✅ CAMBIO: Era 9999, ahora 1300 */
-  padding: 0;
-  transition: opacity 0.3s ease;
+  align-items: center; /* Centra verticalmente */
+  justify-content: center; /* Centra horizontalmente */
+  padding: 16px; /* Margen de seguridad para que no toque los bordes en móvil */
+  
+  /* Animación de entrada suave */
+  animation: overlayFadeIn 0.3s ease-out forwards;
 }
 
-/* Contenedor Principal */
+/* --- Content: La caja blanca del modal --- */
 .terms-modal-content {
-  background-color: var(--card-background-color);
+  background-color: var(--bg-paper, #ffffff); /* Usa tu variable o blanco por defecto */
   width: 100%;
-  height: 95%; /* Casi pantalla completa en móvil */
-  border-top-left-radius: 16px;
-  border-top-right-radius: 16px;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.3);
+  max-width: 500px; /* Ancho máximo en escritorio */
+  max-height: 85vh; /* Ocupa máximo el 85% de la altura de la pantalla */
+  
+  border-radius: 16px; /* Bordes redondeados modernos */
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  
+  /* Estructura interna flexible para header/body/footer */
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--border-color);
+  overflow: hidden; /* Para que el contenido no se salga de los bordes redondeados */
   
-  /* Animación de entrada tipo "Slide Up" */
-  animation: slideUp 0.3s ease-out forwards;
+  /* Animación de subida */
+  animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  position: relative;
 }
 
-@keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
-}
-
-/* ================= HEADER ================= */
+/* --- Header: Título y botón cerrar --- */
 .terms-header {
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color);
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  background-color: var(--card-background-color);
-  flex-shrink: 0;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  background-color: var(--bg-paper, #ffffff);
+  flex-shrink: 0; /* Evita que se encoja */
 }
 
 .terms-title-group {
@@ -65,187 +59,182 @@
 .terms-title-group h3 {
   margin: 0;
   font-size: 1.1rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-dark);
+  font-weight: 600;
+  color: var(--text-primary, #1a202c);
 }
 
 .terms-version-badge {
-  background-color: var(--light-background);
-  color: var(--text-light);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.7rem;
+  display: block;
+  font-size: 0.65rem;
+  color: var(--text-secondary, #718096);
   font-weight: 600;
-  border: 1px solid var(--border-color);
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+  text-transform: uppercase;
 }
 
 .terms-close-btn {
   background: transparent;
   border: none;
-  color: var(--text-light);
+  color: var(--text-secondary, #718096);
   cursor: pointer;
   padding: 8px;
-  border-radius: 4px;
-  transition: all 0.2s;
+  margin: -8px; /* Aumenta el área de toque sin afectar el layout */
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
 }
 
 .terms-close-btn:hover {
-  background-color: var(--light-background);
-  color: var(--error-color);
+  background-color: var(--bg-hover, #f7fafc);
+  color: var(--text-primary, #1a202c);
 }
 
-/* ================= BODY (El documento legal) ================= */
+/* --- Body: El área con scroll --- */
 .terms-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0;
-  background-color: var(--background-color);
+  flex: 1; /* Ocupa todo el espacio disponible */
+  overflow-y: auto; /* Habilita SCROLL solo aquí */
+  padding: 20px;
   position: relative;
-  /* ✅ AÑADIDO: Asegura que el scroll funcione correctamente en iOS */
-  -webkit-overflow-scrolling: touch;
+  
+  /* Scrollbar bonita */
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 transparent;
 }
 
-/* Contenedor del texto "Papel" */
-.terms-document-wrapper {
-  padding: 32px 24px;
-  max-width: 800px;
-  margin: 0 auto;
+.terms-body::-webkit-scrollbar {
+  width: 6px;
+}
+.terms-body::-webkit-scrollbar-thumb {
+  background-color: #cbd5e0;
+  border-radius: 4px;
 }
 
+/* Contenido dinámico HTML */
 .terms-dynamic-content {
-  color: var(--text-dark);
-  font-family: 'Georgia', 'Times New Roman', serif;
-  line-height: 1.8;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-primary, #2d3748);
 }
 
-/* Estilos para el HTML inyectado */
 .terms-dynamic-content h1, 
 .terms-dynamic-content h2, 
 .terms-dynamic-content h3 {
-  margin-top: 1.5em;
-  margin-bottom: 0.8em;
-  color: var(--text-dark);
-  font-family: 'Inter', sans-serif;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-primary, #1a202c);
 }
 
 .terms-dynamic-content p {
-  margin-bottom: 1.2em;
-  text-align: justify;
-}
-
-.terms-dynamic-content ul, 
-.terms-dynamic-content ol {
-  margin-bottom: 1.2em;
-  padding-left: 24px;
-}
-
-.terms-legal-footer {
-  margin-top: 40px;
-  padding-top: 20px;
-  border-top: 1px dashed var(--border-color);
-  font-size: 0.85rem;
-  color: var(--text-light);
-  font-style: italic;
-  font-family: 'Inter', sans-serif;
+  margin-bottom: 1rem;
 }
 
 /* Estados de carga y error */
-.terms-loading-state, 
+.terms-loading-state,
 .terms-error-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  padding: 40px;
+  padding: 40px 20px;
   text-align: center;
-  color: var(--text-light);
-  gap: 16px;
+  color: var(--text-secondary, #718096);
+  height: 100%;
 }
 
-/* ================= FOOTER (Acciones) ================= */
+.terms-error-state p {
+  margin-top: 16px;
+  font-size: 0.9rem;
+}
+
+.terms-legal-footer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border-color, #e2e8f0);
+  font-size: 0.8rem;
+  color: var(--text-secondary, #718096);
+  line-height: 1.4;
+}
+
+/* --- Footer: Botones de acción --- */
 .terms-footer {
-  padding: 20px 24px;
-  border-top: 1px solid var(--border-color);
-  background-color: var(--card-background-color);
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+  background-color: var(--bg-subtle, #f8fafc); /* Un gris muy clarito */
   display: flex;
-  flex-direction: column;
+  justify-content: flex-end; /* Alinea botones a la derecha */
   gap: 12px;
-  flex-shrink: 0;
-  box-shadow: 0 -4px 12px rgba(0,0,0,0.05);
+  flex-shrink: 0; /* Evita que desaparezca */
 }
 
-.btn-accept-terms {
-  width: 100%;
+/* Botones base (asumiendo que tienes clases globales, pero por seguridad las definimos) */
+.btn {
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-radius: 6px;
-  padding: 14px;
+  gap: 8px;
 }
 
-.terms-footer .btn-secondary {
-  width: 100%;
-  border-radius: 6px;
-  background-color: transparent;
-  color: var(--text-light);
-  border: 1px solid var(--border-color);
+.btn-secondary {
+  background-color: white;
+  border: 1px solid var(--border-color, #cbd5e0);
+  color: var(--text-primary, #4a5568);
 }
 
-.terms-footer .btn-secondary:hover {
-  background-color: var(--light-background);
-  color: var(--text-dark);
+.btn-primary {
+  background-color: var(--primary-color, #3182ce); /* Azul por defecto */
+  color: white;
 }
 
-/* ================= MEDIA QUERIES (TABLET & DESKTOP) ================= */
-@media (min-width: 768px) {
-  .terms-modal-overlay {
-    align-items: center;
-    padding: 20px;
-  }
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
-  .terms-modal-content {
-    width: 90%;
-    max-width: 750px;
-    height: 85vh;
-    max-height: 800px;
-    border-radius: 8px;
-    animation: modalFadeIn 0.2s ease-out;
-  }
+/* --- Animaciones Keyframes --- */
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
-  .terms-document-wrapper {
-    padding: 40px;
+@keyframes modalSlideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
   }
-
-  .terms-footer {
-    flex-direction: row;
-    justify-content: flex-end;
-  }
-
-  .btn-accept-terms, 
-  .terms-footer .btn-secondary {
-    width: auto;
-    min-width: 140px;
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
-/* ✅ AÑADIDO: Previene problemas de scroll en iOS Safari */
-@supports (-webkit-touch-callout: none) {
-  .terms-body {
-    position: relative;
-    overflow-y: scroll;
-  }
+/* --- Soporte Dark Mode (Si usas data-theme="dark") --- */
+[data-theme='dark'] .terms-modal-content,
+[data-theme='dark'] .terms-header {
+  background-color: #1a202c; /* Gris oscuro */
+  border-color: #2d3748;
 }
 
-/* AJUSTE MODO OSCURO */
-[data-theme="dark"] .terms-dynamic-content {
-  color: #e2e8f0;
+[data-theme='dark'] .terms-footer {
+  background-color: #171923; /* Más oscuro */
+  border-color: #2d3748;
 }
 
-[data-theme="dark"] .terms-body {
-  background-color: #0f172a;
+[data-theme='dark'] .terms-title-group h3,
+[data-theme='dark'] .terms-dynamic-content {
+  color: #f7fafc;
+}
+
+[data-theme='dark'] .terms-close-btn:hover {
+  background-color: #2d3748;
+  color: white;
 }
