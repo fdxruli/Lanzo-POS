@@ -238,3 +238,17 @@
   background-color: #2d3748;
   color: white;
 }
+
+/* Corrección para que los títulos dentro del contenido HTML sean blancos en modo oscuro */
+[data-theme='dark'] .terms-dynamic-content h1,
+[data-theme='dark'] .terms-dynamic-content h2,
+[data-theme='dark'] .terms-dynamic-content h3,
+[data-theme='dark'] .terms-dynamic-content h4,
+[data-theme='dark'] .terms-dynamic-content strong {
+  color: #f7fafc !important; /* Forzamos color claro */
+}
+
+/* Opcional: Si tienes enlaces en los términos */
+[data-theme='dark'] .terms-dynamic-content a {
+  color: #63b3ed; /* Azul claro legible */
+}
