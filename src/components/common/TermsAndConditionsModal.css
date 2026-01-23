@@ -1,6 +1,7 @@
 /* ==============================================
    ESTILO FORMAL - TERMS & CONDITIONS
    Mobile-First | Dark/Light Mode | Professional
+   ✅ CORREGIDO: z-index ahora usa el sistema de capas
 ============================================== */
 
 /* Overlay con un desenfoque más fuerte para aislar la atención */
@@ -10,13 +11,13 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(15, 23, 42, 0.75); /* Más oscuro para seriedad */
+  background-color: rgba(15, 23, 42, 0.75);
   backdrop-filter: blur(5px);
   display: flex;
   justify-content: center;
   align-items: flex-end; /* En móvil, empieza desde abajo */
-  z-index: 9999;
-  padding: 0; /* Sin padding en móvil para full screen */
+  z-index: var(--z-modal-critical); /* ✅ CAMBIO: Era 9999, ahora 1300 */
+  padding: 0;
   transition: opacity 0.3s ease;
 }
 
@@ -65,7 +66,7 @@
   margin: 0;
   font-size: 1.1rem;
   font-weight: 700;
-  text-transform: uppercase; /* Más formal */
+  text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-dark);
 }
@@ -74,7 +75,7 @@
   background-color: var(--light-background);
   color: var(--text-light);
   padding: 2px 8px;
-  border-radius: 4px; /* Bordes más rectos */
+  border-radius: 4px;
   font-size: 0.7rem;
   font-weight: 600;
   border: 1px solid var(--border-color);
@@ -99,9 +100,11 @@
 .terms-body {
   flex: 1;
   overflow-y: auto;
-  padding: 0; /* Quitamos padding del contenedor para usarlo dentro del papel */
-  background-color: var(--background-color); /* Fondo ligeramente distinto al card */
+  padding: 0;
+  background-color: var(--background-color);
   position: relative;
+  /* ✅ AÑADIDO: Asegura que el scroll funcione correctamente en iOS */
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Contenedor del texto "Papel" */
@@ -112,9 +115,9 @@
 }
 
 .terms-dynamic-content {
-  color: var(--text-dark); /* Texto con alto contraste para lectura */
-  font-family: 'Georgia', 'Times New Roman', serif; /* Serif da autoridad legal */
-  line-height: 1.8; /* Mayor interlineado para lectura seria */
+  color: var(--text-dark);
+  font-family: 'Georgia', 'Times New Roman', serif;
+  line-height: 1.8;
   font-size: 1rem;
 }
 
@@ -125,12 +128,12 @@
   margin-top: 1.5em;
   margin-bottom: 0.8em;
   color: var(--text-dark);
-  font-family: 'Inter', sans-serif; /* Títulos en sans-serif */
+  font-family: 'Inter', sans-serif;
 }
 
 .terms-dynamic-content p {
   margin-bottom: 1.2em;
-  text-align: justify; /* Justificado formal */
+  text-align: justify;
 }
 
 .terms-dynamic-content ul, 
@@ -169,7 +172,7 @@
   border-top: 1px solid var(--border-color);
   background-color: var(--card-background-color);
   display: flex;
-  flex-direction: column; /* Botones apilados en móvil */
+  flex-direction: column;
   gap: 12px;
   flex-shrink: 0;
   box-shadow: 0 -4px 12px rgba(0,0,0,0.05);
@@ -181,7 +184,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-radius: 6px; /* Bordes semirectos */
+  border-radius: 6px;
   padding: 14px;
 }
 
@@ -192,6 +195,7 @@
   color: var(--text-light);
   border: 1px solid var(--border-color);
 }
+
 .terms-footer .btn-secondary:hover {
   background-color: var(--light-background);
   color: var(--text-dark);
@@ -200,25 +204,25 @@
 /* ================= MEDIA QUERIES (TABLET & DESKTOP) ================= */
 @media (min-width: 768px) {
   .terms-modal-overlay {
-    align-items: center; /* Centrado vertical */
+    align-items: center;
     padding: 20px;
   }
 
   .terms-modal-content {
     width: 90%;
-    max-width: 750px; /* Ancho de lectura óptimo A4 */
+    max-width: 750px;
     height: 85vh;
     max-height: 800px;
-    border-radius: 8px; /* Bordes sutiles pero serios en desktop */
-    animation: modalFadeIn 0.2s ease-out; /* Fade normal en desktop */
+    border-radius: 8px;
+    animation: modalFadeIn 0.2s ease-out;
   }
 
   .terms-document-wrapper {
-    padding: 40px; /* Más aire en desktop */
+    padding: 40px;
   }
 
   .terms-footer {
-    flex-direction: row; /* Botones en línea */
+    flex-direction: row;
     justify-content: flex-end;
   }
 
@@ -229,11 +233,19 @@
   }
 }
 
+/* ✅ AÑADIDO: Previene problemas de scroll en iOS Safari */
+@supports (-webkit-touch-callout: none) {
+  .terms-body {
+    position: relative;
+    overflow-y: scroll;
+  }
+}
+
 /* AJUSTE MODO OSCURO */
 [data-theme="dark"] .terms-dynamic-content {
-  color: #e2e8f0; /* Blanco no puro para lectura cómoda */
+  color: #e2e8f0;
 }
 
 [data-theme="dark"] .terms-body {
-  background-color: #0f172a; /* Fondo muy oscuro para contraste */
+  background-color: #0f172a;
 }
