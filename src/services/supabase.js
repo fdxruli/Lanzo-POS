@@ -489,8 +489,6 @@ export const createFreeTrial = async function () {
     }
 };
 
-
-
 export const deactivateDeviceById = async function (deviceId) {
     try {
         const storedData = localStorage.getItem('lanzo_license');
@@ -522,4 +520,56 @@ export const subscribeToSecurityChanges = async () => {
 
 export const removeRealtimeChannel = async (channel) => {
     if (channel) await supabaseClient.removeChannel(channel);
+};
+
+/**
+ * Descarga el contenido HTML de los términos activos desde Supabase.
+ * @param {string} type - Tipo de documento ('terms_of_use' o 'privacy_policy')
+ */
+export const fetchLegalTerms = async (type = 'terms_of_use') => {
+    try {
+        const { data, error } = await supabaseClient
+            .rpc('get_active_legal_terms', { doc_type_param: type });
+
+        if (error) throw error;
+        
+        // La RPC devuelve una tabla, tomamos el primer resultado (si existe)
+        return data && data.length > 0 ? data[0] : null;
+
+    } catch (error) {
+        Logger.error('Error obteniendo términos legales:', error);
+        return null;
+    }
+};
+
+/**
+ * Registra que una licencia específica aceptó una versión específica de los términos.
+ * @param {string} licenseKey - La licencia que acepta.
+ * @param {string} termId - El ID de la versión de términos aceptada.
+ */
+export const acceptLegalTerms = async (licenseKey, termId) => {
+    try {
+        const deviceFingerprint = await getStableDeviceId();
+        
+        // Metadata opcional (navegador, plataforma)
+        const metadata = {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            language: navigator.language
+        };
+
+        const { data, error } = await supabaseClient.rpc('register_term_acceptance', {
+            p_license_key: licenseKey,
+            p_term_id: termId,
+            p_device_fingerprint: deviceFingerprint,
+            p_metadata: metadata
+        });
+
+        if (error) throw error;
+        return data; // { success: true }
+
+    } catch (error) {
+        Logger.error('Error registrando aceptación de términos:', error);
+        return { success: false, error: error.message };
+    }
 };

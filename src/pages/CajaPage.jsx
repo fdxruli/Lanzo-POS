@@ -113,9 +113,20 @@ export default function CajaPage() {
 
     if (result.success) {
       setIsAuditOpen(false);
-      showMessageModal(`✅ Corte realizado con éxito.`);
+      
+      // --- OPTIMIZACIÓN: Disparar respaldo automático ---
+      try {
+        // No bloqueamos la UI con alertas, solo lo intentamos descargar
+        await downloadBackupSmart();
+        showMessageModal(`✅ Corte realizado y respaldo descargado.`);
+      } catch (backupError) {
+        // Si falla el respaldo, el corte YA se hizo, así que solo avisamos del corte
+        console.error("Fallo respaldo automático", backupError);
+        showMessageModal(`✅ Corte realizado con éxito (pero falló la descarga del respaldo).`);
+      }
+      // --------------------------------------------------
+
     } else {
-      // --- CAMBIO: Usamos el helper inteligente ---
       if (result.error && result.error.details) {
         handleActionableError(result.error);
       } else {
@@ -126,8 +137,6 @@ export default function CajaPage() {
 
   // Lógica de Backup (Solicitada)
   const handleBackup = async () => {
-    if (!window.confirm("¿Descargar copia de seguridad optimizada?")) return;
-
     setIsBackupLoading(true);
     try {
       await downloadBackupSmart(); // <--- Cambio aquí
@@ -173,23 +182,22 @@ export default function CajaPage() {
 
           {/* Botón de Backup Integrado */}
           <button
-            className="btn"
-            style={{
-              padding: '6px 12px',
-              fontSize: '0.85rem',
-              border: '1px solid var(--border-color)',
-              backgroundColor: 'var(--card-background-color)',
-              color: 'var(--text-dark)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px'
-            }}
-            onClick={handleBackup}
-            disabled={isBackupLoading}
-            title="Descargar copia de seguridad de la base de datos"
-          >
-            {isBackupLoading ? '⏳...' : '💾 Respaldo'}
-          </button>
+  className="btn btn-backup"
+  onClick={handleBackup}
+  disabled={isBackupLoading}
+  title="Guardar copia de seguridad ahora"
+>
+  {/* Icono y Texto condicional */}
+  {isBackupLoading ? (
+    <>
+      <span className="spinner-small"></span> Guardando...
+    </>
+  ) : (
+    <>
+      💾 Respaldo Rápido
+    </>
+  )}
+</button>
         </div>
 
         <div className="status-body">

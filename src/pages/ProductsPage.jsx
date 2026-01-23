@@ -13,7 +13,6 @@ import { useProductStore } from '../store/useProductStore';
 import { useStatsStore } from '../store/useStatsStore';
 
 import BatchManager from '../components/products/BatchManager';
-import DataTransferModal from '../components/products/DataTransferModal';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import DailyPriceModal from '../components/products/DailyPriceModal';
 import { useAppStore } from '../store/useAppStore';
@@ -47,7 +46,6 @@ export default function ProductsPage() {
     const [editingProduct, setEditingProduct] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
-    const [showDataTransfer, setShowDataTransfer] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
     const [isWizardMode, setIsWizardMode] = useState(true);
 
@@ -362,13 +360,6 @@ export default function ProductsPage() {
                             📝 Actualizar Precios del Día
                         </button>
                     )}
-
-                    <button
-                        className="btn btn-secondary btn-action-header"
-                        onClick={() => setShowDataTransfer(true)}
-                    >
-                        📥 / 📤 Importar y Exportar
-                    </button>
                 </div>
 
             </div >
@@ -540,11 +531,6 @@ export default function ProductsPage() {
                 onDelete={handleDeleteCategory}
             />
 
-            <DataTransferModal
-                show={showDataTransfer}
-                onClose={() => setShowDataTransfer(false)}
-                onRefresh={refreshData}
-            />
             <DailyPriceModal
                 show={showDailyPrice}
                 onClose={() => setShowDailyPrice(false)}
