@@ -2,13 +2,17 @@ import React, { useState } from 'react';
 import { useStatsStore } from '../../store/useStatsStore';
 import { loadData, saveBulkSafe, STORES, archiveOldData } from '../../services/database';
 import Logger from '../../services/Logger';
+import DataTransferModal from '../products/DataTransferModal';
+import { useProductStore } from '../../store/useProductStore';
 
 export default function MaintenanceSettings() {
   const loadStats = useStatsStore((state) => state.loadStats);
+  const loadInitialProducts = useProductStore((state) => state.loadInitialProducts);
+  const [showDataTransfer, setShowDataTransfer] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleRecalculateProfits = async () => {
-    if (!window.confirm("⚠️ ¿Deseas recalcular todas las ventas usando los COSTOS ACTUALES?\n\nEsto corregirá ganancias negativas, pero sobrescribirá el historial de costos.")) return;
+    if (!window.confirm("⚠️ ¿Deseas recalcular...?")) return;
 
     setIsProcessing(true);
     try {
@@ -16,37 +20,41 @@ export default function MaintenanceSettings() {
         loadData(STORES.SALES),
         loadData(STORES.MENU)
       ]);
+      
       const productCostMap = new Map();
       products.forEach(p => productCostMap.set(p.id, parseFloat(p.cost) || 0));
 
-      let updatedCount = 0;
-      const updatedSales = sales.map(sale => {
-        if (sale.fulfillmentStatus === 'cancelled') return sale;
+      // Array solo para lo que cambió
+      const salesToUpdate = []; 
+
+      sales.forEach(sale => { // Usamos forEach en lugar de map
+        if (sale.fulfillmentStatus === 'cancelled') return;
+        
         let saleModified = false;
         const newItems = sale.items.map(item => {
           const realId = item.parentId || item.id;
           const currentCost = productCostMap.get(realId);
-          // Si el costo guardado difiere del actual, actualizamos
+          
           if (currentCost !== undefined && Math.abs((item.cost || 0) - currentCost) > 0.01) {
             saleModified = true;
             return { ...item, cost: currentCost };
           }
           return item;
         });
+
         if (saleModified) {
-          updatedCount++;
-          return { ...sale, items: newItems };
+          // Solo agregamos a la lista de guardar si hubo cambios
+          salesToUpdate.push({ ...sale, items: newItems });
         }
-        return sale;
       });
 
-      if (updatedCount > 0) {
-        // CAMBIO: saveBulkSafe
-        const result = await saveBulkSafe(STORES.SALES, updatedSales);
+      if (salesToUpdate.length > 0) {
+        // Solo guardamos los modificados
+        const result = await saveBulkSafe(STORES.SALES, salesToUpdate);
 
         if (result.success) {
           await loadStats(true);
-          alert(`✅ Reparación completada. Se actualizaron ${updatedCount} ventas.`);
+          alert(`✅ Reparación completada. Se actualizaron ${salesToUpdate.length} ventas.`);
         } else {
           alert(`Error al guardar correcciones: ${result.error?.message}`);
         }
@@ -58,10 +66,10 @@ export default function MaintenanceSettings() {
       alert("Error al recalcular: " + e.message);
     }
     finally { setIsProcessing(false); }
-  };
+};
 
   const handleSyncStock = async () => {
-    if (!window.confirm("⚠️ ¿Sincronizar stock visible con la suma de lotes?")) return;
+    if (!window.confirm("⚠️ ¿Sincronizar stock visible con la suma de lotes?\n\nNOTA: Los productos con 'Stock Simple' no se verán afectados, solo aquellos configurados por lotes.")) return;
 
     setIsProcessing(true);
     try {
@@ -70,43 +78,72 @@ export default function MaintenanceSettings() {
         loadData(STORES.MENU)
       ]);
 
-      // Sumar stock real de lotes activos
-      const realStockMap = {};
+      // 1. Mapa de Suma Real de Lotes
+      const realStockFromBatches = {};
       allBatches.forEach(b => {
         if (b.isActive && b.stock > 0) {
-          realStockMap[b.productId] = (realStockMap[b.productId] || 0) + b.stock;
+          realStockFromBatches[b.productId] = (realStockFromBatches[b.productId] || 0) + b.stock;
         }
       });
 
       const updates = [];
-      allProducts.forEach(p => {
-        // Si el producto usa lotes, verificamos si cuadra
-        const calculatedStock = realStockMap[p.id] || 0;
-        const currentStock = p.stock || 0;
+      let skippedSimpleProducts = 0;
 
-        if (Math.abs(currentStock - calculatedStock) > 0.01) {
-          // Actualizamos el producto padre
-          updates.push({
-            ...p,
-            stock: calculatedStock,
-            trackStock: calculatedStock > 0 || p.trackStock,
-            updatedAt: new Date().toISOString()
-          });
+      allProducts.forEach(p => {
+        const calculatedStock = realStockFromBatches[p.id] || 0;
+        const currentStock = p.stock || 0;
+        
+        // Verificamos si el producto está configurado para usar lotes
+        // (Según tu schema: batchManagement: { enabled: boolean })
+        const usesBatches = p.batchManagement?.enabled === true;
+
+        if (usesBatches) {
+          // CASO 1: El producto ESTÁ configurado para usar Lotes.
+          // La verdad absoluta son los lotes. Si la suma es 0, el stock debe ser 0.
+          if (Math.abs(currentStock - calculatedStock) > 0.01) {
+            updates.push({
+              ...p,
+              stock: calculatedStock,
+              trackStock: true, // Aseguramos que rastree stock
+              updatedAt: new Date().toISOString()
+            });
+          }
+        } else {
+          // CASO 2: El producto NO tiene activado el sistema de lotes (Es Stock Simple o Híbrido mal configurado)
+          
+          if (calculatedStock > 0) {
+            // SUB-CASO A: Aunque dice no usar lotes, ENCONTRAMOS lotes activos.
+            // Prioridad: Si hay lotes físicos, el stock visible debe reflejarlos.
+            if (Math.abs(currentStock - calculatedStock) > 0.01) {
+               updates.push({
+                ...p,
+                stock: calculatedStock,
+                // Opcional: Podríamos forzar activar batchManagement aquí, 
+                // pero mejor solo corregimos el número por seguridad.
+                updatedAt: new Date().toISOString()
+              });
+            }
+          } else {
+            // SUB-CASO B (El más importante): No usa lotes y no tiene lotes encontrados.
+            // Es un producto de STOCK SIMPLE MANUAL.
+            // NO HACEMOS NADA. Respetamos su p.stock actual (ej: 50 unidades).
+            skippedSimpleProducts++;
+          }
         }
       });
 
       if (updates.length > 0) {
-        // CAMBIO: saveBulkSafe
         const result = await saveBulkSafe(STORES.MENU, updates);
 
         if (result.success) {
-          await loadStats(true);
-          alert(`✅ Sincronización completada. Se corrigió el stock de ${updates.length} productos.`);
+          await loadStats(true); // Refrescar stats globales
+          await loadInitialProducts(); // Refrescar lista de productos en memoria
+          alert(`✅ Sincronización inteligente completada.\n\n- Productos corregidos: ${updates.length}\n- Productos manuales respetados: ${skippedSimpleProducts}`);
         } else {
           alert(`Error al sincronizar: ${result.error?.message}`);
         }
       } else {
-        alert("✅ El inventario ya está perfectamente sincronizado.");
+        alert(`✅ El inventario ya está sincronizado.\n(Se omitieron ${skippedSimpleProducts} productos de stock manual).`);
       }
     } catch (e) {
       Logger.error(e);
@@ -126,6 +163,7 @@ export default function MaintenanceSettings() {
         a.href = url;
         a.download = `ARCHIVO_HISTORICO_${new Date().toISOString()}.json`;
         a.click();
+        await loadStats(true);
         alert(`✅ Se archivaron y limpiaron ${oldSales.length} ventas antiguas.`);
       } else {
         alert("No hay ventas antiguas para archivar.");
@@ -181,8 +219,33 @@ export default function MaintenanceSettings() {
               📦 Archivar
             </button>
           </div>
+
+          {/* HERRAMIENTA 4 */}
+          <div className="maintenance-tool-card" style={{ borderColor: '#3b82f6' }}>
+    <div className="tool-info">
+      <h4 style={{ color: '#3b82f6' }}>💾 Respaldo y Datos</h4>
+      <p>- Exporta tu base de datos o importa un respaldo.</p>
+      <p>- Carga masiva de productos vía CSV/JSON.</p>
+    </div>
+    <button 
+      className="btn btn-secondary" 
+      onClick={() => setShowDataTransfer(true)}
+      style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: 'none' }}
+    >
+      📥 Gestionar Datos
+    </button>
+  </div>
         </div>
       </div>
+      <DataTransferModal
+        show={showDataTransfer}
+        onClose={() => setShowDataTransfer(false)}
+        onRefresh={async () => {
+             // Si el usuario importa datos, recargamos todo
+             await loadInitialProducts();
+             await loadStats(true);
+        }}
+      />
     </div>
   );
 }

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
 import Logger from '../../services/Logger';
-import { Lock, Info } from 'lucide-react'; 
+import { Lock, Info, FileText } from 'lucide-react';
+import TermsAndConditionsModal from '../common/TermsAndConditionsModal'; 
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -38,6 +39,8 @@ export default function GeneralSettings() {
     address: false,
     logo: false
   });
+
+  const [showTerms, setShowTerms] = useState(false);
 
   useEffect(() => {
     if (companyProfile) {
@@ -319,6 +322,48 @@ export default function GeneralSettings() {
           ))}
         </div>
       </div>
+      
+      {/* SECCIÓN LEGAL */}
+  <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+    <h3 className="subtitle">Legal y Privacidad</h3>
+
+    <div 
+      onClick={() => setShowTerms(true)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '12px',
+        borderRadius: '8px',
+        backgroundColor: 'var(--bg-light)', // O 'white' con borde
+        border: '1px solid var(--border-color)',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-color)'}
+      onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}
+    >
+      <div style={{ 
+        backgroundColor: '#EBF8FF', // Azul muy claro
+        padding: '8px', 
+        borderRadius: '50%',
+        color: '#3182CE' // Azul
+      }}>
+        <FileText size={20} />
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Términos y Condiciones de Uso</span>
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Consulta nuestras políticas de manejo de datos y privacidad.</span>
+      </div>
+    </div>
+  </div>
+
+  {/* Renderizar el Modal */}
+  <TermsAndConditionsModal 
+    isOpen={showTerms} 
+    onClose={() => setShowTerms(false)} 
+    readOnly={true}
+  />
     </div>
   );
 }
