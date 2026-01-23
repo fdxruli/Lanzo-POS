@@ -3,32 +3,49 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
 import LazyImage from './LazyImage';
-import { ChevronDown, CheckCircle, Lock, Loader2 } from 'lucide-react'; // [Modificado] Agregamos Loader2
+import TermsAndConditionsModal from './TermsAndConditionsModal';
+import { 
+  ChevronDown, 
+  CheckCircle, 
+  Lock, 
+  Loader2, 
+  Camera, 
+  Rocket, 
+  Info,
+  Utensils,     // Restaurante
+  Store,        // Abarrotes
+  Pill,         // Farmacia
+  Apple,        // Frutería
+  Shirt,        // Ropa
+  Hammer        // Ferretería
+} from 'lucide-react'; 
 import './SetupModal.css';
 import Logger from '../../services/Logger';
+import { fetchLegalTerms, acceptLegalTerms } from '../../services/supabase';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
+// [Modificado] Usamos componentes en lugar de emojis en la propiedad 'icon'
+// Nota: Renombramos la propiedad a 'Icon' (Mayúscula) para indicar que es un componente
 const BUSINESS_RUBROS = [
-  { id: 'food_service', label: 'Restaurante / Cocina', icon: '🍳' },
-  { id: 'abarrotes', label: 'Abarrotes / Tienda', icon: '🛒' },
-  { id: 'farmacia', label: 'Farmacia', icon: '💊' },
-  { id: 'verduleria/fruteria', label: 'Frutería / Verdulería', icon: '🍎' },
-  { id: 'apparel', label: 'Ropa / Calzado', icon: '👕' },
-  { id: 'hardware', label: 'Ferretería', icon: '🔨' },
+  { id: 'food_service', label: 'Restaurante / Cocina', Icon: Utensils },
+  { id: 'abarrotes', label: 'Abarrotes / Tienda', Icon: Store },
+  { id: 'farmacia', label: 'Farmacia', Icon: Pill },
+  { id: 'verduleria/fruteria', label: 'Frutería / Verdulería', Icon: Apple },
+  { id: 'apparel', label: 'Ropa / Calzado', Icon: Shirt },
+  { id: 'hardware', label: 'Ferretería', Icon: Hammer },
 ];
 
 export default function SetupModal() {
   const handleSetup = useAppStore((state) => state.handleSetup);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
 
-  // [Nuevo] Estado para controlar la carga
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [setupError, setSetupError] = useState('');
+
   useEffect(() => {
-    // Si la licencia NO permite todo ("*") y solo hay 1 rubro permitido...
     if (!isAllAllowed && allowedRubrosList.length === 1) {
-      // ...lo seleccionamos automáticamente al cargar
       const rubroForzado = allowedRubrosList[0];
       setSelectedTypes([rubroForzado]);
     }
@@ -41,20 +58,14 @@ export default function SetupModal() {
   const [logoData, setLogoData] = useState(null);
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [error, setError] = useState('');
-
-  // Control del Acordeón: 'info' | 'type'
   const [activeSection, setActiveSection] = useState('info');
 
-  // ============================================================
-  // LÓGICA DE LICENCIA DINÁMICA (MEJORADA)
-  // ============================================================
-  
   const licenseFeatures = licenseDetails?.features || {};
   const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
   const allowedRubrosList = licenseFeatures.allowed_rubros || ['*'];
   const isAllAllowed = allowedRubrosList.includes('*');
+  const [showTerms, setShowTerms] = useState(false);
 
-  // Validación del Paso 1 (Nombre obligatorio)
   const isStep1Complete = useMemo(() => name.trim().length > 0, [name]);
 
   const handleSectionToggle = (section) => {
@@ -98,22 +109,40 @@ export default function SetupModal() {
     }
   };
 
-  // [Modificado] Convertimos a async para manejar la espera
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (selectedTypes.length === 0) {
-      setError('⚠️ Debes seleccionar al menos un rubro para finalizar.');
+      setError('⚠️ Debes seleccionar al menos un rubro.');
       if (activeSection !== 'type') setActiveSection('type');
       return;
     }
 
-    // Iniciamos estado de carga
     setIsSubmitting(true);
-    setError(''); // Limpiar errores previos
+    setError(''); 
 
     try {
-      // Esperamos a que el store termine el proceso (subida de archivos + guardado en DB)
+      // --- PASO 1: ACEPTACIÓN DE TÉRMINOS SILENCIOSA ---
+      // Obtenemos el ID del término vigente
+      const terms = await fetchLegalTerms('terms_of_use');
+      
+      if (!terms || !terms.id) {
+         throw new Error("No se pudieron verificar los términos y condiciones. Revisa tu conexión.");
+      }
+
+      // Obtenemos la licencia actual (del store o props)
+      const currentLicenseKey = licenseDetails?.license_key; 
+      
+      if (currentLicenseKey) {
+          // Enviamos la aceptación a la BD
+          const acceptResult = await acceptLegalTerms(currentLicenseKey, terms.id);
+          if (!acceptResult.success && acceptResult.message !== 'ALREADY_ACCEPTED') {
+             throw new Error("Error registrando la aceptación de términos.");
+          }
+      }
+      // --------------------------------------------------
+
+      // --- PASO 2: GUARDAR PERFIL (Lógica original) ---
       await handleSetup({
         name,
         phone,
@@ -121,12 +150,12 @@ export default function SetupModal() {
         logo: logoData,
         business_type: selectedTypes
       });
-      // Nota: Si es exitoso, el appStatus cambiará en el store y este componente probablemente se desmonte.
+
     } catch (err) {
-      Logger.error("Error en submit setup:", err);
-      setError("Ocurrió un error al guardar. Intenta de nuevo.");
+      Logger.error("Error en setup:", err);
+      // Mostrar el error en la UI
+      setError(err.message || "Ocurrió un error al procesar. Intenta de nuevo.");
     } finally {
-      // Si falla o termina, quitamos el loading (si el componente sigue montado)
       setIsSubmitting(false);
     }
   };
@@ -177,7 +206,7 @@ export default function SetupModal() {
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Ej: Mi Tiendita" 
                     autoFocus 
-                    disabled={isSubmitting} // Deshabilitar inputs
+                    disabled={isSubmitting}
                   />
                 </div>
 
@@ -195,7 +224,12 @@ export default function SetupModal() {
                     <div className="mini-logo-upload">
                         <label htmlFor="logo-upload" className={`logo-preview-wrapper ${isSubmitting ? 'disabled' : ''}`}>
                             <LazyImage src={logoPreview} alt="Logo" />
-                            {!isSubmitting && <div className="overlay">📷</div>}
+                            {/* [Modificado] Reemplazo de emoji de cámara por Icono */}
+                            {!isSubmitting && (
+                              <div className="overlay">
+                                <Camera size={24} color="white" />
+                              </div>
+                            )}
                         </label>
                         <input id="logo-upload" type="file" accept="image/*" 
                             onChange={handleImageChange} style={{display:'none'}} 
@@ -247,8 +281,10 @@ export default function SetupModal() {
                 </p>
 
                 {maxRubrosAllowed === 1 && (
-                  <div className="trial-badge" style={{marginBottom: '10px', fontSize: '0.9rem', color: 'var(--primary-color)', backgroundColor: '#fff3cd', padding: '8px', borderRadius: '6px'}}>
-                    ℹ️ <strong>Atención:</strong> Tu plan actual permite seleccionar <strong>1 rubro</strong> principal.
+                  <div className="trial-badge" style={{marginBottom: '10px', fontSize: '0.9rem', color: 'var(--primary-color)', backgroundColor: 'var(--light-background)', padding: '10px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                    {/* [Modificado] Reemplazo de emoji info */}
+                    <Info size={18} />
+                    <span>Tu plan actual permite seleccionar <strong>1 rubro</strong> principal.</span>
                   </div>
                 )}
 
@@ -256,17 +292,21 @@ export default function SetupModal() {
                   {BUSINESS_RUBROS.map(rubro => {
                     const isLockedByLicense = !isAllAllowed && !allowedRubrosList.includes(rubro.id);
                     const isSelected = selectedTypes.includes(rubro.id);
+                    // Obtenemos el componente Icon
+                    const IconComponent = rubro.Icon;
 
                     return (
                       <div
                         key={rubro.id}
                         className={`rubro-card ${isSelected ? 'selected' : ''} ${isLockedByLicense ? 'disabled' : ''}`}
-                        // Bloquear clicks si está enviando
                         onClick={() => !isLockedByLicense && !isSubmitting && handleTypeClick(rubro.id)}
                         style={isLockedByLicense || isSubmitting ? { opacity: 0.5, cursor: 'not-allowed', filter: isLockedByLicense ? 'grayscale(1)' : 'none' } : {}}
                         title={isLockedByLicense ? "No incluido en tu licencia" : ""}
                       >
-                        <span className="rubro-icon">{rubro.icon}</span>
+                        {/* [Modificado] Renderizado del componente Icono */}
+                        <div className="rubro-icon-wrapper">
+                          <IconComponent size={32} strokeWidth={1.5} />
+                        </div>
                         <span className="rubro-label">{rubro.label}</span>
                         {isLockedByLicense && <span style={{fontSize:'0.65rem', color:'var(--error-color)', marginTop:'2px'}}>Bloqueado</span>}
                       </div>
@@ -276,12 +316,22 @@ export default function SetupModal() {
 
                 {error && <div className="error-message">{error}</div>}
 
+                <div style={{ margin: '15px 0', fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+  Al hacer clic en finalizar, aceptas nuestros{' '}
+  <span 
+    className="terms-link" 
+    onClick={() => setShowTerms(true)}
+  >
+    Términos y Condiciones
+  </span>{' '}
+  y política de manejo de datos.
+</div>
+
                 <div className="step-actions end">
-                  {/* [Modificado] Botón con estado de carga */}
                   <button 
                     type="submit" 
                     className="btn btn-save btn-finish"
-                    disabled={isSubmitting} // Importante: Deshabilitar para evitar doble clic
+                    disabled={isSubmitting} 
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                   >
                     {isSubmitting ? (
@@ -290,7 +340,10 @@ export default function SetupModal() {
                         Configurando...
                       </>
                     ) : (
-                      '¡Finalizar y Empezar! 🚀'
+                      // [Modificado] Reemplazo de emoji cohete
+                      <>
+                        ¡Finalizar y Empezar! 
+                      </>
                     )}
                   </button>
                 </div>
@@ -300,6 +353,11 @@ export default function SetupModal() {
 
         </form>
       </div>
+      <TermsAndConditionsModal 
+        isOpen={showTerms} 
+        onClose={() => setShowTerms(false)} 
+        readOnly={true} 
+      />
     </div>
   );
 }

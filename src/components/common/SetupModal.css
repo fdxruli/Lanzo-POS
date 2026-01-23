@@ -179,6 +179,29 @@
   object-fit: cover;
 }
 
+.logo-preview-wrapper .overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.logo-preview-wrapper:hover .overlay {
+  opacity: 1;
+}
+
+/* Asegurar que el icono dentro del overlay no tenga opacidad extra */
+.logo-preview-wrapper .overlay svg {
+  opacity: 0.9;
+}
+
 /* Grid de Rubros */
 .rubro-grid {
   display: grid;
@@ -189,28 +212,39 @@
 /* === TARJETA DE RUBRO (CORREGIDO) === */
 .rubro-card {
   border: 2px solid var(--light-background);
-  /* Borde base */
   border-radius: 10px;
-  padding: 12px;
+  padding: 15px 10px; /* Un poco más de padding vertical */
   text-align: center;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  justify-content: center; /* Centrado vertical */
+  gap: 8px; /* Espacio entre icono y texto */
   background-color: var(--card-background-color);
   transition: all 0.2s ease-in-out;
-  /* Transición suave */
+  height: 100%; /* Para que tengan la misma altura si usamos grid */
+  min-height: 100px;
 }
 
-.rubro-icon {
-  font-size: 1.5rem;
+.rubro-icon-wrapper {
+  color: var(--text-light); /* Color base del icono */
+  transition: color 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Cuando la tarjeta está seleccionada, pintamos el icono del color primario */
+.rubro-card.selected .rubro-icon-wrapper {
+  color: var(--primary-color);
 }
 
 .rubro-label {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-dark);
+  line-height: 1.2;
 }
 
 /* ESTADO SELECCIONADO (Alta Prioridad) */
