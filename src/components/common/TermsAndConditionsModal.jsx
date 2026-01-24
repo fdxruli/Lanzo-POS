@@ -5,7 +5,7 @@ import Logger from '../../services/Logger';
 import './TermsAndConditionsModal.css';
 
 // Agregamos el prop 'readOnly' por defecto en false, pero lo usaremos en true casi siempre
-export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = false }) {
+export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = false, isUpdateNotification = false }) {
   const [termsData, setTermsData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -36,7 +36,6 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
   };
 
   const handleAccept = async () => {
-    // ... (Tu lógica original de handleAccept se queda igual por si se usa en otro lado)
     const storedData = localStorage.getItem('lanzo_license');
     let licenseKey = null;
     if (storedData) {
@@ -69,18 +68,26 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
           <div className="terms-title-group">
             <Shield size={20} className="text-primary" /> 
             <div>
-                <h3>Términos de Uso</h3>
-                {termsData && <span className="terms-version-badge">VERSIÓN {termsData.version}</span>}
+                <h3>{isUpdateNotification ? "Actualización de Condiciones" : "Términos de Uso"}</h3>
+                {termsData && <span className="terms-version-badge">NUEVA VERSIÓN {termsData.version}</span>}
             </div>
           </div>
-          {/* Botón X siempre cierra */}
-          <button onClick={onClose} className="terms-close-btn" aria-label="Cerrar">
-            <X size={24} />
-          </button>
         </div>
 
         {/* Body */}
         <div className="terms-body">
+            {isUpdateNotification && !loading && (
+                <div style={{
+                    background: '#e0f2fe', 
+                    color: '#0369a1', 
+                    padding: '10px', 
+                    borderRadius: '6px',
+                    marginBottom: '10px',
+                    fontSize: '0.9rem'
+                }}>
+                    Hemos actualizado nuestros términos. Al continuar utilizando el sistema, aceptas las nuevas condiciones.
+                </div>
+            )}
             {loading ? (
                 <div className="terms-loading-state">
                     <Loader2 size={48} className="animate-spin text-primary" />
@@ -109,19 +116,28 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
         {/* Footer condicional */}
         <div className="terms-footer">
           {readOnly ? (
-             /* MODO LECTURA: Solo botón Cerrar */
-             <button className="btn btn-secondary" onClick={onClose} style={{width: '100%'}}>
-                Cerrar Documento
-             </button>
+             <button className="btn btn-secondary" onClick={onClose} style={{width: '100%'}}>Cerrar</button>
           ) : (
-             /* MODO ACEPTACIÓN (Original) */
              <>
-                <button className="btn btn-secondary" onClick={onClose} disabled={accepting}>
-                    Cancelar
-                </button>
-                <button className="btn btn-primary btn-accept-terms" onClick={handleAccept} disabled={loading || !!error || accepting}>
-                    {accepting ? <><Loader2 size={18} className="animate-spin" /> Procesando...</> : "Aceptar Condiciones"}
-                </button>
+                {/* En modo actualización, solo mostramos UN botón principal */}
+                {isUpdateNotification ? (
+                    <button 
+                        className="btn btn-primary" 
+                        onClick={handleAccept} 
+                        disabled={loading || !!error || accepting}
+                        style={{width: '100%'}}
+                    >
+                        {accepting ? "Guardando..." : "Entendido, continuar"}
+                    </button>
+                ) : (
+                    /* Modo Clásico (Checkbox / Aceptar explícito) */
+                    <>
+                        <button className="btn btn-secondary" onClick={onClose} disabled={accepting}>Cancelar</button>
+                        <button className="btn btn-primary btn-accept-terms" onClick={handleAccept} disabled={loading || !!error || accepting}>
+                            {accepting ? "Procesando..." : "Aceptar Condiciones"}
+                        </button>
+                    </>
+                )}
              </>
           )}
         </div>

@@ -1,32 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { Download, Share, PlusSquare, X } from 'lucide-react'; // Asegúrate de tener lucide-react instalado
+import React, { useEffect, useState } from 'react';
 
 const InstallPrompt = () => {
+  const [isIOS, setIsIOS] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [showIosPrompt, setShowIosPrompt] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(false);
 
   useEffect(() => {
-    // 1. Lógica para ANDROID / PC (Chrome/Edge)
+    // Detectar si ya está instalado (Standalone)
+    const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    setIsStandalone(isInStandaloneMode);
+
+    // Detectar iOS
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
+    setIsIOS(isIosDevice);
+
+    // Manejar evento de instalación para Android/Chrome
     const handleBeforeInstallPrompt = (e) => {
-      e.preventDefault(); // Evita que el navegador muestre su aviso feo/tímido
-      setDeferredPrompt(e); // Guarda el evento para dispararlo cuando quieras
-      setIsVisible(true);   // Muestra tu botón bonito
+      e.preventDefault();
+      setDeferredPrompt(e);
+      // Solo mostrar si NO está instalado
+      if (!isInStandaloneMode) {
+        setShowPrompt(true);
+      }
     };
 
-    // 2. Lógica para iOS (iPhone/iPad)
-    // iOS no tiene evento de instalación, hay que detectar el User Agent
-    const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
-    const isStandalone = window.navigator.standalone === true; // Si ya está instalada
-
-    if (isIos && !isStandalone) {
-      // Opcional: Mostrar aviso solo la primera vez usando localStorage
-      // if (!localStorage.getItem('iosPromptSeen')) { 
-         setShowIosPrompt(true);
-      // }
-    }
-
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Mostrar prompt de iOS si es iOS y no está instalado
+    if (isIosDevice && !isInStandaloneMode) {
+        setShowPrompt(true);
+    }
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -34,87 +39,118 @@ const InstallPrompt = () => {
   }, []);
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-
-    // Muestra el prompt nativo del sistema
-    deferredPrompt.prompt();
-
-    // Espera a que el usuario decida
-    const { outcome } = await deferredPrompt.userChoice;
-    
-    if (outcome === 'accepted') {
-      setIsVisible(false); // Si aceptó, ocultamos el botón
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setShowPrompt(false);
+      }
+      setDeferredPrompt(null);
     }
-    setDeferredPrompt(null);
   };
 
-  const closeIosPrompt = () => {
-    setShowIosPrompt(false);
-    // localStorage.setItem('iosPromptSeen', 'true'); // Descomentar para recordar
+  if (!showPrompt || isStandalone) return null;
+
+  // --- ESTILOS ---
+  const overlayStyle = {
+    position: 'fixed',
+    bottom: '20px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    width: '90%',
+    maxWidth: '400px',
+    backgroundColor: 'white',
+    borderRadius: '16px',
+    padding: '20px',
+    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+    zIndex: 9999,
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    border: '1px solid #f0f0f0',
+    animation: 'slideUp 0.5s ease-out'
   };
 
-  // --- RENDERIZADO ---
+  const titleStyle = {
+    fontSize: '18px',
+    fontWeight: '600',
+    marginBottom: '10px',
+    color: '#333'
+  };
 
-  // A) Caso ANDROID / PC
-  if (isVisible && deferredPrompt) {
-    return (
-      <div className="fixed bottom-4 left-4 right-4 z-50 bg-slate-900 text-white p-4 rounded-xl shadow-2xl flex items-center justify-between border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-        <div className="flex items-center gap-3">
-          <div className="bg-primary/20 p-2 rounded-lg">
-            <Download className="w-6 h-6 text-primary-400" />
+  const textStyle = {
+    fontSize: '14px',
+    color: '#666',
+    marginBottom: '15px',
+    lineHeight: '1.5'
+  };
+
+  const buttonStyle = {
+    backgroundColor: '#007AFF', // Azul iOS
+    color: 'white',
+    border: 'none',
+    padding: '12px 20px',
+    borderRadius: '10px',
+    fontSize: '16px',
+    fontWeight: '500',
+    width: '100%',
+    cursor: 'pointer'
+  };
+
+  const closeBtnStyle = {
+    position: 'absolute',
+    top: '10px',
+    right: '15px',
+    background: 'none',
+    border: 'none',
+    fontSize: '20px',
+    color: '#999',
+    cursor: 'pointer'
+  };
+
+  // Icono genérico de compartir para la UI
+  const ShareIcon = () => (
+    <span style={{ display: 'inline-block', verticalAlign: 'middle', margin: '0 4px' }}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#007AFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+        <polyline points="16 6 12 2 8 6"></polyline>
+        <line x1="12" y1="2" x2="12" y2="15"></line>
+      </svg>
+    </span>
+  );
+
+  return (
+    <div style={overlayStyle}>
+      <button style={closeBtnStyle} onClick={() => setShowPrompt(false)}>×</button>
+      
+      {isIOS ? (
+        // CONTENIDO PARA IOS
+        <div>
+          <div style={titleStyle}>Instalar App</div>
+          <div style={textStyle}>
+            Para instalar esta app en tu iPhone/iPad:
+            <ol style={{ paddingLeft: '20px', marginTop: '10px' }}>
+              <li>Toca el botón <ShareIcon /> compartir en la barra del navegador.</li>
+              <li>Desliza y selecciona <strong>"Agregar al inicio"</strong>.</li>
+            </ol>
           </div>
-          <div>
-            <p className="font-bold text-sm">Instalar Lanzo POS</p>
-            <p className="text-xs text-slate-400">Accede más rápido y sin internet</p>
+          {/* Triángulo visual decorativo apuntando abajo (opcional, mejor quitarlo si confunde en desktop) */}
+          <div style={{ textAlign: 'center', color: '#ccc', fontSize: '12px' }}>
+            (El menú suele estar abajo)
           </div>
         </div>
-        <button 
-          onClick={handleInstallClick}
-          className="bg-[#FF3B5C] hover:bg-[#ff1f45] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
-        >
-          Instalar
-        </button>
-      </div>
-    );
-  }
-
-  // B) Caso iOS (Instrucciones manuales)
-  if (showIosPrompt) {
-    return (
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 p-6 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] pb-safe">
-        <button 
-          onClick={closeIosPrompt}
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
-        >
-          <X className="w-5 h-5" />
-        </button>
-        
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-3">
-             <img src="/pwa-192x192.png" alt="Icono" className="w-12 h-12 rounded-xl shadow-sm" />
-             <div>
-               <h3 className="font-bold text-lg dark:text-white">Instalar en iPhone</h3>
-               <p className="text-slate-500 text-sm">Agrega la App a tu inicio para una mejor experiencia.</p>
-             </div>
+      ) : (
+        // CONTENIDO PARA ANDROID / CHROME
+        <div>
+          <div style={titleStyle}>Instalar Aplicación</div>
+          <div style={textStyle}>
+            Instala nuestra app para una mejor experiencia y acceso rápido.
           </div>
-
-          <div className="flex flex-col gap-3 text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl">
-             <div className="flex items-center gap-3">
-                <Share className="w-5 h-5 text-blue-500" />
-                <span>1. Toca el botón <b>Compartir</b> en la barra inferior.</span>
-             </div>
-             <div className="bg-slate-200 dark:bg-slate-700 h-px w-full"></div>
-             <div className="flex items-center gap-3">
-                <PlusSquare className="w-5 h-5 text-slate-500" />
-                <span>2. Busca y selecciona <b>"Agregar al inicio"</b>.</span>
-             </div>
-          </div>
+          <button style={buttonStyle} onClick={handleInstallClick}>
+            Instalar
+          </button>
         </div>
-      </div>
-    );
-  }
-
-  return null;
+      )}
+    </div>
+  );
 };
 
 export default InstallPrompt;
