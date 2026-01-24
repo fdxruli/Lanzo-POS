@@ -1,31 +1,39 @@
-// bump-version.js
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+name: Auto Bump Version
 
-// Obtener rutas para ESM (EcmaScript Modules)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+on:
+  push:
+    branches:
+      - main        # Asegúrate de que tu rama principal se llame 'main' o 'master'
+    paths-ignore:
+      - 'package.json' # IMPORTANTE: Evita un bucle infinito. Si solo cambia el package.json, no se ejecuta de nuevo.
 
-const packageJsonPath = path.resolve(__dirname, 'package.json');
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Necesario para poder hacer el 'git push' de vuelta
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-// Leer package.json
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-// Separar la versión actual (ej: "1.0.5")
-const versionParts = packageJson.version.split('.').map(Number);
+      - name: Run Bump Version Script
+        # Ejecuta tu script actual. Asegúrate de que bump-version.js esté en la raíz.
+        # Si está en una carpeta, usa: node carpeta/bump-version.js
+        run: node bump-version.js
 
-// Incrementar el último número (Patch)
-// Esto cumple tu deseo de que "incrementar" automáticamente
-versionParts[2] += 1;
-
-// Si quisieras reiniciar el patch y subir el minor cada 100 cambios, podrías agregar lógica aquí.
-// Ejemplo simple: 1.0.0 -> 1.0.1
-
-const newVersion = versionParts.join('.');
-packageJson.version = newVersion;
-
-// Guardar el archivo actualizado
-fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
-
-console.log(`🚀 Versión actualizada automáticamente a: v${newVersion}`);
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add package.json
+          # El mensaje del commit incluirá la nueva versión
+          git commit -m "chore: release version $(node -p "require('./package.json').version")"
+          git push
