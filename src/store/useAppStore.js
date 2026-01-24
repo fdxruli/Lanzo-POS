@@ -128,6 +128,7 @@ export const useAppStore = create((set, get) => ({
   companyProfile: null,
   licenseDetails: null,
   _isInitilizing: false,
+  pendingTermsUpdate: null,
 
   // === initializeApp ===
   initializeApp: async () => {
@@ -267,6 +268,13 @@ export const useAppStore = create((set, get) => ({
     if (!serverValidation.valid && isWithinGracePeriod) {
       finalStatus = 'grace_period';
       Logger.log('⏰ [AppStore] Licencia en PERÍODO DE GRACIA');
+    }
+
+    if (serverValidation.legal_status?.has_update_terms) {
+      Logger.log("Terminos actualizados detectados:", serverValidation.legal_status);
+      set({ pendingTermsUpdate: serverValidation.legal_status });
+    } else {
+      set({ pendingTermsUpdate: null });
     }
 
     const finalLicenseData = {
@@ -655,6 +663,15 @@ export const useAppStore = create((set, get) => ({
         // Es válido si el servidor dice TRUE o si estamos dentro del tiempo de gracia
         const isWithinGracePeriod = graceEnd && graceEnd > now;
         const isTechnicallyValid = serverCheck.valid || isWithinGracePeriod;
+
+        if (serverCheck.legal_status?.has_updated_terms) {
+             Logger.log("📜 Nuevos términos detectados durante el uso.");
+             // Esto hará que el modal aparezca inmediatamente sin recargar
+             set({ pendingTermsUpdate: serverCheck.legal_status });
+        } else {
+             // Si ya no hay actualización pendiente (ej. aceptó en otra pestaña), limpiamos
+             set({ pendingTermsUpdate: null });
+        }
 
         // === LÓGICA DE DETECCIÓN DE PROBLEMAS ===
 

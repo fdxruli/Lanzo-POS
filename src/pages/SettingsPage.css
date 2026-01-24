@@ -1,9 +1,50 @@
-/*
- * Estilos para SettingsPage.jsx
- * Mobile-first approach
- */
+/* src/pages/SettingsPage.css */
 
-/* ===== ESTILOS BASE PARA MÓVIL ===== */
+/* * AÑADIDO: Contenedor principal de la página
+ * Esto asegura que el contenido final no quede oculto tras la barra de navegación en móviles
+ */
+.settings-page-wrapper {
+  padding-bottom: 120px; /* Espacio generoso para la barra inferior en móvil */
+  width: 100%;
+}
+
+/* * AÑADIDO: Estilos básicos para los tabs (botones superiores)
+ * Para asegurar que se vean bien alineados 
+ */
+.tabs-container {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto; /* Permite scroll horizontal si son muchos tabs en pantallas muy pequeñas */
+  padding-bottom: 15px;
+  margin-bottom: 15px;
+  border-bottom: 1px solid var(--border-color);
+  -webkit-overflow-scrolling: touch; /* Scroll suave en iOS */
+}
+
+.tab-btn {
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: 20px;
+  transition: all 0.2s;
+  font-size: 0.95rem;
+}
+
+.tab-btn.active {
+  background-color: var(--primary-color); /* O el color que uses para activo */
+  color: white; /* O el color de contraste */
+  /* Si no tienes variables globales definidas aquí, se usará el fallback del navegador o 
+     puedes usar var(--text-dark) si prefieres un estilo tipo 'pill' gris */
+  background-color: #3b82f6; /* Fallback azul estándar si var no carga */
+  background-color: var(--primary-color);
+  color: #ffffff;
+}
+
+/* ===== ESTILOS BASE PARA MÓVIL (Existentes) ===== */
 
 .company-form-container {
   background-color: var(--card-background-color);
@@ -244,6 +285,11 @@ input[type="radio"] {
 
 /* Tablets y escritorio (>= 768px) */
 @media (min-width: 768px) {
+  /* En escritorio reducimos el padding inferior porque no hay barra fija móvil tapando */
+  .settings-page-wrapper {
+    padding-bottom: 40px;
+  }
+
   .backup-actions {
     flex-direction: row;
     align-items: center;

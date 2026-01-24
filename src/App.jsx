@@ -14,6 +14,7 @@ import SetupModal from './components/common/SetupModal';
 import ReconnectionBanner from './components/common/ReconnectionBanner';
 import { useSalesStore } from './store/useSalesStore';
 import { useSingleInstance } from './hooks/useSingleInstance';
+import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 
 const MAX_RETRIES = 3;
 const RETRY_SESSION_KEY = 'lazy_retry_count';
@@ -90,6 +91,10 @@ function App() {
   const isDuplicate = useSingleInstance();
   const appStatus = useAppStore((state) => state.appStatus);
   const initializeApp = useAppStore((state) => state.initializeApp);
+  const pendingTermsUpdate = useAppStore((state) => state.pendingTermsUpdate);
+  const clearTermsNotification = () => {
+    useAppStore.setState({ pendingTermsUpdate: null });
+  };
 
   // Traemos ambas acciones: Iniciar y Detener
   const startRealtimeSecurity = useAppStore((state) => state.startRealtimeSecurity);
@@ -276,6 +281,13 @@ function App() {
       return (
         <Suspense fallback={<Layout><PageLoader /></Layout>}>
           <ReconnectionBanner />
+          {pendingTermsUpdate && (
+            <TermsAndConditionsModal
+            isOpen={true}
+            onClose={clearTermsNotification}
+            isUpdateNotification={true}
+            />
+          )}
           <NavigationGuard />
           <ErrorBoundary>
             <Routes>
