@@ -94,20 +94,21 @@ const getLicenseFromStorage = async () => {
 
     const expectedSignature = generateSignature(parsedPackage.data);
 
+    // --- CORRECCIÓN DE SEGURIDAD AQUÍ ---
     if (parsedPackage.signature !== expectedSignature) {
-      Logger.warn("⚠️ La firma local no coincide. Posible actualización de versión.");
-      // NOTA: Esto está bien, permitimos que pase la data aunque la firma falle
-      // para soportar actualizaciones donde cambia el algoritmo de firma.
-      return parsedPackage.data;
+      Logger.error("🚨 ALERTA DE SEGURIDAD: Firma de licencia manipulada o corrupta.");
+      
+      // 1. Destruimos los datos corruptos/falsos inmediatamente
+      clearLicenseFromStorage(); 
+      
+      // 2. Retornamos null para obligar al usuario a autenticarse legalmente
+      return null; 
     }
+    // ------------------------------------
 
     return parsedPackage.data;
   } catch (e) {
     Logger.error("Error leyendo licencia local:", e);
-    // === CAMBIO: NO BORRAR AQUI ===
-    // localStorage.removeItem('lanzo_license'); <--- COMENTAR O BORRAR ESTA LÍNEA
-    // Si borramos aquí, un error tonto de lectura desloguea al usuario.
-    // Mejor retornar null y pedir login, pero los datos siguen ahí por si acaso.
     return null;
   }
 };

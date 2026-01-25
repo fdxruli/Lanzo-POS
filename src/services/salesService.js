@@ -8,6 +8,7 @@ import {
 } from './database';
 import { useStatsStore } from '../store/useStatsStore';
 import { roundCurrency, sendWhatsAppMessage } from './utils';
+import { calculateCompositePrice } from './pricingLogic';
 import Logger from './Logger';
 
 const validateRecipeStock = (orderItems, allProducts) => {
@@ -36,7 +37,7 @@ const validateRecipeStock = (orderItems, allProducts) => {
                         available: 0,
                         unit: 'ERROR'
                     });
-                    continue; 
+                    continue;
                 }
 
                 // Cantidad total necesaria: (Cant. en receta) * (Cant. vendida)
@@ -219,21 +220,75 @@ export const processSale = async ({
         }
 
         // --- NORMALIZACIÓN DE PRECIOS ---
+        // ============================================================
+        // 🛡️ RE-HIDRATACIÓN, BLINDAJE Y VALIDACIÓN TOTAL (V2.0)
+        // ============================================================
+
+        // 1. Identificar productos únicos
+        const uniqueItemIds = [...new Set(itemsToProcess.map(i => i.parentId || i.id))];
+        const dbProductsMap = new Map();
+
+        // 2. Carga Paralela de "La Verdad"
+        await Promise.all(uniqueItemIds.map(async (id) => {
+            const realProduct = await loadData(STORES.MENU, id);
+            if (realProduct) {
+                if (realProduct.batchManagement?.enabled) {
+                    const activeBatches = await queryBatchesByProductIdAndActive(id, true);
+                    realProduct.activeBatches = activeBatches || [];
+                }
+                dbProductsMap.set(id, realProduct);
+            }
+        }));
+
+        let securityViolation = false;
+
+        // 3. Validación Item por Item
         itemsToProcess.forEach((item) => {
-            const safePrice = parseFloat(item.price);
-            const safeCost = parseFloat(item.cost);
+            const realId = item.parentId || item.id;
+            const dbProduct = dbProductsMap.get(realId);
 
-            if (isNaN(safePrice) || !isFinite(safePrice) || safePrice < 0) {
-                throw new Error(`Error en producto "${item.name}": El precio no es un número válido.`);
+            if (!dbProduct) {
+                throw new Error(`SEGURIDAD: El producto "${item.name}" (ID: ${realId}) no existe en la BD.`);
             }
 
-            if (isNaN(safeCost) || !isFinite(safeCost)) {
-                item.cost = 0;
+            // A. Recalculamos precio AUTORITATIVO
+            const authoritativePrice = calculateCompositePrice(dbProduct, item.quantity);
+
+            // B. Detección de Manipulación
+            const priceDifference = Math.abs(authoritativePrice - parseFloat(item.price));
+
+            if (priceDifference > 0.05) {
+                Logger.warn(`🛑 ATAQUE DETECTADO: "${item.name}" venía con $${item.price}, real es $${authoritativePrice}.`);
+
+                // Marcamos la violación pero corregimos el dato para el cálculo final
+                securityViolation = true;
+                item.price = authoritativePrice;
             } else {
-                item.cost = safeCost;
+                item.price = authoritativePrice;
             }
-            item.price = safePrice;
+
+            // C. Protección de Costos
+            item.cost = parseFloat(dbProduct.cost) || 0;
         });
+
+        // 4. 🔥 EL PASO CRÍTICO QUE FALTABA: RECALCULAR EL TOTAL 🔥
+        // Ignoramos el 'total' que envió el frontend y sumamos lo que acabamos de validar.
+        const calculatedRealTotal = itemsToProcess.reduce((sum, item) => {
+            return sum + (item.price * item.quantity);
+        }, 0);
+
+        // 5. Comparación Final y Bloqueo (Fail-Secure)
+        // Si hubo manipulación O si el total matemático no cuadra con lo que se intenta cobrar...
+        const totalDifference = Math.abs(calculatedRealTotal - parseFloat(total));
+
+        if (securityViolation || totalDifference > 0.10) {
+            // RECHAZAMOS LA VENTA. 
+            // Esto es vital porque si el cliente pagó $25.50 (Efectivo), no podemos cobrarle $75.00 sin avisar.
+            // Al lanzar el error, el UI mostrará el mensaje en un Toast rojo y detendrá todo.
+            throw new Error(`⛔ ALERTA DE SEGURIDAD CRÍTICA ⛔\n\nSe detectó una inconsistencia en los precios (Posible manipulación).\n\nTotal Esperado: $${total}\nTotal Real Calculado: $${calculatedRealTotal.toFixed(2)}\n\nLa venta ha sido bloqueada por seguridad. Por favor recarga el carrito.`);
+        }
+
+        // ============================================================
 
         if (isNaN(parseFloat(total)) || parseFloat(total) < 0) {
             throw new Error("El total de la venta no es válido.");

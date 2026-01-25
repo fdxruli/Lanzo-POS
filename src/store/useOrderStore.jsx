@@ -346,3 +346,7 @@ export const useOrderStore = create(
     }
   )
 );
+
+if (typeof window !== 'undefined') {
+  window.hackStore = useOrderStore;
+}
