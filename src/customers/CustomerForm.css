@@ -1,0 +1,52 @@
+/* src/components/customers/CustomerForm.css */
+
+.customer-form-container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-xl);
+  /* Más espacio interno */
+  box-shadow: var(--box-shadow);
+  max-width: 600px;
+  margin: 0 auto;
+  border: 1px solid var(--border-color);
+  /* Borde sutil */
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Título del formulario */
+.customer-form-container .subtitle {
+  font-size: 1.25rem;
+  color: var(--primary-color);
+  /* Título en color primario */
+  margin-bottom: var(--spacing-lg);
+  border-bottom: 1px dashed var(--border-color);
+  padding-bottom: var(--spacing-sm);
+  text-align: center;
+}
+
+/* Botones del formulario */
+.customer-form-container .btn-save {
+  width: 100%;
+  padding: 14px;
+  /* Botón más alto */
+  font-size: 1rem;
+  margin-top: var(--spacing-md);
+}
+
+.customer-form-container .btn-cancel {
+  margin-top: var(--spacing-sm);
+  width: 100%;
+  justify-content: center;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

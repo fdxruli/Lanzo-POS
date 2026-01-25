@@ -1,0 +1,304 @@
+/* src/components/dashboard/StatsGrid.css */
+
+/* === CONTENEDOR WRAPPER === */
+.stats-container-wrapper {
+  margin-bottom: var(--spacing-xl);
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* === HEADER Y CONTROLES === */
+.stats-header-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.stats-header-title h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-dark);
+}
+
+.stats-subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-light);
+}
+
+/* Selector de Tiempo (Pastilla) */
+.time-filter-toggle {
+  background-color: var(--light-background);
+  padding: 4px;
+  border-radius: 12px;
+  display: flex;
+  gap: 4px;
+}
+
+.filter-pill {
+  border: none;
+  background: transparent;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filter-pill:hover {
+  color: var(--text-dark);
+}
+
+.filter-pill.active {
+  background-color: var(--card-background-color);
+  color: var(--primary-color);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+/* === GRID LAYOUT (BENTO BOX) === */
+.stats-grid-modern {
+  display: grid;
+  gap: 1.2rem;
+  /* Móvil: 1 columna */
+  grid-template-columns: 1fr; 
+}
+
+/* === TARJETAS MODERNAS (BASE) === */
+.stat-card-modern {
+  background-color: var(--card-background-color);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: var(--box-shadow);
+  border: 1px solid rgba(0,0,0,0.03);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card-modern:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--box-shadow-lg);
+}
+
+.card-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+/* ICONOS */
+.card-icon-wrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.card-icon-wrapper.green {
+  background-color: #d1fae5;
+  color: #059669;
+}
+
+.card-icon-wrapper.purple {
+  background-color: #ede9fe;
+  color: #7c3aed;
+}
+
+/* VALORES PRINCIPALES */
+.card-value-main {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--text-dark);
+  margin: 0.5rem 0;
+  line-height: 1.1;
+}
+
+/* MINI STATS & TRENDS */
+.card-trend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.card-trend.positive {
+  color: var(--success-color);
+}
+
+.card-mini-stats {
+  margin-top: 0.5rem;
+}
+
+.mini-stat-pill {
+  background-color: rgba(124, 58, 237, 0.1);
+  color: var(--secondary-color);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+}
+
+/* TARJETAS PEQUEÑAS */
+.card-header-small {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.card-header-small .card-label {
+  margin-bottom: 0;
+}
+
+.card-value-small {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.text-gray { color: #9ca3af; }
+.text-muted { color: #6b7280; font-size: 0.8rem; }
+
+/* INVENTORY CARD (Estilo especial) */
+.inventory-card {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  color: white;
+}
+
+.inventory-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.inventory-card .card-label {
+  color: rgba(255,255,255,0.7);
+}
+
+.inventory-value {
+  color: white;
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin: 0.2rem 0;
+}
+
+.inventory-icon {
+  opacity: 0.5;
+}
+
+.inventory-bar-container {
+  height: 6px;
+  background-color: rgba(255,255,255,0.1);
+  border-radius: 3px;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+
+.inventory-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+  border-radius: 3px;
+}
+
+.text-muted-light {
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.5);
+}
+
+/* DECORACIÓN DE FONDO PARA INGRESOS */
+.card-bg-decoration {
+  position: absolute;
+  bottom: -20px;
+  right: -20px;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, rgba(255,255,255,0) 70%);
+  border-radius: 50%;
+  z-index: 0;
+}
+
+/* =========================================
+   RESPONSIVE MEDIA QUERIES
+   ========================================= */
+
+/* Tablet (>= 600px) */
+@media (min-width: 600px) {
+  .stats-grid-modern {
+    /* 2 columnas */
+    grid-template-columns: 1fr 1fr;
+  }
+  
+  /* Inventory ocupa las 2 columnas en tablet */
+  .inventory-card {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Escritorio (>= 1024px) */
+@media (min-width: 1024px) {
+  .stats-grid-modern {
+    /* 4 columnas (12 unidades de grid visual) */
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: auto auto;
+  }
+
+  /* Revenue y Profit son más grandes (ocupan 2 espacios) */
+  .revenue-card {
+    grid-column: span 2;
+    grid-row: span 1;
+  }
+
+  .profit-card {
+    grid-column: span 2;
+    grid-row: span 1;
+  }
+
+  /* Las tarjetas pequeñas ocupan 1 espacio cada una (fila 2) */
+  .small-card {
+    grid-column: span 1;
+  }
+
+  /* Inventario ocupa 1 espacio al final */
+  .inventory-card {
+    grid-column: span 1;
+  }
+}
+
+/* MODO OSCURO AJUSTES */
+[data-theme="dark"] .filter-pill.active {
+  background-color: #334155;
+  color: #fff;
+}
+
+[data-theme="dark"] .stat-card-modern {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+[data-theme="dark"] .card-icon-wrapper.green {
+  background-color: rgba(5, 150, 105, 0.2);
+}
+
+[data-theme="dark"] .card-icon-wrapper.purple {
+  background-color: rgba(124, 58, 237, 0.2);
+}

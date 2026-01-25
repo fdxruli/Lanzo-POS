@@ -1,0 +1,140 @@
+/* src/components/dashboard/SalesHistory.css */
+
+.sales-history-container {
+  display: flex;
+  flex-direction: column;
+  height: 500px; /* Altura fija para el panel */
+  width: 100%;
+}
+
+.subtitle {
+  margin-top: 0;
+  margin-bottom: var(--spacing-md);
+  color: var(--text-dark);
+}
+
+.empty-message {
+  text-align: center;
+  color: var(--text-light);
+  margin-top: var(--spacing-xl);
+}
+
+/* El contenedor con scroll */
+.sales-history-list {
+  flex: 1; /* Ocupa el espacio restante */
+  overflow-y: auto; /* Scroll vertical */
+  padding-right: 5px; /* Espacio para el scrollbar */
+}
+
+/* Wrapper para separar las tarjetas */
+.sale-card-wrapper {
+  margin-bottom: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--card-background-color); /* Se adapta al tema (Blanco/Oscuro) */
+  padding: var(--spacing-sm);
+  transition: border-color 0.2s ease;
+}
+
+.sale-card-wrapper:hover {
+  border-color: var(--secondary-color);
+}
+
+.sale-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Cabecera interna de cada venta */
+.sale-header {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--light-background); /* Gris suave variable */
+  padding-bottom: 5px;
+}
+
+.sale-date {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+}
+
+.sale-total {
+  font-weight: 700;
+  color: var(--success-color);
+  font-size: 1rem;
+}
+
+/* Info del cuerpo */
+.sale-item-info ul {
+  list-style-type: none;
+  padding-left: 5px;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-color);
+}
+
+.prescription-tag {
+  color: var(--error-color);
+  font-size: 0.75rem;
+  margin-left: 5px;
+  font-weight: bold;
+}
+
+/* Detalles de receta (Caja de advertencia) */
+.prescription-details {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-xs);
+  
+  /* Usamos rgba con la variable warning para un fondo transparente tintado */
+  background-color: rgba(255, 184, 0, 0.1); 
+  border: 1px solid var(--warning-color);
+  border-radius: var(--border-radius-sm);
+  
+  font-size: 0.85rem;
+  color: var(--text-dark); /* Texto legible en dark mode */
+}
+
+.doc-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+  color: var(--warning-color); /* Icono y título en color warning */
+}
+
+.doc-note {
+  font-style: italic;
+  margin-top: 2px;
+  color: var(--text-light);
+}
+
+/* Botón de acciones */
+.sale-actions {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--spacing-sm);
+  padding-top: 5px;
+  border-top: 1px dashed var(--border-color); /* Línea punteada sutil */
+}
+
+.delete-order-btn {
+  background-color: transparent;
+  color: var(--error-color);
+  padding: 4px 12px;
+  border: 1px solid var(--error-color);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.delete-order-btn:hover {
+  background-color: var(--error-color);
+  color: white;
+}

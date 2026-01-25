@@ -1,0 +1,585 @@
+/* src/components/pos/OrderSummary.css */
+
+/* === CONTENEDOR PRINCIPAL === */
+.pos-order-container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+  display: flex;
+  flex-direction: column;
+  /* Altura ajustada para escritorio */
+  height: 100%;
+  min-height: 400px;
+  position: sticky;
+  top: 20px;
+}
+
+.pos-order-container h2 {
+  font-size: 1.2rem;
+  color: var(--text-dark);
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  /* Evita que el título se aplaste */
+}
+
+.empty-message {
+  text-align: center;
+  color: var(--text-light);
+  padding: var(--spacing-lg);
+  font-style: italic;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* === LISTA DE PRODUCTOS === */
+.order-list {
+  flex-grow: 1;
+  overflow-y: auto;
+  /* El scroll ocurre AQUÍ dentro */
+  margin-bottom: var(--spacing-md);
+  padding-right: 5px;
+
+  /* Aseguramos que la lista no empuje los botones fuera */
+  min-height: 0;
+}
+
+/* === ITEM INDIVIDUAL (CORREGIDO PARA EVITAR SOLAPAMIENTO) === */
+.order-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  /* Centrado verticalmente */
+  padding: 12px 0;
+  /* Más espacio vertical */
+  border-bottom: 1px solid var(--light-background);
+  animation: fadeIn 0.2s ease-out;
+  gap: 12px;
+  /* ¡CLAVE! Separación obligatoria entre texto y botones */
+}
+
+.order-item:last-child {
+  border-bottom: none;
+}
+
+.order-item-info {
+  flex: 1;
+  /* Ocupa el espacio restante */
+  min-width: 0;
+  /* Permite que el texto se corte si es muy largo */
+  padding-right: 5px;
+}
+
+.order-item-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  /* Permite que los badges bajen si no caben */
+}
+
+.order-item-name {
+  font-weight: 600;
+  color: var(--text-dark);
+  font-size: 0.95rem;
+  line-height: 1.3;
+  /* Evita que una palabra larga rompa el layout */
+  word-wrap: break-word;
+}
+
+/* Detalles extra (Modificadores y Notas) */
+.order-item-modifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.modifier-tag {
+  font-size: 0.7rem;
+  color: var(--text-light);
+  background-color: var(--light-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.order-item-notes {
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  margin-top: 3px;
+  font-style: italic;
+  background-color: rgba(255, 59, 92, 0.05);
+  padding: 2px 5px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.order-item-price {
+  color: var(--secondary-color);
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+/* === CONTROLES DE CANTIDAD (+ -) === */
+.order-item-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Espacio entre botones */
+  flex-shrink: 0;
+  /* ¡CLAVE! Evita que los botones se aplasten */
+  background-color: var(--light-background);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.quantity-btn {
+  width: 32px;
+  /* Botones más grandes para el dedo */
+  height: 32px;
+  border-radius: 6px;
+  background-color: var(--card-background-color);
+  color: var(--text-dark);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 1.1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: all 0.1s ease;
+}
+
+.quantity-btn:active {
+  background-color: var(--secondary-color);
+  color: white;
+  transform: scale(0.95);
+}
+
+.quantity-display {
+  min-width: 24px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-dark);
+}
+
+/* Inputs Bulk (Granel) */
+.bulk-input {
+  width: 65px;
+  padding: 6px;
+  text-align: center;
+  font-size: 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.unit-label {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  font-weight: 600;
+}
+
+/* === FOOTER (TOTALES Y BOTONES) === */
+.order-total,
+.order-actions {
+  flex-shrink: 0;
+  /* PROHIBIDO encogerse: Siempre visibles */
+  background-color: var(--card-background-color);
+  /* Fondo solido para que no se transparente */
+  z-index: 5;
+}
+
+.order-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 0;
+  border-top: 2px dashed var(--border-color);
+  margin-top: auto;
+  /* Empuja al fondo */
+  flex-shrink: 0;
+}
+
+.total-price {
+  color: var(--primary-color);
+  font-size: 1.6rem !important;
+  font-weight: 800;
+}
+
+.order-actions {
+  display: grid;
+  grid-template-columns: 3fr 1fr;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.process-btn {
+  background-color: var(--success-color);
+  color: white;
+  padding: 16px;
+  /* Botón más alto para móvil */
+  border: none;
+  border-radius: var(--border-radius);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 196, 140, 0.3);
+}
+
+.process-btn:active {
+  transform: scale(0.98);
+}
+
+.clear-btn {
+  background-color: transparent;
+  color: var(--error-color);
+  border: 2px solid rgba(255, 59, 92, 0.2);
+  border-radius: var(--border-radius);
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Alertas visuales en item */
+.order-item.exceeds-stock {
+  background-color: #fef2f2;
+  border-radius: 4px;
+  border: 1px solid #fecaca;
+}
+
+.stock-alert-icon {
+  font-size: 1rem;
+  margin-left: 5px;
+}
+
+/* Contenedor de la alerta profesional */
+.stock-error-container {
+  margin-top: 8px;
+  background-color: #fee2e2;
+  /* Rojo muy suave */
+  border: 1px solid #ef4444;
+  /* Borde rojo alerta */
+  border-radius: 6px;
+  padding: 8px 10px;
+
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+
+  /* Animación para llamar la atención suavemente */
+  animation: pulse-red 2s infinite;
+}
+
+/* Texto de la alerta */
+.stock-error-text {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  color: #7f1d1d;
+  /* Rojo oscuro para texto */
+  line-height: 1.2;
+}
+
+.stock-error-text strong {
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: #dc2626;
+  margin-bottom: 2px;
+}
+
+/* Botón de "Auto-Fix" (Ajustar a máximo) */
+.btn-fix-stock {
+  background-color: white;
+  border: 1px solid #b91c1c;
+  color: #b91c1c;
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.btn-fix-stock:hover {
+  background-color: #b91c1c;
+  color: white;
+  transform: translateY(-1px);
+}
+
+.btn-fix-stock:active {
+  transform: scale(0.98);
+}
+
+/* Animación de pulso sutil */
+@keyframes pulse-red {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+/* Ajuste visual para el item cuando tiene error */
+.order-item.exceeds-stock {
+  /* Hacemos el borde izquierdo más grueso para destacar */
+  border-left: 4px solid var(--error-color);
+  background-color: #fffafa;
+  /* Fondo apenas rosado en todo el item */
+  align-items: flex-start;
+  /* Alineamos arriba porque ahora el contenido es más alto */
+  flex-direction: column;
+  /* Apilamos contenido */
+  gap: 5px;
+}
+
+/* Al poner flex-direction column, necesitamos re-alinear los hijos internos */
+.order-item.exceeds-stock>.order-item-info,
+.order-item.exceeds-stock>.order-item-controls {
+  width: 100%;
+  /* Ocupan todo el ancho */
+  justify-content: space-between;
+}
+
+.order-item.exceeds-stock>.order-item-controls {
+  margin-top: 5px;
+  justify-content: flex-end;
+  /* Controles a la derecha */
+}
+
+/* ============================================================
+   ESTILOS RESPONSIVOS (MÓVIL)
+   Se aplican cuando está dentro del Modal en pantallas pequeñas
+   ============================================================ */
+@media (max-width: 768px) {
+
+  /* Asegura que el contenedor llene el espacio del modal */
+  .pos-order-container {
+    height: 100% !important;
+    box-shadow: none;
+    border: none;
+    padding: 0 15px;
+    /* Un poco de margen lateral */
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mobile-summary-header {
+    padding: 15px 5px;
+    flex-shrink: 0;
+    /* El encabezado no se aplasta */
+  }
+
+  .order-list {
+    flex-grow: 1;
+    /* La lista ocupa todo el espacio libre */
+    overflow-y: auto;
+    padding-bottom: 20px;
+  }
+
+  /* SECCIÓN DE BOTONES EN EL FONDO */
+  .order-total,
+  .order-actions {
+    flex-shrink: 0;
+    /* No se aplastan */
+    background-color: var(--card-background-color);
+    /* Fondo sólido por si la lista pasa por debajo */
+  }
+
+  .order-actions {
+    /* Padding extra abajo para separar del borde de la pantalla */
+    padding-bottom: 25px;
+    padding-top: 10px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pos-order-container {
+    height: 100%; /* Usa toda la altura disponible */
+    min-height: 0;
+    
+    /* Quitamos sticky porque ahora usamos flexbox full height */
+    position: relative; 
+    top: 0;
+    
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Nada sale del contenedor */
+    padding-bottom: 0; /* Quitamos padding extra abajo */
+  }
+
+  /* El Título se queda fijo arriba */
+  .pos-order-container h2 {
+    flex-shrink: 0;
+  }
+
+  /* LA LISTA ES LA ÚNICA QUE HACE SCROLL */
+  .order-list {
+    flex: 1; /* Ocupa todo el espacio sobrante en el medio */
+    overflow-y: auto; /* Scroll aquí */
+    min-height: 0;
+    margin-bottom: 10px;
+    padding-right: 5px;
+  }
+
+  /* El Footer (Total y Botones) se queda fijo abajo */
+  .order-total,
+  .order-actions {
+    flex-shrink: 0; /* No dejes que se aplaste */
+    background-color: var(--card-background-color); /* Fondo sólido */
+    margin-top: 0;
+    z-index: 2;
+  }
+  
+  /* Asegura que los botones se vean bien */
+  .order-actions {
+    padding-bottom: 5px;
+  }
+}
+
+/* ESTADO VACÍO MEJORADO */
+.empty-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-light);
+  padding: var(--spacing-xl);
+  flex-grow: 1;
+  opacity: 0.7;
+  background-color: rgba(0, 0, 0, 0.02);
+  /* Fondo sutil */
+  border-radius: var(--border-radius);
+  margin: 10px;
+  border: 2px dashed var(--border-color);
+  /* Borde punteado decorativo */
+}
+
+/* Agregamos un ícono visual usando CSS pseudo-element (Emoji de cesta) */
+.empty-message::before {
+  content: '🛒';
+  /* O puedes usar '🛍️' */
+  font-size: 4rem;
+  margin-bottom: 15px;
+  opacity: 0.5;
+  filter: grayscale(100%);
+}
+
+.empty-message::after {
+  content: 'Escanea o selecciona productos para comenzar';
+  display: block;
+  font-size: 0.85rem;
+  margin-top: 5px;
+  opacity: 0.8;
+}
+
+/* Botón de eliminar ítem individual (Para Granel) */
+.btn-remove-item {
+  background-color: transparent;
+  border: none;
+  color: var(--error-color);
+  /* Rojo */
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  margin-right: 5px;
+  /* Separación del input */
+  transition: background-color 0.2s;
+}
+
+.btn-remove-item:hover {
+  background-color: rgba(255, 59, 92, 0.1);
+  /* Fondo rojizo suave al pasar el mouse */
+}
+
+.btn-remove-item:active {
+  transform: scale(0.95);
+}
+
+/* ============================================================
+   FIX: ALERTAS DE STOCK EN MODO OSCURO
+   ============================================================ */
+
+/* 1. Fondo del ITEM completo cuando falta stock */
+[data-theme="dark"] .order-item.exceeds-stock {
+  /* Fondo rojo muy oscuro y transparente en lugar de blanco rosado */
+  background-color: rgba(69, 10, 10, 0.4);
+  border-color: #7f1d1d;
+  /* Borde rojo oscuro */
+  border-left-color: #ef4444;
+  /* Mantenemos el borde izquierdo brillante */
+}
+
+/* 2. La cajita de la alerta (donde dice "STOCK INSUFICIENTE") */
+[data-theme="dark"] .stock-error-container {
+  /* Fondo sólido oscuro rojizo */
+  background-color: #450a0a;
+  border-color: #7f1d1d;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* 3. Textos dentro de la alerta */
+[data-theme="dark"] .stock-error-text {
+  color: #fca5a5;
+  /* Rojo claro pastel para leerse bien sobre fondo oscuro */
+}
+
+[data-theme="dark"] .stock-error-text strong {
+  color: #f87171;
+  /* Rojo brillante para el título */
+}
+
+/* 4. Botón "Ajustar a X" */
+[data-theme="dark"] .btn-fix-stock {
+  background-color: transparent;
+  border-color: #f87171;
+  color: #f87171;
+}
+
+[data-theme="dark"] .btn-fix-stock:hover {
+  background-color: #f87171;
+  /* Relleno rojo brillante */
+  color: #1e293b;
+  /* Texto oscuro para contraste */
+}
+
+/* 5. Ajuste de la animación de pulso para que brille en oscuro */
+[data-theme="dark"] .stock-error-container {
+  animation: pulse-red-dark 2s infinite;
+}
+
+@keyframes pulse-red-dark {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2);
+  }
+
+  70% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}

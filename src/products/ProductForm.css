@@ -1,0 +1,340 @@
+/*
+ * Estilos para ProductForm.jsx
+ */
+
+.product-form-container {
+  background-color: var(--card-background-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+}
+
+.form-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-weight: 500;
+  color: var(--text-dark);
+}
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  /* Estilos base ya están en index.css */
+}
+
+/* Botón de ayuda (ej. Calcular Costo, Administrar Categorías) */
+.btn-help {
+  background-color: var(--light-background);
+  color: var(--primary-color);
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.875rem;
+  margin-top: var(--spacing-xs);
+}
+
+.btn-help:hover {
+  background-color: rgba(99, 102, 241, 0.1);
+}
+
+/* Contenedor de carga de imagen */
+.image-upload-container {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.image-preview {
+  width: 100px;
+  height: 100px;
+  border-radius: var(--border-radius-sm);
+  object-fit: cover;
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+}
+
+.file-input {
+  flex-grow: 1;
+  padding: var(--spacing-xs);
+}
+
+/* Botones de Guardar y Cancelar */
+.btn-save {
+  background-color: var(--primary-color);
+  color: white;
+  width: 100%;
+  margin-bottom: var(--spacing-sm);
+}
+
+.btn-save:hover {
+  background-color: #5558e3; /* TODO: Usar variable */
+}
+
+.btn-cancel {
+  background-color: transparent;
+  color: var(--text-light);
+  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  width: 100%;
+}
+
+.btn-cancel:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--error-color);
+  border-color: var(--error-color);
+}
+
+.input-with-button {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.input-with-button .form-input {
+  flex-grow: 1; /* El input ocupa el espacio disponible */
+}
+
+.btn-scan-inline {
+  flex-shrink: 0; /* Evita que el botón se encoja */
+  padding: var(--spacing-sm);
+  background-color: var(--secondary-color);
+  color: white;
+  font-size: 1.2rem;
+  line-height: 1; /* Asegura que el emoji esté centrado */
+}
+
+.btn-scan-inline:hover {
+  background-color: var(--primary-color);
+}
+
+.btn-lookup {
+  flex-shrink: 0;
+  padding: var(--spacing-sm);
+  background-color: var(--primary-color);
+  color: white;
+  font-size: 1.2rem;
+  line-height: 1;
+  width: 52px; /* Ancho fijo para que no salte al cambiar '...' por '🔍' */
+  text-align: center;
+}
+
+.btn-lookup:hover {
+  background-color: var(--secondary-color);
+}
+
+.btn-lookup:disabled {
+  background-color: var(--text-light);
+  cursor: not-allowed;
+}
+
+
+/* --- ¡NUEVOS ESTILOS AÑADIDOS! --- */
+
+/* Botón para mostrar/ocultar campos opcionales */
+.btn-toggle-specific {
+  background-color: transparent;
+  color: var(--primary-color);
+  border: none;
+  padding: var(--spacing-xs) 0;
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  text-decoration: none; /* Quitamos el subrayado por defecto */
+}
+
+.btn-toggle-specific:hover {
+  color: var(--secondary-color);
+  text-decoration: underline; /* Subrayado en hover */
+}
+
+/* Contenedor para los campos específicos/opcionales */
+.specific-data-container {
+  /* Animación suave de entrada */
+  animation: fadeIn 0.3s ease-in-out;
+  
+  /* Separador visual */
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
+  border-top: 2px dashed #e5e7eb; /* TODO: Usar variable */
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Añadir al final de src/components/products/ProductForm.css */
+
+/* Estilo para el botón secundario (Gestionar Lotes/Variantes) */
+.btn-secondary {
+  background-color: var(--secondary-color);
+  color: white;
+  width: 100%;
+  margin-bottom: var(--spacing-sm);
+}
+
+.btn-secondary:hover {
+  opacity: 0.9;
+}
+
+/* Estilos para las features "Bloqueadas" */
+.form-group-locked {
+  background-color: var(--light-background);
+  border-left: 4px solid var(--primary-color);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+}
+
+.form-group-locked .form-label {
+  color: var(--text-dark);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.form-group-locked p {
+  color: var(--text-light);
+  margin-top: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  font-size: 0.9rem;
+}
+
+.btn-upgrade {
+  background: var(--primary-color);
+  color: white;
+  padding: var(--spacing-sm);
+  font-weight: 600;
+}
+
+.btn-upgrade:hover {
+  background-color: var(--secondary-color);
+}
+
+/* ================================================
+   ESTILOS ADAPTATIVOS (THEME-AWARE)
+   ================================================ */
+
+/* Contenedores generales (Precios, Ubicación, etc.) */
+.theme-group-container {
+  background-color: var(--light-background, #f8fafc); /* Fallback a gris claro */
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  transition: all 0.3s ease;
+}
+
+/* Sección de Conversión (Azulada) */
+.conversion-section {
+  margin-top: 15px;
+  padding: 15px;
+  border-radius: 8px;
+  /* Usamos primary-color con transparencia para que sirva en Dark y Light */
+  background-color: rgba(59, 130, 246, 0.08); 
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.conversion-header {
+  color: var(--primary-color);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Caja de Ayuda dentro de conversión */
+.help-box-content {
+  background-color: var(--card-background-color, white);
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  font-size: 0.85rem;
+  color: var(--text-dark);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Alertas de colores (Ejemplos Si/No) */
+.example-box {
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.example-box.success {
+  background-color: rgba(34, 197, 94, 0.1); /* Verde transparente */
+  border-left: 4px solid var(--success-color, #22c55e);
+  color: var(--text-dark);
+}
+
+.example-box.warning {
+  background-color: rgba(234, 179, 8, 0.1); /* Naranja/Amarillo transparente */
+  border-left: 4px solid var(--warning-color, #f59e0b);
+  color: var(--text-dark);
+}
+
+/* Previsualización Dinámica (Resultado final) */
+.dynamic-preview-box {
+  grid-column: 1 / -1;
+  margin-top: 5px;
+  padding: 10px;
+  background-color: var(--card-background-color, white);
+  border: 1px dashed var(--primary-color);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Switch de Stock */
+.stock-switch-container {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  cursor: pointer;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  transition: all 0.3s;
+  
+  /* Por defecto (inactivo) */
+  background-color: var(--light-background);
+  border: 1px solid var(--border-color);
+}
+
+.stock-switch-container.active {
+  /* Activo (Verde suave) */
+  background-color: rgba(34, 197, 94, 0.1);
+  border-color: var(--success-color);
+}
+
+.stock-track {
+  width: 44px;
+  height: 24px;
+  border-radius: 20px;
+  position: relative;
+  transition: all 0.3s;
+}
+
+.stock-thumb {
+  width: 18px;
+  height: 18px;
+  background-color: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 3px;
+  transition: all 0.3s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}

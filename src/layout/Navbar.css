@@ -1,0 +1,332 @@
+/* src/components/layout/Navbar.css */
+
+/* ============================================================
+   1. ESTILOS MÓVIL Y TABLET (0px - 1023px)
+   "App Bar" Inferior
+   ============================================================ */
+
+/* BARRA SUPERIOR (Solo marca, sin botones) */
+.mobile-top-bar {
+  background-color: var(--card-background-color);
+  padding: 10px 20px;
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+}
+
+.mobile-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-name {
+  font-weight: 800;
+  color: var(--text-dark);
+  font-size: 1.2rem;
+}
+
+/* BARRA INFERIOR FLOTANTE */
+.mobile-bottom-nav {
+  display: flex !important;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 65px;
+  /* Un poco más bajo para ser más compacto */
+  background-color: var(--card-background-color);
+  /* Sombra suave arriba */
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+  justify-content: space-between;
+  /* Distribución uniforme */
+  align-items: center;
+  padding: 0;
+  /* Sin padding lateral para aprovechar el ancho */
+  z-index: 9999;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Ítems normales */
+.bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-light);
+  font-size: 0.7rem;
+  /* Texto pequeño */
+  font-weight: 500;
+  gap: 4px;
+  background: none;
+  border: none;
+  flex: 1;
+  /* Ocupan todos el mismo ancho (20% cada uno) */
+  height: 100%;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  position: relative;
+  /* Para efectos futuros si quieres */
+}
+
+.bottom-nav-item.active {
+  color: var(--primary-color);
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.bottom-nav-item.active svg {
+  transform: translateY(-2px);
+  stroke-width: 2.5px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 15px;
+  color: #555; /* Color normal */
+  text-decoration: none;
+  border-radius: 8px; /* Bordes redondeados se ven modernos */
+  transition: all 0.3s ease;
+  margin-bottom: 5px;
+}
+
+/* ESTADO SELECCIONADO (ACTIVE) */
+.nav-item.active {
+  background-color: #e0e7ff; /* Un fondo suave (ajústalo a tu color de marca) */
+  color: #3730a3; /* Un texto más oscuro o del color de tu marca */
+  font-weight: 600;
+  /* Opcional: una barra lateral para destacar más */
+  border-left: 4px solid #3730a3; 
+}
+
+/* Efecto Hover (opcional pero recomendado) */
+.nav-item:hover:not(.active) {
+  background-color: #f3f4f6;
+}
+
+.fab-pos-button {
+  position: absolute;
+  top: -30px;
+  /* Flota hacia arriba */
+  width: 65px;
+  height: 65px;
+  /* Gradiente usando tus variables */
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 8px 20px rgba(255, 59, 92, 0.4);
+  /* Borde del color de fondo para simular recorte */
+  border: 5px solid var(--background-color);
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 10000;
+}
+
+.fab-pos-button:active {
+  transform: scale(0.95);
+}
+
+/* MENÚ DESPLEGABLE (DRAWER) */
+.mobile-drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background-color: var(--card-background-color);
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  padding: 20px;
+  padding-bottom: 90px;
+  /* Espacio para que la navbar no lo tape */
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.2);
+  z-index: 9990;
+  transform: translateY(120%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.mobile-drawer.open {
+  transform: translateY(0);
+}
+
+.mobile-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  z-index: 9980;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s;
+  backdrop-filter: blur(3px);
+}
+
+.mobile-drawer-overlay.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.btn-close-drawer {
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dark);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.btn-close-drawer:hover {
+  background: var(--error-color);
+  color: white;
+  border-color: var(--error-color);
+  transform: rotate(90deg);
+}
+
+.btn-close-drawer:active {
+  transform: rotate(90deg) scale(0.95);
+}
+
+.drawer-links {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* Dos columnas */
+  gap: 12px;
+}
+
+.drawer-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 15px;
+  background-color: var(--light-background);
+  border-radius: 12px;
+  color: var(--text-dark);
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+}
+
+.drawer-link.active {
+  background-color: rgba(123, 97, 255, 0.15);
+  color: var(--secondary-color);
+  border: 1px solid var(--secondary-color);
+}
+
+/* SIDEBAR DE ESCRITORIO (Oculto en móvil) */
+.desktop-sidebar {
+  display: none;
+}
+
+/* AJUSTE MODO OSCURO */
+[data-theme="dark"] .mobile-bottom-nav {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .fab-pos-button {
+  /* En modo oscuro, el borde debe coincidir con el fondo oscuro de la app */
+  border-color: var(--background-color);
+}
+
+/* ============================================================
+   2. MEDIA QUERIES: ESCRITORIO (>= 1024px)
+   Solo aquí aparece el Sidebar y se oculta lo móvil
+   ============================================================ */
+@media (min-width: 1024px) {
+
+  .mobile-top-bar,
+  .mobile-bottom-nav,
+  .mobile-drawer,
+  .mobile-drawer-overlay {
+    display: none !important;
+  }
+
+  .desktop-sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 260px;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    background-color: var(--card-background-color);
+    border-right: 1px solid var(--border-color);
+    padding: 2rem 1.5rem;
+    overflow-y: auto;
+    z-index: 100;
+  }
+
+  .sidebar-header {
+    margin-bottom: 2rem;
+    padding-left: 0.5rem;
+    text-align: center;
+  }
+
+  .nav-title {
+    margin-top: 10px;
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--text-dark);
+  }
+
+  .sidebar-links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    color: var(--text-light);
+    font-weight: 600;
+    border-radius: 10px;
+    transition: all 0.2s;
+    text-decoration: none;
+  }
+
+  .nav-link:hover {
+    background-color: var(--light-background);
+    color: var(--text-dark);
+    transform: translateX(5px);
+  }
+
+  .nav-link.active {
+    background: linear-gradient(90deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(255, 59, 92, 0.2);
+  }
+
+  .sidebar-divider {
+    height: 1px;
+    background-color: var(--border-color);
+    margin: 10px 0;
+    opacity: 0.5;
+  }
+}

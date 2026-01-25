@@ -1,0 +1,147 @@
+/*
+ * Estilos para PurchaseHistoryModal.jsx
+ */
+
+.purchase-history-container {
+  margin-bottom: var(--spacing-lg);
+}
+
+.purchase-history-list {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: var(--spacing-lg);
+  border: 1px solid var(--light-background);
+  border-radius: var(--border-radius-sm);
+}
+
+.purchase-history-item {
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid var(--light-background);
+}
+
+.purchase-history-item:last-child {
+  border-bottom: none;
+}
+
+.purchase-history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.purchase-date {
+  flex: 2;
+  font-weight: 500;
+  color: var(--text-dark);
+  margin-bottom: 0;
+}
+
+.purchase-total {
+  flex: 1;
+  font-weight: 600;
+  color: var(--success-color);
+  margin-bottom: 0;
+  text-align: right;
+}
+
+.purchase-items-container {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--light-background);
+  list-style: none;
+  padding-left: 0;
+}
+
+.purchase-item {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--spacing-xs) 0;
+  color: var(--text-light);
+}
+
+.purchase-item-name {
+  flex: 2;
+}
+
+.purchase-item-quantity {
+  flex: 0 0 auto;
+  margin-left: var(--spacing-sm);
+}
+
+.purchase-summary {
+  background-color: var(--light-background);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+}
+
+.purchase-summary h4 {
+  margin-bottom: var(--spacing-sm);
+  color: var(--text-dark);
+}
+
+.purchase-summary p {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-xs);
+}
+
+.purchase-summary p:last-child {
+  margin-bottom: 0;
+}
+
+.purchase-summary span {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+/* 1. Estilos para el resumen de deuda */
+.debt-summary-box {
+  background-color: rgba(239, 68, 68, 0.05); /* Fondo rojo muy claro */
+  border: 1px solid var(--error-color);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.debt-summary-box p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+.debt-summary-box span {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--error-color);
+}
+
+/* 2. Estilos para resaltar ventas fiadas */
+.purchase-history-item.sale-fiado {
+  border-left: 4px solid var(--error-color);
+  padding-left: var(--spacing-sm);
+}
+
+.fiado-tag {
+  background-color: var(--error-color);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: var(--spacing-sm);
+}
+
+.fiado-details {
+  background-color: var(--light-background);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  border-radius: var(--border-radius-sm);
+}
+.fiado-details p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-light);
+  font-weight: 500;
+}
