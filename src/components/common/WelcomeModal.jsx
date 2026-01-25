@@ -79,7 +79,6 @@ export default function WelcomeModal() {
         if (!result.success) {
             setErrorMessage(result.message);
         }
-        // Si es success, el store probablemente redirige o cierra el modal
     } catch (error) {
         Logger.error("Error al validar licencia:", error);
         setErrorMessage('❌ Error de conexión: No se pudo verificar la licencia. Intenta de nuevo.');
@@ -88,7 +87,7 @@ export default function WelcomeModal() {
     }
   };
 
-  // --- MANEJO DE PRUEBA GRATIS (Aquí estaba tu error anterior) ---
+  // --- MANEJO DE PRUEBA GRATIS ---
   const handleTrialClick = async () => {
     if (!isOnline) {
       setErrorMessage('⚠️ Para activar la prueba gratis es necesario estar conectado a internet.');
@@ -99,15 +98,12 @@ export default function WelcomeModal() {
     setErrorMessage('');
 
     try {
-        // Ejecutamos la acción del store
         const result = await handleFreeTrial();
         
-        // Manejamos errores lógicos (ej: dispositivo ya registrado)
         if (!result.success) {
             setErrorMessage(result.message || 'No se pudo activar la prueba.');
         }
     } catch (error) {
-        // Manejamos errores CRÍTICOS (ej: Failed to fetch / Timeouts)
         Logger.error("Error crítico en Trial:", error);
         
         if (error.message && (error.message.includes('fetch') || error.message.includes('Network'))) {
@@ -199,6 +195,18 @@ export default function WelcomeModal() {
             >
               {isLoading ? '⏳ Creando cuenta...' : 'Probar Gratis por 3 Meses'}
             </button>
+            
+            {/* --- AQUÍ ESTÁ EL MENSAJE DE COPYWRITING AÑADIDO --- */}
+            <p style={{ 
+                marginTop: '12px', 
+                textAlign: 'center', 
+                fontSize: '0.85rem', 
+                color: '#6b7280',
+                lineHeight: '1.4'
+            }}>
+              <strong>Sin presiones:</strong> Al terminar tu prueba, podrás renovar tu licencia <strong>totalmente gratis</strong> y seguir operando.
+            </p>
+
           </form>
 
           <div className="welcome-footer">
