@@ -69,7 +69,6 @@ export default function LicenseSettings() {
         if (companyProfile) await updateCompanyProfile({ ...companyProfile, business_type: newSelection });
     };
 
-    // --- NUEVA FUNCIÓN PARA CONFIRMAR EL LOGOUT ---
     const handleLogout = () => {
         const confirmMessage = "⚠️ ADVERTENCIA DE SEGURIDAD ⚠️\n\n" +
             "¿Estás seguro de que deseas cerrar sesión en este dispositivo?\n\n" +
@@ -79,15 +78,81 @@ export default function LicenseSettings() {
             "¿Deseas continuar de todos modos?";
 
         if (window.confirm(confirmMessage)) {
-            logout(); // Solo se ejecuta si el usuario da click en "Aceptar"
+            logout(); 
         }
+    };
+
+    const getExpirationInfo = () => {
+        // NOTA: Asegúrate de que tu DB devuelva 'expires_at' o cambia esta propiedad
+        const expiryDateString = licenseDetails?.expires_at; 
+        
+        if (!expiryDateString) return null;
+
+        const now = new Date();
+        const expiryDate = new Date(expiryDateString);
+        
+        // Calculamos el fin del periodo de gracia (7 días después del vencimiento)
+        const gracePeriodDays = 7;
+        const graceEndDate = new Date(expiryDate);
+        graceEndDate.setDate(graceEndDate.getDate() + gracePeriodDays);
+
+        const isExpired = now > expiryDate;
+        const inGracePeriod = isExpired && now < graceEndDate;
+        const daysLeftInGrace = inGracePeriod 
+            ? Math.ceil((graceEndDate - now) / (1000 * 60 * 60 * 24)) 
+            : 0;
+
+        // Formato de fecha legible
+        const formattedDate = expiryDate.toLocaleDateString('es-MX', { 
+            year: 'numeric', month: 'long', day: 'numeric' 
+        });
+
+        if (inGracePeriod) {
+            return (
+                <div style={{ color: '#d97706', fontWeight: 'bold' }}>
+                    ⚠️ Vencida (Periodo de Gracia)<br/>
+                    <span style={{ fontSize: '0.85em', fontWeight: 'normal' }}>
+                        Corte definitivo en: {daysLeftInGrace} días
+                    </span>
+                </div>
+            );
+        }
+
+        if (isExpired && !inGracePeriod) {
+             return (
+                <div style={{ color: '#dc2626', fontWeight: 'bold' }}>
+                    ⛔ Licencia Suspendida<br/>
+                    <span style={{ fontSize: '0.85em', fontWeight: 'normal' }}>
+                        Expiró el: {formattedDate}
+                    </span>
+                </div>
+            );
+        }
+
+        // Si está activa normal
+        return <span className="license-value">{formattedDate}</span>;
+    };
+
+    const getMaskedLicense = () => {
+        const key = licenseDetails?.license_key;
+        if (!key) return 'Desconocida';
+        if (key.length <= 6) return key;
+        return `****-****-${key.slice(-6).toUpperCase()}`;
     };
 
     const renderLicenseInfo = () => {
         if (!licenseDetails || !licenseDetails.valid) return <p>No hay licencia activa.</p>;
+        
         return (
             <div className="license-info-container">
                 <div className="license-info">
+                    <div className="license-detail">
+                        <span className="license-label">ID Licencia:</span>
+                        <span className="license-value" style={{ fontFamily: 'monospace', letterSpacing: '1px' }}>
+                            {getMaskedLicense()}
+                        </span>
+                    </div>
+                    
                     <div className="license-detail">
                         <span className="license-label">Producto:</span>
                         <span className="license-value">{licenseDetails.product_name || 'N/A'}</span>
@@ -98,6 +163,14 @@ export default function LicenseSettings() {
                             {licenseDetails.status === 'active' ? 'Activa' : (licenseDetails.status || 'Inactiva')}
                         </span>
                     </div>
+                    
+                    {/* --- NUEVO CAMPO DE VENCIMIENTO --- */}
+                    <div className="license-detail">
+                        <span className="license-label">Vencimiento:</span>
+                        {getExpirationInfo() || <span className="license-value">Permanente</span>}
+                    </div>
+                    {/* ---------------------------------- */}
+
                     <div className="license-detail">
                         <span className="license-label">Dispositivos Permitidos:</span>
                         <span className="license-value">
@@ -112,7 +185,6 @@ export default function LicenseSettings() {
                 <h4 className="device-manager-title">Dispositivos Vinculados</h4>
                 <DeviceManager licenseKey={licenseDetails.license_key} />
                 
-                {/* BOTÓN ACTUALIZADO */}
                 <button 
                     className="btn btn-cancel" 
                     style={{ width: 'auto', marginTop: '1rem' }} 

@@ -47,7 +47,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
       setStock(batchToEdit.stock);
       setNotes(batchToEdit.notes || '');
       setLocation(batchToEdit.location || '');
-        setExpiryDate(batchToEdit.expiryDate ? batchToEdit.expiryDate.split('T')[0] : '');
+      setExpiryDate(batchToEdit.expiryDate ? batchToEdit.expiryDate.split('T')[0] : '');
       if (features.hasVariants) {
         setSku(batchToEdit.sku || '');
         const attrs = batchToEdit.attributes || {};
@@ -112,6 +112,11 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
     const oldTotalValue = isEditing ? (batchToEdit.cost * batchToEdit.stock) : 0;
     const newTotalValue = nCost * nStock;
     const valueDifference = newTotalValue - oldTotalValue;
+
+    if (nStock < 0) {
+      showMessageModal("ERROR DE SEGURIDAD: No se permiten entradas de stock negaticos.");
+      return false;
+    }
 
     if (isNaN(nStock) || isNaN(nCost) || isNaN(nPrice)) {
       showMessageModal("Por favor, ingresa valores numéricos válidos.");
@@ -274,14 +279,14 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
           </div>
 
           <div className="form-group">
-  <label>Fecha Caducidad (Opcional)</label>
-  <input 
-    type="date" 
-    value={expiryDate} 
-    onChange={(e) => setExpiryDate(e.target.value)} 
-    className="form-input" 
-  />
-</div>
+            <label>Fecha Caducidad (Opcional)</label>
+            <input
+              type="date"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="form-input"
+            />
+          </div>
 
           <div className="form-group">
             <label>Notas</label>
@@ -446,22 +451,22 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     try {
       // Si el producto no tenía activado el manejo de lotes, lo activamos
       if (selectedProduct && (!selectedProduct.trackStock || !selectedProduct.batchManagement?.enabled)) {
-        
+
         const updatedProduct = {
           ...selectedProduct,
           trackStock: true, // <--- CRUCIAL: Activamos el "switch" principal para el POS
-          batchManagement: { 
+          batchManagement: {
             ...(selectedProduct.batchManagement || {}),
-            enabled: true, 
-            selectionStrategy: 'fifo' 
+            enabled: true,
+            selectionStrategy: 'fifo'
           }
         };
 
         // Guardamos la actualización del producto ANTES de guardar el lote
         await saveDataSafe(STORES.MENU, updatedProduct);
-        
+
         // Actualizamos el producto en el store local para que la UI refleje el cambio
-        useProductStore.getState().loadInitialProducts(); 
+        useProductStore.getState().loadInitialProducts();
       }
 
       // Guardar y Sincronizar
@@ -487,20 +492,27 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   };
 
   const handleDeleteBatch = async (batch) => {
+    // Validación existente de stock
     if (batch.stock > 0) {
-      showMessageModal("No puedes eliminar con stock disponible. Pon el stock en 0 primero.");
+      showMessageModal("No puedes archivar con stock disponible...");
       return;
     }
-    if (window.confirm('¿Eliminar este registro permanentemente?')) {
+
+    if (window.confirm('¿Archivar este lote? (Se mantendrá en el historial para reportes)')) {
       try {
-        const batchValue = batch.cost * batch.stock;
+        // --- CORRECCIÓN DE SEGURIDAD: SOFT DELETE ---
+        // En lugar de deleteDataSafe, actualizamos el estado
+        const archivedBatch = {
+          ...batch,
+          isActive: false, // Lo oculta de la venta activa
+          isArchived: true, // Flag explícito de archivado
+          deletedAt: new Date().toISOString() // Auditoría
+        };
 
-        const result = await deleteDataSafe(STORES.PRODUCT_BATCHES, batch.id);
+        const result = await saveBatchAndSyncProductSafe(archivedBatch);
+        // --------------------------------------------
 
-        if (batchValue > 0) {
-          await adjustInventoryValue(-batchValue);
-        }
-
+        // Actualizar UI...
         const updatedBatches = await loadBatchesForProduct(selectedProductId);
         setLocalBatches(updatedBatches);
         refreshData();
