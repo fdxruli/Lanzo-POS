@@ -18,7 +18,7 @@ import { startLicenseListener, stopLicenseListener } from '../services/licenseRe
 
 const _ui_render_config_v2 = import.meta.env.VITE_LICENSE_SALT;
 
-const FATAL_REASONS = ['banned', 'deleted', 'revoked', 'device_limit_reached','license_not_found', 'invalid_license', 'invalid'];
+const FATAL_REASONS = ['banned', 'deleted', 'revoked', 'device_limit_reached', 'license_not_found', 'invalid_license', 'invalid'];
 
 const RENEWAL_REASONS = ['expired_subscription', 'LICENSE_EXPIRED', 'license_expired'];
 
@@ -97,12 +97,12 @@ const getLicenseFromStorage = async () => {
     // --- CORRECCIÓN DE SEGURIDAD AQUÍ ---
     if (parsedPackage.signature !== expectedSignature) {
       Logger.error("🚨 ALERTA DE SEGURIDAD: Firma de licencia manipulada o corrupta.");
-      
+
       // 1. Destruimos los datos corruptos/falsos inmediatamente
-      clearLicenseFromStorage(); 
-      
+      clearLicenseFromStorage();
+
       // 2. Retornamos null para obligar al usuario a autenticarse legalmente
-      return null; 
+      return null;
     }
     // ------------------------------------
 
@@ -132,6 +132,7 @@ export const useAppStore = create((set, get) => ({
   pendingTermsUpdate: null,
 
   // === initializeApp ===
+
   initializeApp: async () => {
     if (get()._isInitializing) {
       Logger.warn('⏳ initializeApp ya está en ejecución, saltando...');
@@ -139,35 +140,38 @@ export const useAppStore = create((set, get) => ({
     }
 
     set({ _isInitializing: true });
-    Logger.log('🔄 [AppStore] Iniciando aplicación...');
+    Logger.log('🔄 [AppStore] Iniciando aplicación (Modo Instantáneo)...');
 
     try {
       const localLicense = await getLicenseFromStorage();
 
       if (!localLicense?.license_key) {
-        set({ appStatus: 'unauthenticated' });
+        set({ appStatus: 'unauthenticated', _isInitializing: false });
         return;
       }
 
-      const isRecentlyLoaded = sessionStorage.getItem('Lanzo_app_loaded');
-
-      if (navigator.onLine && !isRecentlyLoaded) {
-        try {
-          const serverValidation = await revalidateLicense(localLicense.license_key);
-
-          if (serverValidation?.valid !== undefined) {
-            await get()._processServerValidation(serverValidation, localLicense);
-            sessionStorage.setItem('lanzo_app_loaded', Date.now().toString());
-            set({ _isInitializing: false });
-            return;
-          }
-        } catch (validationError) {
-          Logger.warn('⚠️ Validación falló, usando caché:', validationError);
-        }
-      }
-
+      // 🚀 CARGA INSTANTÁNEA: Entramos directo con la licencia local
+      Logger.log('⚡ [AppStore] Carga rápida activada - Usando caché local');
       await get()._processOfflineMode(localLicense);
       set({ _isInitializing: false });
+
+      // ✨ VALIDACIÓN EN SEGUNDO PLANO (No bloqueante)
+      const isRecentlyLoaded = sessionStorage.getItem('Lanzo_app_loaded');
+      const lastCheck = sessionStorage.getItem('Lanzo_last_validation');
+      const now = Date.now();
+
+      // Solo validamos si:
+      // 1. Hay internet
+      // 2. NO se validó en los últimos 5 minutos (evita validaciones excesivas)
+      const shouldValidate = navigator.onLine &&
+        (!lastCheck || (now - parseInt(lastCheck)) > 5 * 60 * 1000);
+
+      if (shouldValidate) {
+        // Disparamos validación pero NO esperamos el resultado
+        get()._validateInBackground(localLicense.license_key);
+      } else {
+        Logger.log(`✅ [AppStore] Validación reciente detectada, omitiendo check.`);
+      }
 
     } catch (criticalError) {
       Logger.error('💥 Error crítico inicializando:', criticalError);
@@ -175,11 +179,127 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
+  _validateInBackground: async (licenseKey) => {
+    try {
+      Logger.log('🔄 [Background] Iniciando validación silenciosa...');
+
+      // Timeout de seguridad para la validación en background
+      const BACKGROUND_TIMEOUT = 8000; // 8 segundos (más tolerante que el modo bloqueante)
+
+      const validationPromise = revalidateLicense(licenseKey);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('BACKGROUND_TIMEOUT')), BACKGROUND_TIMEOUT)
+      );
+
+      const serverValidation = await Promise.race([
+        validationPromise,
+        timeoutPromise
+      ]);
+
+      if (!serverValidation?.valid && serverValidation?.valid !== false) {
+        // Respuesta extraña del servidor, mejor no tocar nada
+        Logger.warn('[Background] Respuesta inválida del servidor, ignorando.');
+        return;
+      }
+
+      const localLicense = await getLicenseFromStorage();
+      if (!localLicense) {
+        Logger.warn('[Background] No hay licencia local para comparar.');
+        return;
+      }
+
+      // 🔍 DETECCIÓN DE CAMBIOS CRÍTICOS
+      const criticalChanges = {
+        validityChanged: serverValidation.valid !== localLicense.valid,
+        statusChanged: serverValidation.status !== localLicense.status,
+        wasRevoked: !serverValidation.valid && ['banned', 'deleted', 'revoked'].includes(serverValidation.reason),
+        needsRenewal: !serverValidation.valid && ['expired_subscription', 'LICENSE_EXPIRED'].includes(serverValidation.reason)
+      };
+
+      // 🚨 CASO 1: REVOCACIÓN O BAN (Crítico - Cerrar sesión inmediatamente)
+      if (criticalChanges.wasRevoked) {
+        Logger.error('🚫 [Background] ALERTA CRÍTICA: Licencia revocada remotamente');
+
+        showMessageModal(
+          '🚫 LICENCIA REVOCADA\n\nTu licencia ha sido desactivada remotamente. La sesión se cerrará por seguridad.',
+          async () => {
+            await get().logout();
+            window.location.reload();
+          },
+          {
+            type: 'error',
+            confirmButtonText: 'Entendido',
+            showCancel: false,
+            isDismissible: false
+          }
+        );
+        return;
+      }
+
+      // 🔒 CASO 2: EXPIRACIÓN (Requiere renovación - Bloquear pantalla)
+      if (criticalChanges.needsRenewal) {
+        Logger.warn('⏰ [Background] Licencia expirada detectada');
+
+        const expiredDetails = {
+          ...localLicense,
+          ...serverValidation,
+          valid: false,
+          status: 'expired'
+        };
+
+        await saveLicenseToStorage(expiredDetails);
+
+        set({
+          appStatus: 'locked_renewal',
+          licenseStatus: 'expired',
+          licenseDetails: expiredDetails,
+          gracePeriodEnds: null
+        });
+
+        showMessageModal(
+          '⏰ Tu licencia ha expirado.\n\nPara continuar usando la aplicación, renueva tu suscripción.',
+          null,
+          { type: 'warning' }
+        );
+        return;
+      }
+
+      // ✅ CASO 3: ACTUALIZACIÓN NORMAL (Sin criticidad)
+      if (criticalChanges.validityChanged || criticalChanges.statusChanged) {
+        Logger.log('🔔 [Background] Cambios detectados en licencia, actualizando...');
+        await get()._processServerValidation(serverValidation, localLicense);
+      } else {
+        Logger.log('✅ [Background] Licencia validada sin cambios. Verificando perfil...');
+
+        // CORRECCIÓN: Forzamos la carga del perfil aunque la licencia no haya cambiado.
+        // Esto asegura que si cambiaste el Rubro en la BD, se actualice aquí.
+        await get()._loadProfile(localLicense.license_key);
+      }
+
+      // Marcamos que se hizo una validación exitosa
+      sessionStorage.setItem('Lanzo_app_loaded', Date.now().toString());
+      sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
+
+    } catch (error) {
+      // Fallo silencioso - la app ya está funcionando en modo offline
+      if (error.message === 'BACKGROUND_TIMEOUT') {
+        Logger.warn('⚠️ [Background] Timeout de validación (8s) - Servidor lento o sin conexión');
+      } else if (error.message?.includes('fetch') || error.message?.includes('network')) {
+        Logger.warn('⚠️ [Background] Error de red durante validación');
+      } else {
+        Logger.warn('⚠️ [Background] Validación falló:', error.message);
+      }
+
+      // Aunque falle, marcamos timestamp para no reintentar inmediatamente
+      sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
+    }
+  },
+
   // === Renovar licencia ===
   renewLicense: async () => {
     const { licenseDetails } = get();
     if (!licenseDetails?.license_key) {
-        return { success: false, message: 'No hay licencia para renovar' };
+      return { success: false, message: 'No hay licencia para renovar' };
     }
 
     Logger.log("📡 Solicitando renovación de licencia...");
@@ -188,35 +308,35 @@ export const useAppStore = create((set, get) => ({
     const result = await renewLicenseService(licenseDetails.license_key);
 
     if (result.success) {
-        Logger.log("✅ Renovación exitosa. Actualizando estado local...");
+      Logger.log("✅ Renovación exitosa. Actualizando estado local...");
 
-        // Construimos el objeto actualizado
-        const updatedLicense = {
-            ...licenseDetails,
-            expires_at: result.newExpiry, // Actualizamos fecha
-            status: result.status,        // Actualizamos estado (active)
-            valid: true,
-            // Importante: Renovamos el caché offline también
-            localExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-        };
+      // Construimos el objeto actualizado
+      const updatedLicense = {
+        ...licenseDetails,
+        expires_at: result.newExpiry, // Actualizamos fecha
+        status: result.status,        // Actualizamos estado (active)
+        valid: true,
+        // Importante: Renovamos el caché offline también
+        localExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      };
 
-        // 1. Actualizar estado en memoria (React reacciona aquí)
-        set({
-            licenseDetails: updatedLicense,
-            licenseStatus: result.status, // 'active'
-            appStatus: 'ready',           // Desbloquea la pantalla
-            gracePeriodEnds: null         // Limpiamos cualquier gracia previa
-        });
+      // 1. Actualizar estado en memoria (React reacciona aquí)
+      set({
+        licenseDetails: updatedLicense,
+        licenseStatus: result.status, // 'active'
+        appStatus: 'ready',           // Desbloquea la pantalla
+        gracePeriodEnds: null         // Limpiamos cualquier gracia previa
+      });
 
-        // 2. Persistir en disco (Para que F5 no bloquee de nuevo)
-        await saveLicenseToStorage(updatedLicense);
+      // 2. Persistir en disco (Para que F5 no bloquee de nuevo)
+      await saveLicenseToStorage(updatedLicense);
 
-        return { success: true, message: result.message };
+      return { success: true, message: result.message };
     } else {
-        Logger.warn("⚠️ Fallo la renovación:", result.message);
-        return { success: false, message: result.message };
+      Logger.warn("⚠️ Fallo la renovación:", result.message);
+      return { success: false, message: result.message };
     }
-},
+  },
 
   // === _processServerValidation ===
   _processServerValidation: async (serverValidation, localLicense) => {
@@ -241,18 +361,18 @@ export const useAppStore = create((set, get) => ({
           licenseStatus: serverValidation.reason || 'invalid'
         });
         return;
-      } 
-      else if (RENEWAL_REASONS.includes(serverValidation.reason)) {
-         Logger.warn('🔒 [AppStore] Licencia expirada. Bloqueando pantalla...');
-         await get()._loadProfile(localLicense.license_key);
-         set({
-            appStatus: 'locked_renewal', 
-            licenseStatus: 'expired',
-            licenseDetails: { ...localLicense, valid: false, status: 'expired' } 
-         });
-         return;
       }
-       else {
+      else if (RENEWAL_REASONS.includes(serverValidation.reason)) {
+        Logger.warn('🔒 [AppStore] Licencia expirada. Bloqueando pantalla...');
+        await get()._loadProfile(localLicense.license_key);
+        set({
+          appStatus: 'locked_renewal',
+          licenseStatus: 'expired',
+          licenseDetails: { ...localLicense, valid: false, status: 'expired' }
+        });
+        return;
+      }
+      else {
         // === FALLO SUAVE (SOFT FAIL) ===
         // Si el servidor dice "invalid" pero no es fatal (ej. error de formato tras update),
         // ignoramos al servidor y mantenemos la sesión local (Modo Offline forzado).
@@ -450,31 +570,31 @@ export const useAppStore = create((set, get) => ({
           },
 
           onDeviceChanged: (event) => {
-                if (event.status === 'banned' || event.status === 'deleted') {
-                    Logger.warn('🚫 [Realtime] Dispositivo revocado');
-                    
-                    showMessageModal(
-                        '🚫 ACCESO REVOCADO: Tu dispositivo ha sido desactivado remotamente.',
-                        async () => { // Hacemos esta función ASYNC
-                            try {
-                                // 1. Intentamos cerrar sesión limpiamente y ESPERAMOS
-                                await get().logout(); 
-                            } catch (e) {
-                                console.error(e);
-                            } finally {
-                                // 2. Solo después de intentar, recargamos
-                                window.location.reload();
-                            }
-                        },
-                        { 
-                            type: 'error', 
-                            confirmButtonText: 'Entendido, salir',
-                            showCancel: false, // Importante: que no puedan cancelar
-                            isDismissible: false // Importante: que no puedan cerrar clicando fuera
-                        }
-                    );
+            if (event.status === 'banned' || event.status === 'deleted') {
+              Logger.warn('🚫 [Realtime] Dispositivo revocado');
+
+              showMessageModal(
+                '🚫 ACCESO REVOCADO: Tu dispositivo ha sido desactivado remotamente.',
+                async () => { // Hacemos esta función ASYNC
+                  try {
+                    // 1. Intentamos cerrar sesión limpiamente y ESPERAMOS
+                    await get().logout();
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    // 2. Solo después de intentar, recargamos
+                    window.location.reload();
+                  }
+                },
+                {
+                  type: 'error',
+                  confirmButtonText: 'Entendido, salir',
+                  showCancel: false, // Importante: que no puedan cancelar
+                  isDismissible: false // Importante: que no puedan cerrar clicando fuera
                 }
+              );
             }
+          }
         }
       );
 
@@ -650,8 +770,8 @@ export const useAppStore = create((set, get) => ({
     // (Si no hay internet, confiamos en la validación offline que se hizo al inicio)
     if (navigator.onLine) {
       try {
-        Logger.log("🛡️ Verificando integridad de sesión con servidor...");
-        
+        Logger.log("Verificando integridad de sesión con servidor...");
+
         // Llamada a Supabase
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
 
@@ -660,18 +780,18 @@ export const useAppStore = create((set, get) => ({
         const graceEnd = serverCheck.grace_period_ends
           ? new Date(serverCheck.grace_period_ends)
           : null;
-        
+
         // Es válido si el servidor dice TRUE o si estamos dentro del tiempo de gracia
         const isWithinGracePeriod = graceEnd && graceEnd > now;
         const isTechnicallyValid = serverCheck.valid || isWithinGracePeriod;
 
         if (serverCheck.legal_status?.has_updated_terms) {
-             Logger.log("📜 Nuevos términos detectados durante el uso.");
-             // Esto hará que el modal aparezca inmediatamente sin recargar
-             set({ pendingTermsUpdate: serverCheck.legal_status });
+          Logger.log("📜 Nuevos términos detectados durante el uso.");
+          // Esto hará que el modal aparezca inmediatamente sin recargar
+          set({ pendingTermsUpdate: serverCheck.legal_status });
         } else {
-             // Si ya no hay actualización pendiente (ej. aceptó en otra pestaña), limpiamos
-             set({ pendingTermsUpdate: null });
+          // Si ya no hay actualización pendiente (ej. aceptó en otra pestaña), limpiamos
+          set({ pendingTermsUpdate: null });
         }
 
         // === LÓGICA DE DETECCIÓN DE PROBLEMAS ===
@@ -681,7 +801,7 @@ export const useAppStore = create((set, get) => ({
 
           // A.1: ¿Es por falta de pago (Expirada)? -> BLOQUEAR PANTALLA
           if (RENEWAL_REASONS.includes(serverCheck.reason)) {
-            Logger.log("🔒 [Integrity] Licencia expirada. Activando pantalla de renovación.");
+            Logger.log("[Integrity] Licencia expirada. Activando pantalla de renovación.");
 
             const expiredDetails = {
               ...licenseDetails,
@@ -711,7 +831,7 @@ export const useAppStore = create((set, get) => ({
         }
 
         // === CASO B: TODO CORRECTO (O en gracia) ===
-        
+
         let newStatus = serverCheck.status || serverCheck.reason || 'active';
 
         // Ajuste visual para el estado de gracia
@@ -728,9 +848,9 @@ export const useAppStore = create((set, get) => ({
 
         // Actualizamos el store y localStorage solo si cambiaron datos críticos
         // (para evitar re-renders innecesarios en React)
-        const hasChanges = 
-            JSON.stringify(licenseDetails.valid) !== JSON.stringify(updatedDetails.valid) ||
-            licenseDetails.status !== updatedDetails.status;
+        const hasChanges =
+          JSON.stringify(licenseDetails.valid) !== JSON.stringify(updatedDetails.valid) ||
+          licenseDetails.status !== updatedDetails.status;
 
         if (hasChanges) {
           Logger.log(`✅ [Integrity] Sesión actualizada. Estado: ${newStatus}`);
@@ -740,6 +860,13 @@ export const useAppStore = create((set, get) => ({
             licenseDetails: updatedDetails
           });
           await saveLicenseToStorage(updatedDetails);
+        }
+
+        // CORRECCIÓN AGREGADA:
+        // Siempre refrescar el perfil al verificar integridad. 
+        // Si el 'trigger' de la base de datos disparó el evento, queremos ver los cambios del negocio.
+        if (updatedDetails.valid) {
+          await get()._loadProfile(licenseDetails.license_key);
         }
 
       } catch (error) {
