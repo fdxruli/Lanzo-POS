@@ -9,7 +9,7 @@ const RUBRO_FEATURES = {
   // --- GRUPOS NUEVOS ---
   'food_service': ['recipes', 'modifiers', 'waste', 'kds'], // Restaurante: No usa 'bulk' de venta directa usualmente
   'apparel': ['variants', 'sku', 'suppliers'], // Ropa: JAMÁS es a granel
-  'hardware': ['variants', 'sku', 'suppliers', 'minmax', 'wholesale', 'bulk'], // Ferretería: Clavos/Cables sí pueden ser granel
+  'hardware': ['lots', 'sku', 'suppliers', 'minmax', 'wholesale', 'bulk'], // Ferretería: Clavos/Cables sí pueden ser granel
 
   // --- RUBROS ORIGINALES ---
   'abarrotes': ['bulk', 'wholesale', 'suppliers', 'minmax', 'expiry'], // Abarrotes: Sí usa granel (jamón, frijol)
@@ -39,11 +39,11 @@ export function useFeatureConfig(specificRubro = null) {
     } else if (typeof businessTypes === 'string') {
       companyRubros = businessTypes.split(',').map(s => s.trim()).filter(Boolean);
     }
-    
+
     if (companyRubros.length === 0) companyRubros = ['otro'];
 
-    let typesToEvaluate = specificRubro 
-      ? (companyRubros.includes(specificRubro) ? [specificRubro] : []) 
+    let typesToEvaluate = specificRubro
+      ? (companyRubros.includes(specificRubro) ? [specificRubro] : [])
       : companyRubros;
 
     const enabledFeatures = new Set();
@@ -68,12 +68,12 @@ export function useFeatureConfig(specificRubro = null) {
 
     return {
       activeRubros: typesToEvaluate,
-      
+
       // --- Lógica de Negocio Crítica ---
       hasBulk,
       // Helper derivado: Si NO tiene bulk, forzamos modo unitario (Pieza)
       // Esto elimina la pregunta "¿Pieza o Granel?" en Farmacias/Boutiques
-      forceUnitMode: !hasBulk, 
+      forceUnitMode: !hasBulk,
 
       hasExpiry: enabledFeatures.has('expiry'),
       hasMinMax: enabledFeatures.has('minmax'),

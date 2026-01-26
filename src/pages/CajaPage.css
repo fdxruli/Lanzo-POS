@@ -19,16 +19,16 @@
   gap: 1.5rem;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 1rem 40px 1rem;
 }
 
 /* 3. ESTILOS BASE DE TARJETAS */
 .caja-card {
   background-color: var(--card-background-color);
   border-radius: 16px;
-  padding: 2rem;
+  padding: 1rem;
   box-shadow: var(--box-shadow);
-  border: 1px solid var(--border-color); /* Variable genérica mejor que hardcode */
+  border: 1px solid var(--border-color);
+  /* Variable genérica mejor que hardcode */
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   height: 100%;
 }
@@ -102,9 +102,17 @@
   font-family: 'Inter', monospace;
 }
 
-.amount.neutral { color: var(--text-dark); }
-.amount.positive { color: var(--success-color); }
-.amount.negative { color: var(--error-color); }
+.amount.neutral {
+  color: var(--text-dark);
+}
+
+.amount.positive {
+  color: var(--success-color);
+}
+
+.amount.negative {
+  color: var(--error-color);
+}
 
 /* === TARJETA DE ACCIONES (Derecha Arriba) === */
 .actions-title {
@@ -118,17 +126,21 @@
 
 .actions-card {
   /* Asegura que haya espacio interno alrededor de todo el contenido */
-  padding: 20px; 
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  justify-content: center; /* Centra verticalmente si sobra espacio */
+  justify-content: center;
+  /* Centra verticalmente si sobra espacio */
 }
 
 .actions-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr; /* Dos columnas iguales */
-  gap: 15px; /* Espacio vital entre los botones (fila y columna) */
-  margin-top: 15px; /* Separa los botones del título "Control de Efectivo" */
+  grid-template-columns: 1fr 1fr;
+  /* Dos columnas iguales */
+  gap: 15px;
+  /* Espacio vital entre los botones (fila y columna) */
+  margin-top: 15px;
+  /* Separa los botones del título "Control de Efectivo" */
 }
 
 /* -------------------------------------------------------
@@ -140,7 +152,8 @@
   padding: 6px 12px;
   font-size: 0.85rem;
   background-color: var(--card-background-color);
-  border: 1px solid var(--primary-color); /* Borde de color para resaltar sutilmente */
+  border: 1px solid var(--primary-color);
+  /* Borde de color para resaltar sutilmente */
   color: var(--primary-color);
   display: flex;
   align-items: center;
@@ -153,7 +166,7 @@
   background-color: var(--primary-color);
   color: white;
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .btn-backup:active {
@@ -172,7 +185,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Botón Auditar (Principal) */
@@ -190,7 +205,7 @@
 .btn-audit:hover {
   background-color: black;
   transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
 /* Botones Entrada/Salida (Estilos Base) */
@@ -209,7 +224,8 @@
 
 /* Estilo específico Entrada (Verde suave) */
 .btn-entry {
-  background-color: var(--light-background); /* Gris muy suave */
+  background-color: var(--light-background);
+  /* Gris muy suave */
   color: var(--success-color);
   border: 1px solid var(--success-color);
 }
@@ -223,7 +239,8 @@
 /* Estilo específico Salida (Rojo suave) */
 .btn-exit {
   background-color: var(--light-background);
-  color: var(--text-dark); /* Texto oscuro por defecto */
+  color: var(--text-dark);
+  /* Texto oscuro por defecto */
   border: 1px solid var(--border-color);
 }
 
@@ -251,7 +268,8 @@
 
 .history-item:hover,
 .movement-item:hover {
-  background-color: rgba(0,0,0,0.05); /* Efecto hover sutil */
+  background-color: rgba(0, 0, 0, 0.05);
+  /* Efecto hover sutil */
 }
 
 .history-item .status-badge {
@@ -259,8 +277,15 @@
   padding: 2px 8px;
 }
 
-.status-badge.success { background-color: #d1fae5; color: #047857; }
-.status-badge.error { background-color: #fee2e2; color: #b91c1c; }
+.status-badge.success {
+  background-color: #d1fae5;
+  color: #047857;
+}
+
+.status-badge.error {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
 
 
 /* ============================================================
@@ -277,10 +302,21 @@
     align-items: stretch;
   }
 
-  #caja-status-container { grid-area: status; }
-  #caja-actions-container { grid-area: actions; }
-  #caja-movements-container { grid-area: movements; }
-  #caja-history-container { grid-area: history; }
+  #caja-status-container {
+    grid-area: status;
+  }
+
+  #caja-actions-container {
+    grid-area: actions;
+  }
+
+  #caja-movements-container {
+    grid-area: movements;
+  }
+
+  #caja-history-container {
+    grid-area: history;
+  }
 
   .actions-grid {
     grid-template-columns: 1fr 1fr;
@@ -293,8 +329,14 @@
     grid-area: audit;
     height: 100%;
   }
-  .btn-entry { grid-area: entry; }
-  .btn-exit { grid-area: exit; }
+
+  .btn-entry {
+    grid-area: entry;
+  }
+
+  .btn-exit {
+    grid-area: exit;
+  }
 
   #caja-status-container:only-child {
     grid-column: 1 / -1;
@@ -308,7 +350,8 @@
    Aquí arreglamos la "descoordinación"
    ============================================================ */
 [data-theme="dark"] .caja-card {
-  background-color: #1e293b; /* Azul muy oscuro (Slate 800) */
+  background-color: #1e293b;
+  /* Azul muy oscuro (Slate 800) */
   border-color: #334155;
 }
 
@@ -316,22 +359,28 @@
    Lo hacemos Blanco (o gris muy claro) con texto Oscuro para máximo contraste.
 */
 [data-theme="dark"] .btn-audit {
-  background-color: #f1f5f9; /* Slate 100 (Casi blanco) */
-  color: #0f172a; /* Slate 900 (Casi negro) */
-  box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+  background-color: #f1f5f9;
+  /* Slate 100 (Casi blanco) */
+  color: #0f172a;
+  /* Slate 900 (Casi negro) */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="dark"] .btn-audit:hover {
-  background-color: #ffffff; /* Blanco puro al hover */
+  background-color: #ffffff;
+  /* Blanco puro al hover */
   transform: translateY(-2px);
 }
 
 /* Ajustes para Entrada/Salida en Dark Mode */
 [data-theme="dark"] .btn-entry {
-  background-color: rgba(16, 185, 129, 0.1); /* Verde muy transparente */
-  color: #34d399; /* Verde brillante */
+  background-color: rgba(16, 185, 129, 0.1);
+  /* Verde muy transparente */
+  color: #34d399;
+  /* Verde brillante */
   border-color: #059669;
 }
+
 [data-theme="dark"] .btn-entry:hover {
   background-color: #059669;
   color: white;
@@ -339,9 +388,11 @@
 
 [data-theme="dark"] .btn-exit {
   background-color: rgba(255, 255, 255, 0.05);
-  color: #cbd5e1; /* Texto gris claro */
+  color: #cbd5e1;
+  /* Texto gris claro */
   border-color: #475569;
 }
+
 [data-theme="dark"] .btn-exit:hover {
   background-color: rgba(255, 255, 255, 0.1);
   color: white;
@@ -350,7 +401,8 @@
 /* Items del historial en modo oscuro */
 [data-theme="dark"] .history-item,
 [data-theme="dark"] .movement-item {
-  background-color: #0f172a; /* Fondo más oscuro que la tarjeta */
+  background-color: #0f172a;
+  /* Fondo más oscuro que la tarjeta */
   border: 1px solid #334155;
 }
 

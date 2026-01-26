@@ -6,13 +6,19 @@
 .about-page-wrapper {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 0 1.5rem 3rem 1.5rem;
   animation: fadeIn 0.5s ease-out;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* =========================================
@@ -71,7 +77,8 @@
   gap: 2rem;
 }
 
-.about-col-left, .about-col-right {
+.about-col-left,
+.about-col-right {
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -80,7 +87,8 @@
 /* Escritorio */
 @media (min-width: 1024px) {
   .about-grid-layout {
-    grid-template-columns: 1.5fr 1fr; /* Columna Izq más ancha */
+    grid-template-columns: 1.5fr 1fr;
+    /* Columna Izq más ancha */
     align-items: start;
   }
 }
@@ -105,7 +113,8 @@
   align-items: flex-start;
   transition: transform 0.2s, box-shadow 0.2s;
   cursor: default;
-  height: 100%; /* Asegura altura igual */
+  height: 100%;
+  /* Asegura altura igual */
 }
 
 /* Nuevo Header dentro de la tarjeta bento para alinear icono y titulo */
@@ -123,7 +132,7 @@
   color: var(--text-dark);
   transition: all 0.3s;
   /* Quitamos el margin-bottom porque ahora usamos flex gap */
-  margin-bottom: 0; 
+  margin-bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -141,7 +150,8 @@
   font-size: 0.9rem;
   margin: 0;
   color: var(--text-light);
-  line-height: 1.5; /* Mejor lectura */
+  line-height: 1.5;
+  /* Mejor lectura */
 }
 
 .section-header {
@@ -171,7 +181,9 @@
   margin-bottom: 1rem;
 }
 
-.icon-purple { color: #7c3aed; }
+.icon-purple {
+  color: #7c3aed;
+}
 
 .card-intro {
   font-size: 0.9rem;
@@ -228,7 +240,10 @@
 /* Fondo animado */
 .sponsor-bg-effect {
   position: absolute;
-  top: 0; left: 0; width: 100%; height: 100%;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
   z-index: 1;
 }
@@ -258,8 +273,15 @@
 }
 
 @keyframes heartBeat {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.2); }
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
 }
 
 .sponsor-name {
@@ -277,20 +299,21 @@
 }
 
 .impact-counter {
-  background: rgba(255,255,255,0.15);
+  background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(5px);
   padding: 10px 20px;
   border-radius: 12px;
   margin-bottom: 2rem;
   width: 100%;
-  border: 1px solid rgba(255,255,255,0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .impact-number {
   display: block;
   font-size: 1.8rem;
   font-weight: 800;
-  color: #fbbf24; /* Amber 400 */
+  color: #fbbf24;
+  /* Amber 400 */
 }
 
 .impact-label {
@@ -313,7 +336,7 @@
 
 .btn-visit-sponsor:hover {
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
 
 /* =========================================
@@ -352,14 +375,20 @@
   color: #ea580c;
   border-color: #fdba74;
 }
-.btn-bug:hover { background-color: #ffedd5; }
+
+.btn-bug:hover {
+  background-color: #ffedd5;
+}
 
 .btn-idea {
   background-color: #f0fdf4;
   color: #166534;
   border-color: #86efac;
 }
-.btn-idea:hover { background-color: #dcfce7; }
+
+.btn-idea:hover {
+  background-color: #dcfce7;
+}
 
 .contact-footer {
   margin-top: 1.5rem;
@@ -371,7 +400,9 @@
   gap: 6px;
 }
 
-.icon-whatsapp { color: #25D366; }
+.icon-whatsapp {
+  color: #25D366;
+}
 
 /* =========================================
    8. DARK MODE ADJUSTMENTS

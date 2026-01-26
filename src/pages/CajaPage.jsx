@@ -113,7 +113,7 @@ export default function CajaPage() {
 
     if (result.success) {
       setIsAuditOpen(false);
-      
+
       // --- OPTIMIZACIÓN: Disparar respaldo automático ---
       try {
         // No bloqueamos la UI con alertas, solo lo intentamos descargar
@@ -182,22 +182,22 @@ export default function CajaPage() {
 
           {/* Botón de Backup Integrado */}
           <button
-  className="btn btn-backup"
-  onClick={handleBackup}
-  disabled={isBackupLoading}
-  title="Guardar copia de seguridad ahora"
->
-  {/* Icono y Texto condicional */}
-  {isBackupLoading ? (
-    <>
-      <span className="spinner-small"></span> Guardando...
-    </>
-  ) : (
-    <>
-      💾 Respaldo Rápido
-    </>
-  )}
-</button>
+            className="btn btn-backup"
+            onClick={handleBackup}
+            disabled={isBackupLoading}
+            title="Guardar copia de seguridad ahora"
+          >
+            {/* Icono y Texto condicional */}
+            {isBackupLoading ? (
+              <>
+                <span className="spinner-small"></span> Guardando...
+              </>
+            ) : (
+              <>
+                💾 Respaldo Rápido
+              </>
+            )}
+          </button>
         </div>
 
         <div className="status-body">
@@ -317,8 +317,6 @@ export default function CajaPage() {
           </div>
         )}
       </div>
-
-      {/* --- MODALES --- */}
 
       {/* 1. Modal Ajuste Inicial (Inteligente) */}
       <EditInitialModal
