@@ -34,7 +34,7 @@ export default function ContactModal({ show, onClose, onSubmit, title, fields })
       <div className="modal-content contact-modal">
         <h2 className="modal-title">{title}</h2>
         <form onSubmit={handleSubmit}>
-          
+
           {fields.map(field => (
             <div className="form-group" key={field.id}>
               <label className="form-label" htmlFor={field.id}>

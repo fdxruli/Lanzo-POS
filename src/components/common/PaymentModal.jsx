@@ -5,6 +5,8 @@ import QuickAddCustomerModal from './QuickAddCustomerModal';
 import './PaymentModal.css';
 import Logger from '../../services/Logger';
 
+const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000];
+
 export default function PaymentModal({ show, onClose, onConfirm, total }) {
   // Estado local para este modal
   const [amountPaid, setAmountPaid] = useState('');
@@ -20,7 +22,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const [sendReceipt, setSendReceipt] = useState(true);
 
   // --- 1. NUEVO: Estado para bloquear doble clic ---
-  const [isSubmitting, setIsSubmitting] = useState(false); 
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Carga la lista de clientes cuando se abre el modal
   useEffect(() => {
@@ -48,7 +50,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       setSendReceipt(true);
       setIsSubmitting(false);
     }
-  }, [show, total, paymentMethod]); 
+  }, [show, total, paymentMethod]);
 
   // Lógica de cálculo
   const paid = parseFloat(amountPaid) || 0;
@@ -70,6 +72,14 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
   const handleAmountFocus = (e) => {
     e.target.select();
+  };
+
+  const handleDenominationClick = (amount) => {
+    setAmountPaid(amount.toString());
+    // Opcional: Si quieres que al dar clic se "sume" al monto actual (ej: dos de 50 = 100),
+    // cambia la línea anterior por esta lógica:
+    //const current = parseFloat(amountPaid) || 0;
+    //setAmountPaid((current + amount).toString());
   };
 
   const handleCustomerSearch = (e) => {
@@ -98,7 +108,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   // --- 3. NUEVO: Handler protegido contra doble clic ---
   const handleSubmit = async (e) => { // Hacemos la función async
     e.preventDefault();
-    
+
     // Si ya se está enviando o no es válido, detenemos aquí
     if (!canConfirm || isSubmitting) return;
 
@@ -106,21 +116,21 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     setIsSubmitting(true);
 
     try {
-        // Esperamos a que la función del padre termine (o inicie el proceso)
-        await onConfirm({
-          amountPaid: paid, 
-          customerId: selectedCustomerId,
-          paymentMethod: paymentMethod, 
-          saldoPendiente: saldoPendiente, 
-          sendReceipt: sendReceipt
-        });
-        
-        // Nota: No desbloqueamos aquí con setIsSubmitting(false) porque
-        // si tiene éxito, el modal se desmontará/cerrará desde el padre.
+      // Esperamos a que la función del padre termine (o inicie el proceso)
+      await onConfirm({
+        amountPaid: paid,
+        customerId: selectedCustomerId,
+        paymentMethod: paymentMethod,
+        saldoPendiente: saldoPendiente,
+        sendReceipt: sendReceipt
+      });
+
+      // Nota: No desbloqueamos aquí con setIsSubmitting(false) porque
+      // si tiene éxito, el modal se desmontará/cerrará desde el padre.
     } catch (error) {
-        Logger.error("Error al procesar pago:", error);
-        // Solo si falla y el modal sigue abierto, desbloqueamos para reintentar
-        setIsSubmitting(false); 
+      Logger.error("Error al procesar pago:", error);
+      // Solo si falla y el modal sigue abierto, desbloqueamos para reintentar
+      setIsSubmitting(false);
     }
   };
 
@@ -134,9 +144,9 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method);
     if (method === 'efectivo') {
-      setAmountPaid(total.toFixed(2)); 
+      setAmountPaid(total.toFixed(2));
     } else {
-      setAmountPaid(''); 
+      setAmountPaid('');
     }
   }
 
@@ -223,8 +233,33 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                 value={amountPaid}
                 onChange={(e) => setAmountPaid(e.target.value)}
                 onFocus={handleAmountFocus}
-                required={isEfectivo} 
+                required={isEfectivo}
+                autoFocus={isEfectivo}
               />
+
+              {isEfectivo && (
+                <div className="quick-cash-options">
+                  {CASH_DENOMINATIONS.map((amount) => (
+                    <button
+                      key={amount}
+                      type="button"
+                      className="btn-cash-option"
+                      onClick={() => handleDenominationClick(amount)}
+                    >
+                      ${amount}
+                    </button>
+                  ))}
+                  {/* Botón extra para "Monto Exacto" si lo deseas */}
+                  <button
+                    type="button"
+                    className="btn-cash-option"
+                    style={{ gridColumn: '1 / -1', borderColor: 'var(--success-color)', color: 'var(--success-color)' }}
+                    onClick={() => setAmountPaid(total.toFixed(2))}
+                  >
+                    Exacto (${total.toFixed(2)})
+                  </button>
+                </div>
+              )}
 
               {isEfectivo ? (
                 <>
@@ -270,7 +305,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
             >
               {isSubmitting ? 'Procesando...' : 'Confirmar Pago'}
             </button>
-            
+
             <button
               id="cancel-payment-btn"
               className="btn btn-cancel-payment"
@@ -286,9 +321,9 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       {/* Corrección menor: En tu código original usabas 'isQuickAddOpen' para este modal, asegúrate de mantener esa coherencia */}
       {isQuickAddOpen && (
         <QuickAddCustomerModal
-            show={true}
-            onClose={() => setIsQuickAddOpen(false)}
-            onCustomerSaved={handleQuickCustomerSaved}
+          show={true}
+          onClose={() => setIsQuickAddOpen(false)}
+          onCustomerSaved={handleQuickCustomerSaved}
         />
       )}
     </>

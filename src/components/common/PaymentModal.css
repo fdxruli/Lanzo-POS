@@ -1,9 +1,9 @@
 /*
  * Estilos para PaymentModal.jsx
  */
- #payment-modal {
-  z-index: var(--z-modal-high);
- }
+#payment-modal {
+  z-index: 9999;
+}
 
 .payment-details {
   margin-bottom: var(--spacing-lg);
@@ -79,7 +79,8 @@
   box-shadow: var(--box-shadow);
   max-height: 150px;
   overflow-y: auto;
-  z-index: 10; /* Asegura que esté sobre el input de monto */
+  z-index: 10;
+  /* Asegura que esté sobre el input de monto */
 }
 
 .customer-result-item {
@@ -107,7 +108,8 @@
 .btn-method {
   flex: 1;
   padding: var(--spacing-sm);
-  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  border: 1px solid #e5e7eb;
+  /* TODO: Usar variable */
   background-color: var(--card-background-color);
   color: var(--text-light);
 }
@@ -132,6 +134,7 @@
   margin-top: var(--spacing-xs);
   cursor: pointer;
 }
+
 .btn-quick-add:hover {
   text-decoration: underline;
 }
@@ -140,6 +143,43 @@
 .payment-saldo {
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--error-color); /* Lo marcamos como deuda */
+  color: var(--error-color);
+  /* Lo marcamos como deuda */
   text-align: center;
+}
+
+/* Estilos para los botones de billetes rápidos */
+.quick-cash-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  /* 3 columnas */
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  margin-top: -10px;
+  /* Un pequeño ajuste para pegarlo al input de arriba */
+}
+
+.btn-cash-option {
+  padding: 8px 4px;
+  border: 1px solid #d1d5db;
+  /* Gris suave */
+  background-color: white;
+  color: var(--text-color);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.btn-cash-option:hover {
+  background-color: var(--light-background);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  transform: translateY(-1px);
+}
+
+.btn-cash-option:active {
+  transform: translateY(0);
+  background-color: #e5e7eb;
 }

@@ -33,14 +33,14 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved }
         address: '', // Lo dejamos vacío por rapidez
         debt: 0
       };
-      
+
       const result = await saveDataSafe(STORES.CUSTOMERS, newCustomer);
-      if (!result.success){
+      if (!result.success) {
         setError(result.error.message);
         setIsLoading(false);
         return;
       }
-      
+
       // Devolver el cliente al modal de pago
       onCustomerSaved(newCustomer);
       handleClose();
@@ -62,7 +62,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved }
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 2200 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 10000 }}>
       <div className="modal-content quick-add-modal">
         <h2 className="modal-title">Añadir Cliente Rápido</h2>
         <form onSubmit={handleSubmit}>
