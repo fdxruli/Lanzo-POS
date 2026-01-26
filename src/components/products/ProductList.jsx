@@ -245,7 +245,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                         </div>
                       )}
                       {showBarcode && !showPharmacyDetails && (
-                        <div className="detail-item full">
+                        <div className="detail-item">
                           <span className="label">Código:</span>
                           <span className="value monospace">{item.barcode}</span>
                         </div>

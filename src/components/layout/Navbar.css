@@ -89,20 +89,24 @@
   display: flex;
   align-items: center;
   padding: 10px 15px;
-  color: #555; /* Color normal */
+  color: #555;
+  /* Color normal */
   text-decoration: none;
-  border-radius: 8px; /* Bordes redondeados se ven modernos */
+  border-radius: 8px;
+  /* Bordes redondeados se ven modernos */
   transition: all 0.3s ease;
   margin-bottom: 5px;
 }
 
 /* ESTADO SELECCIONADO (ACTIVE) */
 .nav-item.active {
-  background-color: #e0e7ff; /* Un fondo suave (ajústalo a tu color de marca) */
-  color: #3730a3; /* Un texto más oscuro o del color de tu marca */
+  background-color: #e0e7ff;
+  /* Un fondo suave (ajústalo a tu color de marca) */
+  color: #3730a3;
+  /* Un texto más oscuro o del color de tu marca */
   font-weight: 600;
   /* Opcional: una barra lateral para destacar más */
-  border-left: 4px solid #3730a3; 
+  border-left: 4px solid #3730a3;
 }
 
 /* Efecto Hover (opcional pero recomendado) */
