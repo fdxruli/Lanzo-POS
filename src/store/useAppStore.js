@@ -132,48 +132,164 @@ export const useAppStore = create((set, get) => ({
   pendingTermsUpdate: null,
 
   // === initializeApp ===
-  initializeApp: async () => {
-    if (get()._isInitializing) {
-      Logger.warn('⏳ initializeApp ya está en ejecución, saltando...');
+
+initializeApp: async () => {
+  if (get()._isInitializing) {
+    Logger.warn('⏳ initializeApp ya está en ejecución, saltando...');
+    return;
+  }
+
+  set({ _isInitializing: true });
+  Logger.log('🔄 [AppStore] Iniciando aplicación (Modo Instantáneo)...');
+
+  try {
+    const localLicense = await getLicenseFromStorage();
+
+    if (!localLicense?.license_key) {
+      set({ appStatus: 'unauthenticated', _isInitializing: false });
       return;
     }
 
-    set({ _isInitializing: true });
-    Logger.log('🔄 [AppStore] Iniciando aplicación...');
+    // 🚀 CARGA INSTANTÁNEA: Entramos directo con la licencia local
+    Logger.log('⚡ [AppStore] Carga rápida activada - Usando caché local');
+    await get()._processOfflineMode(localLicense);
+    set({ _isInitializing: false });
 
-    try {
-      const localLicense = await getLicenseFromStorage();
+    // ✨ VALIDACIÓN EN SEGUNDO PLANO (No bloqueante)
+    const isRecentlyLoaded = sessionStorage.getItem('Lanzo_app_loaded');
+    const lastCheck = sessionStorage.getItem('Lanzo_last_validation');
+    const now = Date.now();
+    
+    // Solo validamos si:
+    // 1. Hay internet
+    // 2. NO se validó en los últimos 5 minutos (evita validaciones excesivas)
+    const shouldValidate = navigator.onLine && 
+      (!lastCheck || (now - parseInt(lastCheck)) > 5 * 60 * 1000);
 
-      if (!localLicense?.license_key) {
-        set({ appStatus: 'unauthenticated' });
-        return;
-      }
-
-      const isRecentlyLoaded = sessionStorage.getItem('Lanzo_app_loaded');
-
-      if (navigator.onLine && !isRecentlyLoaded) {
-        try {
-          const serverValidation = await revalidateLicense(localLicense.license_key);
-
-          if (serverValidation?.valid !== undefined) {
-            await get()._processServerValidation(serverValidation, localLicense);
-            sessionStorage.setItem('lanzo_app_loaded', Date.now().toString());
-            set({ _isInitializing: false });
-            return;
-          }
-        } catch (validationError) {
-          Logger.warn('⚠️ Validación falló, usando caché:', validationError);
-        }
-      }
-
-      await get()._processOfflineMode(localLicense);
-      set({ _isInitializing: false });
-
-    } catch (criticalError) {
-      Logger.error('💥 Error crítico inicializando:', criticalError);
-      set({ appStatus: 'unauthenticated', _isInitializing: false });
+    if (shouldValidate) {
+      // Disparamos validación pero NO esperamos el resultado
+      get()._validateInBackground(localLicense.license_key);
+    } else {
+      Logger.log(`✅ [AppStore] Validación reciente detectada, omitiendo check.`);
     }
-  },
+
+  } catch (criticalError) {
+    Logger.error('💥 Error crítico inicializando:', criticalError);
+    set({ appStatus: 'unauthenticated', _isInitializing: false });
+  }
+},
+
+_validateInBackground: async (licenseKey) => {
+  try {
+    Logger.log('🔄 [Background] Iniciando validación silenciosa...');
+    
+    // Timeout de seguridad para la validación en background
+    const BACKGROUND_TIMEOUT = 8000; // 8 segundos (más tolerante que el modo bloqueante)
+    
+    const validationPromise = revalidateLicense(licenseKey);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('BACKGROUND_TIMEOUT')), BACKGROUND_TIMEOUT)
+    );
+
+    const serverValidation = await Promise.race([
+      validationPromise,
+      timeoutPromise
+    ]);
+    
+    if (!serverValidation?.valid && serverValidation?.valid !== false) {
+      // Respuesta extraña del servidor, mejor no tocar nada
+      Logger.warn('[Background] Respuesta inválida del servidor, ignorando.');
+      return;
+    }
+
+    const localLicense = await getLicenseFromStorage();
+    if (!localLicense) {
+      Logger.warn('[Background] No hay licencia local para comparar.');
+      return;
+    }
+
+    // 🔍 DETECCIÓN DE CAMBIOS CRÍTICOS
+    const criticalChanges = {
+      validityChanged: serverValidation.valid !== localLicense.valid,
+      statusChanged: serverValidation.status !== localLicense.status,
+      wasRevoked: !serverValidation.valid && ['banned', 'deleted', 'revoked'].includes(serverValidation.reason),
+      needsRenewal: !serverValidation.valid && ['expired_subscription', 'LICENSE_EXPIRED'].includes(serverValidation.reason)
+    };
+
+    // 🚨 CASO 1: REVOCACIÓN O BAN (Crítico - Cerrar sesión inmediatamente)
+    if (criticalChanges.wasRevoked) {
+      Logger.error('🚫 [Background] ALERTA CRÍTICA: Licencia revocada remotamente');
+      
+      showMessageModal(
+        '🚫 LICENCIA REVOCADA\n\nTu licencia ha sido desactivada remotamente. La sesión se cerrará por seguridad.',
+        async () => {
+          await get().logout();
+          window.location.reload();
+        },
+        { 
+          type: 'error',
+          confirmButtonText: 'Entendido',
+          showCancel: false,
+          isDismissible: false
+        }
+      );
+      return;
+    }
+
+    // 🔒 CASO 2: EXPIRACIÓN (Requiere renovación - Bloquear pantalla)
+    if (criticalChanges.needsRenewal) {
+      Logger.warn('⏰ [Background] Licencia expirada detectada');
+      
+      const expiredDetails = {
+        ...localLicense,
+        ...serverValidation,
+        valid: false,
+        status: 'expired'
+      };
+
+      await saveLicenseToStorage(expiredDetails);
+      
+      set({
+        appStatus: 'locked_renewal',
+        licenseStatus: 'expired',
+        licenseDetails: expiredDetails,
+        gracePeriodEnds: null
+      });
+
+      showMessageModal(
+        '⏰ Tu licencia ha expirado.\n\nPara continuar usando la aplicación, renueva tu suscripción.',
+        null,
+        { type: 'warning' }
+      );
+      return;
+    }
+
+    // ✅ CASO 3: ACTUALIZACIÓN NORMAL (Sin criticidad)
+    if (criticalChanges.validityChanged || criticalChanges.statusChanged) {
+      Logger.log('🔔 [Background] Cambios detectados en licencia, actualizando...');
+      await get()._processServerValidation(serverValidation, localLicense);
+    } else {
+      Logger.log('✅ [Background] Licencia validada sin cambios.');
+    }
+    
+    // Marcamos que se hizo una validación exitosa
+    sessionStorage.setItem('Lanzo_app_loaded', Date.now().toString());
+    sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
+    
+  } catch (error) {
+    // Fallo silencioso - la app ya está funcionando en modo offline
+    if (error.message === 'BACKGROUND_TIMEOUT') {
+      Logger.warn('⚠️ [Background] Timeout de validación (8s) - Servidor lento o sin conexión');
+    } else if (error.message?.includes('fetch') || error.message?.includes('network')) {
+      Logger.warn('⚠️ [Background] Error de red durante validación');
+    } else {
+      Logger.warn('⚠️ [Background] Validación falló:', error.message);
+    }
+    
+    // Aunque falle, marcamos timestamp para no reintentar inmediatamente
+    sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
+  }
+},
 
   // === Renovar licencia ===
   renewLicense: async () => {
