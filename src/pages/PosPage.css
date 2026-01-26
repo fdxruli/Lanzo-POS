@@ -1,0 +1,243 @@
+/* src/pages/PosPage.css */
+
+/* ========================================
+   ESTILOS BASE - MÓVIL PRIMERO
+   ======================================== */
+
+.pos-page-layout {
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.section-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0 0 16px 0;
+  padding: 16px 16px 0 16px;
+  color: var(--text-primary, #ffffff);
+}
+
+.pos-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 16px 90px 16px;
+  /* Solo padding lateral y espacio para barra flotante */
+  height: 100%;
+}
+
+.pos-grid .pos-order-container {
+  display: none;
+}
+
+/* ========================================
+   BARRA FLOTANTE DE CARRITO (MÓVIL)
+   ======================================== */
+
+.floating-cart-bar {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 500px;
+  background: linear-gradient(135deg, var(--success-color, #00c48c) 0%, #00a076 100%);
+  color: white;
+  padding: 16px 20px;
+  border-radius: 16px;
+  box-shadow:
+    0 4px 20px rgba(0, 196, 140, 0.3),
+    0 8px 40px rgba(0, 0, 0, 0.2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 500;
+  cursor: pointer;
+  animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-weight: 700;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.floating-cart-bar:active {
+  transform: translateX(-50%) scale(0.96);
+  box-shadow:
+    0 2px 10px rgba(0, 196, 140, 0.3),
+    0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.cart-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cart-count-badge {
+  background-color: white;
+  color: var(--success-color, #00c48c);
+  min-width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 900;
+  padding: 0 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.cart-total-label {
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+
+.cart-arrow {
+  font-size: 1.3rem;
+  opacity: 0.9;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translate(-50%, 120px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+/* ========================================
+   TABLET (768px - 1023px)
+   ======================================== */
+
+@media (min-width: 768px) {
+  .section-title {
+    font-size: 2rem;
+    padding: 20px 24px 0 24px;
+    margin-bottom: 20px;
+  }
+
+  .pos-grid {
+    padding: 0 24px 100px 24px;
+    gap: 16px;
+  }
+
+  .floating-cart-bar {
+    max-width: 600px;
+    padding: 18px 24px;
+    border-radius: 18px;
+    bottom: 90px;
+  }
+
+  .cart-total-label {
+    font-size: 1.3rem;
+  }
+
+  .cart-count-badge {
+    min-width: 32px;
+    height: 32px;
+    font-size: 0.95rem;
+  }
+}
+
+/* ========================================
+   ESCRITORIO (≥ 1024px) - PANTALLA COMPLETA
+   ======================================== */
+
+@media (min-width: 1024px) {
+
+  /* Ocultar barra flotante en escritorio */
+  .floating-cart-bar {
+    display: none !important;
+  }
+
+  /* Layout que ocupa toda la pantalla disponible */
+  .pos-page-layout {
+    /* Ajusta este cálculo según tu navbar/header */
+    height: calc(100vh - 60px);
+    /* Solo resta la altura del navbar superior */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+  }
+
+  .section-title {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 20px 24px 16px 24px;
+    font-size: 2.25rem;
+  }
+
+  /* Grid de dos columnas - OCUPA TODO EL ESPACIO */
+  .pos-grid {
+    display: grid;
+    grid-template-columns: 1fr 440px;
+    /* Resumen más ancho */
+    gap: 20px;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    padding: 0 24px 24px 24px;
+    /* Solo padding lateral y abajo */
+    overflow: hidden;
+  }
+
+  .pos-grid .pos-order-container {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Las columnas deben ocupar toda la altura */
+  .pos-grid>* {
+    height: 100%;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin: 0;
+  }
+}
+
+/* ========================================
+   ESCRITORIO EXTRA GRANDE (≥ 1440px)
+   ======================================== */
+
+@media (min-width: 1440px) {
+  .pos-page-layout {
+    height: calc(100vh - 60px);
+  }
+
+  .section-title {
+    font-size: 2.5rem;
+    padding: 24px 32px 20px 32px;
+  }
+
+  .pos-grid {
+    grid-template-columns: 1fr 500px;
+    /* Resumen aún más ancho */
+    gap: 24px;
+    padding: 0 32px 32px 32px;
+  }
+}
+
+/* ========================================
+   OPTIMIZACIONES
+   ======================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-cart-bar {
+    animation: none;
+    transition: none;
+  }
+
+  .floating-cart-bar:active {
+    transform: translateX(-50%);
+  }
+}
