@@ -167,11 +167,11 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                   </div>
 
                   <div className="actions-area">
-                    <button className="btn-icon btn-edit" onClick={() => onEdit(item)} title="Editar Producto">
-                      <Icons.Edit />
+                    <button className="btn-action btn-edit" onClick={() => onEdit(item)} title="Editar">
+                      <Icons.Edit /> <span>Editar</span>
                     </button>
-                    <button className="btn-icon btn-delete" onClick={() => onDelete(item)} title="Eliminar Producto">
-                      <Icons.Delete />
+                    <button className="btn-action btn-delete" onClick={() => onDelete(item)} title="Eliminar">
+                      <Icons.Delete /> <span>Eliminar</span>
                     </button>
                   </div>
                 </div>

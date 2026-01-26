@@ -119,8 +119,8 @@
   padding: 12px;
   display: flex;
   gap: 12px;
-  align-items: flex-start;
-  border-bottom: 1px solid var(--border-color, #f1f5f9);
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .img-area {
@@ -182,6 +182,8 @@
 .actions-area {
   display: flex;
   gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .btn-icon {
@@ -308,8 +310,8 @@
 }
 
 .rubro-section.logistics {
-  background: var(--bg-primary, #f8fafc);
-  border: 1px solid var(--border-color, #e2e8f0);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
 }
 
 .detail-item {
@@ -492,4 +494,65 @@
 
 .empty-icon {
   margin-bottom: 10px;
+}
+
+/* Estilo base para botones con texto e icono */
+.btn-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Espacio entre icono y texto */
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  /* Tamaño de letra similar a merma */
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+  background: transparent;
+  white-space: nowrap;
+}
+
+/* Variante: Editar (Azul) */
+.btn-action.btn-edit {
+  color: var(--primary-color, #3b82f6);
+  background: rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.btn-action.btn-edit:hover {
+  background: rgba(59, 130, 246, 0.15);
+  transform: translateY(-1px);
+}
+
+/* Variante: Eliminar (Rojo) */
+.btn-action.btn-delete {
+  color: var(--error-color, #ef4444);
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.btn-action.btn-delete:hover {
+  background: rgba(239, 68, 68, 0.15);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 480px) {
+  .btn-action {
+    padding: 4px 6px;
+    /* Menos espacio alrededor */
+    font-size: 0.7rem;
+    /* Letra un poco más chica */
+    gap: 3px;
+    /* Juntar más el icono con el texto */
+    height: 28px;
+    /* Forzar una altura controlada */
+  }
+
+  /* Reducir ligeramente el tamaño de los iconos SVG */
+  .btn-action svg {
+    width: 14px;
+    height: 14px;
+  }
 }
