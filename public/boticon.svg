@@ -1,0 +1,23 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fondo -->
+  <rect width="120" height="120" rx="28" fill="#0F172A"/>
+  
+  <!-- Formas geométricas estilo del logo original pero formando un bot abstracto -->
+  <!-- Cabeza -->
+  <path d="M35 30H75L70 55H40L35 30Z" fill="#60A5FA"/>
+  
+  <!-- Cuerpo principal -->
+  <path d="M40 55H70L78 90H32L40 55Z" fill="#3B82F6"/>
+  
+  <!-- Detalles de interfaz (pantalla/ojos) -->
+  <rect x="45" y="38" width="8" height="8" rx="2" fill="#0F172A" opacity="0.3"/>
+  <rect x="57" y="38" width="8" height="8" rx="2" fill="#0F172A" opacity="0.3"/>
+  
+  <!-- Indicador activo (mantiene el círculo verde del logo original) -->
+  <circle cx="90" cy="35" r="7" fill="#10B981"/>
+  <circle cx="85" cy="50" r="4" fill="#10B981" opacity="0.5"/>
+  
+  <!-- Línea de conexión/antena -->
+  <path d="M55 30V22" stroke="#60A5FA" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="55" cy="20" r="3" fill="#60A5FA"/>
+</svg>
