@@ -1,7 +1,8 @@
 // src/hooks/useCaja.js
 import { useState, useEffect, useCallback } from 'react';
 import { showMessageModal, roundCurrency, generateID } from '../services/utils';
-import { loadDataPaginated, saveDataSafe, STORES, initDB } from '../services/database';
+// Aseguramos la importación correcta desde index
+import { loadDataPaginated, saveDataSafe, STORES, initDB } from '../services/db/index';
 import Logger from '../services/Logger';
 
 export function useCaja() {
@@ -17,35 +18,39 @@ export function useCaja() {
     abonosFiado: 0
   });
 
+  // --- REFACTORIZADO A DEXIE (Corrección del error mode.replace) ---
   const calcularTotalesSesion = async (fechaApertura) => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORES.SALES], 'readonly');
-      const store = tx.objectStore(STORES.SALES);
-      const index = store.index('timestamp');
-      const range = IDBKeyRange.lowerBound(fechaApertura);
-      const request = index.getAll(range);
+    try {
+      const db = await initDB();
+      
+      // Usamos where().aboveOrEqual() en lugar de IDBKeyRange manual
+      const sales = await db.table(STORES.SALES)
+        .where('timestamp')
+        .aboveOrEqual(fechaApertura)
+        .toArray();
 
-      request.onsuccess = () => {
-        const sales = request.result || [];
-        let contado = 0;
-        let abonos = 0;
+      let contado = 0;
+      let abonos = 0;
 
-        for (const sale of sales) {
-          if (sale.fulfillmentStatus === 'cancelled') continue;
-          if (sale.paymentMethod === 'efectivo') {
-            contado += (sale.total || 0);
-          } else if (sale.paymentMethod === 'fiado') {
-            abonos += (sale.abono || 0);
-          }
+      for (const sale of sales) {
+        if (sale.fulfillmentStatus === 'cancelled') continue;
+        
+        if (sale.paymentMethod === 'efectivo') {
+          contado += (sale.total || 0);
+        } else if (sale.paymentMethod === 'fiado') {
+          abonos += (sale.abono || 0);
         }
-        resolve({
-          ventasContado: roundCurrency(contado),
-          abonosFiado: roundCurrency(abonos)
-        });
+      }
+
+      return {
+        ventasContado: roundCurrency(contado),
+        abonosFiado: roundCurrency(abonos)
       };
-      request.onerror = (e) => reject(e.target.error);
-    });
+
+    } catch (e) {
+      Logger.error("Error calculando totales sesión", e);
+      return { ventasContado: 0, abonosFiado: 0 };
+    }
   };
 
   // --- LÓGICA DE APERTURA INTELIGENTE ---
@@ -55,7 +60,7 @@ export function useCaja() {
     const nuevaCaja = {
       id: generateID('caja'),
       fecha_apertura: new Date().toISOString(),
-      monto_inicial: montoHeredado, // <--- INTELIGENCIA: Hereda el saldo anterior
+      monto_inicial: montoHeredado, 
       estado: 'abierta',
       fecha_cierre: null,
       monto_cierre: null,
@@ -63,7 +68,7 @@ export function useCaja() {
       entradas_efectivo: 0,
       salidas_efectivo: 0,
       diferencia: null,
-      es_auto_apertura: true // Marca para identificar que fue automático
+      es_auto_apertura: true 
     };
 
     const result = await saveDataSafe(STORES.CAJAS, nuevaCaja);
@@ -93,9 +98,12 @@ export function useCaja() {
 
       // 3. Cargar datos de la caja activa
       setCajaActual(cajaActiva);
-      await cargarMovimientos(cajaActiva.id);
-      const totales = await calcularTotalesSesion(cajaActiva.fecha_apertura);
-      setTotalesTurno(totales);
+      
+      // Esperamos a cargar movimientos y totales
+      await Promise.all([
+          cargarMovimientos(cajaActiva.id),
+          calcularTotalesSesion(cajaActiva.fecha_apertura).then(setTotalesTurno)
+      ]);
 
       // Historial (excluyendo la actual)
       setHistorialCajas(cajasRecientes.filter(c => c.id !== cajaActiva.id));
@@ -112,15 +120,18 @@ export function useCaja() {
     cargarEstadoCaja();
   }, [cargarEstadoCaja]);
 
+  // --- REFACTORIZADO A DEXIE ---
   const cargarMovimientos = async (cajaId) => {
     try {
       const db = await initDB();
-      const transaction = db.transaction(STORES.MOVIMIENTOS_CAJA, 'readonly');
-      const store = transaction.objectStore(STORES.MOVIMIENTOS_CAJA);
-      const index = store.index('caja_id');
-      const request = index.getAll(cajaId);
-      request.onsuccess = () => setMovimientosCaja(request.result || []);
+      // Búsqueda simple por índice con Dexie
+      const movimientos = await db.table(STORES.MOVIMIENTOS_CAJA)
+        .where('caja_id').equals(cajaId)
+        .toArray();
+        
+      setMovimientosCaja(movimientos || []);
     } catch (error) {
+      Logger.error("Error cargando movimientos", error);
       setMovimientosCaja([]);
     }
   };
@@ -130,14 +141,12 @@ export function useCaja() {
     if (!cajaActual) return;
     const cajaActualizada = { ...cajaActual, monto_inicial: parseFloat(nuevoMonto) };
 
-    // --- REFACTORIZACIÓN A SAFE ---
     const result = await saveDataSafe(STORES.CAJAS, cajaActualizada);
 
     if (result.success) {
       setCajaActual(cajaActualizada);
       showMessageModal("✅ Fondo inicial ajustado.");
     } else {
-      // Manejo seguro del error
       const msg = result.error?.message || "No se pudo actualizar el fondo.";
       showMessageModal(`Error: ${msg}`);
     }
@@ -179,7 +188,6 @@ export function useCaja() {
         return { success: false, error: result.error };
       }
 
-      // Recargamos todo el estado
       await cargarEstadoCaja();
 
       return { success: true, diferencia };
@@ -226,7 +234,7 @@ export function useCaja() {
     error,
     isLoading,
     totalesTurno,
-    ajustarMontoInicial, // Nueva función expuesta
+    ajustarMontoInicial,
     realizarAuditoriaYCerrar,
     registrarMovimiento,
     calcularTotalTeorico

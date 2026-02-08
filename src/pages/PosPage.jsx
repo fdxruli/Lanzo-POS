@@ -11,6 +11,8 @@ import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
 import { processSale } from '../services/salesService';
 import Logger from '../services/Logger';
+import LayawayModal from '../components/pos/LayawayModal';
+import { layawayRepo } from '../services/db';
 
 // --- CAMBIOS: Importamos los nuevos stores especializados ---
 import { useProductStore } from '../store/useProductStore';
@@ -186,7 +188,7 @@ export default function PosPage() {
   }, [debouncedSearchTerm]);
 
   const { cajaActual, abrirCaja } = useCaja();
-  const { order, clearOrder, getTotalPrice } = useOrderStore();
+  const { order, customer, clearOrder, getTotalPrice } = useOrderStore();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
   // --- CAMBIO: Usamos useProductStore para obtener el menú y la función de recarga ---
@@ -200,6 +202,8 @@ export default function PosPage() {
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [prescriptionItems, setPrescriptionItems] = useState([]);
   const [tempPrescriptionData, setTempPrescriptionData] = useState(null);
+
+  const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
 
   useEffect(() => {
     const loadExtras = async () => {
@@ -359,6 +363,61 @@ export default function PosPage() {
     }
   };
 
+  // 1. FUNCIÓN PARA INICIAR EL PROCESO (Se pasa al OrderSummary)
+  const handleInitiateLayaway = () => {
+    // A. Validar que haya productos
+    if (order.length === 0) {
+      showToast('⚠️ El carrito está vacío');
+      return;
+    }
+
+    // B. Validar que sea el rubro correcto (Doble check de seguridad)
+    if (!features.hasLayaway) return;
+
+    setIsLayawayModalOpen(true);
+  };
+
+  // 2. FUNCIÓN PARA GUARDAR EN BD
+  const handleConfirmLayaway = async ({ initialPayment, deadline, customer: customerFromModal }) => {
+    try {
+      setIsProcessing(true);
+
+      // Usamos el cliente que viene del modal. Si no viene, usamos el del store como respaldo (opcional)
+      const targetCustomer = customerFromModal || customer;
+
+      if (!targetCustomer) {
+        throw new Error("No se ha identificado al cliente para el apartado.");
+      }
+
+      const layawayData = {
+        id: crypto.randomUUID(),
+        customerId: targetCustomer.id, // <--- USAR targetCustomer
+        customerName: targetCustomer.name,
+        items: order,
+        totalAmount: total,
+        deadline: deadline
+      };
+
+      // Guardar en BD 
+      const result = await layawayRepo.create(layawayData, initialPayment);
+
+      if (result.success) {
+        // ... resto del código igual ...
+        clearOrder();
+        setIsLayawayModalOpen(false);
+        showMessageModal('✅ Apartado guardado correctamente');
+      } else {
+        showMessageModal('❌ Error al guardar apartado: ' + result.message);
+      }
+
+    } catch (error) {
+      Logger.error("Layaway Error", error);
+      showMessageModal('Error inesperado al crear apartado.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleBarcodeScanned = (code) => {
     // Si tienes lógica específica de escaneo manual, va aquí.
     // El ScannerModal ya maneja la adición al carrito internamente en modo POS.
@@ -417,6 +476,8 @@ export default function PosPage() {
               onOpenPayment={handleInitiateCheckout}
               isMobileModal={true}
               onClose={() => setIsMobileOrderOpen(false)}
+              onOpenLayaway={handleInitiateLayaway}
+              features={features}
             />
           </div>
         </div>
@@ -463,6 +524,14 @@ export default function PosPage() {
         onClose={() => setIsPrescriptionModalOpen(false)}
         onConfirm={handlePrescriptionConfirm}
         itemsRequiringPrescription={prescriptionItems}
+      />
+
+      <LayawayModal
+        show={isLayawayModalOpen}
+        onClose={() => setIsLayawayModalOpen(false)}
+        onConfirm={handleConfirmLayaway}
+        total={total}
+        customer={customer}
       />
     </>
   );

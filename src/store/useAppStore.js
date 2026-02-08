@@ -131,6 +131,25 @@ export const useAppStore = create((set, get) => ({
   _isInitilizing: false,
   pendingTermsUpdate: null,
 
+  showAssistantBot: (() => {
+    try {
+      const saved = localStorage.getItem('lanzo_show_bot');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch (e){
+      return true;
+    }
+  })(),
+
+  // La función para cambiar el valor (Setter)
+  setShowAssistantBot: (value) => { // Sugiero llamarla 'setShow...' por convención, pero 'showAssistantBot' (como función) también sirve si así la usas.
+    try {
+      localStorage.setItem('lanzo_show_bot', JSON.stringify(value));
+    } catch (e) {
+      Logger.error("Error al guardar la preferencia del asistente:");
+    }
+    set({ showAssistantBot: value }); 
+  },
+
   // === initializeApp ===
 
   initializeApp: async () => {

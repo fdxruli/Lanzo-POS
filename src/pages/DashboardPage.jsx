@@ -1,6 +1,6 @@
 // src/pages/DashboardPage.jsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Logger from '../services/Logger';
 
 // --- STORES ---
@@ -25,6 +25,7 @@ import './DashboardPage.css';
 export default function DashboardPage() {
   const [customers, setCustomers] = useState([]);
   const [activeTab, setActiveTab] = useState('stats');
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const features = useFeatureConfig();
 
@@ -65,6 +66,32 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    // Mapeo de URL a estado interno
+    const tabMap = {
+        'stats': 'stats',
+        'tips': 'tips',
+        'restock': 'restock',
+        'history': 'history',
+        'expiration': 'expiration',
+        'waste': 'waste'
+    };
+
+    if (tabParam && tabMap[tabParam]) {
+        setActiveTab(tabMap[tabParam]);
+    }
+}, [searchParams]);
+
+
+const handleTabChange = (tabKey) => {
+    if (tabKey === 'stats') {
+        setSearchParams({}); // Limpia la URL para la vista por defecto
+    } else {
+        setSearchParams({ tab: tabKey });
+    }
+};
+
+  useEffect(() => {
     if (activeTab === 'history') loadRecycleBin();
   }, [activeTab, loadRecycleBin]);
 
@@ -83,45 +110,45 @@ export default function DashboardPage() {
       <div className="tabs-container" id="sales-tabs">
         <button
           className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
-          onClick={() => setActiveTab('stats')}
+          onClick={() => handleTabChange('stats')}
         >
           Estadísticas Clave
         </button>
 
         <button
           className={`tab-btn ${activeTab === 'tips' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tips')}
+          onClick={() => handleTabChange('tips')}
         >
           Consejos Lan
         </button>
 
         {features.hasMinMax && (
-            <button
-              className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`}
-              onClick={() => setActiveTab('restock')}
-            >
-              Reabastecimiento
-            </button>
+          <button
+            className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`}
+            onClick={() => handleTabChange('restock')}
+          >
+            Reabastecimiento
+          </button>
         )}
 
         <button
           className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
-          onClick={() => setActiveTab('history')}
+          onClick={() => handleTabChange('history')}
         >
           Historial y Papelera
         </button>
 
         <button
-             className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`}
-             onClick={() => setActiveTab('expiration')}
+          className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`}
+          onClick={() => handleTabChange('expiration')}
         >
-             Caducidad
+          Caducidad
         </button>
-        
+
         {features.hasWaste && (
           <button
             className={`tab-btn ${activeTab === 'waste' ? 'active' : ''}`}
-            onClick={() => setActiveTab('waste')}
+            onClick={() => handleTabChange('waste')}
             style={{ color: activeTab === 'waste' ? 'var(--error-color)' : '' }}
           >
             Mermas
@@ -152,7 +179,7 @@ export default function DashboardPage() {
               <p>
                 Te recomendamos hacer una <strong>Copia de Seguridad</strong> semanalmente.
                 <button
-                  onClick={() => navigate('/settings')} 
+                  onClick={() => navigate('/settings')}
                   className="link-button"
                 >
                   Ir a Respaldar ahora →
@@ -163,7 +190,7 @@ export default function DashboardPage() {
 
           {/* Grid Principal: Historial (Izquierda) + Papelera (Derecha) */}
           <div className="history-layout-grid">
-            
+
             {/* Sección Principal: Historial */}
             <section className="dashboard-panel history-panel">
               <div className="panel-header">

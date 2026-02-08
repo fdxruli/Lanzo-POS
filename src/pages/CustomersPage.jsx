@@ -3,12 +3,14 @@ import React, { useState, useEffect } from 'react';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
-import AbonoModal from '../components/common/AbonoModal';
+import AbonoModal from '../components/customers/AbonoModal';
+import LayawayModal from '../components/customers/LayawayModal';
 import { useCaja } from '../hooks/useCaja';
 import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useNavigate } from 'react-router-dom';
 import Logger from '../services/Logger';
+import { useSearchParams } from 'react-router-dom';
 
 import {
   saveDataSafe,
@@ -22,6 +24,7 @@ import {
 export default function CustomersPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('add-customer');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [customers, setCustomers] = useState([]);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -32,14 +35,35 @@ export default function CustomersPage() {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
   const [whatsAppLoading, setWhatsAppLoading] = useState(null);
+  const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
 
   const { registrarMovimiento, cajaActual } = useCaja();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
-  // ... (funciones loadCustomers, handleSaveCustomer, handleEditCustomer, handleDeleteCustomer, etc. SIN CAMBIOS) ...
   useEffect(() => {
     loadInitialCustomers();
   }, []);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+
+    // Mapeo: URL -> Estado Interno
+    if (tabParam === 'add') {
+      setActiveTab('add-customer');
+    } else if (tabParam === 'list') { // Usaremos 'list' para ver clientes
+      setActiveTab('view-customers');
+      setEditingCustomer(null); // Aseguramos limpiar edición al entrar por URL
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (internalTab) => {
+    if (internalTab === 'view-customers') {
+      setSearchParams({ tab: 'list' });
+      handleCancelEdit(); // Mantenemos tu limpieza original
+    } else if (internalTab === 'add-customer') {
+      setSearchParams({ tab: 'add' });
+    }
+  };
 
   const loadInitialCustomers = async () => {
     setLoading(true);
@@ -128,7 +152,7 @@ export default function CustomersPage() {
 
   const handleEditCustomer = (customer) => {
     setEditingCustomer(customer);
-    setActiveTab('add-customer');
+    setSearchParams({ tab: 'add' });
   };
 
   const handleDeleteCustomer = async (customerId) => {
@@ -137,7 +161,7 @@ export default function CustomersPage() {
 
       // Validación de negocio (Deuda)
       if (customer && customer.debt > 0) {
-        showMessageModal('No se puede eliminar un cliente con deuda pendiente.');
+        showMessageModal('No se puede eliminar un cliente con deuda pendiente.', null, { type: 'error' });
         return;
       }
 
@@ -187,10 +211,16 @@ export default function CustomersPage() {
     setIsAbonoModalOpen(true);
   };
 
+  const handleOpenLayaways = (customer) => {
+    setSelectedCustomer(customer);
+    setIsLayawayModalOpen(true);
+  };
+
   const handleCloseModals = () => {
     setSelectedCustomer(null);
     setIsHistoryModalOpen(false);
     setIsAbonoModalOpen(false);
+    setIsLayawayModalOpen(false);
   };
 
   const handleConfirmAbono = async (customer, amount, sendReceipt) => {
@@ -367,14 +397,14 @@ ${itemsString}
       <div className="tabs-container" id="customers-tabs">
         <button
           className={`tab-btn ${activeTab === 'add-customer' ? 'active' : ''}`}
-          onClick={() => setActiveTab('add-customer')}
+          onClick={() => handleTabChange('add-customer')}
         >
           {editingCustomer ? 'Editar Cliente' : 'Añadir Cliente'}
         </button>
         <button
           className={`tab-btn ${activeTab === 'view-customers' ? 'active' : ''}`}
           onClick={() => {
-            setActiveTab('view-customers');
+            handleTabChange('view-customers');
             handleCancelEdit();
           }}
         >
@@ -398,6 +428,7 @@ ${itemsString}
             onDelete={handleDeleteCustomer}
             onViewHistory={handleViewHistory}
             onAbonar={handleOpenAbono}
+            onViewLayaways={handleOpenLayaways}
             onWhatsApp={handleWhatsApp}
             onWhatsAppLoading={whatsAppLoading}
           />
@@ -428,6 +459,16 @@ ${itemsString}
         onClose={handleCloseModals}
         onConfirmAbono={handleConfirmAbono}
         customer={selectedCustomer}
+      />
+
+      <LayawayModal
+        show={isLayawayModalOpen}
+        onClose={handleCloseModals}
+        customer={selectedCustomer}
+        onUpdate={() => {
+          // Opcional: Si queremos refrescar algo global al cambiar un apartado
+          // Por ejemplo, si los apartados afectaran la deuda global del cliente (que por ahora no lo hacen, van separados)
+        }}
       />
     </>
   );

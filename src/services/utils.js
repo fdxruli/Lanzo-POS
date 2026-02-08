@@ -12,14 +12,30 @@ import Logger from './Logger';
  */
 export function showMessageModal(message, onConfirm = null, options = {}) {
 
-  // CASO A: Es una Confirmación (Ej: "¿Eliminar cliente?") -> USAR MODAL
+  // CASO A: Es una Confirmación (Modal)
   if (typeof onConfirm === 'function') {
     showMessage(message, onConfirm, options);
     return;
   }
 
-  // CASO B: Es solo información -> USAR TOAST
-  // Detectamos si es error buscando palabras clave o si pasas options.type
+  // CASO B: Es solo información (Toast)
+
+  // 1. NUEVO: Soporte para ADVERTENCIA (Naranja)
+  if (options.type === 'warning') {
+    toast(message, {
+      icon: '⚠️',
+      style: {
+        border: '1px solid #FFB800',
+        padding: '12px',
+        color: '#713200',
+        background: '#FFFAE5', // Fondo cremita suave
+      },
+      duration: 4000
+    });
+    return;
+  }
+
+  // 2. Detección de ERROR (Rojo)
   const isError = options.type === 'error' ||
     message.toLowerCase().includes('error') ||
     message.toLowerCase().includes('falló') ||
@@ -28,6 +44,7 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
   if (isError) {
     toast.error(message, { duration: 4000 });
   } else {
+    // 3. Por defecto: ÉXITO (Verde)
     toast.success(message, { duration: 3000 });
   }
 }
@@ -362,13 +379,13 @@ export const safeLocalStorageSet = (key, value) => {
       // 2. Estrategia: Borrar keys no críticas (cachés, flags temporales)
       // Agrega aquí cualquier key que sea seguro borrar
       const keysToClean = [
-        'lanzo_last_active', 
-        'retry-lazy-refreshed', 
+        'lanzo_last_active',
+        'retry-lazy-refreshed',
         'lanzo-test',
         'loglevel',
         'debug'
       ];
-      
+
       keysToClean.forEach(k => {
         if (k !== key) { // No borrar lo que estamos intentando guardar si colisiona
           try { localStorage.removeItem(k); } catch (e) { /* ignorar */ }
@@ -383,16 +400,16 @@ export const safeLocalStorageSet = (key, value) => {
       } catch (retryError) {
         // 4. Fallo definitivo: Avisar al usuario usando tu modal existente
         Logger.error("❌ Fallo crítico: Memoria llena irrecoverable.");
-        
+
         showMessageModal(
           '⚠️ ALERTA DE MEMORIA\n\nEl navegador no tiene espacio para guardar datos. Es posible que pierdas tu sesión si recargas.\n\nPor favor, borra datos de navegación antiguos.',
-          null, 
+          null,
           { type: 'error' }
         );
         return false;
       }
     }
-    
+
     // Otros errores (ej. Modo Incógnito estricto en Safari a veces bloquea setItem completamente)
     Logger.error("Error de acceso a LocalStorage:", error);
     return false;
@@ -423,9 +440,9 @@ export const checkInternetConnection = async () => {
     // Usar la favicon de Google es un truco común, o un endpoint de tu API "health".
     // Aquí usamos un HEAD request para descargar lo menos posible.
     // NOTA: Asegúrate de que la URL permita CORS o usa 'no-cors' (opaco).
-    await fetch('https://www.google.com/favicon.ico', { 
-      method: 'HEAD', 
-      mode: 'no-cors', 
+    await fetch('https://www.google.com/favicon.ico', {
+      method: 'HEAD',
+      mode: 'no-cors',
       cache: 'no-store',
       signal: controller.signal
     });

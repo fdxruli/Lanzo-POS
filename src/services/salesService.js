@@ -82,38 +82,40 @@ export const processSale = async ({
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
+        const productMap = new Map(allProducts.map(p => [p.id, p]));
+
         // --- VALIDACIÓN PREVIA (RECETAS Y MODIFICADORES) ---
         if (features.hasRecipes && !ignoreStock) {
 
-            // 1. Identificar qué productos e insumos necesitamos revisar (Recetas + Modificadores)
+            // 1. Identificar qué productos e insumos necesitamos revisar
             const uniqueIngredientIds = new Set();
 
             itemsToProcess.forEach(item => {
                 const realId = item.parentId || item.id;
-                const productDef = allProducts.find(p => p.id === realId);
+                // Usamos el Map en lugar de .find()
+                const productDef = productMap.get(realId);
 
                 // A) Recogemos IDs de la Receta Base
-                if (productDef && productDef.recipe && productDef.recipe.length > 0) {
+                if (productDef?.recipe?.length > 0) {
                     productDef.recipe.forEach(ing => {
                         if (ing.ingredientId) uniqueIngredientIds.add(ing.ingredientId);
                     });
                 }
                 // B) Recogemos IDs del Producto Principal si trackea stock directo
-                else if (productDef && productDef.trackStock) {
+                else if (productDef?.trackStock) {
                     uniqueIngredientIds.add(realId);
                 }
 
-                // C) NUEVO: Recogemos IDs de los Modificadores (Extras)
-                if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
+                // C) Recogemos IDs de los Modificadores
+                if (Array.isArray(item.selectedModifiers)) {
                     item.selectedModifiers.forEach(mod => {
-                        if (mod.ingredientId && mod.ingredientId.trim() !== '') {
-                            uniqueIngredientIds.add(mod.ingredientId);
-                        }
+                        if (mod.ingredientId) uniqueIngredientIds.add(mod.ingredientId);
                     });
                 }
             });
 
             // 2. Cargar el STOCK FRESCO desde la Base de Datos
+            // Usamos Promise.all porque loadDataBatch no existe en tu database.js actual
             const freshStockMap = new Map();
             if (uniqueIngredientIds.size > 0) {
                 await Promise.all(Array.from(uniqueIngredientIds).map(async (id) => {
@@ -124,68 +126,57 @@ export const processSale = async ({
                 }));
             }
 
-            // 3. Validar usando un ACUMULADOR (Simulación de consumo)
+            // 3. Validar usando el mapa de stock fresco
             const missingIngredients = [];
+            const simulatedStock = new Map(); // Copia temporal para ir restando
 
-            // Creamos un mapa temporal para ir "gastando" el stock mentalmente
-            const simulatedStock = new Map();
-
-            // Inicializamos el simulador con el stock real que acabamos de traer de la BD
+            // Inicializamos simulador
             freshStockMap.forEach((product, id) => {
                 simulatedStock.set(id, product.stock);
             });
 
             for (const item of itemsToProcess) {
                 const realId = item.parentId || item.id;
-                const productDef = allProducts.find(p => p.id === realId);
+                const productDef = productMap.get(realId); // ✅ Rápido
 
-                // Mapa para consolidar necesidades de ESTE item (Hamburguesa + Extras)
                 const itemRequirements = new Map();
-
                 const addRequirement = (id, qty) => {
                     if (!id) return;
-                    const current = itemRequirements.get(id) || 0;
-                    itemRequirements.set(id, current + qty);
+                    itemRequirements.set(id, (itemRequirements.get(id) || 0) + qty);
                 };
 
-                // A) Sumar ingredientes de la Receta Base
-                if (productDef && productDef.recipe && productDef.recipe.length > 0) {
+                // A) Receta Base
+                if (productDef?.recipe?.length > 0) {
                     productDef.recipe.forEach(ing => {
                         addRequirement(ing.ingredientId, ing.quantity * item.quantity);
                     });
                 }
 
-                // B) Sumar ingredientes de Modificadores (CORRECCIÓN CRÍTICA)
-                if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
+                // B) Modificadores
+                if (Array.isArray(item.selectedModifiers)) {
                     item.selectedModifiers.forEach(mod => {
-                        // Si el modificador tiene un ingrediente vinculado
                         if (mod.ingredientId) {
-                            // Si no se define quantity en el mod, asumimos 1
                             const modQty = (mod.quantity || 1) * item.quantity;
                             addRequirement(mod.ingredientId, modQty);
                         }
                     });
                 }
 
-                // C) Si es producto sin receta pero con control de stock directo
-                if (productDef && productDef.trackStock && (!productDef.recipe || productDef.recipe.length === 0)) {
+                // C) Producto Directo
+                if (productDef?.trackStock && (!productDef.recipe || productDef.recipe.length === 0)) {
                     addRequirement(realId, item.quantity);
                 }
 
                 // --- FASE DE VERIFICACIÓN ---
-                // Ahora validamos el TOTAL acumulado para este platillo contra el stock simulado
                 for (const [reqId, reqQty] of itemRequirements.entries()) {
-
-                    // Si el ingrediente no existe en BD, saltamos
-                    if (!simulatedStock.has(reqId)) continue;
+                    if (!simulatedStock.has(reqId)) continue; // Si no existe en BD, ignoramos (o manejamos como error)
 
                     const currentAvailable = simulatedStock.get(reqId);
 
                     if (currentAvailable < reqQty) {
-                        // Falló la validación
                         const realIngData = freshStockMap.get(reqId);
 
-                        // Evitamos duplicar mensaje
+                        // Evitar duplicados en el reporte de error
                         const alreadyListed = missingIngredients.some(m => m.ingredientName === realIngData.name);
 
                         if (!alreadyListed) {
@@ -193,18 +184,16 @@ export const processSale = async ({
                                 productName: "Pedido (Acumulado)",
                                 ingredientName: realIngData.name,
                                 needed: reqQty,
-                                available: realIngData.stock, // Stock original
+                                available: realIngData.stock,
                                 unit: realIngData.bulkData?.purchase?.unit || 'u'
                             });
                         }
                     } else {
-                        // ÉXITO: Restamos del stock simulado
                         simulatedStock.set(reqId, currentAvailable - reqQty);
                     }
                 }
             }
 
-            // 4. Si hay faltantes, detenemos el proceso y retornamos error
             if (missingIngredients.length > 0) {
                 const details = missingIngredients.map(m =>
                     `• ${m.ingredientName}: Tienes ${m.available.toFixed(2)} ${m.unit} (Necesitas ${m.needed.toFixed(2)})`
@@ -213,7 +202,7 @@ export const processSale = async ({
                 return {
                     success: false,
                     errorType: 'STOCK_WARNING',
-                    message: `⚠️ STOCK INSUFICIENTE:\n\n${details}\n\nLos ingredientes (incluyendo extras) superan lo disponible en cocina.`,
+                    message: `⚠️ STOCK INSUFICIENTE:\n\n${details}\n\nLos ingredientes superan lo disponible.`,
                     missingData: missingIngredients
                 };
             }
