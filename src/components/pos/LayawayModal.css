@@ -1,0 +1,420 @@
+/* src/components/pos/LayawayModal.css */
+
+/* =========================================
+   ANIMACIONES
+   ========================================= */
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* =========================================
+   OVERLAY Y CONTENEDOR PRINCIPAL
+   ========================================= */
+.layaway-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* Usamos un fondo oscuro con opacidad consistente */
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    /* Centrado en desktop, en móvil se ajusta abajo */
+    z-index: 11000;
+    /* Mantenemos z-index alto solicitado */
+    padding: var(--spacing-sm);
+}
+
+.layaway-modal-content {
+    background-color: var(--card-background-color);
+    width: 100%;
+    max-width: 500px;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow-lg);
+    display: flex;
+    flex-direction: column;
+    /* CAMBIO: Usar 90dvh (Dynamic Viewport Height) ayuda en móviles con barras de navegación */
+    max-height: 90dvh;
+    height: auto;
+    overflow: hidden;
+    /* Importante para contener a los hijos */
+    border: 1px solid var(--secondary-color);
+    animation: slideUpFade 0.3s ease-out;
+    color: var(--text-color);
+}
+
+/* 2. NUEVA REGLA CRUCIAL (Esto soluciona el botón oculto) */
+/* Sobrescribimos el estilo en línea height:100% que tiene el <form> en el JSX */
+.layaway-modal-content form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    /* Ocupa el espacio restante debajo del Header */
+    height: auto !important;
+    /* Fuerza a ignorar el 100% del inline-style */
+    min-height: 0;
+    /* Truco de Flexbox para permitir el scroll interno */
+    overflow: hidden;
+    /* Evita que el form crezca más allá del modal */
+}
+
+/* =========================================
+   HEADER
+   ========================================= */
+.layaway-header {
+    background-color: var(--secondary-color);
+    color: #ffffff;
+    /* Texto blanco siempre sobre el color primario/secundario */
+    padding: var(--spacing-md);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    /* Evita que el header se aplaste */
+}
+
+.layaway-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #ffffff;
+}
+
+.btn-close-x {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 5px;
+    line-height: 1;
+    border-radius: 50%;
+    transition: var(--transition);
+}
+
+.btn-close-x:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+}
+
+/* =========================================
+   BODY (SCROLLABLE)
+   ========================================= */
+.layaway-body {
+    padding: var(--spacing-md);
+    overflow-y: auto;
+    /* Activa el scroll vertical */
+    flex: 1;
+    /* Ocupa todo el espacio disponible entre header y footer */
+    min-height: 0;
+    /* Permite que este contenedor se encoja si falta espacio */
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+
+    /* Mejora táctil para el scroll en iOS */
+    -webkit-overflow-scrolling: touch;
+}
+
+/* --- Títulos de Sección --- */
+.layaway-section-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: var(--secondary-color);
+    font-weight: 700;
+    margin-bottom: var(--spacing-xs);
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 4px;
+}
+
+/* --- Búsqueda de Cliente --- */
+.customer-search-group {
+    position: relative;
+    display: flex;
+    gap: var(--spacing-xs);
+}
+
+.input-search-custom {
+    flex: 1;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    background-color: var(--background-color);
+    /* Fondo ligeramente distinto al card */
+    color: var(--text-dark);
+    border-radius: var(--border-radius-sm);
+    font-size: 1rem;
+}
+
+.input-search-custom:focus {
+    border-color: var(--secondary-color);
+    outline: none;
+    background-color: var(--card-background-color);
+}
+
+.btn-new-customer {
+    background-color: var(--light-background);
+    color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    padding: 0 15px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.btn-new-customer:hover {
+    background-color: var(--secondary-color);
+    color: white;
+    border-color: var(--secondary-color);
+}
+
+/* Dropdown de Resultados */
+.search-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--card-background-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    margin-top: 4px;
+    box-shadow: var(--box-shadow-lg);
+    z-index: 20;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.search-item {
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    color: var(--text-dark);
+    transition: background-color 0.2s;
+}
+
+.search-item strong {
+    color: var(--secondary-color);
+}
+
+.search-item:hover {
+    background-color: var(--light-background);
+}
+
+/* --- Tarjeta de Cliente Seleccionado --- */
+.selected-customer-card {
+    background-color: var(--light-background);
+    border: 1px solid var(--secondary-color);
+    border-radius: var(--border-radius-sm);
+    padding: var(--spacing-sm);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.customer-info strong {
+    display: block;
+    color: var(--text-dark);
+    font-size: 1rem;
+}
+
+.customer-info span {
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+
+.btn-change-customer {
+    background: none;
+    border: none;
+    color: var(--error-color);
+    font-size: 0.85rem;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 8px;
+}
+
+/* =========================================
+   FINANZAS (Mobile First Grid)
+   ========================================= */
+.financial-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    /* Una columna en móvil */
+    gap: var(--spacing-md);
+}
+
+/* En pantallas más grandes (Tablets/PC), usamos 2 columnas */
+@media (min-width: 640px) {
+    .financial-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.input-group label {
+    display: block;
+    font-size: 0.9rem;
+    color: var(--text-light);
+    margin-bottom: 6px;
+}
+
+.input-currency-wrapper {
+    position: relative;
+}
+
+.currency-symbol {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-light);
+    font-weight: bold;
+}
+
+.input-financial {
+    width: 100%;
+    padding: 12px 12px 12px 30px;
+    /* Espacio para el $ */
+    border: 1px solid var(--border-color);
+    background-color: var(--background-color);
+    color: var(--text-dark);
+    border-radius: var(--border-radius-sm);
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.input-financial:focus {
+    border-color: var(--secondary-color);
+    background-color: var(--card-background-color);
+    box-shadow: 0 0 0 2px rgba(123, 97, 255, 0.1);
+    outline: none;
+}
+
+/* =========================================
+   RESUMEN VISUAL
+   ========================================= */
+.summary-box {
+    background-color: var(--light-background);
+    /* Usar variable para modo oscuro */
+    border-radius: var(--border-radius-sm);
+    padding: var(--spacing-md);
+    border: 1px dashed var(--border-color);
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 0.95rem;
+    color: var(--text-color);
+}
+
+.row-total {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: var(--text-dark);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+}
+
+.row-advance {
+    color: var(--success-color);
+    /* Usar variable del sistema */
+    font-weight: 600;
+}
+
+.row-remaining {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--error-color);
+    /* Usar variable del sistema (rojo) */
+    margin-top: 10px;
+}
+
+/* Barra de progreso */
+.progress-bar-bg {
+    height: 8px;
+    background-color: var(--border-color);
+    border-radius: 4px;
+    margin-top: 15px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: var(--secondary-color);
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* =========================================
+   FOOTER
+   ========================================= */
+.layaway-footer {
+    padding: var(--spacing-md);
+    background-color: var(--card-background-color);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    gap: var(--spacing-sm);
+    justify-content: flex-start;
+    flex-shrink: 0;
+    /* Evita que el footer se aplaste si hay poco espacio */
+    z-index: 10;
+    /* Asegura que quede por encima si algo se desborda */
+}
+
+/* En móvil, botones full width */
+@media (max-width: 480px) {
+    .layaway-footer {
+        flex-direction: column-reverse;
+        /* Cancelar abajo, Confirmar arriba */
+    }
+
+    .layaway-footer button {
+        width: 100%;
+        padding: 14px;
+        /* Más fácil de tocar */
+    }
+}
+
+.btn-cancel {
+    padding: 12px 20px;
+    border: 1px solid var(--border-color);
+    background-color: transparent;
+    color: var(--text-light);
+    border-radius: var(--border-radius-sm);
+    font-weight: 600;
+}
+
+.btn-cancel:hover {
+    background-color: var(--light-background);
+    color: var(--text-dark);
+}
+
+.btn-confirm-layaway {
+    padding: 12px 25px;
+    border: none;
+    background-color: var(--secondary-color);
+    color: white;
+    border-radius: var(--border-radius-sm);
+    font-weight: 700;
+    box-shadow: 0 4px 10px rgba(123, 97, 255, 0.3);
+}
+
+.btn-confirm-layaway:disabled {
+    background-color: var(--border-color);
+    color: var(--text-light);
+    cursor: not-allowed;
+    box-shadow: none;
+}

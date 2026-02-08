@@ -1,17 +1,12 @@
 /* src/components/customers/CustomerList.css */
 
-/* Contenedor de la Grid */
+/* --- GRID PRINCIPAL --- */
 .customer-list {
   display: grid;
-  
-  /* CAMBIO: Reducir el minmax de 320px a 100% o algo menor (ej. 260px) 
-     para que en móviles ocupe todo el ancho disponible sin romperse */
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  
+  /* Aumentamos un poco el ancho mínimo para acomodar los botones con texto */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--spacing-lg);
   padding-bottom: var(--spacing-xl);
-  
-  /* Asegura que ocupe el ancho disponible */
   width: 100%;
 }
 
@@ -21,159 +16,197 @@
   }
 }
 
-/* Diseño de la Tarjeta */
+/* --- TARJETA DEL CLIENTE --- */
 .customer-card {
   background-color: var(--card-background-color);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
-  padding: var(--spacing-lg);
-  transition: all 0.3s ease;
+  padding: var(--spacing-md); /* Un poco más compacto padding general */
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  height: 100%;
   position: relative;
   overflow: hidden;
   box-shadow: var(--box-shadow);
 }
 
 .customer-card:hover {
-  transform: translateY(-4px);
+  transform: translateY(-3px);
   box-shadow: var(--box-shadow-lg);
-  border-color: var(--secondary-color);
-  /* Brillo violeta al pasar el mouse */
+  border-color: var(--primary-color);
 }
 
-/* Indicador visual lateral para clientes con deuda */
+/* Indicador visual de deuda (Borde izquierdo) */
 .customer-card.has-debt {
   border-left: 4px solid var(--error-color);
 }
 
-/* Información del Cliente */
-.customer-info {
+/* --- CONTENIDO DE LA TARJETA --- */
+.customer-content {
   margin-bottom: var(--spacing-md);
 }
 
-.customer-info h4 {
-  font-size: 1.2rem;
-  color: var(--text-dark);
-  margin-bottom: var(--spacing-xs);
-  font-weight: 700;
+.customer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--spacing-sm);
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.customer-info p {
+.customer-name {
+  font-size: 1.15rem;
+  color: var(--text-dark);
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* Badge de Deuda */
+.debt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: rgba(255, 59, 92, 0.1);
+  color: var(--error-color);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Detalles (Teléfono, Dirección) */
+.customer-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.customer-details p {
   color: var(--text-light);
   font-size: 0.9rem;
-  margin-bottom: 4px;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/* Estilo destacado para la Deuda */
-.customer-debt {
-  margin-top: var(--spacing-md) !important;
-  background-color: rgba(255, 59, 92, 0.1);
-  /* Fondo rojo muy suave */
-  color: var(--error-color) !important;
+.icon-muted {
+  color: var(--text-light);
+  opacity: 0.7;
+  flex-shrink: 0; /* Evita que el icono se aplaste */
+}
+
+.address-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* --- SECCIÓN DE ACCIONES --- */
+.customer-actions-container {
+  margin-top: auto; /* Empuja las acciones al fondo si la tarjeta crece */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Fila 1: Botones Grandes (Primary) */
+.actions-primary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actions-primary .btn {
+  flex: 1 1 auto;
+  min-width: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 10px;
   border-radius: var(--border-radius-sm);
-  text-align: center;
-  font-weight: 800;
-  font-size: 1.1rem;
-  border: 1px dashed rgba(255, 59, 92, 0.3);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border: none;
+  transition: background-color 0.2s;
 }
 
-/* --- BOTONES Y ACCIONES --- */
-.customer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  margin-top: var(--spacing-md);
-}
-
-/* Botones que ocupan todo el ancho (Principales) */
-.btn-abono,
-.btn-whatsapp {
-  flex: 1 1 45%;
-  /* Ocupan casi la mitad cada uno */
-  justify-content: center;
-}
-
-/* Estilo específico para el botón de Abono */
 .btn-abono {
   background-color: var(--success-color);
-  /* Verde para dinero */
   color: white;
-  font-weight: 700;
-  order: 1;
-  /* Asegura que salga primero */
 }
-
 .btn-abono:hover {
-  background-color: #059669;
-  box-shadow: 0 4px 12px rgba(0, 196, 140, 0.3);
+  background-color: #059669; /* Verde más oscuro */
 }
 
-/* Estilo específico para WhatsApp */
 .btn-whatsapp {
-  background-color: var(--card-background-color);
-  border: 1px solid var(--success-color);
+  background-color: transparent;
+  border: 1px solid var(--success-color) !important;
   color: var(--success-color);
-  order: 2;
 }
-
 .btn-whatsapp:hover {
   background-color: var(--success-color);
   color: white;
 }
-
-/* Grupo de botones secundarios (Historial, Editar, Eliminar) */
-/* Hacemos que sean más pequeños o sutiles */
-
-.btn-history,
-.btn-edit,
-.btn-delete {
-  flex: 1;
-  padding: 8px;
-  font-size: 0.85rem;
-  order: 3;
-  margin-top: 5px;
+.btn-whatsapp:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
-.btn-history {
+.btn-layaway {
+  background-color: #e3f2fd;
+  color: #1565c0;
+}
+.btn-layaway:hover {
+  background-color: #bbdefb; /* Un tono un poco más oscuro para el hover */
+}
+
+/* Fila 2: Botones Pequeños (Secondary) */
+.actions-secondary {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+}
+
+.btn-icon-text {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--text-light);
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.btn-icon-text:hover {
   background-color: var(--light-background);
   color: var(--text-dark);
-  border: 1px solid transparent;
 }
 
-.btn-history:hover {
-  border-color: var(--secondary-color);
-  color: var(--secondary-color);
-}
-
-.btn-edit {
-  background-color: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-light);
-}
-
-.btn-edit:hover {
-  border-color: var(--primary-color);
+.btn-icon-text.info:hover {
   color: var(--primary-color);
+  background-color: rgba(var(--primary-rgb), 0.1); /* Asumiendo que tienes variables RGB, si no, usa un azul suave */
 }
 
-.btn-delete {
-  background-color: transparent;
-  color: var(--text-light);
-  border: 1px solid transparent;
-}
-
-.btn-delete:hover {
-  background-color: rgba(255, 59, 92, 0.1);
+.btn-icon-text.danger:hover {
   color: var(--error-color);
+  background-color: rgba(255, 59, 92, 0.1);
 }
 
-/* Spinner de Carga */
+/* --- SPINNER & CARGA --- */
 .spinner-loader {
   width: 40px;
   height: 40px;
@@ -191,60 +224,30 @@
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
-/* Animación suave de entrada para los nuevos elementos */
+/* Animación de entrada */
 .customer-card {
   animation: fadeInCard 0.3s ease-out forwards;
 }
 
 @keyframes fadeInCard {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
+/* Empty State */
 .customer-empty-message {
   text-align: center;
   padding: var(--spacing-xl);
   color: var(--text-light);
-  background-color: rgba(0, 0, 0, 0.02); /* Fondo sutil */
+  background-color: var(--card-background-color);
   border-radius: var(--border-radius);
   margin-top: 20px;
-  border: 2px dashed var(--border-color);
-  
-  /* Flex para centrar icono y texto */
+  border: 1px dashed var(--border-color);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  font-style: italic;
-}
-
-/* Icono de Usuarios (Emoji) */
-.customer-empty-message::before {
-  content: '👥';  /* Icono de grupo/usuarios */
-  font-size: 3rem;
-  margin-bottom: 15px;
-  opacity: 0.5;
-  filter: grayscale(100%);
-}
-
-/* (Opcional) Texto secundario específico para clientes */
-.customer-empty-message::after {
-  content: 'Haz clic en "Añadir Cliente" para comenzar.';
-  display: block;
-  font-size: 0.85rem;
-  margin-top: 5px;
-  opacity: 0.8;
-  font-weight: 500;
+  gap: 10px;
 }

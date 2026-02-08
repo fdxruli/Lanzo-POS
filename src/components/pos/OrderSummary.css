@@ -238,6 +238,20 @@
   transform: scale(0.98);
 }
 
+.btn-layaway {
+  background-color: #6c5ce7; /* Un morado o color distinto al de cobro */
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 8px;
+  font-weight: bold;
+  margin-right: 10px; /* Separación del botón de cobrar */
+  flex: 1;
+}
+.btn-layaway:hover {
+  background-color: #5b4cc4;
+}
+
 .clear-btn {
   background-color: transparent;
   color: var(--error-color);

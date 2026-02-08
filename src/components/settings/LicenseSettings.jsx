@@ -110,7 +110,7 @@ export default function LicenseSettings() {
         if (inGracePeriod) {
             return (
                 <div style={{ color: '#d97706', fontWeight: 'bold' }}>
-                    ⚠️ Vencida (Periodo de Gracia)<br/>
+                    Vencida (Periodo de Gracia)<br/>
                     <span style={{ fontSize: '0.85em', fontWeight: 'normal' }}>
                         Corte definitivo en: {daysLeftInGrace} días
                     </span>
@@ -121,7 +121,7 @@ export default function LicenseSettings() {
         if (isExpired && !inGracePeriod) {
              return (
                 <div style={{ color: '#dc2626', fontWeight: 'bold' }}>
-                    ⛔ Licencia Suspendida<br/>
+                    Licencia Suspendida<br/>
                     <span style={{ fontSize: '0.85em', fontWeight: 'normal' }}>
                         Expiró el: {formattedDate}
                     </span>

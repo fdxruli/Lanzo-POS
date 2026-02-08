@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
 import Logger from '../../services/Logger';
-import { Lock, Info, FileText } from 'lucide-react';
-import TermsAndConditionsModal from '../common/TermsAndConditionsModal'; 
+// CORRECCIÓN 1: 'FileText' estaba escrito como 'FileTex'
+import { Lock, Info, FileText, Bot } from 'lucide-react';
+import TermsAndConditionsModal from '../common/TermsAndConditionsModal';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -22,6 +23,9 @@ export default function GeneralSettings() {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
 
+  const showAssistantBot = useAppStore((state) => state.showAssistantBot);
+  const setShowAssistantBot = useAppStore((state) => state.setShowAssistantBot);
+
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -29,8 +33,7 @@ export default function GeneralSettings() {
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
   const [isProcessingLogo, setIsProcessingLogo] = useState(false);
   const [activeTheme, setActiveTheme] = useState(getInitialTheme);
-  
-  // Estado para detectar si hay un nuevo archivo de logo seleccionado para subir
+
   const [pendingLogoFile, setPendingLogoFile] = useState(null);
 
   const [lockedFields, setLockedFields] = useState({
@@ -49,13 +52,11 @@ export default function GeneralSettings() {
       const currentAddress = companyProfile.address || '';
       const currentLogo = companyProfile.logo || logoPlaceholder;
 
-      // Solo actualizamos el estado local si NO hay cambios pendientes (para no sobrescribir lo que escribe el usuario si el store se actualiza en segundo plano)
-      // En este caso simple, reiniciamos al cargar el perfil para asegurar sincronía.
       setName(currentName);
       setPhone(currentPhone);
       setAddress(currentAddress);
       setLogoPreview(currentLogo);
-      setPendingLogoFile(null); // Limpiamos logo pendiente al cargar datos frescos
+      setPendingLogoFile(null);
 
       setLockedFields({
         name: !!(currentName && currentName.trim().length > 0),
@@ -66,11 +67,9 @@ export default function GeneralSettings() {
     }
   }, [companyProfile]);
 
-  // DETECTAR CAMBIOS (Lógica del botón dinámico)
   const hasChanges = useMemo(() => {
     if (!companyProfile) return false;
-    
-    // Comparamos valor actual vs valor guardado
+
     const savedName = companyProfile.name || '';
     const savedPhone = companyProfile.phone || '';
     const savedAddress = companyProfile.address || '';
@@ -78,13 +77,12 @@ export default function GeneralSettings() {
     const nameChanged = name.trim() !== savedName;
     const phoneChanged = phone.trim() !== savedPhone;
     const addressChanged = address.trim() !== savedAddress;
-    const logoChanged = pendingLogoFile !== null; // Si hay un archivo en cola, hay cambios
+    const logoChanged = pendingLogoFile !== null;
 
     return nameChanged || phoneChanged || addressChanged || logoChanged;
   }, [name, phone, address, pendingLogoFile, companyProfile]);
 
 
-  // Manejo del Tema
   useEffect(() => {
     const systemThemeListener = (e) => {
       if (activeTheme === 'system') applyTheme(e.matches ? 'dark' : 'light');
@@ -108,19 +106,13 @@ export default function GeneralSettings() {
 
     const file = e.target.files[0];
     if (file) {
-      // Solo mostramos preview, NO subimos todavía hasta que den click en Actualizar
-      // Opcional: Si quieres subir al instante como antes, mantenlo. 
-      // Pero para que el botón "Actualizar" tenga sentido, lo ideal es preparar el cambio.
-      // Sin embargo, tu código anterior subía al instante.
-      // Para cumplir "solo se muestre cuando detecte... en el logo", vamos a simular el cambio:
-      
       try {
         setIsProcessingLogo(true);
         const compressedFile = await compressImage(file);
         const objectURL = URL.createObjectURL(compressedFile);
-        
-        setLogoPreview(objectURL);      // Mostramos preview
-        setPendingLogoFile(compressedFile); // Guardamos para subir al guardar
+
+        setLogoPreview(objectURL);
+        setPendingLogoFile(compressedFile);
       } catch (error) {
         Logger.error("Error imagen:", error);
       } finally {
@@ -134,12 +126,11 @@ export default function GeneralSettings() {
       const currentType = companyProfile?.business_type || [];
       const dataToSave = {
         id: 'company',
-        name, phone, address, 
+        name, phone, address,
         business_type: currentType,
         ...updates
       };
       await updateCompanyProfile(dataToSave);
-      // Al finalizar, limpiamos el archivo pendiente pues ya se subió
       setPendingLogoFile(null);
     } catch (error) {
       Logger.error(error);
@@ -149,18 +140,9 @@ export default function GeneralSettings() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Preparamos actualizaciones
     const updates = { name, phone, address };
-    
-    // Si hay logo pendiente, lo mandamos (asumiendo que updateCompanyProfile maneja la subida o el store lo hace)
-    // Nota: En tu código anterior `handleImageChange` subía directo. 
-    // Ahora lo agrupamos. Si tu store espera un objeto File en 'logo', esto funcionará si ajustas el store,
-    // o si el store ya maneja la subida en `updateCompanyProfile`.
-    // Revisando tu código previo: GeneralSettings.jsx anterior subía directo en onChange.
-    // Para que el botón funcione como "Guardar todo junto", enviamos el logo aquí si existe.
     if (pendingLogoFile) {
-        updates.logo = pendingLogoFile;
+      updates.logo = pendingLogoFile;
     }
 
     await updateProfileWrapper(updates);
@@ -178,31 +160,29 @@ export default function GeneralSettings() {
 
   return (
     <div className="company-form-container">
-      {/* HEADER RESPONSIVO: flex-wrap permite que caiga en móvil */}
       <div style={{
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'flex-start', // Alineado arriba para mejor look si se rompe la línea
-          flexWrap: 'wrap',         // CLAVE: Permite envolver elementos
-          gap: '10px',              // Espacio entre título y span cuando se junten
-          marginBottom: '20px'
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        flexWrap: 'wrap',
+        gap: '10px',
+        marginBottom: '20px'
       }}>
         <h3 className="subtitle" style={{ margin: 0, whiteSpace: 'nowrap' }}>Datos de la Empresa</h3>
-        
-        {/* Span Informativo */}
+
         <div style={{
-            fontSize: '0.8rem', 
-            color: 'var(--text-light)', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '5px',
-            backgroundColor: 'var(--bg-light)', // Un fondo suave ayuda a diferenciarlo
-            padding: '4px 8px',
-            borderRadius: '4px',
-            maxWidth: '100%' // Asegura que no rompa el layout
+          fontSize: '0.8rem',
+          color: 'var(--text-light)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px',
+          backgroundColor: 'var(--bg-light)',
+          padding: '4px 8px',
+          borderRadius: '4px',
+          maxWidth: '100%'
         }}>
-            <Info size={14} style={{flexShrink: 0}}/> 
-            <span>Los datos registrados se bloquearán al guardar. Si requiere actualizar sus datos contacte a soporte</span>
+          <Info size={14} style={{ flexShrink: 0 }} />
+          <span>Los datos registrados se bloquearán al guardar. Si requiere actualizar sus datos contacte a soporte</span>
         </div>
       </div>
 
@@ -210,7 +190,7 @@ export default function GeneralSettings() {
 
         <div className="settings-grid">
           {/* 1. Nombre */}
-          <div className="form-group" style={{position:'relative'}}>
+          <div className="form-group" style={{ position: 'relative' }}>
             <label className="form-label">Nombre del Negocio</label>
             <input
               type="text"
@@ -225,7 +205,7 @@ export default function GeneralSettings() {
           </div>
 
           {/* 2. Teléfono */}
-          <div className="form-group" style={{position:'relative'}}>
+          <div className="form-group" style={{ position: 'relative' }}>
             <label className="form-label">Teléfono / WhatsApp</label>
             <input
               type="tel"
@@ -236,25 +216,25 @@ export default function GeneralSettings() {
               disabled={lockedFields.phone}
               style={lockedFields.phone ? { backgroundColor: '#f7fafc', cursor: 'not-allowed', color: '#718096' } : {}}
             />
-             <InputStatusIcon isLocked={lockedFields.phone} />
+            <InputStatusIcon isLocked={lockedFields.phone} />
           </div>
 
           {/* 3. Logo */}
           <div className="form-group logo-upload-group">
             <label className="form-label">Logo</label>
-            <div className={`image-upload-wrapper ${lockedFields.logo ? 'locked' : ''}`} 
-                 style={lockedFields.logo ? { opacity: 0.7, cursor: 'not-allowed' } : {}}>
-              
+            <div className={`image-upload-wrapper ${lockedFields.logo ? 'locked' : ''}`}
+              style={lockedFields.logo ? { opacity: 0.7, cursor: 'not-allowed' } : {}}>
+
               {isProcessingLogo && (
                 <div className="spinner-loader small" style={{ position: 'absolute', inset: 0, margin: 'auto' }}></div>
               )}
-              
+
               <img className="image-preview" src={logoPreview} alt="Logo" />
-              
+
               {lockedFields.logo && (
-                 <div style={{position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(255,255,255,0.5)'}}>
-                    <Lock size={24} color="#4A5568"/>
-                 </div>
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.5)' }}>
+                  <Lock size={24} color="#4A5568" />
+                </div>
               )}
 
               <input
@@ -268,7 +248,7 @@ export default function GeneralSettings() {
           </div>
 
           {/* 4. Dirección */}
-          <div className="form-group full-width" style={{position:'relative'}}>
+          <div className="form-group full-width" style={{ position: 'relative' }}>
             <label className="form-label">Dirección</label>
             <textarea
               className={`form-textarea ${lockedFields.address ? 'input-locked' : ''}`}
@@ -280,24 +260,23 @@ export default function GeneralSettings() {
               style={lockedFields.address ? { backgroundColor: '#f7fafc', cursor: 'not-allowed', color: '#718096' } : {}}
             ></textarea>
             {lockedFields.address && (
-                <span title="Bloqueado" style={{ position: 'absolute', right: '10px', top: '38px', color: '#718096' }}>
-                    <Lock size={16} />
-                </span>
+              <span title="Bloqueado" style={{ position: 'absolute', right: '10px', top: '38px', color: '#718096' }}>
+                <Lock size={16} />
+              </span>
             )}
           </div>
         </div>
 
         {/* Botón Dinámico */}
         <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', height: '40px' }}>
-          {/* Solo mostramos el botón si hay cambios detectados */}
           {hasChanges && (
-              <button 
-                type="submit" 
-                className="btn btn-save animate-fade-in" // animate-fade-in es opcional si tienes la clase
-                style={{ minWidth: '150px' }}
-              >
-                Actualizar datos
-              </button>
+            <button
+              type="submit"
+              className="btn btn-save animate-fade-in"
+              style={{ minWidth: '150px' }}
+            >
+              Actualizar datos
+            </button>
           )}
         </div>
       </form>
@@ -322,48 +301,126 @@ export default function GeneralSettings() {
           ))}
         </div>
       </div>
-      
+
+      {/* SECCIÓN ASISTENTE VIRTUAL */}
+      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+        <h3 className="subtitle">Asistente Virtual</h3>
+
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '12px',
+          backgroundColor: 'var(--bg-light)',
+          borderRadius: '8px',
+          border: '1px solid var(--border-color)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              backgroundColor: showAssistantBot ? '#EBF8FF' : '#EDF2F7',
+              padding: '8px',
+              borderRadius: '50%',
+              color: showAssistantBot ? '#3182CE' : '#A0AEC0',
+              transition: 'all 0.3s ease'
+            }}>
+              <Bot size={24} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Lanzo Bot (experimental)</span>
+              <p>Estamos enseñando a nuestro BOT a ser mejor. <br/>Mientras puedes utilizarlo pero revisa los movimientos</p>
+              <br />
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                {showAssistantBot ? 'El asistente está activo y te dará sugerencias.' : 'El asistente está desactivado.'}
+              </span>
+            </div>
+          </div>
+
+          {/* Toggle Switch Personalizado - CORREGIDO */}
+          <label style={{
+            position: 'relative',
+            display: 'inline-block',
+            width: '50px',
+            height: '26px',
+            cursor: 'pointer',
+            flexShrink: 0, /* IMPORTANTE: Esto evita que el switch se aplaste y la bolita se salga */
+            userSelect: 'none'
+          }}>
+            <input
+              type="checkbox"
+              checked={!!showAssistantBot}
+              onChange={(e) => setShowAssistantBot(e.target.checked)}
+              /* Añadido position: absolute para asegurar que el input no ocupe espacio fantasma */
+              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+            />
+
+            {/* Fondo (Píldora) */}
+            <span style={{
+              position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: showAssistantBot ? 'var(--primary-color)' : '#CBD5E0',
+              transition: 'background-color .4s',
+              borderRadius: '34px'
+            }}></span>
+
+            {/* Bolita (Knob) */}
+            <span style={{
+              position: 'absolute', content: '""', height: '20px', width: '20px',
+              /* Ajuste de simetría: 3px de margen en todos los lados (Arriba, Abajo, Izquierda) */
+              left: '3px',
+              bottom: '3px',
+              backgroundColor: 'white',
+              transition: 'transform .4s', /* Usamos transform para un movimiento más suave */
+              borderRadius: '50%',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              /* MATEMÁTICA DEL MOVIMIENTO: 
+                 Ancho Contenedor (50px) - Ancho Bolita (20px) - Margen Izq (3px) - Margen Der (3px) = 24px de viaje 
+              */
+              transform: showAssistantBot ? 'translateX(24px)' : 'translateX(0)'
+            }}></span>
+          </label>
+        </div>
+      </div>
+
       {/* SECCIÓN LEGAL */}
-  <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
-    <h3 className="subtitle">Legal y Privacidad</h3>
+      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+        <h3 className="subtitle">Legal y Privacidad</h3>
 
-    <div 
-      onClick={() => setShowTerms(true)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        padding: '12px',
-        borderRadius: '8px',
-        backgroundColor: 'var(--bg-light)', // O 'white' con borde
-        border: '1px solid var(--border-color)',
-        cursor: 'pointer',
-        transition: 'all 0.2s ease'
-      }}
-      onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-color)'}
-      onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}
-    >
-      <div style={{ 
-        backgroundColor: '#EBF8FF', // Azul muy claro
-        padding: '8px', 
-        borderRadius: '50%',
-        color: '#3182CE' // Azul
-      }}>
-        <FileText size={20} />
+        <div
+          onClick={() => setShowTerms(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '12px',
+            borderRadius: '8px',
+            backgroundColor: 'var(--bg-light)',
+            border: '1px solid var(--border-color)',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-color)'}
+          onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}
+        >
+          <div style={{
+            backgroundColor: '#EBF8FF',
+            padding: '8px',
+            borderRadius: '50%',
+            color: '#3182CE'
+          }}>
+            {/* Usamos el icono importado correctamente */}
+            <FileText size={20} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Términos y Condiciones de Uso</span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Consulta nuestras políticas de manejo de datos y privacidad.</span>
+          </div>
+        </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Términos y Condiciones de Uso</span>
-        <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Consulta nuestras políticas de manejo de datos y privacidad.</span>
-      </div>
-    </div>
-  </div>
 
-  {/* Renderizar el Modal */}
-  <TermsAndConditionsModal 
-    isOpen={showTerms} 
-    onClose={() => setShowTerms(false)} 
-    readOnly={true}
-  />
+      <TermsAndConditionsModal
+        isOpen={showTerms}
+        onClose={() => setShowTerms(false)}
+        readOnly={true}
+      />
     </div>
   );
 }

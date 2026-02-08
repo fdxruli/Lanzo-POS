@@ -1,13 +1,13 @@
 // src/components/pos/OrderSummary.jsx
 import React from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
-// 1. IMPORTAMOS EL ICONO DE BASURA (Trash2)
 import { ChevronDown, Trash2 } from 'lucide-react';
+import { useFeatureConfig } from '../../hooks/useFeatureConfig'
 import './OrderSummary.css';
 
-export default function OrderSummary({ onOpenPayment, isMobileModal, onClose }) {
+export default function OrderSummary({ onOpenPayment,onOpenLayaway, isMobileModal, onClose }) {
   const order = useOrderStore((state) => state.order);
-
+  const features = useFeatureConfig();
   // Nos aseguramos de tener 'removeItem' disponible
   const { updateItemQuantity, removeItem, clearOrder, getTotalPrice } = useOrderStore.getState();
   const total = getTotalPrice();
@@ -158,6 +158,15 @@ export default function OrderSummary({ onOpenPayment, isMobileModal, onClose }) 
 
           <div className="order-actions">
             <button className="process-btn" onClick={onOpenPayment}>Cobrar</button>
+            {features.hasLayaway && (
+              <button
+              className="btn-layaway"
+              onClick={onOpenLayaway}
+              title="Crear Apartado (Requiere Cliente)"
+              >
+                Apartar
+              </button>
+            )}
             <button className="clear-btn" onClick={() => {
               if (window.confirm('¿Vaciar carrito?')) {
                 clearOrder();

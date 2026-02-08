@@ -1,147 +1,279 @@
-/*
- * Estilos para PurchaseHistoryModal.jsx
- */
-
-.purchase-history-container {
-  margin-bottom: var(--spacing-lg);
+/* src/components/customers/PurchaseHistoryModal.css */
+.modal-overlay {
+  position: fixed; /* Fija el elemento a la ventana del navegador */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5); /* Fondo oscuro semitransparente */
+  display: flex;
+  justify-content: center; /* Centra horizontalmente */
+  align-items: center;     /* Centra verticalmente */
+  z-index: 8000;           /* Asegura que esté por encima de otros elementos (navbar, listas, etc.) */
+  backdrop-filter: blur(2px); /* Opcional: efecto borroso en el fondo */
 }
 
-.purchase-history-list {
-  max-height: 400px;
-  overflow-y: auto;
-  margin-bottom: var(--spacing-lg);
-  border: 1px solid var(--light-background);
-  border-radius: var(--border-radius-sm);
+.history-modal-content {
+  background-color: var(--card-background-color); 
+  color: var(--text-color);
+  max-width: 650px !important;
+  width: 90%;
+  padding: 0 !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 85vh;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow-lg);
+  border: 1px solid var(--border-color);
 }
 
-.purchase-history-item {
-  padding: var(--spacing-sm);
-  border-bottom: 1px solid var(--light-background);
-}
-
-.purchase-history-item:last-child {
-  border-bottom: none;
-}
-
-.purchase-history-item-header {
+/* --- Header --- */
+.modal-header {
+  padding: 20px 24px;
+  background-color: var(--card-background-color); /* Se adapta al modo oscuro */
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: var(--spacing-md);
+  align-items: flex-start;
 }
 
-.purchase-date {
-  flex: 2;
-  font-weight: 500;
-  color: var(--text-dark);
-  margin-bottom: 0;
-}
-
-.purchase-total {
-  flex: 1;
-  font-weight: 600;
-  color: var(--success-color);
-  margin-bottom: 0;
-  text-align: right;
-}
-
-.purchase-items-container {
-  margin-top: var(--spacing-sm);
-  padding-top: var(--spacing-sm);
-  border-top: 1px solid var(--light-background);
-  list-style: none;
-  padding-left: 0;
-}
-
-.purchase-item {
-  display: flex;
-  justify-content: space-between;
-  padding: var(--spacing-xs) 0;
-  color: var(--text-light);
-}
-
-.purchase-item-name {
-  flex: 2;
-}
-
-.purchase-item-quantity {
-  flex: 0 0 auto;
-  margin-left: var(--spacing-sm);
-}
-
-.purchase-summary {
-  background-color: var(--light-background);
-  padding: var(--spacing-md);
-  border-radius: var(--border-radius-sm);
-}
-
-.purchase-summary h4 {
-  margin-bottom: var(--spacing-sm);
-  color: var(--text-dark);
-}
-
-.purchase-summary p {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: var(--spacing-xs);
-}
-
-.purchase-summary p:last-child {
-  margin-bottom: 0;
-}
-
-.purchase-summary span {
-  font-weight: 600;
-  color: var(--primary-color);
-}
-
-/* 1. Estilos para el resumen de deuda */
-.debt-summary-box {
-  background-color: rgba(239, 68, 68, 0.05); /* Fondo rojo muy claro */
-  border: 1px solid var(--error-color);
-  border-radius: var(--border-radius-sm);
-  padding: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.debt-summary-box p {
-  margin: 0;
-  font-weight: 600;
-  color: var(--text-dark);
-}
-.debt-summary-box span {
-  font-size: 1.5rem;
+.modal-title {
+  font-size: 1.25rem;
   font-weight: 700;
+  margin: 0;
+  color: var(--text-dark); /* Texto principal */
+}
+
+.modal-subtitle {
+  margin: 4px 0 0 0;
+  color: var(--text-light); /* Texto secundario */
+  font-size: 0.95rem;
+}
+
+.btn-icon-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-light);
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.btn-icon-close:hover {
   color: var(--error-color);
 }
 
-/* 2. Estilos para resaltar ventas fiadas */
-.purchase-history-item.sale-fiado {
-  border-left: 4px solid var(--error-color);
-  padding-left: var(--spacing-sm);
+/* --- Stats Grid --- */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px 24px;
+  /* Fondo ligeramente diferente para contraste (gris claro en light, gris oscuro en dark) */
+  background-color: var(--background-color); 
+  border-bottom: 1px solid var(--border-color);
 }
 
-.fiado-tag {
-  background-color: var(--error-color);
-  color: white;
+.stat-card {
+  background: var(--card-background-color);
+  padding: 12px;
+  border-radius: var(--border-radius-sm);
+  box-shadow: var(--box-shadow);
+  border: 1px solid var(--border-color); /* Borde sutil */
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
   font-size: 0.75rem;
-  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-light);
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+/* Bordes de estado */
+.stat-card.debt-warning {
+  border-left: 4px solid var(--error-color);
+}
+.stat-card.debt-warning .stat-value { color: var(--error-color); }
+
+.stat-card.debt-clean { 
+  border-left: 4px solid var(--success-color); 
+}
+.stat-card.debt-clean .stat-value { color: var(--success-color); }
+
+/* --- Toolbar / Filters --- */
+.history-toolbar {
+  padding: 12px 24px;
+  background: var(--card-background-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.filter-group {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-chip {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  background: var(--card-background-color);
+  color: var(--text-light);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filter-chip:hover {
+  background: var(--light-background);
+  color: var(--text-dark);
+}
+
+.filter-chip.active {
+  background: var(--text-dark); 
+  color: var(--card-background-color); /* Texto invertido para contraste */
+  border-color: var(--text-dark);
+}
+
+/* --- List Container --- */
+.history-list-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  background-color: var(--background-color); /* Fondo de la lista */
+}
+
+/* --- History Item (The Card) --- */
+.history-item {
+  background: var(--card-background-color);
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.history-item:hover {
+  background-color: var(--light-background); /* Hover adaptativo */
+}
+
+.history-item-header {
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Columna Fecha */
+.date-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 40px;
+  background: var(--light-background); /* Gris suave adaptativo */
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--text-dark);
+}
+
+.date-col .day { font-weight: 700; font-size: 1.1rem; line-height: 1; }
+.date-col .month { font-size: 0.7rem; text-transform: uppercase; color: var(--text-light); }
+
+/* Columna Info */
+.info-col { flex: 1; }
+.info-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.sale-id { font-weight: 600; color: var(--text-dark); }
+.info-sub { font-size: 0.85rem; color: var(--text-light); }
+
+/* Badges con transparencia para que se vean bien en dark mode */
+.badge {
+  font-size: 0.65rem;
+  font-weight: 700;
   padding: 2px 6px;
   border-radius: 4px;
-  margin-left: var(--spacing-sm);
+  text-transform: uppercase;
+}
+.badge-paid { 
+  background-color: rgba(0, 196, 140, 0.15); /* --success-color con opacidad */
+  color: var(--success-color); 
+} 
+.badge-fiado { 
+  background-color: rgba(255, 59, 92, 0.15); /* --error-color con opacidad */
+  color: var(--error-color); 
 }
 
-.fiado-details {
-  background-color: var(--light-background);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  margin-top: var(--spacing-sm);
-  border-radius: var(--border-radius-sm);
+/* Columna Monto */
+.amount-col {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  color: var(--text-dark);
 }
-.fiado-details p {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--text-light);
-  font-weight: 500;
+.amount-col .amount { font-weight: 700; font-size: 1rem; }
+
+/* --- Detalles Expandidos --- */
+.history-item-details {
+  background-color: var(--light-background); /* Fondo ligeramente diferente al de la tarjeta */
+  padding: 0 24px 16px 24px;
+  border-top: 1px dashed var(--border-color);
+  animation: slideDown 0.2s ease-out;
 }
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.details-divider { height: 12px; }
+
+.item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px 0;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: var(--text-light); /* Texto secundario */
+  padding: 4px 0;
+  border-bottom: 1px solid transparent;
+}
+.detail-row:hover {
+  color: var(--text-dark);
+}
+
+.fiado-breakdown {
+  background: var(--card-background-color);
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  margin-top: 8px;
+}
+.breakdown-row { display: flex; justify-content: space-between; font-size: 0.9rem; color: var(--text-color); }
+.total-debt { 
+  font-weight: 700; 
+  color: var(--error-color); 
+  margin-top: 4px; 
+  border-top: 1px solid var(--border-color); 
+  padding-top: 4px; 
+}
+
+.details-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+.transaction-hash { font-size: 0.7rem; color: var(--text-light); font-family: monospace; }

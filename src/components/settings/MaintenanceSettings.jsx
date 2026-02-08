@@ -4,6 +4,7 @@ import { loadData, saveBulkSafe, STORES, archiveOldData } from '../../services/d
 import Logger from '../../services/Logger';
 import DataTransferModal from '../products/DataTransferModal';
 import { useProductStore } from '../../store/useProductStore';
+import { maintenanceTools } from '../../services/db';
 
 export default function MaintenanceSettings() {
   const loadStats = useStatsStore((state) => state.loadStats);
@@ -20,21 +21,21 @@ export default function MaintenanceSettings() {
         loadData(STORES.SALES),
         loadData(STORES.MENU)
       ]);
-      
+
       const productCostMap = new Map();
       products.forEach(p => productCostMap.set(p.id, parseFloat(p.cost) || 0));
 
       // Array solo para lo que cambió
-      const salesToUpdate = []; 
+      const salesToUpdate = [];
 
       sales.forEach(sale => { // Usamos forEach en lugar de map
         if (sale.fulfillmentStatus === 'cancelled') return;
-        
+
         let saleModified = false;
         const newItems = sale.items.map(item => {
           const realId = item.parentId || item.id;
           const currentCost = productCostMap.get(realId);
-          
+
           if (currentCost !== undefined && Math.abs((item.cost || 0) - currentCost) > 0.01) {
             saleModified = true;
             return { ...item, cost: currentCost };
@@ -66,7 +67,7 @@ export default function MaintenanceSettings() {
       alert("Error al recalcular: " + e.message);
     }
     finally { setIsProcessing(false); }
-};
+  };
 
   const handleSyncStock = async () => {
     if (!window.confirm("⚠️ ¿Sincronizar stock visible con la suma de lotes?\n\nNOTA: Los productos con 'Stock Simple' no se verán afectados, solo aquellos configurados por lotes.")) return;
@@ -92,7 +93,7 @@ export default function MaintenanceSettings() {
       allProducts.forEach(p => {
         const calculatedStock = realStockFromBatches[p.id] || 0;
         const currentStock = p.stock || 0;
-        
+
         // Verificamos si el producto está configurado para usar lotes
         // (Según tu schema: batchManagement: { enabled: boolean })
         const usesBatches = p.batchManagement?.enabled === true;
@@ -110,12 +111,12 @@ export default function MaintenanceSettings() {
           }
         } else {
           // CASO 2: El producto NO tiene activado el sistema de lotes (Es Stock Simple o Híbrido mal configurado)
-          
+
           if (calculatedStock > 0) {
             // SUB-CASO A: Aunque dice no usar lotes, ENCONTRAMOS lotes activos.
             // Prioridad: Si hay lotes físicos, el stock visible debe reflejarlos.
             if (Math.abs(currentStock - calculatedStock) > 0.01) {
-               updates.push({
+              updates.push({
                 ...p,
                 stock: calculatedStock,
                 // Opcional: Podríamos forzar activar batchManagement aquí, 
@@ -174,6 +175,37 @@ export default function MaintenanceSettings() {
     }
   };
 
+  const handleFixStock = async () => {
+    setIsProcessing(true);
+    try {
+      const result = await maintenanceTools.fixStock();
+      if (result.success) {
+        alert(result.message); // O usa tu modal de éxito
+        if (result.details.length > 0) {
+          console.log("Detalles de corrección:", result.details);
+        }
+      }
+    } catch (e) {
+      alert("Error: " + e.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRebuildStats = async () => {
+    if (!confirm("Esto recalculará todas las ganancias históricas basándose en las ventas guardadas. ¿Continuar?")) return;
+
+    setIsProcessing(true);
+    try {
+      const result = await maintenanceTools.rebuildStats();
+      alert(result.message);
+    } catch (e) {
+      alert("Error: " + e.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <div className="company-form-container">
       <h3 className="subtitle">Mantenimiento del Sistema</h3>
@@ -190,8 +222,8 @@ export default function MaintenanceSettings() {
               <h4>📊 Reparar Ganancias</h4>
               <p>- Recalcula reportes históricos con costos actuales si ves negativos.</p>
             </div>
-            <button className="btn btn-secondary" onClick={handleRecalculateProfits} disabled={isProcessing}>
-              {isProcessing ? '...' : '🔄 Ejecutar'}
+            <button className="btn btn-secondary" onClick={handleRebuildStats} disabled={isProcessing}>
+              {isProcessing ? '...' : ' Ejecutar'}
             </button>
           </div>
 
@@ -202,8 +234,8 @@ export default function MaintenanceSettings() {
               <p>- Corrige discrepancias si ves "Agotado" pero tienes lotes.</p>
               <p>- Este problema puede llegar a presentarse despues de una actualizacion del sistema</p>
             </div>
-            <button className="btn btn-primary" onClick={handleSyncStock} disabled={isProcessing}>
-              {isProcessing ? '...' : '🧩 Sincronizar'}
+            <button className="btn btn-primary" onClick={handleFixStock} disabled={isProcessing}>
+              {isProcessing ? '...' : 'Sincronizar'}
             </button>
           </div>
 
@@ -222,28 +254,28 @@ export default function MaintenanceSettings() {
 
           {/* HERRAMIENTA 4 */}
           <div className="maintenance-tool-card" style={{ borderColor: '#3b82f6' }}>
-    <div className="tool-info">
-      <h4 style={{ color: '#3b82f6' }}>💾 Respaldo y Datos</h4>
-      <p>- Exporta tu base de datos o importa un respaldo.</p>
-      <p>- Carga masiva de productos vía CSV/JSON.</p>
-    </div>
-    <button 
-      className="btn btn-secondary" 
-      onClick={() => setShowDataTransfer(true)}
-      style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: 'none' }}
-    >
-      📥 Gestionar Datos
-    </button>
-  </div>
+            <div className="tool-info">
+              <h4 style={{ color: '#3b82f6' }}>💾 Respaldo y Datos</h4>
+              <p>- Exporta tu base de datos o importa un respaldo.</p>
+              <p>- Carga masiva de productos vía CSV/JSON.</p>
+            </div>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowDataTransfer(true)}
+              style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: 'none' }}
+            >
+              📥 Gestionar Datos
+            </button>
+          </div>
         </div>
       </div>
       <DataTransferModal
         show={showDataTransfer}
         onClose={() => setShowDataTransfer(false)}
         onRefresh={async () => {
-             // Si el usuario importa datos, recargamos todo
-             await loadInitialProducts();
-             await loadStats(true);
+          // Si el usuario importa datos, recargamos todo
+          await loadInitialProducts();
+          await loadStats(true);
         }}
       />
     </div>

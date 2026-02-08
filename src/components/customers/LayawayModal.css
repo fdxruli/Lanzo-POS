@@ -1,0 +1,384 @@
+/* src/components/customers/LayawayModal.css */
+
+/* --- Layout del Modal --- */
+.modal-content.layaway-modal-content {
+  max-width: 800px;
+  width: 95%;
+  height: 90vh;
+  /* Un poco más alto para móviles */
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background-color: var(--background-color);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+.layaway-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  background-color: var(--background-color);
+}
+
+/* --- Tarjeta de Apartado --- */
+.layaway-card {
+  background-color: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  margin-bottom: var(--spacing-lg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header de Tarjeta */
+.layaway-card-header {
+  padding: var(--spacing-md);
+  background-color: var(--light-background);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  /* Mejor alineación si el texto es largo */
+}
+
+.layaway-meta .layaway-date {
+  font-weight: 700;
+  color: var(--text-dark);
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layaway-status-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.layaway-status-badge.ready {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #34d399;
+}
+
+.layaway-status-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #f59e0b;
+}
+
+/* --- Lista de Productos (Híbrido Tabla/Lista) --- */
+.layaway-products-container {
+  padding: 0 var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+/* Estilo para Escritorio (Tabla limpia) */
+.desktop-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.desktop-table th {
+  text-align: left;
+  color: var(--text-light);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+
+.desktop-table td {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-dark);
+}
+
+/* Estilo para Móvil (Oculto por defecto) */
+.mobile-product-list {
+  display: none;
+}
+
+/* --- Sección Financiera (Grid) --- */
+.layaway-financial-section {
+  background-color: var(--light-background);
+  /* Un fondo suave para diferenciar */
+  padding: var(--spacing-md);
+  margin: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.financial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  /* 3 columnas iguales */
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.finance-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Centrado para que se vea ordenado */
+}
+
+.finance-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-light);
+  margin-bottom: 4px;
+}
+
+.finance-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.finance-value.total {
+  color: var(--primary-color);
+}
+
+.finance-value.paid {
+  color: var(--success-color);
+}
+
+.finance-value.debt {
+  color: var(--error-color);
+}
+
+/* Barra de progreso */
+.progress-container {
+  height: 6px;
+  background-color: #e5e7eb;
+  border-radius: 3px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.progress-fill.ready {
+  background-color: var(--success-color);
+}
+
+.progress-fill.pending {
+  background-color: var(--primary-color);
+}
+
+/* --- Footer de Acciones (Rediseñado) --- */
+.layaway-card-footer {
+  padding: var(--spacing-md);
+  background-color: var(--card-background-color);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  /* Apilamos por defecto para controlar mejor */
+  gap: 15px;
+}
+
+/* Botones principales de acción (Cancelar/Entregar) */
+.layaway-main-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Zona de Ingreso de Abono (Expandida) */
+.payment-zone {
+  background-color: var(--background-color);
+  border: 1px solid var(--primary-color);
+  padding: 15px;
+  border-radius: var(--border-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.payment-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.payment-currency {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: var(--text-light);
+}
+
+.payment-input-large {
+  flex: 1;
+  font-size: 1.2rem;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: white;
+}
+
+.payment-input-large:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.1);
+}
+
+.payment-actions-row {
+  display: flex;
+  gap: 10px;
+}
+
+.payment-actions-row button {
+  flex: 1;
+  /* Botones del mismo ancho */
+  justify-content: center;
+}
+
+/* Botón simple para iniciar abono */
+.btn-start-payment {
+  width: 100%;
+  padding: 10px;
+  background-color: var(--secondary-color);
+  /* O el color que prefieras */
+  color: white;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-start-payment:hover {
+  opacity: 0.9;
+}
+
+/* =========================================
+   RESPONSIVE (MÓVIL)
+   ========================================= */
+@media (max-width: 600px) {
+
+  /* Ocultar tabla escritorio */
+  .desktop-table {
+    display: none;
+  }
+
+  /* Mostrar lista móvil */
+  .mobile-product-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mobile-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--border-color);
+  }
+
+  .mobile-item:last-child {
+    border-bottom: none;
+  }
+
+  .m-item-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .m-item-name {
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--text-dark);
+  }
+
+  .m-item-qty {
+    font-size: 0.8rem;
+    color: var(--text-light);
+  }
+
+  .m-item-total {
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+
+  /* Ajustar Grid Financiero */
+  .financial-grid {
+    gap: 10px;
+  }
+
+  .finance-value {
+    font-size: 1rem;
+  }
+
+  /* Botones principales al 100% de ancho */
+  .layaway-main-actions {
+    flex-direction: column;
+  }
+
+  .layaway-main-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 1. Ajustar la zona de pago para evitar desbordes */
+  .payment-zone {
+    padding: 10px;
+    /* Reducir un poco el padding para ganar espacio */
+  }
+
+  /* 2. Apilar los botones de Confirmar y Cancelar verticalmente */
+  .payment-actions-row {
+    flex-direction: column;
+    /* Cambia de fila a columna */
+    gap: 10px;
+    /* Espacio vertical entre botones */
+  }
+
+  /* 3. Asegurar que los botones ocupen el 100% del ancho */
+  .payment-actions-row button {
+    width: 100%;
+    margin: 0;
+    /* Reseteamos márgenes si los hubiera */
+    padding: 12px;
+    /* Un poco más de área táctil */
+  }
+
+  /* 4. Ajustar el input de dinero para que se vea bien arriba de los botones */
+  .payment-input-row {
+    margin-bottom: 10px;
+  }
+
+  .payment-input-large {
+    font-size: 1.1rem;
+    /* Ajustar ligeramente si es muy grande */
+  }
+}
