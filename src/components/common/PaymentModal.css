@@ -12,6 +12,7 @@
 .payment-label {
   font-weight: 500;
   margin-bottom: var(--spacing-xs);
+  color: var(--text-dark);
 }
 
 .payment-total {
@@ -25,6 +26,10 @@
   margin-bottom: var(--spacing-md);
   font-size: 1.2rem;
   text-align: center;
+  /* Asegura que el input use el fondo correcto del tema */
+  background-color: var(--card-background-color);
+  color: var(--text-dark);
+  border-color: var(--border-color);
 }
 
 .payment-change {
@@ -39,23 +44,25 @@
   color: white;
   width: 100%;
   margin-bottom: var(--spacing-sm);
+  border: none;
 }
 
 .btn-confirm:hover {
-  background-color: #059669;
+  background-color: #059669; /* Podrías crear una variable --success-hover si deseas */
+  transform: translateY(-1px);
 }
 
 .btn-confirm:disabled {
-  background-color: #9ca3af;
-  /* TODO: Usar variable */
+  background-color: var(--text-light);
   cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
 }
 
 .btn-cancel-payment {
   background-color: transparent;
   color: var(--text-light);
-  border: 1px solid #e5e7eb;
-  /* TODO: Usar variable */
+  border: 1px solid var(--border-color);
   width: 100%;
 }
 
@@ -69,6 +76,7 @@
   position: relative;
 }
 
+/* Resultados de búsqueda */
 .customer-search-results {
   position: absolute;
   width: 100%;
@@ -76,11 +84,10 @@
   border: 1px solid var(--primary-color);
   border-top: none;
   border-radius: 0 0 var(--border-radius-sm) var(--border-radius-sm);
-  box-shadow: var(--box-shadow);
+  box-shadow: var(--box-shadow-lg);
   max-height: 150px;
   overflow-y: auto;
   z-index: 10;
-  /* Asegura que esté sobre el input de monto */
 }
 
 .customer-result-item {
@@ -88,6 +95,7 @@
   cursor: pointer;
   color: var(--text-color);
   font-size: 0.9rem;
+  border-bottom: 1px solid var(--light-background);
 }
 
 .customer-result-item:hover {
@@ -95,10 +103,11 @@
   color: var(--primary-color);
 }
 
-.customer-result-item:not(:last-child) {
-  border-bottom: 1px solid var(--light-background);
+.customer-result-item:last-child {
+  border-bottom: none;
 }
 
+/* Selector de método de pago */
 .payment-method-selector {
   display: flex;
   gap: var(--spacing-sm);
@@ -108,15 +117,16 @@
 .btn-method {
   flex: 1;
   padding: var(--spacing-sm);
-  border: 1px solid #e5e7eb;
-  /* TODO: Usar variable */
+  border: 1px solid var(--border-color);
   background-color: var(--card-background-color);
   color: var(--text-light);
+  transition: var(--transition);
 }
 
 .btn-method:hover {
   background-color: var(--light-background);
   color: var(--primary-color);
+  border-color: var(--border-color);
 }
 
 .btn-method.active {
@@ -133,6 +143,7 @@
   padding: var(--spacing-xs) 0;
   margin-top: var(--spacing-xs);
   cursor: pointer;
+  font-size: 0.9rem;
 }
 
 .btn-quick-add:hover {
@@ -144,42 +155,41 @@
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--error-color);
-  /* Lo marcamos como deuda */
   text-align: center;
 }
 
-/* Estilos para los botones de billetes rápidos */
+/* --- Estilos para los botones de billetes rápidos (CORREGIDOS) --- */
 .quick-cash-options {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  /* 3 columnas */
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-md);
-  margin-top: -10px;
-  /* Un pequeño ajuste para pegarlo al input de arriba */
+  margin-top: -5px;
 }
 
 .btn-cash-option {
-  padding: 8px 4px;
-  border: 1px solid #d1d5db;
-  /* Gris suave */
-  background-color: white;
-  color: var(--text-color);
+  padding: 10px 4px;
+  /* Usamos variables del tema en lugar de colores fijos */
+  border: 1px solid var(--border-color);
+  background-color: var(--card-background-color); 
+  color: var(--text-dark);
+  
   border-radius: var(--border-radius-sm);
   cursor: pointer;
   font-weight: 600;
-  font-size: 0.95rem;
-  transition: all 0.2s;
+  font-size: 1rem;
+  transition: var(--transition); /* Usar la transición global */
 }
 
 .btn-cash-option:hover {
   background-color: var(--light-background);
   border-color: var(--primary-color);
   color: var(--primary-color);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow);
 }
 
 .btn-cash-option:active {
   transform: translateY(0);
-  background-color: #e5e7eb;
+  background-color: var(--light-background);
 }

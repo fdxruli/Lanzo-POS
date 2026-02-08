@@ -114,7 +114,7 @@ export default function MessageModal() {
           color: 'white',
           padding: '12px 24px',
           borderRadius: '30px',
-          zIndex: 20005, // IMPORTANTE: Mayor que el z-index del modal (20000)
+          zIndex: 999999, // IMPORTANTE: Mayor que el z-index del modal (20000)
           boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
           fontSize: '0.95rem',
           fontWeight: '500',

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
+import { useNavigate } from 'react-router-dom';
 import Logger from '../../services/Logger';
 import './RenewalModal.css';
 
@@ -8,6 +9,8 @@ export default function RenewalModal() {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const renewLicense = useAppStore((state) => state.renewLicense);
   const logout = useAppStore((state) => state.logout);
+
+  const navigate = useNavigate();
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -20,6 +23,9 @@ export default function RenewalModal() {
       const result = await renewLicense();
       if (!result.success) {
         setErrorMessage(result.message || 'Error al renovar.');
+      } else {
+        Logger.log("Renovación exitosa:", result);
+        navigate('/');
       }
     } catch (error) {
       Logger.error("Error en renovación:", error);

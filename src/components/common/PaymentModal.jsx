@@ -65,10 +65,19 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   // Cálculo de Saldo (Fiado)
   const saldoPendiente = isFiado ? total - paid : 0;
 
+  const currentCustomer = customers.find(c => c.id === selectedCustomerId);
+  const limit = currentCustomer?.creditLimit || 0;
+  const currentDebt = currentCustomer?.debt || 0;
+  const projectedDebt = currentDebt + saldoPendiente;
+  const isOverLimit = isFiado && currentCustomer && (limit === 0 || projectedDebt > limit);
+  const limitMessage = limit === 0
+    ? "Este clciente no tiene credito autorizado."
+    : `Excede el limite de credito ($${limit}). Deuda final $${projectedDebt.toFixed(2)}.`;
+
   // Validación para confirmar
   const canConfirm = isEfectivo
     ? (paid >= total)
-    : (selectedCustomerId !== null && paid <= total);
+    : (selectedCustomerId !== null && paid <= total && !isOverLimit);
 
   const handleAmountFocus = (e) => {
     e.target.select();
@@ -274,6 +283,35 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   <p id="payment-change" className="payment-saldo">
                     ${saldoPendiente.toFixed(2)}
                   </p>
+                  {/* ALERTA DE LÍMITE DE CRÉDITO */}
+                  {isFiado && currentCustomer && (
+                    <div style={{
+                      marginTop: '10px',
+                      padding: '10px',
+                      borderRadius: '6px',
+                      fontSize: '0.85rem',
+                      backgroundColor: isOverLimit ? '#fed7d7' : '#e6fffa', // Rojo si se pasa, Verde/Azul si está bien
+                      color: isOverLimit ? '#c53030' : '#2c7a7b',
+                      border: `1px solid ${isOverLimit ? '#feb2b2' : '#b2f5ea'}`
+                    }}>
+                      {isOverLimit ? (
+                        // CASO ERROR: Se pasó del límite
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span>🚫</span>
+                          <div>
+                            <strong>Crédito Insuficiente</strong>
+                            <div style={{ fontSize: '0.8em' }}>{limitMessage}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        // CASO OK: Muestra cuánto le queda disponible
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Crédito disponible:</span>
+                          <strong>${(limit - projectedDebt).toFixed(2)}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {isFiado && paid > total && (
                     <p style={{ color: 'var(--error-color)', fontSize: '0.8rem', marginTop: '5px' }}>
                       El abono inicial no puede ser mayor al total.

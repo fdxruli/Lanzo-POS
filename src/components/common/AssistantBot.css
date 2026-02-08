@@ -1,0 +1,716 @@
+/* src/components/common/AssistantBot.css (V3.1 - THEME AWARE) */
+
+/* ============================================================
+   CONTENEDOR PRINCIPAL
+   ============================================================ */
+
+.lanzo-bot-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10005;
+  font-family: var(--font-family, system-ui);
+  transition: bottom 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ============================================================
+   TARJETA DEL BOT
+   ============================================================ */
+
+.lanzo-bot-card {
+  position: absolute;
+  bottom: 75px;
+  right: 0;
+  width: 380px;
+  max-height: 600px;
+
+  /* USO DE VARIABLES DE TEMA */
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+
+  border-radius: 16px;
+  box-shadow: var(--box-shadow-lg);
+  /* Sombra del sistema */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform-origin: bottom right;
+
+  /* Transición suave para cambio de tema */
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .lanzo-bot-card {
+    width: calc(100vw - 40px);
+    max-width: 380px;
+    max-height: 65vh;
+  }
+}
+
+/* Animación de entrada */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-pop-in {
+  animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+
+.bot-header {
+  padding: 16px;
+  /* Gradiente del fondo */
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.bot-title {
+  font-weight: 700;
+  font-size: 16px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.mode-toggle-btn,
+.close-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: #ffffff;
+  /* Forzamos blanco puro */
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-left: 4px;
+  padding: 0;
+  /* IMPORTANTE: Elimina el padding por defecto para centrar bien */
+  flex-shrink: 0;
+  /* Evita que el botón se aplaste */
+}
+
+/* NUEVA REGLA: Asegura que el icono sea visible */
+.mode-toggle-btn svg,
+.close-btn svg {
+  stroke: currentColor;
+  /* Hereda el color blanco del botón */
+  width: 16px;
+  /* Fuerza el tamaño */
+  height: 16px;
+  display: block;
+}
+
+.mode-toggle-btn:hover,
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+
+
+/* ============================================================
+   BODY
+   ============================================================ */
+
+.bot-body {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  /* Fondo diferente al de la tarjeta para contraste interno */
+  background: var(--background-color);
+
+  max-height: 500px;
+  transition: background-color 0.3s ease;
+}
+
+/* Scrollbar personalizado */
+.bot-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.bot-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bot-body::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+/* ============================================================
+   CONTENIDO CONTEXTUAL
+   ============================================================ */
+
+.context-message {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dark);
+  /* Texto principal */
+  margin: 0;
+}
+
+.context-message strong {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.bot-actions {
+  margin-top: 8px;
+}
+
+.actions-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-light);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.quick-action-btn {
+  /* Fondo de tarjeta y borde de variable */
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-dark);
+
+  padding: 10px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  position: relative;
+  overflow: hidden;
+}
+
+.quick-action-btn:hover {
+  border-color: var(--primary-color);
+  background: var(--light-background);
+  /* Hover suave del sistema */
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow);
+}
+
+.quick-action-btn.highlight {
+  border-color: var(--primary-color);
+  /* Un fondo muy sutil basado en el primary pero muy transparente */
+  background: rgba(var(--primary-color), 0.05);
+}
+
+/* Ajuste para que el highlight se vea bien en dark mode */
+[data-theme="dark"] .quick-action-btn.highlight {
+  background: rgba(255, 59, 92, 0.15);
+  /* Ajuste manual sutil si es necesario */
+}
+
+.action-icon {
+  font-size: 16px;
+  color: var(--primary-color);
+}
+
+.action-label {
+  flex: 1;
+  text-align: left;
+  font-weight: 500;
+}
+
+.action-arrow {
+  opacity: 0.5;
+  color: var(--text-light);
+}
+
+.quick-action-btn:hover .action-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+/* ============================================================
+   TIPS
+   ============================================================ */
+
+.bot-tips {
+  background: var(--card-background-color);
+  /* Fondo tarjeta */
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--warning-color);
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-color);
+}
+
+.bot-tips small {
+  display: block;
+  font-weight: 600;
+  color: var(--warning-color);
+  /* Usar color de warning del sistema */
+  margin-bottom: 6px;
+}
+
+.bot-tips ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-dark);
+}
+
+.bot-tips li {
+  margin: 4px 0;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   MODO CHAT
+   ============================================================ */
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 8px;
+}
+
+/* Pantalla de bienvenida vacía */
+.chat-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px 0;
+  color: var(--text-light);
+}
+
+.chat-welcome h4 {
+  margin: 10px 0 5px 0;
+  color: var(--text-dark);
+}
+
+.suggested-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 15px;
+}
+
+.suggested-questions button {
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.suggested-questions button:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+
+.chat-message {
+  display: flex;
+  gap: 8px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-message.user {
+  justify-content: flex-end;
+}
+
+.chat-message.bot {
+  justify-content: flex-start;
+}
+
+.message-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.message-bubble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  word-wrap: break-word;
+  position: relative;
+}
+
+/* Burbuja del Usuario */
+.chat-message.user .message-bubble {
+  background: var(--primary-color);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+/* Burbuja del Bot */
+.chat-message.bot .message-bubble {
+  background: var(--card-background-color);
+  color: var(--text-dark);
+  border: 1px solid var(--border-color);
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.inline-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  color: var(--text-dark);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+}
+
+.inline-action-btn:hover {
+  background: var(--border-color);
+}
+
+.message-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.option-btn {
+  background: transparent;
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.option-btn:hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+/* Indicador de escritura */
+.message-bubble.typing {
+  display: flex;
+  gap: 4px;
+  padding: 12px;
+  align-items: center;
+  min-height: 24px;
+}
+
+.message-bubble.typing span {
+  width: 6px;
+  height: 6px;
+  background: var(--text-light);
+  border-radius: 50%;
+  animation: bounce 1.4s ease-in-out infinite;
+}
+
+.message-bubble.typing span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.message-bubble.typing span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+  }
+
+  40% {
+    transform: translateY(-6px);
+  }
+}
+
+/* ============================================================
+   INPUT DE CHAT
+   ============================================================ */
+
+.chat-input-wrapper {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.chat-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+
+  /* Importante para dark mode */
+  background: var(--card-background-color);
+  color: var(--text-dark);
+
+  transition: border-color 0.2s;
+}
+
+.chat-input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(var(--primary-color), 0.1);
+}
+
+.chat-input::placeholder {
+  color: var(--text-light);
+}
+
+.send-btn {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.send-btn:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: scale(1.05);
+}
+
+.send-btn:disabled {
+  background: var(--light-background);
+  color: var(--text-light);
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   AVATAR FLOTANTE
+   ============================================================ */
+
+.lanzo-bot-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  padding: 0;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.2));
+}
+
+.lanzo-bot-avatar:hover {
+  transform: scale(1.1);
+}
+
+.lanzo-bot-avatar.active {
+  transform: scale(0.95);
+}
+
+/* Cuando está el chat activo, usamos el color primario para el botón */
+.lanzo-bot-avatar.chat-active {
+  background: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(var(--primary-color), 0.4);
+}
+
+.lanzo-bot-avatar.has-alert {
+  animation: alertPulse 2s ease-in-out infinite;
+}
+
+@keyframes alertPulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(220, 38, 38, 0));
+  }
+
+  50% {
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 10px rgba(220, 38, 38, 0.6));
+  }
+}
+
+.bot-icon-svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.notification-dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  background: var(--error-color);
+  border: 2px solid var(--card-background-color);
+  /* Borde del color de la tarjeta para que se funda */
+  border-radius: 50%;
+  z-index: 2;
+}
+
+/* ============================================================
+   ALERTA GLOBAL
+   ============================================================ */
+
+.alert-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.alert-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dark);
+  margin: 0;
+}
+
+.action-btn {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.dismiss-link {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  padding: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: center;
+}
+
+.dismiss-link:hover {
+  text-decoration: underline;
+  color: var(--text-dark);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 1024px) {
+  .lanzo-bot-container {
+    bottom: 85px;
+    right: 15px;
+  }
+
+  .lanzo-bot-card {
+    bottom: 75px;
+    right: 0;
+    width: calc(100vw - 30px);
+  }
+
+  .lanzo-bot-avatar {
+    width: 50px;
+    height: 50px;
+  }
+}
+
+@media (max-width: 768px) {
+  .lanzo-bot-container.has-items {
+    /* Subimos el botón. 
+       Generalmente la barra mide unos 60-70px, 
+       así que 90px asegura que quede flotando encima */
+    bottom: 150px !important; 
+  }
+
+  /* Opcional: Si el chat está abierto, también ajustamos la tarjeta 
+     para que no quede tapada por el teclado o la barra si fuera necesario,
+     aunque generalmente al abrir el chat queremos que ocupe todo. */
+  .lanzo-bot-container.has-items .lanzo-bot-card {
+    /* Ajuste ligero si es necesario */
+    bottom: 80px; 
+  }
+}

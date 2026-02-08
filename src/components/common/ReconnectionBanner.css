@@ -6,7 +6,7 @@
   top: 1rem;
   left: 1rem;
   right: 1rem;
-  z-index: 9999;
+  z-index: 11000;
   
   /* Estética de tarjeta moderna */
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
