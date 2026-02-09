@@ -1,6 +1,6 @@
 // src/components/common/AuditModal.jsx
 import React, { useState, useEffect } from 'react';
-import '../customers/Abonomodal.css';
+import '../customers/AbonoModal.css';
 
 export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcularTeorico }) {
     const [montoFisico, setMontoFisico] = useState('');
@@ -110,4 +110,5 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcul
             </div>
         </div>
     );
+
 }
