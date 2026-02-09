@@ -1,5 +1,6 @@
 // src/components/customers/CustomerCard.jsx
 import React, { memo } from 'react';
+import { useFeatureConfig } from '../../hooks/useFeatureConfig'; // <--- 1. IMPORTAR EL HOOK
 import {
     Edit,
     Trash2,
@@ -9,7 +10,7 @@ import {
     Phone,
     MapPin,
     AlertCircle,
-    Package // <-- Nuevo icono importado
+    Package
 } from 'lucide-react';
 
 const CustomerCard = memo(({
@@ -20,8 +21,10 @@ const CustomerCard = memo(({
     onViewHistory,
     onAbonar,
     onWhatsApp,
-    onViewLayaways // <-- Nuevo prop
+    onViewLayaways
 }) => {
+    // 2. OBTENER LA CONFIGURACIÓN
+    const { hasLayaway } = useFeatureConfig(); 
 
     const hasDebt = (customer.debt || 0) > 0;
 
@@ -29,7 +32,8 @@ const CustomerCard = memo(({
         <div className={`customer-card ${hasDebt ? 'has-debt' : ''}`}>
             {/* ... (Encabezado se mantiene igual) ... */}
             <div className="customer-content">
-                <div className="customer-header">
+               {/* ... (Contenido se mantiene igual) ... */}
+               <div className="customer-header">
                     <h4 className="customer-name">{customer.name}</h4>
                     {hasDebt && (
                         <div className="debt-badge">
@@ -66,15 +70,17 @@ const CustomerCard = memo(({
                         </button>
                     )}
 
-                    {/* NUEVO BOTÓN DE APARTADOS */}
-                    <button
-                        className="btn btn-layaway"
-                        onClick={() => onViewLayaways(customer)}
-                        title="Ver apartados activos"
-                    >
-                        <Package size={18} />
-                        <span>Apartados</span>
-                    </button>
+                    {/* 3. AGREGAR LA CONDICIÓN AQUÍ */}
+                    {hasLayaway && (
+                        <button
+                            className="btn btn-layaway"
+                            onClick={() => onViewLayaways(customer)}
+                            title="Ver apartados activos"
+                        >
+                            <Package size={18} />
+                            <span>Apartados</span>
+                        </button>
+                    )}
 
                     {customer.phone && (
                         <button
@@ -83,15 +89,15 @@ const CustomerCard = memo(({
                             disabled={isWhatsAppLoading}
                         >
                             <MessageCircle size={18} />
-                            {/* Texto corto para que quepa */}
                             <span>{isWhatsAppLoading ? '...' : 'Chat'}</span>
                         </button>
                     )}
                 </div>
 
-                {/* Acciones Secundarias */}
+                {/* ... Resto del componente igual ... */}
                 <div className="actions-secondary">
-                    <button
+                    {/* ... Botones secundarios ... */}
+                     <button
                         className="btn-icon-text"
                         onClick={() => onViewHistory(customer)}
                         title="Ver historial"
