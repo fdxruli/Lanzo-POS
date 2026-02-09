@@ -179,14 +179,14 @@
 }
 
 /* --- Botones de Acción (Header) --- */
-.actions-area {
+.product-list-container .actions-area {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
   margin-left: auto;
 }
 
-.btn-icon {
+.product-list-container .btn-icon {
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
@@ -515,31 +515,31 @@
 }
 
 /* Variante: Editar (Azul) */
-.btn-action.btn-edit {
+.product-list-container .btn-action.btn-edit {
   color: var(--primary-color, #3b82f6);
   background: rgba(59, 130, 246, 0.05);
   border-color: rgba(59, 130, 246, 0.2);
 }
 
-.btn-action.btn-edit:hover {
+.product-list-container .btn-action.btn-edit:hover {
   background: rgba(59, 130, 246, 0.15);
   transform: translateY(-1px);
 }
 
 /* Variante: Eliminar (Rojo) */
-.btn-action.btn-delete {
+.product-list-container .btn-action.btn-delete {
   color: var(--error-color, #ef4444);
   background: rgba(239, 68, 68, 0.05);
   border-color: rgba(239, 68, 68, 0.2);
 }
 
-.btn-action.btn-delete:hover {
+.product-list-container .btn-action.btn-delete:hover {
   background: rgba(239, 68, 68, 0.15);
   transform: translateY(-1px);
 }
 
 @media (max-width: 480px) {
-  .btn-action {
+  .product-list-container .btn-action {
     padding: 4px 6px;
     /* Menos espacio alrededor */
     font-size: 0.7rem;
@@ -551,7 +551,7 @@
   }
 
   /* Reducir ligeramente el tamaño de los iconos SVG */
-  .btn-action svg {
+  .product-list-container .btn-action svg {
     width: 14px;
     height: 14px;
   }
