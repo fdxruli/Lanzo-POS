@@ -69,27 +69,31 @@ export default function DashboardPage() {
     const tabParam = searchParams.get('tab');
     // Mapeo de URL a estado interno
     const tabMap = {
-        'stats': 'stats',
-        'tips': 'tips',
-        'restock': 'restock',
-        'history': 'history',
-        'expiration': 'expiration',
-        'waste': 'waste'
+      'stats': 'stats',
+      'tips': 'tips',
+      'restock': 'restock',
+      'history': 'history',
+      'expiration': 'expiration',
+      'waste': 'waste'
     };
 
     if (tabParam && tabMap[tabParam]) {
-        setActiveTab(tabMap[tabParam]);
-    }
-}, [searchParams]);
-
-
-const handleTabChange = (tabKey) => {
-    if (tabKey === 'stats') {
-        setSearchParams({}); // Limpia la URL para la vista por defecto
+      setActiveTab(tabMap[tabParam]);
     } else {
-        setSearchParams({ tab: tabKey });
+      // --- AGREGA ESTO ---
+      // Si no hay parámetro en la URL, forzamos la vista de Estadísticas
+      setActiveTab('stats');
     }
-};
+  }, [searchParams]);
+
+
+  const handleTabChange = (tabKey) => {
+    if (tabKey === 'stats') {
+      setSearchParams({}); // Limpia la URL para la vista por defecto
+    } else {
+      setSearchParams({ tab: tabKey });
+    }
+  };
 
   useEffect(() => {
     if (activeTab === 'history') loadRecycleBin();

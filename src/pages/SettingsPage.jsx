@@ -19,8 +19,12 @@ export default function SettingsPage() {
       'debug': 'debug'
     };
 
+    // CORRECCIÓN: Manejar tanto si existe el param como si no
     if (tabParam && tabMap[tabParam]) {
       setActiveTab(tabMap[tabParam]);
+    } else {
+      // Si no hay parámetro (o es inválido), forzamos la vista general
+      setActiveTab('general');
     }
   }, [searchParams]);
 
