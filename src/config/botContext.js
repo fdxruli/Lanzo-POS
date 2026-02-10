@@ -13,8 +13,8 @@ const getPageKey = (pathname) => {
 // 1. Definir la Alerta Global que falta
 export const GLOBAL_ALERT = {
   active: true, // Cambiar a true si hay un mensaje urgente
-  id: 'actualizacion_02',
-  message: 'El sistema ha tenido una actualizacion considerable. Si notas que los precios o stock no cuadran. Dirigete a la seccion de configuracion > Datos y mantenimiento y ejecuta los dos primeros botones.',
+  id: 'actualizaciones_02',
+  message: 'El sistema a tenido una actualizacion. Si notas algo raro ve a Datos y Mantenimiento en la seccion de configuracion.',
   actionLink: '/configuracion?tab=maintenance'
 };
 

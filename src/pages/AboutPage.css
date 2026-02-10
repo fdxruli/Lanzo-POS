@@ -12,9 +12,8 @@
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(15px);
   }
-
   to {
     opacity: 1;
     transform: translateY(0);
@@ -27,7 +26,7 @@
 .about-hero {
   text-align: center;
   padding: 3rem 0;
-  margin-bottom: 2rem;
+  margin-bottom: 2.5rem;
   border-bottom: 1px dashed var(--border-color);
 }
 
@@ -43,11 +42,12 @@
   color: var(--text-light);
   font-size: 0.8rem;
   font-weight: 700;
-  padding: 4px 12px;
+  padding: 5px 14px;
   border-radius: 20px;
   margin-bottom: 1rem;
   text-transform: uppercase;
   letter-spacing: 1px;
+  border: 1px solid var(--border-color);
 }
 
 .hero-slogan {
@@ -57,15 +57,17 @@
   background: linear-gradient(135deg, var(--text-dark) 0%, var(--text-light) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  line-height: 1.1;
+  background-clip: text;
+  color: var(--text-dark);
+  line-height: 1.15;
 }
 
 .hero-description {
   font-size: 1.1rem;
   color: var(--text-color);
-  max-width: 600px;
+  max-width: 650px;
   margin: 0 auto;
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
 /* =========================================
@@ -84,23 +86,20 @@
   gap: 2rem;
 }
 
-/* Escritorio */
 @media (min-width: 1024px) {
   .about-grid-layout {
     grid-template-columns: 1.5fr 1fr;
-    /* Columna Izq más ancha */
     align-items: start;
   }
 }
 
 /* =========================================
-   4. BENTO GRID (Mejorada para texto largo)
+   4. BENTO GRID
    ========================================= */
 .bento-grid {
   display: grid;
-  /* Hacemos las tarjetas un poco más anchas como mínimo (200px en vez de 140px) */
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.2rem;
 }
 
 .bento-card {
@@ -111,56 +110,83 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: default;
   height: 100%;
-  /* Asegura altura igual */
+  position: relative;
+  overflow: hidden;
 }
 
-/* Nuevo Header dentro de la tarjeta bento para alinear icono y titulo */
+.bento-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+
+.bento-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  border-color: var(--primary-color);
+}
+
+.bento-card:hover::before {
+  transform: scaleX(1);
+}
+
 .bento-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 0.8rem;
+  gap: 12px;
+  margin-bottom: 1rem;
+  width: 100%;
 }
 
 .bento-icon {
   background-color: var(--light-background);
-  padding: 8px;
-  border-radius: 10px;
+  padding: 10px;
+  border-radius: 12px;
   color: var(--text-dark);
   transition: all 0.3s;
-  /* Quitamos el margin-bottom porque ahora usamos flex gap */
-  margin-bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+.bento-card:hover .bento-icon {
+  background-color: var(--primary-color);
+  color: white;
+  transform: scale(1.1);
 }
 
 .bento-card h4 {
-  font-size: 1rem;
+  font-size: 1.05rem;
   margin: 0;
   color: var(--text-dark);
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.3;
 }
 
 .bento-card p {
   font-size: 0.9rem;
   margin: 0;
   color: var(--text-light);
-  line-height: 1.5;
-  /* Mejor lectura */
+  line-height: 1.6;
 }
 
 .section-header {
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   color: var(--text-dark);
-  margin-bottom: 1rem;
-  padding-left: 5px;
+  margin-bottom: 1.2rem;
+  padding-left: 12px;
   border-left: 4px solid var(--secondary-color);
-  padding-left: 10px;
+  font-weight: 800;
 }
 
 /* =========================================
@@ -170,15 +196,21 @@
   background-color: var(--card-background-color);
   border: 1px solid var(--border-color);
   border-radius: 16px;
-  padding: 1.5rem;
-  box-shadow: var(--box-shadow);
+  padding: 1.8rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .card-header-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 1rem;
+}
+
+.card-header-row h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
 }
 
 .icon-purple {
@@ -186,9 +218,10 @@
 }
 
 .card-intro {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   color: var(--text-light);
   margin-bottom: 1.5rem;
+  line-height: 1.5;
 }
 
 .roadmap-list {
@@ -203,18 +236,24 @@
   gap: 12px;
   font-size: 0.95rem;
   color: var(--text-dark);
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
   background-color: var(--light-background);
+  transition: all 0.2s ease;
+}
+
+.roadmap-item:hover {
+  transform: translateX(4px);
 }
 
 .roadmap-item.done .check {
   color: var(--success-color);
   font-weight: 900;
+  font-size: 1.1rem;
 }
 
 .roadmap-item.upcoming {
-  opacity: 0.7;
+  opacity: 0.75;
   border: 1px dashed var(--border-color);
   background-color: transparent;
 }
@@ -222,6 +261,7 @@
 .roadmap-item.upcoming .dot {
   color: var(--text-light);
   font-weight: 900;
+  font-size: 1.2rem;
 }
 
 /* =========================================
@@ -232,12 +272,11 @@
   border-radius: 20px;
   overflow: hidden;
   color: white;
-  padding: 2rem;
+  padding: 2.5rem 2rem;
   text-align: center;
-  box-shadow: 0 10px 30px rgba(123, 97, 255, 0.3);
+  box-shadow: 0 12px 40px rgba(123, 97, 255, 0.35);
 }
 
-/* Fondo animado */
 .sponsor-bg-effect {
   position: absolute;
   top: 0;
@@ -260,100 +299,85 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.2px;
   opacity: 0.9;
   margin-bottom: 1rem;
-}
-
-.heart-beat {
-  color: #ff3b5c;
-  animation: heartBeat 1.5s infinite;
-}
-
-@keyframes heartBeat {
-
-  0%,
-  100% {
-    transform: scale(1);
-  }
-
-  50% {
-    transform: scale(1.2);
-  }
+  font-weight: 600;
 }
 
 .sponsor-name {
-  font-size: 2.2rem;
+  font-size: 2.5rem;
   font-weight: 900;
-  margin: 0;
+  margin: 0 0 1.5rem 0;
   letter-spacing: -1px;
   color: white;
 }
 
 .sponsor-tagline {
-  font-size: 1rem;
-  opacity: 0.8;
-  margin-bottom: 2rem;
+  max-width: 500px;
+  margin: 0 auto 2rem auto;
 }
 
 .impact-counter {
   background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(5px);
-  padding: 10px 20px;
-  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  padding: 1rem 1.5rem;
+  border-radius: 14px;
   margin-bottom: 2rem;
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .impact-number {
   display: block;
-  font-size: 1.8rem;
-  font-weight: 800;
+  font-size: 2rem;
+  font-weight: 900;
   color: #fbbf24;
-  /* Amber 400 */
+  margin: 0.3rem 0;
 }
 
 .impact-label {
-  font-size: 0.8rem;
-  opacity: 0.9;
+  font-size: 0.85rem;
+  opacity: 0.95;
+  display: block;
 }
 
 .btn-visit-sponsor {
   background-color: white;
   color: #4f46e5;
-  padding: 12px 24px;
+  padding: 13px 28px;
   border-radius: 50px;
   font-weight: 700;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .btn-visit-sponsor:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  background-color: #f9fafb;
 }
 
 /* =========================================
    7. CONTACT CARD MODERN
    ========================================= */
-.contact-card-modern {
-  text-align: center;
-}
-
 .contact-card-modern h3 {
   margin-top: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
 }
 
 .contact-actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin-top: 1.5rem;
 }
 
@@ -362,12 +386,13 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 12px;
-  border-radius: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
   font-weight: 600;
-  border: 1px solid transparent;
+  border: 2px solid transparent;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.95rem;
 }
 
 .btn-bug {
@@ -378,6 +403,8 @@
 
 .btn-bug:hover {
   background-color: #ffedd5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.2);
 }
 
 .btn-idea {
@@ -388,11 +415,13 @@
 
 .btn-idea:hover {
   background-color: #dcfce7;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(22, 101, 52, 0.2);
 }
 
 .contact-footer {
   margin-top: 1.5rem;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: var(--text-light);
   display: flex;
   align-items: center;
@@ -400,12 +429,57 @@
   gap: 6px;
 }
 
-.icon-whatsapp {
-  color: #25D366;
+.icon-email {
+  color: #3b82f6;
 }
 
 /* =========================================
-   8. DARK MODE ADJUSTMENTS
+   8. INFO CARD ADICIONAL
+   ========================================= */
+.info-card {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid #93c5fd;
+  border-radius: 16px;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.info-card h4 {
+  margin-top: 0;
+  margin-bottom: 0.8rem;
+  font-size: 1.1rem;
+  color: #1e40af;
+}
+
+.info-card p {
+  font-size: 0.9rem;
+  color: #1e3a8a;
+  margin-bottom: 1.2rem;
+  line-height: 1.5;
+}
+
+.btn-contact-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background-color: #3b82f6;
+  color: white;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.btn-contact-email:hover {
+  background-color: #2563eb;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3);
+}
+
+/* =========================================
+   9. DARK MODE
    ========================================= */
 [data-theme="dark"] .bento-icon {
   background-color: #334155;
@@ -422,12 +496,46 @@
 }
 
 [data-theme="dark"] .btn-bug {
-  background-color: rgba(234, 88, 12, 0.1);
-  border-color: rgba(234, 88, 12, 0.3);
+  background-color: rgba(234, 88, 12, 0.15);
+  border-color: rgba(234, 88, 12, 0.4);
 }
 
 [data-theme="dark"] .btn-idea {
-  background-color: rgba(22, 101, 52, 0.1);
-  border-color: rgba(22, 101, 52, 0.3);
+  background-color: rgba(22, 101, 52, 0.15);
+  border-color: rgba(22, 101, 52, 0.4);
   color: #4ade80;
+}
+
+[data-theme="dark"] .info-card {
+  background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+  border-color: #3b82f6;
+}
+
+[data-theme="dark"] .info-card h4 {
+  color: #93c5fd;
+}
+
+[data-theme="dark"] .info-card p {
+  color: #bfdbfe;
+}
+
+/* =========================================
+   10. RESPONSIVE
+   ========================================= */
+@media (max-width: 640px) {
+  .about-hero {
+    padding: 2rem 0;
+  }
+
+  .bento-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sponsor-name {
+    font-size: 2rem;
+  }
+
+  .impact-number {
+    font-size: 1.6rem;
+  }
 }
