@@ -1,5 +1,8 @@
-/* ProductList.css - Versión adaptable a Temas (Dark/Light Mode) */
+/* ProductList.css - Versión CORREGIDA con especificidad reforzada */
 
+/* ====================================
+   CONTENEDOR PRINCIPAL (Scope Aislado)
+   ==================================== */
 .product-list-container {
   display: flex;
   flex-direction: column;
@@ -7,7 +10,10 @@
   width: 100%;
 }
 
-.list-header {
+/* ====================================
+   HEADER DE LA LISTA
+   ==================================== */
+.product-list-container .list-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -16,67 +22,102 @@
   margin-bottom: 10px;
 }
 
-.subtitle {
+.product-list-container .subtitle {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
-  /* Usa variable de texto principal */
   color: var(--text-color, #1e293b);
 }
 
-.product-count {
+.product-list-container .product-count {
   font-size: 0.85rem;
-  /* Usa variable de texto secundario/ligero */
   color: var(--text-light, #64748b);
   margin-left: 10px;
 }
 
-/* --- Search Box --- */
-.search-box {
-  display: flex;
-  align-items: center;
-  /* Fondo adaptable: blanco en light, oscuro en dark */
-  background: var(--card-background-color, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 8px;
-  padding: 0 12px;
+/* ====================================
+   BUSCADOR (Especificidad reforzada + Z-INDEX)
+   ==================================== */
+.product-list-container .search-box {
+  display: flex !important; /* ← FORZAR display flex */
+  align-items: center !important;
+  position: relative; /* ← Crear contexto de apilamiento */
+  z-index: 10; /* ← Asegurar que esté sobre las tarjetas */
+  
+  background: var(--card-background-color, #ffffff) !important;
+  border: 1px solid var(--border-color, #e2e8f0) !important;
+  border-radius: 8px !important;
+  padding: 0 12px !important;
+  
   width: 300px;
   max-width: 100%;
+  min-height: 42px; /* ← Altura mínima para estabilidad */
+  
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.search-box:focus-within {
-  border-color: var(--primary-color, #3b82f6);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+.product-list-container .search-box:focus-within {
+  border-color: var(--primary-color, #3b82f6) !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1) !important;
+  z-index: 15; /* ← Mayor prioridad cuando está enfocado */
 }
 
-.search-icon {
-  color: var(--text-light, #94a3b8);
-  display: flex;
-  align-items: center;
+.product-list-container .search-icon {
+  color: var(--text-light, #94a3b8) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  
+  flex-shrink: 0 !important;
+  width: 18px !important;
+  height: 18px !important;
+  margin-right: 8px; /* ← Cambié de 4px a 8px para más espacio */
+  
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
+  
+  /* 🔧 CLAVE: Alinear verticalmente con el texto */
+  align-self: center; /* ← AGREGAR ESTA LÍNEA */
+  margin-top: 0; /* ← AGREGAR ESTA LÍNEA */
+  margin-bottom: 0; /* ← AGREGAR ESTA LÍNEA */
 }
 
-.search-box input {
-  border: none;
-  outline: none;
-  padding: 10px;
-  font-size: 0.9rem;
-  width: 100%;
-  background: transparent;
-  /* Importante para que tome el color del padre */
-  color: var(--text-color, #334155);
+/* Asegurar que el SVG dentro del span no se rompa */
+.product-list-container .search-icon svg {
+  width: 18px !important;
+  height: 18px !important;
+  display: block !important;
+  margin: 0 !important; /* ← AGREGAR para eliminar márgenes del SVG */
 }
 
-/* --- Grid --- */
-.product-grid {
+.product-list-container .search-box input {
+  border: none !important;
+  outline: none !important;
+  padding: 10px !important;
+  font-size: 0.9rem !important;
+  width: 100% !important;
+  background: transparent !important;
+  color: var(--text-color, #334155) !important;
+  
+  /* Asegurar que el input no colapse */
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+
+/* ====================================
+   GRID DE PRODUCTOS
+   ==================================== */
+.product-list-container .product-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 }
 
-/* --- Card Structure --- */
-.product-card-complex {
-  /* FONDO ADAPTABLE: Clave para el modo oscuro */
+/* ====================================
+   TARJETAS DE PRODUCTO
+   ==================================== */
+.product-list-container .product-card-complex {
   background: var(--card-background-color, #ffffff);
   border: 1px solid var(--border-color, #e2e8f0);
   border-radius: 12px;
@@ -88,34 +129,31 @@
   position: relative;
 }
 
-.product-card-complex:hover {
+.product-list-container .product-card-complex:hover {
   transform: translateY(-2px);
-  /* Sombra más suave y adaptable */
   box-shadow: 0 4px 12px var(--shadow-color, rgba(0, 0, 0, 0.05));
   border-color: var(--border-color, #cbd5e1);
 }
 
-/* Estado Inactivo (Dimmed) */
-.product-card-complex.opacity-dim {
+/* Estados de la tarjeta */
+.product-list-container .product-card-complex.opacity-dim {
   opacity: 0.85;
-  /* Menos opacidad para que se lea en dark mode */
-  /* Usamos un filtro de escala de grises en lugar de un fondo fijo */
   filter: grayscale(0.8);
   background-color: var(--bg-primary, #f8fafc);
-  /* Fondo de "página" para que parezca hundido */
 }
 
-/* Bordes de estado crítico (usando variables de error/warning si existen) */
-.border-critical {
+.product-list-container .border-critical {
   border-left: 4px solid var(--error-color, #ef4444);
 }
 
-.border-warning {
+.product-list-container .border-warning {
   border-left: 4px solid var(--warning-color, #f97316);
 }
 
-/* --- 1. Header Area --- */
-.complex-header {
+/* ====================================
+   HEADER DE LA TARJETA
+   ==================================== */
+.product-list-container .complex-header {
   padding: 12px;
   display: flex;
   gap: 12px;
@@ -123,7 +161,7 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.img-area {
+.product-list-container .img-area {
   width: 48px;
   height: 48px;
   flex-shrink: 0;
@@ -133,18 +171,18 @@
   background: var(--bg-primary, #f1f5f9);
 }
 
-.img-area img {
+.product-list-container .img-area img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.title-area {
+.product-list-container .title-area {
   flex: 1;
   min-width: 0;
 }
 
-.title-top h4 {
+.product-list-container .title-top h4 {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
@@ -154,72 +192,143 @@
   text-overflow: ellipsis;
 }
 
-.sub-meta {
+.product-list-container .sub-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 4px;
 }
 
-.category-badge,
-.sku-badge {
+.product-list-container .category-badge,
+.product-list-container .sku-badge {
   font-size: 0.7rem;
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 500;
-  /* Fondos con opacidad para adaptarse al modo oscuro */
   background: rgba(148, 163, 184, 0.1);
   color: var(--text-light, #64748b);
 }
 
-.sku-badge {
+.product-list-container .sku-badge {
   background: rgba(59, 130, 246, 0.1);
-  /* Azul muy suave */
   color: var(--primary-color, #3b82f6);
 }
 
-/* --- Botones de Acción (Header) --- */
+/* ====================================
+   🔧 BOTONES DE ACCIÓN (ÁREA CRÍTICA - CORREGIDA)
+   ==================================== */
+
+/* Contenedor de botones con aislamiento */
 .product-list-container .actions-area {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
   margin-left: auto;
+  align-items: center; /* ← Asegura alineación vertical */
 }
 
-.product-list-container .btn-icon {
-  background: transparent;
-  border: 1px solid transparent;
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 6px;
-  color: var(--text-light, #64748b);
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* 
+  ⚠️ CRÍTICO: Usamos !important aquí de forma estratégica
+  porque esta clase está en conflicto con estilos globales
+  de otros componentes que se cargan después
+*/
+.product-list-container .btn-action {
+  display: flex !important; /* ← Forzamos display flex */
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  
+  padding: 6px 10px !important;
+  border-radius: 6px !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  
+  cursor: pointer !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--text-light, #64748b) !important;
+  
+  transition: all 0.2s ease !important;
+  white-space: nowrap !important;
+  
+  /* Dimensiones fijas para evitar colapsos */
+  min-height: 32px;
+  min-width: fit-content;
 }
 
-.btn-icon:hover {
-  background: var(--bg-primary, #f1f5f9);
-  color: var(--text-color, #0f172a);
+/* Estados hover generales */
+.product-list-container .btn-action:hover {
+  transform: translateY(-1px);
 }
 
-.btn-edit:hover {
-  color: var(--primary-color, #3b82f6);
-  background: rgba(59, 130, 246, 0.1);
+/* Variante EDITAR (Azul) - Especificidad máxima */
+.product-list-container .actions-area .btn-action.btn-edit {
+  color: var(--primary-color, #3b82f6) !important;
+  background: rgba(59, 130, 246, 0.05) !important;
+  border-color: rgba(59, 130, 246, 0.2) !important;
 }
 
-.btn-delete:hover {
-  color: var(--error-color, #ef4444);
-  background: rgba(239, 68, 68, 0.1);
+.product-list-container .actions-area .btn-action.btn-edit:hover {
+  background: rgba(59, 130, 246, 0.15) !important;
+  border-color: rgba(59, 130, 246, 0.4) !important;
 }
 
-/* --- 2. Alerts --- */
-.alert-section-wrapper {
+/* Variante ELIMINAR (Rojo) - Especificidad máxima */
+.product-list-container .actions-area .btn-action.btn-delete {
+  color: var(--error-color, #ef4444) !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+  border-color: rgba(239, 68, 68, 0.2) !important;
+}
+
+.product-list-container .actions-area .btn-action.btn-delete:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+
+/* Aseguramos que los SVG dentro de los botones no se rompan */
+.product-list-container .btn-action svg {
+  width: 16px !important;
+  height: 16px !important;
+  flex-shrink: 0 !important;
+}
+
+/* El texto dentro del botón */
+.product-list-container .btn-action span {
+  display: inline-block;
+  line-height: 1;
+}
+
+/* ====================================
+   RESPONSIVE - MÓVIL
+   ==================================== */
+@media (max-width: 480px) {
+  /* En móvil, los botones son más compactos */
+  .product-list-container .btn-action {
+    padding: 4px 6px !important;
+    font-size: 0.7rem !important;
+    gap: 3px !important;
+    min-height: 28px !important;
+  }
+  
+  .product-list-container .btn-action svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  
+  /* Opcional: Ocultar texto en pantallas muy pequeñas */
+  .product-list-container .btn-action span {
+    display: none;
+  }
+}
+
+/* ====================================
+   ALERTAS Y BADGES
+   ==================================== */
+.product-list-container .alert-section-wrapper {
   padding: 8px 12px 0 12px;
 }
 
-.alert-banner {
+.product-list-container .alert-banner {
   font-size: 0.75rem;
   padding: 4px 8px;
   border-radius: 4px;
@@ -227,73 +336,77 @@
   margin-bottom: 4px;
 }
 
-.alert-red {
+.product-list-container .alert-red {
   background: rgba(239, 68, 68, 0.1);
   color: var(--error-color, #ef4444);
 }
 
-.alert-orange {
+.product-list-container .alert-orange {
   background: rgba(249, 115, 22, 0.1);
   color: var(--warning-color, #f97316);
 }
 
-/* --- 3. Main Stats --- */
-.main-stats {
+/* ====================================
+   ESTADÍSTICAS PRINCIPALES
+   ==================================== */
+.product-list-container .main-stats {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   padding: 12px;
   gap: 8px;
 }
 
-.stat-block {
+.product-list-container .stat-block {
   display: flex;
   flex-direction: column;
 }
 
-.stat-label {
+.product-list-container .stat-label {
   font-size: 0.7rem;
   color: var(--text-light, #94a3b8);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
-.stat-value {
+.product-list-container .stat-value {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-color, #334155);
 }
 
-.stat-value.price {
+.product-list-container .stat-value.price {
   color: var(--text-color, #0f172a);
   font-weight: 700;
 }
 
-.stat-value.stock small {
+.product-list-container .stat-value.stock small {
   font-size: 0.7rem;
   color: var(--text-light, #94a3b8);
   font-weight: 400;
   margin-left: 2px;
 }
 
-.text-red {
+.product-list-container .text-red {
   color: var(--error-color, #ef4444);
 }
 
-.text-success {
+.product-list-container .text-success {
   color: var(--success-color, #10b981);
 }
 
-.text-muted {
+.product-list-container .text-muted {
   color: var(--text-light, #cbd5e1);
 }
 
-/* --- 4. Details Container (Por Rubro) --- */
-.details-container {
+/* ====================================
+   DETALLES DEL PRODUCTO
+   ==================================== */
+.product-list-container .details-container {
   padding: 0 12px 12px 12px;
   font-size: 0.8rem;
 }
 
-.rubro-section {
+.product-list-container .rubro-section {
   background: var(--bg-primary, #f8fafc);
   border-radius: 6px;
   padding: 8px;
@@ -303,50 +416,49 @@
   border: 1px solid transparent;
 }
 
-.rubro-section.pharmacy {
+.product-list-container .rubro-section.pharmacy {
   background: rgba(34, 197, 94, 0.05);
-  /* Verde muy suave */
   border: 1px solid rgba(34, 197, 94, 0.2);
 }
 
-.rubro-section.logistics {
+.product-list-container .rubro-section.logistics {
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
 }
 
-.detail-item {
+.product-list-container .detail-item {
   display: flex;
   justify-content: space-between;
 }
 
-.detail-item.full {
+.product-list-container .detail-item.full {
   flex-direction: column;
   gap: 2px;
 }
 
-.detail-row {
+.product-list-container .detail-row {
   display: flex;
   gap: 6px;
   margin-top: 4px;
 }
 
-.label {
+.product-list-container .label {
   color: var(--text-light, #64748b);
   font-weight: 500;
 }
 
-.value {
+.product-list-container .value {
   color: var(--text-color, #334155);
   font-weight: 600;
   text-align: right;
 }
 
-.value.monospace {
+.product-list-container .value.monospace {
   font-family: monospace;
   letter-spacing: 0.5px;
 }
 
-.pill-badge {
+.product-list-container .pill-badge {
   background: var(--card-background-color, white);
   border: 1px solid var(--success-color, #bbf7d0);
   color: var(--success-color, #166534);
@@ -355,33 +467,33 @@
   font-size: 0.7rem;
 }
 
-.lab-badge {
+.product-list-container .lab-badge {
   color: var(--success-color, #15803d);
   font-weight: 600;
   font-size: 0.75rem;
 }
 
-/* --- 5. Footer & Switch --- */
-.complex-footer {
+/* ====================================
+   FOOTER Y SWITCH
+   ==================================== */
+.product-list-container .complex-footer {
   margin-top: auto;
   padding: 10px 12px;
   background: var(--card-background-color, #fff);
-  /* Asegura que el footer coincida con la tarjeta */
   border-top: 1px solid var(--border-color, #f1f5f9);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-/* Custom Switch */
-.status-switch-container {
+.product-list-container .status-switch-container {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
 }
 
-.switch-track {
+.product-list-container .switch-track {
   width: 32px;
   height: 18px;
   background: var(--text-light, #cbd5e1);
@@ -390,15 +502,14 @@
   transition: background 0.2s;
 }
 
-.switch-track.checked {
+.product-list-container .switch-track.checked {
   background: var(--success-color, #22c55e);
 }
 
-.switch-thumb {
+.product-list-container .switch-thumb {
   width: 14px;
   height: 14px;
   background: #ffffff;
-  /* El pulgar siempre suele ser blanco o muy claro */
   border-radius: 50%;
   position: absolute;
   top: 2px;
@@ -407,41 +518,40 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-.switch-track.checked .switch-thumb {
+.product-list-container .switch-track.checked .switch-thumb {
   transform: translateX(14px);
 }
 
-.switch-label {
+.product-list-container .switch-label {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--text-light, #64748b);
 }
 
-/* Footer Badges & Actions */
-.footer-actions {
+.product-list-container .footer-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.feat-badge {
+.product-list-container .feat-badge {
   font-size: 0.7rem;
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 600;
 }
 
-.feat-badge.purple {
+.product-list-container .feat-badge.purple {
   background: rgba(147, 51, 234, 0.1);
   color: #9333ea;
 }
 
-.feat-badge.gray {
+.product-list-container .feat-badge.gray {
   background: var(--bg-primary, #f1f5f9);
   color: var(--text-light, #475569);
 }
 
-.btn-waste-text {
+.product-list-container .btn-waste-text {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -456,17 +566,20 @@
   transition: all 0.2s;
 }
 
-.btn-waste-text:hover {
+.product-list-container .btn-waste-text:hover {
   background: rgba(239, 68, 68, 0.15);
 }
 
-.pagination-container {
+/* ====================================
+   PAGINACIÓN
+   ==================================== */
+.product-list-container .pagination-container {
   display: flex;
   justify-content: center;
   padding: 20px 0;
 }
 
-.btn-load-more {
+.product-list-container .btn-load-more {
   background: var(--primary-color, #3b82f6);
   color: white;
   border: none;
@@ -477,82 +590,24 @@
   transition: background 0.2s;
 }
 
-.btn-load-more:hover {
+.product-list-container .btn-load-more:hover {
   filter: brightness(0.9);
 }
 
-.btn-load-more:disabled {
+.product-list-container .btn-load-more:disabled {
   background: var(--text-light, #cbd5e1);
   cursor: not-allowed;
 }
 
-.empty-state {
+/* ====================================
+   ESTADO VACÍO
+   ==================================== */
+.product-list-container .empty-state {
   text-align: center;
   padding: 40px;
   color: var(--text-light, #64748b);
 }
 
-.empty-icon {
+.product-list-container .empty-icon {
   margin-bottom: 10px;
-}
-
-/* Estilo base para botones con texto e icono */
-.btn-action {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  /* Espacio entre icono y texto */
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  /* Tamaño de letra similar a merma */
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.2s;
-  background: transparent;
-  white-space: nowrap;
-}
-
-/* Variante: Editar (Azul) */
-.product-list-container .btn-action.btn-edit {
-  color: var(--primary-color, #3b82f6);
-  background: rgba(59, 130, 246, 0.05);
-  border-color: rgba(59, 130, 246, 0.2);
-}
-
-.product-list-container .btn-action.btn-edit:hover {
-  background: rgba(59, 130, 246, 0.15);
-  transform: translateY(-1px);
-}
-
-/* Variante: Eliminar (Rojo) */
-.product-list-container .btn-action.btn-delete {
-  color: var(--error-color, #ef4444);
-  background: rgba(239, 68, 68, 0.05);
-  border-color: rgba(239, 68, 68, 0.2);
-}
-
-.product-list-container .btn-action.btn-delete:hover {
-  background: rgba(239, 68, 68, 0.15);
-  transform: translateY(-1px);
-}
-
-@media (max-width: 480px) {
-  .product-list-container .btn-action {
-    padding: 4px 6px;
-    /* Menos espacio alrededor */
-    font-size: 0.7rem;
-    /* Letra un poco más chica */
-    gap: 3px;
-    /* Juntar más el icono con el texto */
-    height: 28px;
-    /* Forzar una altura controlada */
-  }
-
-  /* Reducir ligeramente el tamaño de los iconos SVG */
-  .product-list-container .btn-action svg {
-    width: 14px;
-    height: 14px;
-  }
 }
