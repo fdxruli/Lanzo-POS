@@ -1,4 +1,4 @@
-// src/components/common/AssistantBot.jsx (V4.0 - INTEGRADO CON INTELLIGENCE)
+// src/components/common/AssistantBot.jsx (V4.1 - ALERTAS GLOBALES FORZADAS)
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -8,7 +8,6 @@ import {
   Sparkles, HelpCircle, Lightbulb,
 } from 'lucide-react';
 import './AssistantBot.css';
-
 // --- STORES ---
 import { useOrderStore } from '../../store/useOrderStore';
 import { useProductStore } from '../../store/useProductStore';
@@ -26,9 +25,18 @@ import {
 const AssistantBot = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  
+  const checkInitialGlobalAlert = () => {
+    if (GLOBAL_ALERT && GLOBAL_ALERT.active) {
+      const alertKey = `lanzo_alert_${GLOBAL_ALERT.id}`;
+      // Si NO existe en localStorage, es que es una alerta pendiente (true)
+      return !localStorage.getItem(alertKey);
+    }
+    return false;
+  };
 
-  const [isOpen, setIsOpen] = useState(false);
-  const [showGlobalAlert, setShowGlobalAlert] = useState(false);
+  const [showGlobalAlert, setShowGlobalAlert] = useState(checkInitialGlobalAlert);
+  const [isOpen, setIsOpen] = useState(checkInitialGlobalAlert);
   const [chatMode, setChatMode] = useState(false);
   const [messages, setMessages] = useState([]);
   const [userInput, setUserInput] = useState('');
@@ -42,6 +50,8 @@ const AssistantBot = () => {
   const stats = useStatsStore((state) => state.stats);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const companyProfile = useAppStore((state) => state.companyProfile);
+
+  const showAssistantBot = useAppStore((state) => state.showAssistantBot);
 
   // 2. CÁLCULOS DERIVADOS Y DATA PARA EL BOT
   const botData = useMemo(() => {
@@ -66,6 +76,24 @@ const AssistantBot = () => {
       stats
     };
   }, [cartOrder, menuProducts, stats, licenseDetails, getTotalPrice, companyProfile]);
+
+  // 2.5 🆕 VERIFICACIÓN DE ALERTA GLOBAL (PRIORITARIA)
+  // Esto asegura que las alertas críticas SIEMPRE se muestren, 
+  // incluso si el usuario desactivó el bot en configuración
+  useEffect(() => {
+    if (GLOBAL_ALERT.active) {
+      const alertKey = `lanzo_alert_${GLOBAL_ALERT.id}`;
+      const seenAlert = localStorage.getItem(alertKey);
+      
+      if (!seenAlert) {
+        console.log('🔔 [AssistantBot] Alerta global detectada.');
+        setShowGlobalAlert(true);
+        setIsOpen(true);
+      }
+    } else {
+      setShowGlobalAlert(false);
+    }
+  }, [GLOBAL_ALERT.active, GLOBAL_ALERT.id]);
 
   // 3. OBTENER CONTEXTO INTELIGENTE (Visualización pasiva)
   const context = useMemo(() => {
@@ -93,21 +121,14 @@ const AssistantBot = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  // Efecto: Auto-abrir si hay alerta global no vista
-  useEffect(() => {
-    if (GLOBAL_ALERT.active) {
-      const seenAlert = localStorage.getItem(`lanzo_alert_${GLOBAL_ALERT.id}`);
-      if (!seenAlert) {
-        setShowGlobalAlert(true);
-        setIsOpen(true);
-      }
-    }
-  }, []);
-
   const handleDismissAlert = () => {
-    setShowGlobalAlert(false);
+    // Guardar que el usuario ya vio esta alerta específica
     localStorage.setItem(`lanzo_alert_${GLOBAL_ALERT.id}`, 'true');
+    
+    setShowGlobalAlert(false);
     setIsOpen(false);
+    
+    console.log('✅ [AssistantBot] Alerta global marcada como vista');
   };
 
   const handleQuickAction = (action) => {
@@ -187,16 +208,27 @@ const AssistantBot = () => {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
+      // 🆕 CORRECCIÓN: No cerrar el bot si hay una alerta global activa
+      // (Para que el usuario no pueda ignorarla accidentalmente)
+      if (showGlobalAlert) return;
+      
       if (isOpen && botRef.current && !botRef.current.contains(event.target)) {
         setIsOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
+  }, [isOpen, showGlobalAlert]); // Agregamos showGlobalAlert como dependencia
 
   const hasActiveAlert = showGlobalAlert || (criticalAlert && criticalAlert.severity === 'critical');
   const hasItemsInCart = cartOrder.length > 0;
+
+  // 🆕 LÓGICA MODIFICADA DEL RETURN CONDICIONAL
+  // ANTES: if (!showAssistantBot && !showGlobalAlert) return null;
+  // AHORA: Siempre mostramos el bot si hay una alerta global activa
+  if (!showAssistantBot && !showGlobalAlert) {
+    return null;
+  }
 
   return (
     <div ref={botRef} className={`lanzo-bot-container ${isOpen ? 'open' : 'closed'} ${hasItemsInCart ? 'has-items' : ''}`}>
@@ -211,7 +243,7 @@ const AssistantBot = () => {
                   Asistente IA
                 </>
               ) : (
-                showGlobalAlert ? "Importante" :
+                showGlobalAlert ? "⚠️ Importante" :
                   criticalAlert ? "Atención Requerida" :
                     (context?.title || 'Lanzo Bot')
               )}
@@ -226,7 +258,18 @@ const AssistantBot = () => {
                   {chatMode ? <HelpCircle size={16} /> : <Sparkles size={16} />}
                 </button>
               )}
-              <button onClick={() => setIsOpen(false)} className="close-btn">
+              {/* 🆕 CORRECCIÓN: Deshabilitar el botón X si hay alerta global */}
+              <button 
+                onClick={() => {
+                  // Solo permitir cerrar si NO hay alerta global
+                  if (!showGlobalAlert) {
+                    setIsOpen(false);
+                  }
+                }} 
+                className="close-btn"
+                style={showGlobalAlert ? { opacity: 0.3, cursor: 'not-allowed' } : {}}
+                title={showGlobalAlert ? 'Debes leer el mensaje primero' : 'Cerrar'}
+              >
                 <X size={16} />
               </button>
             </div>
@@ -240,12 +283,12 @@ const AssistantBot = () => {
                   <button
                     onClick={() => {
                       navigate(GLOBAL_ALERT.actionLink);
-                      setIsOpen(false);
+                      handleDismissAlert(); // Marcamos como visto al hacer clic
                     }}
                     className="action-btn"
                   >
                     <Wrench size={16} style={{ marginRight: 5 }} />
-                    Ir a Reparación
+                    Ir Ahora
                   </button>
                 )}
                 <button onClick={handleDismissAlert} className="dismiss-link">
@@ -456,6 +499,7 @@ const AssistantBot = () => {
         className={`lanzo-bot-avatar ${hasActiveAlert ? 'has-alert' : ''} ${chatMode && isOpen ? 'chat-active' : ''}`}
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Asistente Virtual"
+        title={showGlobalAlert ? '⚠️ Tienes un mensaje importante' : 'Abrir asistente'}
       >
         {hasActiveAlert ? (
           <AlertTriangle size={24} color="white" />
@@ -465,7 +509,7 @@ const AssistantBot = () => {
           <img src="/boticon.svg" alt="Asistente" className="bot-icon-svg" />
         )}
 
-        {!isOpen && (botData.lowStockCount > 0 || botData.licenseDays <= 7 || criticalAlert) && (
+        {!isOpen && (botData.lowStockCount > 0 || botData.licenseDays <= 7 || criticalAlert || showGlobalAlert) && (
           <span className="notification-dot"></span>
         )}
       </button>

@@ -2,13 +2,13 @@
 
 /* =========================================
    1. ESTILOS BASE (MOBILE FIRST)
-   Pantalla completa en celular
    ========================================= */
 
-/* Contenedor wrapper (heredado de .modal en index.css pero forzamos reset) */
-.modal:has(.welcome-modal-content) {
+.modal.welcome-modal-overlay {
   padding: 0 !important;
   align-items: flex-start;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
 }
 
 .welcome-modal-content {
@@ -20,69 +20,71 @@
   border: none;
   box-shadow: none;
   background-color: var(--card-background-color);
-  /* O el color oscuro de tu tema */
-
   display: flex;
   flex-direction: column;
-
-  /* --- CAMBIO CLAVE 1: Centrar contenido verticalmente --- */
   justify-content: center;
   align-items: center;
-  /* Centrar horizontalmente */
-
   padding: 30px 25px;
-  /* Un poco más de aire a los lados */
   padding-top: max(50px, env(safe-area-inset-top));
-
+  padding-bottom: max(30px, env(safe-area-inset-bottom));
   overflow-y: auto;
   overflow-x: hidden;
+  animation: fadeInScale 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Barra decorativa superior (Opcional en móvil, la ajustamos) */
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Barra decorativa superior */
 .welcome-modal-content::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
-  height: 6px;
+  height: 5px;
   background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
   border-radius: 0;
-  /* Sin bordes redondos en móvil */
 }
 
-/* Título */
+/* TÍTULO */
 .welcome-modal-content h2 {
-  font-size: clamp(1.8rem, 5vw, 2.2rem);
+  font-size: clamp(1.8rem, 5vw, 2.4rem);
   font-weight: 900;
   text-align: center;
-  
-  /* --- CAMBIO: Aumentar margen superior --- */
-  margin-top: 50px; /* Antes era 10px */
+  margin-top: 20px;
   margin-bottom: 1.5rem;
-  
   background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
   color: var(--primary-color);
+  line-height: 1.2;
 }
 
-/* Resumen / Features */
+/* RESUMEN DE CARACTERÍSTICAS */
 .welcome-summary {
   background-color: var(--light-background);
-  /* O un tono gris suave */
   padding: 20px;
-  border-radius: 16px;
-  margin-bottom: 10px;
-  /* Reducimos margen inferior */
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 14px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
   width: 100%;
-  max-width: 400px;
-  /* Limitar ancho para estética */
+  max-width: 450px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .welcome-summary p {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  font-size: 0.95rem;
 }
 
 .welcome-summary ul {
@@ -92,10 +94,12 @@
 }
 
 .welcome-summary li {
-  margin-bottom: 8px;
-  padding-left: 25px;
+  margin-bottom: 10px;
+  padding-left: 28px;
   position: relative;
   font-size: 0.9rem;
+  color: var(--text-dark);
+  line-height: 1.4;
 }
 
 .welcome-summary li::before {
@@ -104,127 +108,283 @@
   left: 0;
   color: var(--success-color);
   font-weight: 900;
+  font-size: 1.1rem;
 }
 
-/* Formularios y Botones GRANDES para el dedo */
+/* BANNER DE CONEXIÓN */
+.connection-banner {
+  width: 100%;
+  max-width: 450px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.connection-banner.offline {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.connection-banner.online {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+.connection-banner p {
+  margin: 4px 0 0 0;
+  font-size: 0.8rem;
+  font-weight: 400;
+  opacity: 0.9;
+}
+
+/* FORMULARIO */
 #license-form {
   width: 100%;
-  max-width: 400px;
-  /* Para que no se vea gigante en tablets */
-
-  /* --- CAMBIO CLAVE 2: Quitamos margin-top: auto --- */
-  margin-top: 30px;
-  /* Solo un margen fijo para separar del resumen */
-
+  max-width: 450px;
+  margin-top: 0;
   display: flex;
   flex-direction: column;
   gap: 15px;
-  /* Espacio entre inputs y botones */
+}
+
+.welcome-modal-content .form-group {
+  margin-bottom: 5px;
+}
+
+.welcome-modal-content .form-label {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 8px;
+  display: block;
 }
 
 .welcome-modal-content .form-input {
-  padding: 16px;
-  border-radius: 12px;
-  font-size: 1.1rem;
+  padding: 15px;
+  border-radius: 10px;
+  font-size: 1.05rem;
   text-align: center;
-  letter-spacing: 2px;
-  font-family: 'Consolas', monospace;
+  letter-spacing: 1.5px;
+  font-family: 'Consolas', 'Monaco', monospace;
   width: 100%;
   background-color: var(--light-background);
-  border: 2px solid transparent;
+  border: 2px solid var(--border-color);
+  color: var(--text-dark);
+  transition: all 0.3s ease;
+}
+
+.welcome-modal-content .form-input::placeholder {
+  letter-spacing: normal;
+  font-family: inherit;
 }
 
 .welcome-modal-content .form-input:focus {
   background-color: var(--card-background-color);
   border-color: var(--primary-color);
+  box-shadow: 0 0 0 4px rgba(255, 59, 92, 0.1);
+  outline: none;
 }
 
-#license-form .btn-save {
+/* BOTONES */
+#license-form .btn-save,
+#license-form .btn-primary {
   width: 100%;
-  padding: 18px;
-  font-size: 1.1rem;
-  border-radius: 14px;
-  margin-top: 15px;
+  padding: 16px;
+  font-size: 1.05rem;
+  border-radius: 12px;
+  margin-top: 10px;
   background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
-  box-shadow: 0 10px 20px rgba(255, 59, 92, 0.25);
+  box-shadow: 0 8px 20px rgba(255, 59, 92, 0.3);
   border: none;
   color: white;
   font-weight: 800;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+#license-form .btn-save:hover:not(:disabled),
+#license-form .btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(255, 59, 92, 0.4);
+}
+
+#license-form .btn-save:active:not(:disabled),
+#license-form .btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* DIVISOR */
 .trial-divider {
-  margin: 25px 0;
+  margin: 20px 0 15px 0;
   text-align: center;
   position: relative;
   color: var(--text-light);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
+.trial-divider::before,
+.trial-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 35%;
+  height: 1px;
+  background-color: var(--border-color);
+}
+
+.trial-divider::before {
+  left: 0;
+}
+
+.trial-divider::after {
+  right: 0;
+}
+
+/* BOTÓN DE PRUEBA */
 .btn-trial {
   width: 100%;
   padding: 16px;
-  border-radius: 14px;
+  border-radius: 12px;
   background: transparent;
   border: 2px solid var(--secondary-color);
   color: var(--secondary-color);
   font-weight: 700;
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
 }
 
-/* Footer y mensajes */
-.welcome-footer {
-  margin-top: 20px;
-  /* Acercarlo al botón de probar gratis */
+.btn-trial:hover:not(:disabled) {
+  background-color: var(--secondary-color);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(252, 211, 77, 0.3);
+}
+
+.btn-trial:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* INFO BOX */
+.trial-info-box {
+  margin-top: 15px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border: 1px solid #86efac;
+  border-radius: 10px;
   text-align: center;
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
-  width: 100%;
 }
 
+.trial-info-box p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #166534;
+  line-height: 1.5;
+}
+
+/* MENSAJE DE ERROR */
 .welcome-error-message {
   margin-top: 20px;
-  padding: 12px;
-  background-color: rgba(255, 59, 92, 0.1);
-  color: var(--error-color);
-  border-radius: 8px;
+  padding: 14px 16px;
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
   font-weight: 600;
   text-align: center;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  animation: shake 0.4s ease-in-out;
+  width: 100%;
+  max-width: 450px;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-8px); }
+  75% { transform: translateX(8px); }
+}
+
+/* PIE DE PÁGINA */
+.welcome-footer {
+  margin-top: 25px;
+  text-align: center;
+  width: 100%;
+  max-width: 450px;
 }
 
 .btn-support-link {
   background: none;
   border: none;
   color: var(--text-light);
-  text-decoration: underline;
-  margin-top: 15px;
-  display: inline-block;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 10px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.btn-support-link:hover {
+  background-color: var(--light-background);
+  color: var(--text-dark);
+}
+
+.footer-note {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 /* =========================================
-   2. MEDIA QUERY: ESCRITORIO (>= 768px)
-   Recuperar estilo "Modal Flotante"
+   2. ESCRITORIO (>= 768px)
    ========================================= */
 @media (min-width: 768px) {
-
-  /* Reset del contenedor padre para que centre */
-  .modal:has(.welcome-modal-content) {
+  .modal.welcome-modal-overlay {
     padding: 20px !important;
     align-items: center;
   }
 
   .welcome-modal-content {
     width: 90%;
-    max-width: 550px;
-    /* Límite */
+    max-width: 520px;
     height: auto;
-    /* Altura automática */
-    max-height: 90vh;
-    /* No pasarse */
-
+    max-height: 92vh;
     border-radius: 24px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
     border: 1px solid var(--border-color);
-    padding: 40px;
-    /* Más padding interno */
+    padding: 40px 35px;
   }
 
   .welcome-modal-content::before {
@@ -233,11 +393,60 @@
   }
 
   .welcome-modal-content h2 {
-    font-size: 2.2rem;
+    font-size: 2.4rem;
+    margin-top: 10px;
   }
 
-  /* Quitamos el margin-top auto del form para que no se pegue al fondo en desktop */
-  #license-form {
-    margin-top: 0;
+  .welcome-summary {
+    max-width: 100%;
   }
+
+  .connection-banner,
+  .welcome-error-message,
+  #license-form {
+    max-width: 100%;
+  }
+}
+
+/* MODO OSCURO */
+[data-theme="dark"] .welcome-summary {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+[data-theme="dark"] .welcome-modal-content .form-input {
+  background-color: #1e293b;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .welcome-modal-content .form-input:focus {
+  background-color: #0f172a;
+}
+
+[data-theme="dark"] .trial-info-box {
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
+  border-color: #047857;
+}
+
+[data-theme="dark"] .trial-info-box p {
+  color: #6ee7b7;
+}
+
+/* Scrollbar para el modal */
+.welcome-modal-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.welcome-modal-content::-webkit-scrollbar-track {
+  background: var(--light-background);
+}
+
+.welcome-modal-content::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
+}
+
+.welcome-modal-content::-webkit-scrollbar-thumb:hover {
+  background: var(--text-light);
 }

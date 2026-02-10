@@ -110,5 +110,4 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcul
             </div>
         </div>
     );
-
 }

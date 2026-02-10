@@ -1,51 +1,51 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import ContactModal from './ContactModal';
-import { sendWhatsAppMessage } from '../../services/utils';
+import { Mail, HelpCircle, Wifi, WifiOff } from 'lucide-react';
 import './WelcomeModal.css';
 import Logger from '../../services/Logger';
 import { getStableDeviceId } from '../../services/supabase';
 
-const supportFields = [
-  { id: 'name', label: 'Tu Nombre', type: 'input' },
-  { id: 'problem', label: 'Describe tu problema', type: 'textarea' }
-];
-
-const SUPPORT_PHONE_NUMBER = import.meta.env.VITE_SUPPORT_PHONE;
+// Agrega tu correo real como string por si falla la variable de entorno
+const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL;
 
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [isContactOpen, setIsContactOpen] = useState(false);
-
-  // --- ESTADO: Detección de Internet ---
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
+  const handleLogin = useAppStore((state) => state.handleLogin);
+  const handleFreeTrial = useAppStore((state) => state.handleFreeTrial);
+
+  // === MANEJO DE CONEXIÓN ===
   useEffect(() => {
     const handleOnline = () => {
-        setIsOnline(true);
-        setErrorMessage('');
+      setIsOnline(true);
+      setErrorMessage('');
+      Logger.info('Conexión restaurada');
     };
+
     const handleOffline = () => {
-        setIsOnline(false);
+      setIsOnline(false);
+      Logger.warn('Conexión perdida');
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    const prewarmIdenty = async () => {
+    // Pre-cargar identificador de dispositivo
+    const prewarmIdentity = async () => {
+      if (!navigator.onLine) return;
+
       try {
         await getStableDeviceId();
-        Logger.info("Identificador de dispositivo pre-cargado correctamente.");
+        Logger.info("Identificador de dispositivo pre-cargado");
       } catch (error) {
-        Logger.error("Error al pre-cargar el identificador de dispositivo, (se intentará de nuevo al dar clic):", error);
+        Logger.error("Error al pre-cargar identificador:", error);
       }
     };
 
-    if(navigator.onLine) {
-      prewarmIdenty();
-    }
+    prewarmIdentity();
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -53,20 +53,17 @@ export default function WelcomeModal() {
     };
   }, []);
 
-  const handleLogin = useAppStore((state) => state.handleLogin);
-  const handleFreeTrial = useAppStore((state) => state.handleFreeTrial);
-
-  // --- MANEJO DE VALIDACIÓN DE LICENCIA ---
+  // === VALIDACIÓN DE LICENCIA ===
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!isOnline) {
-      setErrorMessage('⚠️ No tienes conexión a internet. Conéctate para continuar.');
+      setErrorMessage('Sin conexión a internet. Conéctate para continuar.');
       return;
     }
 
-    if (!licenseKey) {
-      setErrorMessage('Por favor, ingresa una clave de licencia.');
+    if (!licenseKey.trim()) {
+      setErrorMessage('Por favor, ingresa una clave de licencia válida.');
       return;
     }
 
@@ -74,23 +71,28 @@ export default function WelcomeModal() {
     setErrorMessage('');
 
     try {
-        const result = await handleLogin(licenseKey);
-        
-        if (!result.success) {
-            setErrorMessage(result.message);
-        }
+      const result = await handleLogin(licenseKey.trim());
+
+      if (!result.success) {
+        setErrorMessage(result.message || 'Licencia inválida o expirada');
+      }
     } catch (error) {
-        Logger.error("Error al validar licencia:", error);
-        setErrorMessage('❌ Error de conexión: No se pudo verificar la licencia. Intenta de nuevo.');
+      Logger.error("Error crítico al validar licencia:", error);
+
+      if (error.message?.includes('fetch') || error.message?.includes('Network')) {
+        setErrorMessage('Error de conexión. Verifica tu internet e intenta nuevamente.');
+      } else {
+        setErrorMessage('Error inesperado. Por favor, contacta a soporte.');
+      }
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
-  // --- MANEJO DE PRUEBA GRATIS ---
+  // === PRUEBA GRATIS ===
   const handleTrialClick = async () => {
     if (!isOnline) {
-      setErrorMessage('⚠️ Para activar la prueba gratis es necesario estar conectado a internet.');
+      setErrorMessage('Se requiere conexión a internet para activar la prueba gratuita.');
       return;
     }
 
@@ -98,153 +100,183 @@ export default function WelcomeModal() {
     setErrorMessage('');
 
     try {
-        const result = await handleFreeTrial();
-        
-        if (!result.success) {
-            setErrorMessage(result.message || 'No se pudo activar la prueba.');
-        }
+      const result = await handleFreeTrial();
+
+      if (!result.success) {
+        setErrorMessage(result.message || 'No se pudo activar la prueba.');
+      }
     } catch (error) {
-        Logger.error("Error crítico en Trial:", error);
-        
-        if (error.message && (error.message.includes('fetch') || error.message.includes('Network'))) {
-            setErrorMessage('❌ Error de Red: No pudimos conectar con el servidor. Verifica tu conexión.');
-        } else {
-            setErrorMessage(`❌ Ocurrió un error inesperado: ${error.message}`);
-        }
+      Logger.error("Error en activación de prueba:", error);
+
+      if (error.message?.includes('fetch') || error.message?.includes('Network')) {
+        setErrorMessage('Error de red. Verifica tu conexión.');
+      } else {
+        setErrorMessage(`Error: ${error.message || 'Intenta nuevamente'}`);
+      }
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const handleSubmitSupport = (formData) => {
-    const message = `¡Hola! Necesito soporte. Nombre: ${formData.name}. Problema: ${formData.problem}`;
-    sendWhatsAppMessage(SUPPORT_PHONE_NUMBER, message);
-    setIsContactOpen(false);
+  // === CONTACTO CON SOPORTE ===
+  const handleSupportClick = () => {
+    const envEmail = import.meta.env.VITE_SUPPORT_EMAIL;
+    const supportEmail = (envEmail && envEmail !== 'undefined') ? envEmail : 'contacto.entrealas@gmail.com';
+
+    const deviceInfo = `
+Dispositivo: ${navigator.userAgent}
+Sistema: ${navigator.platform}
+Idioma: ${navigator.language}
+Fecha: ${new Date().toLocaleString()}
+    `.trim();
+
+    const subject = encodeURIComponent("Ayuda - No puedo acceder a Lanzo POS");
+    const body = encodeURIComponent(`Hola equipo de Lanzo,
+
+Necesito ayuda para acceder a la aplicación.
+
+INFORMACIÓN DE MI DISPOSITIVO:
+${deviceInfo}
+
+DESCRIBE TU PROBLEMA:
+[Escribe aquí qué está pasando]
+
+¡Gracias por su ayuda!`);
+
+    // 1. Copiar al portapapeles y avisar al usuario
+    navigator.clipboard.writeText(supportEmail).then(() => {
+      // Opcional: Si tienes un sistema de "Toasts" o notificaciones, úsalo aquí.
+      // Si no, un alert simple es efectivo para este caso de soporte crítico.
+      alert(`📧 Correo de soporte copiado: ${supportEmail}\n\nSi no se abre tu aplicación de correo, puedes escribirnos manualmente.`);
+    }).catch(err => console.error("No se pudo copiar", err));
+
+    // 2. Intentar abrir la app de correo (sin abrir pestañas nuevas)
+    // El timeout da un respiro para que el alert o el copiado no interfieran
+    setTimeout(() => {
+      window.location.href = `mailto:${supportEmail}?subject=${subject}&body=${body}`;
+    }, 500);
   };
 
   return (
-    <>
-      <div className="modal" style={{ display: 'flex' }}>
-        <div className="welcome-modal-content">
-          <h2>Bienvenido a Lanzo</h2>
-          <div className="welcome-summary">
-            <p><strong>Lanzo</strong> es un sistema completo diseñado para agilizar tu negocio:</p>
-            <ul>
-              <li>Gestiona tu Punto de Venta</li>
-              <li>Controla tu inventario en tiempo real</li>
-              <li>Administra Clientes y reportes</li>
-            </ul>
+    <div className="modal welcome-modal-overlay" style={{ display: 'flex' }}>
+      <div className="welcome-modal-content">
+
+        {/* TÍTULO */}
+        <h2>Bienvenido a Lanzo POS</h2>
+
+        {/* RESUMEN DE CARACTERÍSTICAS */}
+        <div className="welcome-summary">
+          <p style={{ marginBottom: '15px', fontWeight: 600, color: 'var(--text-dark)' }}>
+            Sistema completo para impulsar tu negocio:
+          </p>
+          <ul>
+            <li>Punto de Venta profesional</li>
+            <li>Control de inventario en tiempo real</li>
+            <li>Gestión de clientes y reportes</li>
+            <li>Tus datos seguros y privados</li>
+          </ul>
+        </div>
+
+        {/* BANNER DE ESTADO DE CONEXIÓN */}
+        {!isOnline && (
+          <div className="connection-banner offline">
+            <WifiOff size={18} />
+            <div>
+              <strong>Sin conexión a internet</strong>
+              <p>Conéctate para activar tu licencia o iniciar prueba</p>
+            </div>
+          </div>
+        )}
+
+        {isOnline && isLoading && (
+          <div className="connection-banner online">
+            <Wifi size={18} />
+            <span>Verificando con el servidor...</span>
+          </div>
+        )}
+
+        {/* FORMULARIO DE LICENCIA */}
+        <form id="license-form" onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="license-key">
+              ¿Tienes una licencia?
+            </label>
+            <input
+              className="form-input"
+              id="license-key"
+              type="text"
+              required
+              placeholder="LANZO-XXXX-XXXX-XXXX"
+              value={licenseKey}
+              onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+              disabled={isLoading || !isOnline}
+              maxLength={23}
+              style={!isOnline ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
+            />
+
           </div>
 
-          {/* BANNER DE SIN CONEXIÓN */}
-          {!isOnline && (
-            <div style={{
-              backgroundColor: '#fee2e2',
-              color: '#991b1b',
-              padding: '12px',
-              borderRadius: '8px',
-              marginBottom: '15px',
-              fontSize: '0.9rem',
-              textAlign: 'center',
-              border: '1px solid #f87171',
-              fontWeight: 'bold'
-            }}>
-              📡 Sin conexión a internet. <br/>
-              <span style={{fontWeight: 'normal', fontSize: '0.8rem'}}>No podrás activar licencias hasta que te conectes.</span>
-            </div>
-          )}
+          <button
+            type="submit"
+            className="btn btn-primary btn-save"
+            disabled={isLoading || !isOnline || !licenseKey.trim()}
+            style={
+              (!isOnline || isLoading || !licenseKey.trim())
+                ? { opacity: 0.6, cursor: 'not-allowed' }
+                : {}
+            }
+          >
+            {isLoading ? 'Verificando...' : 'Validar Licencia'}
+          </button>
 
-          {/* FORMULARIO DE LICENCIA */}
-          <form id="license-form" onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label className="form-label" htmlFor="license-key">
-                Ingresa tu clave de licencia para activar:
-              </label>
-              <input
-                className="form-input"
-                id="license-key"
-                type="text"
-                required
-                placeholder="LANZO-A1B2-C3D4-E5F6"
-                value={licenseKey}
-                onChange={(e) => setLicenseKey(e.target.value)}
-                disabled={isLoading || !isOnline}
-                style={!isOnline ? { backgroundColor: '#f3f4f6' } : {}}
-              />
-            </div>
+          {/* DIVISOR */}
+          <div className="trial-divider">
+            <span>¿Primera vez?</span>
+          </div>
 
-            <button
-              type="submit"
-              className="btn btn-save"
-              disabled={isLoading || !isOnline}
-              style={(!isOnline || isLoading) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
-            >
-              {isLoading ? '⏳ Verificando...' : 'Validar Licencia'}
-            </button>
+          {/* BOTÓN DE PRUEBA GRATIS */}
+          <button
+            type="button"
+            className="btn btn-secondary btn-trial"
+            onClick={handleTrialClick}
+            disabled={isLoading || !isOnline}
+            style={
+              (!isOnline || isLoading)
+                ? { opacity: 0.6, cursor: 'not-allowed' }
+                : {}
+            }
+          >
+            {isLoading ? 'Activando...' : 'Probar Gratis 3 Meses'}
+          </button>
 
-            <div className="trial-divider">
-              <span>¿Eres nuevo?</span>
-            </div>
-
-            <button
-              type="button"
-              className="btn btn-secondary btn-trial"
-              onClick={handleTrialClick}
-              disabled={isLoading || !isOnline}
-              style={(!isOnline || isLoading) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
-            >
-              {isLoading ? '⏳ Creando cuenta...' : 'Probar Gratis por 3 Meses'}
-            </button>
-            
-            {/* --- AQUÍ ESTÁ EL MENSAJE DE COPYWRITING AÑADIDO --- */}
-            <p style={{ 
-                marginTop: '12px', 
-                textAlign: 'center', 
-                fontSize: '0.85rem', 
-                color: '#6b7280',
-                lineHeight: '1.4'
-            }}>
-              <strong>Sin presiones:</strong> Al terminar tu prueba, podrás renovar tu licencia <strong>totalmente gratis</strong> y seguir operando.
+          {/* MENSAJE DE TRANQUILIDAD */}
+          <div className="trial-info-box">
+            <p>
+              <strong>Sin compromisos:</strong> Al finalizar la prueba, podrás renovar tu licencia
+              <strong> totalmente gratis</strong> y seguir usando Lanzo.
             </p>
-
-          </form>
-
-          <div className="welcome-footer">
-            {/* ZONA DE MENSAJES DE ERROR */}
-            {errorMessage && (
-              <div className="welcome-error-message" style={{ 
-                  color: '#dc2626', 
-                  backgroundColor: '#fef2f2', 
-                  padding: '10px', 
-                  borderRadius: '6px',
-                  marginTop: '10px',
-                  fontSize: '0.9rem',
-                  border: '1px solid #fecaca'
-              }}>
-                {errorMessage}
-              </div>
-            )}
-
-            <button
-              type="button"
-              className="btn-support-link"
-              onClick={() => setIsContactOpen(true)}
-              style={{ marginTop: '15px' }}
-            >
-              ¿Tienes problemas? Contactar a Soporte
-            </button>
           </div>
+        </form>
 
+        {/* ZONA DE ERRORES */}
+        {errorMessage && (
+          <div className="welcome-error-message">
+            {errorMessage}
+          </div>
+        )}
+
+        {/* PIE DE PÁGINA CON SOPORTE */}
+        <div className="welcome-footer">
+          <button
+            type="button"
+            className="btn-support-link"
+            onClick={handleSupportClick}
+          >
+            <Mail size={16} />
+            <span>¿Necesitas ayuda? Contacta a Soporte</span>
+          </button>
         </div>
       </div>
-
-      <ContactModal
-        show={isContactOpen}
-        onClose={() => setIsContactOpen(false)}
-        onSubmit={handleSubmitSupport}
-        title="Contactar a Soporte"
-        fields={supportFields}
-      />
-    </>
+    </div>
   );
 }
