@@ -88,7 +88,7 @@ function Layout() {
       <DataSafetyModal />
       <BackupReminder />
       <InstallPrompt />
-      {showAssistantBot && <AssistantBot />}
+      <AssistantBot />
 
     </div>
   );

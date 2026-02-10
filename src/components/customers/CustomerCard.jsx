@@ -96,7 +96,6 @@ const CustomerCard = memo(({
 
                 {/* ... Resto del componente igual ... */}
                 <div className="actions-secondary">
-                    {/* ... Botones secundarios ... */}
                      <button
                         className="btn-icon-text"
                         onClick={() => onViewHistory(customer)}
