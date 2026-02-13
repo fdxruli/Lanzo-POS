@@ -39,7 +39,8 @@ export default function ProductMenu({
   onSelectCategory,
   searchTerm,
   onSearchChange,
-  onOpenScanner
+  onOpenScanner,
+  showOutofStockCategory
 }) {
   const addSmartItem = useOrderStore((state) => state.addSmartItem);
   const addItemToOrder = useOrderStore((state) => state.addItem);
@@ -186,6 +187,19 @@ export default function ProductMenu({
             {cat.name}
           </button>
         ))}
+        {showOutofStockCategory && (
+          <button
+            className={`category-filter-btn ${selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'active' : ''}`}
+            onClick={() => onSelectCategory('CAT_DYNAMIC_AGOTADOS')}
+            style={{
+              border: '1px solid var(--error-color, #ff4444)',
+              color: selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'white' : 'var(--error-color, #ff4444)',
+              background: selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'var(--error-color, #ff4444)' : 'transparent'
+            }}
+          >
+            Agotados
+          </button>
+        )}
       </div>
 
       <div className="pos-controls">
