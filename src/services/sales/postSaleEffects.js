@@ -29,20 +29,6 @@ export const runPostSaleEffects = async ({
         );
         await useStatsStore.getState().updateStatsForNewSale(sale, costOfGoodsSold);
 
-        // 3. Actualizar Deuda de Cliente (ATÓMICO ⚛️)
-        // Usamos .modify() para evitar condiciones de carrera si hay ventas simultáneas.
-        if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
-            await db.table(STORES.CUSTOMERS)
-                .where('id').equals(sale.customerId)
-                .modify(customer => {
-                    // Suma atómica directa en la base de datos
-                    customer.debt = (customer.debt || 0) + sale.saldoPendiente;
-                })
-                .catch(err => {
-                    Logger?.error(`Error actualizando deuda del cliente ${sale.customerId}:`, err);
-                });
-        }
-
         // 4. Enviar WhatsApp (En segundo plano)
         if (paymentData.sendReceipt && paymentData.customerId) {
             sendReceiptWhatsApp({

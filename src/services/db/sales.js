@@ -28,14 +28,15 @@ export const salesRepository = {
                 db.table(STORES.SALES),
                 db.table(STORES.PRODUCT_BATCHES),
                 db.table(STORES.MENU),
-                db.table(STORES.TRANSACTION_LOG)
+                db.table(STORES.TRANSACTION_LOG),
+                db.table(STORES.CUSTOMERS)
             ], async () => {
 
                 // 1. Verificación de Idempotencia (Evitar duplicados)
                 const existingSale = await db.table(STORES.SALES).get(sale.id);
                 if (existingSale) {
                     throw new DatabaseError(
-                        DB_ERROR_CODES.CONSTRAINT_VIOLATION, 
+                        DB_ERROR_CODES.CONSTRAINT_VIOLATION,
                         'La venta ya fue procesada anteriormente.'
                     );
                 }
@@ -63,13 +64,13 @@ export const salesRepository = {
 
                 // C. CACHEO: Una sola query por producto (muy rápido)
                 const batchesCacheMap = new Map();
-                
+
                 await Promise.all(
                     Array.from(affectedProductIds).map(async (productId) => {
                         const batches = await db.table(STORES.PRODUCT_BATCHES)
                             .where('productId').equals(productId)
                             .toArray(); // Traemos TODOS (activos e inactivos)
-                        
+
                         batchesCacheMap.set(productId, batches);
                     })
                 );
@@ -130,20 +131,20 @@ export const salesRepository = {
                 // 4. RECALCULACIÓN INTELIGENTE DEL STOCK PADRE
                 // ============================================================
                 // Ahora que los lotes están actualizados, recalculamos el padre
-                
+
                 for (const productId of affectedProductIds) {
                     const product = await db.table(STORES.MENU).get(productId);
-                    
+
                     if (!product) continue; // Producto eliminado (caso extremo)
 
                     // Solo recalculamos si trackea stock
                     if (product.trackStock) {
-                        
+
                         // OPCIÓN A: Si el producto USA LOTES
                         if (product.batchManagement?.enabled) {
                             // Suma de lotes activos (ya actualizados en el caché)
                             const productBatches = batchesCacheMap.get(productId) || [];
-                            
+
                             const totalStock = productBatches
                                 .filter(b => {
                                     const stockVal = Number(b.stock);
@@ -156,12 +157,12 @@ export const salesRepository = {
                                 stock: totalStock,
                                 updatedAt: new Date().toISOString()
                             });
-                        } 
+                        }
                         // OPCIÓN B: Si el producto NO USA LOTES (descuento directo)
                         else {
                             // Calculamos cuánto se vendió de este producto
                             let totalSold = 0;
-                            
+
                             sale.items.forEach(item => {
                                 const itemProductId = item.parentId || item.id;
                                 if (itemProductId === productId) {
@@ -183,9 +184,31 @@ export const salesRepository = {
                 }
 
                 // ============================================================
+                // 4.5 ACTUALIZACIÓN DE DEUDA DEL CLIENTE
+                // ============================================================
+                // Al hacerlo aquí, garantizamos que si esto falla, la venta NO se guarda.
+                if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
+                    const customer = await db.table(STORES.CUSTOMERS).get(sale.customerId);
+
+                    if (customer) {
+                        await db.table(STORES.CUSTOMERS).update(sale.customerId, {
+                            debt: (customer.debt || 0) + sale.saldoPendiente,
+                            updatedAt: new Date().toISOString()
+                        });
+                    } else {
+                        // Opcional: Lanzar error si el cliente no existe, para abortar la venta
+                        throw new Error(`Integridad: El cliente ${sale.customerId} no existe.`);
+                    }
+                }
+
+                // ============================================================
                 // 5. GUARDAR LA VENTA
                 // ============================================================
-                await db.table(STORES.SALES).add(sale);
+                const saleToSave = {
+                    ...sale,
+                    postEffectsCompleted: true
+                };
+                await db.table(STORES.SALES).add(saleToSave);
 
                 // ============================================================
                 // 6. LOG DE AUDITORÍA

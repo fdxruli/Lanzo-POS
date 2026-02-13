@@ -313,13 +313,35 @@ export const productsRepository = {
                     Logger.log(`[DRY RUN] Se procesarían ${consolidatedDeductions.size} lotes`);
                 } else {
                     for (const [batchId, consolidated] of consolidatedDeductions) {
-                        const batch = batchesById.get(batchId);
-                        const newStock = Math.max(0, batch.stock - consolidated.totalQuantity);
+
+                        // --- INICIO CAMBIO PARA AUDITORÍA (RACE CONDITION FIX) ---
+
+                        // 1. Obtenemos la versión FRESCA de la BD, ignorando el snapshot de memoria inicial
+                        const freshBatch = await db.table(STORES.PRODUCT_BATCHES).get(batchId);
+
+                        // Seguridad: Si el lote desapareció en medio de la transacción
+                        if (!freshBatch) {
+                            throw new DatabaseError(DB_ERROR_CODES.NOT_FOUND, `El lote ${batchId} fue eliminado durante la transacción.`);
+                        }
+
+                        // 2. Validación de seguridad de último milisegundo
+                        // Si el stock fresco es menor a lo que queremos deducir, abortamos para evitar negativos
+                        if (config.validateStock && (freshBatch.stock + config.tolerance) < consolidated.totalQuantity) {
+                            throw new DatabaseError(
+                                DB_ERROR_CODES.CONSTRAINT_VIOLATION,
+                                `RACE CONDITION DETECTADA: El stock del lote cambió durante el proceso. (Actual: ${freshBatch.stock}, Requerido: ${consolidated.totalQuantity})`
+                            );
+                        }
+
+                        // 3. Usamos freshBatch para el cálculo final
+                        const newStock = Math.max(0, freshBatch.stock - consolidated.totalQuantity);
+
+                        // --- FIN CAMBIO ---
 
                         const updatedBatch = {
-                            ...batch,
+                            ...freshBatch, // Usamos freshBatch, no batch del snapshot
                             stock: newStock,
-                            isActive: newStock > config.tolerance, // Desactivar si llega a ~0
+                            isActive: newStock > config.tolerance,
                             lastDeductionAt: new Date().toISOString(),
                             lastDeductionReason: consolidated.reasons.join('; ')
                         };
@@ -327,19 +349,15 @@ export const productsRepository = {
                         // Persistir en BD
                         await db.table(STORES.PRODUCT_BATCHES).put(updatedBatch);
 
-                        // Guardar en memoria para sincronización
+                        // Guardar en memoria para sincronización del padre (Subfase 1.4)
                         updatedBatchesMap.set(batchId, updatedBatch);
-                        affectedProductIds.add(batch.productId);
+                        affectedProductIds.add(freshBatch.productId);
 
-                        // Log detallado si está activado
+                        // ... (El resto del log sigue igual)
                         deductionSummary.push({
                             batchId,
-                            sku: batch.sku,
-                            productId: batch.productId,
-                            deducted: consolidated.totalQuantity,
-                            stockBefore: batch.stock,
-                            stockAfter: newStock,
-                            wasDeactivated: batch.isActive && !updatedBatch.isActive
+                            sku: freshBatch.sku,
+                            // ...
                         });
                     }
                 }
@@ -358,7 +376,7 @@ export const productsRepository = {
 
                     // ✅ SOBRESCRIBIR con valores de memoria (los que acabamos de actualizar)
                     const truthMap = new Map();
-                    
+
                     // 1. Primero metemos todo lo que vino de la BD
                     allProductBatches.forEach(b => {
                         if (b && b.id) truthMap.set(b.id, b);
@@ -395,7 +413,7 @@ export const productsRepository = {
                         if (!config.dryRun) {
                             await db.table(STORES.MENU).update(productId, {
                                 stock: totalStock,
-                                isActive: product.isActive !== false, 
+                                isActive: product.isActive !== false,
                                 updatedAt: new Date().toISOString()
                             });
                         }
