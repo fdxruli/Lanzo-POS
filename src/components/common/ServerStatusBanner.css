@@ -1,0 +1,96 @@
+.server-status-banner {
+    position: fixed;
+    bottom: 20px;
+    /* O top: 70px si prefieres arriba */
+    right: 20px;
+    max-width: 400px;
+    padding: 16px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 9999;
+    animation: slideIn 0.3s ease-out;
+    font-family: system-ui, -apple-system, sans-serif;
+    padding-right: 40px;
+    /* Dar espacio para la X */
+    position: fixed;
+    /* Asegurar que flote */
+    pointer-events: auto;
+}
+
+.server-status-banner.degraded {
+    background-color: #fff8e1;
+    /* Amarillo suave */
+    border-left: 5px solid #ffc107;
+    color: #5a4a00;
+}
+
+.server-status-banner.down {
+    background-color: #e3f2fd;
+    /* Azul suave (para transmitir calma, no error rojo) */
+    border-left: 5px solid #2196f3;
+    color: #0d47a1;
+}
+
+.status-icon {
+    font-size: 24px;
+}
+
+.status-content strong {
+    display: block;
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.status-content p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.status-content small {
+    display: block;
+    margin-top: 6px;
+    font-size: 11px;
+    opacity: 0.8;
+    font-style: italic;
+}
+
+.banner-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: inherit;
+    /* Hereda el color del texto del banner */
+    opacity: 0.6;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.banner-close-btn:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
