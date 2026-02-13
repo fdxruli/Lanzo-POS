@@ -10,15 +10,15 @@ import './ProductMenu.css';
 const playBeep = (freq = 1200, type = 'sine') => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return; 
-    
+    if (!AudioContext) return;
+
     const ctx = new AudioContext();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    osc.type = type; 
+    osc.type = type;
     osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    
+
     gain.gain.setValueAtTime(0.1, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
 
@@ -92,8 +92,8 @@ export default function ProductMenu({
     // Y el producto tiene gestión de lotes/tallas activada.
     // ---------------------------------------------------------
     if (features.hasVariants && product.batchManagement?.enabled) {
-      setSelectedProductForVariant(product); 
-      setVariantModalOpen(true);             
+      setSelectedProductForVariant(product);
+      setVariantModalOpen(true);
       return; // Detenemos aquí, el usuario debe elegir la talla en el modal
     }
 
@@ -103,8 +103,8 @@ export default function ProductMenu({
     // Y el producto tiene ingredientes extra configurados.
     // ---------------------------------------------------------
     if (features.hasModifiers && product.modifiers && product.modifiers.length > 0) {
-      setSelectedProductForMod(product);     
-      setModModalOpen(true);                 
+      setSelectedProductForMod(product);
+      setModModalOpen(true);
       return; // Detenemos aquí, el usuario elige los extras
     }
 
@@ -112,7 +112,7 @@ export default function ProductMenu({
     // CASO 3: ABARROTES / FARMACIA / GENERAL (Venta Rápida)
     // Aquí caen todos los demás. Incluyendo Farmacia (la receta se pide al cobrar, no al agregar).
     // ---------------------------------------------------------
-    
+
     // Preparamos el producto (limpieza de datos)
     const cleanProduct = {
       ...product,
@@ -131,7 +131,7 @@ export default function ProductMenu({
     if (product.saleType === 'bulk') {
       showMessageModal(
         `⚖️ Producto a Granel: ${product.name}`,
-        null, 
+        null,
         { type: 'warning', duration: 3000 }
       );
     }
@@ -140,7 +140,7 @@ export default function ProductMenu({
   const handleConfirmVariants = (variantItem) => {
     // Como ya viene el lote seleccionado del modal, addSmartItem 
     // detectará que ya trae batchId y lo pasará directo. Es seguro.
-    addSmartItem(variantItem); 
+    addSmartItem(variantItem);
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
   }
@@ -156,10 +156,10 @@ export default function ProductMenu({
     // Verificamos si tiene trackStock explícito O si tiene gestión de lotes habilitada (importados por CSV)
     const isTracking = item.trackStock || item.batchManagement?.enabled;
 
-    if (!isTracking) return <div className="stock-info no-stock-label" style={{color:'#999'}}>---</div>;
-    
+    if (!isTracking) return <div className="stock-info no-stock-label" style={{ color: '#999' }}>---</div>;
+
     const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
-    
+
     // Mostramos stock si es mayor a 0, de lo contrario AGOTADO
     return item.stock > 0
       ? <div className="stock-info">Stock: {item.stock}{unit}</div>
@@ -282,7 +282,8 @@ export default function ProductMenu({
                   <LazyImage className="menu-item-image" src={item.image} alt={item.name} />
                   <h3 className="menu-item-name">{item.name}</h3>
                   <p className="menu-item-price">
-                    ${item.price.toFixed(2)}
+                    {/* Agregamos (item.price || 0) para evitar el crash */}
+                    ${(item.price || 0).toFixed(2)}
                     {item.saleType === 'bulk' && <span className="menu-item-unit"> / {item.bulkData?.purchase?.unit || 'kg'}</span>}
                   </p>
                   {renderStockInfo(item)}
