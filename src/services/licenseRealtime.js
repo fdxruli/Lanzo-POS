@@ -1,6 +1,5 @@
-// src/services/licenseRealtime.js
-
 import { supabaseClient } from './supabase';
+import { useAppStore } from '../store/useAppStore';
 import Logger from './Logger';
 
 let activeChannel = null;
@@ -33,7 +32,7 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
   // Logger.log(`📡 [Realtime] Conectando canal seguro para: ${licenseKey}...`);
 
   const channelId = `secure-events-${licenseKey}-${Date.now()}`;
-  
+
   const channel = supabaseClient
     .channel(channelId) // Canal público estándar, filtrado por lógica
     .on(
@@ -41,7 +40,7 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       {
         event: 'INSERT', // Solo nos importan nuevos eventos
         schema: 'public',
-        table: 'license_events', 
+        table: 'license_events',
         filter: `license_key=eq.${licenseKey}` // 🔒 FILTRO CLAVE
       },
       async (payload) => {
@@ -51,32 +50,32 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
         Logger.log(`🔔 [Realtime] Evento recibido: ${event.event_type}`);
 
         // --- LÓGICA DE REACCIÓN SEGURA ---
-        
+
         // 1. Cambios en la Licencia (Plan, Expiración, Features)
         if (event.event_type === 'LICENSE_UPDATE') {
           if (callbacks.onLicenseChanged) {
             // No pasamos datos. Avisamos que "algo cambió" para que la app re-valide.
-            callbacks.onLicenseChanged({ 
-                source: 'realtime_event', 
-                type: 'update' 
+            callbacks.onLicenseChanged({
+              source: 'realtime_event',
+              type: 'update'
             });
           }
         }
 
         // 2. Seguridad del Dispositivo (Baneos remotos)
         if (event.event_type === 'DEVICE_BANNED' || event.event_type === 'DEVICE_DELETED') {
-            const targetFingerprint = event.metadata?.fingerprint;
-            
-            // Solo reaccionamos si el evento es PARA ESTE dispositivo
-            if (targetFingerprint === deviceFingerprint) {
-                Logger.warn("🚫 [Realtime] ¡Alerta de seguridad! Este dispositivo ha sido desactivado.");
-                if (callbacks.onDeviceChanged) {
-                    callbacks.onDeviceChanged({ 
-                        status: event.event_type === 'DEVICE_BANNED' ? 'banned' : 'deleted',
-                        reason: 'remote_admin_action'
-                    });
-                }
+          const targetFingerprint = event.metadata?.fingerprint;
+
+          // Solo reaccionamos si el evento es PARA ESTE dispositivo
+          if (targetFingerprint === deviceFingerprint) {
+            Logger.warn("🚫 [Realtime] ¡Alerta de seguridad! Este dispositivo ha sido desactivado.");
+            if (callbacks.onDeviceChanged) {
+              callbacks.onDeviceChanged({
+                status: event.event_type === 'DEVICE_BANNED' ? 'banned' : 'deleted',
+                reason: 'remote_admin_action'
+              });
             }
+          }
         }
       }
     )
@@ -88,7 +87,7 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
         activeChannel = channel;
         reconnectAttempts = 0;
         if (reconnectTimer) clearTimeout(reconnectTimer);
-      } 
+      }
       else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         Logger.error("❌ [Realtime] Error de conexión:", err || status);
         isConnecting = false;
@@ -107,21 +106,32 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
 
 // --- Helper de Reconexión (Extraído para limpieza) ---
 const handleReconnect = (key, fp, cb) => {
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimer && !isReconnecting) {
-        const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
-        reconnectAttempts++;
-        isReconnecting = true;
-        
-        Logger.log(`🔄 [Realtime] Reintentando en ${delay/1000}s...`);
-        
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          isReconnecting = false;
-          startLicenseListener(key, fp, cb);
-        }, delay);
-    } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        Logger.error("❌ [Realtime] Sin conexión permanente. Se pasará a modo offline.");
+  if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimer && !isReconnecting) {
+    const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
+    reconnectAttempts++;
+    isReconnecting = true;
+
+    Logger.log(`🔄 [Realtime] Reintentando en ${delay / 1000}s...`);
+
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      isReconnecting = false;
+      startLicenseListener(key, fp, cb);
+    }, delay);
+  } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    if (intentos >= MAX_INTENTOS) { // O la condición que tengas para rendirte
+      Logger.error('[Realtime] Sin conexión permanente. Se pasará a modo offline.');
+
+      // --- AGREGAR ESTO ---
+      // Esto fuerza que el banner aparezca y SE QUEDE hasta que el usuario lo cierre
+      useAppStore.getState().reportServerFailure(
+        'No se pudo establecer conexión en tiempo real con el servidor. Se trabajará en modo offline.'
+      );
+      // --------------------
+
+      return; // Salir
     }
+  }
 };
 
 export const stopLicenseListener = async (channel) => {
@@ -142,7 +152,7 @@ export const stopLicenseListener = async (channel) => {
 };
 
 export const cleanupAllChannels = async () => {
-    await stopLicenseListener(activeChannel);
+  await stopLicenseListener(activeChannel);
 };
 
 export const getConnectionStatus = () => {

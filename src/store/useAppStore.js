@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { loadData, saveData, STORES } from '../services/database';
-import { isLocalStorageEnabled, normalizeDate, showMessageModal, safeLocalStorageSet } from '../services/utils';
+import { isLocalStorageEnabled, normalizeDate, showMessageModal, safeLocalStorageSet, checkInternetConnection } from '../services/utils';
 import Logger from '../services/Logger';
 import { renewLicenseService } from '../services/licenseService';
 
@@ -130,12 +130,29 @@ export const useAppStore = create((set, get) => ({
   licenseDetails: null,
   _isInitilizing: false,
   pendingTermsUpdate: null,
+  serverHealth: 'ok',
+  serverMessage: null,
+
+  dismissServerAlert: () => {
+    Logger.log("User dismissed server alert");
+    set({ serverMessage: null });
+  },
+
+  reportServerFailure: (message) => {
+    const currentMsg = get().serverMessage;
+    if (!currentMsg) {
+      set({
+        serverHealth: 'down',
+        serverMessage: message || 'Conexion interrumpida con el servidor de licencias'
+      });
+    }
+  },
 
   showAssistantBot: (() => {
     try {
       const saved = localStorage.getItem('lanzo_show_bot');
       return saved !== null ? JSON.parse(saved) : true;
-    } catch (e){
+    } catch (e) {
       return true;
     }
   })(),
@@ -147,7 +164,7 @@ export const useAppStore = create((set, get) => ({
     } catch (e) {
       Logger.error("Error al guardar la preferencia del asistente:");
     }
-    set({ showAssistantBot: value }); 
+    set({ showAssistantBot: value });
   },
 
   // === initializeApp ===
@@ -202,6 +219,7 @@ export const useAppStore = create((set, get) => ({
     try {
       Logger.log('🔄 [Background] Iniciando validación silenciosa...');
 
+      const isOnlineStart = await checkInternetConnection();
       // Timeout de seguridad para la validación en background
       const BACKGROUND_TIMEOUT = 8000; // 8 segundos (más tolerante que el modo bloqueante)
 
@@ -298,8 +316,27 @@ export const useAppStore = create((set, get) => ({
       // Marcamos que se hizo una validación exitosa
       sessionStorage.setItem('Lanzo_app_loaded', Date.now().toString());
       sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
+      set({ serverHealth: 'ok', serverMessage: null });
 
     } catch (error) {
+      const isOnlineNow = await checkInternetConnection();
+      if (isOnlineNow) {
+        if (error.message === 'BACKGROUND_TIMEOUT') {
+          Logger.warn('⚠️ [Salud] Detectada latencia alta en Supabase');
+          set({
+            serverHealth: 'degraded',
+            serverMessage: 'Nuestros servidores están respondiendo más lento de lo normal. Tu licencia sigue activa en modo local.'
+          });
+        } else if (error.message?.includes('fetch') || error.code === 'PGRST301' || error.code?.startsWith('5')) {
+          Logger.warn('⚠️ [Salud] Detectada caída en Supabase');
+          set({
+            serverHealth: 'down',
+            serverMessage: 'Estamos realizando mantenimiento en la base de datos. Algunas funciones online no estarán disponibles momentáneamente.'
+          });
+        }
+      } else {
+        set({ serverHealth: 'ok', serverMessage: null });
+      }
       // Fallo silencioso - la app ya está funcionando en modo offline
       if (error.message === 'BACKGROUND_TIMEOUT') {
         Logger.warn('⚠️ [Background] Timeout de validación (8s) - Servidor lento o sin conexión');

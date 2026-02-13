@@ -12,6 +12,7 @@ import WelcomeModal from './components/common/WelcomeModal';
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
 import ReconnectionBanner from './components/common/ReconnectionBanner';
+import ServerStatusBanner from './components/common/ServerStatusBanner';
 import { useSalesStore } from './store/useSalesStore';
 import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
@@ -267,40 +268,43 @@ function App() {
 
     case 'ready':
       return (
-        <Suspense fallback={<Layout><PageLoader /></Layout>}>
+        <>
           <ReconnectionBanner />
-          {pendingTermsUpdate && (
-            <TermsAndConditionsModal
-              isOpen={true}
-              onClose={clearTermsNotification}
-              isUpdateNotification={true}
-            />
-          )}
-          <NavigationGuard />
-          
-          <ErrorBoundary>
-            <Routes>
-            <Route 
-                path="/renovacion-urgente" 
-                element={
-                  <div style={{ width: '100vw', height: '100vh', background: '#000' }}>
-                    <RenewalModal />
-                  </div>
-                } 
+          <ServerStatusBanner />
+          <Suspense fallback={<Layout><PageLoader /></Layout>}>
+            {pendingTermsUpdate && (
+              <TermsAndConditionsModal
+                isOpen={true}
+                onClose={clearTermsNotification}
+                isUpdateNotification={true}
               />
-              <Route path="/" element={<Layout />}>
-                <Route index element={<Suspense fallback={<PageLoader />}><PosPage /></Suspense>} />
-                <Route path="caja" element={<Suspense fallback={<PageLoader />}><CajaPage /></Suspense>} />
-                <Route path='pedidos' element={<Suspense fallback={<PageLoader />}><OrdersPage /></Suspense>} />
-                <Route path="productos" element={<Suspense fallback={<PageLoader />}><ProductsPage /></Suspense>} />
-                <Route path="clientes" element={<Suspense fallback={<PageLoader />}><CustomersPage /></Suspense>} />
-                <Route path="ventas" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
-                <Route path="configuracion" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
-                <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
-              </Route>
-            </Routes>
-          </ErrorBoundary>
-        </Suspense>
+            )}
+            <NavigationGuard />
+
+            <ErrorBoundary>
+              <Routes>
+                <Route
+                  path="/renovacion-urgente"
+                  element={
+                    <div style={{ width: '100vw', height: '100vh', background: '#000' }}>
+                      <RenewalModal />
+                    </div>
+                  }
+                />
+                <Route path="/" element={<Layout />}>
+                  <Route index element={<Suspense fallback={<PageLoader />}><PosPage /></Suspense>} />
+                  <Route path="caja" element={<Suspense fallback={<PageLoader />}><CajaPage /></Suspense>} />
+                  <Route path='pedidos' element={<Suspense fallback={<PageLoader />}><OrdersPage /></Suspense>} />
+                  <Route path="productos" element={<Suspense fallback={<PageLoader />}><ProductsPage /></Suspense>} />
+                  <Route path="clientes" element={<Suspense fallback={<PageLoader />}><CustomersPage /></Suspense>} />
+                  <Route path="ventas" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
+                  <Route path="configuracion" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
+                  <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
+                </Route>
+              </Routes>
+            </ErrorBoundary>
+          </Suspense>
+        </>
       );
 
     default:

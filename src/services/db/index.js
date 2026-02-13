@@ -10,7 +10,7 @@ import { create } from 'zustand';
 // ============================================================
 // EXPORTACIÓN DE CONSTANTES Y CLASES (Compatibilidad 100%)
 // ============================================================
-export { STORES, DB_ERROR_CODES, DatabaseError };
+export { db, STORES, DB_ERROR_CODES, DatabaseError };
 
 // ============================================================
 // FUNCIONES DE INICIALIZACIÓN

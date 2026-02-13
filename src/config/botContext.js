@@ -14,7 +14,7 @@ const getPageKey = (pathname) => {
 export const GLOBAL_ALERT = {
   active: true, // Cambiar a true si hay un mensaje urgente
   id: 'actualizaciones_03',
-  message: 'El sistema a tenido una actualizacion. Si notas algo raro ve a Datos y Mantenimiento en la seccion de configuracion.',
+  message: 'El sistema a tenido una actualizacion considerable. Si notas algo raro ve a Datos y Mantenimiento en la seccion de configuracion para sincronizar tus ventas y stock de productos. Y si tienes problemas con el sistema por favor reporta a soporte ;)',
   actionLink: '/configuracion?tab=maintenance'
 };
 
@@ -413,5 +413,4 @@ export default {
   getBotContext,
   getCriticalAlert,
   getSmartSuggestions
-
 };

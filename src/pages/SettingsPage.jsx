@@ -4,6 +4,7 @@ import GeneralSettings from '../components/settings/GeneralSettings';
 import LicenseSettings from '../components/settings/LicenseSettings';
 import MaintenanceSettings from '../components/settings/MaintenanceSettings';
 import DbMigrationTester from '../components/debug/DbMigrationTester';
+import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
 
 export default function SettingsPage() {
@@ -16,7 +17,8 @@ export default function SettingsPage() {
       'general': 'general',
       'license': 'license',
       'maintenance': 'maintenance',
-      'debug': 'debug'
+      'debug': 'debug',
+      'test-ventas': 'test-ventas'
     };
 
     // CORRECCIÓN: Manejar tanto si existe el param como si no
@@ -63,6 +65,15 @@ export default function SettingsPage() {
             Depuración DB
           </button>
         )}
+
+        {import.meta.env.DEV && (
+          <button
+            className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`} // Ajusta 'tab-btn' a tu clase CSS real
+            onClick={() => handleTabChange('test-ventas')}
+          >
+            Test Ventas
+          </button>
+        )}
       </div>
 
       <div className="settings-content">
@@ -77,6 +88,15 @@ export default function SettingsPage() {
               Usa esto solo si sabes lo que haces.
             </p>
             <DbMigrationTester />
+          </div>
+        )}
+        {activeTab === 'test-ventas' && (
+          <div className="debug-section">
+            <h3>Zona de Peligro & Pruebas</h3>
+            <p className="text-warning">
+              Herramienta técnica para verificar la migración de salesService.js
+            </p>
+            <SalesSystemTester />
           </div>
         )}
       </div>
