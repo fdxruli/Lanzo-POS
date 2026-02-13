@@ -191,8 +191,6 @@ export default function PosPage() {
   const { order, customer, clearOrder, getTotalPrice } = useOrderStore();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
-  // --- CAMBIO: Usamos useProductStore para obtener el menú y la función de recarga ---
-  // Nota: 'loadInitialProducts' es el equivalente a la carga inicial/refresco en el nuevo store
   const allProducts = useProductStore((state) => state.menu);
   const refreshData = useProductStore((state) => state.loadInitialProducts);
 
@@ -428,23 +426,59 @@ export default function PosPage() {
     }
   };
 
-  const handleBarcodeScanned = (code) => {
-    // Si tienes lógica específica de escaneo manual, va aquí.
-    // El ScannerModal ya maneja la adición al carrito internamente en modo POS.
-  };
+  const productosFiltradosParaMenu = useMemo(() => {
+    // Usamos 'allProducts' que es la variable que ya tienes definida arriba
+    const listaOrigen = allProducts || [];
+
+    // CASO 1: Categoría "Agotados" (Nótese el guion bajo _ )
+    if (selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS') {
+      return listaOrigen.filter(p => {
+        // Corregido: batchManagement (singular)
+        const gestionaStock = p.trackStock || p.batchManagement?.enabled;
+        // Solo mostramos si gestiona stock Y el stock es <= 0
+        return gestionaStock && p.stock <= 0;
+      });
+    }
+
+    // CASO 2: Filtrado Normal (Todos o Categoría específica)
+    return listaOrigen.filter(p => {
+      // Corregido: p.categoryId
+      const matchCategory = selectedCategoryId === null || p.categoryId === selectedCategoryId;
+
+      // Corregido: batchManagement (singular)
+      const gestionaStock = p.trackStock || p.batchManagement?.enabled;
+
+      // Calculamos la variable que faltaba
+      const tieneStock = !gestionaStock || p.stock > 0;
+
+      // Retornamos solo si es de la categoría Y tiene stock (para limpiar la vista)
+      return matchCategory && tieneStock;
+    });
+  }, [allProducts, selectedCategoryId]);
+
+  const hasOutOfStockItems = useMemo(() => {
+    if (!allProducts) return false;
+
+    return allProducts.some(product => {
+      // Un producto está "agotado" si gestiona stock Y su stock es <= 0
+      const gestionaStock = product.trackStock || product.batchManagement?.enabled;
+      return gestionaStock && product.stock <= 0;
+    });
+  }, [allProducts]);
 
   return (
     <>
       <div className="pos-page-layout">
         <div className="pos-grid">
           <ProductMenu
-            products={filteredProducts}
+            products={productosFiltradosParaMenu}
             categories={categories}
             selectedCategoryId={selectedCategoryId}
             onSelectCategory={setSelectedCategoryId}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             onOpenScanner={() => setIsScannerOpen(true)}
+            showOutofStockCategory={hasOutOfStockItems}
           />
           <OrderSummary onOpenPayment={handleInitiateCheckout} />
         </div>
