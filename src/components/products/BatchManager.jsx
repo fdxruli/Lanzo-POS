@@ -4,8 +4,9 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 // --- CAMBIO: Usamos los stores especializados ---
 import { useProductStore } from '../../store/useProductStore';
 import { useStatsStore } from '../../store/useStatsStore';
+import { useInventoryMovement } from '../../hooks/useInventoryMovement';
 
-import { saveDataSafe, saveBatchAndSyncProductSafe, deleteDataSafe, saveData, STORES, deleteData, queryByIndex, saveBatchAndSyncProduct } from '../../services/database';
+import { saveDataSafe, saveBatchAndSyncProductSafe, STORES, queryByIndex } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useCaja } from '../../hooks/useCaja';
@@ -39,6 +40,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
   const { registrarMovimiento, cajaActual } = useCaja();
   const isEditing = !!batchToEdit;
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (isEditing) {
       // --- MODO EDICIÓN ---
@@ -89,6 +91,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
       }
     }
   }, [batchToEdit, isEditing, features, product, menu]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Generador de SKU Automático
   const generateAutoSku = () => {
@@ -343,8 +346,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   const loadInitialProducts = useProductStore((state) => state.loadInitialProducts);
   const refreshData = useProductStore((state) => state.loadInitialProducts); // Ojo: loadAllData ya no existe
   const menu = useProductStore((state) => state.menu);
-  const loadBatchesForProduct = useProductStore((state) => state.loadBatchesForProduct);
-  const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
+  const { loadBatchesForProduct } = useInventoryMovement();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [batchToEdit, setBatchToEdit] = useState(null);
@@ -442,11 +444,6 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
     setShowSuggestions(false);
   }
 
-  const handleActionableError = (result) => {
-    const { message } = result.error;
-    showMessageModal(message);
-  };
-
   const handleSaveBatch = async (batchData) => {
     try {
       // Si el producto no tenía activado el manejo de lotes, lo activamos
@@ -470,7 +467,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
       }
 
       // Guardar y Sincronizar
-      const result = await saveBatchAndSyncProductSafe(batchData);
+      await saveBatchAndSyncProductSafe(batchData);
 
       const updatedBatches = await loadBatchesForProduct(selectedProductId);
       setLocalBatches(updatedBatches);
@@ -509,7 +506,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
           deletedAt: new Date().toISOString() // Auditoría
         };
 
-        const result = await saveBatchAndSyncProductSafe(archivedBatch);
+        await saveBatchAndSyncProductSafe(archivedBatch);
         // --------------------------------------------
 
         // Actualizar UI...

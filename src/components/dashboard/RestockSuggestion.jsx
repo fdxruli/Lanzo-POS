@@ -1,47 +1,81 @@
-// src/components/dashboard/RestockSuggestions.jsx
-import React, { useMemo } from 'react';
-import { useProductStore } from '../../store/useProductStore';
-import { showMessageModal } from '../../services/utils';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Clipboard, Truck, AlertTriangle } from 'lucide-react';
+import { getLowStockProductsReport } from '../../services/inventoryAnalysis';
+import { showMessageModal } from '../../services/utils';
+import Logger from '../../services/Logger';
 
 export default function RestockSuggestions() {
-  const getLowStockProducts = useProductStore(state => state.getLowStockProducts);
-  
-  // Obtenemos los productos calculados
-  const lowStockItems = useMemo(() => getLowStockProducts(), [getLowStockProducts]);
+  const [lowStockItems, setLowStockItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Agrupamos por proveedor para facilitar los pedidos
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadReport = async () => {
+      setIsLoading(true);
+      try {
+        const report = await getLowStockProductsReport();
+        if (isMounted) {
+          setLowStockItems(report);
+        }
+      } catch (error) {
+        Logger.error('Error cargando sugerencias de compra:', error);
+        if (isMounted) {
+          setLowStockItems([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadReport();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const groupedBySupplier = useMemo(() => {
     const groups = {};
-    lowStockItems.forEach(item => {
-      const sup = item.supplierName;
-      if (!groups[sup]) groups[sup] = [];
-      groups[sup].push(item);
+    lowStockItems.forEach((item) => {
+      const supplier = item.supplierName;
+      if (!groups[supplier]) groups[supplier] = [];
+      groups[supplier].push(item);
     });
     return groups;
   }, [lowStockItems]);
 
   const handleCopyList = (supplierName, items) => {
     let text = `📋 *PEDIDO PARA: ${supplierName.toUpperCase()}*\n\n`;
-    items.forEach(item => {
+    items.forEach((item) => {
       text += `- ${item.suggestedOrder} ${item.unit} de ${item.name} (Stock actual: ${item.currentStock})\n`;
     });
-    text += `\nGenerado por Lanzo POS`;
+    text += '\nGenerado por Lanzo POS';
 
     navigator.clipboard.writeText(text)
       .then(() => showMessageModal('✅ Lista copiada al portapapeles. Pégala en WhatsApp.'))
       .catch(() => showMessageModal('Error al copiar.', null, { type: 'error' }));
   };
 
+  if (isLoading) {
+    return <div className="expiration-loading">Analizando inventario para reabastecimiento...</div>;
+  }
+
   if (lowStockItems.length === 0) {
     return (
-      <div style={{ 
-        padding: '3rem', textAlign: 'center', backgroundColor: 'var(--card-background-color)', 
-        borderRadius: '16px', border: '1px dashed var(--success-color)' 
+      <div style={{
+        padding: '3rem',
+        textAlign: 'center',
+        backgroundColor: 'var(--card-background-color)',
+        borderRadius: '16px',
+        border: '1px dashed var(--success-color)'
       }}>
         <Truck size={48} color="var(--success-color)" style={{ marginBottom: '1rem', opacity: 0.5 }} />
         <h3>¡Todo en Orden!</h3>
-        <p style={{ color: 'var(--text-light)' }}>Tu inventario está saludable. No hay productos por debajo del mínimo.</p>
+        <p style={{ color: 'var(--text-light)' }}>
+          Tu inventario está saludable. No hay productos por debajo del mínimo.
+        </p>
       </div>
     );
   }
@@ -50,22 +84,30 @@ export default function RestockSuggestions() {
     <div className="restock-container">
       <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <AlertTriangle color="var(--warning-color)" />
-        <h3 className="subtitle" style={{ margin: 0 }}>Sugerencias de Compra ({lowStockItems.length} productos)</h3>
+        <h3 className="subtitle" style={{ margin: 0 }}>
+          Sugerencias de Compra ({lowStockItems.length} productos)
+        </h3>
       </div>
 
-      <div className="restock-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+      <div
+        className="restock-grid"
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}
+      >
         {Object.entries(groupedBySupplier).map(([supplier, items]) => (
-          <div key={supplier} style={{ 
-            backgroundColor: 'var(--card-background-color)', 
-            borderRadius: '12px', 
-            padding: '1.5rem',
-            boxShadow: 'var(--box-shadow)',
-            borderTop: '4px solid var(--secondary-color)'
-          }}>
+          <div
+            key={supplier}
+            style={{
+              backgroundColor: 'var(--card-background-color)',
+              borderRadius: '12px',
+              padding: '1.5rem',
+              boxShadow: 'var(--box-shadow)',
+              borderTop: '4px solid var(--secondary-color)'
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h4 style={{ margin: 0, color: 'var(--text-dark)' }}>{supplier}</h4>
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary"
                 style={{ padding: '6px 12px', fontSize: '0.8rem' }}
                 onClick={() => handleCopyList(supplier, items)}
               >
@@ -82,14 +124,21 @@ export default function RestockSuggestions() {
                 </tr>
               </thead>
               <tbody>
-                {items.map(item => (
+                {items.map((item) => (
                   <tr key={item.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                     <td style={{ padding: '8px 5px', fontWeight: '500' }}>{item.name}</td>
                     <td style={{ textAlign: 'center', color: 'var(--error-color)', fontWeight: 'bold' }}>
-                      {item.currentStock} <span style={{fontSize:'0.7em', fontWeight:'normal', color:'#999'}}>min:{item.minStock}</span>
+                      {item.currentStock}
+                      {' '}
+                      <span style={{ fontSize: '0.7em', fontWeight: 'normal', color: '#999' }}>
+                        min:
+                        {item.minStock}
+                      </span>
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: '800', color: 'var(--primary-color)' }}>
-                      {item.suggestedOrder} {item.unit}
+                      {item.suggestedOrder}
+                      {' '}
+                      {item.unit}
                     </td>
                   </tr>
                 ))}
@@ -101,3 +150,4 @@ export default function RestockSuggestions() {
     </div>
   );
 }
+

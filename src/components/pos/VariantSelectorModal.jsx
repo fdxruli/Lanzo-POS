@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore'; 
+import { useInventoryMovement } from '../../hooks/useInventoryMovement';
 import './VariantSelectorModal.css'; 
 import Logger from '../../services/Logger';
 
@@ -15,7 +15,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
-  const loadBatchesForProduct = useProductStore(state => state.loadBatchesForProduct);
+  const { loadBatchesForProduct } = useInventoryMovement();
   const companyProfile = useAppStore(state => state.companyProfile);
 
   // --- CORRECCIÓN AQUÍ ---
