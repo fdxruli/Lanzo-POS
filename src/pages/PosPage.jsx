@@ -1,6 +1,5 @@
 // src/pages/PosPage.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import ProductMenu from '../components/pos/ProductMenu';
 import OrderSummary from '../components/pos/OrderSummary';
 import ScannerModal from '../components/common/ScannerModal';
@@ -16,10 +15,10 @@ import { layawayRepo } from '../services/db';
 
 // --- CAMBIOS: Importamos los nuevos stores especializados ---
 import { useProductStore } from '../store/useProductStore';
-import { useStatsStore } from '../store/useStatsStore';
+import { useInventoryMovement } from '../hooks/useInventoryMovement';
 
-import { loadData, saveBulk, saveData, queryByIndex, queryBatchesByProductIdAndActive, STORES, processBatchDeductions } from '../services/database';
-import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
+import { loadData, STORES } from '../services/database';
+import { showMessageModal } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useDebounce } from '../hooks/useDebounce';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
@@ -67,8 +66,7 @@ export default function PosPage() {
   const [isSaleInProgress, setIsSaleInProgress] = useState(false);
   const [isMobileOrderOpen, setIsMobileOrderOpen] = useState(false);
 
-  const scanProductFast = useProductStore((state) => state.scanProductFast);
-  const { setOrder, order: currentOrder } = useOrderStore();
+  const { scanProductFast } = useInventoryMovement();
 
   const [toastMsg, setToastMsg] = useState(null);
 
@@ -216,20 +214,6 @@ export default function PosPage() {
     };
     loadExtras();
   }, []); // Dependencias vacías para cargar solo al montar
-
-  // Filtramos localmente por Categoría y Tipo (búsqueda por texto ya viene filtrada del store)
-  const filteredProducts = useMemo(() => {
-    // 1. Filtro base (Vendibles)
-    let items = (allProducts || []).filter(p => p.productType === 'sellable' || !p.productType);
-
-    // 2. Filtro de Categoría
-    if (selectedCategoryId) {
-      items = items.filter(p => p.categoryId === selectedCategoryId);
-    }
-
-    return items;
-  }, [allProducts, selectedCategoryId]);
-
   const handleInitiateCheckout = () => {
     const licenseDetails = useAppStore.getState().licenseDetails;
     if (!licenseDetails || !licenseDetails.valid) {

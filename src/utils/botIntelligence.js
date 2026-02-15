@@ -5,6 +5,7 @@
  */
 
 import { loadData, STORES } from '../services/db';
+import { getExpiringProductsReport, getLowStockProductsReport } from '../services/inventoryAnalysis';
 import { INTENT_PATTERNS, SYNONYMS, CONVERSATION_CONTEXT } from './IntentPatterns';
 import {
   normalizeText,
@@ -161,13 +162,14 @@ export const calculateSalesReport = async (timeframe = 'today') => {
     case 'today':
       startDate.setHours(0, 0, 0, 0);
       break;
-    case 'yesterday':
+    case 'yesterday': {
       startDate.setDate(startDate.getDate() - 1);
       startDate.setHours(0, 0, 0, 0);
       const endYesterday = new Date(startDate);
       endYesterday.setHours(23, 59, 59, 999);
       now.setTime(endYesterday.getTime());
       break;
+    }
     case 'week':
       startDate.setDate(startDate.getDate() - 7);
       break;
@@ -222,61 +224,13 @@ export const calculateSalesReport = async (timeframe = 'today') => {
 /**
  * Obtiene productos con stock bajo con más detalles
  */
-export const getLowStockProducts = async () => {
-  const products = await loadData(STORES.MENU) || [];
-  
-  const lowStock = products
-    .filter(p => 
-      p.isActive !== false &&
-      p.trackStock &&
-      p.minStock > 0 &&
-      p.stock <= p.minStock
-    )
-    .map(p => {
-      const urgency = p.stock / (p.minStock || 1);
-      const targetStock = p.maxStock && p.maxStock > p.minStock ? p.maxStock : p.minStock * 2;
-      const deficit = targetStock - p.stock;
-      
-      return {
-        ...p,
-        urgency,
-        deficit: Math.ceil(deficit),
-        targetStock
-      };
-    })
-    .sort((a, b) => a.urgency - b.urgency);
-  
-  return lowStock.slice(0, 10);
+export const getLowStockProducts = async (options = {}) => {
+  return getLowStockProductsReport({ limit: 10, ...options });
 };
 
-/**
- * Obtiene productos próximos a vencer
- */
 export const getExpiringProducts = async (daysThreshold = 7) => {
-  const products = await loadData(STORES.MENU) || [];
-  const today = new Date();
-  const threshold = new Date();
-  threshold.setDate(threshold.getDate() + daysThreshold);
-  
-  const expiring = products
-    .filter(p => {
-      if (!p.shelfLife || !p.isActive) return false;
-      const expiryDate = new Date(p.shelfLife);
-      return expiryDate <= threshold && expiryDate >= today;
-    })
-    .map(p => {
-      const expiryDate = new Date(p.shelfLife);
-      const daysLeft = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
-      
-      return {
-        ...p,
-        daysLeft,
-        urgencyLevel: daysLeft <= 2 ? 'critical' : daysLeft <= 5 ? 'high' : 'medium'
-      };
-    })
-    .sort((a, b) => a.daysLeft - b.daysLeft);
-  
-  return expiring.slice(0, 10);
+  const report = await getExpiringProductsReport({ daysThreshold });
+  return report.slice(0, 10);
 };
 
 /**
@@ -299,7 +253,7 @@ export const getCustomersWithDebt = async () => {
 /**
  * Calcula antigüedad de la deuda (simulado por ahora)
  */
-const calculateDebtAge = (customer) => {
+const calculateDebtAge = () => {
   // Por ahora retornamos 'reciente', pero esto debería calcularse con las ventas
   return 'reciente';
 };
@@ -327,7 +281,6 @@ export const searchProductByName = async (productName) => {
  */
 export const getTopProducts = async (timeframe = 'month', limit = 10) => {
   const sales = await loadData(STORES.SALES) || [];
-  const now = new Date();
   let startDate = new Date();
   
   switch (timeframe) {
@@ -374,7 +327,7 @@ export const getTopProducts = async (timeframe = 'month', limit = 10) => {
 /**
  * Genera respuestas inteligentes y contextuales
  */
-export const generateResponse = async (intent, entities, context) => {
+export const generateResponse = async (intent, entities) => {
   console.log('💬 Generando respuesta para:', intent);
   
   // Manejar contextos conversacionales
@@ -389,30 +342,7 @@ export const generateResponse = async (intent, entities, context) => {
       actions: []
     };
   }
-  
-  const { products, stats, cart } = context; // Datos en tiempo real para respuestas más precisas
   const responses = {
-    low_stock: async () => {
-      let lowStock = [];
-      if (products && products.length > 0) {
-        lowStock = products.filter(p => 
-          p.trackStock && p.isActive && p.stock <= (p.minStock || 0)
-        ).map(p => ({
-          ...p,
-          deficit: (p.maxStock || p.minStock * 2) - p.stock
-        }));
-      } else {
-        lowStock = await getLowStockProducts();
-      }
-      return {
-        title: 'Stock Bajo Detectado',
-        message: `Hay ${lowStock.length} productos con stock bajo.`,
-        tips: [],
-        actions: [
-          { label: 'Ver Inventario', path: '/inventario', icon: '' }
-        ]
-      };
-    },
     sales_report: async () => {
       const report = await calculateSalesReport(entities.timeframe || 'today');
       const periodText = {
@@ -614,7 +544,6 @@ export const generateResponse = async (intent, entities, context) => {
       
       const list = topProducts
         .map((p, i) => {
-          const avgProfit = p.quantity > 0 ? p.profit / p.quantity : 0;
           return `${i + 1}. ${p.name}\n   ${p.quantity} vendidos • $${p.revenue.toFixed(2)} • Ganancia: $${p.profit.toFixed(2)}`;
         })
         .join('\n\n');
@@ -848,3 +777,6 @@ export const getProactiveSuggestions = async () => {
     return priority[b.priority] - priority[a.priority];
   })[0]; // Retornar solo la más importante
 };
+
+
+
