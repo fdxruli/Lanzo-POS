@@ -513,17 +513,33 @@ export const productsRepository = {
     },
 
     /**
-     * Búsqueda tipo "LIKE" o "StartsWith" por nombre.
-     * Dexie optimiza esto usando índices si existen (name_lower).
+     * Búsqueda FLEXIBLE: Nombre (contiene), Código o SKU.
      */
     async searchProducts(term, limit = 50) {
         try {
-            const lowerTerm = term.toLowerCase();
+            const lowerTerm = term.toLowerCase().trim();
 
-            // Usamos el índice 'name_lower' para búsqueda rápida por prefijo
+            if (!lowerTerm) return [];
+
+            // Usamos .filter() en lugar de .startsWith() para buscar "dentro" del texto
+            // y buscar en múltiples campos a la vez.
             return await db.table(STORES.MENU)
-                .where('name_lower').startsWith(lowerTerm)
-                .filter(p => p.isActive !== false) // Filtro en memoria para el estado
+                .filter(p => {
+                    // 1. Descartar inactivos
+                    if (p.isActive === false) return false;
+
+                    // 2. Coincidencia por Nombre (CONTAINS)
+                    // Ej: Buscar "Pinol" encuentra "Limpiador Pinol"
+                    if (p.name && p.name.toLowerCase().includes(lowerTerm)) return true;
+
+                    // 3. Coincidencia por Código de Barras (Exacta o Parcial)
+                    if (p.barcode && p.barcode.includes(lowerTerm)) return true;
+
+                    // 4. Coincidencia por SKU (si el producto padre tiene sku asignado)
+                    if (p.sku && p.sku.toLowerCase().includes(lowerTerm)) return true;
+
+                    return false;
+                })
                 .limit(limit)
                 .toArray();
 

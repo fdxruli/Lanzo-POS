@@ -221,7 +221,7 @@
 /* Contenedor de botones con aislamiento */
 .product-list-container .actions-area {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
   margin-left: auto;
   align-items: center; /* ← Asegura alineación vertical */
@@ -259,6 +259,17 @@
 /* Estados hover generales */
 .product-list-container .btn-action:hover {
   transform: translateY(-1px);
+}
+
+.btn-action.btn-batches {
+  background-color: #e0f2fe; /* Azul muy claro */
+  color: #0284c7;            /* Azul intenso */
+  border: 1px solid #bae6fd;
+}
+
+.btn-action.btn-batches:hover {
+  background-color: #0284c7;
+  color: white;
 }
 
 /* Variante EDITAR (Azul) - Especificidad máxima */

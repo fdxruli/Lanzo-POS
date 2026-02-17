@@ -357,25 +357,22 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
 
   // --- LÓGICA DE BÚSQUEDA ---
   useEffect(() => {
-    // Evitamos buscar si el searchTerm es igual al nombre del producto seleccionado
+    // Si el texto es igual al producto seleccionado, no buscamos de nuevo
     const selectedProd = rawProducts.find(p => p.id === selectedProductId);
     if (selectedProd && searchTerm === selectedProd.name) return;
 
     const timer = setTimeout(() => {
-      if (searchTerm.trim().length >= 2) {
+      // CAMBIO: Buscamos desde la primera letra (>= 1) para que sea más reactivo
+      if (searchTerm.trim().length >= 1) {
         searchProducts(searchTerm);
       } else if (searchTerm === '') {
         if (!selectedProductId) loadInitialProducts();
       }
-    }, 500);
+    }, 400); // Pequeña reducción de tiempo para que se sienta más rápido
 
     return () => clearTimeout(timer);
   }, [searchTerm, selectedProductId]);
 
-  // --- CORRECCIÓN CRÍTICA AQUÍ ---
-  // Sincronizar buscador solo cuando seleccionamos un producto.
-  // IMPORTANTE: Hemos quitado el 'else { setSearchTerm("") }' y la dependencia de 'rawProducts' en el reseteo
-  // para evitar que el input se borre cuando llegan los resultados de la búsqueda.
   useEffect(() => {
     if (selectedProductId) {
       const prod = rawProducts.find(p => p.id === selectedProductId);
@@ -386,8 +383,19 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
   }, [selectedProductId, rawProducts]);
 
   const filteredProducts = useMemo(() => {
-    return rawProducts.slice(0, 10);
-  }, [rawProducts]);
+    // Si no hay término de búsqueda, mostrar los primeros 10 (comportamiento default)
+    if (!searchTerm) return rawProducts.slice(0, 10);
+
+    const lowerTerm = searchTerm.toLowerCase();
+
+    // Filtramos localmente lo que ya tenemos en memoria para feedback instantáneo
+    // Esto arregla el problema de ver "Chettos" cuando escribes "P"
+    return rawProducts.filter(p =>
+      p.name.toLowerCase().includes(lowerTerm) ||
+      (p.barcode && p.barcode.includes(lowerTerm))
+    ).slice(0, 10);
+
+  }, [rawProducts, searchTerm]);
 
   const selectedProduct = useMemo(() => {
     return rawProducts.find(p => p.id === selectedProductId);

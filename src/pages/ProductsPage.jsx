@@ -528,6 +528,7 @@ export default function ProductsPage() {
                         onEdit={handleEditProduct}
                         onDelete={handleDeleteProduct}
                         onToggleStatus={handleToggleStatus}
+                        onManageBatches={handleManageBatches}
                     />
                 )
             }
