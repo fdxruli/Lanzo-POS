@@ -203,7 +203,7 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
   };
 
   return (
-    <div className="modal" style={{ display: 'flex' }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 9999 }}>
       <div className="modal-content batch-form-modal">
         <h2 className="modal-title">{isEditing ? 'Editar' : 'Registrar'} {features.hasVariants ? 'Variante' : 'Lote'}</h2>
         <p>Producto: <strong>{product.name}</strong></p>
@@ -297,14 +297,47 @@ const BatchForm = ({ product, batchToEdit, onClose, onSave, features, menu }) =>
           </div>
 
           {!isEditing && (
-            <div className="form-group-checkbox" style={{ marginTop: '5px', padding: '8px', backgroundColor: '#fff3cd', borderRadius: '8px' }}>
+            <div
+              className="form-group-checkbox"
+              onClick={() => setPagadoDeCaja(!pagadoDeCaja)}
+              style={{
+                marginTop: '15px',
+                padding: '12px 15px',
+                backgroundColor: pagadoDeCaja ? 'rgba(3, 105, 161, 0.1)' : 'var(--card-background-color, #fff)',
+                border: `2px solid ${pagadoDeCaja ? 'var(--primary-color, #0369a1)' : 'var(--border-color, #e2e8f0)'}`,
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
               <input
                 type="checkbox"
                 id="pay-from-caja"
                 checked={pagadoDeCaja}
                 onChange={(e) => setPagadoDeCaja(e.target.checked)}
+                onClick={(e) => e.stopPropagation()} // Evita que el clic en el input dispare el onClick del div padre dos veces
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  cursor: 'pointer'
+                }}
               />
-              <label htmlFor="pay-from-caja" style={{ fontSize: '0.9rem' }}>💸 Pagar con dinero de Caja</label>
+              <label
+                htmlFor="pay-from-caja"
+                style={{
+                  fontSize: '1rem',
+                  fontWeight: pagadoDeCaja ? '600' : 'normal',
+                  color: pagadoDeCaja ? 'var(--primary-color, #0369a1)' : 'inherit',
+                  margin: 0,
+                  cursor: 'pointer',
+                  userSelect: 'none' // Evita que el texto se sombree al hacer clics rápidos
+                }}
+              >
+                💸 Pagar con dinero de Caja
+              </label>
             </div>
           )}
 
@@ -485,9 +518,12 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
 
       showMessageModal('✅ Lote guardado y stock total actualizado.');
 
+      return true;
+
     } catch (error) {
       Logger.error(error);
       showMessageModal(`Error: ${error.message}`);
+
     }
   };
 
