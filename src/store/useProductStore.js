@@ -95,26 +95,32 @@ export const useProductStore = create((set, get) => ({
       const categories = get().categories;
       const categoryToDelete = categories.find((category) => category.id === categoryId);
 
-      if (categoryToDelete) {
-        await saveDataSafe(STORES.DELETED_CATEGORIES, {
-          ...categoryToDelete,
-          deletedTimestamp: new Date().toISOString(),
-          deletedReason: 'Categoria eliminada y desvinculada'
-        });
-      }
-
+      // Ejecutar primero la eliminación real
       const result = await deleteCategoryCascading(categoryId);
+
       if (result.success) {
+        // Solo si tuvo éxito, creamos el registro en la papelera
+        if (categoryToDelete) {
+          await saveDataSafe(STORES.DELETED_CATEGORIES, {
+            ...categoryToDelete,
+            deletedTimestamp: new Date().toISOString(),
+            deletedReason: 'Categoria eliminada y desvinculada'
+          });
+        }
+
         set({
           categories: categories.filter((category) => category.id !== categoryId),
           isLoading: false
         });
         get().loadInitialProducts();
       } else {
+        // Bloquear el fallo silencioso
+        alert(`No se pudo eliminar la categoría: ${result.message || 'Error desconocido'}`);
         set({ isLoading: false });
       }
     } catch (error) {
       Logger.error('Error eliminando categoria:', error);
+      alert('Error crítico al intentar eliminar la categoría.');
       set({ isLoading: false });
     }
   },

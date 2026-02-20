@@ -54,8 +54,9 @@ export const processSaleCore = async ({
                 const hasValidPrescription = tempPrescriptionData &&
                     tempPrescriptionData.doctorName &&
                     tempPrescriptionData.licenseNumber;
+
                 if (!hasValidPrescription) {
-                    throw new Error(`BLOQUEO DE SEGURIDAD: El producto "${restrictedItem.name}" es controlado y requiere dats de receta medica (Doctor y Cedula).`)
+                    throw new Error(`BLOQUEO DE SEGURIDAD: El producto "${restrictedItem.name}" es controlado y requiere datos de receta médica (Doctor y Cédula).`);
                 }
             }
         }
@@ -71,10 +72,6 @@ export const processSaleCore = async ({
 
         if (!stockValidation.ok) {
             return stockValidation.response;
-        }
-
-        if (isNaN(parseFloat(total)) || parseFloat(total) < 0) {
-            throw new Error('El total de la venta no es válido.');
         }
 
         await normalizeAndValidatePricing({
