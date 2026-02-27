@@ -32,56 +32,94 @@ export const useSalesStore = create((set, get) => ({
   },
 
   deleteSale: async (timestamp) => {
-    
-    // 1. Confirmación honesta (Auditoría)
-    const confirmMessage = '¿Mover esta venta a la Papelera?\n\nNOTA: Esto solo la elimina del historial visible. NO devuelve los productos al inventario.';
-    if (!window.confirm(confirmMessage)) return;
+    // 1. Confirmación de eliminación de la venta
+    if (!window.confirm('¿Mover esta venta a la Papelera?')) return;
+
+    const currentSales = get().sales;
+    const saleFound = currentSales.find(s => s.timestamp === timestamp);
+
+    if (!saleFound) {
+      alert("⚠️ No se encontró la venta. Intenta recargar la página.");
+      return;
+    }
+
+    // 2. Decisión de Negocio: ¿Qué pasa con la mercancía?
+    const confirmRestoreStock = window.confirm(
+      '¿Deseas DEVOLVER los productos de esta venta al inventario físico?\n\n' +
+      '• [Aceptar]: Sí, hubo un error de cobro y el producto sigue en mostrador.\n' +
+      '• [Cancelar]: No, el producto es merma/pérdida (no regresará al stock).'
+    );
 
     set({ isLoading: true });
 
     try {
-      // 2. BUSCAR LA VENTA PRIMERO
-      // Necesitamos el objeto completo para obtener su 'id' real (Key de la BD)
-      // y también para asegurarnos de que existe antes de intentar moverla.
-      const currentSales = get().sales;
-      const saleFound = currentSales.find(s => s.timestamp === timestamp);
+      // 3. Reversión de Inventario (Solo si el usuario aceptó)
+      if (confirmRestoreStock && saleFound.items) {
+        Logger.log('Iniciando devolución de inventario para la venta:', saleFound.id);
 
-      if (!saleFound) {
-        alert("⚠️ No se encontró la venta. Intenta recargar la página.");
-        set({ isLoading: false });
-        return;
+        for (const item of saleFound.items) {
+          // Revisamos si el item guardó el registro de qué lotes descontó
+          if (item.batchesUsed && Array.isArray(item.batchesUsed)) {
+            for (const batchUsage of item.batchesUsed) {
+              try {
+                // Cargar el lote original afectado
+                const batch = await loadData(STORES.PRODUCT_BATCHES, batchUsage.batchId);
+
+                if (batch) {
+                  // Restaurar la cantidad exacta que se le descontó
+                  batch.stock = (Number(batch.stock) || 0) + Number(batchUsage.quantity);
+
+                  // Caso límite: Si el lote había llegado a 0 y se auto-desactivó, lo revivimos
+                  if (batch.stock > 0) {
+                    batch.isActive = true;
+                  }
+
+                  batch.updatedAt = new Date().toISOString();
+                  await saveData(STORES.PRODUCT_BATCHES, batch);
+                  Logger.log(`Stock restaurado: Lote ${batch.id}, Cantidad: +${batchUsage.quantity}`);
+                } else {
+                  Logger.warn(`Lote huérfano: No se encontró el lote ${batchUsage.batchId} en BD.`);
+                }
+              } catch (batchError) {
+                Logger.error(`Error crítico restaurando el lote ${batchUsage.batchId}:`, batchError);
+              }
+            }
+          }
+        }
       }
 
-      // 3. RECICLAR USANDO EL ID
-      // Aunque la UI usa timestamp, la base de datos usa 'id'.
-      // Usamos saleFound.id para asegurar que le pegamos al registro correcto.
+      // 4. Mover a la papelera dejando rastro del motivo en el campo "reason"
+      const auditReason = confirmRestoreStock
+        ? "Eliminado manualmente - Inventario Devuelto"
+        : "Eliminado manualmente - Inventario NO Devuelto (Merma)";
+
       const result = await recycleData(
-        STORES.SALES,          // Origen
-        STORES.DELETED_SALES,  // Destino
-        saleFound.id,          // <--- AQUI ESTÁ LA CLAVE: Usamos el ID real
-        "Eliminado manualmente desde Historial" 
+        STORES.SALES,
+        STORES.DELETED_SALES,
+        saleFound.id,
+        auditReason
       );
 
       if (result.success) {
-        // 4. ACTUALIZAR UI
-        // Filtramos usando timestamp porque es lo que tenemos a mano y es único
+        // 5. Actualizar la UI
         const updatedSales = currentSales.filter(s => s.timestamp !== timestamp);
-        
-        set({ 
+
+        set({
           sales: updatedSales,
-          isLoading: false 
+          isLoading: false
         });
 
-        alert("✅ Venta movida a la papelera (Auditoría).");
+        alert(confirmRestoreStock
+          ? "✅ Venta cancelada y productos devueltos al stock."
+          : "✅ Venta cancelada. Los productos se registraron como salida definitiva.");
       } else {
-        console.warn("Fallo reciclaje:", result);
-        alert("No se pudo mover a la papelera. Revisa la consola.");
+        alert("Fallo crítico: No se pudo mover a la papelera. Revisa la consola.");
         set({ isLoading: false });
       }
 
     } catch (error) {
-      Logger.error("Error crítico al eliminar venta:", error);
-      alert("Ocurrió un error inesperado.");
+      Logger.error("Error inesperado al cancelar venta:", error);
+      alert("Ocurrió un error al procesar la cancelación.");
       set({ isLoading: false });
     }
   }
