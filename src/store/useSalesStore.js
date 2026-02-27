@@ -57,32 +57,86 @@ export const useSalesStore = create((set, get) => ({
       if (confirmRestoreStock && saleFound.items) {
         Logger.log('Iniciando devolución de inventario para la venta:', saleFound.id);
 
+        // Guardaremos los IDs de los productos con lotes para recalcular su total visual al final
+        const affectedParentIds = new Set();
+
         for (const item of saleFound.items) {
-          // Revisamos si el item guardó el registro de qué lotes descontó
-          if (item.batchesUsed && Array.isArray(item.batchesUsed)) {
+
+          // -------------------------------------------------------------
+          // CASO A: El producto usó LOTES (de sí mismo o de ingredientes)
+          // -------------------------------------------------------------
+          if (item.batchesUsed && item.batchesUsed.length > 0) {
             for (const batchUsage of item.batchesUsed) {
               try {
-                // Cargar el lote original afectado
                 const batch = await loadData(STORES.PRODUCT_BATCHES, batchUsage.batchId);
-
                 if (batch) {
-                  // Restaurar la cantidad exacta que se le descontó
                   batch.stock = (Number(batch.stock) || 0) + Number(batchUsage.quantity);
-
-                  // Caso límite: Si el lote había llegado a 0 y se auto-desactivó, lo revivimos
-                  if (batch.stock > 0) {
-                    batch.isActive = true;
-                  }
-
+                  if (batch.stock > 0) batch.isActive = true;
                   batch.updatedAt = new Date().toISOString();
-                  await saveData(STORES.PRODUCT_BATCHES, batch);
-                  Logger.log(`Stock restaurado: Lote ${batch.id}, Cantidad: +${batchUsage.quantity}`);
-                } else {
-                  Logger.warn(`Lote huérfano: No se encontró el lote ${batchUsage.batchId} en BD.`);
+
+                  await saveDataSafe(STORES.PRODUCT_BATCHES, batch);
+
+                  // Anotar el producto para sincronizar el catálogo principal después
+                  const parentIdToSync = batchUsage.ingredientId || batch.productId;
+                  if (parentIdToSync) affectedParentIds.add(parentIdToSync);
+
                 }
-              } catch (batchError) {
-                Logger.error(`Error crítico restaurando el lote ${batchUsage.batchId}:`, batchError);
+              } catch (err) {
+                Logger.error(`Error restaurando el lote ${batchUsage.batchId}:`, err);
               }
+            }
+          }
+
+          // -------------------------------------------------------------
+          // CASO B: Producto SIMPLE (Ej. Coca Cola sin lotes)
+          // -------------------------------------------------------------
+          else {
+            try {
+              const realProductId = item.parentId || item.id;
+              const parentProduct = await loadData(STORES.MENU, realProductId);
+
+              // Solo devolvemos si realmente lleva control de inventario
+              if (parentProduct && parentProduct.trackStock !== false) {
+                // Usamos stockDeducted (si lo guardó la venta) o la cantidad pedida
+                const qtyToReturn = Number(item.stockDeducted ?? item.quantity);
+
+                parentProduct.stock = (Number(parentProduct.stock) || 0) + qtyToReturn;
+                parentProduct.updatedAt = new Date().toISOString();
+
+                await saveDataSafe(STORES.MENU, parentProduct);
+                Logger.log(`Stock directo restaurado: ${parentProduct.name} +${qtyToReturn}`);
+              }
+            } catch (err) {
+              Logger.error(`Error restaurando producto simple ${item.id}:`, err);
+            }
+          }
+        }
+
+        // -------------------------------------------------------------
+        // FASE 3.1: Sincronizar catálogo principal para productos con lotes
+        // -------------------------------------------------------------
+        // Si no hacemos esto, Dexie actualiza los lotes pero el catálogo mostrará el número viejo.
+        if (affectedParentIds.size > 0) {
+          const { db } = await import('../services/database'); // Importamos la instancia Dexie
+          for (const productId of affectedParentIds) {
+            try {
+              const parentProduct = await loadData(STORES.MENU, productId);
+              if (parentProduct) {
+                // Sumamos la verdad absoluta: todos los lotes activos de este producto
+                const allBatches = await db.table(STORES.PRODUCT_BATCHES)
+                  .where('productId').equals(productId)
+                  .toArray();
+
+                const totalStock = allBatches
+                  .filter(b => b.isActive && Number(b.stock) > 0)
+                  .reduce((sum, b) => sum + Number(b.stock), 0);
+
+                parentProduct.stock = totalStock;
+                parentProduct.updatedAt = new Date().toISOString();
+                await saveDataSafe(STORES.MENU, parentProduct);
+              }
+            } catch (err) {
+              Logger.error(`Error sincronizando visualmente padre ${productId}:`, err);
             }
           }
         }
