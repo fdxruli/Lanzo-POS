@@ -20,31 +20,21 @@ const CSV_HEADERS = [
 
 /**
  * 🚀 EXPORTACIÓN INTELIGENTE DE INVENTARIO (Streaming)
- * Reemplaza a la antigua 'generateCSV'.
- * Lee los productos uno por uno y descarga el archivo directamente.
  */
 export const downloadInventorySmart = async () => {
-  // 1. Cargamos categorías primero (son pocas, caben en memoria)
   const categories = await loadData(STORES.CATEGORIES);
   const catMap = new Map(categories.map(c => [c.id, c.name]));
 
-  // 2. Preparamos el inicio del archivo
   const headerRow = CSV_HEADERS.join(',') + '\n';
-  const fileParts = [headerRow]; // Aquí acumularemos los trozos (chunks)
+  const fileParts = [headerRow];
 
-  // 3. Función auxiliar para limpiar textos (evitar romper el CSV con comillas)
   const clean = (txt) => `"${(txt || '').replace(/"/g, '""')}"`;
 
   try {
-    // 4. Usamos el streaming de la base de datos
     await streamStoreToCSV(
-      STORES.MENU, // Leemos la tienda de Productos
+      STORES.MENU,
       (product) => {
-        // --- LOGICA POR FILA ---
         const catName = catMap.get(product.categoryId) || '';
-
-        // Nota: Confiamos en que 'product.stock' está sincronizado. 
-        // Si usas lotes, asegúrate de correr "Sincronizar Stock" en Configuración antes.
         return [
           product.id,
           clean(product.name),
@@ -65,12 +55,10 @@ export const downloadInventorySmart = async () => {
         ].join(',');
       },
       (chunkString) => {
-        // --- CADA VEZ QUE SE LLENA UN BLOQUE (500 items) ---
         fileParts.push(chunkString);
       }
     );
 
-    // 5. Crear y Descargar el Archivo
     const date = new Date().toISOString().split('T')[0];
     const blob = new Blob(fileParts, { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -81,12 +69,9 @@ export const downloadInventorySmart = async () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
-    // Limpieza de memoria
     URL.revokeObjectURL(url);
 
     return true;
-
   } catch (error) {
     Logger.error("Error en exportación inteligente:", error);
     throw error;
@@ -95,30 +80,23 @@ export const downloadInventorySmart = async () => {
 
 /**
  * 🚀 EXPORTACIÓN INTELIGENTE DE VENTAS (Streaming)
- * Nueva función para descargar miles de ventas sin crashear.
  */
 export const downloadSalesSmart = async () => {
   const headers = ['Fecha', 'Hora', 'Folio', 'Total', 'Metodo', 'Cliente', 'Items'].join(',') + '\n';
   const fileParts = [headers];
-
   const clean = (txt) => `"${(txt || '').replace(/"/g, '""')}"`;
 
   try {
     await streamStoreToCSV(
       STORES.SALES,
       (sale) => {
-        // Formatear fecha y hora
         const d = new Date(sale.timestamp);
         const dateStr = d.toLocaleDateString();
         const timeStr = d.toLocaleTimeString();
-
-        // Resumen de items
         const itemsSummary = sale.items.map(i => `${i.quantity}x ${i.name}`).join(' | ');
         const clientText = sale.customerId ? 'Registrado' : 'Público General';
-
         return [
-          dateStr,
-          timeStr,
+          dateStr, timeStr,
           `#${sale.timestamp.slice(-6)}`,
           sale.total,
           sale.paymentMethod,
@@ -134,7 +112,6 @@ export const downloadSalesSmart = async () => {
     const date = new Date().toISOString().split('T')[0];
     const blob = new Blob(fileParts, { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-
     const link = document.createElement("a");
     link.href = url;
     link.setAttribute("download", `reporte_ventas_${date}.csv`);
@@ -142,7 +119,6 @@ export const downloadSalesSmart = async () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-
     return true;
   } catch (error) {
     Logger.error("Error exportando ventas:", error);
@@ -150,11 +126,113 @@ export const downloadSalesSmart = async () => {
   }
 };
 
-// --- IMPORTACIÓN (Se mantiene igual, la lógica es compleja de streamear al subir) ---
-export const processImport = async (csvContent) => {
-  const lines = csvContent.split(/\r?\n/).filter(line => line.trim() !== '');
-  const headers = lines[0].split(',');
+// ============================================================
+// HELPERS DE NORMALIZACIÓN PARA IMPORTACIÓN
+// ============================================================
 
+/**
+ * Parser CSV robusto que maneja:
+ * - Campos entre comillas con comas internas
+ * - Saltos de línea dentro de comillas
+ * - Comillas escapadas ("")
+ */
+const parseCSVLine = (line) => {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < line.length) {
+    const char = line[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        // Comilla doble escapada ("")
+        if (line[i + 1] === '"') {
+          current += '"';
+          i += 2;
+        } else {
+          // Cierre de campo citado
+          inQuotes = false;
+          i++;
+        }
+      } else {
+        current += char;
+        i++;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+        i++;
+      } else if (char === ',') {
+        result.push(current.trim());
+        current = '';
+        i++;
+      } else {
+        current += char;
+        i++;
+      }
+    }
+  }
+
+  result.push(current.trim());
+  return result;
+};
+
+/**
+ * Normaliza el campo saleType para que coincida con el schema.
+ * Acepta: 'unit', 'bulk', 'unidad', 'pieza', 'pza', 'granel', 'kg', etc.
+ */
+const normalizeSaleType = (value) => {
+  if (!value) return 'unit';
+  const v = value.toString().toLowerCase().trim();
+  const bulkValues = ['bulk', 'granel', 'kg', 'kilo', 'peso', 'gramos', 'litros', 'lt'];
+  if (bulkValues.includes(v)) return 'bulk';
+  // Todo lo demás (unit, unidad, pieza, pza, etc.) → unit
+  return 'unit';
+};
+
+/**
+ * Normaliza el campo productType para que coincida con el schema.
+ * Acepta: 'sellable', 'ingredient', 'medicamento', 'producto', 'ingrediente', etc.
+ */
+const normalizeProductType = (value) => {
+  if (!value) return 'sellable';
+  const v = value.toString().toLowerCase().trim();
+  const ingredientValues = ['ingredient', 'ingrediente', 'insumo', 'materia prima'];
+  if (ingredientValues.includes(v)) return 'ingredient';
+  // Todo lo demás (sellable, medicamento, producto, etc.) → sellable
+  return 'sellable';
+};
+
+/**
+ * Normaliza booleanos desde múltiples formatos de texto.
+ * Acepta: 'SI', 'NO', 'TRUE', 'FALSE', 'True', 'False', '1', '0', 'yes', 'no', 'sí'
+ */
+const normalizeBoolean = (value) => {
+  if (!value) return false;
+  const v = value.toString().toLowerCase().trim();
+  const trueValues = ['si', 'sí', 'yes', 'true', '1', 'verdadero'];
+  return trueValues.includes(v);
+};
+
+// ============================================================
+// IMPORTACIÓN CSV
+// ============================================================
+
+export const processImport = async (csvContent) => {
+  // Normalizar saltos de línea (Windows \r\n, Mac \r, Linux \n)
+  const normalizedContent = csvContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalizedContent.split('\n').filter(line => line.trim() !== '');
+
+  if (lines.length < 2) {
+    throw new Error('El archivo está vacío o solo tiene encabezados.');
+  }
+
+  // Parsear encabezados con el mismo parser robusto
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
+
+  // Verificar columnas obligatorias (insensible a mayúsculas/espacios)
   if (!headers.includes('name') || !headers.includes('price')) {
     throw new Error('El archivo no tiene las columnas obligatorias: name, price');
   }
@@ -164,71 +242,108 @@ export const processImport = async (csvContent) => {
   const errors = [];
 
   const existingCats = await loadData(STORES.CATEGORIES);
-  const catNameMap = new Map(existingCats.map(c => [c.name.toLowerCase(), c.id]));
+  const catNameMap = new Map(existingCats.map(c => [c.name.toLowerCase().trim(), c.id]));
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
-    // Regex para manejar comas dentro de comillas
-    const regex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
-    const values = line.split(regex).map(val => val.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+    if (!line.trim()) continue;
+
+    // ✅ CORRECCIÓN PRINCIPAL: Usar el parser robusto en lugar del regex frágil
+    const values = parseCSVLine(line);
 
     if (values.length < 2) continue;
 
+    // Construir objeto fila (mapeo por nombre de columna)
     const row = {};
     headers.forEach((header, index) => {
       if (values[index] !== undefined) {
-        row[header.trim()] = values[index];
+        row[header] = values[index];
       }
     });
 
-    if (!row.name) {
+    // Soporte para variantes de nombre de columna
+    // saleType puede venir como: saletype, saleType, sale_type, tipo_venta
+    const saleTypeRaw =
+      row['saletype'] || row['saleType'] || row['sale_type'] ||
+      row['tipo_venta'] || row['tipoventa'] || '';
+
+    // productType puede venir como: producttype, productType, product_type, tipo_producto
+    const productTypeRaw =
+      row['producttype'] || row['productType'] || row['product_type'] ||
+      row['tipo_producto'] || row['tipoproducto'] || '';
+
+    // requiresPrescription puede venir como: requiresprescription, requiresPrescription, receta
+    const prescriptionRaw =
+      row['requiresprescription'] || row['requiresPrescription'] ||
+      row['receta'] || row['requiere_receta'] || 'false';
+
+    if (!row['name']) {
       errors.push(`Fila ${i + 1}: Falta el nombre del producto.`);
       continue;
     }
 
-    try {
-      const newId = (row.id && row.id.length > 5) ? row.id : generateID('prod');
+    const priceVal = parseFloat(row['price']);
+    if (isNaN(priceVal)) {
+      errors.push(`Fila ${i + 1} ("${row['name']}"): El precio no es un número válido.`);
+      continue;
+    }
 
+    try {
+      const newId = (row['id'] && row['id'].length > 5) ? row['id'] : generateID('prod');
+
+      // Resolver categoría
       let catId = '';
-      if (row.category) {
-        const catLower = row.category.toLowerCase();
+      if (row['category']) {
+        const catLower = row['category'].toLowerCase().trim();
         if (catNameMap.has(catLower)) {
           catId = catNameMap.get(catLower);
         }
       }
 
-      const stock = parseFloat(row.stock) || 0;
-      const cost = parseFloat(row.cost) || 0;
+      const stock = parseFloat(row['stock']) || 0;
+      const cost = parseFloat(row['cost']) || 0;
 
       const product = {
         id: newId,
-        name: row.name,
-        barcode: row.barcode || '',
-        description: row.description || '',
-        price: parseFloat(row.price) || 0,
+        name: row['name'],
+        barcode: row['barcode'] || '',
+        description: row['description'] || '',
+        price: priceVal,
+        cost: cost,
         categoryId: catId,
-        saleType: row.saleType || 'unit',
-        productType: row.productType || 'sellable',
-        minStock: row.minStock ? parseFloat(row.minStock) : null,
-        maxStock: row.maxStock ? parseFloat(row.maxStock) : null,
-        sustancia: row.sustancia || null,
-        laboratorio: row.laboratorio || null,
-        requiresPrescription: (row.requiresPrescription || '').toUpperCase() === 'SI',
-        presentation: row.presentation || null,
+
+        // ✅ CORRECCIÓN: Normalizar saleType y productType
+        saleType: normalizeSaleType(saleTypeRaw),
+        productType: normalizeProductType(productTypeRaw),
+
+        minStock: row['minstock'] !== undefined && row['minstock'] !== ''
+          ? parseFloat(row['minstock']) : null,
+        maxStock: row['maxstock'] !== undefined && row['maxstock'] !== ''
+          ? parseFloat(row['maxstock']) : null,
+
+        // Campos farmacia
+        sustancia: row['sustancia'] || null,
+        laboratorio: row['laboratorio'] || null,
+
+        // ✅ CORRECCIÓN: Normalizar boolean (acepta True/False/SI/NO/1/0)
+        requiresPrescription: normalizeBoolean(prescriptionRaw),
+
+        presentation: row['presentation'] || null,
+
         isActive: true,
-        createdAt: new Date().toISOString(),
         trackStock: true,
         stock: stock,
+        createdAt: new Date().toISOString(),
         batchManagement: { enabled: true, selectionStrategy: 'fifo' },
         image: null
       };
 
       productsToSave.push(product);
 
-      // Si tiene stock/costo, creamos un lote de importación
+      // Crear lote inicial si tiene stock o costo
       if (stock > 0 || cost > 0) {
         batchesToSave.push({
-          id: `batch-imp-${newId}-${Date.now()}`,
+          id: `batch-imp-${newId}-${Date.now()}-${i}`,
           productId: newId,
           stock: stock,
           cost: cost,
@@ -242,33 +357,28 @@ export const processImport = async (csvContent) => {
       }
 
     } catch (err) {
-      errors.push(`Fila ${i + 1}: Error procesando datos (${err.message})`);
+      errors.push(`Fila ${i + 1} ("${row['name'] || '?'}"): Error procesando datos (${err.message})`);
     }
   }
 
   let successCount = 0;
 
-  // 1. Guardar Productos (Safe)
   if (productsToSave.length > 0) {
     const result = await saveBulkSafe(STORES.MENU, productsToSave);
-
     if (result.success) {
       successCount = productsToSave.length;
     } else {
       Logger.error("Error importando productos:", result.error);
-      errors.push(`FATAL: No se pudieron guardar los productos. ${result.error.message}`);
-      // Si fallan los productos, no intentamos guardar los lotes para evitar inconsistencia
+      errors.push(`FATAL: No se pudieron guardar los productos. ${result.error?.message || result.message}`);
       return { success: false, importedCount: 0, errors };
     }
   }
 
-  // 2. Guardar Lotes (Safe)
   if (batchesToSave.length > 0) {
     const batchResult = await saveBulkSafe(STORES.PRODUCT_BATCHES, batchesToSave);
-
     if (!batchResult.success) {
       Logger.error("Error importando lotes:", batchResult.error);
-      errors.push(`ADVERTENCIA: Los productos se crearon, pero falló el registro de stock inicial (Lotes). Error: ${batchResult.error.message}`);
+      errors.push(`ADVERTENCIA: Los productos se crearon, pero falló el registro de stock inicial. Error: ${batchResult.error?.message || batchResult.message}`);
     }
   }
 
@@ -280,7 +390,7 @@ export const processImport = async (csvContent) => {
 };
 
 /**
- * Utilería simple para descargar strings (usada por reportes pequeños)
+ * Utilería simple para descargar strings
  */
 export const downloadFile = (content, filename) => {
   const blob = new Blob(["\ufeff" + content], { type: 'text/csv;charset=utf-8;' });
@@ -294,10 +404,9 @@ export const downloadFile = (content, filename) => {
   document.body.removeChild(link);
 };
 
-// --- REPORTES ESPECÍFICOS (Se mantienen igual) ---
+// --- REPORTES ESPECÍFICOS ---
 
 export const generatePharmacyReport = (sales) => {
-  // ... (Tu código actual de farmacia se queda igual)
   const HEADERS = [
     'Fecha', 'Hora', 'Folio Venta',
     'Producto', 'Sustancia Activa', 'Cantidad',
@@ -313,7 +422,6 @@ export const generatePharmacyReport = (sales) => {
       const doctor = sale.prescriptionDetails.doctorName || 'N/A';
       const cedula = sale.prescriptionDetails.licenseNumber || 'N/A';
       const notas = sale.prescriptionDetails.notes || '';
-
       sale.items.forEach(item => {
         if (item.requiresPrescription) {
           rows.push([
@@ -331,8 +439,6 @@ export const generatePharmacyReport = (sales) => {
 };
 
 export const generateFullBackup = async () => {
-  // Nota: Esto sigue cargando todo a memoria para JSON.
-  // Es aceptable para backups medianos, pero a futuro también debería ser streaming.
   const db = await initDB();
   const backupData = {
     version: 1,
@@ -349,12 +455,10 @@ export const generateFullBackup = async () => {
 
 /**
  * 🚀 RESPALDO OPTIMIZADO (Streaming)
- * Escribe directamente al disco si es posible, o usa chunks de memoria.
  */
 export const downloadBackupSmart = async () => {
   const fileName = `RESPALDO_LANZO_${new Date().toISOString().split('T')[0]}.jsonl`;
 
-  // ESTRATEGIA A: File System Access API (PC/Chrome/Edge) - CERO RAM
   if ('showSaveFilePicker' in window) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -364,25 +468,18 @@ export const downloadBackupSmart = async () => {
           accept: { 'application/json': ['.jsonl'] },
         }],
       });
-
       const writable = await handle.createWritable();
-
-      // Aquí ocurre la magia: escribimos directo al disco conforme leemos de la BD
       await streamAllDataToJSONL(async (chunkString) => {
         await writable.write(chunkString);
       });
-
       await writable.close();
-      return true; // Éxito
+      return true;
     } catch (err) {
-      if (err.name === 'AbortError') return false; // Usuario canceló
+      if (err.name === 'AbortError') return false;
       Logger.warn("FS API falló, usando fallback Blob...", err);
-      // Si falla, pasamos a la Estrategia B
     }
   }
 
-  // ESTRATEGIA B: Fallback Clásico (Móviles/Firefox) - RAM Optimizada
-  // Aún acumulamos en memoria, pero strings planos pesan menos que objetos JS.
   const parts = [];
   await streamAllDataToJSONL((chunkString) => {
     parts.push(chunkString);
@@ -390,7 +487,6 @@ export const downloadBackupSmart = async () => {
 
   const blob = new Blob(parts, { type: 'application/x-jsonlines;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-
   const link = document.createElement("a");
   link.href = url;
   link.setAttribute("download", fileName);
