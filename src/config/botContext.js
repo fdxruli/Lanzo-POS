@@ -15,7 +15,7 @@ export const GLOBAL_ALERT = {
   active: true,
   id: 'update_soporte_06',
   message: 'Mantenimiento finalizado. Se aplicaron correcciones en los módulos de venta. Si experimentas cualquier anomalía en tu corte de caja o cobros, levanta un ticket con soporte técnico.',
-  actionLink: '/configuracion?tab=contacto'
+  actionLink: '/acerca-de'
 };
 
 
