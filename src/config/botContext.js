@@ -12,11 +12,12 @@ const getPageKey = (pathname) => {
 
 // 1. Definir la Alerta Global que falta
 export const GLOBAL_ALERT = {
-  active: true, // Cambiar a true si hay un mensaje urgente
-  id: 'actualizaciones_05',
-  message: 'Se mejoro los campos de buscada en Gestionar Lote y Punto de venta. No fue actualizacion fuerte pero si notas inconsistencias. ve a configuracion.',
+  active: true,
+  id: 'outage_mitigacion_05',
+  message: '❌ FALLA DE SISTEMA: El Punto de Venta se encuentra temporalmente inhabilitado por un error de actualización. Estaremos fuera de servicio normal por 48 hrs. Por favor, ve a configuración para revisar las opciones de mantenimiento.',
   actionLink: '/configuracion?tab=maintenance'
 };
+
 
 // 2. Función para obtener acciones rápidas (solicitada por AssistantBot)
 export const getQuickActions = (pathname, rubroType = 'abarrotes') => {
