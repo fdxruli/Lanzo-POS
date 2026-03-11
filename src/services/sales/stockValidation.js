@@ -1,23 +1,10 @@
-// services/sales/stockValidation.js
-// ✅ Incluye Timeout de Seguridad (DB Protection)
-// ✅ Mantiene detección de ingredientes eliminados
-
-// Helper interno para manejar el Timeout sin romper la inyección de dependencias
-const loadWithTimeout = (loadFn, store, id, timeoutMs = 5000) => {
-    return Promise.race([
-        loadFn(store, id),
-        new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`DB_TIMEOUT: La lectura del ID ${id} excedió los ${timeoutMs}ms`)), timeoutMs)
-        )
-    ]);
-};
-
 export const validateStockBeforeSale = async ({
     itemsToProcess,
     productMap,
     features,
     ignoreStock,
-    loadData, // <--- Usaremos esta instancia inyectada
+    loadData,
+    loadMultipleData,
     STORES
 }) => {
     if (!features.hasRecipes || ignoreStock) {
@@ -45,33 +32,47 @@ export const validateStockBeforeSale = async ({
         }
     });
 
-    // 🔥 CARGA DE STOCK FRESCO (CON TIMEOUT Y PARALELISMO)
-    // Protege contra congelamientos si la BD tarda en responder
+    // 🔥 CARGA DE STOCK FRESCO (OPTIMIZADO CON BULK GET Y TIMEOUT ÚNICO)
     const freshStockMap = new Map();
+    const idsArray = Array.from(uniqueIngredientIds);
 
-    if (uniqueIngredientIds.size > 0) {
+    if (idsArray.length > 0) {
         try {
-            await Promise.all(Array.from(uniqueIngredientIds).map(async (id) => {
-                // 👇 AQUI APLICAMOS EL TIMEOUT USANDO LA FUNCIÓN INYECTADA
-                const freshProd = await loadWithTimeout(loadData, STORES.MENU, id);
+            // Se asume que ahora inyectas `loadMultipleData` en los parámetros
+            const fetchPromise = loadMultipleData(STORES.MENU, idsArray);
+            
+            // Un solo timeout para toda la operación de lectura masiva
+            const results = await Promise.race([
+                fetchPromise,
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('DB_TIMEOUT: La lectura masiva excedió el tiempo límite')), 5000)
+                )
+            ]);
 
+            // Si llegamos aquí, se completó a tiempo.
+            // Si la promesa original (fetchPromise) falla después del timeout, 
+            // IndexedDB simplemente desechará la transacción de solo lectura, 
+            // pero AÚN DEBES añadirle un catch vacío para evitar el unhandled rejection.
+            fetchPromise.catch(() => {}); 
+
+            results.forEach((freshProd, index) => {
                 if (freshProd) {
-                    freshStockMap.set(id, freshProd);
+                    freshStockMap.set(idsArray[index], freshProd);
                 }
-            }));
+            });
+
         } catch (error) {
-            // Si hay timeout, devolvemos error controlado para no colgar el POS
             if (error.message.includes('DB_TIMEOUT')) {
                 return {
                     ok: false,
                     response: {
                         success: false,
                         errorType: 'DB_TIMEOUT',
-                        message: '⚠️ El sistema está tardando en verificar el inventario. Inténtalo de nuevo.'
+                        message: '⚠️ El sistema está tardando en verificar el inventario. El motor de base de datos está ocupado.'
                     }
                 };
             }
-            throw error; // Otros errores siguen su curso normal
+            throw error; 
         }
     }
 

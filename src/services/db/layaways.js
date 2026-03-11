@@ -1,6 +1,7 @@
 // services/db/layaways.js - VERSIÓN CORREGIDA
 import { db, STORES } from './dexie';
 import { handleDexieError, DatabaseError } from './utils';
+import { generateID } from '../utils';
 import { productsRepository } from './products';
 import { useStatsStore } from '../../store/useStatsStore'; // ✅ AGREGADO
 import Logger from '../Logger';
@@ -77,7 +78,7 @@ export const layawayRepository = {
 
                 if (initialPayment > 0) {
                     newLayaway.payments.push({
-                        id: crypto.randomUUID(),
+                        id: generateID('pay'),
                         amount: initialPayment,
                         date: now,
                         type: 'initial_deposit',
@@ -87,7 +88,7 @@ export const layawayRepository = {
                     // ✅ NUEVO: REGISTRAR EN MOVIMIENTOS DE CAJA (SI SE PROPORCIONÓ)
                     if (cajaId) {
                         await db.table(STORES.MOVIMIENTOS_CAJA).add({
-                            id: `mov-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
+                            id: generateID('mov'),
                             caja_id: cajaId,
                             tipo: 'entrada',
                             monto: initialPayment,
@@ -206,7 +207,7 @@ export const layawayRepository = {
             // 2. Crear venta histórica
             const now = new Date().toISOString();
             const saleRecord = {
-                id: `sale-layaway-${layaway.id}`,
+                id: generateID('sal'),
                 timestamp: now,
                 customerId: layaway.customerId,
                 customerName: layaway.customerName,

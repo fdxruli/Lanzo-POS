@@ -10,7 +10,7 @@ async function getStableFingerprint() {
     const STORAGE_KEY = 'lanzo_device_id'; // Misma clave que usa supabase.js
 
     // 1. Intentar leer del almacenamiento local (LO MÁS IMPORTANTE)
-    let existingId = localStorage.getItem(STORAGE_KEY);
+    const existingId = localStorage.getItem(STORAGE_KEY);
     if (existingId) return existingId;
 
     // 2. Si no existe (raro si ya activaste), generar uno nuevo y guardarlo

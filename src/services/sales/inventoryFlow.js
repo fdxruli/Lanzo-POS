@@ -1,4 +1,4 @@
-import { FLOAT_EPSILON } from './constants';
+import { normalizeStock } from '../db/utils';
 
 export const loadRelevantBatches = async ({
     itemsToProcess,
@@ -150,11 +150,13 @@ export const buildProcessedItemsAndDeductions = ({
             const targetId = component.targetId;
             const batches = batchesMap.get(targetId) || [];
 
+            requiredQty = normalizeStock(requiredQty);
+            
             for (const batch of batches) {
-                if (requiredQty <= FLOAT_EPSILON) break;
-                if (batch.stock <= 0) continue;
+                if (requiredQty <= 0) break;
+                if (normalizeStock(batch.stock) <= 0) continue;
 
-                const toDeduct = Math.min(requiredQty, batch.stock);
+                const toDeduct = normalizeStock(Math.min(requiredQty, batch.stock));
 
                 batchesToDeduct.push({
                     batchId: batch.id,
@@ -162,7 +164,7 @@ export const buildProcessedItemsAndDeductions = ({
                     productId: targetId
                 });
 
-                batch.stock -= toDeduct;
+                batch.stock = normalizeStock(batch.stock - toDeduct);
 
                 itemBatchesUsed.push({
                     batchId: batch.id,
@@ -172,10 +174,10 @@ export const buildProcessedItemsAndDeductions = ({
                 });
 
                 itemTotalCost += roundCurrency(batch.cost * toDeduct);
-                requiredQty -= toDeduct;
+                requiredQty = normalizeStock(requiredQty - toDeduct);
             }
 
-            if (requiredQty > FLOAT_EPSILON) {
+            if (requiredQty > 0) {
                 const originalProduct = allProducts.find(p => p.id === targetId);
                 const fallbackCost = originalProduct?.cost || 0;
                 itemTotalCost += (fallbackCost * requiredQty);

@@ -19,6 +19,7 @@ import RestockSuggestions from '../components/dashboard/RestockSuggestion';
 import ExpirationAlert from '../components/dashboard/ExpirationAlert';
 
 import { loadData, STORES } from '../services/database';
+import { showMessageModal } from '../services/utils';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
 
@@ -39,6 +40,10 @@ export default function DashboardPage() {
   const loadRecentSales = useSalesStore((state) => state.loadRecentSales);
   const deleteSale = useSalesStore((state) => state.deleteSale);
   const wasteLogs = useSalesStore((state) => state.wasteLogs);
+  const fetchWastePage = useSalesStore((state) => state.fetchWastePage);
+  const hasMoreWaste = useSalesStore((state) => state.hasMoreWaste);
+  const currentWastePageIndex = useSalesStore((state) => state.currentWastePageIndex);
+  const isWasteLoading = useSalesStore((state) => state.isWasteLoading);
 
   // 3. PRODUCTOS
   const menu = useProductStore((state) => state.menu);
@@ -93,6 +98,67 @@ export default function DashboardPage() {
     } else {
       setSearchParams({ tab: tabKey });
     }
+  };
+
+  const buildWarningsMessage = (warnings = []) => {
+    if (!warnings.length) return '';
+
+    const preview = warnings
+      .slice(0, 3)
+      .map((warning, index) => `${index + 1}. ${warning.message}`)
+      .join('\n');
+
+    const tail = warnings.length > 3
+      ? `\n... y ${warnings.length - 3} advertencias mas.`
+      : '';
+
+    return `\n\nAdvertencias:\n${preview}${tail}`;
+  };
+
+  const handleDeleteSale = async (timestamp) => {
+    const confirmDelete = window.confirm('¿Mover esta venta a la Papelera?');
+    if (!confirmDelete) return;
+
+    const restoreStock = window.confirm(
+      '¿Deseas DEVOLVER los productos de esta venta al inventario fisico?\n\n' +
+      '• [Aceptar]: Si, hubo un error de cobro y el producto sigue en mostrador.\n' +
+      '• [Cancelar]: No, el producto es merma/perdida (no regresara al stock).'
+    );
+
+    const result = await deleteSale(timestamp, { restoreStock });
+
+    if (result.success) {
+      if (result.warnings.length > 0) {
+        const baseMessage = restoreStock
+          ? 'Venta cancelada con restauracion parcial de inventario.'
+          : 'Venta cancelada y movida a la papelera.';
+        showMessageModal(
+          `${baseMessage}${buildWarningsMessage(result.warnings)}`,
+          null,
+          { type: 'warning' }
+        );
+        return;
+      }
+
+      showMessageModal(
+        restoreStock
+          ? '✅ Venta cancelada y productos devueltos al stock.'
+          : '✅ Venta cancelada. Los productos se registraron como salida definitiva.'
+      );
+      return;
+    }
+
+    if (result.code === 'NOT_FOUND') {
+      showMessageModal('⚠️ No se encontro la venta. Intenta recargar la pagina.', null, { type: 'warning' });
+      return;
+    }
+
+    if (result.code === 'RECYCLE_FAILED') {
+      showMessageModal(`Error al mover a la papelera: ${result.message || 'fallo desconocido'}`, null, { type: 'error' });
+      return;
+    }
+
+    showMessageModal(`Error al procesar la cancelacion: ${result.message || 'error inesperado'}`, null, { type: 'error' });
   };
 
   useEffect(() => {
@@ -202,7 +268,7 @@ export default function DashboardPage() {
                 <span className="panel-subtitle">Registro de ventas recientes</span>
               </div>
               <div className="panel-body">
-                <SalesHistory sales={sales} onDeleteSale={deleteSale} />
+                <SalesHistory sales={sales} onDeleteSale={handleDeleteSale} />
               </div>
             </section>
 
@@ -233,7 +299,14 @@ export default function DashboardPage() {
 
       {/* 6. MERMAS */}
       {activeTab === 'waste' && features.hasWaste && (
-        <WasteHistory logs={wasteLogs} />
+        <WasteHistory
+          logs={wasteLogs}
+          onNext={() => fetchWastePage('next')}
+          onPrev={() => fetchWastePage('prev')}
+          hasMoreWaste={hasMoreWaste}
+          currentWastePageIndex={currentWastePageIndex}
+          isWasteLoading={isWasteLoading}
+        />
       )}
     </>
   );

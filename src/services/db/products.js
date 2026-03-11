@@ -1,7 +1,94 @@
 import { db, STORES } from './dexie';
 import { handleDexieError, validateOrThrow, DatabaseError, DB_ERROR_CODES } from './utils';
+import { generateID } from '../utils';
 import { productSchema } from '../../schemas/productSchema';
 import Logger from '../Logger';
+
+const DEFAULT_SEARCH_LIMIT = 50;
+const INDEX_SEARCH_FIELDS = ['name_lower', 'barcode', 'sku'];
+
+const normalizeSearchValue = (value) =>
+    value === null || value === undefined ? '' : String(value).toLowerCase();
+
+const isActiveProduct = (product) => product?.isActive !== false;
+
+const matchesSearchTerm = (product, normalizedTerm) => {
+    const searchName = normalizeSearchValue(product?.name_lower || product?.name);
+    if (searchName.includes(normalizedTerm)) return true;
+
+    const barcode = normalizeSearchValue(product?.barcode);
+    if (barcode.includes(normalizedTerm)) return true;
+
+    const sku = normalizeSearchValue(product?.sku);
+    return sku.includes(normalizedTerm);
+};
+
+const dedupeProducts = (groups, limit = DEFAULT_SEARCH_LIMIT) => {
+    const deduped = [];
+    const seen = new Set();
+
+    for (const group of groups) {
+        for (const product of group) {
+            if (!product?.id || seen.has(product.id)) continue;
+            seen.add(product.id);
+            deduped.push(product);
+
+            if (deduped.length >= limit) {
+                return deduped;
+            }
+        }
+    }
+
+    return deduped;
+};
+
+export const searchProductsInDB = async (searchTerm) => {
+    try {
+        const normalizedTerm = normalizeSearchValue(searchTerm).trim();
+        if (!normalizedTerm) return [];
+
+        const productTable = db.table(STORES.MENU);
+
+        const indexedResults = await Promise.all(
+            INDEX_SEARCH_FIELDS.map(async (indexName) => {
+                try {
+                    return await productTable
+                        .where(indexName)
+                        .startsWith(normalizedTerm)
+                        .filter((product) => isActiveProduct(product))
+                        .limit(DEFAULT_SEARCH_LIMIT)
+                        .toArray();
+                } catch {
+                    // Compatibilidad: si un índice aún no existe en una versión vieja,
+                    // seguimos con el resto y cubrimos con fallback.
+                    return [];
+                }
+            })
+        );
+
+        const dedupedIndexedResults = dedupeProducts(indexedResults, DEFAULT_SEARCH_LIMIT);
+        if (dedupedIndexedResults.length >= DEFAULT_SEARCH_LIMIT) {
+            return dedupedIndexedResults;
+        }
+
+        const takenIds = new Set(dedupedIndexedResults.map((product) => product.id));
+        const remainingSlots = DEFAULT_SEARCH_LIMIT - dedupedIndexedResults.length;
+        const fallbackLimit = Math.max(DEFAULT_SEARCH_LIMIT * 10, remainingSlots * 4);
+
+        const fallbackResults = await productTable
+            .filter((product) => {
+                if (!isActiveProduct(product)) return false;
+                if (takenIds.has(product.id)) return false;
+                return matchesSearchTerm(product, normalizedTerm);
+            })
+            .limit(fallbackLimit)
+            .toArray();
+
+        return dedupeProducts([dedupedIndexedResults, fallbackResults], DEFAULT_SEARCH_LIMIT);
+    } catch (error) {
+        throw handleDexieError(error, 'searchProductsInDB');
+    }
+};
 
 /**
  * Repositorio especializado en Inventario y Productos.
@@ -29,34 +116,25 @@ export const productsRepository = {
                     .where('productId').equals(batchData.productId)
                     .toArray();
 
-                // 3. Lógica FIFO (First-In, First-Out) para costos
-                // Ordenamos por fecha de creación (más antiguo primero)
-                allBatches.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
+                // --- INSERTA ESTO ---
+                // 3. Lógica de Sincronización Diferenciada (Variantes vs Lotes)
                 let totalStock = 0;
-                let currentCost = 0;
-                let currentPrice = 0;
-                let foundActive = false;
+                let totalValue = 0; // Acumulador para el Costo Promedio Ponderado
+                let isVariantProduct = false;
 
-                // Recorremos para sumar stock total y encontrar el precio vigente
                 for (const batch of allBatches) {
-                    if (batch.isActive && batch.stock > 0) {
-                        totalStock += batch.stock;
-
-                        // Tomamos el costo/precio del PRIMER lote activo (el más antiguo con stock)
-                        if (!foundActive) {
-                            currentCost = batch.cost;
-                            currentPrice = batch.price;
-                            foundActive = true;
-                        }
+                    // 3.1 Detección de Variante: Si el lote tiene atributos (ej. talla, color), el producto es multiprecio.
+                    if (batch.attributes && Object.keys(batch.attributes).length > 0) {
+                        isVariantProduct = true;
                     }
-                }
 
-                // Si no hay lotes activos (stock 0), usamos los datos del lote que acabamos de guardar
-                // para que el producto no quede con precio 0.
-                if (!foundActive) {
-                    currentCost = batchData.cost;
-                    currentPrice = batchData.price;
+                    if (batch.isActive && Number(batch.stock) > 0) {
+                        const safeStock = Number(batch.stock) || 0;
+                        const safeCost = Number(batch.cost) || 0;
+
+                        totalStock += safeStock;
+                        totalValue += (safeCost * safeStock);
+                    }
                 }
 
                 // 4. Actualizar el Producto Padre
@@ -64,11 +142,35 @@ export const productsRepository = {
                 const product = await productStore.get(batchData.productId);
 
                 if (product) {
+                    let newCost = product.cost;
+                    let newPrice = product.price;
+
+                    if (isVariantProduct) {
+                        // CASO A: ES UNA VARIANTE (Ej. Ropa, Zapatos)
+                        // Regla: El padre solo actúa como contenedor de stock. 
+                        // NO sobreescribimos su precio ni costo, porque cada variante (lote) tiene el suyo propio
+                        // y el POS ya los resuelve correctamente vía `searchProductBySKU`.
+                        newCost = product.cost;
+                        newPrice = product.price;
+                    } else {
+                        // CASO B: ES UN LOTE NORMAL (Ej. Caducidades, Insumos)
+                        // Regla: Aplicamos Costo Promedio Ponderado (Fórmula Contable Estándar)
+                        if (totalStock > 0) {
+                            newCost = Number((totalValue / totalStock).toFixed(4));
+                        } else {
+                            newCost = Number(batchData.cost) || 0; // Fallback a la compra actual si el inventario estaba en 0
+                        }
+
+                        // El precio del producto padre es soberano.
+                        // Solo se actualiza si el payload del lote trae una bandera explícita.
+                        newPrice = batchData.updateGlobalPrice === true ? Number(batchData.price) : product.price;
+                    }
+
                     const updatedProduct = {
                         ...product,
                         stock: totalStock,
-                        cost: currentCost, // Costo ponderado FIFO
-                        price: currentPrice, // Precio sugerido FIFO
+                        cost: newCost,
+                        price: newPrice,
                         hasBatches: true,
                         updatedAt: new Date().toISOString()
                     };
@@ -117,7 +219,7 @@ export const productsRepository = {
         };
 
         const startTime = Date.now();
-        const operationId = `deduction-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const operationId = generateID('opd');
 
         // Validación de entrada básica
         if (!Array.isArray(deductions) || deductions.length === 0) {
@@ -516,36 +618,8 @@ export const productsRepository = {
      * Búsqueda FLEXIBLE: Nombre (contiene), Código o SKU.
      */
     async searchProducts(term, limit = 50) {
-        try {
-            const lowerTerm = term.toLowerCase().trim();
-
-            if (!lowerTerm) return [];
-
-            // Usamos .filter() en lugar de .startsWith() para buscar "dentro" del texto
-            // y buscar en múltiples campos a la vez.
-            return await db.table(STORES.MENU)
-                .filter(p => {
-                    // 1. Descartar inactivos
-                    if (p.isActive === false) return false;
-
-                    // 2. Coincidencia por Nombre (CONTAINS)
-                    // Ej: Buscar "Pinol" encuentra "Limpiador Pinol"
-                    if (p.name && p.name.toLowerCase().includes(lowerTerm)) return true;
-
-                    // 3. Coincidencia por Código de Barras (Exacta o Parcial)
-                    if (p.barcode && p.barcode.includes(lowerTerm)) return true;
-
-                    // 4. Coincidencia por SKU (si el producto padre tiene sku asignado)
-                    if (p.sku && p.sku.toLowerCase().includes(lowerTerm)) return true;
-
-                    return false;
-                })
-                .limit(limit)
-                .toArray();
-
-        } catch (error) {
-            throw handleDexieError(error, 'Search Products');
-        }
+        const results = await searchProductsInDB(term);
+        return results.slice(0, limit);
     },
 
     /**
@@ -618,6 +692,107 @@ export const productsRepository = {
             return existing.id !== currentId; // True si existe y es de otro producto
         } catch (error) {
             throw handleDexieError(error, 'Check Barcode');
+        }
+    },
+
+    async getBatchesForManagerUI(productId, historyLimit = 30) {
+        try {
+            // 1. Obtener todos los lotes usando el índice primario seguro
+            const allProductBatches = await db.table(STORES.PRODUCT_BATCHES)
+                .where('productId').equals(productId)
+                .toArray();
+
+            // 2. Filtrar en memoria (evita el error de IDBKeyRange con booleanos)
+            const activeBatches = allProductBatches.filter(b => b.isActive === true);
+
+            // 3. Obtener el historial limitado, manejando fechas inválidas que pasarías por alto
+            const archivedBatches = allProductBatches
+                .filter(b => b.isActive === false)
+                .sort((a, b) => {
+                    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                    return dateB - dateA;
+                })
+                .slice(0, historyLimit);
+
+            // 4. Calcular valor real
+            const inventoryValue = activeBatches.reduce((sum, batch) =>
+                sum + ((Number(batch.cost) || 0) * (Number(batch.stock) || 0)), 0
+            );
+
+            // 5. Devolver consolidado y ordenar con seguridad contra nulos
+            return {
+                batches: [...activeBatches, ...archivedBatches].sort((a, b) => {
+                    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                    return dateB - dateA;
+                }),
+                inventoryValue
+            };
+        } catch (error) {
+            throw handleDexieError(error, 'Get Batches For Manager UI');
+        }
+    },
+
+    /**
+     * Guarda un lote de producción y descuenta atómicamente la materia prima (Ingredientes).
+     */
+    async saveProductionBatchAndSync(batchData, recipe) {
+        try {
+            return await db.transaction('rw', [STORES.PRODUCT_BATCHES, STORES.MENU], async () => {
+                const deductions = [];
+                let rawMaterialsCost = 0;
+
+                // 1. Calcular y verificar disponibilidad de materia prima (FIFO)
+                for (const item of recipe) {
+                    const requiredQty = Number(item.quantity) * Number(batchData.stock);
+                    let remainingQty = requiredQty;
+
+                    const batches = await db.table(STORES.PRODUCT_BATCHES)
+                        .where('productId').equals(item.ingredientId)
+                        .toArray();
+
+                    // Filtrar activos y ordenar del más viejo al más nuevo
+                    const activeBatches = batches
+                        .filter(b => b.isActive && b.stock > 0)
+                        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+                    for (const b of activeBatches) {
+                        if (remainingQty <= 0.0001) break;
+                        const toDeduct = Math.min(remainingQty, b.stock);
+
+                        deductions.push({
+                            batchId: b.id,
+                            quantity: toDeduct,
+                            reason: `Producción lote: ${batchData.id}`
+                        });
+
+                        remainingQty -= toDeduct;
+                        rawMaterialsCost += (toDeduct * b.cost);
+                    }
+
+                    // Si se agota el inventario del ingrediente antes de cubrir la receta
+                    if (remainingQty > 0.0001) {
+                        const ingrediente = await db.table(STORES.MENU).get(item.ingredientId);
+                        throw new DatabaseError(
+                            DB_ERROR_CODES.CONSTRAINT_VIOLATION,
+                            `Stock insuficiente para producir. Faltan ${remainingQty.toFixed(2)} unidades del ingrediente: ${ingrediente?.name || 'Desconocido'}.`
+                        );
+                    }
+                }
+
+                // 2. Ejecutar deducciones usando tu propio motor robusto
+                if (deductions.length > 0) {
+                    await this.processBatchDeductions(deductions, { validateStock: true });
+                }
+
+                // 3. Guardar el lote del producto terminado y sincronizar
+                await this.saveBatchAndSyncProduct(batchData);
+
+                return { success: true, rawMaterialsCost };
+            });
+        } catch (error) {
+            throw handleDexieError(error, 'Save Production Batch');
         }
     }
 };

@@ -50,14 +50,22 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
 }
 
 /**
- * Genera un identificador unico universal (UUID v4).
- * Mucho mas seguro que Date.now() para evitar duplicados.
- * Ejemplo: '3b12f1df-5232-4e6c-8a8b-1a2b3c4d5e6f'
+ * Genera un identificador único universal y ordenable cronológicamente (K-Sortable).
+ * Combina un timestamp en Base36 con entropía de un UUID para evitar colisiones,
+ * asegurando que la paginación de Dexie.js respete el orden de creación.
  */
-
 export const generateID = (prefix = '') => {
-  const uuid = crypto.randomUUID();
-  return prefix ? `${prefix}_${uuid}` : uuid;
+  // 1. Timestamp en milisegundos a Base36 (alfanumérico corto).
+  // Como el tiempo avanza, esta cadena siempre será alfabéticamente mayor que las anteriores.
+  const timestamp = Date.now().toString(36);
+
+  // 2. Entropía (Tomamos un fragmento del UUID para hacerlo único)
+  const entropy = crypto.randomUUID().split('-')[0];
+
+  // Resultado ej: 'cust_m0jg1z00_3b12f1df'
+  const id = `${timestamp}_${entropy}`;
+
+  return prefix ? `${prefix}_${id}` : id;
 };
 
 /**

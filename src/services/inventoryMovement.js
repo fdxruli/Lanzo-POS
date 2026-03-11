@@ -7,6 +7,7 @@ import {
   searchProductBySKU,
   STORES
 } from './database';
+import { productsRepository } from './db/products';
 import Logger from './Logger';
 
 const parseDate = (value) => {
@@ -19,6 +20,11 @@ const sortByFifo = (a, b) => {
   const aCreatedAt = parseDate(a?.createdAt)?.getTime() ?? 0;
   const bCreatedAt = parseDate(b?.createdAt)?.getTime() ?? 0;
   return aCreatedAt - bCreatedAt;
+};
+
+export const loadBatchesForManager = async (productId) => {
+  if (!productId) return { batches: [], inventoryValue: 0 };
+  return await productsRepository.getBatchesForManagerUI(productId);
 };
 
 export const sortBatchesByStrategy = (batches = [], strategy = 'fifo') => {

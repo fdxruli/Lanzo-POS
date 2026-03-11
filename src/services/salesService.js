@@ -1,17 +1,22 @@
-﻿import {
+import {
+    db,
     loadData,
+    recycleData,
     saveData,
+    saveDataSafe,
     STORES,
     queryBatchesByProductIdAndActive,
     queryByIndex,
-    executeSaleTransactionSafe
+    executeSaleTransactionSafe,
+    loadMultipleData
 } from './database';
 import { useStatsStore } from '../store/useStatsStore';
 import { roundCurrency, sendWhatsAppMessage } from './utils';
-import { calculateCompositePrice } from './pricingLogic';
+import { calculatePricingDetails } from './pricingLogic';
 import Logger from './Logger';
 import { processSaleCore } from './sales/processSaleCore';
 import { sendReceiptWhatsApp as sendReceiptWhatsAppBase } from './sales/receiptWhatsApp';
+import { cancelSaleCore } from './sales/cancelSaleCore';
 
 export { updateDailyStats, getFastDashboardStats } from './sales/statsService';
 
@@ -23,7 +28,7 @@ const sendReceiptWhatsApp = (params) => sendReceiptWhatsAppBase({
     Logger
 });
 
-// 1. Renombramos la lógica original a una función interna (no exportada)
+// 1. Renombramos la logica original a una funcion interna (no exportada)
 const _processSaleInternal = async (params) => {
     return processSaleCore(params, {
         loadData,
@@ -32,21 +37,22 @@ const _processSaleInternal = async (params) => {
         queryBatchesByProductIdAndActive,
         queryByIndex,
         executeSaleTransactionSafe,
+        loadMultipleData,
         useStatsStore,
         roundCurrency,
         sendReceiptWhatsApp,
-        calculateCompositePrice,
+        calculatePricingDetails,
         Logger
     });
 };
 
-// 2. Exportamos la función pública con la lógica de Retry
+// 2. Exportamos la funcion publica con la logica de Retry
 // Esto permite que la UI siga llamando a "processSale" sin cambios, pero ahora tiene superpoderes.
 export const processSale = async (params, maxRetries = 3) => {
     Logger.info('Iniciando proceso de venta (Safe Mode)...');
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        // Llamamos a la lógica interna
+        // Llamamos a la logica interna
         const result = await _processSaleInternal(params);
 
         // Si fue exitoso, retornamos inmediatamente
@@ -62,22 +68,44 @@ export const processSale = async (params, maxRetries = 3) => {
             // Pausa (Backoff)
             await new Promise(r => setTimeout(r, delay));
 
-            // IMPORTANTE: Al reintentar, la función _processSaleInternal volverá a:
+            // IMPORTANTE: Al reintentar, la funcion _processSaleInternal volvera a:
             // 1. Leer el stock fresco (src/services/sales/stockValidation.js)
             // 2. Recalcular lotes disponibles
             // 3. Intentar guardar
             continue;
         }
 
-        // Si es otro tipo de error (ej: tarjeta rechazada, validación fallida), no reintentamos
+        // Si es otro tipo de error (ej: tarjeta rechazada, validacion fallida), no reintentamos
         return result;
     }
 
     // Si agotamos los intentos
-    Logger.error('Fallo en venta tras múltiples intentos de concurrencia.');
+    Logger.error('Fallo en venta tras multiples intentos de concurrencia.');
     return {
         success: false,
         errorType: 'MAX_RETRIES',
-        message: 'El sistema está muy ocupado. Por favor intenta cobrar de nuevo.'
+        message: 'El sistema esta muy ocupado. Por favor intenta cobrar de nuevo.'
     };
+};
+
+export const cancelSale = async ({
+    timestamp,
+    restoreStock = false,
+    currentSales = []
+}) => {
+    return cancelSaleCore(
+        {
+            saleTimestamp: timestamp,
+            restoreStock,
+            currentSales
+        },
+        {
+            loadData,
+            saveDataSafe,
+            recycleData,
+            STORES,
+            db,
+            Logger
+        }
+    );
 };

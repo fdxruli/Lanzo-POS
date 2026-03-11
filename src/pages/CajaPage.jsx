@@ -5,6 +5,7 @@ import { showMessageModal } from '../services/utils';
 import { downloadBackupSmart } from '../services/dataTransfer';
 import './CajaPage.css';
 import Logger from '../services/Logger';
+import { Money } from '../utils/moneyMath';
 
 // --- Componente Local: Modal para corregir el fondo inicial ---
 const EditInitialModal = ({ show, onClose, onSave, currentAmount }) => {
@@ -17,12 +18,16 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const val = parseFloat(amount);
-    if (!isNaN(val) && val >= 0) {
-      onSave(val);
-      onClose();
-    } else {
-      alert('Ingresa un monto válido');
+    try {
+      const safeVal = Money.init(amount);
+      if (safeVal.gte(0)) {
+        onSave(Money.toExactString(safeVal));
+        onClose();
+      } else {
+        alert('Ingresa un monto válido (mayor o igual a 0)');
+      }
+    } catch (e) {
+      alert('Monto inválido');
     }
   };
 
@@ -83,7 +88,7 @@ export default function CajaPage() {
     event.preventDefault();
     const monto = event.target.elements['entrada-monto-input'].value;
     const concepto = event.target.elements['entrada-concepto-input'].value;
-    if (await registrarMovimiento('entrada', parseFloat(monto), concepto)) {
+    if (await registrarMovimiento('entrada', monto, concepto)) {
       setModalVisible(null);
       showMessageModal('Entrada registrada correctamente.');
     }
@@ -93,7 +98,7 @@ export default function CajaPage() {
     event.preventDefault();
     const monto = event.target.elements['salida-monto-input'].value;
     const concepto = event.target.elements['salida-concepto-input'].value;
-    if (await registrarMovimiento('salida', parseFloat(monto), concepto)) {
+    if (await registrarMovimiento('salida', monto, concepto)) {
       setModalVisible(null);
       showMessageModal('Salida registrada correctamente.');
     }
@@ -158,14 +163,25 @@ export default function CajaPage() {
     );
   }
 
-  // Cálculo del total actual en tiempo real
-  const totalEnCaja = cajaActual ? (
-    (cajaActual.monto_inicial || 0) +
-    (totalesTurno.ventasContado || 0) +
-    (totalesTurno.abonosFiado || 0) +
-    (cajaActual.entradas_efectivo || 0) -
-    (cajaActual.salidas_efectivo || 0)
-  ) : 0;
+  // Cálculo del total actual en tiempo real ESTRICTO
+  let totalEnCajaSafe = Money.init(0);
+
+  if (cajaActual) {
+    // 1. Convertimos todos los strings a instancias seguras de Big.js
+    const inicial = Money.init(cajaActual.monto_inicial || 0);
+    const ventas = Money.init(totalesTurno.ventasContado || 0);
+    const abonos = Money.init(totalesTurno.abonosFiado || 0);
+    const entradas = Money.init(cajaActual.entradas_efectivo || 0);
+    const salidas = Money.init(cajaActual.salidas_efectivo || 0);
+
+    // 2. Sumamos todo usando los métodos de Money, nunca el operador "+"
+    const subtotalIngresos = Money.add(inicial, ventas);
+    const subtotalExtras = Money.add(abonos, entradas);
+    const ingresosTotales = Money.add(subtotalIngresos, subtotalExtras);
+
+    // 3. Restamos las salidas
+    totalEnCajaSafe = Money.subtract(ingresosTotales, salidas);
+  }
 
   return (
     <div className="caja-grid">
@@ -204,7 +220,6 @@ export default function CajaPage() {
           <div className="info-row">
             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               Fondo Inicial
-              {/* Botón lápiz para corregir el fondo automático */}
               <button
                 className="btn-icon-small"
                 onClick={() => setModalVisible('edit-inicial')}
@@ -214,34 +229,34 @@ export default function CajaPage() {
                 ✏️
               </button>
             </span>
-            <span className="amount neutral">${cajaActual?.monto_inicial?.toFixed(2) || '0.00'}</span>
+            <span className="amount neutral">${Money.toNumber(cajaActual?.monto_inicial || 0).toFixed(2)}</span>
           </div>
 
           <div className="info-row">
             <span>Ventas (Efectivo)</span>
-            <span className="amount success">+ ${totalesTurno.ventasContado.toFixed(2)}</span>
+            <span className="amount success">+ ${Money.toNumber(totalesTurno.ventasContado || 0).toFixed(2)}</span>
           </div>
 
-          {totalesTurno.abonosFiado > 0 && (
+          {Money.init(totalesTurno.abonosFiado || 0).gt(0) && (
             <div className="info-row">
               <span>Abonos (Créditos)</span>
-              <span className="amount warning">+ ${totalesTurno.abonosFiado.toFixed(2)}</span>
+              <span className="amount warning">+ ${Money.toNumber(totalesTurno.abonosFiado || 0).toFixed(2)}</span>
             </div>
           )}
 
           <div className="info-row">
             <span>Entradas Extras</span>
-            <span className="amount positive">+ ${cajaActual?.entradas_efectivo?.toFixed(2) || '0.00'}</span>
+            <span className="amount positive">+ ${Money.toNumber(cajaActual?.entradas_efectivo || 0).toFixed(2)}</span>
           </div>
           <div className="info-row">
             <span>Salidas (Gastos)</span>
-            <span className="amount negative">- ${cajaActual?.salidas_efectivo?.toFixed(2) || '0.00'}</span>
+            <span className="amount negative">- ${Money.toNumber(cajaActual?.salidas_efectivo || 0).toFixed(2)}</span>
           </div>
 
           <div className="info-row" style={{ borderTop: '2px solid #eee', marginTop: '10px', paddingTop: '10px', borderBottom: 'none' }}>
             <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Total en Caja</span>
             <span className="amount" style={{ fontSize: '1.4rem', color: 'var(--primary-color)' }}>
-              ${totalEnCaja.toFixed(2)}
+              ${Money.toNumber(totalEnCajaSafe).toFixed(2)}
             </span>
           </div>
         </div>
@@ -278,7 +293,7 @@ export default function CajaPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontWeight: 500 }}>{mov.concepto}</span>
                   <span style={{ fontWeight: 'bold', color: mov.tipo === 'entrada' ? 'var(--success-color)' : 'var(--error-color)' }}>
-                    {mov.tipo === 'entrada' ? '+' : '-'}${mov.monto.toFixed(2)}
+                    {mov.tipo === 'entrada' ? '+' : '-'}${Money.toNumber(mov.monto).toFixed(2)}
                   </span>
                 </div>
                 <small style={{ color: 'var(--text-light)' }}>{new Date(mov.fecha).toLocaleTimeString()}</small>
@@ -295,25 +310,31 @@ export default function CajaPage() {
           <p style={{ textAlign: 'center', color: '#999', padding: '20px' }}>No hay historial.</p>
         ) : (
           <div className="history-list" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            {historialCajas.map(c => (
-              <div key={c.id} className="history-item" style={{ padding: '10px', borderBottom: '1px solid #eee' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                  <strong>{new Date(c.fecha_apertura).toLocaleDateString()}</strong>
-                  <span className={`status-badge ${!c.diferencia || Math.abs(c.diferencia) < 1 ? 'success' : 'error'}`}
-                    style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
-                    {Math.abs(c.diferencia || 0) < 1 ? 'Cuadrada' : 'Descuadre'}
-                  </span>
+            {historialCajas.map(c => {
+              // Sanitización estricta por cada iteración
+              const diffSafe = Money.init(c.diferencia || 0);
+              const isCuadrada = diffSafe.abs().lt(1); // En lugar de Math.abs
+
+              return (
+                <div key={c.id} className="history-item" style={{ padding: '10px', borderBottom: '1px solid #eee' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <strong>{new Date(c.fecha_apertura).toLocaleDateString()}</strong>
+                    <span className={`status-badge ${isCuadrada ? 'success' : 'error'}`}
+                      style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
+                      {isCuadrada ? 'Cuadrada' : 'Descuadre'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.85rem', color: '#666', margin: 0 }}>
+                    Cierre: {c.monto_cierre ? `$${Money.toNumber(c.monto_cierre || 0).toFixed(2)}` : 'N/A'}
+                  </p>
+                  {!isCuadrada && (
+                    <small style={{ color: diffSafe.gt(0) ? 'var(--success-color)' : 'var(--error-color)' }}>
+                      Dif: {diffSafe.gt(0) ? '+' : ''}${Money.toNumber(diffSafe).toFixed(2)}
+                    </small>
+                  )}
                 </div>
-                <p style={{ fontSize: '0.85rem', color: '#666', margin: 0 }}>
-                  Cierre: {c.monto_cierre ? `$${c.monto_cierre.toFixed(2)}` : 'N/A'}
-                </p>
-                {c.diferencia && Math.abs(c.diferencia) > 0 && (
-                  <small style={{ color: c.diferencia > 0 ? 'var(--success-color)' : 'var(--error-color)' }}>
-                    Dif: {c.diferencia > 0 ? '+' : ''}${c.diferencia.toFixed(2)}
-                  </small>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

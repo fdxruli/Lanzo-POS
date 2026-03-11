@@ -57,7 +57,7 @@ export async function getStableDeviceId() {
     const STORAGE_KEY = 'lanzo_device_id';
 
     // A. Intentar leer de LocalStorage (Memoria rápida)
-    let lsId = localStorage.getItem(STORAGE_KEY);
+    const lsId = localStorage.getItem(STORAGE_KEY);
 
     // B. Intentar leer de IndexedDB (Memoria persistente)
     let dbId = null;
@@ -125,40 +125,86 @@ export async function getStableDeviceId() {
     }
 }
 
+async function getUntamperedTime() {
+    const now = Date.now();
+    let lastSeen = null;
+    try {
+        const record = await loadData(STORES.SYNC_CACHE, 'security_monotonic_clock');
+        if (record && record.value) lastSeen = record.value;
+    } catch (e) {
+        Logger.warn("No se pudo leer el reloj de seguridad.");
+    }
+
+    if (lastSeen && now < lastSeen) {
+        const diff = lastSeen - now;
+        const MAX_TOLERANCE_MS = 24 * 60 * 60 * 1000; // 24 horas
+
+        if (diff > MAX_TOLERANCE_MS) {
+            throw new Error("TIME_TAMPERING_DETECTED");
+        }
+
+        // Es un retroceso menor (NTP o ajuste manual pequeño).
+        // No arrojamos error, pero retornamos el tiempo futuro que ya teníamos registrado.
+        // Esto impide que el usuario "gane" tiempo retrocediendo el reloj dentro de la tolerancia.
+        return lastSeen;
+    }
+
+    // Actualizamos el reloj al tiempo más reciente
+    try {
+        await saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: now });
+    } catch (e) { }
+
+    return now;
+}
+
 // Configuración del Rate Limit
 const RATE_LIMIT_KEY = 'lanzo_license_attempts';
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_TIME = 5 * 60 * 1000;
 
-function checkRateLimit() {
-    const storedData = localStorage.getItem(RATE_LIMIT_KEY);
-    if (!storedData) return { attempts: 0, lockedUntil: null };
-    const { attempts, lockedUntil } = JSON.parse(storedData);
+async function checkRateLimit() {
+    let storedData = null;
+    try {
+        const record = await loadData(STORES.SYNC_CACHE, RATE_LIMIT_KEY);
+        if (record && record.value) storedData = record.value;
+    } catch (e) { }
 
-    if (lockedUntil && new Date().getTime() < lockedUntil) {
-        const remainingSeconds = Math.ceil((lockedUntil - new Date().getTime()) / 1000);
+    if (!storedData) return { attempts: 0, lockedUntil: null };
+
+    const { attempts, lockedUntil } = storedData;
+    const now = Date.now();
+
+    if (lockedUntil && now < lockedUntil) {
+        const remainingSeconds = Math.ceil((lockedUntil - now) / 1000);
         throw new Error(`Demasiados intentos. Por favor espera ${Math.ceil(remainingSeconds / 60)} minutos.`);
     }
 
-    if (lockedUntil && new Date().getTime() > lockedUntil) {
-        localStorage.removeItem(RATE_LIMIT_KEY);
+    if (lockedUntil && now > lockedUntil) {
+        await resetRateLimit();
         return { attempts: 0, lockedUntil: null };
     }
     return { attempts, lockedUntil };
 }
 
-function registerFailedAttempt() {
-    const { attempts } = checkRateLimit();
-    const newAttempts = attempts + 1;
-    let newData = { attempts: newAttempts, lockedUntil: null };
-    if (newAttempts >= MAX_ATTEMPTS) {
-        newData.lockedUntil = new Date().getTime() + LOCKOUT_TIME;
+async function registerFailedAttempt() {
+    try {
+        const { attempts } = await checkRateLimit();
+        const newAttempts = attempts + 1;
+        const newData = { attempts: newAttempts, lockedUntil: null };
+        if (newAttempts >= MAX_ATTEMPTS) {
+            newData.lockedUntil = Date.now() + LOCKOUT_TIME;
+        }
+        await saveData(STORES.SYNC_CACHE, { key: RATE_LIMIT_KEY, value: newData });
+    } catch (e) {
+        Logger.warn("Error guardando rate limit", e);
     }
-    safeLocalStorageSet(RATE_LIMIT_KEY, JSON.stringify(newData));
 }
 
-function resetRateLimit() {
-    localStorage.removeItem(RATE_LIMIT_KEY);
+async function resetRateLimit() {
+    try {
+        // En lugar de removeItem, sobreescribimos con nulo o borramos si tienes deleteData
+        await saveData(STORES.SYNC_CACHE, { key: RATE_LIMIT_KEY, value: null });
+    } catch (e) { }
 }
 
 // --- Funciones Principales ---
@@ -176,7 +222,7 @@ export const activateLicense = async function (licenseKey) {
             };
         }
 
-        checkRateLimit();
+        await checkRateLimit();
 
         const deviceFingerprint = await getStableDeviceId();
         const friendlyName = getFriendlyDeviceName(navigator.userAgent);
@@ -201,7 +247,7 @@ export const activateLicense = async function (licenseKey) {
             // Si tu RPC de activación devuelve el token, guárdalo YA.
             // Si el token viene en data.device_security_token o data.details.token:
             const initialToken = data.device_security_token || (data.details && data.details.token);
-            
+
             if (initialToken) {
                 await setSecureCredentials(initialToken);
             } else {
@@ -212,12 +258,12 @@ export const activateLicense = async function (licenseKey) {
             return { valid: true, message: data.message, details: data.details };
         } else {
             // El servidor respondió, pero rechazó la activación (ej. licencia tope alcanzado)
-            registerFailedAttempt();
+            await registerFailedAttempt();
             return { valid: false, message: data.error || 'Error de activación.' };
         }
 
     } catch (error) {
-        const isRateLimit = error.message && error.message.includes('Demasiados intentos');
+        const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
 
         if (!isRateLimit) {
             // Usamos el Logger para no ensuciar consola en producción
@@ -225,7 +271,7 @@ export const activateLicense = async function (licenseKey) {
 
             // Solo registramos intento fallido si fue un error lógico o de servidor,
             // no si fue un error de validación local o desconexión.
-            registerFailedAttempt();
+            await registerFailedAttempt();
         }
 
         return { valid: false, message: error.message };
@@ -287,12 +333,46 @@ export const revalidateLicense = async function (licenseKeyProp) {
         }
 
         // 🟢 NUEVO 3: Si el servidor nos da un nuevo token, lo guardamos inmediatamente (Rotación)
-        if (data && data.new_security_token) {
-            await setSecureCredentials(data.new_security_token);
+        if (data && data.valid) {
+            // Rotación del token
+            if (data.new_security_token) {
+                await setSecureCredentials(data.new_security_token);
+            }
+
+            const currentRealTime = Date.now();
+
+            // Guardar el estado validado en IndexedDB de forma exclusiva
+            await saveData(STORES.SYNC_CACHE, {
+                key: 'last_valid_license_state',
+                value: {
+                    payload: data,
+                    timestamp: currentRealTime
+                }
+            });
+
+            // CORRECCIÓN CRÍTICA: "Sanar" el reloj monotónico.
+            // Si validamos online con éxito, asumimos que el reloj actual es la nueva verdad.
+            // Esto rescata al dispositivo de la trampa del "salto al futuro".
+            try {
+                await saveData(STORES.SYNC_CACHE, {
+                    key: 'security_monotonic_clock',
+                    value: currentRealTime
+                });
+            } catch (e) {
+                Logger.warn("Fallo al sanar el reloj monotónico", e);
+            }
         }
 
         if (!data.valid && data.reason !== 'offline_grace') {
             Logger.warn("⛔ Servidor confirmó: Licencia inválida:", data.reason);
+            // Si el servidor invalida, destruimos el caché offline local
+            await loadData(STORES.SYNC_CACHE, 'last_valid_license_state').then(async (record) => {
+                if (record) {
+                    // Implementa un borrado si tienes la función deleteData, 
+                    // o sobrescribe con un objeto inválido
+                    await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+                }
+            });
         }
 
         return data;
@@ -311,27 +391,68 @@ export const revalidateLicense = async function (licenseKeyProp) {
         if (isNetworkError) {
             Logger.log('☁️ Modo offline activado por problema de conexión');
 
-            let storedLicense = null;
+            // 1. Verificar que existe el token de seguridad del dispositivo
+            const securityToken = await getSecureCredentials();
+
+            // 2. Recuperar el último estado validado
+            let storedState = null;
             try {
-                const ls = localStorage.getItem('lanzo_license');
-                if (ls) storedLicense = JSON.parse(ls)?.data;
+                const record = await loadData(STORES.SYNC_CACHE, 'last_valid_license_state');
+                if (record && record.value) storedState = record.value;
             } catch (e) { }
 
-            if (storedLicense?.license_key) {
+            if (!securityToken || !storedState || !storedState.payload) {
                 return {
-                    ...storedLicense,
-                    valid: true,
-                    reason: 'offline_grace',
-                    is_fallback: true,
-                    last_check_failed: new Date().toISOString()
+                    valid: false,
+                    reason: 'no_secure_context',
+                    details: 'Requiere conexión a internet para validación inicial.'
                 };
             }
+
+            // 3. Evaluar el tiempo transcurrido con el reloj antimanipulación
+            let now;
+            try {
+                now = await getUntamperedTime();
+            } catch (error) {
+                if (error.message === "TIME_TAMPERING_DETECTED") {
+                    // Bloqueo fulminante: Si detectamos trampa, destruimos la sesión offline
+                    //await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+                    return {
+                        valid: false,
+                        reason: 'time_tampering_detected',
+                        details: 'Inconsistencia severa de reloj detectada. Ajusta tu dispositivo a la fecha y hora correctas, y conéctate a internet para restaurar el sistema.'
+                    };
+                }
+                now = Date.now(); // Fallback si falla IndexedDB
+            }
+
+            const MAX_OFFLINE_MS = 72 * 60 * 60 * 1000;
+            const timeOffline = now - storedState.timestamp;
+
+            // También validamos si de alguna forma storedState.timestamp está en el futuro (otra trampa)
+            if (!storedState.timestamp || isNaN(timeOffline) || timeOffline < 0 || timeOffline > MAX_OFFLINE_MS) {
+                return {
+                    valid: false,
+                    reason: 'offline_grace_expired',
+                    details: 'El periodo de gracia offline es inválido o ha expirado. Conéctate a internet.'
+                };
+            }
+
+            // Conceder acceso offline temporal
+            return {
+                ...storedState.payload,
+                valid: true,
+                reason: 'offline_grace',
+                is_fallback: true,
+                last_check_failed: new Date().toISOString(),
+                hours_remaining: Math.floor((MAX_OFFLINE_MS - timeOffline) / (1000 * 60 * 60))
+            };
         }
 
         return {
             valid: false,
-            reason: isNetworkError ? 'no_cached_license' : 'server_rejected',
-            details: error.message
+            reason: 'server_rejected',
+            details: error?.message || String(error) || 'Error desconocido del servidor'
         };
     }
 };
@@ -381,7 +502,7 @@ export const uploadFile = async function (file, type = 'product') {
         const fileName = `${type}-${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
         const filePath = `public_uploads/${fileName}`;
 
-        let { error: uploadError } = await supabaseClient
+        const { error: uploadError } = await supabaseClient
             .storage
             .from('images')
             .upload(filePath, file, {
@@ -451,7 +572,7 @@ export const deactivateCurrentDevice = async (licenseKey) => {
 
 export const createFreeTrial = async function () {
     try {
-        checkRateLimit();
+        await checkRateLimit();
 
         const deviceFingerprint = await getStableDeviceId();
         const friendlyName = getFriendlyDeviceName(navigator.userAgent);
@@ -475,15 +596,15 @@ export const createFreeTrial = async function () {
             const licenseData = data.details || data;
             return { success: true, details: licenseData };
         } else {
-            registerFailedAttempt();
+            await registerFailedAttempt();
             return { success: false, error: data.error || 'No se pudo crear la licencia.' };
         }
 
     } catch (error) {
-        const isRateLimit = error.message && error.message.includes('Demasiados intentos');
+        const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
         if (!isRateLimit) {
             Logger.error('❌ Error creando trial:', error);
-            registerFailedAttempt();
+            await registerFailedAttempt();
         }
         return { success: false, error: error.message };
     }
@@ -532,7 +653,7 @@ export const fetchLegalTerms = async (type = 'terms_of_use') => {
             .rpc('get_active_legal_terms', { doc_type_param: type });
 
         if (error) throw error;
-        
+
         // La RPC devuelve una tabla, tomamos el primer resultado (si existe)
         return data && data.length > 0 ? data[0] : null;
 
@@ -550,7 +671,7 @@ export const fetchLegalTerms = async (type = 'terms_of_use') => {
 export const acceptLegalTerms = async (licenseKey, termId) => {
     try {
         const deviceFingerprint = await getStableDeviceId();
-        
+
         // Metadata opcional (navegador, plataforma)
         const metadata = {
             userAgent: navigator.userAgent,

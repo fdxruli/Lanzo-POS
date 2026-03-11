@@ -11,7 +11,8 @@ import { useAppStore } from '../store/useAppStore';
 import { useNavigate } from 'react-router-dom';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
-
+import { customerCreditRepository } from '../services/db/customerCreditRepository';
+import { generateID } from '../services/utils';
 import {
   saveDataSafe,
   deleteDataSafe,
@@ -68,7 +69,7 @@ export default function CustomersPage() {
   const loadInitialCustomers = async () => {
     setLoading(true);
     try {
-      const data = await loadDataPaginated(STORES.CUSTOMERS, { limit: PAGE_SIZE, offset: 0 });
+      const data = await loadDataPaginated(STORES.CUSTOMERS, { limit: PAGE_SIZE, offset: 0, direction: 'prev' });
       setCustomers(data);
       setPage(1);
       setHasMore(data.length === PAGE_SIZE);
@@ -126,7 +127,7 @@ export default function CustomersPage() {
 
   const handleSaveCustomer = async (customerData) => {
     try {
-      const id = editingCustomer ? editingCustomer.id : `customer-${Date.now()}`;
+      const id = editingCustomer ? editingCustomer.id : generateID('cust');
       const existingDebt = editingCustomer ? editingCustomer.debt : 0;
       const dataToSave = { ...customerData, id, debt: existingDebt };
 
@@ -225,59 +226,57 @@ export default function CustomersPage() {
 
   const handleConfirmAbono = async (customer, amount, sendReceipt) => {
     try {
+      // 1. Verificación estricta de pre-condiciones en UI
+      if (!cajaActual || cajaActual.estado !== 'abierta') {
+        showMessageModal('Debes tener una caja abierta para registrar un abono.');
+        handleCloseModals();
+        return;
+      }
+
       const concepto = `Abono de cliente: ${customer.name}`;
+      const deudaAnterior = customer.debt || 0; // Capturamos para el recibo antes de mutar
 
-      // 1. Registrar en caja (existente)
-      const movimientoExitoso = await registrarMovimiento('entrada', amount, concepto);
-      if (!movimientoExitoso) {
-        showMessageModal('Error: No se pudo registrar en caja (¿Caja cerrada?).');
+      // 2. Ejecutar la transacción Atómica (Ledger + Cliente + Caja)
+      // Delegamos TODO al repositorio. Si algo falla aquí, Dexie hace rollback automático.
+      const result = await customerCreditRepository.processPayment(
+        customer.id,
+        amount,
+        'efectivo',
+        cajaActual.id,
+        concepto
+      );
+
+      // 3. Manejo del Caso de Éxito
+      if (result && result.success) {
+        showMessageModal('¡Abono registrado exitosamente!');
         handleCloseModals();
-        return;
-      }
 
-      // 2. Cargar cliente (usamos loadData normal porque es lectura simple)
-      const customerData = await loadData(STORES.CUSTOMERS, customer.id);
-      const deudaAnterior = customerData.debt || 0;
-      const nuevaDeuda = Math.max(0, deudaAnterior - amount);
-      customerData.debt = nuevaDeuda;
+        // Recargar la lista de clientes para que la UI refleje la nueva deuda
+        loadInitialCustomers();
 
-      // 3. --- REFACTORIZACIÓN A SAFE ---
-      const result = await saveDataSafe(STORES.CUSTOMERS, customerData);
+        // 4. Enviar Recibo (Opcional) usando la deuda real calculada por la BD (result.newDebt)
+        if (sendReceipt) {
+          const message =
+            `*--- Recibo de Abono ---*\n` +
+            `*Negocio:* ${companyName}\n\n` +
+            `Hola *${customer.name}*,\n` +
+            `Hemos registrado tu abono:\n\n` +
+            `Monto Abonado: *$${amount.toFixed(2)}*\n` +
+            `Deuda Anterior: $${deudaAnterior.toFixed(2)}\n` +
+            `*Saldo Restante: $${result.newDebt.toFixed(2)}*\n\n` +
+            `¡Gracias por tu pago!`;
 
-      if (!result.success) {
-        // Usamos tu helper de errores accionables si existe, o mensaje directo
-        if (result.error && result.error.details) {
-          handleActionableError(result); // Reutilizamos tu función de manejo de errores
-        } else {
-          showMessageModal(`Error al guardar el abono: ${result.error?.message || 'Desconocido'}`);
+          sendWhatsAppMessage(customer.phone, message);
         }
-        handleCloseModals();
-        return;
-      }
-
-      showMessageModal('¡Abono registrado exitosamente!');
-      handleCloseModals();
-      loadInitialCustomers();
-
-      // 3. Enviar Recibo (Opcional)
-      if (sendReceipt) {
-        const message =
-          `*--- Recibo de Abono ---*\n` +
-          `*Negocio:* ${companyName}\n\n` +
-          `Hola *${customer.name}*,\n` +
-          `Hemos registrado tu abono:\n\n` +
-          `Monto Abonado: *$${amount.toFixed(2)}*\n` +
-          `Deuda Anterior: $${deudaAnterior.toFixed(2)}\n` +
-          `*Saldo Restante: $${nuevaDeuda.toFixed(2)}*\n\n` +
-          `¡Gracias por tu pago!`;
-
-        sendWhatsAppMessage(customer.phone, message);
       }
 
     } catch (error) {
       Logger.error('Error crítico en abono:', error);
-      showMessageModal(`Error al procesar: ${error.message}`);
-      // ✅ MEJORA CRÍTICA: Aseguramos que el modal se cierre si hay error de sistema
+
+      // Mostrar el error exacto que arrojó el motor transaccional (ej. Abono excede deuda)
+      const errorMsg = error.message || 'Error desconocido al procesar la transacción.';
+      showMessageModal(`Transacción abortada: ${errorMsg}`);
+
       handleCloseModals();
     }
   };

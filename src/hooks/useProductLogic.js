@@ -29,7 +29,7 @@ export const useProductLogic = (initialOverrides = {}) => {
     // Lógica de cálculo de precios automática
     const updatePriceLogic = (field, value) => {
         let { cost, price, margin } = data;
-        let newData = { ...data };
+        const newData = { ...data };
 
         // Actualizamos el campo específico
         if (field === 'cost') { cost = value; newData.cost = value; }

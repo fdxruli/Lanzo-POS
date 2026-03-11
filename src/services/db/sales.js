@@ -1,5 +1,7 @@
 import { db, STORES } from './dexie';
-import { handleDexieError, DatabaseError, DB_ERROR_CODES } from './utils';
+import { handleDexieError, DatabaseError, DB_ERROR_CODES, normalizeStock } from './utils';
+import { generateID } from '../utils'
+import { Money } from '../../utils/moneyMath';
 
 /**
  * Repositorio de Ventas.
@@ -29,7 +31,8 @@ export const salesRepository = {
                 db.table(STORES.PRODUCT_BATCHES),
                 db.table(STORES.MENU),
                 db.table(STORES.TRANSACTION_LOG),
-                db.table(STORES.CUSTOMERS)
+                db.table(STORES.CUSTOMERS),
+                db.table(STORES.CUSTOMER_LEDGER),
             ], async () => {
 
                 // 1. Verificación de Idempotencia (Evitar duplicados)
@@ -107,11 +110,11 @@ export const salesRepository = {
                     }
 
                     // Actualizar en memoria primero
-                    const newStock = batch.stock - quantity;
+                    const newStock = normalizeStock(batch.stock - quantity);
                     const updatedBatch = {
                         ...batch,
                         stock: newStock,
-                        isActive: newStock > 0.0001
+                        isActive: newStock > 0
                     };
 
                     // Guardar cambio en el mapa temporal
@@ -145,12 +148,9 @@ export const salesRepository = {
                             // Suma de lotes activos (ya actualizados en el caché)
                             const productBatches = batchesCacheMap.get(productId) || [];
 
-                            const totalStock = productBatches
-                                .filter(b => {
-                                    const stockVal = Number(b.stock);
-                                    return b.isActive && !isNaN(stockVal) && stockVal > 0.0001;
-                                })
-                                .reduce((sum, b) => sum + Number(b.stock), 0);
+                            const totalStock = normalizeStock(productBatches
+                                .filter(b => b.isActive && normalizeStock(b.stock) > 0)
+                                .reduce((sum, b) => sum + normalizeStock(b.stock), 0));
 
                             // Actualizar padre con el stock REAL calculado
                             await db.table(STORES.MENU).update(productId, {
@@ -171,8 +171,8 @@ export const salesRepository = {
                             });
 
                             if (totalSold > 0) {
-                                let newStock = product.stock - totalSold;
-                                if (newStock < 0) newStock = 0; // Protección
+                                let newStock = normalizeStock(product.stock - totalSold);
+                                if (newStock < 0) newStock = 0;
 
                                 await db.table(STORES.MENU).update(productId, {
                                     stock: newStock,
@@ -186,19 +186,34 @@ export const salesRepository = {
                 // ============================================================
                 // 4.5 ACTUALIZACIÓN DE DEUDA DEL CLIENTE
                 // ============================================================
-                // Al hacerlo aquí, garantizamos que si esto falla, la venta NO se guarda.
-                if (sale.paymentMethod === 'fiado' && sale.customerId && sale.saldoPendiente > 0) {
-                    const customer = await db.table(STORES.CUSTOMERS).get(sale.customerId);
+                const saldoSafe = Money.init(sale.saldoPendiente);
 
-                    if (customer) {
-                        await db.table(STORES.CUSTOMERS).update(sale.customerId, {
-                            debt: (customer.debt || 0) + sale.saldoPendiente,
-                            updatedAt: new Date().toISOString()
-                        });
-                    } else {
-                        // Opcional: Lanzar error si el cliente no existe, para abortar la venta
-                        throw new Error(`Integridad: El cliente ${sale.customerId} no existe.`);
+                if (sale.paymentMethod === 'fiado' && sale.customerId && saldoSafe.gt(0)) {
+                    const customer = await db.table(STORES.CUSTOMERS).get(sale.customerId);
+                    if (!customer) {
+                        throw new Error(`Integridad Crítica: El cliente ${sale.customerId} no existe para el cargo a crédito.`);
                     }
+
+                    const timestamp = new Date().toISOString();
+
+                    // 1. Registro inmutable de la deuda adquirida (Guardamos String exacto)
+                    await db.table(STORES.CUSTOMER_LEDGER).add({
+                        id: generateID('chg'),
+                        customerId: sale.customerId,
+                        type: 'CHARGE',
+                        amount: Money.toExactString(saldoSafe),
+                        reference: sale.id,
+                        timestamp
+                    });
+
+                    // 2. Actualización de la proyección (Guardamos String exacto, JAMÁS toNumber)
+                    const currentDebt = Money.init(customer.debt || 0);
+                    const newDebt = Money.add(currentDebt, saldoSafe);
+
+                    await db.table(STORES.CUSTOMERS).update(sale.customerId, {
+                        debt: Money.toExactString(newDebt),
+                        updatedAt: timestamp
+                    });
                 }
 
                 // ============================================================
@@ -213,7 +228,7 @@ export const salesRepository = {
                 // ============================================================
                 // 6. LOG DE AUDITORÍA
                 // ============================================================
-                const transactionId = `tx-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+                const transactionId = generateID('txn');
                 await db.table(STORES.TRANSACTION_LOG).add({
                     id: transactionId,
                     type: 'SALE',

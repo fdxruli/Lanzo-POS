@@ -42,7 +42,7 @@ export function useFeatureConfig(specificRubro = null) {
 
     if (companyRubros.length === 0) companyRubros = ['otro'];
 
-    let typesToEvaluate = specificRubro
+    const typesToEvaluate = specificRubro
       ? (companyRubros.includes(specificRubro) ? [specificRubro] : [])
       : companyRubros;
 

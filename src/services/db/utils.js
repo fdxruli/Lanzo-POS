@@ -1,5 +1,5 @@
 import Dexie from 'dexie';
-import Logger from '../Logger'; 
+import Logger from '../Logger';
 // Asegúrate de que la ruta a Logger sea correcta (../../services/Logger si estamos en services/db)
 // Asumo que Logger.js está en src/services/Logger.js, así que desde src/services/db/utils.js sería:
 // import Logger from '../Logger'; 
@@ -31,6 +31,17 @@ export const DB_ERROR_CODES = {
   UNKNOWN: 'UNKNOWN'
 };
 
+export const STOCK_DECIMALS = 4;
+
+/**
+ * Normaliza valores de stock para eliminar residuos de coma flotante (IEEE 754).
+ * Utiliza notación exponencial para un redondeo matemático seguro en JS.
+ */
+export const normalizeStock = (value) => {
+  const num = Number(value);
+  if (isNaN(num)) return 0;
+  return Number(Math.round(num + 'e' + STOCK_DECIMALS) + 'e-' + STOCK_DECIMALS);
+};
 // ============================================================
 // MANEJO DE ERRORES DEXIE
 // ============================================================
@@ -51,7 +62,7 @@ export function handleDexieError(error, context = '') {
     errorCode = DB_ERROR_CODES.QUOTA_EXCEEDED;
     userMessage = '💾 Espacio lleno. Libera espacio o realiza un respaldo.';
     actionable = 'SUGGEST_BACKUP';
-  } 
+  }
   else if (error instanceof Dexie.VersionError || errName === 'VersionError') {
     errorCode = DB_ERROR_CODES.VERSION_ERROR;
     userMessage = '⚠️ Base de datos desactualizada. Recarga la página.';

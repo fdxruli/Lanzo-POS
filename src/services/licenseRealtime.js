@@ -1,5 +1,4 @@
 import { supabaseClient } from './supabase';
-import { useAppStore } from '../store/useAppStore';
 import Logger from './Logger';
 
 let activeChannel = null;
@@ -12,11 +11,19 @@ const BASE_RECONNECT_DELAY = 3000;
 
 /**
  * Inicia la escucha SEGURA en tiempo real.
- * Ahora escucha la tabla 'license_events' en lugar de las tablas maestras.
+ * Escucha la tabla 'license_events' en lugar de las tablas maestras.
+ *
+ * @param {string} licenseKey
+ * @param {string} deviceFingerprint
+ * @param {object} callbacks
+ * @param {function} callbacks.onLicenseChanged   - Se llama cuando hay un LICENSE_UPDATE
+ * @param {function} callbacks.onDeviceChanged    - Se llama cuando el dispositivo es baneado/eliminado
+ * @param {function} callbacks.onPermanentFailure - Se llama cuando se agotan todos los reintentos
+ *                                                  Recibe (message: string)
  */
 export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) => {
   if (!licenseKey || !deviceFingerprint) {
-    Logger.warn("[Realtime] Faltan datos para iniciar la conexión WebSocket.");
+    Logger.warn('[Realtime] Faltan datos para iniciar la conexión WebSocket.');
     return null;
   }
 
@@ -29,19 +36,18 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
   }
 
   isConnecting = true;
-  // Logger.log(`📡 [Realtime] Conectando canal seguro para: ${licenseKey}...`);
 
   const channelId = `secure-events-${licenseKey}-${Date.now()}`;
 
   const channel = supabaseClient
-    .channel(channelId) // Canal público estándar, filtrado por lógica
+    .channel(channelId)
     .on(
       'postgres_changes',
       {
-        event: 'INSERT', // Solo nos importan nuevos eventos
+        event: 'INSERT',
         schema: 'public',
         table: 'license_events',
-        filter: `license_key=eq.${licenseKey}` // 🔒 FILTRO CLAVE
+        filter: `license_key=eq.${licenseKey}`
       },
       async (payload) => {
         const event = payload.new;
@@ -49,12 +55,9 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
 
         Logger.log(`🔔 [Realtime] Evento recibido: ${event.event_type}`);
 
-        // --- LÓGICA DE REACCIÓN SEGURA ---
-
         // 1. Cambios en la Licencia (Plan, Expiración, Features)
         if (event.event_type === 'LICENSE_UPDATE') {
           if (callbacks.onLicenseChanged) {
-            // No pasamos datos. Avisamos que "algo cambió" para que la app re-valide.
             callbacks.onLicenseChanged({
               source: 'realtime_event',
               type: 'update'
@@ -68,7 +71,7 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
 
           // Solo reaccionamos si el evento es PARA ESTE dispositivo
           if (targetFingerprint === deviceFingerprint) {
-            Logger.warn("🚫 [Realtime] ¡Alerta de seguridad! Este dispositivo ha sido desactivado.");
+            Logger.warn('🚫 [Realtime] ¡Alerta de seguridad! Este dispositivo ha sido desactivado.');
             if (callbacks.onDeviceChanged) {
               callbacks.onDeviceChanged({
                 status: event.event_type === 'DEVICE_BANNED' ? 'banned' : 'deleted',
@@ -81,20 +84,18 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
     )
     .subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
-        Logger.log("✅ [Realtime] Canal seguro conectado.");
+        Logger.log('✅ [Realtime] Canal seguro conectado.');
         isConnecting = false;
         isReconnecting = false;
         activeChannel = channel;
         reconnectAttempts = 0;
         if (reconnectTimer) clearTimeout(reconnectTimer);
-      }
-      else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        Logger.error("❌ [Realtime] Error de conexión:", err || status);
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        Logger.error('❌ [Realtime] Error de conexión:', err || status);
         isConnecting = false;
         activeChannel = null;
         handleReconnect(licenseKey, deviceFingerprint, callbacks);
-      }
-      else if (status === 'CLOSED') {
+      } else if (status === 'CLOSED') {
         isConnecting = false;
         isReconnecting = false;
         if (activeChannel === channel) activeChannel = null;
@@ -104,32 +105,35 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
   return channel;
 };
 
-// --- Helper de Reconexión (Extraído para limpieza) ---
-const handleReconnect = (key, fp, cb) => {
-  if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimer && !isReconnecting) {
+// --- CORRECCIÓN: handleReconnect ya no importa useAppStore.
+// En su lugar, invoca callbacks.onPermanentFailure cuando se agotan los reintentos.
+const handleReconnect = (key, fp, callbacks) => {
+  // Si ya hay un timer pendiente o estamos reconectando, no hacemos nada
+  if (reconnectTimer || isReconnecting) return;
+
+  if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
     const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
     reconnectAttempts++;
     isReconnecting = true;
 
-    Logger.log(`🔄 [Realtime] Reintentando en ${delay / 1000}s...`);
+    Logger.log(`🔄 [Realtime] Reintentando en ${delay / 1000}s... (intento ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
 
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       isReconnecting = false;
-      startLicenseListener(key, fp, cb);
+      startLicenseListener(key, fp, callbacks);
     }, delay);
-  } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    if (intentos >= MAX_INTENTOS) { // O la condición que tengas para rendirte
-      Logger.error('[Realtime] Sin conexión permanente. Se pasará a modo offline.');
 
-      // --- AGREGAR ESTO ---
-      // Esto fuerza que el banner aparezca y SE QUEDE hasta que el usuario lo cierre
-      useAppStore.getState().reportServerFailure(
+  } else {
+    // CORRECCIÓN CRÍTICA: Se eliminó el `if (intentos >= MAX_INTENTOS)` que causaba ReferenceError.
+    // Llegamos aquí directamente cuando reconnectAttempts >= MAX_RECONNECT_ATTEMPTS.
+    Logger.error('[Realtime] Sin conexión permanente tras máximos reintentos. Modo offline.');
+
+    // Notificamos al store a través del callback (sin importar useAppStore directamente)
+    if (callbacks.onPermanentFailure) {
+      callbacks.onPermanentFailure(
         'No se pudo establecer conexión en tiempo real con el servidor. Se trabajará en modo offline.'
       );
-      // --------------------
-
-      return; // Salir
     }
   }
 };
@@ -146,7 +150,7 @@ export const stopLicenseListener = async (channel) => {
   if (channel) {
     try {
       await supabaseClient.removeChannel(channel);
-    } catch (e) { /* ignore */ }
+    } catch (e) { /* ignorar */ }
   }
   if (activeChannel === channel) activeChannel = null;
 };

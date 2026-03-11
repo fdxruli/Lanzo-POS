@@ -4,12 +4,23 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { calculateCompositePrice, validateWholesaleCondition } from '../services/pricingLogic';
 import { roundCurrency, safeLocalStorageSet, showMessageModal } from '../services/utils';
 import { queryBatchesByProductIdAndActive } from '../services/database';
+import { Money } from '../utils/moneyMath';
 
 const safeStorage = {
-  getItem: (name) => localStorage.getItem(name),
+  getItem: (name) => {
+    try {
+      const item = localStorage.getItem(name);
+      if (!item) return null;
+      // Validar si es un JSON parseable. Si está corrupto, lo purga de inmediato.
+      JSON.parse(item);
+      return item;
+    } catch (e) {
+      console.error(`Estado corrupto en ${name}, purgando...`);
+      localStorage.removeItem(name);
+      return null;
+    }
+  },
   setItem: (name, value) => {
-    // Usamos nuestra función protegida. 
-    // Si falla, retorna false, pero Zustand no crashea.
     safeLocalStorageSet(name, value);
   },
   removeItem: (name) => localStorage.removeItem(name),
@@ -331,12 +342,17 @@ export const useOrderStore = create(
 
       getTotalPrice: () => {
         const { order } = get();
-        return order.reduce((sum, item) => {
+
+        const exactTotal = order.reduce((sum, item) => {
           if (item.quantity && item.quantity > 0) {
-            return roundCurrency(sum + roundCurrency(item.price * item.quantity));
+            const lineTotal = Money.multiply(item.price, item.quantity);
+            return Money.add(sum, lineTotal);
           }
           return sum;
-        }, 0);
+        }, Money.init(0));
+
+        // Delegamos la conversión y el redondeo estrictamente al wrapper
+        return Money.toNumber(exactTotal);
       },
     }),
     {

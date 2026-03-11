@@ -39,19 +39,19 @@ export default function ProductsPage() {
     // --- CONEXIÓN AL NUEVO STORE DE PRODUCTOS ---
     const categories = useProductStore((state) => state.categories);
     const products = useProductStore((state) => state.menu);
-    const rawProducts = useProductStore((state) => state.rawProducts);
-
-    // Alias para mantener la compatibilidad con el resto del código
-    const refreshData = useProductStore((state) => state.loadInitialProducts);
 
     const [editingProduct, setEditingProduct] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
     const [isWizardMode, setIsWizardMode] = useState(true);
+    const [, setShowDataTransfer] = useState(false);
 
-    // Carga inicial
+    const setFilters = useProductStore((state) => state.setFilters);
+    const refreshData = useProductStore((state) => state.loadInitialProducts);
+
     useEffect(() => {
+        setFilters({ categoryId: null, outOfStockOnly: false })
         refreshData();
     }, []);
 
@@ -312,12 +312,8 @@ export default function ProductsPage() {
     };
 
     const handleEditProduct = (product) => {
-        // Buscamos en rawProducts para tener la versión original sin agregaciones
-        const productToEdit = rawProducts.find(p => p.id === product.id);
-        if (productToEdit) {
-            setEditingProduct(productToEdit);
-            setActiveTab('add-product');
-        }
+        setEditingProduct(product);
+        setActiveTab('add-product');
     };
 
     const handleCreateIngredient = () => {
@@ -547,7 +543,7 @@ export default function ProductsPage() {
                 activeTab === 'categories' && (
                     <CategoryManager
                         categories={categories}
-                        onSave={handleSaveCategory}
+                        onRefresh={refreshData}
                         onDelete={handleDeleteCategory}
                     />
                 )
@@ -570,7 +566,11 @@ export default function ProductsPage() {
                 show={showCategoryModal}
                 onClose={() => setShowCategoryModal(false)}
                 categories={categories}
-                onSave={handleSaveCategory}
+                // Usamos refreshData porque es la función que sincroniza 
+                // el store con la base de datos tras un cambio
+                onRefresh={refreshData}
+                // Usamos handleDeleteCategory que ya tiene la lógica de 
+                // borrado en cascada y manejo de errores
                 onDelete={handleDeleteCategory}
             />
 

@@ -6,7 +6,7 @@
 
 import { loadData, STORES } from '../services/db';
 import { getExpiringProductsReport, getLowStockProductsReport } from '../services/inventoryAnalysis';
-import { INTENT_PATTERNS, SYNONYMS, CONVERSATION_CONTEXT } from './IntentPatterns';
+import { INTENT_PATTERNS, CONVERSATION_CONTEXT } from './IntentPatterns';
 import {
   normalizeText,
   tokenize,
@@ -155,7 +155,7 @@ export const extractEntities = (userMessage) => {
 export const calculateSalesReport = async (timeframe = 'today') => {
   const sales = await loadData(STORES.SALES) || [];
   const now = new Date();
-  let startDate = new Date();
+  const startDate = new Date();
   
   // Configurar rango de fechas
   switch (timeframe.type || timeframe) {
@@ -281,7 +281,7 @@ export const searchProductByName = async (productName) => {
  */
 export const getTopProducts = async (timeframe = 'month', limit = 10) => {
   const sales = await loadData(STORES.SALES) || [];
-  let startDate = new Date();
+  const startDate = new Date();
   
   switch (timeframe) {
     case 'week':

@@ -29,38 +29,28 @@ export const STORES = {
   TRANSACTION_LOG: 'transaction_log',
   SYNC_CACHE: 'sync_cache',
   IMAGES: 'images',
-  LAYAWAYS: 'layaways'
+  LAYAWAYS: 'layaways',
+  CUSTOMER_LEDGER: 'customer_ledger',
 };
 
 class LanzoDatabase extends Dexie {
   constructor() {
     super(DB_NAME);
-
-    // Definición del Esquema (Versión 1)
-    // SINTAXIS DEXIE:
-    // '++id': Auto-increment (Si usas UUIDs strings, usa solo 'id')
-    // '&': Índice Único (Unique)
-    // '*': Multi-entry index (para arrays de etiquetas, etc.)
-    // '[a+b]': Índice Compuesto
-    
-    // NOTA IMPORTANTE: Asumo que usas UUIDs (strings) para los IDs basado en tu código anterior (generateID).
-    // Por eso uso 'id' y no '++id'. Si alguna tabla usa auto-increment numérico, avísame para cambiarlo.
-    
     this.version(1).stores({
       // --- Inventario y Productos ---
       [STORES.MENU]: 'id, barcode, name_lower, categoryId', // Índices simples
-      
-      [STORES.PRODUCT_BATCHES]: 'id, productId, sku, expiryDate, [productId+isActive], [productId+isActive+createdAt]', 
+
+      [STORES.PRODUCT_BATCHES]: 'id, productId, sku, expiryDate, [productId+isActive], [productId+isActive+createdAt]',
       // ^ Aquí incluimos tus índices compuestos y el nuevo de caducidad
-      
-      [STORES.CATEGORIES]: 'id',
+
+      [STORES.CATEGORIES]: 'id, name, isActive, sortOrder',
       [STORES.INGREDIENTS]: 'id',
 
       // --- Ventas y Clientes ---
-      [STORES.SALES]: 'id, &timestamp, customerId, fulfillmentStatus, [customerId+timestamp]', 
+      [STORES.SALES]: 'id, &timestamp, customerId, fulfillmentStatus, [customerId+timestamp]',
       // ^ &timestamp es único. Agregamos fulfillmentStatus para KDS.
 
-      [STORES.CUSTOMERS]: 'id, phone', 
+      [STORES.CUSTOMERS]: 'id, phone',
 
       // --- Caja y Movimientos ---
       [STORES.CAJAS]: 'id, estado', // Para encontrar caja abierta rápido
@@ -74,7 +64,7 @@ class LanzoDatabase extends Dexie {
       [STORES.THEME]: 'id',
       [STORES.STATS]: 'id', // global_stats
       [STORES.DAILY_STATS]: 'id', // Usualmente la fecha es el ID aquí
-      
+
       // --- Papelera ---
       [STORES.DELETED_MENU]: 'id',
       [STORES.DELETED_CUSTOMERS]: 'id',
@@ -84,7 +74,7 @@ class LanzoDatabase extends Dexie {
       // --- Otros ---
       [STORES.WASTE]: 'id',
       [STORES.PROCESSED_SALES_LOG]: 'id',
-      
+
       // Casos especiales de KeyPath
       [STORES.SYNC_CACHE]: 'key', // Tu código usaba 'key' como primary key
       [STORES.IMAGES]: 'id',       // Almacenamiento de Blobs
@@ -92,14 +82,89 @@ class LanzoDatabase extends Dexie {
       // Esquema de apartados 
       [STORES.LAYAWAYS]: 'id, customerId, status, deadline, [customerId+status]'
     });
-    
-    // Middleware (Hooks) Opcional: 
-    // Aquí podríamos agregar hooks globales para logs o auditoría automática en el futuro.
+
+    this.version(2).stores({
+      [STORES.SALES]: 'id, timestamp, customerId, fulfillmentStatus, [customerId+timestamp]'
+    });
+
+    this.version(3).stores({
+      [STORES.CUSTOMER_LEDGER]: 'id, customerId, type, timestamp, [customerId+timestamp]'
+    });
+
+    this.version(4).stores({
+      // Añadimos createdAt como índice a las tablas que requieren paginación K-Sortable
+      [STORES.MENU]: 'id, createdAt, barcode, name_lower, categoryId',
+      [STORES.CUSTOMERS]: 'id, createdAt, phone',
+      [STORES.CATEGORIES]: 'id, createdAt, name, isActive, sortOrder'
+    }).upgrade(async tx => {
+      // Tiempo base en el pasado para registros legacy sin timestamp en el ID
+      // Previene que se mezclen con los registros nuevos K-Sortables
+      let fallbackTime = new Date('2023-01-01T00:00:00.000Z').getTime();
+
+      const injectCreatedAt = async (tableName) => {
+        await tx.table(tableName).toCollection().modify(record => {
+          if (!record.createdAt) {
+            // Intentar rescatar el timestamp si el ID viejo lo contenía (ej: cust-1691234567890)
+            const match = String(record.id).match(/\d{13}/);
+            if (match) {
+              record.createdAt = new Date(parseInt(match[0], 10)).toISOString();
+            } else {
+              // Incremento artificial de 1 segundo para evitar colisiones de ordenamiento
+              // K-Sortable depende de la unicidad secuencial
+              fallbackTime += 1000;
+              record.createdAt = new Date(fallbackTime).toISOString();
+            }
+          }
+        });
+      };
+
+      // Dexie .modify() maneja el procesamiento por lotes internamente, 
+      // evitando bloqueos severos de memoria.
+      await injectCreatedAt(STORES.CUSTOMERS);
+      await injectCreatedAt(STORES.MENU);
+      await injectCreatedAt(STORES.CATEGORIES);
+    });
+
+    this.version(5).stores({
+      [STORES.CAJAS]: 'id, estado, fecha_apertura'
+    });
+
+    this.version(6).stores({
+      [STORES.MENU]: 'id, createdAt, barcode, name_lower, categoryId, sku'
+    });
+
+    this.version(7).stores({
+      [STORES.WASTE]: 'id, timestamp'
+    }).upgrade(async tx => {
+      let fallbackTime = new Date('2023-01-01T00:00:00.000Z').getTime();
+
+      await tx.table(STORES.WASTE).toCollection().modify(record => {
+        const hasValidTimestamp =
+          typeof record.timestamp === 'string' &&
+          Number.isFinite(Date.parse(record.timestamp));
+
+        if (hasValidTimestamp) return;
+
+        const match = String(record.id || '').match(/\d{13}/);
+        if (match) {
+          record.timestamp = new Date(parseInt(match[0], 10)).toISOString();
+          return;
+        }
+
+        fallbackTime += 1000;
+        record.timestamp = new Date(fallbackTime).toISOString();
+      });
+    });
   }
 }
 
 // Instancia Singleton
 export const db = new LanzoDatabase();
+
+db.on('blocked', () => {
+  console.error('Migración bloqueada por conexiones antiguas activas.');
+  alert('Actualización crítica de la base de datos pendiente. Por favor, cierra todas las demás pestañas de esta aplicación y recarga la página para continuar.');
+});
 
 // Exportar clase por si se necesita instanciar para tests
 export { LanzoDatabase };

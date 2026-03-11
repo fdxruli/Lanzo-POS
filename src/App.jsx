@@ -1,11 +1,11 @@
 // src/App.jsx
-import React, { useEffect, lazy, Suspense } from 'react';
+import { useEffect, lazy, Suspense, useRef } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import NavigationGuard from './components/common/NavigationGuard';
 import Logger from './services/Logger';
-
+import { db, STORES } from './services/db/dexie';
 // --- COMPONENTES CRÍTICOS (Eager Loading) ---
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
@@ -13,41 +13,35 @@ import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
 import ReconnectionBanner from './components/common/ReconnectionBanner';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
-import { useSalesStore } from './store/useSalesStore';
+import UpdatePrompt from './components/common/UpdatePrompt';
+import InstallPrompt from './components/common/InstallPrompt';
 import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 
 const MAX_RETRIES = 3;
-const RETRY_SESSION_KEY = 'lazy_retry_count';
-
-// --- FUNCIÓN "LAZY" INTELIGENTE ---
 const lazyRetry = (importFn, componentName = 'Component') => {
+  const componentKey = `lazy_retry_${componentName}`;
+
   return lazy(async () => {
     try {
       const component = await importFn();
-      // Si carga con éxito, limpiamos el contador de errores
-      window.sessionStorage.removeItem(RETRY_SESSION_KEY);
+      window.sessionStorage.removeItem(componentKey);
       return component;
     } catch (error) {
       Logger.error(`Error cargando módulo ${componentName}:`, error);
 
-      // 1. Obtener intentos actuales
-      const currentRetries = parseInt(window.sessionStorage.getItem(RETRY_SESSION_KEY) || '0', 10);
+      const currentRetries = parseInt(window.sessionStorage.getItem(componentKey) || '0', 10);
 
-      // 2. Si no hemos excedido el máximo, recargamos
       if (currentRetries < MAX_RETRIES) {
-        window.sessionStorage.setItem(RETRY_SESSION_KEY, (currentRetries + 1).toString());
-        Logger.warn(`Reintentando carga (${currentRetries + 1}/${MAX_RETRIES})...`);
+        window.sessionStorage.setItem(componentKey, (currentRetries + 1).toString());
+        Logger.warn(`Reintentando carga de ${componentName} (${currentRetries + 1}/${MAX_RETRIES})...`);
         window.location.reload();
-        // Retornamos promesa infinita para que React espere al reload
         return new Promise(() => { });
       }
 
-      // 3. SI EXCEDIMOS: Rendirse elegantemente (NO recargar más)
-      Logger.error("Máximo de reintentos alcanzado. Mostrando UI de error.");
-      window.sessionStorage.removeItem(RETRY_SESSION_KEY); // Limpiar para el futuro
+      Logger.error(`Máximo de reintentos alcanzado para ${componentName}. Mostrando UI de error.`);
+      window.sessionStorage.removeItem(componentKey);
 
-      // Retornamos un componente de error visual en lugar de romper la app
       return {
         default: () => (
           <div style={{
@@ -55,15 +49,17 @@ const lazyRetry = (importFn, componentName = 'Component') => {
             alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center'
           }}>
             <h2 style={{ fontSize: '2rem' }}>⚠️</h2>
-            <h3>Error de conexión</h3>
+            <h3>Error de carga del módulo</h3>
             <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
-            <p style={{ fontSize: '0.9rem', color: '#666' }}>Verifica tu internet.</p>
             <button
               className="btn btn-primary"
               style={{ marginTop: '1rem' }}
-              onClick={() => window.location.reload()}
+              onClick={() => {
+                window.sessionStorage.removeItem(componentKey);
+                window.location.reload();
+              }}
             >
-              Intentar de nuevo manualmente
+              Reintentar
             </button>
           </div>
         )
@@ -103,7 +99,7 @@ function App() {
 
   useEffect(() => {
     initializeApp();
-  }, []);
+  }, [initializeApp]);
 
   useEffect(() => {
     let isMounted = true;
@@ -120,103 +116,134 @@ function App() {
     };
   }, [appStatus, startRealtimeSecurity, stopRealtimeSecurity]);
 
+  // Candado persistente fuera del ciclo de dependencias del useEffect
+  const isReconnectingRef = useRef(false);
+
   useEffect(() => {
-    let isReconnecting = false;
-
     const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible') {
-        if (isReconnecting) return;
-        isReconnecting = true;
-        Logger.log("👁️ Pestaña activa: Verificando salud del sistema...");
+      if (document.visibilityState !== 'visible') {
+        sessionStorage.setItem('lanzo_last_active', Date.now().toString());
+        return;
+      }
 
-        // Bandera para controlar si podemos proceder con operaciones de BD
-        let dbIsHealthy = false;
+      if (isReconnectingRef.current) {
+        Logger.warn("⏳ Health check ya en curso. Ignorando evento de visibilidad.");
+        return;
+      }
 
-        try {
-          const { initDB, closeDB, STORES } = await import('./services/database');
+      isReconnectingRef.current = true;
+      Logger.log("👁️ Pestaña activa: Verificando salud del sistema...");
 
-          // --- PASO 1 y 2: VERIFICACIÓN NORMAL ---
-          const dbInstance = await initDB();
+      // Asumimos que la BD está sana a menos que la prueba profunda (si se ejecuta) diga lo contrario
+      let dbIsHealthy = true;
 
-          const healthCheckPromise = new Promise((resolve, reject) => {
-            try {
-              // ... (tu código existente del healthCheckPromise)
-              const tx = dbInstance.transaction([STORES.MENU], 'readonly');
-              const store = tx.objectStore(STORES.MENU);
-              const request = store.count();
-              request.onsuccess = () => resolve(true);
-              request.onerror = () => reject(new Error("PING_FAILED"));
-              setTimeout(() => reject(new Error("PING_TIMEOUT")), 2000);
-            } catch (e) {
-              reject(e);
+      try {
+        const lastCheck = parseInt(sessionStorage.getItem('lanzo_last_health_check') || '0', 10);
+        const needsDeepCheck = (Date.now() - lastCheck) >= 60000;
+
+        if (!needsDeepCheck) {
+          Logger.log("⏳ Health check profundo omitido por cooldown (menos de 60s).");
+        } else {
+          // 1. Validar cuota de disco
+          if (navigator.storage && navigator.storage.estimate) {
+            const { quota, usage } = await navigator.storage.estimate();
+            const usagePercentage = (usage / quota) * 100;
+            if (usagePercentage > 95) {
+              throw new Error(`QUOTA_CRITICAL: Almacenamiento al ${usagePercentage.toFixed(2)}%`);
             }
+          }
+
+          // 2. Validar capacidad real de ESCRITURA con control de transacciones
+          await new Promise((resolve, reject) => {
+            let isSettled = false;
+            let timeoutId;
+
+            // Iniciamos la transacción instanciándola para poder abortarla
+            const tx = db.transaction('rw', db[STORES.SYNC_CACHE], async () => {
+              await db[STORES.SYNC_CACHE].put({ key: 'health_ping', timestamp: Date.now() });
+            });
+
+            timeoutId = setTimeout(() => {
+              if (isSettled) return;
+              isSettled = true;
+
+              // ABORTO EXPLÍCITO: Matamos la transacción a nivel Dexie/IndexedDB
+              // Esto evita la promesa colgada en el motor subyacente
+              if (tx && typeof tx.abort === 'function') {
+                try { tx.abort(); } catch (e) { /* Ignorar errores de aborto */ }
+              }
+              reject(new Error("PING_TIMEOUT_WRITE"));
+            }, 2000);
+
+            tx.then(() => {
+              if (isSettled) return;
+              isSettled = true;
+              clearTimeout(timeoutId);
+              resolve(true);
+            }).catch(error => {
+              if (isSettled) return;
+              isSettled = true;
+              clearTimeout(timeoutId);
+              reject(new Error(`TX_WRITE_ERROR: ${error.name} - ${error.message}`));
+            });
           });
 
-          await healthCheckPromise;
-          Logger.log("✅ Conexión a BD verificada y activa.");
-          dbIsHealthy = true; // Marcar como saludable
-
-        } catch (error) {
-          Logger.warn("⚠️ Conexión inestable detectada:", error.message);
-          Logger.log("🔄 Ejecutando reinicio forzado de BD...");
-
-          // --- PASO 3: REINICIO FORZADO ---
-          try {
-            const { closeDB, initDB } = await import('./services/database');
-            closeDB();
-            await new Promise(r => setTimeout(r, 500));
-            await initDB();
-            Logger.log("✅ BD recuperada exitosamente tras reinicio.");
-            dbIsHealthy = true; // Recuperación exitosa
-          } catch (retryError) {
-            Logger.error("💥 Error crítico recuperando BD:", retryError);
-            dbIsHealthy = false; // Falló definitivamente
-
-            // Opcional: Forzar recarga si la BD está muerta
-            // window.location.reload(); 
-          }
+          Logger.log("✅ Conexión a BD verificada y con capacidad de escritura.");
+          sessionStorage.setItem('lanzo_last_health_check', Date.now().toString());
         }
 
-        // --- RESTAURACIÓN DE SERVICIOS ---
-        // SOLO ejecutar si la BD está saludable
-        if (appStatus === 'ready' && dbIsHealthy) { // <--- AQUÍ ESTÁ EL CAMBIO CLAVE
-          const { licenseDetails, realtimeSubscription } = useAppStore.getState();
+      } catch (error) {
+        Logger.error("⚠️ FATAL: Base de datos colapsó o está corrupta.", error.message);
+        dbIsHealthy = false;
 
-          if (licenseDetails?.license_key && !realtimeSubscription) {
-            stopRealtimeSecurity();
-            startRealtimeSecurity();
+        sessionStorage.removeItem('lanzo_last_health_check');
+
+        Logger.error("Aislamiento del error: Forzando recarga de entorno.");
+        window.location.reload(true);
+        // Eliminado el return falaz. El control pasa al finally, 
+        // pero condicionado por dbIsHealthy.
+
+      } finally {
+        // Ejecución estricta: Solo actuamos y liberamos candados si sobrevivimos al chequeo
+        if (dbIsHealthy) {
+          // Lectura dinámica: Evitamos el stale closure leyendo el estado en este milisegundo exacto
+          const currentState = useAppStore.getState();
+
+          if (currentState.appStatus === 'ready') {
+            if (currentState.licenseDetails?.license_key && !currentState.realtimeSubscription) {
+              stopRealtimeSecurity();
+              startRealtimeSecurity();
+            }
+
+            const lastActive = sessionStorage.getItem('lanzo_last_active');
+            const now = Date.now();
+            if (!lastActive || (now - parseInt(lastActive)) > 300000) {
+              currentState.verifySessionIntegrity().catch(Logger.warn);
+            }
           }
 
-          const lastActive = sessionStorage.getItem('lanzo_last_active');
-          const now = Date.now();
-          if (!lastActive || (now - parseInt(lastActive)) > 300000) {
-            // Solo llamamos a esto si dbIsHealthy es true
-            useAppStore.getState().verifySessionIntegrity().catch(Logger.warn);
-          }
+          // El candado se libera ÚNICAMENTE si no estamos en proceso de recarga forzada
+          isReconnectingRef.current = false;
         }
-
-        isReconnecting = false;
-      } else {
-        sessionStorage.setItem('lanzo_last_active', Date.now().toString());
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    // Manejo de BFCache (Back-Forward Cache) para móviles
     const handlePageShow = (event) => {
-      if (event.persisted) {
+      if (event.persisted && document.visibilityState === 'visible') {
         Logger.log("🔄 Restaurado desde caché, verificando...");
         handleVisibilityChange();
       }
     };
+
     window.addEventListener('pageshow', handlePageShow);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener('pageshow', handlePageShow);
     };
-  }, [appStatus, startRealtimeSecurity, stopRealtimeSecurity]);
+  }, [startRealtimeSecurity, stopRealtimeSecurity]);
 
   if (isDuplicate) {
     return (
@@ -271,6 +298,8 @@ function App() {
         <>
           <ReconnectionBanner />
           <ServerStatusBanner />
+          <UpdatePrompt />
+          <InstallPrompt />
           <Suspense fallback={<Layout><PageLoader /></Layout>}>
             {pendingTermsUpdate && (
               <TermsAndConditionsModal
