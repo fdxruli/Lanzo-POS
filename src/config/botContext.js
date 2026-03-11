@@ -13,10 +13,11 @@ const getPageKey = (pathname) => {
 // 1. Definir la Alerta Global que falta
 export const GLOBAL_ALERT = {
   active: true,
-  id: 'outage_mitigacion_05',
-  message: '❌ FALLA DE SISTEMA: El Punto de Venta se encuentra temporalmente inhabilitado por un error de actualización. Estaremos fuera de servicio normal por 48 hrs. Por favor, ve a configuración para revisar las opciones de mantenimiento.',
-  actionLink: '/configuracion?tab=maintenance'
+  id: 'update_soporte_06',
+  message: 'Mantenimiento finalizado. Se aplicaron correcciones en los módulos de venta. Si experimentas cualquier anomalía en tu corte de caja o cobros, levanta un ticket con soporte técnico.',
+  actionLink: '/configuracion?tab=contacto'
 };
+
 
 
 // 2. Función para obtener acciones rápidas (solicitada por AssistantBot)
