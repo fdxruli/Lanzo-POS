@@ -1,130 +1,135 @@
-import { useEffect, useState } from 'react';
-
-const DISMISS_KEY = 'lanzo_install_dismissed_timestamp';
-const GRACE_PERIOD_MS = 15 * 24 * 60 * 60 * 1000; // 15 días de silencio
+import { useEffect } from 'react';
+import { useAppStore } from '../../store/useAppStore';
 
 const ShareIcon = () => (
   <span style={{ display: 'inline-block', verticalAlign: 'middle', margin: '0 4px' }}>
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary-color)' }}>
-      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
-      <polyline points="16 6 12 2 8 6"></polyline>
-      <line x1="12" y1="2" x2="12" y2="15"></line>
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ color: 'var(--primary-color)' }}
+    >
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <polyline points="16 6 12 2 8 6" />
+      <line x1="12" y1="2" x2="12" y2="15" />
     </svg>
   </span>
 );
 
-// Detección estricta: Cubre iPhones clásicos e iPads modernos (iPadOS 13+)
 const checkIsIOS = () => {
+  if (typeof window === 'undefined') return false;
+
   const userAgent = window.navigator.userAgent.toLowerCase();
-  const isIPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  const isIPadOS = window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1;
   return /iphone|ipad|ipod/.test(userAgent) || isIPadOS;
 };
 
-const checkIsStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+const checkIsStandalone = () => {
+  if (typeof window === 'undefined') return false;
+
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+};
 
 const InstallPrompt = () => {
-  const isIOS = checkIsIOS();
-  const isStandalone = checkIsStandalone();
-
-  const [deferredPrompt, setDeferredPrompt] = useState(window.deferredPwaPrompt);
-  const [showPrompt, setShowPrompt] = useState(false);
+  const isIOS = useAppStore((state) => state.isIOS);
+  const showInstallModal = useAppStore((state) => state.showInstallModal);
+  const isInstalling = useAppStore((state) => state.isInstalling);
+  const setInstallContext = useAppStore((state) => state.setInstallContext);
+  const setDeferredPrompt = useAppStore((state) => state.setDeferredPrompt);
+  const closeInstallModal = useAppStore((state) => state.closeInstallModal);
+  const requestInstall = useAppStore((state) => state.requestInstall);
+  const markInstalled = useAppStore((state) => state.markInstalled);
 
   useEffect(() => {
-    if (isStandalone) return;
+    if (typeof window === 'undefined') return undefined;
 
-    const lastDismissed = localStorage.getItem(DISMISS_KEY);
-    if (lastDismissed && (Date.now() - parseInt(lastDismissed, 10)) < GRACE_PERIOD_MS) {
-      return; 
-    }
-
-    const handlePromptReady = () => {
-      setDeferredPrompt(window.deferredPwaPrompt);
-      setShowPrompt(true);
+    const syncInstallContext = () => {
+      setInstallContext({
+        isIOS: checkIsIOS(),
+        isStandalone: checkIsStandalone()
+      });
     };
 
-    if (window.deferredPwaPrompt) {
-      handlePromptReady();
-    } else if (isIOS && !isStandalone) {
-      setShowPrompt(true);
-    }
+    const syncPromptFromWindow = () => {
+      setDeferredPrompt(window.deferredPwaPrompt || null);
+    };
+
+    const handlePromptReady = () => {
+      syncInstallContext();
+      syncPromptFromWindow();
+    };
+
+    const handleInstalled = () => {
+      window.deferredPwaPrompt = null;
+      markInstalled();
+    };
+
+    syncInstallContext();
+    syncPromptFromWindow();
 
     window.addEventListener('lanzo-pwa-ready', handlePromptReady);
-    window.addEventListener('appinstalled', () => setShowPrompt(false));
+    window.addEventListener('appinstalled', handleInstalled);
 
     return () => {
       window.removeEventListener('lanzo-pwa-ready', handlePromptReady);
-      window.removeEventListener('appinstalled', () => setShowPrompt(false));
+      window.removeEventListener('appinstalled', handleInstalled);
     };
-  }, [isStandalone, isIOS]);
+  }, [markInstalled, setDeferredPrompt, setInstallContext]);
 
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
+  if (!showInstallModal) return null;
 
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-
-    if (outcome === 'dismissed') {
-      localStorage.setItem(DISMISS_KEY, Date.now().toString());
-    }
-
-    window.deferredPwaPrompt = null;
-    setDeferredPrompt(null);
-    setShowPrompt(false);
-  };
-
-  const handleDismissClick = () => {
-    localStorage.setItem(DISMISS_KEY, Date.now().toString());
-    setShowPrompt(false);
-  };
-
-  if (!showPrompt) return null;
-
-  // Estilos adaptados al index.css
   const overlayStyle = {
-    position: 'fixed', 
-    bottom: '20px', 
-    left: '50%', 
+    position: 'fixed',
+    bottom: '20px',
+    left: '50%',
     transform: 'translateX(-50%)',
-    width: '90%', 
-    maxWidth: '400px', 
-    backgroundColor: 'var(--card-background-color)', 
+    width: '90%',
+    maxWidth: '400px',
+    backgroundColor: 'var(--card-background-color)',
     borderRadius: 'var(--border-radius)',
-    padding: 'var(--spacing-lg)', 
-    boxShadow: 'var(--box-shadow-lg)', 
+    padding: 'var(--spacing-lg)',
+    boxShadow: 'var(--box-shadow-lg)',
     zIndex: 'var(--z-toast)',
-    border: '1px solid var(--border-color)', 
-    animation: 'slideUp 0.5s ease-out',
+    border: '1px solid var(--border-color)',
+    animation: 'slideUp 0.5s ease-out'
   };
 
-  const titleStyle = { 
-    fontSize: '1.1rem', 
-    fontWeight: '700', 
-    marginBottom: 'var(--spacing-xs)', 
-    color: 'var(--text-dark)' 
+  const titleStyle = {
+    fontSize: '1.1rem',
+    fontWeight: '700',
+    marginBottom: 'var(--spacing-xs)',
+    color: 'var(--text-dark)'
   };
-  
-  const textStyle = { 
-    fontSize: '0.95rem', 
-    color: 'var(--text-color)', 
-    marginBottom: 'var(--spacing-md)', 
-    lineHeight: '1.5' 
+
+  const textStyle = {
+    fontSize: '0.95rem',
+    color: 'var(--text-color)',
+    marginBottom: 'var(--spacing-md)',
+    lineHeight: '1.5'
   };
 
   const closeBtnStyle = {
-    position: 'absolute', 
-    top: '12px', 
-    right: '15px', 
+    position: 'absolute',
+    top: '12px',
+    right: '15px',
     background: 'none',
-    border: 'none', 
-    fontSize: '18px', 
-    color: 'var(--text-light)', 
+    border: 'none',
+    fontSize: '18px',
+    color: 'var(--text-light)',
     cursor: 'pointer',
     padding: '4px'
   };
 
   return (
     <div style={overlayStyle}>
-      <button style={closeBtnStyle} onClick={handleDismissClick}>✕</button>
+      <button style={closeBtnStyle} onClick={closeInstallModal} aria-label="Cerrar aviso de instalacion">
+        x
+      </button>
 
       {isIOS ? (
         <div>
@@ -132,26 +137,31 @@ const InstallPrompt = () => {
           <div style={textStyle}>
             Para instalar esta app en tu dispositivo:
             <ol style={{ paddingLeft: 'var(--spacing-lg)', marginTop: 'var(--spacing-xs)' }}>
-              <li>Toca el botón <ShareIcon /> compartir en la barra de navegación.</li>
-              <li>Desliza y selecciona <strong style={{color: 'var(--text-dark)'}}>Agregar al inicio</strong>.</li>
+              <li>
+                Toca el boton <ShareIcon /> compartir en la barra de navegacion.
+              </li>
+              <li>
+                Desliza y selecciona <strong style={{ color: 'var(--text-dark)' }}>Agregar al inicio</strong>.
+              </li>
             </ol>
           </div>
           <div style={{ textAlign: 'center', color: 'var(--text-light)', fontSize: '0.8rem' }}>
-            (El menú suele estar en la parte inferior)
+            (El menu suele estar en la parte inferior)
           </div>
         </div>
       ) : (
         <div>
-          <div style={titleStyle}>Instalar Aplicación</div>
+          <div style={titleStyle}>Instalar aplicacion</div>
           <div style={textStyle}>
-            Instala nuestra app para una mejor experiencia y operación rápida.
+            Instala nuestra app para una mejor experiencia y operacion mas rapida.
           </div>
-          <button 
-            className="btn-primary" 
-            style={{ width: '100%', padding: '12px' }} 
-            onClick={handleInstallClick}
+          <button
+            className="btn-primary"
+            style={{ width: '100%', padding: '12px' }}
+            onClick={requestInstall}
+            disabled={isInstalling}
           >
-            Instalar ahora
+            {isInstalling ? 'Instalando...' : 'Instalar ahora'}
           </button>
         </div>
       )}

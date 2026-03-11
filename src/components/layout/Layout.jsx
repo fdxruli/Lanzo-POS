@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
@@ -12,7 +12,6 @@ import { Toaster } from 'react-hot-toast';
 import { useAppStore } from '../../store/useAppStore';
 import './Layout.css';
 import Logger from '../../services/Logger';
-import InstallPrompt from '../common/InstallPrompt';
 import { GLOBAL_ALERT } from '../../config/botContext';
 import { lazy, Suspense } from 'react';
 const AssistantBot = lazy(() => import('../common/AssistantBot'));
@@ -104,7 +103,6 @@ function Layout() {
       <MessageModal />
       <DataSafetyModal />
       <BackupReminder />
-      <InstallPrompt />
 
       {(showAssistantBot || (GLOBAL_ALERT && GLOBAL_ALERT.active && !localStorage.getItem(`lanzo_alert_${GLOBAL_ALERT.id}`))) && (
         <Suspense fallback={null}>
