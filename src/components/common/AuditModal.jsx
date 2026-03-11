@@ -1,10 +1,11 @@
 // src/components/common/AuditModal.jsx
 import React, { useState, useEffect } from 'react';
+import { Money } from '../../utils/moneyMath'; // <-- IMPORTACIÓN OBLIGATORIA
 import '../customers/AbonoModal.css';
 
 export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcularTeorico }) {
     const [montoFisico, setMontoFisico] = useState('');
-    const [teorico, setTeorico] = useState(0);
+    const [teorico, setTeorico] = useState("0"); // Se inicializa como string puro
     const [comentarios, setComentarios] = useState('');
     const [step, setStep] = useState(1); // 1: Conteo, 2: Resultado
 
@@ -17,15 +18,21 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcul
         }
     }, [show, calcularTeorico]);
 
-    const diferencia = (parseFloat(montoFisico) || 0) - teorico;
-    const hayDiferencia = Math.abs(diferencia) > 0.5; // Tolerancia de 50 centavos
+    // --- CÁLCULO ESTRICTO CON BIG.JS ---
+    const fisicoSafe = Money.init(montoFisico || 0);
+    const teoricoSafe = Money.init(teorico || 0);
+
+    const diferenciaSafe = Money.subtract(fisicoSafe, teoricoSafe);
+    // Tolerancia de 50 centavos validada sin Math.abs() nativo
+    const hayDiferencia = diferenciaSafe.abs().gt(0.5);
 
     const handleNext = () => {
         setStep(2);
     };
 
     const handleSubmit = () => {
-        onConfirmAudit(parseFloat(montoFisico), comentarios);
+        // Enviar la cadena exacta al controlador, NUNCA un float
+        onConfirmAudit(Money.toExactString(fisicoSafe), comentarios);
     };
 
     if (!show) return null;
@@ -47,6 +54,8 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcul
                                 value={montoFisico}
                                 onChange={(e) => setMontoFisico(e.target.value)}
                                 autoFocus
+                                step="0.01" // Restricción en UI
+                                min="0"
                             />
                         </div>
                         <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
@@ -54,7 +63,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcul
                             <button
                                 className="btn btn-save"
                                 onClick={handleNext}
-                                disabled={!montoFisico}
+                                disabled={!montoFisico || fisicoSafe.lt(0)} // Bloquear negativos
                             >
                                 Verificar Cuadre
                             </button>
@@ -64,10 +73,14 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcul
                     <>
                         <div style={{ textAlign: 'center', marginBottom: '20px' }}>
                             <p style={{ marginBottom: '5px' }}>El sistema espera:</p>
-                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>${teorico.toFixed(2)}</div>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
+                                ${Money.toNumber(teoricoSafe).toFixed(2)}
+                            </div>
 
                             <p style={{ marginBottom: '5px', marginTop: '15px' }}>Tú contaste:</p>
-                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>${parseFloat(montoFisico).toFixed(2)}</div>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>
+                                ${Money.toNumber(fisicoSafe).toFixed(2)}
+                            </div>
 
                             <div style={{
                                 marginTop: '20px',
@@ -78,7 +91,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcul
                                 fontWeight: 'bold'
                             }}>
                                 {hayDiferencia
-                                    ? `⚠️ Diferencia: ${diferencia > 0 ? '+' : ''}${diferencia.toFixed(2)}`
+                                    ? `⚠️ Diferencia: ${diferenciaSafe.gt(0) ? '+' : ''}${Money.toNumber(diferenciaSafe).toFixed(2)}`
                                     : '✅ ¡Caja Cuadrada Perfectamente!'}
                             </div>
                         </div>
@@ -100,7 +113,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcul
                             <button
                                 className="btn btn-process"
                                 onClick={handleSubmit}
-                                disabled={hayDiferencia && comentarios.length < 5} // Obligar comentario si falla
+                                disabled={hayDiferencia && comentarios.trim().length < 5}
                             >
                                 Confirmar y Cerrar Caja
                             </button>

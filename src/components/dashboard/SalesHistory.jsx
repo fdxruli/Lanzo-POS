@@ -6,19 +6,19 @@ export default function SalesHistory({ sales, onDeleteSale }) {
     // Quitamos el style inline fijo y usamos la clase para controlar la altura
     <div className="sales-history-container">
       <h3 className="subtitle">Historial de Ventas ({sales.length})</h3>
-      
+
       {sales.length === 0 ? (
         <div className="empty-message">No hay ventas registradas.</div>
       ) : (
         // Agregamos la clase 'sales-history-list' aquí
         <div className="sales-history-list">
           {sales.map((sale) => (
-            <div 
+            <div
               key={sale.timestamp}
               className="sale-card-wrapper" // Clase auxiliar para el margen
             >
               <div className="sale-item">
-                
+
                 {/* Cabecera de la venta */}
                 <div className="sale-header">
                   <div className="sale-date">
@@ -30,16 +30,32 @@ export default function SalesHistory({ sales, onDeleteSale }) {
                 <div className="sale-item-info">
                   {/* Lista de Productos */}
                   <ul>
-                    {sale.items.map(item => (
-                      <li key={item.id}>
-                        {item.quantity}x {item.name}
-                        {item.requiresPrescription && (
-                          <span className="prescription-tag">
-                            (Controlado)
-                          </span>
-                        )}
-                      </li>
-                    ))}
+                    {sale.items.map(item => {
+                      const isCostMissing = item.cost === null || item.cost === undefined;
+
+                      return (
+                        <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>{item.quantity}x {item.name}</span>
+
+                          {/* Etiqueta de Controlado */}
+                          {item.requiresPrescription && (
+                            <span className="prescription-tag">
+                              (Controlado)
+                            </span>
+                          )}
+
+                          {/* Etiqueta Crítica de Auditoría */}
+                          {isCostMissing && (
+                            <span
+                              style={{ background: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}
+                              title="Este producto fue vendido sin un costo de compra registrado. La ganancia es irreal."
+                            >
+                              ⚠️ Sin Costo
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
 
                   {/* Datos de Receta Médica */}

@@ -1,11 +1,10 @@
-// src/components/common/AbonoModal.jsx
+// src/components/customers/AbonoModal.jsx
 import React, { useState, useEffect } from 'react';
 import './AbonoModal.css';
 
 export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) {
   const [monto, setMonto] = useState('');
   const [error, setError] = useState('');
-
   const [sendReceipt, setSendReceipt] = useState(true);
 
   const deudaActual = customer?.debt || 0;
@@ -44,6 +43,7 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
       return;
     }
 
+    // El Modal solo pasa la información al componente PADRE.
     onConfirmAbono(customer, montoAbono, sendReceipt);
   };
 

@@ -1,14 +1,21 @@
-import React from 'react';
+﻿import React from 'react';
 
-export default function WasteHistory({ logs }) {
+export default function WasteHistory({
+    logs,
+    onNext = () => {},
+    onPrev = () => {},
+    hasMoreWaste = false,
+    currentWastePageIndex = 0,
+    isWasteLoading = false
+}) {
     const totalLoss = logs.reduce((sum, log) => sum + (log.lossAmount || 0), 0);
 
     return (
         <div className="sales-history-container" style={{ marginTop: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                <h3 className="subtitle" style={{ marginBottom: 0, color: 'var(--error-color)' }}>📉 Historial de Mermas y Desperdicios</h3>
+                <h3 className="subtitle" style={{ marginBottom: 0, color: 'var(--error-color)' }}>Historial de Mermas y Desperdicios</h3>
                 <div style={{ textAlign: 'right' }}>
-                    <small>Pérdida Total Registrada</small>
+                    <small>Perdida Total Registrada</small>
                     <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--error-color)' }}>
                         -${totalLoss.toFixed(2)}
                     </div>
@@ -16,7 +23,7 @@ export default function WasteHistory({ logs }) {
             </div>
 
             {logs.length === 0 ? (
-                <div className="empty-message">No hay registros de merma. ¡Bien hecho!</div>
+                <div className="empty-message">No hay registros de merma. Bien hecho.</div>
             ) : (
                 <div className="sales-history-list">
                     {logs.map((log) => (
@@ -40,7 +47,7 @@ export default function WasteHistory({ logs }) {
                                 </div>
                                 {log.notes && (
                                     <div style={{ fontSize: '0.85rem', fontStyle: 'italic', marginTop: '4px', color: '#888' }}>
-                                        📝 {log.notes}
+                                        Nota: {log.notes}
                                     </div>
                                 )}
                             </div>
@@ -48,6 +55,30 @@ export default function WasteHistory({ logs }) {
                     ))}
                 </div>
             )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', gap: '8px' }}>
+                <button
+                    className="delete-order-btn"
+                    style={{ minWidth: '120px' }}
+                    onClick={onPrev}
+                    disabled={isWasteLoading || currentWastePageIndex === 0}
+                >
+                    {isWasteLoading ? 'Cargando...' : 'Pagina anterior'}
+                </button>
+
+                <span style={{ fontSize: '0.9rem', color: '#666' }}>
+                    Pagina {currentWastePageIndex + 1}
+                </span>
+
+                <button
+                    className="delete-order-btn"
+                    style={{ minWidth: '120px' }}
+                    onClick={onNext}
+                    disabled={isWasteLoading || !hasMoreWaste}
+                >
+                    {isWasteLoading ? 'Cargando...' : 'Pagina siguiente'}
+                </button>
+            </div>
         </div>
     );
 }

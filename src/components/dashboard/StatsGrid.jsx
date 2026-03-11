@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  TrendingUp, 
-  ShoppingBag, 
-  CreditCard, 
-  DollarSign, 
-  Package, 
+import {
+  TrendingUp,
+  ShoppingBag,
+  CreditCard,
+  DollarSign,
+  Package,
   Activity,
   Ticket
 } from 'lucide-react';
@@ -19,29 +19,36 @@ export default function StatsGrid({ stats }) {
   const metrics = useMemo(() => {
     const isToday = timeRange === 'today';
     let revenue = 0, profit = 0, orders = 0, items = 0;
+    let hasMissingCosts = false; // Flag local para la vista actual
 
     if (isToday) {
-      // Lógica para "HOY" (Ventas desde las 00:00 hrs)
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
 
       const relevantSales = sales.filter(s => new Date(s.timestamp) >= startOfDay && s.fulfillmentStatus !== 'cancelled');
-      
+
       relevantSales.forEach(s => {
         revenue += s.total;
         orders += 1;
         s.items.forEach(item => {
           items += item.quantity;
-          const itemCost = item.cost || 0;
-          profit += (item.price - itemCost) * item.quantity;
+
+          // REGLA ESTRICTA: Detectar costo nulo/indefinido
+          let rawCost = item.cost;
+          if (rawCost === null || rawCost === undefined) {
+            hasMissingCosts = true;
+            rawCost = 0; // Fallback para no romper la matemática
+          }
+
+          profit += (item.price - rawCost) * item.quantity;
         });
       });
     } else {
-      // Lógica para "TOTAL GLOBAL" (Acumulado de la base de datos)
       revenue = stats.totalRevenue;
       profit = stats.totalNetProfit;
       orders = stats.totalOrders;
       items = stats.totalItemsSold;
+      hasMissingCosts = stats.hasMissingCosts || false; // Leemos el flag del store
     }
 
     const avgTicket = orders > 0 ? revenue / orders : 0;
@@ -49,7 +56,8 @@ export default function StatsGrid({ stats }) {
 
     return {
       revenue, profit, orders, items, avgTicket, marginPercent,
-      inventory: stats.inventoryValue
+      inventory: stats.inventoryValue,
+      hasMissingCosts // Exportamos el flag a la UI
     };
   }, [stats, sales, timeRange]);
 
@@ -57,28 +65,28 @@ export default function StatsGrid({ stats }) {
 
   return (
     <div className="stats-container-wrapper">
-      
+
       {/* --- HEADER MEJORADO --- */}
       <div className="stats-header-controls">
         <div className="stats-header-title">
           <h3>Resumen de Negocio</h3>
           {/* SUBTÍTULO DINÁMICO QUE EXPLICA TODO */}
           <p className="stats-subtitle">
-            {timeRange === 'today' 
-              ? '📊 Mostrando solo las ventas de HOY.' 
+            {timeRange === 'today'
+              ? '📊 Mostrando solo las ventas de HOY.'
               : '🌎 Mostrando el acumulado desde que iniciaste.'}
           </p>
         </div>
-        
+
         <div className="time-filter-toggle">
-          <button 
+          <button
             className={`filter-pill ${timeRange === 'today' ? 'active' : ''}`}
             onClick={() => setTimeRange('today')}
             title="Ver solo lo de hoy"
           >
             📅 Hoy
           </button>
-          <button 
+          <button
             className={`filter-pill ${timeRange === 'all' ? 'active' : ''}`}
             onClick={() => setTimeRange('all')}
             title="Ver acumulado histórico"
@@ -89,7 +97,7 @@ export default function StatsGrid({ stats }) {
       </div>
 
       <div className="stats-grid-modern">
-        
+
         {/* TARJETA 1: INGRESOS */}
         <div className="stat-card-modern revenue-card">
           <div className="card-icon-wrapper green">
@@ -107,18 +115,26 @@ export default function StatsGrid({ stats }) {
         </div>
 
         {/* TARJETA 2: UTILIDAD */}
-        <div className="stat-card-modern profit-card">
+        <div className={`stat-card-modern profit-card ${metrics.hasMissingCosts ? 'border-red-500' : ''}`}>
           <div className="card-icon-wrapper purple">
             <TrendingUp size={24} />
           </div>
           <div className="card-content">
             <span className="card-label">Ganancia Estimada</span>
             <h2 className="card-value-main">{formatCurrency(metrics.profit)}</h2>
-            <div className="card-mini-stats">
-              <span className="mini-stat-pill">
-                Margen: <strong>{metrics.marginPercent.toFixed(1)}%</strong>
-              </span>
-            </div>
+
+            {/* RENDER CONDICIONAL DE ANOMALÍA */}
+            {metrics.hasMissingCosts ? (
+              <div className="text-red-500 text-xs font-bold mt-1 flex items-center gap-1">
+                ⚠️ Margen inexacto (Faltan costos en inventario)
+              </div>
+            ) : (
+              <div className="card-mini-stats">
+                <span className="mini-stat-pill">
+                  Margen: <strong>{metrics.marginPercent.toFixed(1)}%</strong>
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -155,20 +171,31 @@ export default function StatsGrid({ stats }) {
         </div>
 
         {/* TARJETA 6: INVENTARIO (Fijo) */}
-        <div className="stat-card-modern inventory-card">
+        <div className={`stat-card-modern inventory-card ${metrics.inventory === null ? 'border-red-500 bg-red-50' : ''}`}>
           <div className="inventory-content">
             <div>
               <span className="card-label">Dinero en Mercancía</span>
-              <h3 className="inventory-value">{formatCurrency(metrics.inventory)}</h3>
+              {metrics.inventory === null ? (
+                <div className="flex flex-col gap-1 mt-1">
+                  <h3 className="inventory-value text-red-600 text-lg font-bold">No disponible</h3>
+                  <span className="text-red-500 text-xs font-semibold">⚠️ Error de cálculo en sistema</span>
+                </div>
+              ) : (
+                <h3 className="inventory-value">{formatCurrency(metrics.inventory)}</h3>
+              )}
             </div>
             <div className="inventory-icon">
-              <Package size={32} strokeWidth={1.5} />
+              <Package size={32} strokeWidth={1.5} className={metrics.inventory === null ? "text-red-400" : ""} />
             </div>
           </div>
-          <div className="inventory-bar-container">
-            <div className="inventory-bar" style={{width: '100%'}}></div>
-          </div>
-          <small className="text-muted-light">Valor actual de tu stock</small>
+          {metrics.inventory !== null && (
+            <div className="inventory-bar-container">
+              <div className="inventory-bar" style={{ width: '100%' }}></div>
+            </div>
+          )}
+          <small className={metrics.inventory === null ? "text-red-400" : "text-muted-light"}>
+            {metrics.inventory === null ? "Cálculo abortado para prevenir daños." : "Valor actual de tu stock"}
+          </small>
         </div>
 
       </div>

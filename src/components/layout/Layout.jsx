@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
@@ -13,7 +13,9 @@ import { useAppStore } from '../../store/useAppStore';
 import './Layout.css';
 import Logger from '../../services/Logger';
 import InstallPrompt from '../common/InstallPrompt';
-import AssistantBot from '../common/AssistantBot';
+import { GLOBAL_ALERT } from '../../config/botContext';
+import { lazy, Suspense } from 'react';
+const AssistantBot = lazy(() => import('../common/AssistantBot'));
 
 function Layout() {
   const loadStats = useStatsStore(state => state.loadStats);
@@ -24,6 +26,21 @@ function Layout() {
   const initializeApp = useAppStore(state => state.initializeApp);
 
   const showAssistantBot = useAppStore(state => state.showAssistantBot);
+
+  const location = useLocation();
+
+  useEffect(() => {
+    // Restablece el scroll del documento principal
+    window.scrollTo(0, 0);
+
+    // Si tu CSS hace que el scroll ocurra dentro de un contenedor específico 
+    // en lugar del body, también restablecemos el scroll de ese contenedor:
+    const contentWrapper = document.querySelector('.content-wrapper');
+    const pageContainer = document.querySelector('.page-container');
+
+    if (contentWrapper) contentWrapper.scrollTo(0, 0);
+    if (pageContainer) pageContainer.scrollTo(0, 0);
+  }, [location.pathname]);
 
   useEffect(() => {
     Logger.log("🚀 Inicializando Stores modulares...");
@@ -88,7 +105,12 @@ function Layout() {
       <DataSafetyModal />
       <BackupReminder />
       <InstallPrompt />
-      <AssistantBot />
+
+      {(showAssistantBot || (GLOBAL_ALERT && GLOBAL_ALERT.active && !localStorage.getItem(`lanzo_alert_${GLOBAL_ALERT.id}`))) && (
+        <Suspense fallback={null}>
+          <AssistantBot />
+        </Suspense>
+      )}
 
     </div>
   );

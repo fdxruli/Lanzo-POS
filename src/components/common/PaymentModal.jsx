@@ -4,6 +4,7 @@ import { loadData, saveData, STORES } from '../../services/database';
 import QuickAddCustomerModal from './QuickAddCustomerModal';
 import './PaymentModal.css';
 import Logger from '../../services/Logger';
+import { Money } from '../../utils/moneyMath';
 
 const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000];
 
@@ -34,7 +35,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       fetchCustomers();
       // Sugerir el monto total si es en efectivo
       if (paymentMethod === 'efectivo') {
-        setAmountPaid(total.toFixed(2));
+        setAmountPaid(Money.toNumber(Money.init(total)).toFixed(2).toString());
       } else {
         setAmountPaid('');
       }
@@ -52,43 +53,86 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     }
   }, [show, total, paymentMethod]);
 
-  // Lógica de cálculo
-  const paid = parseFloat(amountPaid) || 0;
+  const safeTotal = Money.init(total);
+
+  let safePaid;
+  try {
+    const cleanInput = amountPaid.toString().replace(',', '.');
+    safePaid = Money.init(cleanInput || "0");
+  } catch (e) {
+    safePaid = Money.init(0);
+  }
 
   // Lógica condicional
   const isEfectivo = paymentMethod === 'efectivo';
   const isFiado = paymentMethod === 'fiado';
 
-  // Cálculo de Cambio (Efectivo)
-  const change = isEfectivo ? paid - total : 0;
-
-  // Cálculo de Saldo (Fiado)
-  const saldoPendiente = isFiado ? total - paid : 0;
+  // 3. Cálculos estrictos usando la API de Money (devuelven instancias Big)
+  const change = isEfectivo ? Money.subtract(safePaid, safeTotal) : Money.init("0");
+  const saldoPendiente = isFiado ? Money.subtract(safeTotal, safePaid) : Money.init("0");
 
   const currentCustomer = customers.find(c => c.id === selectedCustomerId);
-  const limit = currentCustomer?.creditLimit || 0;
-  const currentDebt = currentCustomer?.debt || 0;
-  const projectedDebt = currentDebt + saldoPendiente;
-  const isOverLimit = isFiado && currentCustomer && (limit === 0 || projectedDebt > limit);
-  const limitMessage = limit === 0
-    ? "Este clciente no tiene credito autorizado."
-    : `Excede el limite de credito ($${limit}). Deuda final $${projectedDebt.toFixed(2)}.`;
 
-  // Validación para confirmar
+  const limit = Money.init(currentCustomer?.creditLimit || 0);
+  const currentDebt = Money.init(currentCustomer?.debt || 0);
+  const projectedDebt = Money.add(currentDebt, saldoPendiente);
+
+  // 4. Evaluaciones usando los comparadores seguros de Big.js (.eq, .gt, .gte, .lte)
+  const isOverLimit = isFiado && currentCustomer && (limit.eq(0) || projectedDebt.gt(limit));
+
+  const limitMessage = limit.eq(0)
+    ? "Este cliente no tiene crédito autorizado."
+    : `Excede el límite de crédito ($${Money.toNumber(limit)}). Deuda final $${Money.toNumber(projectedDebt)}.`;
+
   const canConfirm = isEfectivo
-    ? (paid >= total)
-    : (selectedCustomerId !== null && paid <= total && !isOverLimit);
+    ? safePaid.gte(safeTotal)
+    : (selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit);
+
+  // Handler para el input (Control Estricto de Strings)
+  const handleAmountChange = (e) => {
+    const val = e.target.value;
+    // Permite solo números y opcionalmente hasta dos decimales. Bloquea letras, 'e', o negativos.
+    if (val === '' || /^\d+(\.\d{0,2})?$/.test(val)) {
+      setAmountPaid(val);
+    }
+  };
 
   const handleAmountFocus = (e) => {
     e.target.select();
   };
 
   const handleDenominationClick = (amount) => {
-    setAmountPaid(amount.toString());
-    // Opcional: Si quieres que al dar clic se "sume" al monto actual (ej: dos de 50 = 100),
-    // cambia la línea anterior por esta lógica:
-    //const current = parseFloat(amountPaid) || 0;
-    //setAmountPaid((current + amount).toString());
+    const added = Money.init(amount);
+
+    // Si el input actual es exactamente igual al total (el auto-fill),
+    // asumimos que el cajero está reemplazando el pago sugerido con un billete real.
+    if (safePaid.eq(safeTotal)) {
+      setAmountPaid(Money.toExactString(added));
+    } else {
+      // De lo contrario, sumamos billetes (ej. clic en $50 y luego clic en $20 = $70)
+      const newTotal = Money.add(safePaid, added);
+      setAmountPaid(Money.toExactString(newTotal));
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!canConfirm || isSubmitting) return;
+    setIsSubmitting(true);
+
+    try {
+      await onConfirm({
+        // 5. OBLIGATORIO: Enviar los datos puros (strings exactos) para evitar corromper al padre
+        amountPaid: Money.toExactString(safePaid),
+        customerId: selectedCustomerId,
+        paymentMethod: paymentMethod,
+        saldoPendiente: Money.toExactString(saldoPendiente),
+        sendReceipt: sendReceipt
+      });
+    } catch (error) {
+      Logger.error("Error al procesar pago:", error);
+      setIsSubmitting(false);
+    }
   };
 
   const handleCustomerSearch = (e) => {
@@ -114,35 +158,6 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     setFilteredCustomers([]);
   };
 
-  // --- 3. NUEVO: Handler protegido contra doble clic ---
-  const handleSubmit = async (e) => { // Hacemos la función async
-    e.preventDefault();
-
-    // Si ya se está enviando o no es válido, detenemos aquí
-    if (!canConfirm || isSubmitting) return;
-
-    // Bloqueamos el botón inmediatamente
-    setIsSubmitting(true);
-
-    try {
-      // Esperamos a que la función del padre termine (o inicie el proceso)
-      await onConfirm({
-        amountPaid: paid,
-        customerId: selectedCustomerId,
-        paymentMethod: paymentMethod,
-        saldoPendiente: saldoPendiente,
-        sendReceipt: sendReceipt
-      });
-
-      // Nota: No desbloqueamos aquí con setIsSubmitting(false) porque
-      // si tiene éxito, el modal se desmontará/cerrará desde el padre.
-    } catch (error) {
-      Logger.error("Error al procesar pago:", error);
-      // Solo si falla y el modal sigue abierto, desbloqueamos para reintentar
-      setIsSubmitting(false);
-    }
-  };
-
   // ... (handlers handleQuickCustomerSaved y handlePaymentMethodChange sin cambios) ...
   const handleQuickCustomerSaved = (newCustomer) => {
     setCustomers(prev => [...prev, newCustomer]);
@@ -153,7 +168,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method);
     if (method === 'efectivo') {
-      setAmountPaid(total.toFixed(2));
+      setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString());
     } else {
       setAmountPaid('');
     }
@@ -171,7 +186,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
           <form onSubmit={handleSubmit}>
             <div className="payment-details">
               <p className="payment-label">Total a Pagar:</p>
-              <p id="payment-total" className="payment-total">${total.toFixed(2)}</p>
+              <p id="payment-total" className="payment-total">${Money.toNumber(safeTotal)}</p>
 
               {/* ... (Selector de método y Buscador de cliente sin cambios) ... */}
               <div className="form-group">
@@ -236,11 +251,10 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
               <input
                 className="payment-input"
                 id="payment-amount"
-                type="number"
-                step="0.01"
-                min="0"
+                type="text"           // NUNCA type="number"
+                inputMode="decimal"   // Lanza el teclado numérico con punto en móviles
                 value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
+                onChange={handleAmountChange}
                 onFocus={handleAmountFocus}
                 required={isEfectivo}
                 autoFocus={isEfectivo}
@@ -263,9 +277,9 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                     type="button"
                     className="btn-cash-option"
                     style={{ gridColumn: '1 / -1', borderColor: 'var(--success-color)', color: 'var(--success-color)' }}
-                    onClick={() => setAmountPaid(total.toFixed(2))}
+                    onClick={() => setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString())}
                   >
-                    Exacto (${total.toFixed(2)})
+                    Exacto (${Money.toNumber(safeTotal).toFixed(2)})
                   </button>
                 </div>
               )}
@@ -274,14 +288,14 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                 <>
                   <p className="payment-label">Cambio:</p>
                   <p id="payment-change" className="payment-change">
-                    ${change >= 0 ? change.toFixed(2) : '0.00'}
+                    ${change.gte(0) ? Money.toNumber(change).toFixed(2) : '0.00'}
                   </p>
                 </>
               ) : (
                 <>
                   <p className="payment-label">Saldo Pendiente:</p>
                   <p id="payment-change" className="payment-saldo">
-                    ${saldoPendiente.toFixed(2)}
+                    ${Money.toNumber(saldoPendiente).toFixed(2)}
                   </p>
                   {/* ALERTA DE LÍMITE DE CRÉDITO */}
                   {isFiado && currentCustomer && (
@@ -307,12 +321,12 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                         // CASO OK: Muestra cuánto le queda disponible
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span>Crédito disponible:</span>
-                          <strong>${(limit - projectedDebt).toFixed(2)}</strong>
+                          <strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong>
                         </div>
                       )}
                     </div>
                   )}
-                  {isFiado && paid > total && (
+                  {isFiado && safePaid.gt(safeTotal) && (
                     <p style={{ color: 'var(--error-color)', fontSize: '0.8rem', marginTop: '5px' }}>
                       El abono inicial no puede ser mayor al total.
                     </p>

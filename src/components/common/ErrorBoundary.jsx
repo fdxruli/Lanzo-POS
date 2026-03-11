@@ -29,40 +29,32 @@ class ErrorBoundary extends React.Component {
   }
 
   handleReset = () => {
+    // 1. Purgar estado volátil persistido que suele causar render loops
+    localStorage.removeItem('lanzo-cart-storage');
+    
+    // 2. Limpiar sesión de UI (no tocar licencias ni perfiles)
+    sessionStorage.clear();
+    
     this.setState({ hasError: false, error: null, errorInfo: null });
-    // Opcional: Aquí podrías intentar limpiar partes específicas del estado global si fuera necesario
   }
 
-  // Nueva función MEJORADA: Limpia Service Workers y Cache antes de redirigir
-  // Esto soluciona el error de "Manifest Syntax Error" y la pérdida de estilos (Dark Mode)
-  handleGoToPos = async () => {
+  handleGoToPos = () => {
+    Logger.log("🧹 Iniciando recuperación quirúrgica. Purgando estado volátil...");
+
     try {
-      Logger.log("🧹 Iniciando limpieza de emergencia antes de ir al POS...");
+      // Purgar carritos corruptos y estados de UI problemáticos
+      localStorage.removeItem('lanzo-cart-storage');
+      
+      // Eliminar banderas temporales que puedan estar bloqueando flujos
+      sessionStorage.clear();
 
-      // 1. Desregistrar Service Workers (Soluciona el error del Manifest/PWA corrupto)
-      if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const registration of registrations) {
-          await registration.unregister();
-          Logger.log("Service Worker desregistrado.");
-        }
-      }
-
-      // 2. Limpiar Caché del navegador (Asegura que se carguen los estilos y scripts frescos)
-      if ('caches' in window) {
-        const cacheNames = await caches.keys();
-        await Promise.all(
-          cacheNames.map(name => {
-            Logger.log(`Borrando caché: ${name}`);
-            return caches.delete(name);
-          })
-        );
-      }
+      // No tocamos 'lanzo_license', 'lanzo_device_id' ni 'lanzo_show_bot'
+      // Absolutamente NADA de interactuar con el Service Worker aquí.
     } catch (e) {
-      Logger.warn("No se pudo completar la limpieza de caché, redirigiendo de todas formas...", e);
+      Logger.warn("Error durante la limpieza de estado local:", e);
     } finally {
-      // 3. Redirigir forzando carga desde el servidor
-      window.location.href = '/';
+      // Usar replace para no ensuciar el historial del navegador con rutas muertas
+      window.location.replace('/');
     }
   }
 
