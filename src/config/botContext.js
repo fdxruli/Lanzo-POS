@@ -13,7 +13,7 @@ const getPageKey = (pathname) => {
 // 1. Definir la Alerta Global que falta
 export const GLOBAL_ALERT = {
   active: true,
-  id: 'update_soporte_06',
+  id: 'update_soporte_07',
   message: 'Mantenimiento finalizado. Se aplicaron correcciones en los módulos de venta. Si experimentas cualquier anomalía en tu corte de caja o cobros, levanta un ticket con soporte técnico.',
   actionLink: '/acerca-de'
 };
