@@ -5,11 +5,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lanzo POS</title>
-  
+
+  <link rel="manifest" href="/manifest.webmanifest">
+
   <meta name="theme-color" content="#FF3B5C" />
-  
+
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <link rel="apple-touch-icon" href="/pwa-192x192.png">
 
   <meta name="mobile-web-app-capable" content="yes" />
 
@@ -41,6 +44,23 @@
       }
     })();
   </script>
+
+  <script>
+    // Captura estricta y temprana para PWA
+    window.deferredPwaPrompt = null;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      window.deferredPwaPrompt = e;
+      // Emitimos una señal para que React se entere si ya se montó o cuando se monte
+      window.dispatchEvent(new Event('lanzo-pwa-ready'));
+    });
+
+    window.addEventListener('appinstalled', () => {
+      window.deferredPwaPrompt = null;
+    });
+  </script>
+</head>
 
 </head>
 
