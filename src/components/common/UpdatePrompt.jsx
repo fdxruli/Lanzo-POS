@@ -2,7 +2,6 @@ import React from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { RefreshCw, X } from 'lucide-react';
 
-// Intervalo estricto: Busca actualizaciones cada 1 hora
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; 
 
 const UpdatePrompt = () => {
@@ -13,8 +12,6 @@ const UpdatePrompt = () => {
     onRegistered(registration) {
       if (!registration) return;
 
-      // Sondeo periódico: Obliga al navegador a checar el servidor
-      // independientemente de si el usuario recarga la página o no.
       setInterval(() => {
         if (navigator.onLine) {
           registration.update().catch((error) => {
@@ -32,33 +29,48 @@ const UpdatePrompt = () => {
 
   return (
     <div style={{
-      position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999,
-      backgroundColor: '#1e293b', color: 'white', padding: '16px',
-      borderRadius: '8px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-      display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '300px'
+      position: 'fixed', 
+      bottom: '20px', 
+      right: '20px', 
+      zIndex: 'var(--z-toast)',
+      backgroundColor: 'var(--card-background-color)', 
+      color: 'var(--text-color)', 
+      padding: 'var(--spacing-md)',
+      borderRadius: 'var(--border-radius)', 
+      boxShadow: 'var(--box-shadow-lg)',
+      border: '1px solid var(--border-color)',
+      display: 'flex', 
+      flexDirection: 'column', 
+      gap: 'var(--spacing-sm)', 
+      maxWidth: '300px'
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: '500' }}>
+        <h4 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-dark)', display: 'flex', alignItems: 'center', gap: '6px' }}>
           ✨ Nueva versión disponible
-        </p>
+        </h4>
         <button 
           onClick={() => setNeedRefresh(false)}
-          style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+          style={{ 
+            background: 'none', 
+            border: 'none', 
+            color: 'var(--text-light)', 
+            cursor: 'pointer',
+            padding: '2px'
+          }}
           aria-label="Cerrar notificación"
         >
-          <X size={16} />
+          <X size={18} />
         </button>
       </div>
-      <p style={{ margin: 0, fontSize: '0.8rem', color: '#cbd5e1' }}>
+      <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-color)' }}>
         Guarda tu venta actual y actualiza para aplicar los cambios en el sistema.
       </p>
+      
+      {/* Usando tu clase global btn-primary */}
       <button
+        className="btn-primary"
         onClick={() => updateServiceWorker(true)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-          backgroundColor: '#3b82f6', color: 'white', border: 'none',
-          padding: '8px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600'
-        }}
+        style={{ marginTop: 'var(--spacing-xs)' }}
       >
         <RefreshCw size={16} />
         Actualizar ahora
