@@ -5,6 +5,7 @@ import { generateID, showMessageModal, roundCurrency } from '../../services/util
 // --- CAMBIO: Usamos el store correcto (Estadísticas) ---
 import { useStatsStore } from '../../store/useStatsStore';
 import { useProductStore } from '../../store/useProductStore';
+import { useSalesStore } from '../../store/useSalesStore';
 
 export default function WasteModal({ show, onClose, product, onConfirm }) {
     const [quantity, setQuantity] = useState('');
@@ -13,6 +14,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
     const menu = useProductStore(state => state.menu);
     // --- CAMBIO: Usamos el hook del store de estadísticas ---
     const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
+    const registerWasteRecord = useSalesStore(state => state.registerWasteRecord);
 
     if (!show || !product) return null;
 
@@ -114,6 +116,8 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
 
         if (!wasteResult.success) {
             alert(`Advertencia: Inventario actualizado pero falló el registro de historial.`);
+        } else {
+            await registerWasteRecord(wasteRecord);
         }
 
         // Actualizar valor financiero global

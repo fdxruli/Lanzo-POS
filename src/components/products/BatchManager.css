@@ -150,7 +150,6 @@
   max-height: 250px;
   overflow-y: auto;
   z-index: 50;
-  /* Debe estar encima de todo */
   box-shadow: var(--box-shadow-lg);
 }
 
@@ -161,6 +160,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
+  background: transparent;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  text-align: left;
+  font: inherit;
 }
 
 .product-suggestion-item:hover {

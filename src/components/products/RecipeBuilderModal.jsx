@@ -73,8 +73,8 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     const currentCost = ingredient.cost || 0;
 
     let finalQuantity = parseFloat(quantity);
-    let finalUnit = unit;
-    let contMultiplier = finalQuantity;
+    const finalUnit = unit;
+    const contMultiplier = finalQuantity;
 
     if (useSmallUnit) {
       // Convertir a unidad pequeña según bulkData

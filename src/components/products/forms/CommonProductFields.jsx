@@ -1,5 +1,6 @@
 import React from 'react';
 import ScannerModal from '../../common/ScannerModal';
+import CategorySelect from './CategorySelect';
 
 const getMarginColor = (marginVal) => {
     const m = parseFloat(marginVal) || 0;
@@ -165,10 +166,12 @@ export default function CommonProductFields({
                     <div className="form-group">
                         <label className="form-label">Categoría</label>
                         <div style={{ display: 'flex', gap: '10px' }}>
-                            <select className="form-input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                                <option value="">Sin categoría</option>
-                                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-                            </select>
+                            <CategorySelect
+                                className="form-input"
+                                value={categoryId}
+                                onChange={setCategoryId}
+                                activeCategories={categories}
+                            />
                             <button type="button" className="btn btn-help" onClick={onOpenCategoryManager}>+</button>
                         </div>
                     </div>
