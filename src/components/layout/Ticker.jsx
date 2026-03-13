@@ -13,6 +13,15 @@ const promotionalMessages = [
 ];
 
 function getBackupAlertMessage() {
+  // 1. Verificamos si el usuario lo pospuso
+  const postponedUntil = localStorage.getItem('backup_postponed_until');
+  if (postponedUntil) {
+    if (new Date() < new Date(postponedUntil)) {
+      return null; // Ocultamos el mensaje del Ticker porque está pospuesto
+    }
+  }
+
+  // 2. Verificamos la fecha real de respaldo
   const lastBackup = localStorage.getItem('last_backup_date');
   if (!lastBackup) return "⚠️ No has realizado ninguna copia de seguridad. Ve a Configuración > Exportar.";
   
@@ -78,6 +87,13 @@ export default function Ticker() {
 
   const menu = useProductStore((state) => state.menu);
   const isLoading = useProductStore((state) => state.isLoading);
+
+  const [backupUpdateTick, setBackupUpdateTick] = React.useState(0);
+  useEffect(() => {
+    const handleBackupUpdate = () => setBackupUpdateTick(prev => prev + 1);
+    window.addEventListener('backup_status_changed', handleBackupUpdate);
+    return () => window.removeEventListener('backup_status_changed', handleBackupUpdate);
+  }, []);
 
   // Log para debug (solo en desarrollo)
   useEffect(() => {
@@ -153,7 +169,7 @@ export default function Ticker() {
       Logger.error('Error generando alertas:', error);
       return { messages: promotionalMessages, isPriority: false };
     }
-  }, [licenseStatus, gracePeriodEnds, licenseDetails, menu, isLoading]);
+  }, [licenseStatus, gracePeriodEnds, licenseDetails, menu, isLoading, backupUpdateTick]);
   
   const containerClasses = [
     'notification-ticker-container',

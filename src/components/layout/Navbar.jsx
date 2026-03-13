@@ -28,6 +28,7 @@ function Navbar() {
   const isIOS = useAppStore((state) => state.isIOS);
   const isUpdating = useAppStore((state) => state.isUpdating);
   const isInstalling = useAppStore((state) => state.isInstalling);
+  const isBackupLoading = useAppStore((state) => state.isBackupLoading);
   const runUpdate = useAppStore((state) => state.runUpdate);
   const requestInstall = useAppStore((state) => state.requestInstall);
 
@@ -36,6 +37,23 @@ function Navbar() {
 
   const toggleMenu = () => setIsMobileMenuOpen((prev) => !prev);
   const closeMenu = () => setIsMobileMenuOpen(false);
+
+  const preventNavigationWhileBackup = (e) => {
+    if (!isBackupLoading) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  };
+
+  const handleProtectedNavClick = (e) => {
+    if (preventNavigationWhileBackup(e)) return;
+    closeMenu();
+  };
+
+  const handleProtectedMenuToggle = (e) => {
+    if (preventNavigationWhileBackup(e)) return;
+    toggleMenu();
+  };
 
   const drawerLinks = [
     { to: '/clientes', label: 'Clientes', icon: <Users size={20} /> },
@@ -48,7 +66,9 @@ function Navbar() {
   const hasPwaAction = updateAvailable || isInstallable;
   const installButtonLabel = isIOS ? 'Instalar App (iOS)' : 'Instalar App';
 
-  const getDesktopClass = ({ isActive }) => `nav-link ${isActive ? 'active' : ''}`;
+  const getDesktopClass = ({ isActive }) => `nav-link ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`;
+  const getBottomClass = ({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`;
+  const getDrawerClass = ({ isActive }) => `drawer-link ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`;
 
   const pwaActionBaseStyle = {
     width: '100%',
@@ -104,8 +124,10 @@ function Navbar() {
       <nav className="mobile-bottom-nav">
         <NavLink
           to="/caja"
-          className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}
-          onClick={closeMenu}
+          className={getBottomClass}
+          onClick={handleProtectedNavClick}
+          aria-disabled={isBackupLoading}
+          tabIndex={isBackupLoading ? -1 : 0}
         >
           <Inbox size={22} />
           <span>Caja</span>
@@ -113,8 +135,10 @@ function Navbar() {
 
         <NavLink
           to="/productos"
-          className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}
-          onClick={closeMenu}
+          className={getBottomClass}
+          onClick={handleProtectedNavClick}
+          aria-disabled={isBackupLoading}
+          tabIndex={isBackupLoading ? -1 : 0}
         >
           <Package size={22} />
           <span>Productos</span>
@@ -122,8 +146,10 @@ function Navbar() {
 
         <NavLink
           to="/"
-          className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}
-          onClick={closeMenu}
+          className={getBottomClass}
+          onClick={handleProtectedNavClick}
+          aria-disabled={isBackupLoading}
+          tabIndex={isBackupLoading ? -1 : 0}
           end
         >
           <Store size={22} />
@@ -132,16 +158,19 @@ function Navbar() {
 
         <NavLink
           to="/ventas"
-          className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}
-          onClick={closeMenu}
+          className={getBottomClass}
+          onClick={handleProtectedNavClick}
+          aria-disabled={isBackupLoading}
+          tabIndex={isBackupLoading ? -1 : 0}
         >
           <TrendingUp size={22} />
           <span>Ventas</span>
         </NavLink>
 
         <button
-          className={`bottom-nav-item ${isMobileMenuOpen || isSectionFromMenu ? 'active' : ''}`}
-          onClick={toggleMenu}
+          className={`bottom-nav-item ${isMobileMenuOpen || isSectionFromMenu ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`}
+          onClick={handleProtectedMenuToggle}
+          disabled={isBackupLoading}
         >
           <Menu size={22} />
           <span>Menu</span>
@@ -162,8 +191,10 @@ function Navbar() {
             <NavLink
               key={link.to}
               to={link.to}
-              className={({ isActive }) => `drawer-link ${isActive ? 'active' : ''}`}
-              onClick={closeMenu}
+              className={getDrawerClass}
+              onClick={handleProtectedNavClick}
+              aria-disabled={isBackupLoading}
+              tabIndex={isBackupLoading ? -1 : 0}
             >
               {link.icon}
               {link.label}
@@ -175,7 +206,7 @@ function Navbar() {
               {updateAvailable && (
                 <button
                   onClick={handleUpdateClick}
-                  disabled={isUpdating}
+                  disabled={isUpdating || isBackupLoading}
                   style={updateButtonStyle}
                   aria-label="Actualizar sistema"
                 >
@@ -187,7 +218,7 @@ function Navbar() {
               {isInstallable && (
                 <button
                   onClick={handleInstallClick}
-                  disabled={isInstalling}
+                  disabled={isInstalling || isBackupLoading}
                   style={installButtonStyle}
                   aria-label="Instalar app"
                 >
@@ -206,36 +237,73 @@ function Navbar() {
         </div>
 
         <div className="sidebar-links">
-          <NavLink to="/" className={getDesktopClass} end>
+          <NavLink
+            to="/"
+            className={getDesktopClass}
+            end
+            onClick={handleProtectedNavClick}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
             <Store size={20} /> Punto de Venta
           </NavLink>
 
-          <NavLink to="/caja" className={getDesktopClass}>
+          <NavLink
+            to="/caja"
+            className={getDesktopClass}
+            onClick={handleProtectedNavClick}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
             <Inbox size={20} /> Caja
           </NavLink>
 
           {features.hasKDS && (
-            <NavLink to="/pedidos" className={getDesktopClass}>
+            <NavLink
+              to="/pedidos"
+              className={getDesktopClass}
+              onClick={handleProtectedNavClick}
+              aria-disabled={isBackupLoading}
+              tabIndex={isBackupLoading ? -1 : 0}
+            >
               <ChefHat size={20} /> Pedidos-Rest.
             </NavLink>
           )}
 
-          <NavLink to="/productos" className={getDesktopClass}>
+          <NavLink
+            to="/productos"
+            className={getDesktopClass}
+            onClick={handleProtectedNavClick}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
             <Package size={20} /> Productos
           </NavLink>
 
-          <NavLink to="/clientes" className={getDesktopClass}>
+          <NavLink
+            to="/clientes"
+            className={getDesktopClass}
+            onClick={handleProtectedNavClick}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
             <Users size={20} /> Clientes
           </NavLink>
 
-          <NavLink to="/ventas" className={getDesktopClass}>
+          <NavLink
+            to="/ventas"
+            className={getDesktopClass}
+            onClick={handleProtectedNavClick}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
             <TrendingUp size={20} /> Ventas y Reportes
           </NavLink>
 
           {hasPwaAction && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
               {updateAvailable && (
-                <button onClick={runUpdate} disabled={isUpdating} style={updateButtonStyle} aria-label="Actualizar sistema">
+                <button onClick={runUpdate} disabled={isUpdating || isBackupLoading} style={updateButtonStyle} aria-label="Actualizar sistema">
                   <RefreshCw size={16} />
                   {isUpdating ? 'Actualizando...' : 'Actualizar Sistema'}
                 </button>
@@ -244,7 +312,7 @@ function Navbar() {
               {isInstallable && (
                 <button
                   onClick={requestInstall}
-                  disabled={isInstalling}
+                  disabled={isInstalling || isBackupLoading}
                   style={installButtonStyle}
                   aria-label="Instalar app"
                 >
@@ -257,11 +325,23 @@ function Navbar() {
 
           <div className="sidebar-divider" />
 
-          <NavLink to="/configuracion" className={getDesktopClass}>
+          <NavLink
+            to="/configuracion"
+            className={getDesktopClass}
+            onClick={handleProtectedNavClick}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
             <Settings size={20} /> Configuracion
           </NavLink>
 
-          <NavLink to="/acerca-de" className={getDesktopClass}>
+          <NavLink
+            to="/acerca-de"
+            className={getDesktopClass}
+            onClick={handleProtectedNavClick}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
             <Info size={20} /> Acerca de
           </NavLink>
         </div>

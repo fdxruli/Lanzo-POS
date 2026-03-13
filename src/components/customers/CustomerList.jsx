@@ -98,17 +98,18 @@ export default function CustomerList({
     const observerRef = useRef(null);
     const sentinelRef = useRef(null);
 
+    const safeCustomers = Array.isArray(customers) ? customers : [];
     // Ordenar clientes: Prioridad a los que deben más
     const sortedCustomers = useMemo(() => {
-        return [...customers].sort((a, b) => (b.debt || 0) - (a.debt || 0));
-    }, [customers]);
+        return [...safeCustomers].sort((a, b) => (b.debt || 0) - (a.debt || 0));
+    }, [safeCustomers]);
 
     // Calcular estadísticas rápidas para mostrar en la cabecera
     const stats = useMemo(() => {
-        const totalDebt = customers.reduce((acc, c) => acc + (c.debt || 0), 0);
-        const overLimitCount = customers.filter(c => (c.debt || 0) > (c.creditLimit || 0) && (c.creditLimit > 0)).length;
+        const totalDebt = safeCustomers.reduce((acc, c) => acc + (c.debt || 0), 0);
+        const overLimitCount = safeCustomers.filter(c => (c.debt || 0) > (c.creditLimit || 0) && (c.creditLimit > 0)).length;
         return { totalDebt, overLimitCount };
-    }, [customers]);
+    }, [safeCustomers]);
 
     useEffect(() => { setDisplayLimit(20); }, [customers]);
 
@@ -182,7 +183,7 @@ export default function CustomerList({
         );
     }
 
-    if (customers.length === 0) {
+    if (safeCustomers.length === 0) {
         return (
             <div className="customer-empty-message">
                 <Users size={48} style={{ opacity: 0.3 }} />

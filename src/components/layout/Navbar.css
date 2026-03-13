@@ -85,6 +85,15 @@
   stroke-width: 2.5px;
 }
 
+.bottom-nav-item.disabled,
+.drawer-link.disabled,
+.nav-link.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
 .nav-item {
   display: flex;
   align-items: center;
