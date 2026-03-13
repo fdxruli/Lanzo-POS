@@ -13,6 +13,7 @@
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.0.1",
     "@supabase/supabase-js": "^2.86.0",
+    "@zxing/library": "^0.21.3",
     "big.js": "^7.0.1",
     "dexie": "^4.3.0",
     "dexie-react-hooks": "^4.2.0",

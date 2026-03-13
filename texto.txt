@@ -1,0 +1,46 @@
+modo claro tipo Apple
+
+/* --- PALETA PRINCIPAL --- */
+  --primary-color: #111827;
+  --primary-hover: #000000;
+  --secondary-color: #2563EB;
+
+  /* --- ESTADOS --- */
+  --success-color: #10B981;
+  --warning-color: #F59E0B;
+  --error-color: #EF4444;
+
+  /* --- FONDOS --- */
+  --background-color: #FFFFFF;
+  --card-background-color: #F9FAFB;
+  --light-background: #F3F4F6;
+
+  /* --- BORDES --- */
+  --border-color: #E5E7EB;
+
+  /* --- TEXTOS --- */
+  --text-dark: #111827;
+  --text-color: #374151;
+  --text-light: #6B7280;
+
+modo oscuro super minimalista --solamente el background--
+[data-theme="dark"] {
+
+  /* --- FONDOS --- */
+  --background-color: #09090B;
+  --card-background-color: #18181B;
+  --light-background: #27272A;
+
+  /* --- BORDES --- */
+  --border-color: #3F3F46;
+
+  /* --- TEXTOS --- */
+  --text-dark: #FAFAFA;
+  --text-color: #D4D4D8;
+  --text-light: #A1A1AA;
+
+  /* --- SOMBRAS (más visibles en oscuro) --- */
+  --box-shadow: 0 6px 12px rgba(0,0,0,0.5);
+  --box-shadow-lg: 0 20px 40px rgba(0,0,0,0.7);
+
+}
