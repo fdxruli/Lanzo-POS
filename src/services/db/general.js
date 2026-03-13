@@ -1,149 +1,204 @@
 import { db, STORES } from './dexie';
-import { handleDexieError, validateOrThrow,DatabaseError, DB_ERROR_CODES, } from './utils';
-import { generateID } from '../utils'
+import { handleDexieError, validateOrThrow, DatabaseError, DB_ERROR_CODES } from './utils';
+import { generateID } from '../utils';
+import { buildPhoneBuckets, summarizePhoneConflictGroups, toIndexedPhoneKey } from './customerPhoneUtils';
 
-// Importamos los esquemas de validación existentes
-// Asegúrate de que las rutas sean correctas respecto a la nueva ubicación
+// Importamos los esquemas de validacion existentes
 import { productSchema } from '../../schemas/productSchema';
 import { customerSchema } from '../../schemas/customerSchema';
 
-// Mapeo de Esquemas para validación automática
 const SCHEMAS = {
   [STORES.MENU]: productSchema,
-  [STORES.CUSTOMERS]: customerSchema,
-  // Agrega aquí otros esquemas futuros (ej: categorySchema)
+  [STORES.CUSTOMERS]: customerSchema
+};
+
+const PHONE_FIELD = 'phone';
+
+const buildPhoneConstraintError = (message, details = {}) => {
+  return new DatabaseError(DB_ERROR_CODES.CONSTRAINT_VIOLATION, message, {
+    field: PHONE_FIELD,
+    actionable: 'CHECK_FORM',
+    ...details
+  });
+};
+
+const getPhonePolicyContext = (customers = []) => {
+  const buckets = buildPhoneBuckets(customers);
+  const conflictGroups = Array.from(buckets.entries())
+    .filter(([, records]) => records.length > 1)
+    .map(([phoneKey, records]) => ({ phoneKey, records }));
+
+  const conflictRecordIds = new Set();
+  conflictGroups.forEach((group) => {
+    group.records.forEach((record) => conflictRecordIds.add(record.id));
+  });
+
+  return { buckets, conflictGroups, conflictRecordIds };
+};
+
+const applyCustomerWriteMetadata = (dataToSave, existingRecord) => {
+  const now = new Date().toISOString();
+
+  if (!dataToSave.createdAt) {
+    dataToSave.createdAt = existingRecord?.createdAt || now;
+  }
+
+  dataToSave.updatedAt = now;
+};
+
+const applyCustomerPhonePolicy = async (dataToSave, existingRecord) => {
+  const allCustomers = await db.table(STORES.CUSTOMERS).toArray();
+  const { buckets, conflictGroups, conflictRecordIds } = getPhonePolicyContext(allCustomers);
+
+  const currentId = dataToSave.id || existingRecord?.id || null;
+  const incomingPhone = dataToSave.phone !== undefined
+    ? dataToSave.phone
+    : (existingRecord?.phone || '');
+  const incomingPhoneKey = toIndexedPhoneKey(incomingPhone);
+
+  const hasHistoricalConflicts = conflictGroups.length > 0;
+  const isCurrentRecordInConflict = currentId ? conflictRecordIds.has(currentId) : false;
+
+  if (hasHistoricalConflicts && !isCurrentRecordInConflict) {
+    const conflictPreview = summarizePhoneConflictGroups(conflictGroups);
+
+    throw buildPhoneConstraintError(
+      'Se detectaron telefonos duplicados historicos. Resuelve esos conflictos antes de crear o editar otros clientes.',
+      {
+        actionable: 'RESOLVE_PHONE_CONFLICTS',
+        conflictPreview
+      }
+    );
+  }
+
+  if (!incomingPhoneKey) {
+    delete dataToSave.phoneKey;
+    return;
+  }
+
+  const samePhoneRecords = (buckets.get(incomingPhoneKey) || [])
+    .filter((customer) => customer.id !== currentId);
+
+  if (samePhoneRecords.length > 0) {
+    const message = hasHistoricalConflicts
+      ? 'Este telefono sigue en conflicto. Asigna un telefono unico o dejalo vacio temporalmente para resolver.'
+      : 'El telefono ya esta registrado para otro cliente.';
+
+    throw buildPhoneConstraintError(message, {
+      actionable: hasHistoricalConflicts ? 'RESOLVE_PHONE_CONFLICTS' : 'CHECK_FORM'
+    });
+  }
+
+  dataToSave.phoneKey = incomingPhoneKey;
 };
 
 /**
- * Repositorio Genérico para operaciones CRUD básicas.
- * Incluye validación Zod automática y manejo de errores estandarizado.
+ * Repositorio Generico para operaciones CRUD basicas.
+ * Incluye validacion Zod automatica y manejo de errores estandarizado.
  */
 export const generalRepository = {
-
-  /**
-   * Obtiene todos los registros de una tienda.
-   * @param {string} storeName - Nombre de la tienda (usar constantes STORES).
-   * @returns {Promise<Array>}
-   */
   async getAll(storeName) {
     try {
       return await db.table(storeName).toArray();
     } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
       throw handleDexieError(error, `Get All ${storeName}`);
     }
   },
 
-  /**
-   * Obtiene un registro por su ID (o clave primaria).
-   * @param {string} storeName 
-   * @param {string|number} id 
-   */
   async getById(storeName, id) {
     try {
       return await db.table(storeName).get(id);
     } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
       throw handleDexieError(error, `Get By ID ${storeName}`);
     }
   },
 
-  /**
-   * Guarda o actualiza un registro (Upsert).
-   * Valida automáticamente si existe un esquema asociado.
-   * @param {string} storeName 
-   * @param {object} data 
-   */
   async save(storeName, data) {
     try {
-      // 1. Normalización
       const dataToSave = { ...data };
+      const existingRecord = data?.id
+        ? await db.table(storeName).get(data.id)
+        : null;
+
       if (storeName === STORES.MENU && dataToSave.name) {
         dataToSave.name_lower = dataToSave.name.toLowerCase();
       }
 
-      // 2. Validación Zod
+      if (storeName === STORES.CUSTOMERS) {
+        applyCustomerWriteMetadata(dataToSave, existingRecord);
+        await applyCustomerPhonePolicy(dataToSave, existingRecord);
+      }
+
       const schema = SCHEMAS[storeName];
       const validatedData = validateOrThrow(schema, dataToSave, `Save ${storeName}`);
 
-      // 3. Guardado Inteligente (Update vs Put) CORREGIDO
-      if (data.id) {
-        // Consultar si realmente existe el registro en la BD
-        const existingRecord = await db.table(storeName).get(data.id);
-
-        if (existingRecord) {
-          // Si existe, hacemos update para no destruir campos ocultos (merge superficial)
-          await db.table(storeName).update(data.id, validatedData);
-        } else {
-          // Tiene ID pre-generado pero es un registro nuevo en la BD
-          await db.table(storeName).put(validatedData);
-        }
+      if (data?.id && existingRecord) {
+        await db.table(storeName).update(data.id, validatedData);
       } else {
-        // Por precaución, si llegara un dato sin ID
         await db.table(storeName).put(validatedData);
       }
 
       return { success: true };
-
     } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
       throw handleDexieError(error, `Save ${storeName}`);
     }
   },
 
-  /**
-   * Guarda múltiples registros en una sola operación (Bulk Upsert).
-   * Ideal para importaciones o sincronizaciones.
-   * @param {string} storeName 
-   * @param {Array} dataArray 
-   */
   async saveBulk(storeName, dataArray) {
     try {
       const schema = SCHEMAS[storeName];
 
-      // 1. Validar y Normalizar todo el array antes de tocar la BD
       const validItems = dataArray.map((item, index) => {
         const processed = { ...item };
+
         if (storeName === STORES.MENU && processed.name) {
           processed.name_lower = processed.name.toLowerCase();
         }
-        // validateOrThrow lanzará error con el contexto si falla
+
+        if (storeName === STORES.CUSTOMERS) {
+          const phoneKey = toIndexedPhoneKey(processed.phone);
+          if (phoneKey) {
+            processed.phoneKey = phoneKey;
+          } else {
+            delete processed.phoneKey;
+          }
+
+          const now = new Date().toISOString();
+          processed.createdAt = processed.createdAt || now;
+          processed.updatedAt = now;
+        }
+
         return validateOrThrow(schema, processed, `Bulk Save ${storeName} (Index ${index})`);
       });
 
-      // 2. Bulk Put (Muy rápido en Dexie)
       await db.table(storeName).bulkPut(validItems);
       return { success: true };
-
     } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
       throw handleDexieError(error, `Bulk Save ${storeName}`);
     }
   },
 
-  /**
-   * Elimina un registro por ID.
-   */
   async delete(storeName, id) {
     try {
       await db.table(storeName).delete(id);
       return { success: true };
     } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
       throw handleDexieError(error, `Delete ${storeName}`);
     }
   },
 
-  /**
-   * Mueve un item a la papelera (Soft Delete) de forma Transaccional.
-   * @param {string} sourceStore - Tienda origen (ej: 'menu')
-   * @param {string} trashStore - Tienda destino (ej: 'deleted_menu')
-   * @param {string} id - ID del item
-   * @param {string} reason 
-   */
-  async recycle(sourceStore, trashStore, id, reason = "Eliminado por usuario") {
+  async recycle(sourceStore, trashStore, id, reason = 'Eliminado por usuario') {
     try {
-      // Usamos una transacción Read-Write para atomicidad
       await db.transaction('rw', [sourceStore, trashStore], async () => {
         const item = await db.table(sourceStore).get(id);
 
         if (!item) {
-          throw new Error('ItemNotFound'); // Salimos de la transacción
+          throw new Error('ItemNotFound');
         }
 
         const deletedItem = {
@@ -153,59 +208,44 @@ export const generalRepository = {
           originalStore: sourceStore
         };
 
-        // En Dexie, las operaciones dentro de transaction se "encolan"
         await db.table(trashStore).put(deletedItem);
         await db.table(sourceStore).delete(id);
       });
 
       return { success: true };
-
     } catch (error) {
       if (error.message === 'ItemNotFound') {
         return { success: false, message: 'El item ya no existe' };
       }
+      if (error?.name === 'DatabaseError') throw error;
       throw handleDexieError(error, `Recycle ${sourceStore}`);
     }
   },
 
-  /**
-   * Búsqueda simple por índice.
-   * @param {string} storeName 
-   * @param {string} indexName - Nombre del campo indexado (ej: 'categoryId')
-   * @param {any} value - Valor a buscar
-   */
   async findByIndex(storeName, indexName, value) {
     try {
       return await db.table(storeName).where(indexName).equals(value).toArray();
     } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
       throw handleDexieError(error, `Find By Index ${storeName}`);
     }
   },
 
   async getMultiple(storeName, ids) {
     try {
-      // Dexie bulkGet es infinitamente más rápido que N llamadas get()
-      // Ejecuta una sola transacción readonly.
       return await db.table(storeName).bulkGet(ids);
     } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
       throw handleDexieError(error, `Bulk Get ${storeName}`);
     }
   }
 };
 
-
-
 export const categoriesRepository = {
-  /**
-   * Guarda o actualiza una categoría validando que el nombre no exista.
-   */
   async saveCategory(categoryData) {
     const isNew = !categoryData.id;
 
-    // 1. El nombre real para guardar (solo limpiamos los extremos)
     const displayName = categoryData.name.trim();
-
-    // 2. El nombre sanitizado SOLO para comparación
     const comparisonName = displayName.replace(/\s+/g, '').toLowerCase();
 
     const existing = await db.table(STORES.CATEGORIES)
@@ -213,13 +253,12 @@ export const categoriesRepository = {
       .first();
 
     if (existing && existing.id !== categoryData.id) {
-      throw new DatabaseError(DB_ERROR_CODES.CONSTRAINT_VIOLATION, 'Ya existe una categoría activa con este nombre.');
+      throw new DatabaseError(DB_ERROR_CODES.CONSTRAINT_VIOLATION, 'Ya existe una categoria activa con este nombre.');
     }
 
-    // Preparar el payload usando el nombre legible (displayName)
     const payload = {
       id: categoryData.id || generateID('cat'),
-      name: displayName, // <-- AQUÍ USAMOS EL LEGIBLE
+      name: displayName,
       color: categoryData.color || '#cccccc',
       sortOrder: Number(categoryData.sortOrder) || 0,
       isActive: true,
@@ -231,12 +270,9 @@ export const categoriesRepository = {
     return payload;
   },
 
-  /**
-   * Soft Delete: Mantiene la categoría para reportes históricos, pero la oculta de la UI.
-   */
   async softDeleteCategory(categoryId) {
     const category = await db.table(STORES.CATEGORIES).get(categoryId);
-    if (!category) return { success: false, message: 'Categoría no encontrada' };
+    if (!category) return { success: false, message: 'Categoria no encontrada' };
 
     await db.table(STORES.CATEGORIES).update(categoryId, {
       isActive: false,
@@ -246,9 +282,6 @@ export const categoriesRepository = {
     return { success: true };
   },
 
-  /**
-   * Obtiene solo categorías activas ordenadas por sortOrder.
-   */
   async getActiveCategories() {
     const categories = await db.table(STORES.CATEGORIES)
       .filter(c => c.isActive !== false)

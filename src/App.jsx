@@ -102,148 +102,38 @@ function App() {
   }, [initializeApp]);
 
   useEffect(() => {
-    let isMounted = true;
-
     if (appStatus === 'ready') {
       startRealtimeSecurity();
     }
-
-    // CLEANUP FUNCTION: Se ejecuta al desmontar o cambiar appStatus
-    return () => {
-      isMounted = false;
-      // Detiene la escucha para liberar memoria y sockets
-      stopRealtimeSecurity();
-    };
-  }, [appStatus, startRealtimeSecurity, stopRealtimeSecurity]);
+  }, [appStatus]);
 
   // Candado persistente fuera del ciclo de dependencias del useEffect
   const isReconnectingRef = useRef(false);
 
   useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState !== 'visible') {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Toda esa lógica masiva debe vivir en el store, no en el componente UI
+        useAppStore.getState().performSystemHealthCheck();
+      } else {
         sessionStorage.setItem('lanzo_last_active', Date.now().toString());
-        return;
-      }
-
-      if (isReconnectingRef.current) {
-        Logger.warn("⏳ Health check ya en curso. Ignorando evento de visibilidad.");
-        return;
-      }
-
-      isReconnectingRef.current = true;
-      Logger.log("👁️ Pestaña activa: Verificando salud del sistema...");
-
-      // Asumimos que la BD está sana a menos que la prueba profunda (si se ejecuta) diga lo contrario
-      let dbIsHealthy = true;
-
-      try {
-        const lastCheck = parseInt(sessionStorage.getItem('lanzo_last_health_check') || '0', 10);
-        const needsDeepCheck = (Date.now() - lastCheck) >= 60000;
-
-        if (!needsDeepCheck) {
-          Logger.log("⏳ Health check profundo omitido por cooldown (menos de 60s).");
-        } else {
-          // 1. Validar cuota de disco
-          if (navigator.storage && navigator.storage.estimate) {
-            const { quota, usage } = await navigator.storage.estimate();
-            const usagePercentage = (usage / quota) * 100;
-            if (usagePercentage > 95) {
-              throw new Error(`QUOTA_CRITICAL: Almacenamiento al ${usagePercentage.toFixed(2)}%`);
-            }
-          }
-
-          // 2. Validar capacidad real de ESCRITURA con control de transacciones
-          await new Promise((resolve, reject) => {
-            let isSettled = false;
-            let timeoutId;
-
-            // Iniciamos la transacción instanciándola para poder abortarla
-            const tx = db.transaction('rw', db[STORES.SYNC_CACHE], async () => {
-              await db[STORES.SYNC_CACHE].put({ key: 'health_ping', timestamp: Date.now() });
-            });
-
-            timeoutId = setTimeout(() => {
-              if (isSettled) return;
-              isSettled = true;
-
-              // ABORTO EXPLÍCITO: Matamos la transacción a nivel Dexie/IndexedDB
-              // Esto evita la promesa colgada en el motor subyacente
-              if (tx && typeof tx.abort === 'function') {
-                try { tx.abort(); } catch (e) { /* Ignorar errores de aborto */ }
-              }
-              reject(new Error("PING_TIMEOUT_WRITE"));
-            }, 2000);
-
-            tx.then(() => {
-              if (isSettled) return;
-              isSettled = true;
-              clearTimeout(timeoutId);
-              resolve(true);
-            }).catch(error => {
-              if (isSettled) return;
-              isSettled = true;
-              clearTimeout(timeoutId);
-              reject(new Error(`TX_WRITE_ERROR: ${error.name} - ${error.message}`));
-            });
-          });
-
-          Logger.log("✅ Conexión a BD verificada y con capacidad de escritura.");
-          sessionStorage.setItem('lanzo_last_health_check', Date.now().toString());
-        }
-
-      } catch (error) {
-        Logger.error("⚠️ FATAL: Base de datos colapsó o está corrupta.", error.message);
-        dbIsHealthy = false;
-
-        sessionStorage.removeItem('lanzo_last_health_check');
-
-        Logger.error("Aislamiento del error: Forzando recarga de entorno.");
-        window.location.reload(true);
-        // Eliminado el return falaz. El control pasa al finally, 
-        // pero condicionado por dbIsHealthy.
-
-      } finally {
-        // Ejecución estricta: Solo actuamos y liberamos candados si sobrevivimos al chequeo
-        if (dbIsHealthy) {
-          // Lectura dinámica: Evitamos el stale closure leyendo el estado en este milisegundo exacto
-          const currentState = useAppStore.getState();
-
-          if (currentState.appStatus === 'ready') {
-            if (currentState.licenseDetails?.license_key && !currentState.realtimeSubscription) {
-              stopRealtimeSecurity();
-              startRealtimeSecurity();
-            }
-
-            const lastActive = sessionStorage.getItem('lanzo_last_active');
-            const now = Date.now();
-            if (!lastActive || (now - parseInt(lastActive)) > 300000) {
-              currentState.verifySessionIntegrity().catch(Logger.warn);
-            }
-          }
-
-          // El candado se libera ÚNICAMENTE si no estamos en proceso de recarga forzada
-          isReconnectingRef.current = false;
-        }
       }
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
     const handlePageShow = (event) => {
       if (event.persisted && document.visibilityState === 'visible') {
-        Logger.log("🔄 Restaurado desde caché, verificando...");
         handleVisibilityChange();
       }
     };
 
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener('pageshow', handlePageShow);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener('pageshow', handlePageShow);
     };
-  }, [startRealtimeSecurity, stopRealtimeSecurity]);
+  }, []);
 
   if (isDuplicate) {
     return (

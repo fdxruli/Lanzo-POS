@@ -103,11 +103,18 @@ export default function PosPage() {
                 (activeFilters.categoryId === null || activeFilters.categoryId === undefined) ||
                 item.categoryId === activeFilters.categoryId;
 
-            const matchesOutOfStock =
-                !activeFilters.outOfStockOnly ||
-                ((item.trackStock || item.batchManagement?.enabled) && Number(item.stock || 0) <= 0);
+            // Determinar si el producto está realmente agotado
+            const isOutOfStock =
+                (item.trackStock || item.batchManagement?.enabled) && Number(item.stock || 0) <= 0;
 
-            return matchesCategory && matchesOutOfStock;
+            // Lógica excluyente:
+            if (activeFilters.outOfStockOnly) {
+                // En la categoría dinámica, SOLO mostramos los que no tienen stock
+                return matchesCategory && isOutOfStock;
+            } else {
+                // En el catálogo general, OCULTAMOS explícitamente los que no tienen stock
+                return matchesCategory && !isOutOfStock;
+            }
         }), [activeFilters.categoryId, activeFilters.outOfStockOnly]);
 
     // ── Store de orden ─────────────────────────────────────────────

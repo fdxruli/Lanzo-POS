@@ -618,7 +618,7 @@ export const streamAllDataToJSONL = async (onChunk) => {
             if (rows.length === 0) break;
 
             const chunkString = rows.map(row => JSON.stringify({ s: tableName, d: row })).join('\n') + '\n';
-            onChunk(chunkString);
+            await onChunk(chunkString);
 
             offset += CHUNK_SIZE;
         }

@@ -191,10 +191,22 @@
 }
 
 /* Botón Auditar (Principal) */
-.btn-audit.full-width {
+/* --- CLASES UTILITARIAS DE ESTRUCTURA --- */
+.full-width {
   grid-column: span 2;
+  width: 100%;
+}
+
+.half-width {
+  grid-column: span 1;
+  width: 100%;
+}
+
+/* --- CLASES ESTÉTICAS --- */
+.btn-audit {
   padding: 12px;
   font-weight: bold;
+  /* El resto de tus estilos de hover, dark mode, etc. se mantienen igual */
 }
 
 .half-width {
@@ -250,6 +262,39 @@
   transform: translateY(-2px);
 }
 
+/* Estilo específico Ajuste de Caja (Gris/Advertencia sutil) */
+.btn-adjust {
+  padding: 1rem;
+  font-size: 1rem;
+  border-radius: 12px;
+  font-weight: 700;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  background-color: var(--light-background);
+  color: var(--text-dark);
+  border: 1px dashed var(--border-color); /* Borde punteado para diferenciarlo de transacciones normales */
+}
+
+.btn-adjust:hover {
+  background-color: #e2e8f0; /* Un gris ligeramente más oscuro al pasar el cursor */
+  transform: translateY(-2px);
+  border-style: solid;
+}
+
+/* Modo oscuro para el botón de Ajuste */
+[data-theme="dark"] .btn-adjust {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+[data-theme="dark"] .btn-adjust:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: #94a3b8;
+}
 /* === HISTORIAL (Abajo) === */
 .history-list,
 #caja-movements-list {
@@ -302,11 +347,11 @@
     align-items: stretch;
   }
 
-  #caja-status-container {
+  .status-card {
     grid-area: status;
   }
 
-  #caja-actions-container {
+  .actions-card {
     grid-area: actions;
   }
 
@@ -322,7 +367,8 @@
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
       "audit audit"
-      "entry exit";
+      "entry exit"
+      "adjust adjust";
   }
 
   .btn-audit {

@@ -1,14 +1,17 @@
-export const createPWASlice = (set, get) => ({
-  deferredPrompt: null,
-  isInstallable: false,
-  isIOS: false,
-  isStandalone: false,
-  updateAvailable: false,
-  triggerUpdate: null,
-  showInstallModal: false,
-  showUpdateModal: false,
-  isInstalling: false,
-  isUpdating: false,
+export const createPWASlice = (set, get) => {
+  // Mantener fuera del estado evita no-serializables en Zustand.
+  let triggerUpdateRef = null;
+
+  return {
+    deferredPrompt: null,
+    isInstallable: false,
+    isIOS: false,
+    isStandalone: false,
+    updateAvailable: false,
+    showInstallModal: false,
+    showUpdateModal: false,
+    isInstalling: false,
+    isUpdating: false,
 
   setInstallContext: ({ isIOS = false, isStandalone = false }) =>
     set((state) => {
@@ -94,7 +97,9 @@ export const createPWASlice = (set, get) => ({
     set({ updateAvailable: false, showUpdateModal: false });
   },
 
-  setTriggerUpdate: (fn) => set({ triggerUpdate: typeof fn === 'function' ? fn : null }),
+    setTriggerUpdate: (fn) => {
+      triggerUpdateRef = typeof fn === 'function' ? fn : null;
+    },
 
   openUpdateModal: () => {
     if (!get().updateAvailable) return;
@@ -103,19 +108,20 @@ export const createPWASlice = (set, get) => ({
 
   closeUpdateModal: () => set({ showUpdateModal: false }),
 
-  runUpdate: async () => {
-    const { triggerUpdate, isUpdating } = get();
+    runUpdate: async () => {
+      const { isUpdating } = get();
 
-    if (!triggerUpdate || isUpdating) return;
+      if (!triggerUpdateRef || isUpdating) return;
 
-    set({ isUpdating: true });
+      set({ isUpdating: true });
 
-    try {
-      await triggerUpdate(true);
-      set({ updateAvailable: false, showUpdateModal: false, isUpdating: false });
-    } catch (error) {
-      console.error('Error aplicando actualizacion del Service Worker:', error);
-      set({ isUpdating: false });
+      try {
+        await triggerUpdateRef(true);
+        set({ updateAvailable: false, showUpdateModal: false, isUpdating: false });
+      } catch (error) {
+        console.error('Error aplicando actualizacion del Service Worker:', error);
+        set({ isUpdating: false });
+      }
     }
-  }
-});
+  };
+};

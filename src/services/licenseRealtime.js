@@ -6,6 +6,7 @@ let reconnectTimer = null;
 let isConnecting = false;
 let isReconnecting = false;
 let reconnectAttempts = 0;
+let onlineListener = null;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY = 3000;
 
@@ -24,6 +25,14 @@ const BASE_RECONNECT_DELAY = 3000;
 export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) => {
   if (!licenseKey || !deviceFingerprint) {
     Logger.warn('[Realtime] Faltan datos para iniciar la conexión WebSocket.');
+    return null;
+  }
+
+  if (!navigator.onLine) {
+    Logger.warn('[Realtime] Sin conexion a internet fisica. Abortando WebSocket y esperando red...');
+    // Llamar a handleReconnect garantiza que volvamos a colocar el listener de 'online' 
+    // en caso de que esto haya sido invocado por un microcorte.
+    handleReconnect(licenseKey, deviceFingerprint, callbacks);
     return null;
   }
 
@@ -111,6 +120,33 @@ const handleReconnect = (key, fp, callbacks) => {
   // Si ya hay un timer pendiente o estamos reconectando, no hacemos nada
   if (reconnectTimer || isReconnecting) return;
 
+  if (!navigator.onLine) {
+    Logger.log('⏸️ [Realtime] Red caída. Esperando a que el sistema operativo reporte conexión...');
+
+    isReconnecting = true;
+
+    // Limpiar listener previo por seguridad antes de asignar uno nuevo
+    if (onlineListener) {
+      window.removeEventListener('online', onlineListener);
+    }
+
+    onlineListener = () => {
+      window.removeEventListener('online', onlineListener);
+      onlineListener = null;
+      isReconnecting = false;
+      Logger.log('▶️ [Realtime] Red recuperada. Retomando conexión...');
+      reconnectAttempts = 0;
+      startLicenseListener(key, fp, callbacks);
+    };
+
+    window.addEventListener('online', onlineListener);
+
+    if (callbacks.onPermanentFailure) {
+      callbacks.onPermanentFailure('Conexión perdida. Lanzo POS trabajará offline hasta que regrese.');
+    }
+    return;
+  }
+
   if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
     const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
     reconnectAttempts++;
@@ -143,6 +179,11 @@ export const stopLicenseListener = async (channel) => {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  if (onlineListener) {
+    window.removeEventListener('online', onlineListener);
+    onlineListener = null;
+  }
+
   isConnecting = false;
   isReconnecting = false;
   reconnectAttempts = 0;

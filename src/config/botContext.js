@@ -18,8 +18,6 @@ export const GLOBAL_ALERT = {
   actionLink: '/acerca-de'
 };
 
-
-
 // 2. Función para obtener acciones rápidas (solicitada por AssistantBot)
 export const getQuickActions = (pathname, rubroType = 'abarrotes') => {
   // Intentar buscar en la config específica

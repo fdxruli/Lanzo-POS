@@ -1,5 +1,5 @@
 // src/pages/CustomersPage.jsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
@@ -15,11 +15,11 @@ import { customerCreditRepository } from '../services/db/customerCreditRepositor
 import { generateID } from '../services/utils';
 import {
   saveDataSafe,
-  deleteDataSafe,
   loadDataPaginated,
   loadData,
   STORES,
-  recycleData
+  recycleData,
+  DB_ERROR_CODES
 } from '../services/database';
 
 export default function CustomersPage() {
@@ -29,7 +29,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(0);
+  const [nextCursor, setNextCursor] = useState(null);
   const [hasMore, setHasMore] = useState(true);
   const PAGE_SIZE = 50;
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -38,7 +38,7 @@ export default function CustomersPage() {
   const [whatsAppLoading, setWhatsAppLoading] = useState(null);
   const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
 
-  const { registrarMovimiento, cajaActual } = useCaja();
+  const { cajaActual } = useCaja();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
   useEffect(() => {
@@ -69,60 +69,85 @@ export default function CustomersPage() {
   const loadInitialCustomers = async () => {
     setLoading(true);
     try {
-      const data = await loadDataPaginated(STORES.CUSTOMERS, { limit: PAGE_SIZE, offset: 0, direction: 'prev' });
-      setCustomers(data);
-      setPage(1);
-      setHasMore(data.length === PAGE_SIZE);
+      const { data = [], nextCursor: newCursor = null } = await loadDataPaginated(STORES.CUSTOMERS, {
+        limit: PAGE_SIZE,
+        cursor: null,
+        timeIndex: 'createdAt'
+      });
+      const safeData = Array.isArray(data) ? data : [];
+      setCustomers(safeData);
+      setNextCursor(newCursor);
+      setHasMore(Boolean(newCursor));
     } catch (error) {
       Logger.error("Error cargando clientes:", error);
+      setCustomers([]);
+      setNextCursor(null);
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
   };
 
   const loadMoreCustomers = async () => {
-    if (!hasMore) return;
+    if (!hasMore || !nextCursor) return;
     setLoading(true);
     try {
-      const nextData = await loadDataPaginated(STORES.CUSTOMERS, {
+      const { data = [], nextCursor: newCursor = null } = await loadDataPaginated(STORES.CUSTOMERS, {
         limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE
+        cursor: nextCursor,
+        timeIndex: 'createdAt'
       });
 
-      if (nextData.length > 0) {
-        setCustomers(prev => [...prev, ...nextData]);
-        setPage(prev => prev + 1);
-        setHasMore(nextData.length === PAGE_SIZE);
+      const safeNextData = Array.isArray(data) ? data : [];
+
+      if (safeNextData.length > 0) {
+        setCustomers(prev => [...prev, ...safeNextData]);
+        setNextCursor(newCursor);
+        setHasMore(Boolean(newCursor));
       } else {
+        setNextCursor(null);
         setHasMore(false);
       }
     } catch (error) {
       Logger.error("Error paginando:", error);
+      setNextCursor(null);
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
   };
 
   const handleActionableError = (result) => {
-    const { message, details } = result.error;
+    const message = result?.error?.message || result?.message || 'Error en base de datos.';
+    const details = result?.error?.details || {};
 
-    // Opción 1: Sugerir Recarga (DB Bloqueada/Desconectada)
+    // Opcion 1: Sugerir Recarga (DB Bloqueada/Desconectada)
     if (details.actionable === 'SUGGEST_RELOAD') {
       showMessageModal(message, () => window.location.reload(), {
-        confirmButtonText: 'Recargar Página'
+        confirmButtonText: 'Recargar Pagina'
       });
     }
-    // Opción 2: Sugerir Respaldo (Disco Lleno)
+    // Opcion 2: Sugerir Respaldo (Disco Lleno)
     else if (details.actionable === 'SUGGEST_BACKUP') {
-      // CORREGIDO: Usamos navigate y corregimos la ruta '/configuracion'
       showMessageModal(message, () => navigate('/configuracion'), {
         confirmButtonText: 'Ir a Respaldar'
       });
     }
-    // Opción 3: Error Genérico
+    // Opcion 3: Error generico
     else {
       showMessageModal(message, null, { type: 'error' });
     }
+  };
+
+  const getCustomerPhoneFieldError = (result) => {
+    const code = result?.error?.code;
+    const field = result?.error?.details?.field;
+
+    if (code === DB_ERROR_CODES.CONSTRAINT_VIOLATION && field === 'phone') {
+      return result?.error?.message || result?.message || 'El telefono ya esta registrado para otro cliente.';
+    }
+
+    return null;
   };
 
   const handleSaveCustomer = async (customerData) => {
@@ -131,26 +156,30 @@ export default function CustomersPage() {
       const existingDebt = editingCustomer ? editingCustomer.debt : 0;
       const dataToSave = { ...customerData, id, debt: existingDebt };
 
-      // --- CAMBIO: Usamos versión Segura ---
       const result = await saveDataSafe(STORES.CUSTOMERS, dataToSave);
 
       if (!result.success) {
+        const phoneFieldError = getCustomerPhoneFieldError(result);
+        if (phoneFieldError) {
+          return { success: false, fieldErrors: { phone: phoneFieldError } };
+        }
+
         handleActionableError(result);
-        return; // Detenemos si falló
+        return { success: false };
       }
-      // ------------------------------------
 
       setEditingCustomer(null);
       setActiveTab('view-customers');
-      loadInitialCustomers();
-      showMessageModal('¡Cliente guardado con éxito!');
+      await loadInitialCustomers();
+      showMessageModal('Cliente guardado con exito!');
 
+      return { success: true };
     } catch (error) {
       Logger.error('Error al guardar cliente:', error);
       showMessageModal('Error inesperado al guardar cliente.');
+      return { success: false };
     }
   };
-
   const handleEditCustomer = (customer) => {
     setEditingCustomer(customer);
     setSearchParams({ tab: 'add' });
@@ -416,7 +445,6 @@ ${itemsString}
           onSave={handleSaveCustomer}
           onCancel={handleCancelEdit}
           customerToEdit={editingCustomer}
-          allCustomers={customers} // Nota: Esto pasará solo los cargados. Para validación perfecta, idealmente CustomerForm buscaría en BD.
         />
       ) : (
         <>
@@ -472,3 +500,6 @@ ${itemsString}
     </>
   );
 }
+
+
+

@@ -1,23 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useCaja } from '../hooks/useCaja';
 import AuditModal from '../components/common/AuditModal';
 import { showMessageModal } from '../services/utils';
-import { downloadBackupSmart } from '../services/dataTransfer';
+import {
+  downloadBackupSmart,
+  BACKUP_ABORT_REASON,
+  BACKUP_WARNING_BLOB_PERF
+} from '../services/dataTransfer';
 import './CajaPage.css';
 import Logger from '../services/Logger';
 import { Money } from '../utils/moneyMath';
+import { useAppStore } from '../store/useAppStore';
 
 // --- Componente Local: Modal para corregir el fondo inicial ---
-const EditInitialModal = ({ show, onClose, onSave, currentAmount }) => {
+const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = false }) => {
   const [amount, setAmount] = useState('');
 
   // Al abrir, cargamos el monto actual para editarlo
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (show) setAmount(currentAmount !== undefined ? currentAmount : '')
   }, [show, currentAmount]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (isDisabled) return;
     try {
       const safeVal = Money.init(amount);
       if (safeVal.gte(0)) {
@@ -26,7 +34,7 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount }) => {
       } else {
         alert('Ingresa un monto válido (mayor o igual a 0)');
       }
-    } catch (e) {
+    } catch {
       alert('Monto inválido');
     }
   };
@@ -52,11 +60,138 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount }) => {
               autoFocus
               step="0.01"
               min="0"
+              disabled={isDisabled}
             />
           </div>
           <div style={{ display: 'flex', gap: '10px', marginTop: '15px', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn btn-save">Actualizar</button>
+            <button type="button" className="btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
+            <button type="submit" className="btn btn-save" disabled={isDisabled}>Actualizar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+// --- Componente Local: Modal para ajuste de caja ---
+const CashAdjustmentModal = ({
+  show,
+  onClose,
+  onConfirm,
+  calcularTeorico,
+  isDisabled = false
+}) => {
+  const [montoFisicoReal, setMontoFisicoReal] = useState('');
+  const [comentario, setComentario] = useState('');
+  const [totalTeorico, setTotalTeorico] = useState('0');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadTeorico = async () => {
+      if (!show || !calcularTeorico) return;
+      const teorico = await calcularTeorico();
+      if (isMounted) {
+        setTotalTeorico(teorico);
+        setMontoFisicoReal('');
+        setComentario('');
+      }
+    };
+
+    loadTeorico();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [show, calcularTeorico]);
+
+  if (!show) return null;
+
+  const teoricoSafe = Money.init(totalTeorico || 0);
+  const fisicoSafe = Money.init(montoFisicoReal || 0);
+  const diferenciaSafe = Money.subtract(fisicoSafe, teoricoSafe);
+  const comentarioLimpio = comentario.trim();
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (isDisabled) return;
+
+    onConfirm(Money.toExactString(fisicoSafe), comentarioLimpio);
+  };
+
+  const diferenciaEsPositiva = diferenciaSafe.gt(0);
+  const diferenciaEsNegativa = diferenciaSafe.lt(0);
+
+  return (
+    <div className="modal" style={{ display: 'flex', zIndex: 1200 }}>
+      <div className="modal-content" style={{ maxWidth: '500px' }}>
+        <h3 className="modal-title">Ajuste de Caja</h3>
+        <p style={{ marginBottom: '12px', color: 'var(--text-light)', fontSize: '0.9rem' }}>
+          Ingresa el monto fisico real para generar un ajuste auditable contra el total teorico.
+        </p>
+
+        <div style={{ marginBottom: '12px', padding: '10px', background: 'var(--light-background)', borderRadius: '8px' }}>
+          <strong>Total teorico actual:</strong> ${Money.toNumber(teoricoSafe).toFixed(2)}
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">Monto Fisico Real ($)</label>
+            <input
+              type="number"
+              className="form-input"
+              value={montoFisicoReal}
+              onChange={(e) => setMontoFisicoReal(e.target.value)}
+              step="0.01"
+              min="0"
+              required
+              autoFocus
+              disabled={isDisabled}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Comentario (obligatorio)</label>
+            <textarea
+              className="form-textarea"
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+              placeholder="Ej: Correccion por cambio mal dado"
+              required
+              disabled={isDisabled}
+            />
+          </div>
+
+          <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#f8fafc' }}>
+            <strong>Diferencia:</strong>{' '}
+            <span style={{ color: diferenciaEsPositiva ? 'var(--success-color)' : (diferenciaEsNegativa ? 'var(--error-color)' : 'var(--text-dark)') }}>
+              {diferenciaEsPositiva ? '+' : ''}${Money.toNumber(diferenciaSafe).toFixed(2)}
+            </span>
+            {diferenciaEsPositiva && (
+              <div style={{ color: 'var(--success-color)', marginTop: '4px' }}>
+                Se registrara como ajuste_entrada.
+              </div>
+            )}
+            {diferenciaEsNegativa && (
+              <div style={{ color: 'var(--error-color)', marginTop: '4px' }}>
+                Se registrara como ajuste_salida.
+              </div>
+            )}
+            {!diferenciaEsPositiva && !diferenciaEsNegativa && (
+              <div style={{ color: 'var(--text-light)', marginTop: '4px' }}>
+                No hay diferencia; no se registrara movimiento.
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '15px' }}>
+            <button type="button" className="btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
+            <button
+              type="submit"
+              className="btn btn-save"
+              disabled={isDisabled || !montoFisicoReal || fisicoSafe.lt(0) || comentarioLimpio.length === 0}
+            >
+              Registrar Ajuste
+            </button>
           </div>
         </form>
       </div>
@@ -75,17 +210,21 @@ export default function CajaPage() {
     ajustarMontoInicial, //
     realizarAuditoriaYCerrar,
     registrarMovimiento,
-    calcularTotalTeorico
+    calcularTotalTeorico,
+    registrarAjusteCaja,
+    sincronizarEstadoCaja
   } = useCaja();
 
-  const [modalVisible, setModalVisible] = useState(null); // 'entrada', 'salida', 'edit-inicial'
+  const [modalVisible, setModalVisible] = useState(null); // 'entrada', 'salida', 'edit-inicial', 'ajuste-caja'
   const [isAuditOpen, setIsAuditOpen] = useState(false);
-  const [isBackupLoading, setIsBackupLoading] = useState(false);
+  const isBackupLoading = useAppStore((state) => state.isBackupLoading);
+  const setBackupLoading = useAppStore((state) => state.setBackupLoading);
 
   // --- Handlers ---
 
   const handleEntradaSubmit = async (event) => {
     event.preventDefault();
+    if (isBackupLoading) return;
     const monto = event.target.elements['entrada-monto-input'].value;
     const concepto = event.target.elements['entrada-concepto-input'].value;
     if (await registrarMovimiento('entrada', monto, concepto)) {
@@ -96,12 +235,36 @@ export default function CajaPage() {
 
   const handleSalidaSubmit = async (event) => {
     event.preventDefault();
+    if (isBackupLoading) return;
     const monto = event.target.elements['salida-monto-input'].value;
     const concepto = event.target.elements['salida-concepto-input'].value;
     if (await registrarMovimiento('salida', monto, concepto)) {
       setModalVisible(null);
       showMessageModal('Salida registrada correctamente.');
     }
+  };
+
+  const handleAjusteSubmit = async (montoFisicoReal, comentario) => {
+    if (isBackupLoading) return;
+
+    const resultado = await registrarAjusteCaja(montoFisicoReal, comentario);
+    if (!resultado.success) {
+      showMessageModal(`Error al registrar ajuste: ${resultado.error?.message || resultado.error}`, null, { type: 'error' });
+      return;
+    }
+
+    if (resultado.noChange) {
+      showMessageModal('No hay diferencia entre monto fisico y total teorico. No se registro ajuste.');
+      setModalVisible(null);
+      return;
+    }
+
+    const esEntrada = resultado.tipo === 'ajuste_entrada';
+    const montoAjuste = Money.toNumber(resultado.monto_ajuste || 0).toFixed(2);
+    showMessageModal(
+      `Ajuste registrado: ${esEntrada ? 'ajuste_entrada' : 'ajuste_salida'} por $${montoAjuste}.`
+    );
+    setModalVisible(null);
   };
 
   const handleActionableError = (errorObj) => {
@@ -113,44 +276,78 @@ export default function CajaPage() {
     }
   };
 
-  const handleAuditConfirm = async (montoFisico, comentarios) => {
-    const result = await realizarAuditoriaYCerrar(montoFisico, comentarios);
+  const showBackupPerformanceWarning = (backupResult) => {
+    if (backupResult.warnings?.includes(BACKUP_WARNING_BLOB_PERF)) {
+      showMessageModal(
+        'Aviso: Respaldo generado en modo compatible (Blob). En bases grandes puede tardar mas.',
+        null,
+        { type: 'warning' }
+      );
+    }
+  };
 
-    if (result.success) {
-      setIsAuditOpen(false);
+  const handleAuditConfirm = async (montoFisicoTotal, montoFondoSiguienteTurno, comentarios) => {
+    if (isBackupLoading) return;
+    setBackupLoading(true);
 
-      // --- OPTIMIZACIÓN: Disparar respaldo automático ---
+    try {
+      const result = await realizarAuditoriaYCerrar(montoFisicoTotal, montoFondoSiguienteTurno, comentarios);
+
+      if (!result.success) {
+        if (result.error && result.error.details) {
+          handleActionableError(result.error);
+        } else {
+          showMessageModal(`Error al cerrar caja: ${result.error}`, null, { type: 'error' });
+        }
+        return;
+      }
+
       try {
-        // No bloqueamos la UI con alertas, solo lo intentamos descargar
-        await downloadBackupSmart();
-        showMessageModal(`✅ Corte realizado y respaldo descargado.`);
-      } catch (backupError) {
-        // Si falla el respaldo, el corte YA se hizo, así que solo avisamos del corte
-        console.error("Fallo respaldo automático", backupError);
-        showMessageModal(`✅ Corte realizado con éxito (pero falló la descarga del respaldo).`);
-      }
-      // --------------------------------------------------
+        const backupResult = await downloadBackupSmart();
 
-    } else {
-      if (result.error && result.error.details) {
-        handleActionableError(result.error);
-      } else {
-        showMessageModal(`Error al cerrar caja: ${result.error}`, null, { type: 'error' });
+        if (backupResult.success === true) {
+          showBackupPerformanceWarning(backupResult);
+          showMessageModal('Corte realizado y respaldo descargado.');
+        } else if (backupResult.reason === BACKUP_ABORT_REASON) {
+          showMessageModal('Corte realizado con exito.');
+        } else {
+          throw new Error('Resultado de respaldo no reconocido.');
+        }
+      } catch (backupError) {
+        Logger.error('Fallo respaldo automatico', backupError);
+        showMessageModal('Corte realizado con exito (pero fallo la descarga del respaldo).');
       }
+
+      await sincronizarEstadoCaja();
+      setIsAuditOpen(false);
+    } finally {
+      setBackupLoading(false);
     }
   };
 
   // Lógica de Backup (Solicitada)
   const handleBackup = async () => {
-    setIsBackupLoading(true);
+    if (isBackupLoading) return;
+    setBackupLoading(true);
     try {
-      await downloadBackupSmart(); // <--- Cambio aquí
-      showMessageModal("✅ Respaldo generado correctamente.");
+      const backupResult = await downloadBackupSmart();
+
+      if (backupResult.success === true) {
+        showBackupPerformanceWarning(backupResult);
+        showMessageModal('Respaldo generado correctamente.');
+        return;
+      }
+
+      if (backupResult.reason === BACKUP_ABORT_REASON) {
+        return;
+      }
+
+      throw new Error('Resultado de respaldo no reconocido.');
     } catch (e) {
       Logger.error(e);
-      showMessageModal("Error al respaldar.", null, { type: 'error' });
+      showMessageModal('Error al respaldar.', null, { type: 'error' });
     } finally {
-      setIsBackupLoading(false);
+      setBackupLoading(false);
     }
   };
 
@@ -222,9 +419,10 @@ export default function CajaPage() {
               Fondo Inicial
               <button
                 className="btn-icon-small"
-                onClick={() => setModalVisible('edit-inicial')}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', padding: '0' }}
+                onClick={() => !isBackupLoading && setModalVisible('edit-inicial')}
+                style={{ background: 'none', border: 'none', cursor: isBackupLoading ? 'not-allowed' : 'pointer', fontSize: '1rem', padding: '0' }}
                 title="Corregir fondo inicial calculado"
+                disabled={isBackupLoading}
               >
                 ✏️
               </button>
@@ -266,14 +464,22 @@ export default function CajaPage() {
       <div className="caja-card actions-card">
         <h3 className="actions-title">Control de Efectivo</h3>
         <div className="actions-grid">
-          <button className="btn btn-audit full-width" onClick={() => setIsAuditOpen(true)}>
+          <button className="btn btn-audit full-width" onClick={() => setIsAuditOpen(true)} disabled={isBackupLoading}>
             🛡️ Corte de Caja (Cerrar Turno)
           </button>
-          <button className="btn btn-entry half-width" onClick={() => setModalVisible('entrada')}>
+          <button className="btn btn-entry half-width" onClick={() => setModalVisible('entrada')} disabled={isBackupLoading}>
             + Entrada
           </button>
-          <button className="btn btn-exit half-width" onClick={() => setModalVisible('salida')}>
+          <button className="btn btn-exit half-width" onClick={() => setModalVisible('salida')} disabled={isBackupLoading}>
             - Salida
+          </button>
+          <button
+            className="btn btn-adjust full-width"
+            onClick={() => setModalVisible('ajuste-caja')}
+            disabled={isBackupLoading}
+            title="Registrar ajuste auditable por diferencia fisica"
+          >
+            Ajuste de Caja
           </button>
         </div>
       </div>
@@ -283,22 +489,30 @@ export default function CajaPage() {
         <h3 className="subtitle">Movimientos del Turno</h3>
         <div id="caja-movements-list">
           {movimientosCaja.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#999', fontStyle: 'italic' }}>No hay movimientos manuales.</p>
+            <p style={{ textAlign: 'center', color: '#999', fontStyle: 'italic' }}>No hay movimientos registrados.</p>
           ) : (
-            movimientosCaja.map(mov => (
-              <div key={mov.id} className="movement-item" style={{
-                borderLeft: `4px solid ${mov.tipo === 'entrada' ? 'var(--success-color)' : 'var(--error-color)'}`,
-                marginBottom: '8px', padding: '8px', backgroundColor: 'var(--light-background)', borderRadius: '4px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontWeight: 500 }}>{mov.concepto}</span>
-                  <span style={{ fontWeight: 'bold', color: mov.tipo === 'entrada' ? 'var(--success-color)' : 'var(--error-color)' }}>
-                    {mov.tipo === 'entrada' ? '+' : '-'}${Money.toNumber(mov.monto).toFixed(2)}
-                  </span>
+            movimientosCaja.map(mov => {
+              const esEntrada = mov.tipo === 'entrada' || mov.tipo === 'ajuste_entrada';
+              const esAjuste = mov.tipo === 'ajuste_entrada' || mov.tipo === 'ajuste_salida';
+              const colorMov = esEntrada ? 'var(--success-color)' : 'var(--error-color)';
+
+              return (
+                <div key={mov.id} className="movement-item" style={{
+                  borderLeft: `4px solid ${colorMov}`,
+                  marginBottom: '8px', padding: '8px', backgroundColor: 'var(--light-background)', borderRadius: '4px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 500 }}>
+                      {esAjuste ? '[Ajuste] ' : ''}{mov.concepto}
+                    </span>
+                    <span style={{ fontWeight: 'bold', color: colorMov }}>
+                      {esEntrada ? '+' : '-'}${Money.toNumber(mov.monto).toFixed(2)}
+                    </span>
+                  </div>
+                  <small style={{ color: 'var(--text-light)' }}>{new Date(mov.fecha).toLocaleTimeString()}</small>
                 </div>
-                <small style={{ color: 'var(--text-light)' }}>{new Date(mov.fecha).toLocaleTimeString()}</small>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -342,9 +556,10 @@ export default function CajaPage() {
       {/* 1. Modal Ajuste Inicial (Inteligente) */}
       <EditInitialModal
         show={modalVisible === 'edit-inicial'}
-        onClose={() => setModalVisible(null)}
+        onClose={() => !isBackupLoading && setModalVisible(null)}
         currentAmount={cajaActual?.monto_inicial}
         onSave={ajustarMontoInicial}
+        isDisabled={isBackupLoading}
       />
 
       {/* 2. Modal Entrada */}
@@ -355,15 +570,15 @@ export default function CajaPage() {
             <form onSubmit={handleEntradaSubmit}>
               <div className="form-group">
                 <label className="form-label">Monto:</label>
-                <input name="entrada-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus />
+                <input name="entrada-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus disabled={isBackupLoading} />
               </div>
               <div className="form-group">
                 <label className="form-label">Concepto:</label>
-                <input name="entrada-concepto-input" type="text" className="form-input" placeholder="Ej: Cambio, Aporte extra" required />
+                <input name="entrada-concepto-input" type="text" className="form-input" placeholder="Ej: Cambio, Aporte extra" required disabled={isBackupLoading} />
               </div>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
-                <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)}>Cancelar</button>
-                <button type="submit" className="btn btn-save">Guardar</button>
+                <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)} disabled={isBackupLoading}>Cancelar</button>
+                <button type="submit" className="btn btn-save" disabled={isBackupLoading}>Guardar</button>
               </div>
             </form>
           </div>
@@ -378,28 +593,37 @@ export default function CajaPage() {
             <form onSubmit={handleSalidaSubmit}>
               <div className="form-group">
                 <label className="form-label">Monto:</label>
-                <input name="salida-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus />
+                <input name="salida-monto-input" type="number" className="form-input" step="0.01" min="0" required autoFocus disabled={isBackupLoading} />
               </div>
               <div className="form-group">
                 <label className="form-label">Concepto:</label>
-                <input name="salida-concepto-input" type="text" className="form-input" placeholder="Ej: Pago proveedor" required />
+                <input name="salida-concepto-input" type="text" className="form-input" placeholder="Ej: Pago proveedor" required disabled={isBackupLoading} />
               </div>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
-                <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)}>Cancelar</button>
-                <button type="submit" className="btn btn-delete">Registrar Salida</button>
+                <button type="button" className="btn btn-cancel" onClick={() => setModalVisible(null)} disabled={isBackupLoading}>Cancelar</button>
+                <button type="submit" className="btn btn-delete" disabled={isBackupLoading}>Registrar Salida</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* 4. Modal Auditoría (Cierre Inteligente) */}
+      {/* 4. Modal Ajuste de Caja */}
+      <CashAdjustmentModal
+        show={modalVisible === 'ajuste-caja'}
+        onClose={() => !isBackupLoading && setModalVisible(null)}
+        onConfirm={handleAjusteSubmit}
+        calcularTeorico={calcularTotalTeorico}
+        isDisabled={isBackupLoading}
+      />
+      {/* 5. Modal Auditoria (Cierre Inteligente) */}
       <AuditModal
         show={isAuditOpen}
-        onClose={() => setIsAuditOpen(false)}
+        onClose={() => !isBackupLoading && setIsAuditOpen(false)}
         onConfirmAudit={handleAuditConfirm}
         caja={cajaActual}
         calcularTeorico={calcularTotalTeorico}
+        isProcessing={isBackupLoading}
       />
     </div>
   );

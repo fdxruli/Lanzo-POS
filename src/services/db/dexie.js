@@ -1,5 +1,6 @@
 import Dexie from 'dexie';
 import { DB_NAME } from '../../config/dbConfig'; // Usamos tu config existente
+import { buildPhoneBuckets, toIndexedPhoneKey } from './customerPhoneUtils';
 // Nota: Dexie maneja el versionado de forma interna y más limpia, 
 // pero importamos DB_NAME para mantener consistencia.
 
@@ -153,6 +154,29 @@ class LanzoDatabase extends Dexie {
 
         fallbackTime += 1000;
         record.timestamp = new Date(fallbackTime).toISOString();
+      });
+    });
+
+    this.version(8).stores({
+      [STORES.CUSTOMERS]: 'id, createdAt, phone, &phoneKey'
+    }).upgrade(async tx => {
+      const customers = await tx.table(STORES.CUSTOMERS).toArray();
+      const buckets = buildPhoneBuckets(customers);
+      const duplicatedPhones = new Set(
+        Array.from(buckets.entries())
+          .filter(([, records]) => records.length > 1)
+          .map(([phoneKey]) => phoneKey)
+      );
+
+      await tx.table(STORES.CUSTOMERS).toCollection().modify(record => {
+        const phoneKey = toIndexedPhoneKey(record.phone);
+
+        if (!phoneKey || duplicatedPhones.has(phoneKey)) {
+          delete record.phoneKey;
+          return;
+        }
+
+        record.phoneKey = phoneKey;
       });
     });
   }

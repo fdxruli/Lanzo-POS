@@ -4,6 +4,7 @@ export const createUISlice = (set, get) => ({
   appStatus: 'loading',
   serverHealth: 'ok',
   serverMessage: null,
+  isBackupLoading: false,
   showAssistantBot: (() => {
     try {
       const saved = localStorage.getItem('lanzo_show_bot');
@@ -35,5 +36,12 @@ export const createUISlice = (set, get) => ({
       Logger.error('Error al guardar la preferencia del asistente:');
     }
     set({ showAssistantBot: value });
-  }
+  },
+
+  setBackupLoading: (value) => {
+    set({ isBackupLoading: Boolean(value) });
+  },
+
+  startBackupLoading: () => set({ isBackupLoading: true }),
+  stopBackupLoading: () => set({ isBackupLoading: false })
 });

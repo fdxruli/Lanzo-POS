@@ -1,12 +1,5 @@
 import Dexie from 'dexie';
 import Logger from '../Logger';
-// Asegúrate de que la ruta a Logger sea correcta (../../services/Logger si estamos en services/db)
-// Asumo que Logger.js está en src/services/Logger.js, así que desde src/services/db/utils.js sería:
-// import Logger from '../Logger'; 
-
-// ============================================================
-// CLASES DE ERROR (Compatibilidad con tu sistema actual)
-// ============================================================
 
 export class DatabaseError extends Error {
   constructor(code, message, details = {}) {
@@ -27,62 +20,55 @@ export const DB_ERROR_CODES = {
   VERSION_ERROR: 'VERSION_ERROR',
   BLOCKED: 'BLOCKED',
   TIMEOUT: 'TIMEOUT',
-  VALIDATION_ERROR: 'VALIDATION_ERROR', // Agregado explícitamente
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
   UNKNOWN: 'UNKNOWN'
 };
 
 export const STOCK_DECIMALS = 4;
 
-/**
- * Normaliza valores de stock para eliminar residuos de coma flotante (IEEE 754).
- * Utiliza notación exponencial para un redondeo matemático seguro en JS.
- */
 export const normalizeStock = (value) => {
   const num = Number(value);
   if (isNaN(num)) return 0;
   return Number(Math.round(num + 'e' + STOCK_DECIMALS) + 'e-' + STOCK_DECIMALS);
 };
-// ============================================================
-// MANEJO DE ERRORES DEXIE
-// ============================================================
 
-/**
- * Convierte errores nativos de Dexie/IndexedDB en DatabaseError controlados.
- */
 export function handleDexieError(error, context = '') {
   let errorCode = DB_ERROR_CODES.UNKNOWN;
-  let userMessage = 'Ocurrió un error inesperado en la base de datos.';
+  let userMessage = 'Ocurrio un error inesperado en la base de datos.';
   let actionable = null;
+  let field = null;
 
   const errName = error.name || '';
   const errMsg = error.message || '';
 
-  // Mapeo de errores específicos de Dexie
   if (error instanceof Dexie.QuotaExceededError || errName === 'QuotaExceededError') {
     errorCode = DB_ERROR_CODES.QUOTA_EXCEEDED;
-    userMessage = '💾 Espacio lleno. Libera espacio o realiza un respaldo.';
+    userMessage = 'Espacio lleno. Libera espacio o realiza un respaldo.';
     actionable = 'SUGGEST_BACKUP';
-  }
-  else if (error instanceof Dexie.VersionError || errName === 'VersionError') {
+  } else if (error instanceof Dexie.VersionError || errName === 'VersionError') {
     errorCode = DB_ERROR_CODES.VERSION_ERROR;
-    userMessage = '⚠️ Base de datos desactualizada. Recarga la página.';
+    userMessage = 'Base de datos desactualizada. Recarga la pagina.';
     actionable = 'SUGGEST_RELOAD';
-  }
-  else if (error instanceof Dexie.ConstraintError || errName === 'ConstraintError') {
+  } else if (error instanceof Dexie.ConstraintError || errName === 'ConstraintError') {
     errorCode = DB_ERROR_CODES.CONSTRAINT_VIOLATION;
-    userMessage = '⚠️ Duplicado: Ya existe un registro con este ID o Código.';
-    actionable = 'SUGGEST_EDIT';
-  }
-  else if (error instanceof Dexie.TransactionInactiveError || errName === 'TransactionInactiveError') {
+
+    const isCustomerSave = context === 'Save customers';
+    if (isCustomerSave) {
+      userMessage = 'El telefono ya esta registrado para otro cliente.';
+      actionable = 'CHECK_FORM';
+      field = 'phone';
+    } else {
+      userMessage = 'Duplicado: Ya existe un registro con este ID o codigo.';
+      actionable = 'SUGGEST_EDIT';
+    }
+  } else if (error instanceof Dexie.TransactionInactiveError || errName === 'TransactionInactiveError') {
     errorCode = DB_ERROR_CODES.TRANSACTION_INACTIVE;
-    userMessage = '⚠️ La operación se canceló o expiró. Intenta de nuevo.';
-  }
-  else if (errMsg.includes('TIMEOUT')) {
+    userMessage = 'La operacion se cancelo o expiro. Intenta de nuevo.';
+  } else if (errMsg.includes('TIMEOUT')) {
     errorCode = DB_ERROR_CODES.TIMEOUT;
-    userMessage = '⏱️ La operación tardó demasiado.';
+    userMessage = 'La operacion tardo demasiado.';
   }
 
-  // Log técnico
   Logger.error(`[DB_ERROR:${errorCode}] ${context}`, {
     originalError: error,
     message: errMsg,
@@ -92,35 +78,23 @@ export function handleDexieError(error, context = '') {
   return new DatabaseError(errorCode, userMessage, {
     context,
     originalError: errMsg,
-    actionable
+    actionable,
+    ...(field ? { field } : {})
   });
 }
 
-// ============================================================
-// VALIDACIÓN ZOD GENERICA
-// ============================================================
-
-/**
- * Valida datos usando un esquema Zod.
- * Si falla, lanza un DatabaseError con formato amigable.
- * Si pasa, retorna los datos parseados (limpios/transformados).
- * * @param {object} schema - Esquema Zod
- * @param {any} data - Datos a validar
- * @param {string} context - Contexto para el log (ej: "Product Save")
- */
 export function validateOrThrow(schema, data, context = 'Validation') {
-  if (!schema) return data; // Si no hay esquema, pasamos los datos tal cual (bypass)
+  if (!schema) return data;
 
   try {
     return schema.parse(data);
   } catch (error) {
     if (error.name === 'ZodError') {
-      Logger.warn(`⚠️ Validación fallida (${context}):`, error);
+      Logger.warn(`Validacion fallida (${context}):`, error);
 
-      let message = "Datos inválidos";
+      let message = 'Datos invalidos';
       const issues = error.errors || error.issues;
 
-      // Extracción inteligente del mensaje de error (Tu lógica original mejorada)
       if (issues && issues.length > 0) {
         const first = issues[0];
         const path = first.path.length > 0 ? first.path.join(' > ') : 'Campo';
@@ -134,6 +108,6 @@ export function validateOrThrow(schema, data, context = 'Validation') {
         actionable: 'CHECK_FORM'
       });
     }
-    throw error; // Re-lanzar si no es ZodError
+    throw error;
   }
 }

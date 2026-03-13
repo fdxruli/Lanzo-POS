@@ -1,5 +1,4 @@
 import {
-  saveData,
   saveBulkSafe,
   loadData,
   STORES,
@@ -70,7 +69,7 @@ export const downloadInventorySmart = async () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-
+    markBackupCompleted();
     return true;
   } catch (error) {
     Logger.error("Error en exportación inteligente:", error);
@@ -439,7 +438,7 @@ export const generatePharmacyReport = (sales) => {
 };
 
 export const generateFullBackup = async () => {
-  const db = await initDB();
+  await initDB();
   const backupData = {
     version: 1,
     timestamp: new Date().toISOString(),
@@ -453,6 +452,18 @@ export const generateFullBackup = async () => {
   return JSON.stringify(backupData, null, 2);
 };
 
+export const BACKUP_ABORT_REASON = 'ABORTED';
+export const BACKUP_WARNING_BLOB_PERF = 'BLOB_PERF_DEGRADED';
+
+const yieldToMainThread = () => new Promise((resolve) => {
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => resolve());
+    return;
+  }
+
+  setTimeout(resolve, 0);
+});
+
 /**
  * 🚀 RESPALDO OPTIMIZADO (Streaming)
  */
@@ -460,8 +471,9 @@ export const downloadBackupSmart = async () => {
   const fileName = `RESPALDO_LANZO_${new Date().toISOString().split('T')[0]}.jsonl`;
 
   if ('showSaveFilePicker' in window) {
+    let handle;
     try {
-      const handle = await window.showSaveFilePicker({
+      handle = await window.showSaveFilePicker({
         suggestedName: fileName,
         types: [{
           description: 'Respaldo Lanzo (JSON Lines)',
@@ -469,21 +481,41 @@ export const downloadBackupSmart = async () => {
         }],
       });
       const writable = await handle.createWritable();
-      await streamAllDataToJSONL(async (chunkString) => {
-        await writable.write(chunkString);
-      });
-      await writable.close();
-      return true;
+      try {
+        await streamAllDataToJSONL(async (chunkString) => {
+          await writable.write(chunkString);
+        });
+        await writable.close();
+      } catch (error) {
+        try {
+          await writable.abort();
+        } catch (abortError) {
+          Logger.warn('No se pudo abortar el stream de respaldo tras fallo.', abortError);
+        }
+        throw error;
+      }
+      markBackupCompleted();
+      return { success: true, mode: 'FS_API' };
     } catch (err) {
-      if (err.name === 'AbortError') return false;
-      Logger.warn("FS API falló, usando fallback Blob...", err);
+      if (err.name === 'AbortError') {
+        return { success: false, reason: BACKUP_ABORT_REASON };
+      }
+      throw err;
     }
   }
 
   const parts = [];
-  await streamAllDataToJSONL((chunkString) => {
+  let chunkCounter = 0;
+  await streamAllDataToJSONL(async (chunkString) => {
     parts.push(chunkString);
+    chunkCounter += 1;
+
+    // Evita congelar la UI en respaldos grandes cuando usamos Blob fallback.
+    if (chunkCounter % 20 === 0) {
+      await yieldToMainThread();
+    }
   });
+  await yieldToMainThread();
 
   const blob = new Blob(parts, { type: 'application/x-jsonlines;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -494,6 +526,17 @@ export const downloadBackupSmart = async () => {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+  markBackupCompleted();
+  return {
+    success: true,
+    mode: 'BLOB_FALLBACK',
+    warnings: [BACKUP_WARNING_BLOB_PERF]
+  };
+};
 
-  return true;
+// Función para registrar que se hizo un respaldo y avisar a la interfaz
+export const markBackupCompleted = () => {
+  localStorage.setItem('last_backup_date', new Date().toISOString());
+  localStorage.removeItem('backup_postponed_until');
+  window.dispatchEvent(new Event('backup_status_changed'));
 };
