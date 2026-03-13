@@ -3,9 +3,9 @@
 /* ===== VARIABLES GLOBALES ===== */
 :root {
   /* --- PALETA PRINCIPAL --- */
-  --primary-color: #FF3B5C;
-  --primary-hover: #E02041;
-  --secondary-color: #7B61FF;
+  --primary-color: #3B82F6;
+  --primary-hover: #4F46E5;
+  --secondary-color: #06B6D4;
 
   /* --- ESTADOS --- */
   --success-color: #00C48C;
@@ -13,23 +13,23 @@
   --error-color: #FF3B5C;
 
   /* --- FONDOS (Modo Claro - SOFT / AMIGABLE) --- */
-  --background-color: #E8EAED;
+  --background-color: #374151;
   /* Antes era muy blanco, ahora es gris descanso */
 
   /* 2. Fondo de Tarjetas: Blanco puro o ligeramente 'crema' para contraste */
   --card-background-color: #FFFFFF;
 
   /* 3. Fondos secundarios: Un gris un poco más oscuro que el fondo general */
-  --light-background: #DCE0E5;
+  --light-background: #F1F5F9;
   /* Para inputs y hovers */
 
   /* 4. Bordes: Un poco más oscuros para definir bien sin forzar la vista */
-  --border-color: #BCC3CD;
+  --border-color: #E2E8F0;
 
   /* --- TEXTOS --- */
-  --text-dark: #1F2937;
-  --text-color: #4B5563;
-  --text-light: #6B7280;
+  --text-dark: #0F172A;
+  --text-color: #334155;
+  --text-light: #64748B;
 
   /* --- ESPACIADO Y BORDES --- */
   --spacing-xs: 0.5rem;
@@ -46,20 +46,29 @@
 
   /* --- ARQUITECTURA DE Z-INDEX (SISTEMA DE CAPAS CORREGIDO) --- */
   --z-normal: 1;
-  --z-navbar: 100;       /* Barra de navegación */
-  --z-sticky: 200;       /* Elementos pegajosos (headers de tablas) */
-  --z-drawer: 300;       /* Menú lateral móvil */
-  --z-backdrop: 900;     /* Fondo oscuro de modales */
-  
+  --z-navbar: 100;
+  /* Barra de navegación */
+  --z-sticky: 200;
+  /* Elementos pegajosos (headers de tablas) */
+  --z-drawer: 300;
+  /* Menú lateral móvil */
+  --z-backdrop: 900;
+  /* Fondo oscuro de modales */
+
   /* NIVELES DE MODALES */
-  --z-modal-base: 1000;        /* Modales estándar (Bienvenida, Config, Login) */
-  --z-modal-high: 1100;        /* Modales de flujo (Pago, Modificadores, Selector Variantes) */
-  --z-modal-top: 1200;         /* Modales encima de flujo (Scanner, Auditoría, Caja Rápida) */
-  --z-modal-critical: 1300;    /* Modales urgentes/bloqueantes (Receta Médica, Contacto) */
-  
+  --z-modal-base: 1000;
+  /* Modales estándar (Bienvenida, Config, Login) */
+  --z-modal-high: 1100;
+  /* Modales de flujo (Pago, Modificadores, Selector Variantes) */
+  --z-modal-top: 1200;
+  /* Modales encima de flujo (Scanner, Auditoría, Caja Rápida) */
+  --z-modal-critical: 1300;
+  /* Modales urgentes/bloqueantes (Receta Médica, Contacto) */
+
   /* CAPAS SUPERIORES (Modales sobre Modales) */
-  --z-modal-overlay: 2200;     /* Para QuickAddCustomer, Recetas, Mermas, Importar */
-  
+  --z-modal-overlay: 2200;
+  /* Para QuickAddCustomer, Recetas, Mermas, Importar */
+
   /* CAPA DE NOTIFICACIONES (Siempre encima de todo) */
   --z-toast: 9999;
 
@@ -73,14 +82,14 @@
    MODO OSCURO (Dark Mode)
 ====================================================== */
 [data-theme="dark"] {
-  --background-color: #0F172A;
-  --card-background-color: #1E293B;
-  --light-background: #334155;
-  --border-color: #475569;
+  --background-color: #0B0F19;
+  --card-background-color: #111827;
+  --light-background: #1F2937;
+  --border-color: #374151;
 
-  --text-dark: #F8FAFC;
-  --text-color: #CBD5E1;
-  --text-light: #94A3B8;
+  --text-dark: #F9FAFB;
+  --text-color: #D1D5DB;
+  --text-light: #9CA3AF;
 
   --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
   --box-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6);
@@ -135,7 +144,8 @@ select {
   /* Transición rápida para foco */
 }
 
-input, textarea {
+input,
+textarea {
   -webkit-user-select: text;
   user-select: text;
 }
@@ -379,13 +389,15 @@ svg path {
   border-bottom: 1px solid var(--border-color);
   margin-bottom: var(--spacing-xl);
   padding-left: var(--spacing-xs);
-  overflow-x: auto; /* Permite scroll horizontal en móviles */
+  overflow-x: auto;
+  /* Permite scroll horizontal en móviles */
 }
 
 .tab-btn {
   background: transparent;
   border: none;
-  border-bottom: 3px solid transparent; /* Línea invisible base */
+  border-bottom: 3px solid transparent;
+  /* Línea invisible base */
   padding: var(--spacing-sm) var(--spacing-xs);
   font-size: 1rem;
   font-weight: 500;
@@ -393,7 +405,8 @@ svg path {
   cursor: pointer;
   transition: all 0.3s ease;
   white-space: nowrap;
-  margin-bottom: -1px; /* Solapamiento con la línea base */
+  margin-bottom: -1px;
+  /* Solapamiento con la línea base */
 }
 
 .tab-btn:hover {
