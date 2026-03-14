@@ -22,6 +22,7 @@ import { loadData, STORES } from '../services/database';
 import { showMessageModal } from '../services/utils';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
+import { Save, BarChart3, Trash2, ArrowRight } from 'lucide-react';
 
 export default function DashboardPage() {
   const [customers, setCustomers] = useState([]);
@@ -243,7 +244,9 @@ export default function DashboardPage() {
         <div className="tab-content fade-in">
           {/* Banner de Advertencia */}
           <div className="data-warning-banner">
-            <span className="data-warning-icon">💾</span>
+            <span className="data-warning-icon">
+              <Save size={24} strokeWidth={1.5} />
+            </span>
             <div>
               <strong>Importante: Tus datos viven en este dispositivo.</strong>
               <p>
@@ -251,8 +254,9 @@ export default function DashboardPage() {
                 <button
                   onClick={() => navigate('/settings')}
                   className="link-button"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                 >
-                  Ir a Respaldar ahora →
+                  Ir a Respaldar ahora <ArrowRight size={16} />
                 </button>
               </p>
             </div>
@@ -264,18 +268,18 @@ export default function DashboardPage() {
             {/* Sección Principal: Historial */}
             <section className="dashboard-panel history-panel">
               <div className="panel-header">
-                <h3>📊 Historial de Movimientos</h3>
+                <h3><BarChart3 size={20} /> Historial de Movimientos</h3>
                 <span className="panel-subtitle">Registro de ventas recientes</span>
               </div>
               <div className="panel-body">
-                <SalesHistory sales={sales} onDeleteSale={handleDeleteSale} />
+                <SalesHistory sales={sales} onDeleteSale={deleteSale} />
               </div>
             </section>
 
             {/* Sección Lateral: Papelera */}
             <section className="dashboard-panel recycle-panel">
               <div className="panel-header danger-theme">
-                <h3>🗑️ Papelera</h3>
+                <h3><Trash2 size={20} /> Papelera</h3>
                 <span className="panel-subtitle">Elementos eliminados</span>
               </div>
               <div className="panel-body">

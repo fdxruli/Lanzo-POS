@@ -144,8 +144,11 @@
 }
 
 .data-warning-icon {
-  font-size: 1.5rem;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0; /* Evita que el SVG se aplaste si el texto es muy largo */
+  color: #C2410C; /* Asegura que el SVG tome el color naranja oscuro del tema */
 }
 
 .data-warning-banner strong {

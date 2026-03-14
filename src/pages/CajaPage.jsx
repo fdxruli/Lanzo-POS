@@ -11,6 +11,7 @@ import './CajaPage.css';
 import Logger from '../services/Logger';
 import { Money } from '../utils/moneyMath';
 import { useAppStore } from '../store/useAppStore';
+import { Save, Pencil, Lock, TrendingUp, TrendingDown } from 'lucide-react';
 
 // --- Componente Local: Modal para corregir el fondo inicial ---
 const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = false }) => {
@@ -407,7 +408,7 @@ export default function CajaPage() {
               </>
             ) : (
               <>
-                💾 Respaldo Rápido
+                <Save size={18} /> Respaldo Rápido
               </>
             )}
           </button>
@@ -419,12 +420,11 @@ export default function CajaPage() {
               Fondo Inicial
               <button
                 className="btn-icon-small"
-                onClick={() => !isBackupLoading && setModalVisible('edit-inicial')}
-                style={{ background: 'none', border: 'none', cursor: isBackupLoading ? 'not-allowed' : 'pointer', fontSize: '1rem', padding: '0' }}
+                onClick={() => setModalVisible('edit-inicial')}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)', padding: '0', display: 'flex', alignItems: 'center' }}
                 title="Corregir fondo inicial calculado"
-                disabled={isBackupLoading}
               >
-                ✏️
+                <Pencil size={16} />
               </button>
             </span>
             <span className="amount neutral">${Money.toNumber(cajaActual?.monto_inicial || 0).toFixed(2)}</span>
@@ -464,14 +464,14 @@ export default function CajaPage() {
       <div className="caja-card actions-card">
         <h3 className="actions-title">Control de Efectivo</h3>
         <div className="actions-grid">
-          <button className="btn btn-audit full-width" onClick={() => setIsAuditOpen(true)} disabled={isBackupLoading}>
-            🛡️ Corte de Caja (Cerrar Turno)
+          <button className="btn btn-audit full-width" onClick={() => setIsAuditOpen(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <Lock size={20} /> Corte de Caja (Cerrar Turno)
           </button>
-          <button className="btn btn-entry half-width" onClick={() => setModalVisible('entrada')} disabled={isBackupLoading}>
-            + Entrada
+          <button className="btn btn-entry half-width" onClick={() => setModalVisible('entrada')} style={{ gap: '6px' }}>
+            <TrendingUp size={18} /> Entrada
           </button>
-          <button className="btn btn-exit half-width" onClick={() => setModalVisible('salida')} disabled={isBackupLoading}>
-            - Salida
+          <button className="btn btn-exit half-width" onClick={() => setModalVisible('salida')} style={{ gap: '6px' }}>
+            <TrendingDown size={18} /> Salida
           </button>
           <button
             className="btn btn-adjust full-width"

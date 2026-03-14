@@ -1,26 +1,22 @@
 // src/pages/OrderPage.jsx
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { saveDataSafe, STORES, getOrdersSince } from '../services/database';
 import { showMessageModal } from '../services/utils';
 import Logger from '../services/Logger';
+import { useStatsStore } from '../store/useStatsStore';
+import { SALE_STATUS } from '../services/sales/financialStats';
 import './OrderPage.css';
 
 // Componente para el Temporizador Individual de cada Ticket
 const TicketTimer = ({ timestamp, status }) => {
-    const [elapsed, setElapsed] = useState(0);
+    const [now, setNow] = useState(() => Date.now());
+    const elapsed = Math.floor((now - new Date(timestamp).getTime()) / 60000);
 
     useEffect(() => {
-        const calculateTime = () => {
-            const start = new Date(timestamp).getTime();
-            const now = new Date().getTime();
-            return Math.floor((now - start) / 60000); // Minutos
-        };
-
-        setElapsed(calculateTime());
         // Actualizar cada 30 segundos para no sobrecargar
-        const interval = setInterval(() => setElapsed(calculateTime()), 30000);
+        const interval = setInterval(() => setNow(Date.now()), 30000);
         return () => clearInterval(interval);
-    }, [timestamp]);
+    }, []);
 
     // Definir urgencia (Semáforo)
     let urgencyClass = 'time-fresh';
@@ -48,7 +44,13 @@ export default function OrdersPage() {
     // Sonido de campana
     const NOTIFICATION_SOUND = "https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"; 
 
-    const fetchOrders = async () => {
+    const playNotificationSound = useCallback(() => {
+        if (audioPlayer.current) {
+            audioPlayer.current.play().catch(() => Logger.info("Interacción requerida para audio"));
+        }
+    }, []);
+
+    const fetchOrders = useCallback(async () => {
         try {
             const yesterday = new Date();
             yesterday.setHours(yesterday.getHours() - 24);
@@ -89,19 +91,13 @@ export default function OrdersPage() {
         } finally {
             setIsLoading(false);
         }
-    };
-
-    const playNotificationSound = () => {
-        if (audioPlayer.current) {
-            audioPlayer.current.play().catch(e => console.log("Interacción requerida para audio"));
-        }
-    };
+    }, [playNotificationSound]);
 
     useEffect(() => {
         fetchOrders();
         const interval = setInterval(fetchOrders, 10000); // Polling cada 10s
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchOrders]);
 
     const handleAdvanceStatus = async (order) => {
         const nextStatus = order.fulfillmentStatus === 'pending' ? 'ready' : 'completed';
@@ -134,10 +130,19 @@ export default function OrdersPage() {
     const handleCancelOrder = async (order) => {
         if (!window.confirm('¿Cancelar comanda definitivamente?')) return;
         
-        const updatedOrder = { ...order, fulfillmentStatus: 'cancelled' };
+        const updatedOrder = {
+            ...order,
+            fulfillmentStatus: 'cancelled',
+            status: SALE_STATUS.CANCELLED
+        };
         const result = await saveDataSafe(STORES.SALES, updatedOrder);
         
         if (result.success) {
+            try {
+                await useStatsStore.getState().rebuildFinancialStats();
+            } catch (error) {
+                Logger.warn('Pedido cancelado, pero no se pudieron reconstruir las metricas financieras.', error);
+            }
             fetchOrders(); // Esto disparará la lógica dinámica nuevamente
             showMessageModal('Pedido cancelado', null, { type: 'success' });
         }

@@ -21,6 +21,7 @@ import {
   recycleData,
   DB_ERROR_CODES
 } from '../services/database';
+import { ChevronDown, Loader2 } from 'lucide-react';
 
 export default function CustomersPage() {
   const navigate = useNavigate();
@@ -153,7 +154,7 @@ export default function CustomersPage() {
   const handleSaveCustomer = async (customerData) => {
     try {
       const id = editingCustomer ? editingCustomer.id : generateID('cust');
-      const existingDebt = editingCustomer ? editingCustomer.debt : 0;
+      const existingDebt = editingCustomer ? (parseFloat(editingCustomer.debt) || 0) : 0;
       const dataToSave = { ...customerData, id, debt: existingDebt };
 
       const result = await saveDataSafe(STORES.CUSTOMERS, dataToSave);
@@ -362,7 +363,7 @@ Hola *${customer.name}*,
 
 A continuación el detalle de su saldo pendiente con nosotros.
 
-*DEUDA TOTAL A LA FECHA: $${customer.debt.toFixed(2)}*
+*DEUDA TOTAL A LA FECHA: $${Number(customer.debt || 0).toFixed(2)}*
 --------------------------------
 *Detalle de notas pendientes:*
 `;
@@ -461,17 +462,29 @@ ${itemsString}
           />
 
           {/* BOTÓN CARGAR MÁS */}
-          {hasMore && (
-            <div style={{ textAlign: 'center', padding: '20px' }}>
-              <button
-                className="btn btn-secondary"
-                onClick={loadMoreCustomers}
-                disabled={loading}
-              >
-                {loading ? 'Cargando...' : '⬇️ Cargar más clientes'}
-              </button>
-            </div>
-          )}
+{hasMore && (
+  <div style={{ textAlign: 'center', padding: '20px' }}>
+    <button
+      className="btn btn-secondary"
+      onClick={loadMoreCustomers}
+      disabled={loading}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+    >
+      {loading ? (
+        <>
+          {/* Ojo: Necesitarás agregar una animación en tu CSS para que gire, ej: className="spin" */}
+          <Loader2 size={18} /> 
+          Cargando...
+        </>
+      ) : (
+        <>
+          <ChevronDown size={18} /> 
+          Cargar más clientes
+        </>
+      )}
+    </button>
+  </div>
+)}
         </>
       )}
 
