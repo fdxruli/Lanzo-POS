@@ -3,9 +3,9 @@
 /* ===== VARIABLES GLOBALES ===== */
 :root {
   /* --- PALETA PRINCIPAL --- */
-  --primary-color: #3B82F6;
-  --primary-hover: #4F46E5;
-  --secondary-color: #06B6D4;
+  --primary-color: #4F46E5;
+--primary-hover: #4338CA;
+--secondary-color: #0EA5E9;
 
   /* --- ESTADOS --- */
   --success-color: #00C48C;
