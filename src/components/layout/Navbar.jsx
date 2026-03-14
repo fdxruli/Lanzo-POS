@@ -300,6 +300,28 @@ function Navbar() {
             <TrendingUp size={20} /> Ventas y Reportes
           </NavLink>
 
+          <div className="sidebar-divider" />
+
+          <NavLink
+            to="/configuracion"
+            className={getDesktopClass}
+            onClick={handleProtectedNavClick}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
+            <Settings size={20} /> Configuracion
+          </NavLink>
+
+          <NavLink
+            to="/acerca-de"
+            className={getDesktopClass}
+            onClick={handleProtectedNavClick}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
+            <Info size={20} /> Acerca de
+          </NavLink>
+
           {hasPwaAction && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
               {updateAvailable && (
@@ -322,28 +344,6 @@ function Navbar() {
               )}
             </div>
           )}
-
-          <div className="sidebar-divider" />
-
-          <NavLink
-            to="/configuracion"
-            className={getDesktopClass}
-            onClick={handleProtectedNavClick}
-            aria-disabled={isBackupLoading}
-            tabIndex={isBackupLoading ? -1 : 0}
-          >
-            <Settings size={20} /> Configuracion
-          </NavLink>
-
-          <NavLink
-            to="/acerca-de"
-            className={getDesktopClass}
-            onClick={handleProtectedNavClick}
-            aria-disabled={isBackupLoading}
-            tabIndex={isBackupLoading ? -1 : 0}
-          >
-            <Info size={20} /> Acerca de
-          </NavLink>
         </div>
       </nav>
     </>
