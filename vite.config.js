@@ -20,7 +20,7 @@ export default defineConfig({
         short_name: 'Lanzo',
         description: 'Sistema de Punto de Venta e Inventario',
         theme_color: '#FF3B5C',
-        background_color: '#E8EAED',
+        background_color: '#4F46E5',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
