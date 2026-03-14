@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
 import Logger from '../../services/Logger';
-// CORRECCIÓN 1: 'FileText' estaba escrito como 'FileTex'
-import { Lock, Info, FileText, Bot } from 'lucide-react';
+// Se importaron nuevos iconos de lucide-react (Store, Phone, MapPin, Image, Sun, Moon, Monitor)
+import { Lock, Info, FileText, Bot, Store, Phone, MapPin, Image as ImageIcon, Sun, Moon, Monitor } from 'lucide-react';
 import TermsAndConditionsModal from '../common/TermsAndConditionsModal';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
@@ -191,7 +191,9 @@ export default function GeneralSettings() {
         <div className="settings-grid">
           {/* 1. Nombre */}
           <div className="form-group" style={{ position: 'relative' }}>
-            <label className="form-label">Nombre del Negocio</label>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Store size={16} /> Nombre del Negocio
+            </label>
             <input
               type="text"
               className={`form-input ${lockedFields.name ? 'input-locked' : ''}`}
@@ -206,7 +208,9 @@ export default function GeneralSettings() {
 
           {/* 2. Teléfono */}
           <div className="form-group" style={{ position: 'relative' }}>
-            <label className="form-label">Teléfono / WhatsApp</label>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Phone size={16} /> Teléfono / WhatsApp
+            </label>
             <input
               type="tel"
               className={`form-input ${lockedFields.phone ? 'input-locked' : ''}`}
@@ -221,7 +225,9 @@ export default function GeneralSettings() {
 
           {/* 3. Logo */}
           <div className="form-group logo-upload-group">
-            <label className="form-label">Logo</label>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ImageIcon size={16} /> Logo
+            </label>
             <div className={`image-upload-wrapper ${lockedFields.logo ? 'locked' : ''}`}
               style={lockedFields.logo ? { opacity: 0.7, cursor: 'not-allowed' } : {}}>
 
@@ -249,7 +255,9 @@ export default function GeneralSettings() {
 
           {/* 4. Dirección */}
           <div className="form-group full-width" style={{ position: 'relative' }}>
-            <label className="form-label">Dirección</label>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <MapPin size={16} /> Dirección
+            </label>
             <textarea
               className={`form-textarea ${lockedFields.address ? 'input-locked' : ''}`}
               value={address}
@@ -294,8 +302,11 @@ export default function GeneralSettings() {
                 checked={activeTheme === theme}
                 onChange={handleThemeChange}
               />
-              <span className="theme-radio-text">
-                {theme === 'light' ? '☀️ Claro' : theme === 'dark' ? '🌙 Oscuro' : '💻 Sistema'}
+              {/* Aquí se reemplazaron los Emojis por los Iconos de Lucide */}
+              <span className="theme-radio-text" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {theme === 'light' ? <><Sun size={16} /> Claro</> : 
+                 theme === 'dark' ? <><Moon size={16} /> Oscuro</> : 
+                 <><Monitor size={16} /> Sistema</>}
               </span>
             </label>
           ))}
@@ -335,25 +346,23 @@ export default function GeneralSettings() {
             </div>
           </div>
 
-          {/* Toggle Switch Personalizado - CORREGIDO */}
+          {/* Toggle Switch Personalizado */}
           <label style={{
             position: 'relative',
             display: 'inline-block',
             width: '50px',
             height: '26px',
             cursor: 'pointer',
-            flexShrink: 0, /* IMPORTANTE: Esto evita que el switch se aplaste y la bolita se salga */
+            flexShrink: 0,
             userSelect: 'none'
           }}>
             <input
               type="checkbox"
               checked={!!showAssistantBot}
               onChange={(e) => setShowAssistantBot(e.target.checked)}
-              /* Añadido position: absolute para asegurar que el input no ocupe espacio fantasma */
               style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
             />
 
-            {/* Fondo (Píldora) */}
             <span style={{
               position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
               backgroundColor: showAssistantBot ? 'var(--primary-color)' : '#CBD5E0',
@@ -361,19 +370,14 @@ export default function GeneralSettings() {
               borderRadius: '34px'
             }}></span>
 
-            {/* Bolita (Knob) */}
             <span style={{
               position: 'absolute', content: '""', height: '20px', width: '20px',
-              /* Ajuste de simetría: 3px de margen en todos los lados (Arriba, Abajo, Izquierda) */
               left: '3px',
               bottom: '3px',
               backgroundColor: 'white',
-              transition: 'transform .4s', /* Usamos transform para un movimiento más suave */
+              transition: 'transform .4s',
               borderRadius: '50%',
               boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-              /* MATEMÁTICA DEL MOVIMIENTO: 
-                 Ancho Contenedor (50px) - Ancho Bolita (20px) - Margen Izq (3px) - Margen Der (3px) = 24px de viaje 
-              */
               transform: showAssistantBot ? 'translateX(24px)' : 'translateX(0)'
             }}></span>
           </label>
@@ -406,7 +410,6 @@ export default function GeneralSettings() {
             borderRadius: '50%',
             color: '#3182CE'
           }}>
-            {/* Usamos el icono importado correctamente */}
             <FileText size={20} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>

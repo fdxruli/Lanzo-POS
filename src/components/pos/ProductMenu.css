@@ -30,7 +30,7 @@
   flex-shrink: 0;
   /* Evita que el botón se encoja */
   padding: var(--spacing-sm);
-  background-color: var(--secondary-color);
+  background-color: var(--primary-color);
   color: white;
 }
 

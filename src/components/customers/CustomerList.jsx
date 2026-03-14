@@ -23,42 +23,42 @@ const CreditConfigModal = ({ isOpen, onClose, currentGlobal, onSaveGlobal, isSav
 
                 <div className="form-group">
                     <label className="form-label">Límite Global ($)</label>
-                    <input 
-                        type="number" 
-                        className="form-input" 
-                        value={limit} 
+                    <input
+                        type="number"
+                        className="form-input"
+                        value={limit}
                         onChange={(e) => setLimit(parseFloat(e.target.value) || 0)}
                         min="0"
                     />
                 </div>
 
-                <div style={{ 
-                    marginTop: '15px', 
-                    padding: '10px', 
-                    background: '#fff3cd', 
-                    borderRadius: '6px', 
+                <div style={{
+                    marginTop: '15px',
+                    padding: '10px',
+                    background: '#fff3cd',
+                    borderRadius: '6px',
                     border: '1px solid #ffeeba',
                     fontSize: '0.85rem'
                 }}>
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
-                        <input 
-                            type="checkbox" 
-                            checked={applyToAll} 
-                            onChange={(e) => setApplyToAll(e.target.checked)} 
+                        <input
+                            type="checkbox"
+                            checked={applyToAll}
+                            onChange={(e) => setApplyToAll(e.target.checked)}
                             style={{ marginTop: '3px' }}
                         />
                         <span>
                             <strong>Aplicar a todos los clientes existentes</strong>
-                            <br/>
-                            <span style={{color: '#856404'}}>Cuidado: Esto sobrescribirá los límites personalizados de todos los clientes registrados.</span>
+                            <br />
+                            <span style={{ color: '#856404' }}>Cuidado: Esto sobrescribirá los límites personalizados de todos los clientes registrados.</span>
                         </span>
                     </label>
                 </div>
 
                 <div className="modal-actions" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                     <button className="btn btn-cancel" onClick={onClose} disabled={isSaving}>Cancelar</button>
-                    <button 
-                        className="btn btn-save" 
+                    <button
+                        className="btn btn-save"
                         onClick={() => onSaveGlobal(limit, applyToAll)}
                         disabled={isSaving}
                     >
@@ -83,7 +83,7 @@ export default function CustomerList({
 }) {
     // --- ESTADOS Y STORES ---
     const { companyProfile, updateCompanyProfile } = useAppStore();
-    
+
     // Obtenemos el límite global del perfil de la empresa (o 0 si no existe)
     // Usamos un campo personalizado en el perfil llamado 'settings_default_credit_limit'
     const globalCreditLimit = useMemo(() => {
@@ -94,20 +94,25 @@ export default function CustomerList({
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [isSavingConfig, setIsSavingConfig] = useState(false);
-    
+
     const observerRef = useRef(null);
     const sentinelRef = useRef(null);
 
     const safeCustomers = Array.isArray(customers) ? customers : [];
     // Ordenar clientes: Prioridad a los que deben más
     const sortedCustomers = useMemo(() => {
-        return [...safeCustomers].sort((a, b) => (b.debt || 0) - (a.debt || 0));
+        return [...safeCustomers].sort((a, b) => (parseFloat(b.debt) || 0) - (parseFloat(a.debt) || 0));
     }, [safeCustomers]);
 
-    // Calcular estadísticas rápidas para mostrar en la cabecera
     const stats = useMemo(() => {
-        const totalDebt = safeCustomers.reduce((acc, c) => acc + (c.debt || 0), 0);
-        const overLimitCount = safeCustomers.filter(c => (c.debt || 0) > (c.creditLimit || 0) && (c.creditLimit > 0)).length;
+        const totalDebt = safeCustomers.reduce((acc, c) => acc + (parseFloat(c.debt) || 0), 0);
+
+        const overLimitCount = safeCustomers.filter(c => {
+            const debtVal = parseFloat(c.debt) || 0;
+            const limitVal = parseFloat(c.creditLimit) || 0;
+            return debtVal > limitVal && limitVal > 0;
+        }).length;
+
         return { totalDebt, overLimitCount };
     }, [safeCustomers]);
 
@@ -157,10 +162,10 @@ export default function CustomerList({
                     ...c,
                     creditLimit: newLimit
                 }));
-                
+
                 // Ejecutamos las actualizaciones (simulado secuencial para no bloquear UI)
                 for (const updatedCustomer of updates) {
-                    await onEdit(updatedCustomer); 
+                    await onEdit(updatedCustomer);
                 }
             }
             setShowConfigModal(false);
@@ -192,15 +197,15 @@ export default function CustomerList({
                     Haz clic en "Añadir Cliente" para comenzar.
                 </span>
                 {/* Botón de config inicial */}
-                <button 
-                    className="btn-text" 
+                <button
+                    className="btn-text"
                     onClick={() => setShowConfigModal(true)}
                     style={{ marginTop: '20px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '5px' }}
                 >
                     <Settings size={14} /> Configurar Límite de Crédito
                 </button>
-                <CreditConfigModal 
-                    isOpen={showConfigModal} 
+                <CreditConfigModal
+                    isOpen={showConfigModal}
                     onClose={() => setShowConfigModal(false)}
                     currentGlobal={globalCreditLimit}
                     onSaveGlobal={handleSaveGlobalLimit}
@@ -213,9 +218,9 @@ export default function CustomerList({
     return (
         <div className="customer-list-container">
             {/* Cabecera de Resumen de Crédito */}
-            <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 marginBottom: '15px',
                 padding: '10px 15px',
@@ -242,8 +247,8 @@ export default function CustomerList({
                     )}
                 </div>
 
-                <button 
-                    className="btn btn-secondary small" 
+                <button
+                    className="btn btn-secondary small"
                     onClick={() => setShowConfigModal(true)}
                     style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}
                 >
@@ -289,8 +294,8 @@ export default function CustomerList({
             </div>
 
             {/* Modal de Configuración */}
-            <CreditConfigModal 
-                isOpen={showConfigModal} 
+            <CreditConfigModal
+                isOpen={showConfigModal}
                 onClose={() => setShowConfigModal(false)}
                 currentGlobal={globalCreditLimit}
                 onSaveGlobal={handleSaveGlobalLimit}

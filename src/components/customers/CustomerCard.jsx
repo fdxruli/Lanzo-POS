@@ -24,21 +24,22 @@ const CustomerCard = memo(({
     onViewLayaways
 }) => {
     // 2. OBTENER LA CONFIGURACIÓN
-    const { hasLayaway } = useFeatureConfig(); 
+    const { hasLayaway } = useFeatureConfig();
 
-    const hasDebt = (customer.debt || 0) > 0;
+    const parsedDebt = parseFloat(customer.debt) || 0;
+    const hasDebt = parsedDebt > 0;
 
     return (
         <div className={`customer-card ${hasDebt ? 'has-debt' : ''}`}>
             {/* ... (Encabezado se mantiene igual) ... */}
             <div className="customer-content">
-               {/* ... (Contenido se mantiene igual) ... */}
-               <div className="customer-header">
+                {/* ... (Contenido se mantiene igual) ... */}
+                <div className="customer-header">
                     <h4 className="customer-name">{customer.name}</h4>
                     {hasDebt && (
                         <div className="debt-badge">
                             <AlertCircle size={14} />
-                            <span>Deuda: ${customer.debt.toFixed(2)}</span>
+                            <span>Deuda: ${parsedDebt.toFixed(2)}</span>
                         </div>
                     )}
                 </div>
@@ -96,7 +97,7 @@ const CustomerCard = memo(({
 
                 {/* ... Resto del componente igual ... */}
                 <div className="actions-secondary">
-                     <button
+                    <button
                         className="btn-icon-text"
                         onClick={() => onViewHistory(customer)}
                         title="Ver historial"

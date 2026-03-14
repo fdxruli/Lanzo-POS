@@ -6,6 +6,7 @@ import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import VariantSelectorModal from './VariantSelectorModal';
 import './ProductMenu.css';
+import { Camera, ScanLine } from 'lucide-react';
 
 const playBeep = (freq = 1200, type = 'sine') => {
   try {
@@ -212,7 +213,7 @@ export default function ProductMenu({
           onChange={(e) => onSearchChange(e.target.value)}
         />
         <button id="scan-barcode-btn" className="btn btn-scan" title="Escanear" onClick={onOpenScanner}>
-          📷
+          <ScanLine size={20} />
         </button>
       </div>
 

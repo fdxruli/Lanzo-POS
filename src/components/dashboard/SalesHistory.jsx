@@ -24,7 +24,9 @@ export default function SalesHistory({ sales, onDeleteSale }) {
                   <div className="sale-date">
                     {new Date(sale.timestamp).toLocaleString()}
                   </div>
-                  <div className="sale-total">${sale.total.toFixed(2)}</div>
+                  <div className="sale-total">
+                    ${(Number(sale.total) || 0).toFixed(2)}
+                  </div>
                 </div>
 
                 <div className="sale-item-info">
