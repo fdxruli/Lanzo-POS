@@ -110,7 +110,7 @@
    ==================================== */
 .product-list-container .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
 }
 
@@ -156,6 +156,7 @@
 .product-list-container .complex-header {
   padding: 12px;
   display: flex;
+  flex-wrap: wrap; /* ← CRÍTICO: Permite que los botones salten a la siguiente línea si no hay espacio */
   gap: 12px;
   align-items: center;
   border-bottom: 1px solid var(--border-color);
@@ -178,8 +179,8 @@
 }
 
 .product-list-container .title-area {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 120px; /* ← Se le da un tamaño base inicial */
+  min-width: 120px; /* ← CRÍTICO: Evita que el título sea aplastado a 0px */
 }
 
 .product-list-container .title-top h4 {
@@ -225,6 +226,7 @@
   flex-shrink: 0;
   margin-left: auto;
   align-items: center; /* ← Asegura alineación vertical */
+  flex-wrap: wrap; /* ← Permite que los botones salten a la siguiente línea si no hay espacio */
 }
 
 /* 
