@@ -1,7 +1,7 @@
 {
   "name": "lanzo-pos-react",
   "private": true,
-  "version": "3.0.1",
+  "version": "3.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
