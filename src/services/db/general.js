@@ -126,6 +126,14 @@ export const generalRepository = {
         dataToSave.name_lower = dataToSave.name.toLowerCase();
       }
 
+      if (storeName === STORES.MENU && dataToSave.committedStock === undefined) {
+        dataToSave.committedStock = existingRecord?.committedStock ?? 0;
+      }
+
+      if (storeName === STORES.PRODUCT_BATCHES && dataToSave.committedStock === undefined) {
+        dataToSave.committedStock = existingRecord?.committedStock ?? 0;
+      }
+
       if (storeName === STORES.CUSTOMERS) {
         applyCustomerWriteMetadata(dataToSave, existingRecord);
         await applyCustomerPhonePolicy(dataToSave, existingRecord);
@@ -156,6 +164,14 @@ export const generalRepository = {
 
         if (storeName === STORES.MENU && processed.name) {
           processed.name_lower = processed.name.toLowerCase();
+        }
+
+        if (storeName === STORES.MENU && processed.committedStock === undefined) {
+          processed.committedStock = 0;
+        }
+
+        if (storeName === STORES.PRODUCT_BATCHES && processed.committedStock === undefined) {
+          processed.committedStock = 0;
         }
 
         if (storeName === STORES.CUSTOMERS) {

@@ -1,249 +1,390 @@
 import { db, STORES } from './dexie';
-import { handleDexieError, DatabaseError, DB_ERROR_CODES, normalizeStock } from './utils';
-import { generateID } from '../utils'
+import {
+    handleDexieError,
+    DatabaseError,
+    DB_ERROR_CODES,
+    normalizeStock,
+    getAvailableStock,
+    getCommittedStock
+} from './utils';
+import { generateID } from '../utils';
 import { Money } from '../../utils/moneyMath';
+import { SALE_STATUS } from '../sales/financialStats';
 
-/**
- * Repositorio de Ventas.
- * Maneja transacciones críticas de facturación y consistencia de stock.
- */
+const getRealProductId = (item) => item?.parentId || item?.id;
+const isCommittedSaleItem = (item) => item?.inventoryReservation?.source === 'table';
+const hasBatchDeductions = (item) => Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0;
+
+const buildNonBatchSalesMap = (saleItems = []) => {
+    const summary = new Map();
+
+    (saleItems || []).forEach((item) => {
+        if (hasBatchDeductions(item)) return;
+
+        const productId = getRealProductId(item);
+        if (!productId) return;
+
+        const totalSold = normalizeStock(item?.stockDeducted ?? item?.quantity ?? 0);
+        if (totalSold <= 0) return;
+
+        const current = summary.get(productId) || { totalSold: 0, committedSold: 0 };
+        current.totalSold = normalizeStock(current.totalSold + totalSold);
+
+        if (isCommittedSaleItem(item)) {
+            const committedQty = normalizeStock(item?.inventoryReservation?.committedQuantity ?? totalSold);
+            current.committedSold = normalizeStock(current.committedSold + committedQty);
+        }
+
+        summary.set(productId, current);
+    });
+
+    return summary;
+};
+
+const buildInventoryError = (message) => {
+    const error = new Error(message);
+    error.isInventoryError = true;
+    return error;
+};
+
+const buildConcurrencyError = (message) => {
+    const error = new Error(message);
+    error.isConcurrencyError = true;
+    return error;
+};
+
+const collectAffectedProductIds = (sale, deductions = []) => {
+    const affectedProductIds = new Set();
+
+    (deductions || []).forEach(({ productId }) => {
+        if (productId) affectedProductIds.add(productId);
+    });
+
+    if (Array.isArray(sale?.items)) {
+        sale.items.forEach((item) => {
+            const productId = getRealProductId(item);
+            if (productId) affectedProductIds.add(productId);
+        });
+    }
+
+    return affectedProductIds;
+};
+
+const loadBatchesCacheByProduct = async (affectedProductIds, tableBatches) => {
+    const batchesCacheMap = new Map();
+
+    await Promise.all(
+        Array.from(affectedProductIds).map(async (productId) => {
+            const productBatches = await tableBatches
+                .where('productId')
+                .equals(productId)
+                .toArray();
+
+            batchesCacheMap.set(productId, productBatches);
+        })
+    );
+
+    return batchesCacheMap;
+};
+
+const applyBatchDeductions = async ({ deductions = [], batchesCacheMap, tableBatches }) => {
+    for (const deduction of deductions || []) {
+        const quantity = normalizeStock(deduction?.quantity);
+        if (quantity <= 0) continue;
+
+        const productBatches = batchesCacheMap.get(deduction.productId) || [];
+        let batch = productBatches.find((candidate) => candidate.id === deduction.batchId);
+
+        if (!batch) {
+            batch = await tableBatches.get(deduction.batchId);
+        }
+
+        if (!batch) {
+            throw buildInventoryError(
+                `CRITICAL_BATCH_NOT_FOUND: El lote ${deduction.batchId} no existe.`
+            );
+        }
+
+        if (normalizeStock(batch.stock) < quantity) {
+            throw buildInventoryError(
+                `STOCK_INSUFFICIENT: Lote ${batch.sku || deduction.batchId} tiene ${batch.stock}, se requiere ${quantity}.`
+            );
+        }
+
+        if (deduction.fromCommittedStock) {
+            const committedStock = getCommittedStock(batch);
+            if (committedStock < quantity) {
+                throw buildInventoryError(
+                    `CRITICAL_COMMITTED_UNDERFLOW: Lote ${batch.sku || deduction.batchId} tiene ${committedStock} comprometido, ` +
+                    `se intentan convertir ${quantity}.`
+                );
+            }
+        } else if (getAvailableStock(batch) < quantity) {
+            throw buildInventoryError(
+                `STOCK_INSUFFICIENT: Lote ${batch.sku || deduction.batchId} solo tiene ${getAvailableStock(batch)} disponible, ` +
+                `se requieren ${quantity}.`
+            );
+        }
+
+        const updatedBatch = {
+            ...batch,
+            stock: normalizeStock(batch.stock - quantity),
+            committedStock: deduction.fromCommittedStock
+                ? normalizeStock(getCommittedStock(batch) - quantity)
+                : getCommittedStock(batch),
+            isActive: normalizeStock(batch.stock - quantity) > 0
+        };
+
+        const batchIndex = productBatches.findIndex((candidate) => candidate.id === deduction.batchId);
+        if (batchIndex >= 0) {
+            productBatches[batchIndex] = updatedBatch;
+        }
+
+        await tableBatches.put(updatedBatch);
+    }
+};
+
+const syncParentProductsAfterSale = async ({
+    affectedProductIds,
+    batchesCacheMap,
+    saleItems,
+    tableMenu,
+}) => {
+    const nonBatchSalesMap = buildNonBatchSalesMap(saleItems);
+    const productIdsArray = Array.from(affectedProductIds);
+
+    // Lectura Masiva (Bulk Read)
+    const products = await tableMenu.bulkGet(productIdsArray);
+
+    const productsToUpdate = [];
+    const timestamp = new Date().toISOString();
+
+    // Procesamiento Síncrono en Memoria
+    for (let i = 0; i < products.length; i++) {
+        const product = products[i];
+
+        if (!product || product.trackStock === false) continue;
+
+        const productId = productIdsArray[i];
+
+        if (product.batchManagement?.enabled) {
+            const productBatches = batchesCacheMap.get(productId) || [];
+            const totalStock = normalizeStock(
+                productBatches
+                    .filter((batch) => batch?.isActive && normalizeStock(batch.stock) > 0)
+                    .reduce((sum, batch) => sum + normalizeStock(batch.stock), 0)
+            );
+
+            const totalCommittedStock = normalizeStock(
+                productBatches.reduce((sum, batch) => sum + getCommittedStock(batch), 0)
+            );
+
+            productsToUpdate.push({
+                ...product,
+                stock: totalStock,
+                committedStock: totalCommittedStock,
+                updatedAt: timestamp
+            });
+
+            continue;
+        }
+
+        const nonBatchSale = nonBatchSalesMap.get(productId);
+        if (!nonBatchSale || nonBatchSale.totalSold <= 0) continue;
+
+        const retailSold = normalizeStock(nonBatchSale.totalSold - nonBatchSale.committedSold);
+        if (retailSold > 0 && getAvailableStock(product) < retailSold) {
+            throw buildInventoryError(
+                `STOCK_INSUFFICIENT: Producto ${product.name} solo tiene ${getAvailableStock(product)} disponible, ` +
+                `se requieren ${retailSold}.`
+            );
+        }
+
+        if (nonBatchSale.committedSold > 0 && getCommittedStock(product) < nonBatchSale.committedSold) {
+            throw buildInventoryError(
+                `CRITICAL_COMMITTED_UNDERFLOW: Producto ${product.name} tiene ${getCommittedStock(product)} comprometido, ` +
+                `se intentan convertir ${nonBatchSale.committedSold}.`
+            );
+        }
+
+        const newStock = normalizeStock(Number(product.stock || 0) - nonBatchSale.totalSold);
+        if (newStock < 0) {
+            throw buildInventoryError(
+                `STOCK_INSUFFICIENT: Producto ${product.name} tiene ${product.stock}, se requiere ${nonBatchSale.totalSold}.`
+            );
+        }
+
+        productsToUpdate.push({
+            ...product,
+            stock: newStock,
+            committedStock: nonBatchSale.committedSold > 0
+                ? normalizeStock(getCommittedStock(product) - nonBatchSale.committedSold)
+                : getCommittedStock(product),
+            updatedAt: timestamp
+        });
+    }
+
+    // Escritura Masiva (Bulk Write)
+    if (productsToUpdate.length > 0) {
+        await tableMenu.bulkPut(productsToUpdate);
+    }
+};
+
+const applyCustomerCreditCharge = async ({ sale, tables }) => {
+    const saldoSafe = Money.init(sale.saldoPendiente);
+
+    if (sale.paymentMethod !== 'fiado' || !sale.customerId || saldoSafe.lte(0)) {
+        return;
+    }
+
+    // Falla rápida: Si la orden exige fiado pero las dependencias no existen, la integridad de los datos está comprometida. No ignorar.
+    if (!tables.customers || !tables.customerLedger) {
+        throw new Error(`Integridad Crítica: Se solicitó fiado para el cliente ${sale.customerId}, pero las tablas no fueron provisionadas en el pre-flight.`);
+    }
+
+    const customer = await tables.customers.get(sale.customerId);
+    if (!customer) {
+        throw new Error(`Integridad Crítica: El cliente ${sale.customerId} no existe para el cargo a crédito.`);
+    }
+
+    const timestamp = new Date().toISOString();
+
+    await tables.customerLedger.add({
+        id: generateID('chg'),
+        customerId: sale.customerId,
+        type: 'CHARGE',
+        amount: Money.toExactString(saldoSafe),
+        reference: sale.id,
+        timestamp
+    });
+
+    const currentDebt = Money.init(customer.debt || 0);
+    const newDebt = Money.add(currentDebt, saldoSafe);
+
+    await tables.customers.update(sale.customerId, {
+        debt: Money.toExactString(newDebt),
+        updatedAt: timestamp
+    });
+};
+
+const persistSaleAndLog = async ({ sale, tables, logType = 'SALE', extraLogFields = {} }) => {
+    const saleToSave = {
+        ...sale,
+        status: sale.status ?? SALE_STATUS.CLOSED,
+        postEffectsCompleted: true
+    };
+
+    await tables.sales.put(saleToSave);
+
+    const transactionId = generateID('txn');
+    await tables.transactionLog.add({
+        id: transactionId,
+        type: logType,
+        status: 'COMPLETED',
+        timestamp: new Date().toISOString(),
+        amount: sale.total,
+        saleId: sale.id,
+        ...extraLogFields
+    });
+
+    return transactionId;
+};
+
+const processSaleWithinTransaction = async ({ sale, deductions = [], tables, logType = 'SALE', extraLogFields = {} }) => {
+    const existingSale = await tables.sales.get(sale.id);
+    if (existingSale) {
+        if (existingSale.status !== SALE_STATUS.OPEN) {
+            throw new DatabaseError(
+                DB_ERROR_CODES.CONSTRAINT_VIOLATION,
+                'La venta ya fue procesada anteriormente.'
+            );
+        }
+    }
+
+    const affectedProductIds = collectAffectedProductIds(sale, deductions);
+    const batchesCacheMap = await loadBatchesCacheByProduct(affectedProductIds, tables.batches);
+
+    await applyBatchDeductions({
+        deductions,
+        batchesCacheMap,
+        tableBatches: tables.batches
+    });
+
+    await syncParentProductsAfterSale({
+        affectedProductIds,
+        batchesCacheMap,
+        saleItems: sale?.items || [],
+        tableMenu: tables.menu
+    });
+
+    await applyCustomerCreditCharge({
+        sale,
+        tables
+    });
+
+    const transactionId = await persistSaleAndLog({
+        sale,
+        tables,
+        logType,
+        extraLogFields
+    });
+
+    return { success: true, transactionId };
+};
+
+// Pre-flight check dinámico. Evalúa el array de ventas y extrae las dependencias de tablas requeridas.
+const resolveRequiredStoreNames = (salesPayloads = []) => {
+    const stores = new Set([
+        STORES.SALES,
+        STORES.PRODUCT_BATCHES,
+        STORES.MENU,
+        STORES.TRANSACTION_LOG
+    ]);
+
+    const sales = Array.isArray(salesPayloads) ? salesPayloads : [salesPayloads];
+
+    for (const sale of sales) {
+        // Bloquear si hay customerId para soportar lealtad, historial, o créditos
+        if (sale?.customerId) {
+            stores.add(STORES.CUSTOMERS);
+            stores.add(STORES.CUSTOMER_LEDGER);
+        }
+    }
+
+    return Array.from(stores);
+};
+
+// Inyector condicional de dependencias
+const buildTransactionTables = (lockedStores = []) => {
+    const tables = {};
+    if (lockedStores.includes(STORES.SALES)) tables.sales = db.table(STORES.SALES);
+    if (lockedStores.includes(STORES.PRODUCT_BATCHES)) tables.batches = db.table(STORES.PRODUCT_BATCHES);
+    if (lockedStores.includes(STORES.MENU)) tables.menu = db.table(STORES.MENU);
+    if (lockedStores.includes(STORES.TRANSACTION_LOG)) tables.transactionLog = db.table(STORES.TRANSACTION_LOG);
+    if (lockedStores.includes(STORES.CUSTOMERS)) tables.customers = db.table(STORES.CUSTOMERS);
+    if (lockedStores.includes(STORES.CUSTOMER_LEDGER)) tables.customerLedger = db.table(STORES.CUSTOMER_LEDGER);
+    return tables;
+};
+
 export const salesRepository = {
 
-    /**
-     * 🔥 VERSIÓN OPTIMIZADA CON RECALCULACIÓN INTELIGENTE
-     * 
-     * Ejecuta una venta de forma Transaccional y Atómica.
-     * Actualiza stocks (Lotes y Productos Padre), guarda la venta y genera log.
-     * 
-     * MEJORAS:
-     * - Pre-carga lotes en memoria (1 query por producto)
-     * - Recalcula stock del padre sumando lotes (autocorrección)
-     * - Evita doble deducción
-     * 
-     * @param {object} sale - Objeto de venta completo.
-     * @param {Array} deductions - Array de { batchId, quantity, productId }.
-     */
     async executeSaleTransaction(sale, deductions) {
         try {
-            // Definimos las tablas involucradas para bloquearlas (Read-Write)
-            return await db.transaction('rw', [
-                db.table(STORES.SALES),
-                db.table(STORES.PRODUCT_BATCHES),
-                db.table(STORES.MENU),
-                db.table(STORES.TRANSACTION_LOG),
-                db.table(STORES.CUSTOMERS),
-                db.table(STORES.CUSTOMER_LEDGER),
-            ], async () => {
+            const lockedStoreNames = resolveRequiredStoreNames(sale);
+            const dexieTablesToLock = lockedStoreNames.map(name => db.table(name));
 
-                // 1. Verificación de Idempotencia (Evitar duplicados)
-                const existingSale = await db.table(STORES.SALES).get(sale.id);
-                if (existingSale) {
-                    throw new DatabaseError(
-                        DB_ERROR_CODES.CONSTRAINT_VIOLATION,
-                        'La venta ya fue procesada anteriormente.'
-                    );
-                }
-
-                // ============================================================
-                // 2. PRE-CARGA INTELIGENTE DE LOTES (OPTIMIZACIÓN CLAVE)
-                // ============================================================
-                // Identificamos qué productos necesitamos recalcular
-                const affectedProductIds = new Set();
-
-                // A. Productos con deducciones de lotes
-                deductions.forEach(({ productId }) => {
-                    if (productId) affectedProductIds.add(productId);
+            return await db.transaction('rw', dexieTablesToLock, async () => {
+                const tables = buildTransactionTables(lockedStoreNames);
+                return processSaleWithinTransaction({
+                    sale,
+                    deductions,
+                    tables,
+                    logType: 'SALE'
                 });
-
-                // B. Productos vendidos directamente (sin lotes)
-                if (sale.items && Array.isArray(sale.items)) {
-                    sale.items.forEach(item => {
-                        if (!item.batchesUsed || item.batchesUsed.length === 0) {
-                            const pid = item.parentId || item.id;
-                            if (pid) affectedProductIds.add(pid);
-                        }
-                    });
-                }
-
-                // C. CACHEO: Una sola query por producto (muy rápido)
-                const batchesCacheMap = new Map();
-
-                await Promise.all(
-                    Array.from(affectedProductIds).map(async (productId) => {
-                        const batches = await db.table(STORES.PRODUCT_BATCHES)
-                            .where('productId').equals(productId)
-                            .toArray(); // Traemos TODOS (activos e inactivos)
-
-                        batchesCacheMap.set(productId, batches);
-                    })
-                );
-
-                // ============================================================
-                // 3. VALIDACIÓN Y DESCUENTO DE LOTES
-                // ============================================================
-                // Mapa temporal para trackear cambios en memoria
-                const batchUpdates = new Map();
-
-                for (const { batchId, quantity, productId } of deductions) {
-                    if (quantity <= 0) continue;
-
-                    // Obtener lote del caché (ya lo tenemos en RAM)
-                    const productBatches = batchesCacheMap.get(productId) || [];
-                    let batch = productBatches.find(b => b.id === batchId);
-
-                    // Si no está en caché, lo buscamos en BD (caso raro)
-                    if (!batch) {
-                        batch = await db.table(STORES.PRODUCT_BATCHES).get(batchId);
-                    }
-
-                    if (!batch) {
-                        throw new Error(
-                            `Integridad Crítica: El lote ${batchId} no existe.`
-                        );
-                    }
-
-                    // Validación de Stock (Atomic Check)
-                    if (batch.stock < quantity) {
-                        throw new Error(
-                            `STOCK_INSUFFICIENT: Lote ${batch.sku || batchId} tiene ${batch.stock}, se requiere ${quantity}`
-                        );
-                    }
-
-                    // Actualizar en memoria primero
-                    const newStock = normalizeStock(batch.stock - quantity);
-                    const updatedBatch = {
-                        ...batch,
-                        stock: newStock,
-                        isActive: newStock > 0
-                    };
-
-                    // Guardar cambio en el mapa temporal
-                    batchUpdates.set(batchId, updatedBatch);
-
-                    // Actualizar también el caché para el recálculo posterior
-                    const batchIndex = productBatches.findIndex(b => b.id === batchId);
-                    if (batchIndex >= 0) {
-                        productBatches[batchIndex] = updatedBatch;
-                    }
-
-                    // Persistir en BD
-                    await db.table(STORES.PRODUCT_BATCHES).put(updatedBatch);
-                }
-
-                // ============================================================
-                // 4. RECALCULACIÓN INTELIGENTE DEL STOCK PADRE
-                // ============================================================
-                // Ahora que los lotes están actualizados, recalculamos el padre
-
-                for (const productId of affectedProductIds) {
-                    const product = await db.table(STORES.MENU).get(productId);
-
-                    if (!product) continue; // Producto eliminado (caso extremo)
-
-                    // Solo recalculamos si trackea stock
-                    if (product.trackStock) {
-
-                        // OPCIÓN A: Si el producto USA LOTES
-                        if (product.batchManagement?.enabled) {
-                            // Suma de lotes activos (ya actualizados en el caché)
-                            const productBatches = batchesCacheMap.get(productId) || [];
-
-                            const totalStock = normalizeStock(productBatches
-                                .filter(b => b.isActive && normalizeStock(b.stock) > 0)
-                                .reduce((sum, b) => sum + normalizeStock(b.stock), 0));
-
-                            // Actualizar padre con el stock REAL calculado
-                            await db.table(STORES.MENU).update(productId, {
-                                stock: totalStock,
-                                updatedAt: new Date().toISOString()
-                            });
-                        }
-                        // OPCIÓN B: Si el producto NO USA LOTES (descuento directo)
-                        else {
-                            // Calculamos cuánto se vendió de este producto
-                            let totalSold = 0;
-
-                            sale.items.forEach(item => {
-                                const itemProductId = item.parentId || item.id;
-                                if (itemProductId === productId) {
-                                    totalSold += item.quantity || 0;
-                                }
-                            });
-
-                            if (totalSold > 0) {
-                                let newStock = normalizeStock(product.stock - totalSold);
-                                if (newStock < 0) newStock = 0;
-
-                                await db.table(STORES.MENU).update(productId, {
-                                    stock: newStock,
-                                    updatedAt: new Date().toISOString()
-                                });
-                            }
-                        }
-                    }
-                }
-
-                // ============================================================
-                // 4.5 ACTUALIZACIÓN DE DEUDA DEL CLIENTE
-                // ============================================================
-                const saldoSafe = Money.init(sale.saldoPendiente);
-
-                if (sale.paymentMethod === 'fiado' && sale.customerId && saldoSafe.gt(0)) {
-                    const customer = await db.table(STORES.CUSTOMERS).get(sale.customerId);
-                    if (!customer) {
-                        throw new Error(`Integridad Crítica: El cliente ${sale.customerId} no existe para el cargo a crédito.`);
-                    }
-
-                    const timestamp = new Date().toISOString();
-
-                    // 1. Registro inmutable de la deuda adquirida (Guardamos String exacto)
-                    await db.table(STORES.CUSTOMER_LEDGER).add({
-                        id: generateID('chg'),
-                        customerId: sale.customerId,
-                        type: 'CHARGE',
-                        amount: Money.toExactString(saldoSafe),
-                        reference: sale.id,
-                        timestamp
-                    });
-
-                    // 2. Actualización de la proyección (Guardamos String exacto, JAMÁS toNumber)
-                    const currentDebt = Money.init(customer.debt || 0);
-                    const newDebt = Money.add(currentDebt, saldoSafe);
-
-                    await db.table(STORES.CUSTOMERS).update(sale.customerId, {
-                        debt: Money.toExactString(newDebt),
-                        updatedAt: timestamp
-                    });
-                }
-
-                // ============================================================
-                // 5. GUARDAR LA VENTA
-                // ============================================================
-                const saleToSave = {
-                    ...sale,
-                    postEffectsCompleted: true
-                };
-                await db.table(STORES.SALES).add(saleToSave);
-
-                // ============================================================
-                // 6. LOG DE AUDITORÍA
-                // ============================================================
-                const transactionId = generateID('txn');
-                await db.table(STORES.TRANSACTION_LOG).add({
-                    id: transactionId,
-                    type: 'SALE',
-                    status: 'COMPLETED',
-                    timestamp: new Date().toISOString(),
-                    amount: sale.total,
-                    saleId: sale.id
-                });
-
-                return { success: true, transactionId };
             });
 
         } catch (error) {
-            // Manejo especial para errores de negocio (Stock) vs errores técnicos
-            if (error.message && error.message.includes('STOCK_INSUFFICIENT')) {
+            if (error?.isInventoryError || (error?.message && error.message.includes('STOCK_INSUFFICIENT'))) {
                 return {
                     success: false,
                     isStockError: true,
@@ -255,12 +396,128 @@ export const salesRepository = {
         }
     },
 
-    /**
-     * Obtiene ventas desde una fecha específica hasta hoy.
-     * Utiliza el índice 'timestamp' para evitar escanear toda la tabla.
-     * 
-     * @param {string} isoDateString - Fecha de inicio en formato ISO.
-     */
+    async executeSplitOpenTableOrderTransaction({
+        parentOrderId,
+        parentExpectedVersion = null,
+        splitGroupId,
+        childPayloads = []
+    }) {
+        try {
+            if (!parentOrderId) {
+                throw new Error('SPLIT_ORDER_INVALID: parentOrderId es obligatorio.');
+            }
+
+            if (!Array.isArray(childPayloads) || childPayloads.length !== 2) {
+                throw new Error('SPLIT_ORDER_INVALID: Se requieren exactamente dos tickets hijos.');
+            }
+
+            const salesToEvaluate = childPayloads.map(p => p.sale);
+            const lockedStoreNames = resolveRequiredStoreNames(salesToEvaluate);
+            const dexieTablesToLock = lockedStoreNames.map(name => db.table(name));
+
+            return await db.transaction('rw', dexieTablesToLock, async () => {
+                const tables = buildTransactionTables(lockedStoreNames);
+                const parentSale = await tables.sales.get(parentOrderId);
+
+                if (!parentSale) {
+                    throw buildConcurrencyError('La orden padre ya no existe.');
+                }
+
+                if (parentSale.status !== SALE_STATUS.OPEN) {
+                    throw buildConcurrencyError('La orden padre ya no está abierta.');
+                }
+
+                if (parentSale.orderType !== 'table') {
+                    throw new Error('SPLIT_ORDER_INVALID: Solo se pueden dividir órdenes de mesa.');
+                }
+
+                const currentVersion = parentSale.updatedAt || parentSale.timestamp || null;
+                if (parentExpectedVersion && currentVersion !== parentExpectedVersion) {
+                    throw buildConcurrencyError('La orden padre cambió antes de confirmar el split.');
+                }
+
+                const childSaleIds = [];
+
+                for (const childPayload of childPayloads) {
+                    const childSale = childPayload?.sale;
+                    const childDeductions = childPayload?.deductions || [];
+
+                    if (!childSale?.id) {
+                        throw new Error('SPLIT_ORDER_INVALID: Ticket hijo sin id de venta.');
+                    }
+
+                    const result = await processSaleWithinTransaction({
+                        sale: childSale,
+                        deductions: childDeductions,
+                        tables,
+                        logType: 'SPLIT_CHILD',
+                        extraLogFields: {
+                            splitGroupId,
+                            splitParentId: parentOrderId,
+                            splitLabel: childSale.splitLabel || null
+                        }
+                    });
+
+                    if (!result.success) {
+                        throw new Error('SPLIT_ORDER_INVALID: No se pudo procesar ticket hijo.');
+                    }
+
+                    childSaleIds.push(childSale.id);
+                }
+
+                const nowIso = new Date().toISOString();
+                const parentUpdated = {
+                    ...parentSale,
+                    status: SALE_STATUS.CANCELLED,
+                    fulfillmentStatus: 'cancelled',
+                    cancelReason: 'split_settled',
+                    splitGroupId,
+                    splitChildIds: childSaleIds,
+                    splitSettledAt: nowIso,
+                    updatedAt: nowIso
+                };
+
+                await tables.sales.put(parentUpdated);
+
+                await tables.transactionLog.add({
+                    id: generateID('txn'),
+                    type: 'SPLIT_PARENT_CANCEL',
+                    status: 'COMPLETED',
+                    timestamp: nowIso,
+                    amount: parentSale.total,
+                    saleId: parentSale.id,
+                    splitGroupId,
+                    splitChildIds: childSaleIds
+                });
+
+                return {
+                    success: true,
+                    splitGroupId,
+                    parentOrderId,
+                    childSaleIds
+                };
+            });
+        } catch (error) {
+            if (error?.isInventoryError || (error?.message && error.message.includes('STOCK_INSUFFICIENT'))) {
+                return {
+                    success: false,
+                    isStockError: true,
+                    message: error.message
+                };
+            }
+
+            if (error?.isConcurrencyError) {
+                return {
+                    success: false,
+                    isConcurrencyError: true,
+                    message: error.message
+                };
+            }
+
+            throw handleDexieError(error, 'Execute Split Open Table Order Transaction');
+        }
+    },
+
     async getOrdersSince(isoDateString) {
         try {
             return await db.table(STORES.SALES)
@@ -271,14 +528,28 @@ export const salesRepository = {
         }
     },
 
-    /**
-     * Obtiene una venta por ID.
-     */
-    async getSaleById(saleId) {
+    async getHistorySalesSince(isoDateString) {
         try {
-            return await db.table(STORES.SALES).get(saleId);
+            const allSales = await db.table(STORES.SALES)
+                .where('timestamp').aboveOrEqual(isoDateString)
+                .reverse()
+                .toArray();
+
+            return allSales.filter(sale =>
+                !sale.splitParentId &&
+                sale.status === SALE_STATUS.CLOSED
+            );
         } catch (error) {
-            throw handleDexieError(error, 'Get Sale By ID');
+            throw handleDexieError(error, 'Get History Sales Since');
+        }
+    },
+
+    async getSalesByIds(saleIds = []) {
+        try {
+            if (!saleIds.length) return [];
+            return await db.table(STORES.SALES).where('id').anyOf(saleIds).toArray();
+        } catch (error) {
+            throw handleDexieError(error, 'Get Sales By Ids');
         }
     }
 };

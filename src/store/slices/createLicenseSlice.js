@@ -39,6 +39,45 @@ export const createLicenseSlice = (set, get) => ({
   _isInitializing: false,
   pendingTermsUpdate: null,
 
+  performSystemHealthCheck: async () => {
+    const state = get();
+
+    // Caso límite 1: No interrumpir la carga inicial ni ejecutar en pantallas sin autenticación
+    if (state.appStatus === 'loading' || state._isInitializing || state.appStatus === 'unauthenticated') {
+      return;
+    }
+
+    const lastActiveRaw = sessionStorage.getItem('lanzo_last_active');
+    const now = Date.now();
+
+    if (!lastActiveRaw) return;
+
+    const timeAwayMs = now - parseInt(lastActiveRaw, 10);
+    const timeAwayMinutes = timeAwayMs / (1000 * 60);
+
+    // Caso límite 2: Control de ráfagas. Solo revalidar si la app estuvo dormida más de 3 minutos.
+    // Ajusta este umbral según la criticidad de tu POS.
+    if (timeAwayMinutes < 3) {
+      Logger.log(`[HealthCheck] Inactividad breve (${timeAwayMinutes.toFixed(1)}m), omitiendo check de servidor.`);
+      return;
+    }
+
+    Logger.log(`[HealthCheck] Retorno tras ${timeAwayMinutes.toFixed(1)}m de inactividad. Revalidando integridad...`);
+    
+    // Consumir el timestamp para evitar ejecuciones en bucle
+    sessionStorage.removeItem('lanzo_last_active');
+
+    // Caso límite 3: Verificación de red antes de golpear la API
+    if (!navigator.onLine) {
+      Logger.warn('[HealthCheck] El sistema está offline tras despertar. Operando con caché local.');
+      // Aquí el Health Check detecta que no hay red, podríamos forzar un chequeo a Dexie local si fuera necesario.
+      return;
+    }
+
+    // Reutilizar la lógica que ya maneja periodos de gracia, expiración y actualizaciones de términos
+    await state.verifySessionIntegrity();
+  },
+
   initializeApp: async () => {
     if (get()._isInitializing) {
       Logger.warn('initializeApp ya está en ejecución, saltando...');

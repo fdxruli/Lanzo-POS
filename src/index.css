@@ -144,6 +144,17 @@ select {
   /* Transición rápida para foco */
 }
 
+/* Forzar el fondo oscuro y texto claro en las opciones del select */
+select option {
+  background-color: var(--card-background-color);
+  color: var(--text-dark);
+}
+
+/* Opcional: Estilo para cuando una opción está deshabilitada (ej. "-- Seleccionar --") */
+select option:disabled {
+  color: var(--text-light);
+}
+
 input,
 textarea {
   -webkit-user-select: text;

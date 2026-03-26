@@ -10,22 +10,18 @@ describe('validateStockBeforeSale', () => {
             ['dish-1', { id: 'dish-1', recipe: [{ ingredientId: 'ing-1', quantity: 2 }] }]
         ]);
 
-        const loadData = vi.fn(async (_, id) => {
-            if (id === 'ing-1') {
-                return { id: 'ing-1', name: 'Tomate', stock: 3, bulkData: { purchase: { unit: 'kg' } } };
-            }
-            if (id === 'ing-2') {
-                return { id: 'ing-2', name: 'Queso', stock: 10, bulkData: { purchase: { unit: 'kg' } } };
-            }
-            return null;
-        });
+        const loadMultipleData = vi.fn(async () => ([
+            { id: 'ing-1', name: 'Tomate', stock: 3, committedStock: 0, bulkData: { purchase: { unit: 'kg' } } },
+            { id: 'ing-2', name: 'Queso', stock: 10, committedStock: 0, bulkData: { purchase: { unit: 'kg' } } }
+        ]));
 
         const result = await validateStockBeforeSale({
             itemsToProcess,
             productMap,
             features: { hasRecipes: true },
             ignoreStock: false,
-            loadData,
+            loadData: vi.fn(),
+            loadMultipleData,
             STORES: { MENU: 'menu' }
         });
 
@@ -51,5 +47,31 @@ describe('validateStockBeforeSale', () => {
 
         expect(result).toEqual({ ok: true });
         expect(loadData).not.toHaveBeenCalled();
+    });
+
+    it('usa stock disponible restando committedStock', async () => {
+        const loadMultipleData = vi.fn(async () => ([
+            { id: 'prod-1', name: 'Cerveza', stock: 10, committedStock: 8 }
+        ]));
+
+        const result = await validateStockBeforeSale({
+            itemsToProcess: [{ id: 'prod-1', quantity: 3 }],
+            productMap: new Map([
+                ['prod-1', { id: 'prod-1', name: 'Cerveza', trackStock: true }]
+            ]),
+            features: { hasRecipes: true },
+            ignoreStock: false,
+            loadData: vi.fn(),
+            loadMultipleData,
+            STORES: { MENU: 'menu' }
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.response.errorType).toBe('STOCK_WARNING');
+        expect(result.response.missingData[0]).toMatchObject({
+            ingredientName: 'Cerveza',
+            available: 2,
+            needed: 3
+        });
     });
 });

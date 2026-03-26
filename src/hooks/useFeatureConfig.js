@@ -7,7 +7,7 @@ import { useAppStore } from '../store/useAppStore';
  */
 const RUBRO_FEATURES = {
   // --- GRUPOS NUEVOS ---
-  'food_service': ['recipes', 'modifiers', 'waste', 'kds'], // Restaurante: No usa 'bulk' de venta directa usualmente
+  'food_service': ['recipes', 'modifiers', 'waste', 'kds', 'tables'], // Restaurante: No usa 'bulk' de venta directa usualmente
   'apparel': ['variants', 'sku', 'suppliers', 'layaway'], // Ropa: JAMÁS es a granel
   'hardware': ['lots', 'sku', 'suppliers', 'minmax', 'wholesale', 'bulk'], // Ferretería: Clavos/Cables sí pueden ser granel
 
@@ -86,6 +86,7 @@ export function useFeatureConfig(specificRubro = null) {
       hasRecipes: enabledFeatures.has('recipes'),
       hasModifiers: enabledFeatures.has('modifiers'),
       hasKDS: enabledFeatures.has('kds'),
+      hasTables: enabledFeatures.has('tables'),
       hasWholesale: enabledFeatures.has('wholesale'),
       hasDailyPricing: enabledFeatures.has('daily_pricing'),
       hasLayaway: enabledFeatures.has('layaway'),

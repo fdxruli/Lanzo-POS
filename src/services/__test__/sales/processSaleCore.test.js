@@ -52,7 +52,7 @@ const makeDeps = (overrides = {}) => {
         useStatsStore: { getState: () => ({ updateStatsForNewSale }) },
         roundCurrency: (value) => Math.round(value * 100) / 100,
         sendReceiptWhatsApp: vi.fn(async () => true),
-        calculateCompositePrice: vi.fn(() => 10),
+        calculatePricingDetails: vi.fn(() => 10),
         Logger: {
             time: vi.fn(),
             timeEnd: vi.fn(),
@@ -74,6 +74,10 @@ describe('processSaleCore', () => {
         expect(result.success).toBe(true);
         expect(typeof result.saleId).toBe('string');
         expect(deps.executeSaleTransactionSafe).toHaveBeenCalledOnce();
+        expect(deps.executeSaleTransactionSafe).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'closed' }),
+            expect.any(Array)
+        );
         expect(deps.__updateStatsForNewSale).toHaveBeenCalledOnce();
         expect(deps.sendReceiptWhatsApp).toHaveBeenCalledOnce();
     });
@@ -97,21 +101,30 @@ describe('processSaleCore', () => {
         expect(deps.sendReceiptWhatsApp).not.toHaveBeenCalled();
     });
 
-    it('en fiado actualiza deuda del cliente', async () => {
+    it('en fiado delega la deuda a la transaccion de venta', async () => {
         const deps = makeDeps();
         const result = await processSaleCore(makeParams({
+            order: [{ id: 'prod-1', name: 'Producto 1', quantity: 6, price: 10 }],
             paymentData: {
                 customerId: 'cust-1',
                 paymentMethod: 'fiado',
                 amountPaid: 10,
                 saldoPendiente: 50,
                 sendReceipt: false
-            }
+            },
+            total: 60
         }), deps);
 
         expect(result.success).toBe(true);
-        expect(deps.saveData).toHaveBeenCalledOnce();
-        expect(deps.saveData).toHaveBeenCalledWith('customers', expect.objectContaining({ debt: 70 }));
+        expect(deps.executeSaleTransactionSafe).toHaveBeenCalledWith(
+            expect.objectContaining({
+                paymentMethod: 'fiado',
+                saldoPendiente: '50',
+                status: 'closed'
+            }),
+            expect.any(Array)
+        );
+        expect(deps.saveData).not.toHaveBeenCalled();
         expect(deps.__updateStatsForNewSale).toHaveBeenCalledOnce();
     });
 });

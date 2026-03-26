@@ -33,6 +33,9 @@
 }
 
 .kds-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 20px;
   font-size: 1rem;
   font-weight: 600;
@@ -83,6 +86,11 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
+  padding: 0;
+}
+
+.kds-refresh-btn svg {
+  flex-shrink: 0; 
 }
 
 .kds-refresh-btn:hover {
@@ -160,7 +168,13 @@
   border-radius: var(--border-radius);
   border: 2px dashed var(--border-color);
 }
-.empty-icon { font-size: 4rem; margin-bottom: 1rem; display: block;}
+
+.empty-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+  color: var(--text-light);
+}
 
 /* --- TICKET CARD DESIGN --- */
 .kds-ticket {
@@ -204,6 +218,9 @@
 }
 
 .ticket-customer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.8rem;
   color: var(--text-light);
   text-transform: uppercase;
@@ -212,6 +229,9 @@
 
 /* Timer Logic - Mapeado a variables globales */
 .ticket-timer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-weight: bold;
   padding: 4px 10px;
   border-radius: 6px;
@@ -283,6 +303,9 @@
 }
 
 .item-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-top: 6px;
   margin-left: 38px;
   font-size: 0.85rem;
@@ -294,6 +317,10 @@
 }
 
 .ticket-global-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin: 10px;
   padding: 8px;
   background-color: rgba(255, 184, 0, 0.1); /* Transparencia sobre warning */

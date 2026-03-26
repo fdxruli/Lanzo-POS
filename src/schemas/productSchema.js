@@ -19,6 +19,7 @@ export const productSchema = z.object({
   
   // Stock e Inventario
   stock: z.coerce.number().default(0),
+  committedStock: z.coerce.number().default(0),
   minStock: z.coerce.number().nullable().optional(),
   maxStock: z.coerce.number().nullable().optional(),
   trackStock: z.boolean().default(true),

@@ -1,3 +1,5 @@
+import { getAvailableStock } from '../db/utils';
+
 export const validateStockBeforeSale = async ({
     itemsToProcess,
     productMap,
@@ -40,20 +42,18 @@ export const validateStockBeforeSale = async ({
         try {
             // Se asume que ahora inyectas `loadMultipleData` en los parámetros
             const fetchPromise = loadMultipleData(STORES.MENU, idsArray);
-            
+
+            // Captura inmediata: Previene el UnhandledPromiseRejection si el timeout gana 
+            // y esta promesa es rechazada posteriormente en segundo plano.
+            fetchPromise.catch(() => { });
+
             // Un solo timeout para toda la operación de lectura masiva
             const results = await Promise.race([
-                fetchPromise,
-                new Promise((_, reject) => 
+                fetchPromise, // Compite la promesa original
+                new Promise((_, reject) =>
                     setTimeout(() => reject(new Error('DB_TIMEOUT: La lectura masiva excedió el tiempo límite')), 5000)
                 )
             ]);
-
-            // Si llegamos aquí, se completó a tiempo.
-            // Si la promesa original (fetchPromise) falla después del timeout, 
-            // IndexedDB simplemente desechará la transacción de solo lectura, 
-            // pero AÚN DEBES añadirle un catch vacío para evitar el unhandled rejection.
-            fetchPromise.catch(() => {}); 
 
             results.forEach((freshProd, index) => {
                 if (freshProd) {
@@ -72,7 +72,7 @@ export const validateStockBeforeSale = async ({
                     }
                 };
             }
-            throw error; 
+            throw error;
         }
     }
 
@@ -80,7 +80,7 @@ export const validateStockBeforeSale = async ({
     const simulatedStock = new Map();
 
     freshStockMap.forEach((product, id) => {
-        simulatedStock.set(id, product.stock);
+        simulatedStock.set(id, getAvailableStock(product));
     });
 
     for (const item of itemsToProcess) {
@@ -142,7 +142,7 @@ export const validateStockBeforeSale = async ({
                         productName: 'Pedido (Acumulado)',
                         ingredientName: realIngData.name,
                         needed: reqQty,
-                        available: realIngData.stock,
+                        available: getAvailableStock(realIngData),
                         unit: realIngData.bulkData?.purchase?.unit || 'u'
                     });
                 }

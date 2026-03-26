@@ -535,6 +535,7 @@ export default function ProductsPage() {
                         ingredients={ingredientsOnly}
                         onSave={handleSaveProduct}
                         onDelete={handleDeleteProduct}
+                        onManageBatches={handleManageBatches}
                     />
                 )
             }

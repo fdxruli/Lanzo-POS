@@ -32,6 +32,14 @@ export const normalizeStock = (value) => {
   return Number(Math.round(num + 'e' + STOCK_DECIMALS) + 'e-' + STOCK_DECIMALS);
 };
 
+export const getCommittedStock = (record) => normalizeStock(record?.committedStock || 0);
+
+export const getAvailableStock = (record) => {
+  const physicalStock = normalizeStock(record?.stock || 0);
+  const committedStock = getCommittedStock(record);
+  return normalizeStock(Math.max(0, physicalStock - committedStock));
+};
+
 export function handleDexieError(error, context = '') {
   let errorCode = DB_ERROR_CODES.UNKNOWN;
   let userMessage = 'Ocurrio un error inesperado en la base de datos.';

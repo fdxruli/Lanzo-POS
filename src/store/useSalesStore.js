@@ -125,7 +125,10 @@ export const useSalesStore = create((set, get) => ({
     set({ isLoading: true });
 
     try {
+      // 1. Recuperar ventas actuales en memoria
       const currentSales = get().sales;
+
+      // 2. Pasar currentSales para respetar la firma original de la función (evita la regresión)
       const result = await cancelSale({
         timestamp,
         restoreStock: normalizedRestoreStock,
@@ -133,8 +136,20 @@ export const useSalesStore = create((set, get) => ({
       });
 
       if (result.success) {
-        const updatedSales = currentSales.filter((sale) => sale.timestamp !== timestamp);
-        set({ sales: updatedSales });
+        // 3. Determinar la profundidad de la vista actual del usuario.
+        // Si hay más de 50 elementos cargados, respetamos ese tamaño para no perder el contexto.
+        const targetLimit = Math.max(50, currentSales.length);
+
+        // 4. Recargar desde la BD con el límite ajustado.
+        // Al traer la misma cantidad de elementos (pero con uno borrado de la BD), 
+        // automáticamente el siguiente registro más antiguo "sube" para rellenar el hueco.
+        const { data: recentSales } = await loadDataPaginated(STORES.SALES, {
+          limit: targetLimit,
+          direction: 'prev',
+          timeIndex: 'timestamp'
+        });
+
+        set({ sales: recentSales || [] });
       }
 
       return result;

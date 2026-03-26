@@ -4,6 +4,7 @@
 import { showMessage } from '../store/useMessageStore';
 import toast from 'react-hot-toast';
 import Logger from './Logger';
+import { getAvailableStock } from './db/utils';
 
 /**
  * Muestra un mensaje al usuario.
@@ -83,83 +84,71 @@ export const fileToBase64 = (file) => {
 /**
  * Comprime, recorta a cuadrado y convierte una imagen a WebP.
  * OPTIMIZADO PARA USO LOCAL: Calidad 0.6 y 300px es suficiente para tarjetas.
+ * @param {File|Blob} file - Archivo de imagen a procesar.
+ * @param {number} targetSize - Tamaño objetivo en píxeles (ancho y alto).
+ * @param {number} quality - Calidad de compresión (0 a 1).
+ * @returns {Promise<File>} - Promesa que resuelve en un objeto File en formato WebP.
  */
-export const compressImage = (
-  file,
-  targetSize = 150, // 300px es perfecto para tarjetas de POS
-  quality = 0.6     // 60% calidad en WebP es muy ligero y se ve bien
-) => {
-  return new Promise((resolve, reject) => {
-    if (!file || !file.type.startsWith('image/')) {
-      reject(new Error("El archivo no es una imagen válida."));
-      return;
+export const compressImage = async (file, targetSize = 150, quality = 0.6) => {
+  if (!file || !file.type.startsWith('image/')) {
+    throw new Error("El archivo no es una imagen válida.");
+  }
+
+  // Decodificar la imagen en un hilo en segundo plano
+  const bitmap = await createImageBitmap(file);
+
+  try {
+    // Verificar soporte para OffscreenCanvas
+    const canvas = typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(targetSize, targetSize)
+      : document.createElement('canvas');
+
+    const ctx = canvas.getContext('2d');
+
+    // Configurar dimensiones del recorte cuadrado centrado
+    let sourceX = 0;
+    let sourceY = 0;
+    let sourceWidth = bitmap.width;
+    let sourceHeight = bitmap.height;
+
+    if (sourceWidth > sourceHeight) {
+      sourceX = (sourceWidth - sourceHeight) / 2;
+      sourceWidth = sourceHeight;
+    } else if (sourceHeight > sourceWidth) {
+      sourceY = (sourceHeight - sourceWidth) / 2;
+      sourceHeight = sourceWidth;
     }
 
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.src = objectUrl;
+    // Configurar dimensiones del canvas
+    canvas.width = targetSize;
+    canvas.height = targetSize;
 
-    img.onload = () => {
-      // Usamos un pequeño delay para no congelar la UI
-      setTimeout(() => {
-        try {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext("2d");
+    // Dibujar la imagen recortada y redimensionada
+    ctx.drawImage(bitmap, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetSize, targetSize);
 
-          let sourceX = 0;
-          let sourceY = 0;
-          let sourceWidth = img.width;
-          let sourceHeight = img.height;
-
-          // Recorte cuadrado centrado (Center Crop)
-          if (sourceWidth > sourceHeight) {
-            sourceX = (sourceWidth - sourceHeight) / 2;
-            sourceWidth = sourceHeight;
-          } else if (sourceHeight > sourceWidth) {
-            sourceY = (sourceHeight - sourceWidth) / 2;
-            sourceHeight = sourceWidth;
+    // Convertir el canvas a un Blob en formato WebP
+    const blob = await new Promise((resolve, reject) => {
+      if (canvas instanceof OffscreenCanvas) {
+        canvas.convertToBlob({ type: 'image/webp', quality })
+          .then(resolve)
+          .catch(reject);
+      } else {
+        canvas.toBlob((resultBlob) => {
+          if (!resultBlob) {
+            reject(new Error("El navegador falló al generar la compresión de la imagen (memoria insuficiente o error de canvas)."));
+            return;
           }
+          resolve(resultBlob);
+        }, 'image/webp', quality);
+      }
+    });
 
-          canvas.width = targetSize;
-          canvas.height = targetSize;
-
-          // Dibujar imagen redimensionada
-          ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetSize, targetSize);
-
-          // Convertir a WebP (Formato de nueva generación, muy ligero)
-          canvas.toBlob(
-            (blob) => {
-              URL.revokeObjectURL(objectUrl);
-
-              if (!blob) {
-                reject(new Error("Error al procesar imagen."));
-                return;
-              }
-
-              // Creamos un nuevo archivo WebP
-              const newFileName = file.name.replace(/\.[^/.]+$/, "") + '.webp';
-              const webpFile = new File([blob], newFileName, {
-                type: 'image/webp',
-                lastModified: Date.now()
-              });
-
-              resolve(webpFile);
-            },
-            'image/webp',
-            quality
-          );
-        } catch (err) {
-          URL.revokeObjectURL(objectUrl);
-          reject(new Error("Error durante el procesamiento."));
-        }
-      }, 50);
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("Error al cargar la imagen."));
-    };
-  });
+    // Crear un nuevo objeto File a partir del Blob
+    return new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), { type: 'image/webp' });
+  } finally {
+    // Liberar memoria del bitmap
+    bitmap.close();
+  }
 };
 
 /**
@@ -216,15 +205,16 @@ export const getProductAlerts = (product) => {
   let isLowStock = false;
   let isNearingExpiry = false;
   let expiryDays = null;
+  const availableStock = getAvailableStock(product);
 
   // 1. Revisar si está agotado
-  const isOutOfStock = product.trackStock && product.stock <= 0;
+  const isOutOfStock = product.trackStock && availableStock <= 0;
 
   // 2. Revisar stock bajo (solo si no está agotado)
   if (
     product.trackStock &&
-    product.stock > 0 &&
-    product.stock < LOW_STOCK_THRESHOLD
+    availableStock > 0 &&
+    availableStock < LOW_STOCK_THRESHOLD
   ) {
     isLowStock = true;
   }

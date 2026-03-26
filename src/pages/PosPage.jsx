@@ -1,14 +1,16 @@
 // src/pages/PosPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ProductMenu from '../components/pos/ProductMenu';
 import OrderSummary from '../components/pos/OrderSummary';
+import TablesView from '../components/pos/TablesView';
+import SplitBillModal from '../components/pos/SplitBillModal';
 import ScannerModal from '../components/common/ScannerModal';
 import PaymentModal from '../components/common/PaymentModal';
 import QuickCajaModal from '../components/common/QuickCajaModal';
 import PrescriptionModal from '../components/pos/PrescriptionModal';
 import { useCaja } from '../hooks/useCaja';
 import { useOrderStore } from '../store/useOrderStore';
-import { processSale } from '../services/salesService';
+import { processSale, splitOpenTableOrder } from '../services/salesService';
 import Logger from '../services/Logger';
 import LayawayModal from '../components/pos/LayawayModal';
 import { layawayRepo } from '../services/db';
@@ -21,6 +23,9 @@ import { showMessageModal } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useDebounce } from '../hooks/useDebounce';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
+import { getAvailableStock } from '../services/db/utils';
+import { db, STORES } from '../services/db';
+import { SALE_STATUS } from '../services/sales/financialStats';
 import './PosPage.css';
 
 const playBeep = (freq = 1200, type = 'sine') => {
@@ -62,6 +67,26 @@ export default function PosPage() {
     const [prescriptionItems, setPrescriptionItems] = useState([]);
     const [tempPrescriptionData, setTempPrescriptionData] = useState(null);
     const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
+    const [isTablesViewOpen, setIsTablesViewOpen] = useState(false);
+    const [activeTablesCount, setActiveTablesCount] = useState(0);
+    const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
+
+    const fetchActiveTablesCount = useCallback(async () => {
+        if (!features.hasTables) return;
+        try {
+            const count = await db.table(STORES.SALES)
+                .where('status')
+                .equals(SALE_STATUS.OPEN)
+                .count();
+            setActiveTablesCount(count);
+        } catch (error) {
+            Logger.error('Error contando mesas activas:', error);
+        }
+    }, [features.hasTables]);
+
+    useEffect(() => {
+        fetchActiveTablesCount();
+    }, [fetchActiveTablesCount]);
 
     // ── Búsqueda con debounce ──────────────────────────────────────
     const [searchTerm, setSearchTerm] = useState('');
@@ -97,7 +122,11 @@ export default function PosPage() {
 
     const applyActiveFilters = useCallback((items = []) =>
         items.filter((item) => {
+            // 1. Descartar inactivos
             if (item?.isActive === false) return false;
+
+            // 2. CORRECCIÓN: Descartar ingredientes inmediatamente
+            if (item?.productType === 'ingredient') return false;
 
             const matchesCategory =
                 (activeFilters.categoryId === null || activeFilters.categoryId === undefined) ||
@@ -105,21 +134,28 @@ export default function PosPage() {
 
             // Determinar si el producto está realmente agotado
             const isOutOfStock =
-                (item.trackStock || item.batchManagement?.enabled) && Number(item.stock || 0) <= 0;
+                (item.trackStock || item.batchManagement?.enabled) && getAvailableStock(item) <= 0;
 
             // Lógica excluyente:
             if (activeFilters.outOfStockOnly) {
-                // En la categoría dinámica, SOLO mostramos los que no tienen stock
                 return matchesCategory && isOutOfStock;
             } else {
-                // En el catálogo general, OCULTAMOS explícitamente los que no tienen stock
                 return matchesCategory && !isOutOfStock;
             }
         }), [activeFilters.categoryId, activeFilters.outOfStockOnly]);
 
     // ── Store de orden ─────────────────────────────────────────────
     const { cajaActual, abrirCaja } = useCaja();
-    const { order, customer, clearOrder, getTotalPrice } = useOrderStore();
+    const {
+        order,
+        customer,
+        activeOrderId,
+        clearOrder,
+        clearSession,
+        getTotalPrice,
+        saveOrderAsOpen,
+        loadOpenOrder
+    } = useOrderStore();
     const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
     const total = getTotalPrice();
@@ -347,10 +383,11 @@ export default function PosPage() {
                 companyName,
                 tempPrescriptionData,
                 ignoreStock: forceSale,
+                activeOrderId,
             });
 
             if (result.success) {
-                clearOrder();
+                clearSession();
                 setTempPrescriptionData(null);
                 setIsMobileOrderOpen(false);
                 showMessageModal('✅ ¡Venta registrada correctamente!');
@@ -359,6 +396,8 @@ export default function PosPage() {
                 await refreshData();
                 const hasAgotados = await checkHasOutOfStockProducts();
                 setHasOutOfStockItems(hasAgotados);
+
+                await fetchActiveTablesCount();
             } else {
                 if (result.errorType === 'RACE_CONDITION') {
                     showMessageModal('⚠️ El sistema está muy ocupado. Por favor intenta cobrar de nuevo.');
@@ -444,6 +483,189 @@ export default function PosPage() {
     };
 
     // ── Render ─────────────────────────────────────────────────────
+    const handleSaveAsOpen = async () => {
+        if (!features.hasTables) return;
+
+        const currentTableData = useOrderStore.getState().tableData;
+        const isUpdating = Boolean(useOrderStore.getState().activeOrderId); // Comprobar si es edición
+
+        if (!currentTableData || currentTableData.trim() === '') {
+            const promptedName = window.prompt('Por favor, ingresa un identificador para la mesa (Ej: Mesa 2, Barra, Cliente):');
+
+            if (!promptedName || promptedName.trim() === '') {
+                return;
+            }
+            useOrderStore.setState({ tableData: promptedName.trim() });
+        }
+
+        const result = await saveOrderAsOpen();
+        if (result.success) {
+            setIsMobileOrderOpen(false);
+            // FEEDBACK DINÁMICO
+            showMessageModal(isUpdating ? '✅ Mesa actualizada correctamente.' : '✅ Pedido guardado y enviado a cocina.');
+            await fetchActiveTablesCount();
+            return;
+        }
+
+        showMessageModal(result.message || 'No se pudo guardar la orden abierta.', null, { type: 'error' });
+    };
+
+    const executeLoadOpenOrder = async (orderId, silent = false) => {
+        const result = await loadOpenOrder(orderId);
+        if (result.success) {
+            if (!silent) {
+                setIsTablesViewOpen(false);
+                showMessageModal('Mesa cargada en el pedido actual.');
+            }
+            await fetchActiveTablesCount();
+            return result; // Es crucial retornar el resultado para saber si tuvo éxito
+        }
+
+        if (!silent) {
+            showMessageModal(result.message || 'No se pudo cargar la orden abierta.', null, { type: 'error' });
+        }
+        return result;
+    };
+
+    const handleLoadOpenOrder = (orderId) => {
+        if (!features.hasTables) return;
+
+        const hasCurrentOrder = order.some((item) => Number(item?.quantity) > 0);
+        if (!hasCurrentOrder) {
+            void executeLoadOpenOrder(orderId);
+            return;
+        }
+
+        showMessageModal(
+            'Hay un carrito activo. Deseas reemplazarlo por la mesa seleccionada?',
+            () => {
+                void executeLoadOpenOrder(orderId);
+            },
+            {
+                title: 'Cambiar mesa activa',
+                type: 'warning',
+                confirmButtonText: 'Si, cargar mesa',
+            }
+        );
+    };
+
+    const handleQuickTableAction = async (targetOrder, actionType) => {
+        const hasCurrentOrder = order.some((item) => Number(item?.quantity) > 0);
+
+        if (hasCurrentOrder) {
+            showMessageModal(
+                'Tienes un carrito activo sin guardar. Límpialo o guárdalo antes de cobrar una mesa diferente.',
+                () => { },
+                {
+                    title: 'Acción bloqueada',
+                    type: 'error',
+                    confirmButtonText: 'Entendido'
+                }
+            );
+            return;
+        }
+
+        try {
+            // Le pasamos "true" para que no interrumpa al usuario con mensajes innecesarios
+            const result = await executeLoadOpenOrder(targetOrder.id, true);
+
+            // Solo abrimos los modales si la carga fue realmente exitosa
+            if (result && result.success) {
+                setIsTablesViewOpen(false);
+
+                // NOMBRES DE VARIABLES CORREGIDOS
+                if (actionType === 'checkout') {
+                    setIsPaymentModalOpen(true);
+                } else if (actionType === 'split') {
+                    setIsSplitModalOpen(true);
+                }
+            } else {
+                // Si la carga falla silenciosamente, avisamos aquí
+                showMessageModal(result?.message || 'Error al cargar la mesa para cobro.', null, { type: 'error' });
+            }
+        } catch (error) {
+            console.error("Error al cargar la mesa para acción rápida:", error);
+        }
+    };
+
+    const handleOpenSplitBill = () => {
+        if (!features.hasTables) return;
+
+        if (!activeOrderId) {
+            showMessageModal('No hay una mesa activa cargada para dividir.');
+            return;
+        }
+
+        const sellableItems = order.filter((item) => Number(item?.quantity) > 0);
+        if (sellableItems.length === 0) {
+            showMessageModal('No hay productos en la mesa activa para dividir.');
+            return;
+        }
+
+        setIsSplitModalOpen(true);
+    };
+
+    const handleConfirmSplitBill = async (splitPayload) => {
+        if (isSaleInProgress) return;
+
+        const isSessionValid = await verifySessionIntegrity();
+        if (!isSessionValid) {
+            showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
+                window.location.reload();
+            });
+            return;
+        }
+
+        if (
+            splitPayload?.tickets?.some((ticket) => ticket?.paymentData?.paymentMethod === 'efectivo') &&
+            (!cajaActual || cajaActual.estado !== 'abierta')
+        ) {
+            showMessageModal('Necesitas abrir caja para cobrar tickets en efectivo.', null, { type: 'warning' });
+            return;
+        }
+
+        setIsSaleInProgress(true);
+        try {
+            const result = await splitOpenTableOrder({
+                parentOrderId: activeOrderId,
+                orderSnapshot: order,
+                mode: splitPayload.mode,
+                tickets: splitPayload.tickets,
+                features,
+                companyName
+            });
+
+            if (result.success) {
+                clearSession();
+                setIsSplitModalOpen(false);
+                showMessageModal('✅ Split bill aplicado y cobro registrado correctamente.');
+                await refreshData();
+                const hasAgotados = await checkHasOutOfStockProducts();
+                setHasOutOfStockItems(hasAgotados);
+                await fetchActiveTablesCount();
+                return;
+            }
+
+            if (result.errorType === 'DIRTY_ORDER') {
+                showMessageModal(result.message, null, { type: 'warning' });
+                return;
+            }
+
+            if (result.errorType === 'RACE_CONDITION') {
+                showMessageModal(result.message, null, { type: 'warning' });
+                await refreshData();
+                return;
+            }
+
+            showMessageModal(result.message || 'No se pudo dividir/cobrar la mesa.', null, { type: 'error' });
+        } catch (error) {
+            Logger.error('Error crítico en Split Bill:', error);
+            showMessageModal(`Error inesperado: ${error.message}`, null, { type: 'error' });
+        } finally {
+            setIsSaleInProgress(false);
+        }
+    };
+
     return (
         <>
             <div className="pos-page-layout">
@@ -467,29 +689,46 @@ export default function PosPage() {
                         onOpenScanner={() => setIsScannerOpen(true)}
                         showOutofStockCategory={hasOutOfStockItems}
                     />
-                    <OrderSummary onOpenPayment={handleInitiateCheckout} />
+                    <OrderSummary
+                        onOpenPayment={handleInitiateCheckout}
+                        onOpenSplit={handleOpenSplitBill}
+                        onOpenLayaway={handleInitiateLayaway}
+                        showRestaurantActions={features.hasTables}
+                        canSplitOrder={features.hasTables && Boolean(activeOrderId)}
+                        onSaveOpenOrder={features.hasTables ? handleSaveAsOpen : undefined}
+                        onOpenTables={() => setIsTablesViewOpen(true)}
+                        activeTablesCount={activeTablesCount}
+                    />
                 </div>
             </div>
 
-            {/* Barra flotante del carrito (móvil) */}
-            {totalItemsCount > 0 && (
-                <div
-                    className="floating-cart-bar"
-                    onClick={() => setIsMobileOrderOpen(true)}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Ver carrito con ${totalItemsCount} artículos, total $${total.toFixed(2)}`}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            setIsMobileOrderOpen(true);
-                        }
-                    }}
-                >
-                    <div className="cart-info">
-                        <span className="cart-count-badge">{totalItemsCount}</span>
-                        <span className="cart-total-label">${total.toFixed(2)}</span>
-                    </div>
-                    <span className="cart-arrow">Ver pedido</span>
+            {/* --- BARRA FLOTANTE DUAL POS (MÓVIL) --- */}
+            {((features.hasTables && activeTablesCount > 0) || totalItemsCount > 0) && (
+                <div className="floating-pos-bar">
+
+                    {/* Solo se muestra si hay mesas activas */}
+                    {features.hasTables && activeTablesCount > 0 && (
+                        <button
+                            className="floating-btn tables-btn"
+                            onClick={() => setIsTablesViewOpen(true)}
+                        >
+                            <span className="btn-label">Mesas</span>
+                            <span className="tables-badge">{activeTablesCount}</span>
+                        </button>
+                    )}
+
+                    {/* Solo se muestra si hay productos en el carrito */}
+                    {totalItemsCount > 0 && (
+                        <button
+                            className="floating-btn cart-btn active"
+                            onClick={() => setIsMobileOrderOpen(true)}
+                        >
+                            <div className="cart-summary-content">
+                                <span className="cart-count">{totalItemsCount}</span>
+                                <span className="cart-total">${total.toFixed(2)}</span>
+                            </div>
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -510,10 +749,15 @@ export default function PosPage() {
                     >
                         <OrderSummary
                             onOpenPayment={handleInitiateCheckout}
+                            onOpenSplit={handleOpenSplitBill}
                             isMobileModal={true}
                             onClose={() => setIsMobileOrderOpen(false)}
                             onOpenLayaway={handleInitiateLayaway}
-                            features={features}
+                            showRestaurantActions={features.hasTables}
+                            canSplitOrder={features.hasTables && Boolean(activeOrderId)}
+                            onSaveOpenOrder={features.hasTables ? handleSaveAsOpen : undefined}
+                            onOpenTables={() => setIsTablesViewOpen(true)}
+                            activeTablesCount={activeTablesCount}
                         />
                     </div>
                 </div>
@@ -543,6 +787,16 @@ export default function PosPage() {
             )}
 
             {/* Modales */}
+            {features.hasTables && (
+                <TablesView
+                    show={isTablesViewOpen}
+                    onClose={() => setIsTablesViewOpen(false)}
+                    onSelectOrder={handleLoadOpenOrder} // El clic normal sigue usando la lógica vieja
+                    onCheckoutOrder={(order) => handleQuickTableAction(order, 'checkout')}
+                    onSplitOrder={(order) => handleQuickTableAction(order, 'split')}
+                />
+            )}
+
             <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
 
             <PaymentModal
@@ -550,6 +804,15 @@ export default function PosPage() {
                 onClose={() => setIsPaymentModalOpen(false)}
                 onConfirm={handleProcessOrder}
                 total={total}
+            />
+
+            <SplitBillModal
+                show={isSplitModalOpen}
+                onClose={() => setIsSplitModalOpen(false)}
+                order={order}
+                total={total}
+                isCajaOpen={Boolean(cajaActual && cajaActual.estado === 'abierta')}
+                onConfirm={handleConfirmSplitBill}
             />
 
             <QuickCajaModal

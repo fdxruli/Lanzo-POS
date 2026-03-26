@@ -332,6 +332,7 @@ export const processImport = async (csvContent) => {
         isActive: true,
         trackStock: true,
         stock: stock,
+        committedStock: 0,
         createdAt: new Date().toISOString(),
         batchManagement: { enabled: true, selectionStrategy: 'fifo' },
         image: null
@@ -345,6 +346,7 @@ export const processImport = async (csvContent) => {
           id: `batch-imp-${newId}-${Date.now()}-${i}`,
           productId: newId,
           stock: stock,
+          committedStock: 0,
           cost: cost,
           price: product.price,
           createdAt: new Date().toISOString(),

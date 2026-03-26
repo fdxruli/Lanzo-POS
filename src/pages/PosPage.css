@@ -30,81 +30,105 @@
 }
 
 /* ========================================
-   BARRA FLOTANTE DE CARRITO (MÓVIL)
+   BARRA FLOTANTE DUAL POS (MÓVIL)
    ======================================== */
-
-.floating-cart-bar {
+.floating-pos-bar {
   position: fixed;
-  bottom: 80px;
+  bottom: 80px; 
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 32px);
   max-width: 500px;
-  background: linear-gradient(135deg, var(--success-color, #00c48c) 0%, #00a076 100%);
-  color: white;
-  padding: 16px 20px;
-  border-radius: 16px;
-  box-shadow:
-    0 4px 20px rgba(0, 196, 140, 0.3),
-    0 8px 40px rgba(0, 0, 0, 0.2);
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  gap: 12px;
   z-index: 500;
-  cursor: pointer;
   animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.floating-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 100px; /* Estilo píldora para elementos flotantes */
+  border: none;
   font-weight: 700;
-  transition: all 0.2s ease;
+  font-size: 1.05rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s, background-color 0.2s;
   -webkit-tap-highlight-color: transparent;
 }
 
-.floating-cart-bar:active {
-  transform: translateX(-50%) scale(0.96);
-  box-shadow:
-    0 2px 10px rgba(0, 196, 140, 0.3),
-    0 4px 20px rgba(0, 0, 0, 0.15);
+.floating-btn:active:not(:disabled) {
+  transform: scale(0.96);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.cart-info {
+/* Botón Mesas: Acción primaria, diseño sólido */
+.tables-btn {
+  background-color: var(--primary-color, #2563eb);
+  color: #ffffff;
+}
+
+.tables-btn .btn-icon {
+  font-size: 1.2rem;
+}
+
+.tables-badge {
+  background-color: var(--error-color, #ef4444);
+  color: white;
+  border-radius: 50px;
+  padding: 2px 8px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  margin-left: 4px;
+}
+
+/* Botón Carrito: Restaurado al token del sistema */
+.cart-btn.empty {
+  background-color: var(--surface-color, #ffffff);
+  color: var(--text-muted, #9ca3af);
+  border: 1px solid var(--border-color, #e5e7eb);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+}
+
+.cart-btn.active {
+  background-color: var(--success-color, #00c48c);
+  color: #ffffff;
+}
+
+.cart-summary-content {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
-.cart-count-badge {
-  background-color: white;
+.cart-count {
+  background-color: #ffffff;
   color: var(--success-color, #00c48c);
-  min-width: 28px;
-  height: 28px;
+  min-width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.85rem;
-  font-weight: 900;
-  padding: 0 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 0.9rem;
+  font-weight: 800;
 }
 
-.cart-total-label {
-  font-size: 1.15rem;
-  letter-spacing: -0.02em;
+.cart-total {
+  font-weight: 800;
+  font-size: 1.1rem;
 }
 
-.cart-arrow {
-  font-size: 1.3rem;
-  opacity: 0.9;
-}
-
-@keyframes slideUp {
-  from {
-    transform: translate(-50%, 120px);
-    opacity: 0;
-  }
-
-  to {
-    transform: translate(-50%, 0);
-    opacity: 1;
+/* Ocultar en escritorio */
+@media (min-width: 1024px) {
+  .floating-pos-bar {
+    display: none !important;
   }
 }
 

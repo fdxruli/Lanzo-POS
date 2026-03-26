@@ -8,6 +8,7 @@ import {
     queryBatchesByProductIdAndActive,
     queryByIndex,
     executeSaleTransactionSafe,
+    executeSplitOpenTableOrderTransactionSafe,
     loadMultipleData
 } from './database';
 import { useStatsStore } from '../store/useStatsStore';
@@ -15,6 +16,7 @@ import { roundCurrency, sendWhatsAppMessage } from './utils';
 import { calculatePricingDetails } from './pricingLogic';
 import Logger from './Logger';
 import { processSaleCore } from './sales/processSaleCore';
+import { splitOpenTableOrderCore } from './sales/splitOrderService';
 import { sendReceiptWhatsApp as sendReceiptWhatsAppBase } from './sales/receiptWhatsApp';
 import { cancelSaleCore } from './sales/cancelSaleCore';
 
@@ -42,6 +44,19 @@ const _processSaleInternal = async (params) => {
         roundCurrency,
         sendReceiptWhatsApp,
         calculatePricingDetails,
+        Logger
+    });
+};
+
+const _splitOpenTableOrderInternal = async (params) => {
+    return splitOpenTableOrderCore(params, {
+        loadData,
+        loadMultipleData,
+        STORES,
+        executeSplitOpenTableOrderTransactionSafe,
+        useStatsStore,
+        roundCurrency,
+        sendReceiptWhatsApp,
         Logger
     });
 };
@@ -88,12 +103,40 @@ export const processSale = async (params, maxRetries = 3) => {
     };
 };
 
+export const splitOpenTableOrder = async (params, maxRetries = 3) => {
+    Logger.info('Iniciando split bill de mesa (Safe Mode)...');
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const result = await _splitOpenTableOrderInternal(params);
+
+        if (result.success) {
+            return result;
+        }
+
+        if (result.errorType === 'RACE_CONDITION' && attempt < maxRetries) {
+            const delay = 100 * attempt;
+            Logger.warn(`[Retry ${attempt}/${maxRetries}] Race condition detectada en split bill. Reintentando en ${delay}ms...`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+        }
+
+        return result;
+    }
+
+    Logger.error('Fallo en split bill tras multiples intentos de concurrencia.');
+    return {
+        success: false,
+        errorType: 'MAX_RETRIES',
+        message: 'El sistema esta muy ocupado. Por favor intenta dividir/cobrar de nuevo.'
+    };
+};
+
 export const cancelSale = async ({
     timestamp,
     restoreStock = false,
     currentSales = []
 }) => {
-    return cancelSaleCore(
+    const result = await cancelSaleCore(
         {
             saleTimestamp: timestamp,
             restoreStock,
@@ -108,4 +151,14 @@ export const cancelSale = async ({
             Logger
         }
     );
+
+    if (result.success) {
+        try {
+            await useStatsStore.getState().rebuildFinancialStats();
+        } catch (error) {
+            Logger.warn('La venta se cancelo, pero no se pudieron reconstruir las metricas financieras.', error);
+        }
+    }
+
+    return result;
 };

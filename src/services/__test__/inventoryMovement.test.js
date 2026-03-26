@@ -66,10 +66,19 @@ describe('scanProductFast', () => {
 
     dbMocks.searchProductByBarcode.mockResolvedValue(null);
     dbMocks.searchProductBySKU.mockResolvedValue(variant);
+    dbMocks.loadData.mockResolvedValue({
+      id: 'batch-sku',
+      stock: 10,
+      committedStock: 4
+    });
 
     const result = await scanProductFast('SKU-123');
 
-    expect(result).toEqual(variant);
+    expect(result).toEqual({
+      ...variant,
+      stock: 6,
+      committedStock: 4
+    });
     expect(dbMocks.queryBatchesByProductIdAndActive).not.toHaveBeenCalled();
   });
 
@@ -148,4 +157,3 @@ describe('removeProductBatch', () => {
     );
   });
 });
-

@@ -1,5 +1,11 @@
 import { db, STORES } from './dexie';
-import { handleDexieError, validateOrThrow, DatabaseError, DB_ERROR_CODES } from './utils';
+import {
+    handleDexieError,
+    validateOrThrow,
+    DatabaseError,
+    DB_ERROR_CODES,
+    getCommittedStock
+} from './utils';
 import { generateID } from '../utils';
 import { productSchema } from '../../schemas/productSchema';
 import Logger from '../Logger';
@@ -105,20 +111,29 @@ export const productsRepository = {
             // Usamos una transacción Read-Write para garantizar integridad.
             // Si algo falla, Dexie hace rollback automático de ambos cambios.
             return await db.transaction('rw', [db.table(STORES.PRODUCT_BATCHES), db.table(STORES.MENU)], async () => {
+                const existingBatch = batchData?.id
+                    ? await db.table(STORES.PRODUCT_BATCHES).get(batchData.id)
+                    : null;
+                const normalizedBatchData = {
+                    ...existingBatch,
+                    ...batchData,
+                    committedStock: batchData?.committedStock ?? existingBatch?.committedStock ?? 0
+                };
 
                 // 1. Guardar el lote (Upsert)
                 // Nota: Aquí podrías agregar validación Zod para batchData si creas un batchSchema
-                await db.table(STORES.PRODUCT_BATCHES).put(batchData);
+                await db.table(STORES.PRODUCT_BATCHES).put(normalizedBatchData);
 
                 // 2. Obtener TODOS los lotes de este producto para recalcular
                 // Usamos el índice 'productId' definido en dexie.js
                 const allBatches = await db.table(STORES.PRODUCT_BATCHES)
-                    .where('productId').equals(batchData.productId)
+                    .where('productId').equals(normalizedBatchData.productId)
                     .toArray();
 
                 // --- INSERTA ESTO ---
                 // 3. Lógica de Sincronización Diferenciada (Variantes vs Lotes)
                 let totalStock = 0;
+                let totalCommittedStock = 0;
                 let totalValue = 0; // Acumulador para el Costo Promedio Ponderado
                 let isVariantProduct = false;
 
@@ -127,6 +142,8 @@ export const productsRepository = {
                     if (batch.attributes && Object.keys(batch.attributes).length > 0) {
                         isVariantProduct = true;
                     }
+
+                    totalCommittedStock += getCommittedStock(batch);
 
                     if (batch.isActive && Number(batch.stock) > 0) {
                         const safeStock = Number(batch.stock) || 0;
@@ -139,7 +156,7 @@ export const productsRepository = {
 
                 // 4. Actualizar el Producto Padre
                 const productStore = db.table(STORES.MENU);
-                const product = await productStore.get(batchData.productId);
+                const product = await productStore.get(normalizedBatchData.productId);
 
                 if (product) {
                     let newCost = product.cost;
@@ -158,17 +175,18 @@ export const productsRepository = {
                         if (totalStock > 0) {
                             newCost = Number((totalValue / totalStock).toFixed(4));
                         } else {
-                            newCost = Number(batchData.cost) || 0; // Fallback a la compra actual si el inventario estaba en 0
+                            newCost = Number(normalizedBatchData.cost) || 0; // Fallback a la compra actual si el inventario estaba en 0
                         }
 
                         // El precio del producto padre es soberano.
                         // Solo se actualiza si el payload del lote trae una bandera explícita.
-                        newPrice = batchData.updateGlobalPrice === true ? Number(batchData.price) : product.price;
+                        newPrice = normalizedBatchData.updateGlobalPrice === true ? Number(normalizedBatchData.price) : product.price;
                     }
 
                     const updatedProduct = {
                         ...product,
                         stock: totalStock,
+                        committedStock: totalCommittedStock,
                         cost: newCost,
                         price: newPrice,
                         hasBatches: true,
@@ -465,41 +483,45 @@ export const productsRepository = {
                 }
 
                 // ═══════════════════════════════════════════════════════════
-                // 🔥 SUBFASE 1.4: SINCRONIZAR PRODUCTOS PADRE (CORREGIDO)
+                // 🔥 SUBFASE 1.4: SINCRONIZAR PRODUCTOS PADRE (OPTIMIZADO)
                 // ═══════════════════════════════════════════════════════════
                 const parentUpdateSummary = [];
 
                 for (const productId of affectedProductIds) {
-                    // ✅ CORRECCIÓN CLAVE: Leer TODOS los lotes del producto
-                    // (no solo los que modificamos)
-                    const allProductBatches = await db.table(STORES.PRODUCT_BATCHES)
+                    // 1. Filtro temprano en el motor de base de datos
+                    const activeDbBatches = await db.table(STORES.PRODUCT_BATCHES)
                         .where('productId').equals(productId)
+                        .filter(b => b.isActive === true && b.stock > 0)
                         .toArray();
 
-                    // ✅ SOBRESCRIBIR con valores de memoria (los que acabamos de actualizar)
+                    // 2. Fusión de Estado (Verdad Absoluta en memoria)
                     const truthMap = new Map();
 
-                    // 1. Primero metemos todo lo que vino de la BD
-                    allProductBatches.forEach(b => {
+                    for (const b of activeDbBatches) {
                         if (b && b.id) truthMap.set(b.id, b);
-                    });
+                    }
 
-                    // 2. SOBRESCRIBIMOS con la verdad absoluta de memoria
-                    updatedBatchesMap.forEach((memoryBatch, batchId) => {
+                    // Sobrescribir con las modificaciones de la transacción actual
+                    for (const [batchId, memoryBatch] of updatedBatchesMap.entries()) {
                         if (String(memoryBatch.productId) === String(productId)) {
                             truthMap.set(batchId, memoryBatch);
                         }
-                    });
+                    }
 
-                    // 3. Calculamos stock sumando SOLO lotes activos con stock > 0
-                    const finalBatches = Array.from(truthMap.values());
-                    const activeBatches = finalBatches.filter(b => {
+                    // 3. Cálculo de stock aritmético directo O(K)
+                    let totalStock = 0;
+                    let activeBatchesCount = 0;
+
+                    for (const b of truthMap.values()) {
                         const stockVal = Number(b.stock);
                         const isActuallyActive = Boolean(b.isActive) && !isNaN(stockVal) && stockVal > config.tolerance;
-                        return isActuallyActive;
-                    });
 
-                    const totalStock = activeBatches.reduce((sum, b) => sum + Number(b.stock), 0);
+                        // Ignoramos lotes que acaban de morir o vaciarse en esta transacción
+                        if (isActuallyActive) {
+                            totalStock += stockVal;
+                            activeBatchesCount++;
+                        }
+                    }
 
                     // 4. Actualizar producto padre
                     const product = await db.table(STORES.MENU).get(productId);
@@ -525,8 +547,7 @@ export const productsRepository = {
                             name: product.name,
                             stockBefore,
                             stockAfter: totalStock,
-                            activeBatches: activeBatches.length,
-                            totalBatches: finalBatches.length
+                            activeBatches: activeBatchesCount
                         });
                     }
                 }

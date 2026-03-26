@@ -1,10 +1,11 @@
 // services/db/layaways.js - VERSIÓN CORREGIDA
 import { db, STORES } from './dexie';
-import { handleDexieError, DatabaseError } from './utils';
+import { handleDexieError } from './utils';
 import { generateID } from '../utils';
 import { productsRepository } from './products';
 import { useStatsStore } from '../../store/useStatsStore'; // ✅ AGREGADO
 import Logger from '../Logger';
+import { SALE_STATUS } from '../sales/financialStats';
 
 export const layawayRepository = {
 
@@ -109,14 +110,17 @@ export const layawayRepository = {
     },
 
     /**
-     * Cancelar un apartado y DEVOLVER STOCK
-     */
-    async cancel(layawayId, reason = 'Cancelación por cliente') {
+ * Cancelar un apartado y DEVOLVER STOCK (Ahora con gestión de caja)
+ * @param {boolean} retainMoney - Si es true, el dinero se asume como penalización a favor de la tienda.
+ * @param {string} cajaId - ID de la caja para registrar el reembolso si retainMoney es false.
+ */
+    async cancel(layawayId, reason = 'Cancelación por cliente', retainMoney = false, cajaId = null) {
         try {
             return await db.transaction('rw', [
                 db.table(STORES.LAYAWAYS),
                 db.table(STORES.PRODUCT_BATCHES),
-                db.table(STORES.MENU)
+                db.table(STORES.MENU),
+                db.table(STORES.MOVIMIENTOS_CAJA) // <-- AGREGAR TABLA A LA TRANSACCIÓN
             ], async () => {
 
                 const layaway = await db.table(STORES.LAYAWAYS).get(layawayId);
@@ -167,11 +171,25 @@ export const layawayRepository = {
                     });
                 }
 
+                if (layaway.paidAmount > 0 && !retainMoney) {
+                    if (!cajaId) throw new Error("Se requiere una caja abierta para procesar el reembolso del apartado.");
+
+                    // Extraer el dinero de la caja
+                    await db.table(STORES.MOVIMIENTOS_CAJA).add({
+                        id: generateID('mov'),
+                        caja_id: cajaId,
+                        tipo: 'salida',
+                        monto: layaway.paidAmount,
+                        concepto: `Reembolso cancelación de Apartado #${layawayId.slice(-4)}`,
+                        fecha: new Date().toISOString()
+                    });
+                }
+
                 // ACTUALIZAR ESTADO
                 await db.table(STORES.LAYAWAYS).update(layawayId, {
                     status: 'cancelled',
                     updatedAt: new Date().toISOString(),
-                    notes: reason
+                    notes: `${reason} - ${retainMoney ? 'Fondos retenidos por penalización' : 'Fondos reembolsados'}`
                 });
 
                 return { success: true };
@@ -186,7 +204,7 @@ export const layawayRepository = {
      */
     async convertToSale(layawayId, cashierId = 'system') {
         return await db.transaction('rw', [
-            db.table(STORES.LAYAWAYS), 
+            db.table(STORES.LAYAWAYS),
             db.table(STORES.SALES),
             db.table(STORES.DAILY_STATS) // ✅ AGREGADO
         ], async () => {
@@ -219,7 +237,7 @@ export const layawayRepository = {
                 subtotal: layaway.totalAmount,
                 discount: 0,
                 paymentMethod: 'layaway_completed',
-                status: 'completed',
+                status: SALE_STATUS.CLOSED,
                 fulfillmentStatus: 'fulfilled',
                 cashierId: cashierId,
                 isLayawayConversion: true,

@@ -1,9 +1,10 @@
 // src/hooks/useCaja.js
 import { useState, useEffect, useCallback } from 'react';
 import { showMessageModal, generateID } from '../services/utils';
-import { loadDataPaginated, saveDataSafe, STORES, initDB } from '../services/db/index';
+import { loadDataPaginated, saveDataSafe, STORES, initDB, db } from '../services/db/index';
 import Logger from '../services/Logger';
 import { Money } from '../utils/moneyMath';
+import { isFinanciallyClosedSale } from '../services/sales/financialStats';
 
 const MOVIMIENTO_TIPOS = {
   ENTRADA: 'entrada',
@@ -37,7 +38,7 @@ export function useCaja() {
       let abonosSafe = Money.init(0);
 
       for (const sale of sales) {
-        if (sale.fulfillmentStatus === 'cancelled') continue;
+        if (!isFinanciallyClosedSale(sale)) continue;
 
         if (sale.paymentMethod === 'efectivo') {
           contadoSafe = Money.add(contadoSafe, sale.total || 0);
@@ -74,12 +75,216 @@ export function useCaja() {
       entradas_efectivo: '0',
       salidas_efectivo: '0',
       diferencia: null,
-      es_auto_apertura: true
+      es_auto_apertura: true,
+      updatedAt: new Date().toISOString() // Sello de versión inicial
     };
 
     const result = await saveDataSafe(STORES.CAJAS, nuevaCaja);
     if (!result.success) throw result.error;
     return nuevaCaja;
+  };
+
+  const ajustarMontoInicial = async (nuevoMonto) => {
+    if (!cajaActual) return;
+
+    const montoSafe = Money.init(nuevoMonto);
+    if (montoSafe.lt(0)) {
+      showMessageModal('Error: El fondo no puede ser negativo.');
+      return;
+    }
+
+    try {
+      const versionEsperada = cajaActual.updatedAt || cajaActual.fecha_apertura;
+
+      const cajaGuardada = await db.transaction('rw', db.table(STORES.CAJAS), async () => {
+        const cajaDb = await db.table(STORES.CAJAS).get(cajaActual.id);
+        if (!cajaDb) throw new Error("CRITICAL: La caja no existe.");
+
+        const currentVersion = cajaDb.updatedAt || cajaDb.fecha_apertura;
+        if (currentVersion !== versionEsperada) {
+          throw new Error("CONCURRENCY_ERROR: Modificación concurrente detectada.");
+        }
+
+        cajaDb.monto_inicial = Money.toExactString(montoSafe);
+        cajaDb.updatedAt = new Date().toISOString();
+        await db.table(STORES.CAJAS).put(cajaDb);
+        return cajaDb;
+      });
+
+      setCajaActual(cajaGuardada);
+      showMessageModal('Fondo inicial ajustado.');
+    } catch (error) {
+      Logger.error('Error de concurrencia ajustando monto', error);
+      showMessageModal(`Error: ${error.message}`);
+      await sincronizarEstadoCaja();
+    }
+  };
+
+  const realizarAuditoriaYCerrar = async (montoFisicoTotal, montoFondoSiguienteTurno, comentarios = '') => {
+    if (!cajaActual) return { success: false, error: new Error('No hay caja activa.') };
+
+    try {
+      const montoFisicoSafe = Money.init(montoFisicoTotal);
+      const montoFondoSiguienteTurnoSafe = Money.init(montoFondoSiguienteTurno);
+      const totalTeoricoSafe = Money.init(await calcularTotalTeorico());
+
+      if (montoFisicoSafe.lt(0) || montoFondoSiguienteTurnoSafe.lt(0)) {
+        return { success: false, error: new Error('Los montos de auditoria no pueden ser negativos.') };
+      }
+
+      if (montoFondoSiguienteTurnoSafe.gt(montoFisicoSafe)) {
+        return {
+          success: false,
+          error: new Error('El fondo del siguiente turno no puede ser mayor al dinero fisico contado.')
+        };
+      }
+
+      const diferenciaSafe = Money.subtract(montoFisicoSafe, totalTeoricoSafe);
+      const { ventasContado, abonosFiado } = await calcularTotalesSesion(cajaActual.fecha_apertura);
+      const totalVentasEfectivoSafe = Money.add(ventasContado, abonosFiado);
+
+      const versionEsperada = cajaActual.updatedAt || cajaActual.fecha_apertura;
+
+      const { nuevaCajaId } = await db.transaction('rw', db.table(STORES.CAJAS), async () => {
+        const cajaDb = await db.table(STORES.CAJAS).get(cajaActual.id);
+        if (!cajaDb) throw new Error("CRITICAL: La caja no existe.");
+
+        const currentVersion = cajaDb.updatedAt || cajaDb.fecha_apertura;
+        if (currentVersion !== versionEsperada) {
+          throw new Error("CONCURRENCY_ERROR: Operación de cierre abortada. La caja fue modificada externamente.");
+        }
+
+        const cajaCerradaData = {
+          ...cajaDb,
+          fecha_cierre: new Date().toISOString(),
+          monto_cierre: Money.toExactString(montoFisicoSafe),
+          monto_fondo_siguiente_turno: Money.toExactString(montoFondoSiguienteTurnoSafe),
+          ventas_efectivo: Money.toExactString(totalVentasEfectivoSafe),
+          diferencia: Money.toExactString(diferenciaSafe),
+          comentarios_auditoria: comentarios,
+          estado: 'cerrada',
+          updatedAt: new Date().toISOString(),
+          detalle_cierre: {
+            ventas_contado: Money.toExactString(ventasContado),
+            abonos_fiado: Money.toExactString(abonosFiado),
+            total_teorico: Money.toExactString(totalTeoricoSafe)
+          }
+        };
+
+        await db.table(STORES.CAJAS).put(cajaCerradaData);
+
+        const nuevaCajaIdGen = generateID('caja');
+        const nuevaCaja = {
+          id: nuevaCajaIdGen,
+          fecha_apertura: new Date().toISOString(),
+          monto_inicial: Money.toExactString(montoFondoSiguienteTurnoSafe),
+          estado: 'abierta',
+          fecha_cierre: null,
+          monto_cierre: null,
+          ventas_efectivo: '0',
+          entradas_efectivo: '0',
+          salidas_efectivo: '0',
+          diferencia: null,
+          es_auto_apertura: true,
+          updatedAt: new Date().toISOString()
+        };
+
+        await db.table(STORES.CAJAS).put(nuevaCaja);
+
+        return { nuevaCajaId: nuevaCajaIdGen };
+      });
+
+      return {
+        success: true,
+        diferencia: Money.toExactString(diferenciaSafe),
+        nuevaCajaId: nuevaCajaId
+      };
+    } catch (auditError) {
+      Logger.error('Error en cierre de caja', auditError);
+      return { success: false, error: auditError };
+    }
+  };
+
+  const registrarMovimiento = async (tipo, monto, concepto) => {
+    if (!cajaActual) return false;
+
+    const tiposPermitidos = Object.values(MOVIMIENTO_TIPOS);
+    if (!tiposPermitidos.includes(tipo)) {
+      showMessageModal('Tipo de movimiento no permitido.');
+      return false;
+    }
+
+    const montoSafe = Money.init(monto);
+    if (montoSafe.lte(0)) {
+      showMessageModal('El monto debe ser mayor a 0.');
+      return false;
+    }
+
+    const conceptoLimpio = String(concepto || '').trim();
+    if (!conceptoLimpio) {
+      showMessageModal('El concepto es obligatorio.');
+      return false;
+    }
+
+    const esSalida = tipo === MOVIMIENTO_TIPOS.SALIDA || tipo === MOVIMIENTO_TIPOS.AJUSTE_SALIDA;
+    if (esSalida) {
+      const totalTeoricoActualSafe = Money.init(await calcularTotalTeorico());
+      const totalTeoricoPostSalidaSafe = Money.subtract(totalTeoricoActualSafe, montoSafe);
+
+      if (totalTeoricoPostSalidaSafe.lt(0)) {
+        showMessageModal('Operacion bloqueada: la salida dejaria el total teorico en negativo.');
+        return false;
+      }
+    }
+
+    try {
+      const versionEsperada = cajaActual.updatedAt || cajaActual.fecha_apertura;
+      const esEntrada = tipo === MOVIMIENTO_TIPOS.ENTRADA || tipo === MOVIMIENTO_TIPOS.AJUSTE_ENTRADA;
+
+      const movimientoId = `mov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const movimiento = {
+        id: movimientoId,
+        caja_id: cajaActual.id,
+        tipo,
+        monto: Money.toExactString(montoSafe),
+        concepto: conceptoLimpio,
+        fecha: new Date().toISOString()
+      };
+
+      const cajaGuardada = await db.transaction('rw', [db.table(STORES.CAJAS), db.table(STORES.MOVIMIENTOS_CAJA)], async () => {
+        const cajaDb = await db.table(STORES.CAJAS).get(cajaActual.id);
+        if (!cajaDb) throw new Error("CRITICAL: La caja no existe.");
+
+        const currentVersion = cajaDb.updatedAt || cajaDb.fecha_apertura;
+        if (currentVersion !== versionEsperada) {
+          throw new Error("CONCURRENCY_ERROR: La caja fue modificada por otra operación.");
+        }
+
+        if (esEntrada) {
+          const currentEntradas = Money.init(cajaDb.entradas_efectivo || 0);
+          cajaDb.entradas_efectivo = Money.toExactString(Money.add(currentEntradas, montoSafe));
+        } else {
+          const currentSalidas = Money.init(cajaDb.salidas_efectivo || 0);
+          cajaDb.salidas_efectivo = Money.toExactString(Money.add(currentSalidas, montoSafe));
+        }
+
+        cajaDb.updatedAt = new Date().toISOString();
+        await db.table(STORES.CAJAS).put(cajaDb);
+        await db.table(STORES.MOVIMIENTOS_CAJA).put(movimiento);
+
+        return cajaDb;
+      });
+
+      setCajaActual(cajaGuardada);
+      setMovimientosCaja((prev) => [...prev, movimiento]);
+      return true;
+
+    } catch (movementError) {
+      Logger.error('Error registrando movimiento de caja', movementError);
+      showMessageModal(movementError.message || 'Error al registrar el movimiento de caja.');
+      await sincronizarEstadoCaja();
+      return false;
+    }
   };
 
   const cargarMovimientos = async (cajaId) => {
@@ -143,26 +348,6 @@ export function useCaja() {
     await cargarEstadoCaja();
   }, [cargarEstadoCaja]);
 
-  const ajustarMontoInicial = async (nuevoMonto) => {
-    if (!cajaActual) return;
-
-    const montoSafe = Money.init(nuevoMonto);
-    if (montoSafe.lt(0)) {
-      showMessageModal('Error: El fondo no puede ser negativo.');
-      return;
-    }
-
-    const cajaActualizada = { ...cajaActual, monto_inicial: Money.toExactString(montoSafe) };
-    const result = await saveDataSafe(STORES.CAJAS, cajaActualizada);
-
-    if (result.success) {
-      setCajaActual(cajaActualizada);
-      showMessageModal('Fondo inicial ajustado.');
-    } else {
-      showMessageModal(`Error: ${result.error?.message}`);
-    }
-  };
-
   const calcularTotalTeorico = async () => {
     if (!cajaActual) return '0';
 
@@ -176,135 +361,6 @@ export function useCaja() {
     const totalTeoricoSafe = Money.subtract(ingresosTotales, salidasSafe);
 
     return Money.toExactString(totalTeoricoSafe);
-  };
-
-  const realizarAuditoriaYCerrar = async (montoFisicoTotal, montoFondoSiguienteTurno, comentarios = '') => {
-    if (!cajaActual) return { success: false, error: new Error('No hay caja activa.') };
-
-    try {
-      const montoFisicoSafe = Money.init(montoFisicoTotal);
-      const montoFondoSiguienteTurnoSafe = Money.init(montoFondoSiguienteTurno);
-      const totalTeoricoSafe = Money.init(await calcularTotalTeorico());
-
-      if (montoFisicoSafe.lt(0) || montoFondoSiguienteTurnoSafe.lt(0)) {
-        return { success: false, error: new Error('Los montos de auditoria no pueden ser negativos.') };
-      }
-
-      if (montoFondoSiguienteTurnoSafe.gt(montoFisicoSafe)) {
-        return {
-          success: false,
-          error: new Error('El fondo del siguiente turno no puede ser mayor al dinero fisico contado.')
-        };
-      }
-
-      const diferenciaSafe = Money.subtract(montoFisicoSafe, totalTeoricoSafe);
-      const { ventasContado, abonosFiado } = await calcularTotalesSesion(cajaActual.fecha_apertura);
-      const totalVentasEfectivoSafe = Money.add(ventasContado, abonosFiado);
-
-      const cajaCerrada = {
-        ...cajaActual,
-        fecha_cierre: new Date().toISOString(),
-        monto_cierre: Money.toExactString(montoFisicoSafe),
-        monto_fondo_siguiente_turno: Money.toExactString(montoFondoSiguienteTurnoSafe),
-        ventas_efectivo: Money.toExactString(totalVentasEfectivoSafe),
-        diferencia: Money.toExactString(diferenciaSafe),
-        comentarios_auditoria: comentarios,
-        estado: 'cerrada',
-        detalle_cierre: {
-          ventas_contado: Money.toExactString(ventasContado),
-          abonos_fiado: Money.toExactString(abonosFiado),
-          total_teorico: Money.toExactString(totalTeoricoSafe)
-        }
-      };
-
-      const result = await saveDataSafe(STORES.CAJAS, cajaCerrada);
-      if (!result.success) return { success: false, error: result.error };
-
-      const nuevaCaja = await autoAbrirCaja(Money.toExactString(montoFondoSiguienteTurnoSafe));
-
-      return {
-        success: true,
-        diferencia: Money.toExactString(diferenciaSafe),
-        nuevaCajaId: nuevaCaja.id
-      };
-    } catch (auditError) {
-      return { success: false, error: auditError };
-    }
-  };
-
-  const registrarMovimiento = async (tipo, monto, concepto) => {
-    if (!cajaActual) return false;
-
-    const tiposPermitidos = Object.values(MOVIMIENTO_TIPOS);
-    if (!tiposPermitidos.includes(tipo)) {
-      showMessageModal('Tipo de movimiento no permitido.');
-      return false;
-    }
-
-    const montoSafe = Money.init(monto);
-    if (montoSafe.lte(0)) {
-      showMessageModal('El monto debe ser mayor a 0.');
-      return false;
-    }
-
-    const conceptoLimpio = String(concepto || '').trim();
-    if (!conceptoLimpio) {
-      showMessageModal('El concepto es obligatorio.');
-      return false;
-    }
-
-    const esSalida = tipo === MOVIMIENTO_TIPOS.SALIDA || tipo === MOVIMIENTO_TIPOS.AJUSTE_SALIDA;
-    if (esSalida) {
-      const totalTeoricoActualSafe = Money.init(await calcularTotalTeorico());
-      const totalTeoricoPostSalidaSafe = Money.subtract(totalTeoricoActualSafe, montoSafe);
-
-      if (totalTeoricoPostSalidaSafe.lt(0)) {
-        showMessageModal('Operacion bloqueada: la salida dejaria el total teorico en negativo.');
-        return false;
-      }
-    }
-
-    const movimiento = {
-      id: `mov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      caja_id: cajaActual.id,
-      tipo,
-      monto: Money.toExactString(montoSafe),
-      concepto: conceptoLimpio,
-      fecha: new Date().toISOString()
-    };
-
-    try {
-      const movResult = await saveDataSafe(STORES.MOVIMIENTOS_CAJA, movimiento);
-      if (!movResult.success) {
-        showMessageModal(movResult.error.message);
-        return false;
-      }
-
-      const cajaActualizada = { ...cajaActual };
-      const esEntrada = tipo === MOVIMIENTO_TIPOS.ENTRADA || tipo === MOVIMIENTO_TIPOS.AJUSTE_ENTRADA;
-
-      if (esEntrada) {
-        const currentEntradas = Money.init(cajaActualizada.entradas_efectivo || 0);
-        cajaActualizada.entradas_efectivo = Money.toExactString(Money.add(currentEntradas, montoSafe));
-      } else {
-        const currentSalidas = Money.init(cajaActualizada.salidas_efectivo || 0);
-        cajaActualizada.salidas_efectivo = Money.toExactString(Money.add(currentSalidas, montoSafe));
-      }
-
-      const cajaResult = await saveDataSafe(STORES.CAJAS, cajaActualizada);
-      if (!cajaResult.success) {
-        showMessageModal(`Error: ${cajaResult.error.message}`);
-        return false;
-      }
-
-      setCajaActual(cajaActualizada);
-      setMovimientosCaja((prev) => [...prev, movimiento]);
-      return true;
-    } catch (movementError) {
-      Logger.error('Error registrando movimiento de caja', movementError);
-      showMessageModal('Error al registrar el movimiento de caja.');
-      return false;
-    }
   };
 
   const registrarAjusteCaja = async (montoFisicoReal, comentario) => {

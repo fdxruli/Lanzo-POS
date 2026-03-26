@@ -8,6 +8,7 @@ import {
   STORES
 } from './database';
 import { productsRepository } from './db/products';
+import { getAvailableStock, getCommittedStock } from './db/utils';
 import Logger from './Logger';
 
 const parseDate = (value) => {
@@ -67,7 +68,7 @@ export const loadBatchesForProduct = async (productId, options = {}) => {
   let result = Array.isArray(batches) ? batches : [];
 
   if (onlyActive) {
-    result = result.filter((batch) => batch?.isActive && Number(batch?.stock) > 0);
+    result = result.filter((batch) => batch?.isActive && getAvailableStock(batch) > 0);
   }
 
   if (!includeArchived) {
@@ -87,12 +88,23 @@ export const scanProductFast = async (barcode) => {
     }
 
     if (!product) return null;
-    if (product?.isVariant || product?.batchId) return product;
+    if (product?.isVariant || product?.batchId) {
+      if (!product?.batchId) return product;
+
+      const batchSnapshot = await loadData(STORES.PRODUCT_BATCHES, product.batchId);
+      if (!batchSnapshot) return product;
+
+      return {
+        ...product,
+        stock: getAvailableStock(batchSnapshot),
+        committedStock: getCommittedStock(batchSnapshot)
+      };
+    }
     if (!product?.batchManagement?.enabled) return product;
 
     const activeBatches = await queryBatchesByProductIdAndActive(product.id, true);
     const availableBatches = (activeBatches || [])
-      .filter((batch) => Number(batch?.stock) > 0 && batch?.isActive !== false);
+      .filter((batch) => getAvailableStock(batch) > 0 && batch?.isActive !== false);
 
     if (availableBatches.length === 0) return product;
 
@@ -106,7 +118,7 @@ export const scanProductFast = async (barcode) => {
       price: parseFloat(selectedBatch.price) || product.price,
       cost: parseFloat(selectedBatch.cost) || product.cost,
       batchId: selectedBatch.id,
-      stock: Number(selectedBatch.stock) || 0
+      stock: getAvailableStock(selectedBatch)
     };
   } catch (error) {
     Logger.error('Error en Fast Scan:', error);
@@ -157,4 +169,3 @@ export const removeProductBatch = async (productId, batchId) => {
 
   return archivedBatch;
 };
-

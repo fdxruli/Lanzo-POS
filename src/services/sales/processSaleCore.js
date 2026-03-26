@@ -7,6 +7,7 @@ import {
 import { runPostSaleEffects } from './postSaleEffects';
 import { Money } from '../../utils/moneyMath';
 import { generateID } from '../utils';
+import { SALE_STATUS } from './financialStats';
 
 export const processSaleCore = async ({
     order,
@@ -16,7 +17,8 @@ export const processSaleCore = async ({
     features,
     companyName,
     tempPrescriptionData,
-    ignoreStock = false
+    ignoreStock = false,
+    activeOrderId
 }, {
     loadData,
     loadMultipleData,
@@ -43,7 +45,7 @@ export const processSaleCore = async ({
         try {
             totalNum = Money.init(total);
             if (totalNum.lt(0)) throw new Error();
-        } catch (e) {
+        } catch {
             throw new Error('El total de la venta no es numéricamente válido.');
         }
 
@@ -52,6 +54,12 @@ export const processSaleCore = async ({
         try {
             abonoSeguro = Money.init(paymentData.amountPaid || 0);
             saldoSeguro = Money.init(paymentData.saldoPendiente || 0);
+
+            // CORRECCIÓN: El ingreso contable jamás puede superar al total del ticket.
+            // Si el cliente da $100 para pagar $75, el abono a la venta es exactamente $75.
+            if (abonoSeguro.gt(totalNum)) {
+                abonoSeguro = totalNum;
+            }
 
             if (abonoSeguro.lt(0) || saldoSeguro.lt(0)) {
                 throw new Error('Los valores financieros no pueden ser negativos.');
@@ -126,7 +134,7 @@ export const processSaleCore = async ({
         const currentIsoTime = new Date().toISOString();
 
         const sale = {
-            id: generateID('sal'),
+            id: activeOrderId || generateID('sal'),
             timestamp: currentIsoTime,
             items: processedItems,
             total: Money.toExactString(totalNum),
@@ -134,6 +142,7 @@ export const processSaleCore = async ({
             paymentMethod: paymentData.paymentMethod,
             abono: Money.toExactString(abonoSeguro),
             saldoPendiente: Money.toExactString(saldoSeguro),
+            status: SALE_STATUS.CLOSED,
             fulfillmentStatus: features.hasKDS ? 'pending' : 'completed',
             prescriptionDetails: tempPrescriptionData || null,
             postEffectsCompleted: false
@@ -145,7 +154,13 @@ export const processSaleCore = async ({
             if (transactionResult.isConcurrencyError) {
                 return { success: false, errorType: 'RACE_CONDITION', message: 'El stock cambió mientras cobrabas. Intenta de nuevo.' };
             }
-            return { success: false, message: transactionResult.error.message };
+
+            // Corrección: Lectura defensiva de la causa del fallo
+            const errorMessage = transactionResult.error?.message
+                || transactionResult.message
+                || 'Falló la transacción de venta sin un mensaje de error específico.';
+
+            return { success: false, message: errorMessage };
         }
 
         await runPostSaleEffects({

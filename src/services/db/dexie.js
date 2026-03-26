@@ -1,6 +1,9 @@
 import Dexie from 'dexie';
 import { DB_NAME } from '../../config/dbConfig'; // Usamos tu config existente
 import { buildPhoneBuckets, toIndexedPhoneKey } from './customerPhoneUtils';
+import { getLegacyFinancialSaleStatus } from '../sales/financialStats';
+import Logger from '../Logger';
+import { showMessage } from '../../store/useMessageStore';
 // Nota: Dexie maneja el versionado de forma interna y más limpia, 
 // pero importamos DB_NAME para mantener consistencia.
 
@@ -179,16 +182,102 @@ class LanzoDatabase extends Dexie {
         record.phoneKey = phoneKey;
       });
     });
+
+    this.version(9).stores({
+      [STORES.SALES]: 'id, timestamp, customerId, fulfillmentStatus, status, orderType, [customerId+timestamp]'
+    }).upgrade(async tx => {
+      await tx.table(STORES.SALES).toCollection().modify(record => {
+        if (!record.status) {
+          record.status = getLegacyFinancialSaleStatus(record);
+        }
+      });
+    });
+
+    this.version(10).stores({
+      [STORES.MENU]: 'id, createdAt, barcode, name_lower, categoryId, sku',
+      [STORES.PRODUCT_BATCHES]: 'id, productId, sku, expiryDate, [productId+isActive], [productId+isActive+createdAt]'
+    }).upgrade(async tx => {
+      const initializeCommittedStock = async (tableName) => {
+        await tx.table(tableName).toCollection().modify(record => {
+          const currentCommitted = Number(record?.committedStock);
+          if (!Number.isFinite(currentCommitted) || currentCommitted < 0) {
+            record.committedStock = 0;
+          }
+        });
+      };
+
+      await initializeCommittedStock(STORES.MENU);
+      await initializeCommittedStock(STORES.PRODUCT_BATCHES);
+    });
   }
 }
 
 // Instancia Singleton
 export const db = new LanzoDatabase();
 
+// Variable de control para evitar múltiples invocaciones si Dexie emite el evento en ráfaga
+let isMigrationBlockHandled = false;
+
 db.on('blocked', () => {
-  console.error('Migración bloqueada por conexiones antiguas activas.');
-  alert('Actualización crítica de la base de datos pendiente. Por favor, cierra todas las demás pestañas de esta aplicación y recarga la página para continuar.');
+  Logger.error('Migración bloqueada por conexiones antiguas activas.');
+
+  if (isMigrationBlockHandled) return;
+  isMigrationBlockHandled = true;
+
+  const msg = 'Actualización crítica de la base de datos pendiente. Por favor, cierra todas las demás pestañas de esta aplicación y recarga la página para continuar.';
+
+  // Callback forzado para disparar el CASO A (Modal) de showMessageModal
+  // Obliga al usuario del kiosco a interactuar y proporciona un método de recuperación (reload)
+  const onConfirmAction = () => {
+    window.location.reload();
+  };
+
+  const dispatchUIModal = () => {
+    try {
+      // Reemplaza showMessageModal por showMessage
+      showMessage(msg, onConfirmAction, { type: 'error' });
+    } catch (error) {
+      Logger.error('Fallo en la invocación del store Zustand/UI:', error);
+      injectRawDOMFallback(msg);
+    }
+  };
+
+  // PUNTO CIEGO: Manejo de ciclo de vida fuera de React
+  // Si la migración se bloquea inmediatamente al parsear el bundle, el árbol de React 
+  // (y el componente Modal que escucha el store) no existirá en el DOM. 
+  // Modificar el store prematuramente causaría la pérdida silenciosa del evento.
+  if (document.readyState === 'loading') {
+    // El DOM aún se está construyendo. Esperamos a que termine y damos margen 
+    // a la hidratación/montaje de React.
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(dispatchUIModal, 1500);
+    });
+  } else {
+    // El DOM está listo. Ejecutamos asíncronamente para vaciar el call stack actual.
+    setTimeout(dispatchUIModal, 500);
+  }
 });
+
+/**
+ * Fallback absoluto: Si React falla al renderizar debido al esquema obsoleto de la DB,
+ * o si el store de Zustand lanza excepciones por inicialización incompleta,
+ * inyectamos una capa nativa directamente en el DOM para evitar que el kiosco quede inoperable.
+ */
+function injectRawDOMFallback(message) {
+  if (document.getElementById('lanzo-db-block-fallback')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'lanzo-db-block-fallback';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.95);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:2147483647;font-family:sans-serif;padding:2rem;text-align:center;';
+
+  overlay.innerHTML = `
+    <h1 style="color:#ff4444;margin-bottom:1rem;">Mantenimiento Requerido</h1>
+    <p style="font-size:1.5rem;max-width:600px;line-height:1.4;margin-bottom:2rem;">${message}</p>
+    <button onclick="window.location.reload()" style="padding:1rem 2rem;font-size:1.2rem;background:#ff4444;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:bold;">Recargar Sistema</button>
+  `;
+
+  document.body.appendChild(overlay);
+}
 
 // Exportar clase por si se necesita instanciar para tests
 export { LanzoDatabase };

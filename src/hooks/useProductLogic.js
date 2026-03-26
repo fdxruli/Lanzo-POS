@@ -1,60 +1,62 @@
-// src/hooks/useProductLogic.js
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { generateID } from '../services/utils';
 
 export const useProductLogic = (initialOverrides = {}) => {
-    // Definimos valores por defecto seguros
     const defaults = {
         id: generateID('prod'),
         name: '',
         barcode: '',
         categoryId: '',
-        cost: '',
-        price: '',
-        margin: '',
-        stock: '',
+        cost: 0, 
+        price: 0,
+        margin: 0,
+        stock: 0,
         minStock: 5,
         trackStock: true,
         productType: 'sellable',
-        saleType: 'unit', // Default seguro
+        saleType: 'unit',
         unit: 'pza'
     };
 
-    // Fusionamos defaults + overrides
     const [data, setData] = useState({
         ...defaults,
         ...initialOverrides
     });
 
-    // Lógica de cálculo de precios automática
+    // Utilidad de redondeo estricto que retorna Number, no String.
+    const roundNumber = (num, decimals = 2) => {
+        const factor = Math.pow(10, decimals);
+        return Math.round((Number(num) + Number.EPSILON) * factor) / factor;
+    };
+
     const updatePriceLogic = (field, value) => {
         let { cost, price, margin } = data;
         const newData = { ...data };
 
-        // Actualizamos el campo específico
-        if (field === 'cost') { cost = value; newData.cost = value; }
-        if (field === 'price') { price = value; newData.price = value; }
-        if (field === 'margin') { margin = value; newData.margin = value; }
+        // Asegurar que las entradas manuales se traten como números
+        if (field === 'cost') { cost = value; newData.cost = Number(value) || 0; }
+        if (field === 'price') { price = value; newData.price = Number(value) || 0; }
+        if (field === 'margin') { margin = value; newData.margin = Number(value) || 0; }
 
-        const nCost = parseFloat(cost) || 0;
-        const nPrice = parseFloat(price) || 0;
-        const nMargin = parseFloat(margin) || 0;
+        const nCost = Number(cost) || 0;
+        const nPrice = Number(price) || 0;
+        const nMargin = Number(margin) || 0;
 
-        // Regla 1: Costo cambia -> Recalcular Precio (manteniendo margen) O Recalcular Margen (manteniendo precio)?
-        // UX Standard: Si tengo margen definido, respeto el margen.
         if (field === 'cost' && nMargin > 0) {
-             newData.price = (nCost * (1 + (nMargin / 100))).toFixed(2);
+            newData.price = roundNumber(nCost * (1 + (nMargin / 100)), 2);
         }
-        
-        // Regla 2: Margen cambia -> Calculo Precio
-        else if (field === 'margin' && nCost > 0) {
-            newData.price = (nCost * (1 + (nMargin / 100))).toFixed(2);
+        else if (field === 'margin' && nCost >= 0) { // Aplica incluso si nCost es 0
+            newData.price = roundNumber(nCost * (1 + (nMargin / 100)), 2);
         }
-        
-        // Regla 3: Precio cambia -> Recalculo Margen
-        else if (field === 'price' && nCost > 0) {
-            // Evitamos división por cero
-            newData.margin = (((nPrice - nCost) / nCost) * 100).toFixed(1);
+        else if (field === 'price') {
+            if (nCost > 0) {
+                newData.margin = roundNumber(((nPrice - nCost) / nCost) * 100, 1);
+            } else if (nCost === 0 && nPrice > 0) {
+                // Manejo de división por cero: Si no hay costo pero hay precio, el margen es 100%
+                newData.margin = 100;
+            } else {
+                newData.margin = 0;
+            }
         }
 
         setData(newData);

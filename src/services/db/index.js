@@ -2,7 +2,7 @@ import { db, STORES } from './dexie';
 import { generalRepository } from './general';
 import { productsRepository, searchProductsInDB } from './products';
 import { salesRepository } from './sales';
-import { DatabaseError, DB_ERROR_CODES } from './utils';
+import { DatabaseError, DB_ERROR_CODES, getAvailableStock } from './utils';
 import { fixStockInconsistencies, rebuildDailyStats } from '../maintenance';
 import { layawayRepository } from './layaways';
 import { handleDexieError } from './utils';
@@ -75,6 +75,9 @@ export const processBatchDeductions = (deductions) =>
 export const executeSaleTransactionSafe = (sale, deductions) =>
     safeExecute(() => salesRepository.executeSaleTransaction(sale, deductions));
 
+export const executeSplitOpenTableOrderTransactionSafe = (payload) =>
+    safeExecute(() => salesRepository.executeSplitOpenTableOrderTransaction(payload));
+
 export const layawayRepo = {
     create: (data, initial) => safeExecute(() => layawayRepository.create(data, initial)),
     getByCustomer: (custId, active) => safeExecute(() => layawayRepository.getByCustomer(custId, active)),
@@ -82,7 +85,7 @@ export const layawayRepo = {
     getById: (id) => safeExecute(() => layawayRepository.getById(id))
 };
 
-export const executeBatchWithPaymentSafe = async (batchData, paymentInfo) => {
+export const executeBatchWithPaymentSafe = async (batchData, paymentInfo, expectedVersion = null) => {
     return safeExecute(async () => {
         return await db.transaction('rw',
             [
@@ -94,8 +97,17 @@ export const executeBatchWithPaymentSafe = async (batchData, paymentInfo) => {
             ],
             async () => {
                 const caja = await db.table(STORES.CAJAS).get(paymentInfo.cajaId);
-                if (!caja || caja.estado !== 'abierta') {
+                if (!caja) {
+                    throw new Error("Transacción abortada: La caja no existe.");
+                }
+                if (caja.estado !== 'abierta') {
                     throw new Error("Transacción abortada: La caja fue cerrada antes de completar la operación.");
+                }
+
+                // Control de Concurrencia Optimista (OCC)
+                const currentVersion = caja.updatedAt || caja.fecha_apertura;
+                if (expectedVersion && currentVersion !== expectedVersion) {
+                    throw new Error("CONCURRENCY_ERROR: La caja ha sido modificada por otra transacción. Por favor, recarga y vuelve a intentar.");
                 }
 
                 const fondoInicial = Number(caja.monto_inicial || caja.fondo_inicial || 0);
@@ -108,6 +120,7 @@ export const executeBatchWithPaymentSafe = async (batchData, paymentInfo) => {
                 }
 
                 caja.salidas_efectivo = salidasEfectivo + paymentInfo.monto;
+                caja.updatedAt = new Date().toISOString(); // Mutación de versión
                 await db.table(STORES.CAJAS).put(caja);
 
                 const movimiento = {
@@ -297,7 +310,7 @@ export const loadDataPaginated = async (storeName, options = {}) => {
 
                 if (outOfStockOnly) {
                     const gestionaStock = item.trackStock || item.batchManagement?.enabled;
-                    if (!gestionaStock || item.stock > 0) return false;
+                    if (!gestionaStock || getAvailableStock(item) > 0) return false;
                 }
 
                 if (hasSearchFilter) {
@@ -331,7 +344,7 @@ export const loadDataPaginated = async (storeName, options = {}) => {
                 if (item.isActive === false) return false;
 
                 const gestionaStock = item.trackStock || item.batchManagement?.enabled;
-                if (!gestionaStock || item.stock > 0) return false;
+                if (!gestionaStock || getAvailableStock(item) > 0) return false;
 
                 if (hasSearchFilter) {
                     // 1. Fallback robusto para retrocompatibilidad con productos antiguos
