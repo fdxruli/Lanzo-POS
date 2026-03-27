@@ -14,12 +14,15 @@ import './Layout.css';
 import Logger from '../../services/Logger';
 import { GLOBAL_ALERT } from '../../config/botContext';
 import { lazy, Suspense } from 'react';
+import { useOrderStore } from '../../store/useOrderStore';
 const AssistantBot = lazy(() => import('../common/AssistantBot'));
 
 function Layout() {
   const loadStats = useStatsStore(state => state.loadStats);
   const loadProducts = useProductStore(state => state.loadInitialProducts);
   const loadSales = useSalesStore(state => state.loadRecentSales);
+
+  const reconcileOrphanedOrders = useOrderStore(state => state.reconcileOrphanedOrders);
 
   const licenseDetails = useAppStore(state => state.licenseDetails);
   const initializeApp = useAppStore(state => state.initializeApp);
@@ -42,10 +45,26 @@ function Layout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    Logger.log("🚀 Inicializando Stores modulares...");
-    loadStats();
-    loadProducts();
-    loadSales();
+    const initializeData = async () => {
+      Logger.log("🚀 Inicializando Stores modulares y auditoría...");
+
+      // A. PRIMERO: Ejecutar el recolector de basura de inventario
+      try {
+        const result = await reconcileOrphanedOrders();
+        if (result?.count > 0) {
+          Logger.log(`🧹 Se liberó el inventario de ${result.count} órdenes abandonadas.`);
+        }
+      } catch (error) {
+        Logger.error("Fallo durante la reconciliación de órdenes:", error);
+      }
+
+      // B. DESPUÉS: Cargar la información a la UI (ahora con el stock real)
+      loadStats();
+      loadProducts();
+      loadSales();
+    };
+
+    initializeData();
   }, []);
 
   useEffect(() => {

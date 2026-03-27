@@ -5,15 +5,14 @@ export default function Logo({ className, style, vertical = false }) {
     const companyName = useAppStore(state => state.companyProfile?.name);
     const rawName = companyName ? companyName.toUpperCase() : "TU NEGOCIO";
 
-    // --- CÁLCULO DE ANCHO DINÁMICO (Modo Horizontal) ---
-    // Calculamos el ancho basándonos en los caracteres reales para que la "pastilla" se ajuste
-    // "LANZO" (5) + " x " (3) = 8 caracteres base + el nombre del negocio
-    const totalChars = 8 + rawName.length;
-    
-    // Estimación: 16px por letra (aprox para font 24px bold) + 90px espacio icono + 40px padding final
+    const MAX_CHARS = 22; // Define un límite lógico para el navbar
+    const displayHorizontalName = rawName.length > MAX_CHARS
+        ? rawName.substring(0, MAX_CHARS - 3) + '...'
+        : rawName;
+
+    // Recalcular basándote en el texto truncado, no en el rawName
+    const totalChars = 8 + displayHorizontalName.length;
     const estimatedWidth = (totalChars * 16) + 90 + 40;
-    
-    // Establecemos un mínimo razonable (ej. 260px) para que no se vea minúsculo, pero quitamos el 460 forzado
     const finalWidth = Math.max(260, estimatedWidth);
 
     // --- MODO VERTICAL (Para Sidebar de Escritorio) ---
@@ -39,12 +38,12 @@ export default function Logo({ className, style, vertical = false }) {
                     y="45"
                     fontFamily="sans-serif"
                     fontWeight="800"
-                    fontSize="20" 
+                    fontSize="20"
                     fill="var(--text-dark)"
                     letterSpacing="0.5"
                 >
                     LANZO <tspan fontSize="17" fontWeight="400" fill="var(--text-light)">x</tspan>
-                    
+
                     {/* Línea 2: Nombre del negocio */}
                     <tspan x="65" dy="30" fontSize="17" fill="var(--primary-color)">
                         {/* Si es muy largo en vertical, lo cortamos visualmente para que no salga del cuadro */}
@@ -61,7 +60,7 @@ export default function Logo({ className, style, vertical = false }) {
     // --- MODO HORIZONTAL (Navbar) ---
     return (
         <svg
-            viewBox={`0 0 ${finalWidth} 80`} 
+            viewBox={`0 0 ${finalWidth} 80`}
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
             className={className}
@@ -80,14 +79,14 @@ export default function Logo({ className, style, vertical = false }) {
                 y="50"
                 fontFamily="sans-serif"
                 fontWeight="800"
-                fontSize="24" 
+                fontSize="24"
                 fill="var(--text-dark)"
-                letterSpacing="0.5" 
-                /* Se eliminó textLength para evitar el efecto de "letras separadas" */
+                letterSpacing="0.5"
+            /* Se eliminó textLength para evitar el efecto de "letras separadas" */
             >
                 LANZO
                 <tspan fontSize="18" fontWeight="400" fill="var(--text-light)" dx="8">x</tspan>
-                <tspan fill="var(--primary-color)" dx="8">{rawName}</tspan>
+                <tspan fill="var(--primary-color)" dx="8">{displayHorizontalName}</tspan>
             </text>
 
             {/* Indicador al final ajustado dinámicamente */}

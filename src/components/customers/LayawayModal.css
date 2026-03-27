@@ -74,6 +74,20 @@
   border: 1px solid #f59e0b;
 }
 
+.layaway-status-badge.overdue {
+    background-color: #fee2e2;
+    color: #dc2626;
+    border: 1px solid #f87171;
+    font-weight: bold;
+    animation: pulse-border 2s infinite; /* Para llamar la atención del cajero */
+}
+
+@keyframes pulse-border {
+    0% { border-color: #f87171; }
+    50% { border-color: #dc2626; }
+    100% { border-color: #f87171; }
+}
+
 /* --- Lista de Productos (Híbrido Tabla/Lista) --- */
 .layaway-products-container {
   padding: 0 var(--spacing-md);

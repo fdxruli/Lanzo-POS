@@ -1,23 +1,33 @@
-// components/pos/LayawayModal.jsx - VERSIÓN CORREGIDA
+// components/pos/LayawayModal.jsx
 import React, { useState, useEffect } from 'react';
 import { loadData, STORES } from '../../services/database';
 import QuickAddCustomerModal from '../common/QuickAddCustomerModal';
-import { useCaja } from '../../hooks/useCaja'; // ✅ AGREGADO
+import { useCaja } from '../../hooks/useCaja';
 import { showMessageModal } from '../../services/utils';
 import Logger from '../../services/Logger';
+// ✅ Importaciones de Lucide React
+import {
+    Package,
+    X,
+    Search,
+    UserPlus,
+    Phone,
+    CreditCard,
+    AlertTriangle,
+    CheckCircle
+} from 'lucide-react';
 import './LayawayModal.css';
 
 export default function LayawayModal({ show, onClose, onConfirm, total, customer: preSelectedCustomer }) {
     const [initialPayment, setInitialPayment] = useState('');
     const [deadline, setDeadline] = useState('');
-    
+
     const [customers, setCustomers] = useState([]);
     const [customerSearch, setCustomerSearch] = useState('');
     const [filteredCustomers, setFilteredCustomers] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
 
-    // ✅ NUEVO: Hook de caja
     const { cajaActual } = useCaja();
 
     useEffect(() => {
@@ -78,19 +88,16 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
     const handleSubmit = (e) => {
         e.preventDefault();
 
-        // ✅ VALIDACIÓN 1: CLIENTE OBLIGATORIO
         if (!selectedCustomer) {
             alert("Es obligatorio asignar un cliente.");
             return;
         }
 
-        // ✅ VALIDACIÓN 2: MONTO COHERENTE
         if (remaining < 0) {
             alert("El abono no puede ser mayor al total.");
             return;
         }
 
-        // ✅ VALIDACIÓN 3: CAJA ABIERTA (SI HAY ABONO INICIAL)
         if (initialAmount > 0 && (!cajaActual || cajaActual.estado !== 'abierta')) {
             showMessageModal(
                 '⚠️ CAJA CERRADA\n\nNecesitas abrir una caja antes de recibir el abono inicial.',
@@ -100,9 +107,8 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
             return;
         }
 
-        // ✅ VALIDACIÓN 4: LÍMITE DE CRÉDITO
-        const deudaActual = selectedCustomer.debt || 0;
-        const limiteCredito = selectedCustomer.creditLimit || 0;
+        const deudaActual = Number(selectedCustomer.debt) || 0;
+        const limiteCredito = Number(selectedCustomer.creditLimit) || 0;
 
         if (limiteCredito > 0 && (deudaActual + remaining) > limiteCredito) {
             showMessageModal(
@@ -122,12 +128,11 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
             return;
         }
 
-        // ✅ TODO OK - PROCEDER
         onConfirm({
             initialPayment: initialAmount,
             deadline,
             customer: selectedCustomer,
-            cajaId: cajaActual?.id || null // ✅ PASAMOS EL ID DE LA CAJA
+            cajaId: cajaActual?.id || null
         });
     };
 
@@ -135,146 +140,163 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
         <>
             <div className="layaway-modal-overlay">
                 <div className="layaway-modal-content">
-                    
+
                     {/* Header */}
                     <div className="layaway-header">
-                        <h2>📦 Nuevo Apartado</h2>
-                        <button className="btn-close-x" onClick={onClose}>&times;</button>
+                        <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Package size={24} className="text-primary" /> Nuevo Apartado
+                        </h2>
+                        <button className="btn-close-x" onClick={onClose}>
+                            <X size={24} />
+                        </button>
                     </div>
 
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         <div className="layaway-body">
-                            
-                            {/* SECCIÓN 1: CLIENTE */}
-                            <div className="layaway-section-title">Información del Cliente</div>
-                            
-                            {!selectedCustomer ? (
-                                <div className="customer-search-group">
-                                    <input
-                                        className="input-search-custom"
-                                        type="text"
-                                        placeholder="Buscar cliente (Nombre o Tel)..."
-                                        value={customerSearch}
-                                        onChange={handleCustomerSearch}
-                                        autoFocus
-                                    />
-                                    <button 
-                                        type="button" 
-                                        className="btn-new-customer"
-                                        onClick={() => setIsQuickAddOpen(true)}
-                                    >
-                                        + Nuevo
-                                    </button>
 
-                                    {filteredCustomers.length > 0 && (
-                                        <div className="search-dropdown">
-                                            {filteredCustomers.map(c => (
-                                                <div 
-                                                    key={c.id} 
-                                                    className="search-item"
-                                                    onClick={() => handleCustomerClick(c)}
-                                                >
-                                                    <strong>{c.name}</strong> <small>({c.phone})</small>
-                                                    {c.creditLimit > 0 && (
-                                                        <span style={{fontSize:'0.75rem', color:'#718096'}}>
-                                                            {' '}Límite: ${c.creditLimit}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            ))}
+                            {/* COLUMNA IZQUIERDA: Búsqueda y Selección de Cliente */}
+                            <div className="layaway-column">
+                                <div className="layaway-section-title">Información del Cliente</div>
+
+                                {!selectedCustomer ? (
+                                    <div className="customer-search-group">
+                                        <div style={{ position: 'relative', flex: 1 }}>
+                                            <Search size={18} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#a0aec0' }} />
+                                            <input
+                                                className="input-search-custom"
+                                                type="text"
+                                                placeholder="Buscar cliente (Nombre o Tel)..."
+                                                value={customerSearch}
+                                                onChange={handleCustomerSearch}
+                                                style={{ paddingLeft: '35px', width: '100%' }}
+                                                autoFocus
+                                            />
                                         </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="selected-customer-card">
-                                    <div className="customer-info">
-                                        <strong>{selectedCustomer.name}</strong>
-                                        <span>📞 {selectedCustomer.phone}</span>
-                                        {/* ✅ MOSTRAR INFO DE CRÉDITO */}
-                                        {selectedCustomer.creditLimit > 0 && (
-                                            <span style={{fontSize:'0.8rem', color:'#4a5568'}}>
-                                                💳 Límite: ${selectedCustomer.creditLimit} | 
-                                                Deuda: ${(selectedCustomer.debt || 0).toFixed(2)}
-                                            </span>
+                                        <button
+                                            type="button"
+                                            className="btn-new-customer"
+                                            onClick={() => setIsQuickAddOpen(true)}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+                                        >
+                                            <UserPlus size={16} /> Nuevo
+                                        </button>
+
+                                        {filteredCustomers.length > 0 && (
+                                            <div className="search-dropdown">
+                                                {filteredCustomers.map(c => (
+                                                    <div
+                                                        key={c.id}
+                                                        className="search-item"
+                                                        onClick={() => handleCustomerClick(c)}
+                                                    >
+                                                        <strong>{c.name}</strong> <small>({c.phone})</small>
+                                                        {c.creditLimit > 0 && (
+                                                            <span style={{ fontSize: '0.75rem', color: '#718096', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                                <CreditCard size={12} /> Límite: ${c.creditLimit}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         )}
                                     </div>
-                                    <button 
-                                        type="button" 
-                                        className="btn-change-customer"
-                                        onClick={() => setSelectedCustomer(null)}
-                                    >
-                                        Cambiar
-                                    </button>
-                                </div>
-                            )}
+                                ) : (
+                                    <div className="selected-customer-card">
+                                        <div className="customer-info" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <strong style={{ fontSize: '1.1rem' }}>{selectedCustomer.name}</strong>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#4a5568' }}>
+                                                <Phone size={14} /> {selectedCustomer.phone}
+                                            </span>
+                                            {selectedCustomer.creditLimit > 0 && (
+                                                <span style={{ fontSize: '0.85rem', color: '#4a5568', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                                    <CreditCard size={14} /> Límite: ${selectedCustomer.creditLimit} |
+                                                    Deuda: ${(Number(selectedCustomer.debt) || 0).toFixed(2)}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="btn-change-customer"
+                                            onClick={() => setSelectedCustomer(null)}
+                                        >
+                                            Cambiar
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
 
-                            {/* SECCIÓN 2: FINANZAS */}
-                            <div className="layaway-section-title">Plan de Pago</div>
-                            
-                            <div className="financial-grid">
-                                <div className="input-group">
-                                    <label>Abono Inicial</label>
-                                    <div className="input-currency-wrapper">
-                                        <span className="currency-symbol">$</span>
-                                        <input 
-                                            type="number" 
+                            {/* COLUMNA DERECHA: Finanzas y Resumen */}
+                            <div className="layaway-column right-column">
+                                <div className="layaway-section-title">Plan de Pago</div>
+
+                                <div className="financial-grid">
+                                    <div className="input-group">
+                                        <label>Abono Inicial</label>
+                                        <div className="input-currency-wrapper">
+                                            <span className="currency-symbol">$</span>
+                                            <input
+                                                type="number"
+                                                className="input-financial"
+                                                value={initialPayment}
+                                                onChange={e => setInitialPayment(e.target.value)}
+                                                step="0.01"
+                                                min="0"
+                                                max={total}
+                                                placeholder="0.00"
+                                                required
+                                            />
+                                        </div>
+                                        <small style={{ fontSize: '0.75rem', color: '#b2bec3' }}>
+                                            Mínimo sugerido: ${(total * 0.10).toFixed(2)}
+                                        </small>
+                                        {initialAmount > 0 && (!cajaActual || cajaActual.estado !== 'abierta') && (
+                                            <small style={{ fontSize: '0.75rem', color: '#e53e3e', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <AlertTriangle size={12} /> Necesitas abrir una caja primero
+                                            </small>
+                                        )}
+                                    </div>
+
+                                    <div className="input-group">
+                                        <label>Fecha Límite</label>
+                                        <input
+                                            type="date"
                                             className="input-financial"
-                                            value={initialPayment}
-                                            onChange={e => setInitialPayment(e.target.value)}
-                                            step="0.01"
-                                            min="0"
-                                            max={total}
-                                            placeholder="0.00"
+                                            style={{ paddingLeft: '10px' }}
+                                            value={deadline}
+                                            onChange={e => setDeadline(e.target.value)}
                                             required
                                         />
                                     </div>
-                                    <small style={{ fontSize: '0.75rem', color: '#b2bec3' }}>
-                                        Mínimo sugerido: ${(total * 0.10).toFixed(2)}
-                                    </small>
-                                    {/* ✅ ADVERTENCIA SI NO HAY CAJA */}
-                                    {initialAmount > 0 && (!cajaActual || cajaActual.estado !== 'abierta') && (
-                                        <small style={{ fontSize: '0.75rem', color: '#e53e3e', marginTop: '5px', display: 'block' }}>
-                                            ⚠️ Necesitas abrir una caja primero
-                                        </small>
-                                    )}
                                 </div>
 
-                                <div className="input-group">
-                                    <label>Fecha Límite</label>
-                                    <input 
-                                        type="date" 
-                                        className="input-financial"
-                                        style={{ paddingLeft: '10px' }}
-                                        value={deadline}
-                                        onChange={e => setDeadline(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                            </div>
+                                {/* SECCIÓN 3: RESUMEN VISUAL */}
+                                <div className="summary-box">
+                                    <div className="summary-row row-total">
+                                        <span>Total del Pedido:</span>
+                                        <span>${total.toFixed(2)}</span>
+                                    </div>
+                                    <div className="summary-row">
+                                        <span>Abono Inicial ({percentage.toFixed(0)}%):</span>
+                                        <span className="row-advance">- ${initialAmount.toFixed(2)}</span>
+                                    </div>
+                                    <div className="summary-row row-remaining">
+                                        <span>Restante por Pagar:</span>
+                                        <span>${remaining.toFixed(2)}</span>
+                                    </div>
 
-                            {/* SECCIÓN 3: RESUMEN VISUAL */}
-                            <div className="summary-box">
-                                <div className="summary-row row-total">
-                                    <span>Total del Pedido:</span>
-                                    <span>${total.toFixed(2)}</span>
-                                </div>
-                                <div className="summary-row">
-                                    <span>Abono Inicial ({percentage.toFixed(0)}%):</span>
-                                    <span className="row-advance">- ${initialAmount.toFixed(2)}</span>
-                                </div>
-                                <div className="summary-row row-remaining">
-                                    <span>Restante por Pagar:</span>
-                                    <span>${remaining.toFixed(2)}</span>
-                                </div>
-
-                                <div className="progress-bar-bg">
-                                    <div 
-                                        className="progress-bar-fill" 
-                                        style={{ width: `${Math.min(percentage, 100)}%` }}
-                                    ></div>
-                                </div>
-                                <div style={{ textAlign: 'center', marginTop: '5px', fontSize: '0.75rem', color: '#636e72' }}>
-                                    {percentage < 100 ? 'Pendiente de liquidación' : '¡Liquidado totalmente!'}
+                                    <div className="progress-bar-bg">
+                                        <div
+                                            className="progress-bar-fill"
+                                            style={{ width: `${Math.min(percentage, 100)}%` }}
+                                        ></div>
+                                    </div>
+                                    <div style={{ textAlign: 'center', marginTop: '5px', fontSize: '0.75rem', color: '#636e72', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '5px' }}>
+                                        {percentage < 100 ? (
+                                            <>Pendiente de liquidación</>
+                                        ) : (
+                                            <><CheckCircle size={14} color="#27ae60" /> ¡Liquidado totalmente!</>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
@@ -282,16 +304,18 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
 
                         {/* Footer */}
                         <div className="layaway-footer">
-                            <button 
-                                type="submit" 
+                            <button
+                                type="submit"
                                 className="btn-confirm-layaway"
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                                 disabled={
-                                    !selectedCustomer || 
-                                    remaining < 0 || 
+                                    !selectedCustomer ||
+                                    remaining < 0 ||
                                     initialAmount < 0 ||
                                     (initialAmount > 0 && (!cajaActual || cajaActual.estado !== 'abierta'))
                                 }
                             >
+                                <CheckCircle size={20} />
                                 CONFIRMAR APARTADO
                             </button>
                         </div>

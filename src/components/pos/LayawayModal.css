@@ -418,3 +418,27 @@
     cursor: not-allowed;
     box-shadow: none;
 }
+
+/* =========================================
+   SISTEMA DE COLUMNAS (DESKTOP)
+   ========================================= */
+
+.layaway-column {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0; /* Crítico: Evita que el input de búsqueda rompa el grid flexbox */
+}
+
+@media (min-width: 768px) {
+    .layaway-modal-content {
+        /* Se sobrescribe el límite original de 500px para acomodar ambas columnas */
+        max-width: 850px; 
+    }
+
+    .layaway-body {
+        /* Cambia el apilamiento vertical por lado a lado */
+        flex-direction: row; 
+        align-items: stretch; /* Obliga a ambas columnas a tener la misma altura */
+    }
+}

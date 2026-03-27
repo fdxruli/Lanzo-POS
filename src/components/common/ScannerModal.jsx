@@ -5,6 +5,7 @@ import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { useOrderStore } from '../../store/useOrderStore';
 import { productsRepository } from '../../services/db/products';
 import { db, STORES } from '../../services/db/dexie';
+import { getAvailableStock } from '../../services/db/utils';
 import './ScannerModal.css';
 import Logger from '../../services/Logger';
 
@@ -159,7 +160,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
               .table(STORES.PRODUCT_BATCHES)
               .where('productId')
               .equals(product.id)
-              .filter((b) => b.isActive && b.stock > 0)
+              .filter((b) => b.isActive && getAvailableStock(b) > 0)
               .sortBy('createdAt');
 
             if (activeBatches?.length > 0) {
@@ -180,11 +181,15 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           cost: finalCost,
           originalPrice: finalPrice,
           batchId,
-          stock:
-            typeof product.stock === 'number' && !isNaN(product.stock)
-              ? product.stock
-              : 0,
+          stock: 0,
         };
+
+        if (product.isVariant && batchId) {
+          const currentBatch = await db.table(STORES.PRODUCT_BATCHES).get(batchId);
+          safeProduct.stock = currentBatch ? getAvailableStock(currentBatch) : getAvailableStock(product);
+        } else {
+          safeProduct.stock = getAvailableStock(product);
+        }
 
         setScannedItems((prev) => {
           // Agrupar por id + batchId para no mezclar variantes del mismo producto

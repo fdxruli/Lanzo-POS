@@ -3,6 +3,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useInventoryMovement } from '../../hooks/useInventoryMovement';
 import './VariantSelectorModal.css'; 
 import Logger from '../../services/Logger';
+import { getAvailableStock } from '../../services/db/utils';
 
 // Iconos SVG
 const SearchIcon = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>;
@@ -37,7 +38,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
         try {
           const productBatches = await loadBatchesForProduct(product.id);
           // Filtramos solo los activos con stock positivo
-          const available = (productBatches || []).filter(b => b.isActive && b.stock > 0);
+          const available = (productBatches || []).filter((batch) => batch.isActive && getAvailableStock(batch) > 0);
           setBatches(available);
         } catch (error) {
           Logger.error("Error cargando variantes:", error);
@@ -80,7 +81,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
             displayTalla: talla,
             displayColor: color,
             displayLocation: location,
-            stockState: getStockState(batch.stock)
+            stockState: getStockState(getAvailableStock(batch))
         });
     });
 
@@ -113,7 +114,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
       name: `${product.name} (${batch.displayColor} ${batch.displayTalla})`,
       price: batch.price, 
       cost: batch.cost,
-      stock: batch.stock,
+      stock: getAvailableStock(batch),
       trackStock: true,
       isVariant: true,
       batchId: batch.id,

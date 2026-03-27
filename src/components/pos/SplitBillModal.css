@@ -1,0 +1,114 @@
+.split-bill-modal {
+  max-width: 1100px;
+}
+
+.split-mode-row {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.split-lines-table-wrap {
+  overflow-x: auto;
+  margin-bottom: var(--spacing-lg);
+}
+
+.split-lines-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.split-lines-table th,
+.split-lines-table td {
+  border-bottom: 1px solid var(--border-color);
+  padding: 8px;
+  text-align: left;
+}
+
+.split-lines-table input {
+  min-width: 90px;
+}
+
+.split-line-name {
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.split-line-price {
+  font-size: 0.8rem;
+  color: var(--text-light);
+}
+
+.split-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.split-ticket-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  display: grid;
+  gap: var(--spacing-sm);
+  background-color: var(--light-background);
+}
+
+.split-ticket-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.split-ticket-total {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-dark);
+}
+
+.split-ticket-adjustment {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 0.85rem;
+}
+
+.split-ticket-card label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.split-receipt-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+  font-size: 0.85rem;
+}
+
+.split-receipt-toggle input {
+  width: auto;
+}
+
+.split-validation-error {
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--error-color);
+  font-weight: 600;
+}
+
+.split-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+}
+
+@media (max-width: 900px) {
+  .split-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .split-actions {
+    grid-template-columns: 1fr;
+  }
+}
+

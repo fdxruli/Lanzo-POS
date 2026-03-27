@@ -48,7 +48,8 @@
 }
 
 .btn-confirm:hover {
-  background-color: #059669; /* Podrías crear una variable --success-hover si deseas */
+  background-color: #059669;
+  /* Podrías crear una variable --success-hover si deseas */
   transform: translateY(-1px);
 }
 
@@ -171,14 +172,15 @@
   padding: 10px 4px;
   /* Usamos variables del tema en lugar de colores fijos */
   border: 1px solid var(--border-color);
-  background-color: var(--card-background-color); 
+  background-color: var(--card-background-color);
   color: var(--text-dark);
-  
+
   border-radius: var(--border-radius-sm);
   cursor: pointer;
   font-weight: 600;
   font-size: 1rem;
-  transition: var(--transition); /* Usar la transición global */
+  transition: var(--transition);
+  /* Usar la transición global */
 }
 
 .btn-cash-option:hover {
@@ -192,4 +194,38 @@
 .btn-cash-option:active {
   transform: translateY(0);
   background-color: var(--light-background);
+}
+
+/* * Layout de dos columnas para pantallas grandes 
+ */
+@media (min-width: 768px) {
+
+  /* Hacemos el modal más ancho para acomodar ambas columnas cómodamente */
+  #payment-modal .modal-content {
+    max-width: 750px;
+    width: 90%;
+  }
+
+  .payment-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: start;
+  }
+
+  /* Eliminamos el margen inferior en el contenedor izquierdo para que no empuje el layout */
+  .payment-col-left .payment-details {
+    margin-bottom: 0;
+  }
+
+  /* Aseguramos que los botones queden pegados al fondo de la columna derecha */
+  .payment-col-right {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .payment-actions {
+    margin-top: auto;
+  }
 }

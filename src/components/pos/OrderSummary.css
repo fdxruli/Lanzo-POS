@@ -48,6 +48,31 @@
   min-height: 0;
 }
 
+/* Input para identificar la mesa (Se adapta a modo oscuro) */
+.table-identifier-input {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  font-size: 1rem;
+  background-color: var(--light-background); /* Fondo dinámico */
+  color: var(--text-dark); /* Texto dinámico */
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Efecto al hacer clic en el input */
+.table-identifier-input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb, 0, 196, 140), 0.2);
+}
+
+/* Placeholder adaptativo */
+.table-identifier-input::placeholder {
+  color: var(--text-light);
+  opacity: 0.7;
+}
+
 /* === ITEM INDIVIDUAL (CORREGIDO PARA EVITAR SOLAPAMIENTO) === */
 .order-item {
   display: flex;
@@ -236,6 +261,16 @@
 
 .process-btn:active {
   transform: scale(0.98);
+}
+
+.save-open-btn {
+  grid-column: 1 / -1;
+}
+
+.split-btn {
+  grid-column: 1 / -1;
+  background-color: #1d4ed8;
+  box-shadow: 0 4px 10px rgba(29, 78, 216, 0.3);
 }
 
 .btn-layaway {
@@ -596,4 +631,37 @@
   100% {
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
   }
+}
+
+/* Botón "Mesas" */
+.btn-mesas-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.9rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.btn-mesas-header:active {
+  transform: scale(0.96);
+}
+
+/* Contador de mesas activas */
+.active-tables-count {
+  background-color: white;
+  color: var(--primary-color);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  min-width: 24px;
+  text-align: center;
 }

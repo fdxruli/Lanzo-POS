@@ -107,27 +107,6 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
         }
     };
 
-    const handleCancel = async (layaway) => {
-        if (!window.confirm("¿CANCELAR apartado? El stock será devuelto al inventario.")) return;
-
-        setProcessingId(layaway.id);
-        try {
-            await layawayRepository.cancel(layaway.id, "Cancelado por usuario");
-            let msg = 'Apartado cancelado. Stock restaurado.';
-            if (layaway.paidAmount > 0) {
-                msg += ` ℹ️ Devolver $${layaway.paidAmount.toFixed(2)} al cliente.`;
-            }
-            showMessageModal(msg);
-            loadLayaways();
-            if (onUpdate) onUpdate();
-        } catch (error) {
-            Logger.error("Error cancelando apartado", error);
-            showMessageModal(`Error: ${error.message}`);
-        } finally {
-            setProcessingId(null);
-        }
-    };
-
     const getDaysElapsed = (dateString) => {
         const start = new Date(dateString);
         const now = new Date();
@@ -136,6 +115,54 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
     };
 
     if (!show || !customer) return null;
+
+    const checkIsOverdue = (deadline) => {
+        if (!deadline) return false;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const limit = new Date(deadline);
+        limit.setHours(0, 0, 0, 0);
+        return today > limit;
+    };
+
+    const handleCancel = async (layaway) => {
+    const isOverdue = checkIsOverdue(layaway.deadline);
+    if (!window.confirm(`¿CANCELAR apartado ${isOverdue ? 'VENCIDO' : ''}? El stock será devuelto al inventario.`)) return;
+
+    let retenerDinero = false;
+    if (layaway.paidAmount > 0) {
+        // Obligamos al usuario a decidir qué pasa con los fondos
+        retenerDinero = window.confirm(
+            `💰 FONDOS RETENIDOS: $${layaway.paidAmount.toFixed(2)}\n\n` +
+            `¿Deseas COBRAR este dinero como penalización?\n` +
+            `[Aceptar] = La tienda se queda el dinero.\n` +
+            `[Cancelar] = Reembolsar al cliente (registrará salida de caja).`
+        );
+
+        if (!retenerDinero && (!cajaActual || cajaActual.estado !== 'abierta')) {
+            showMessageModal('⚠️ Necesitas una caja abierta para registrar el reembolso.');
+            return;
+        }
+    }
+
+    setProcessingId(layaway.id);
+    try {
+        await layawayRepository.cancel(layaway.id, "Cancelado por usuario/vencimiento", retenerDinero, cajaActual?.id);
+        
+        let msg = 'Apartado cancelado y stock restaurado.';
+        if (layaway.paidAmount > 0 && !retenerDinero) {
+            msg += `\n\n💵 DEVOLVER: $${layaway.paidAmount.toFixed(2)} al cliente.`;
+        }
+        showMessageModal(msg);
+        loadLayaways();
+        if (onUpdate) onUpdate();
+    } catch (error) {
+        Logger.error("Error cancelando apartado", error);
+        showMessageModal(`Error: ${error.message}`);
+    } finally {
+        setProcessingId(null);
+    }
+};
 
     return (
         <div className="modal" style={{ display: 'flex', zIndex: 8001 }}>
@@ -175,6 +202,7 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
                                 const progress = (layaway.paidAmount / layaway.totalAmount) * 100;
                                 const isReady = pending <= 0.1;
                                 const daysElapsed = getDaysElapsed(layaway.createdAt);
+                                const isOverdue = checkIsOverdue(layaway.deadline);
                                 const isPayingThis = activePaymentId === layaway.id;
 
                                 return (
@@ -182,19 +210,19 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
                                         
                                         {/* 1. Header de Tarjeta */}
                                         <div className="layaway-card-header">
-                                            <div className="layaway-meta">
-                                                <div className="layaway-date">
-                                                    <Calendar size={16} />
-                                                    {new Date(layaway.createdAt).toLocaleDateString()}
-                                                </div>
-                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>
-                                                    Hace {daysElapsed} días • Ref: {layaway.id.slice(-6)}
-                                                </span>
-                                            </div>
-                                            <div className={`layaway-status-badge ${isReady ? 'ready' : 'pending'}`}>
-                                                {isReady ? 'Listo' : 'Pendiente'}
-                                            </div>
-                                        </div>
+    <div className="layaway-meta">
+        <div className="layaway-date">
+            <Calendar size={16} />
+            {new Date(layaway.createdAt).toLocaleDateString()}
+        </div>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>
+            Límite: {layaway.deadline ? new Date(layaway.deadline).toLocaleDateString() : 'Sin definir'}
+        </span>
+    </div>
+    <div className={`layaway-status-badge ${isReady ? 'ready' : (isOverdue ? 'overdue' : 'pending')}`}>
+        {isReady ? 'Listo' : (isOverdue ? 'Vencido' : 'Pendiente')}
+    </div>
+</div>
 
                                         {/* 2. Productos (Diseño Híbrido) */}
                                         <div className="layaway-products-container">
@@ -264,16 +292,18 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
                                             
                                             {/* A) Modo Normal: Botón de Abonar grande y Botones de gestión */}
                                             {!isPayingThis && !isReady && (
-                                                <button 
-                                                    className="btn-start-payment"
-                                                    onClick={() => {
-                                                        setActivePaymentId(layaway.id);
-                                                        setPaymentAmount('');
-                                                    }}
-                                                >
-                                                    <DollarSign size={20} /> Registrar Nuevo Abono
-                                                </button>
-                                            )}
+    <button 
+        className="btn-start-payment"
+        onClick={() => {
+            setActivePaymentId(layaway.id);
+            setPaymentAmount('');
+        }}
+        disabled={isOverdue} // <-- BLOQUEO
+        style={isOverdue ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+    >
+        <DollarSign size={20} /> {isOverdue ? 'Abonos Bloqueados (Vencido)' : 'Registrar Nuevo Abono'}
+    </button>
+)}
 
                                             {/* B) Modo Abono: Formulario Expandido */}
                                             {isPayingThis && (

@@ -3,7 +3,8 @@
 .sales-history-container {
   display: flex;
   flex-direction: column;
-  height: 500px; /* Altura fija para el panel */
+  height: 500px;
+  /* Altura fija para el panel */
   width: 100%;
 }
 
@@ -21,9 +22,12 @@
 
 /* El contenedor con scroll */
 .sales-history-list {
-  flex: 1; /* Ocupa el espacio restante */
-  overflow-y: auto; /* Scroll vertical */
-  padding-right: 5px; /* Espacio para el scrollbar */
+  flex: 1;
+  /* Ocupa el espacio restante */
+  overflow-y: auto;
+  /* Scroll vertical */
+  padding-right: 5px;
+  /* Espacio para el scrollbar */
 }
 
 /* Wrapper para separar las tarjetas */
@@ -31,7 +35,8 @@
   margin-bottom: var(--spacing-sm);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
-  background-color: var(--card-background-color); /* Se adapta al tema (Blanco/Oscuro) */
+  background-color: var(--card-background-color);
+  /* Se adapta al tema (Blanco/Oscuro) */
   padding: var(--spacing-sm);
   transition: border-color 0.2s ease;
 }
@@ -52,7 +57,8 @@
   justify-content: space-between;
   width: 100%;
   margin-bottom: var(--spacing-xs);
-  border-bottom: 1px solid var(--light-background); /* Gris suave variable */
+  border-bottom: 1px solid var(--light-background);
+  /* Gris suave variable */
   padding-bottom: 5px;
 }
 
@@ -88,14 +94,15 @@
 .prescription-details {
   margin-top: var(--spacing-sm);
   padding: var(--spacing-xs);
-  
+
   /* Usamos rgba con la variable warning para un fondo transparente tintado */
-  background-color: rgba(255, 184, 0, 0.1); 
+  background-color: rgba(255, 184, 0, 0.1);
   border: 1px solid var(--warning-color);
   border-radius: var(--border-radius-sm);
-  
+
   font-size: 0.85rem;
-  color: var(--text-dark); /* Texto legible en dark mode */
+  color: var(--text-dark);
+  /* Texto legible en dark mode */
 }
 
 .doc-row {
@@ -103,7 +110,8 @@
   align-items: center;
   gap: 5px;
   margin-bottom: 2px;
-  color: var(--warning-color); /* Icono y título en color warning */
+  color: var(--warning-color);
+  /* Icono y título en color warning */
 }
 
 .doc-note {
@@ -119,7 +127,8 @@
   justify-content: flex-end;
   margin-top: var(--spacing-sm);
   padding-top: 5px;
-  border-top: 1px dashed var(--border-color); /* Línea punteada sutil */
+  border-top: 1px dashed var(--border-color);
+  /* Línea punteada sutil */
 }
 
 .delete-order-btn {
@@ -137,4 +146,127 @@
 .delete-order-btn:hover {
   background-color: var(--error-color);
   color: white;
+}
+
+.warning-cost-tag {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+/* Modificadores para Ticket Padre Dividido */
+.split-parent-card {
+  border-left: 4px solid var(--primary-color);
+  background-color: var(--light-background);
+}
+
+.split-badge {
+  background-color: var(--primary-color);
+  color: #ffffff;
+  /* Color de contraste para fondos primarios */
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 12px;
+  margin-left: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.split-total {
+  text-decoration: line-through;
+  color: var(--text-light);
+}
+
+.text-muted-strike {
+  text-decoration: line-through;
+  color: var(--text-light);
+  opacity: 0.8;
+}
+
+/* Botón Acordeón */
+.toggle-split-btn {
+  background-color: transparent;
+  color: var(--primary-color);
+  padding: 4px 12px;
+  border: 1px solid var(--primary-color);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.8rem;
+  cursor: pointer;
+  margin-right: auto;
+  font-weight: 600;
+  transition: background 0.2s, color 0.2s;
+}
+
+.toggle-split-btn:hover {
+  background-color: var(--primary-color);
+  color: #ffffff;
+}
+
+/* Acordeón Hijos */
+.split-children-accordion {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.split-loading,
+.split-error {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  text-align: center;
+  padding: 8px;
+}
+
+.split-child-card {
+  background-color: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.split-child-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px dashed var(--border-color);
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+
+.split-child-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.split-child-status {
+  font-size: 0.65rem;
+  background-color: var(--light-background);
+  border: 1px solid var(--border-color);
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--text-color);
+  font-weight: bold;
+}
+
+.split-child-total {
+  color: var(--success-color);
+  font-size: 0.95rem;
+}
+
+.split-child-items {
+  font-size: 0.8rem;
+  color: var(--text-color);
+}
+
+.child-item-row {
+  margin-bottom: 2px;
 }

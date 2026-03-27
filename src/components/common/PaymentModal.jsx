@@ -184,189 +184,200 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
         <div className="modal-content">
           <h2 className="modal-title">Procesar Pago</h2>
           <form onSubmit={handleSubmit}>
-            <div className="payment-details">
-              <p className="payment-label">Total a Pagar:</p>
-              <p id="payment-total" className="payment-total">${Money.toNumber(safeTotal)}</p>
+            <div className="payment-grid">
+              {/* COLUMNA IZQUIERDA: Contexto del Pago */}
+              <div className="payment-col-left">
+                <div className="payment-details">
+                  <p className="payment-label">Total a Pagar:</p>
+                  <p id="payment-total" className="payment-total">${Money.toNumber(safeTotal)}</p>
 
-              {/* ... (Selector de método y Buscador de cliente sin cambios) ... */}
-              <div className="form-group">
-                <label className="form-label">Método de Pago:</label>
-                <div className="payment-method-selector">
-                  <button
-                    type="button"
-                    className={`btn-method ${isEfectivo ? 'active' : ''}`}
-                    onClick={() => handlePaymentMethodChange('efectivo')}
-                  >
-                    Efectivo
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn-method ${isFiado ? 'active' : ''}`}
-                    onClick={() => handlePaymentMethodChange('fiado')}
-                  >
-                    Fiado
-                  </button>
-                </div>
-              </div>
-
-              <div className="form-group customer-search-wrapper">
-                <label className="form-label" htmlFor="sale-customer-input">
-                  {isFiado ? 'Asignar a Cliente (Obligatorio):' : 'Asignar a Cliente (Opcional):'}
-                </label>
-                <input
-                  className="form-input"
-                  id="sale-customer-input"
-                  type="text"
-                  placeholder="Buscar por nombre o teléfono. Introduce minumo 3 letras"
-                  value={customerSearch}
-                  onChange={handleCustomerSearch}
-                  autoComplete="off"
-                />
-                {filteredCustomers.length > 0 && (
-                  <div className="customer-search-results">
-                    {filteredCustomers.slice(0, 5).map(c => (
-                      <div
-                        key={c.id}
-                        className="customer-result-item"
-                        onClick={() => handleCustomerClick(c)}
+                  <div className="form-group">
+                    <label className="form-label">Método de Pago:</label>
+                    <div className="payment-method-selector">
+                      <button
+                        type="button"
+                        className={`btn-method ${isEfectivo ? 'active' : ''}`}
+                        onClick={() => handlePaymentMethodChange('efectivo')}
                       >
-                        {c.name} ({c.phone})
-                      </div>
-                    ))}
+                        Efectivo
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn-method ${isFiado ? 'active' : ''}`}
+                        onClick={() => handlePaymentMethodChange('fiado')}
+                      >
+                        Fiado
+                      </button>
+                    </div>
                   </div>
-                )}
-                <button
-                  type="button"
-                  className="btn-quick-add"
-                  onClick={() => setIsQuickAddOpen(true)}
-                >
-                  + Nuevo Cliente
-                </button>
-              </div>
 
-              {/* ... (Inputs de monto y cambio sin cambios) ... */}
-              <label className="payment-input-label" htmlFor="payment-amount">
-                {isEfectivo ? 'Monto Recibido:' : 'Abono (Opcional):'}
-              </label>
-              <input
-                className="payment-input"
-                id="payment-amount"
-                type="text"           // NUNCA type="number"
-                inputMode="decimal"   // Lanza el teclado numérico con punto en móviles
-                value={amountPaid}
-                onChange={handleAmountChange}
-                onFocus={handleAmountFocus}
-                required={isEfectivo}
-                autoFocus={isEfectivo}
-              />
-
-              {isEfectivo && (
-                <div className="quick-cash-options">
-                  {CASH_DENOMINATIONS.map((amount) => (
-                    <button
-                      key={amount}
-                      type="button"
-                      className="btn-cash-option"
-                      onClick={() => handleDenominationClick(amount)}
-                    >
-                      ${amount}
-                    </button>
-                  ))}
-                  {/* Botón extra para "Monto Exacto" si lo deseas */}
-                  <button
-                    type="button"
-                    className="btn-cash-option"
-                    style={{ gridColumn: '1 / -1', borderColor: 'var(--success-color)', color: 'var(--success-color)' }}
-                    onClick={() => setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString())}
-                  >
-                    Exacto (${Money.toNumber(safeTotal).toFixed(2)})
-                  </button>
-                </div>
-              )}
-
-              {isEfectivo ? (
-                <>
-                  <p className="payment-label">Cambio:</p>
-                  <p id="payment-change" className="payment-change">
-                    ${change.gte(0) ? Money.toNumber(change).toFixed(2) : '0.00'}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="payment-label">Saldo Pendiente:</p>
-                  <p id="payment-change" className="payment-saldo">
-                    ${Money.toNumber(saldoPendiente).toFixed(2)}
-                  </p>
-                  {/* ALERTA DE LÍMITE DE CRÉDITO */}
-                  {isFiado && currentCustomer && (
-                    <div style={{
-                      marginTop: '10px',
-                      padding: '10px',
-                      borderRadius: '6px',
-                      fontSize: '0.85rem',
-                      backgroundColor: isOverLimit ? '#fed7d7' : '#e6fffa', // Rojo si se pasa, Verde/Azul si está bien
-                      color: isOverLimit ? '#c53030' : '#2c7a7b',
-                      border: `1px solid ${isOverLimit ? '#feb2b2' : '#b2f5ea'}`
-                    }}>
-                      {isOverLimit ? (
-                        // CASO ERROR: Se pasó del límite
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <span>🚫</span>
-                          <div>
-                            <strong>Crédito Insuficiente</strong>
-                            <div style={{ fontSize: '0.8em' }}>{limitMessage}</div>
+                  <div className="form-group customer-search-wrapper">
+                    <label className="form-label" htmlFor="sale-customer-input">
+                      {isFiado ? 'Asignar a Cliente (Obligatorio):' : 'Asignar a Cliente (Opcional):'}
+                    </label>
+                    <input
+                      className="form-input"
+                      id="sale-customer-input"
+                      type="text"
+                      placeholder="Buscar por nombre o teléfono. Introduce minumo 3 letras"
+                      value={customerSearch}
+                      onChange={handleCustomerSearch}
+                      autoComplete="off"
+                    />
+                    {filteredCustomers.length > 0 && (
+                      <div className="customer-search-results">
+                        {filteredCustomers.slice(0, 5).map(c => (
+                          <div
+                            key={c.id}
+                            className="customer-result-item"
+                            onClick={() => handleCustomerClick(c)}
+                          >
+                            {c.name} ({c.phone})
                           </div>
-                        </div>
-                      ) : (
-                        // CASO OK: Muestra cuánto le queda disponible
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Crédito disponible:</span>
-                          <strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong>
-                        </div>
-                      )}
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="btn-quick-add"
+                      onClick={() => setIsQuickAddOpen(true)}
+                    >
+                      + Nuevo Cliente
+                    </button>
+                  </div>
+
+                  {/* El checkbox de ticket puede ir en esta columna para no estorbar los botones */}
+                  {selectedCustomerId && (
+                    <div className="form-group-checkbox" style={{ marginTop: '15px' }}>
+                      <input
+                        id="send-receipt-ticket"
+                        type="checkbox"
+                        checked={sendReceipt}
+                        onChange={(e) => setSendReceipt(e.target.checked)}
+                      />
+                      <label htmlFor="send-receipt-ticket">Enviar ticket por WhatsApp</label>
                     </div>
                   )}
-                  {isFiado && safePaid.gt(safeTotal) && (
-                    <p style={{ color: 'var(--error-color)', fontSize: '0.8rem', marginTop: '5px' }}>
-                      El abono inicial no puede ser mayor al total.
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-
-            {selectedCustomerId && (
-              <div className="form-group-checkbox">
-                <input
-                  id="send-receipt-ticket"
-                  type="checkbox"
-                  checked={sendReceipt}
-                  onChange={(e) => setSendReceipt(e.target.checked)}
-                />
-                <label htmlFor="send-receipt-ticket">Enviar ticket por WhatsApp</label>
+                </div>
               </div>
-            )}
 
-            {/* --- 4. NUEVO: Botón protegido --- */}
-            <button
-              id="confirm-payment-btn"
-              className="btn btn-confirm"
-              type="submit"
-              disabled={!canConfirm || isSubmitting} // Deshabilitado si está enviando
-              style={isSubmitting ? { opacity: 0.7, cursor: 'wait' } : {}}
-            >
-              {isSubmitting ? 'Procesando...' : 'Confirmar Pago'}
-            </button>
+              {/* COLUMNA DERECHA: Ejecución del Pago */}
+              <div className="payment-col-right">
+                <div className="payment-details">
+                  <label className="payment-input-label" htmlFor="payment-amount">
+                    {isEfectivo ? 'Monto Recibido:' : 'Abono (Opcional):'}
+                  </label>
+                  <input
+                    className="payment-input"
+                    id="payment-amount"
+                    type="text"
+                    inputMode="decimal"
+                    value={amountPaid}
+                    onChange={handleAmountChange}
+                    onFocus={handleAmountFocus}
+                    required={isEfectivo}
+                    autoFocus={isEfectivo}
+                  />
 
-            <button
-              id="cancel-payment-btn"
-              className="btn btn-cancel-payment"
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting} // También deshabilitamos cancelar durante el envío
-            >
-              Cancelar
-            </button>
+                  {isEfectivo && (
+                    <div className="quick-cash-options">
+                      {CASH_DENOMINATIONS.map((amount) => (
+                        <button
+                          key={amount}
+                          type="button"
+                          className="btn-cash-option"
+                          onClick={() => handleDenominationClick(amount)}
+                        >
+                          ${amount}
+                        </button>
+                      ))}
+                      {/* Botón extra para "Monto Exacto" si lo deseas */}
+                      <button
+                        type="button"
+                        className="btn-cash-option"
+                        style={{ gridColumn: '1 / -1', borderColor: 'var(--success-color)', color: 'var(--success-color)' }}
+                        onClick={() => setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString())}
+                      >
+                        Exacto (${Money.toNumber(safeTotal).toFixed(2)})
+                      </button>
+                    </div>
+                  )}
+
+                  {isEfectivo ? (
+                    <>
+                      <p className="payment-label">Cambio:</p>
+                      <p id="payment-change" className="payment-change">
+                        ${change.gte(0) ? Money.toNumber(change).toFixed(2) : '0.00'}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="payment-label">Saldo Pendiente:</p>
+                      <p id="payment-change" className="payment-saldo">
+                        ${Money.toNumber(saldoPendiente).toFixed(2)}
+                      </p>
+                      {/* ALERTA DE LÍMITE DE CRÉDITO */}
+                      {isFiado && currentCustomer && (
+                        <div style={{
+                          marginTop: '10px',
+                          padding: '10px',
+                          borderRadius: '6px',
+                          fontSize: '0.85rem',
+                          backgroundColor: isOverLimit ? '#fed7d7' : '#e6fffa', // Rojo si se pasa, Verde/Azul si está bien
+                          color: isOverLimit ? '#c53030' : '#2c7a7b',
+                          border: `1px solid ${isOverLimit ? '#feb2b2' : '#b2f5ea'}`
+                        }}>
+                          {isOverLimit ? (
+                            // CASO ERROR: Se pasó del límite
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <span>🚫</span>
+                              <div>
+                                <strong>Crédito Insuficiente</strong>
+                                <div style={{ fontSize: '0.8em' }}>{limitMessage}</div>
+                              </div>
+                            </div>
+                          ) : (
+                            // CASO OK: Muestra cuánto le queda disponible
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <span>Crédito disponible:</span>
+                              <strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {isFiado && safePaid.gt(safeTotal) && (
+                        <p style={{ color: 'var(--error-color)', fontSize: '0.8rem', marginTop: '5px' }}>
+                          El abono inicial no puede ser mayor al total.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Los botones de acción van al final de la columna de ejecución */}
+                <div className="payment-actions">
+                  <button
+                    id="confirm-payment-btn"
+                    className="btn btn-confirm"
+                    type="submit"
+                    disabled={!canConfirm || isSubmitting}
+                    style={isSubmitting ? { opacity: 0.7, cursor: 'wait' } : {}}
+                  >
+                    {isSubmitting ? 'Procesando...' : 'Confirmar Pago'}
+                  </button>
+
+                  <button
+                    id="cancel-payment-btn"
+                    className="btn btn-cancel-payment"
+                    type="button"
+                    onClick={onClose}
+                    disabled={isSubmitting}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
           </form>
         </div>
       </div>

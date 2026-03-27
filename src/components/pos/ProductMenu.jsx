@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
 import { getProductAlerts, showMessageModal } from '../../services/utils';
+import { getAvailableStock } from '../../services/db/utils';
 import LazyImage from '../common/LazyImage';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -161,10 +162,11 @@ export default function ProductMenu({
     if (!isTracking) return <div className="stock-info no-stock-label" style={{ color: '#999' }}>---</div>;
 
     const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
+    const availableStock = getAvailableStock(item);
 
     // Mostramos stock si es mayor a 0, de lo contrario AGOTADO
-    return item.stock > 0
-      ? <div className="stock-info">Stock: {item.stock}{unit}</div>
+    return availableStock > 0
+      ? <div className="stock-info">Stock: {availableStock}{unit}</div>
       : <div className="stock-info out-of-stock-label">AGOTADO</div>;
   };
 
