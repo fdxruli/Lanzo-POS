@@ -9,12 +9,50 @@
   animation: fadeIn 0.3s ease-out;
 }
 
+/* --- ESTADO VACÍO DE INSUMOS --- */
+.ingredient-empty-message {
+  grid-column: 1 / -1;
+  /* Asegura que ocupe todo el ancho del grid */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-light);
+  padding: 3rem 1rem;
+  background-color: rgba(0, 0, 0, 0.02);
+  border: 2px dashed var(--border-color);
+  border-radius: var(--border-radius);
+  margin-top: 10px;
+}
+
+/* Icono de caja para insumos */
+.ingredient-empty-message::before {
+  content: '📦';
+  font-size: 3.5rem;
+  margin-bottom: 15px;
+  opacity: 0.6;
+  filter: grayscale(80%);
+}
+
+.ingredient-empty-message p {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  margin-bottom: 5px;
+}
+
+.ingredient-empty-message small {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
 /* --- FORMULARIO --- */
 .ingredient-form-section {
   background-color: var(--light-background);
   padding: var(--spacing-md);
   border-radius: var(--border-radius);
-  border: 1px solid rgba(0,0,0,0.05);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .ingredient-inline-form {
@@ -30,7 +68,8 @@
 
 .ingredient-inline-form .form-group {
   flex: 1;
-  margin-bottom: 0; /* Reset global margin */
+  margin-bottom: 0;
+  /* Reset global margin */
 }
 
 .ingredient-inline-form label {
@@ -88,7 +127,8 @@
   border-radius: var(--border-radius-sm);
   padding: var(--spacing-md);
   box-shadow: var(--box-shadow);
-  border-left: 4px solid var(--secondary-color); /* Color diferente a categorías */
+  border-left: 4px solid var(--secondary-color);
+  /* Color diferente a categorías */
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -128,7 +168,8 @@
 @media (min-width: 768px) {
   .ingredient-manager-container {
     display: grid;
-    grid-template-columns: 320px 1fr; /* Formulario fijo, lista flexible */
+    grid-template-columns: 320px 1fr;
+    /* Formulario fijo, lista flexible */
     gap: var(--spacing-xl);
     align-items: start;
     height: calc(100vh - 200px);
@@ -142,24 +183,25 @@
     box-shadow: var(--box-shadow);
     height: fit-content;
   }
-  
+
   .ingredient-list-section {
-      height: 100%;
-      display: flex;
-      flex-direction: column;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
   }
 
   .ingredient-list-grid {
-      max-height: 100%;
-      padding-right: 10px;
+    max-height: 100%;
+    padding-right: 10px;
   }
 }
 
 /* MODO OSCURO */
 [data-theme="dark"] .ingredient-form-section {
-    background-color: #1f2937;
-    border-color: #374151;
+  background-color: #1f2937;
+  border-color: #374151;
 }
+
 [data-theme="dark"] .ingredient-card-item {
-    background-color: #1f2937;
+  background-color: #1f2937;
 }

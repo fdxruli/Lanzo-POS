@@ -27,6 +27,7 @@ export function buildBatchPayload({
     cost: nCost,
     price: nPrice,
     stock: nStock,
+    committedStock: isEditing ? Number(batchToEdit?.committedStock) || 0 : 0,
     notes: values.notes || null,
     trackStock: nStock > 0,
     isActive: nStock > 0,
@@ -44,4 +45,3 @@ export function buildBatchPayload({
   updateGlobalPrice: features?.hasVariants ? false : Boolean(values.updateGlobalPrice)
   };
 }
-
