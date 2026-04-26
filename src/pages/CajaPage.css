@@ -1,303 +1,490 @@
 /* src/pages/CajaPage.css */
+/* ============================================================
+   MOBILE FIRST - Optimizado para pantallas táctiles
+   ============================================================ */
 
-/* 1. TÍTULO DE LA SECCIÓN */
-.section-title {
-  color: var(--primary-color);
-  font-size: 2rem;
-  font-weight: 800;
-  margin-top: 2rem;
-  margin-bottom: 2rem;
-  padding: 0 1rem;
-  border-bottom: 2px solid rgba(99, 102, 241, 0.1);
-  padding-bottom: var(--spacing-sm);
-}
-
-/* 2. LAYOUT GRID PRINCIPAL */
+/* ============================================================
+   1. LAYOUT PRINCIPAL
+   ============================================================ */
 .caja-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.5rem;
+  gap: 0.75rem;
   max-width: 1200px;
   margin: 0 auto;
+  padding: 0.75rem;
+  padding-bottom: 2rem;
 }
 
-/* 3. ESTILOS BASE DE TARJETAS */
+/* ============================================================
+   2. COMPONENTES BASE (Tarjetas)
+   ============================================================ */
 .caja-card {
   background-color: var(--card-background-color);
-  border-radius: 16px;
+  border-radius: var(--border-radius, 12px);
   padding: 1rem;
-  box-shadow: var(--box-shadow);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   border: 1px solid var(--border-color);
-  /* Variable genérica mejor que hardcode */
   transition: transform 0.2s ease, box-shadow 0.2s ease;
-  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .caja-card:hover {
-  box-shadow: var(--box-shadow-lg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .caja-card h3,
 .subtitle {
-  font-size: 1.25rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text-dark);
-  margin-bottom: 1.5rem;
-  border-bottom: 1px dashed var(--border-color);
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
   padding-bottom: 0.5rem;
 }
 
-/* === TARJETA DE ESTADO (Izquierda Arriba) === */
+/* ============================================================
+   3. TARJETA DE ESTADO (CajaStatusCard)
+   ============================================================ */
 .status-card {
-  border-left: 5px solid var(--text-light);
+  border-left: 4px solid var(--text-light);
+}
+
+.status-card:has(.status-badge.open) {
+  border-left-color: var(--success-color);
 }
 
 .status-header {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+/* Badges de estado - apilados en móvil */
+.status-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   align-items: center;
-  margin-bottom: 1.5rem;
 }
 
 .status-badge {
-  padding: 6px 12px;
-  border-radius: 20px;
+  padding: 0.375rem 0.75rem;
+  border-radius: 9999px;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  background-color: var(--light-background);
+  color: var(--text-light);
+  white-space: nowrap;
 }
 
 .status-badge.open {
-  background-color: rgba(0, 196, 140, 0.15);
+  background-color: rgba(16, 185, 129, 0.15);
   color: var(--success-color);
 }
 
+/* Metadata (fechas, sync, actividad) */
+.status-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--text-light);
+}
+
+.status-meta small {
+  display: block;
+}
+
+/* Indicador de actividad */
+.activity-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.7rem;
+}
+
+.activity-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: #94A3B8;
+}
+
+.activity-dot.active {
+  background-color: #10B981;
+  animation: pulse 2s infinite;
+}
+
+/* Barra de progreso de liquidez */
+.liquidity-progress {
+  margin-top: 0.5rem;
+}
+
+.liquidity-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+  font-size: 0.7rem;
+}
+
+.liquidity-header span:last-child {
+  font-weight: 700;
+}
+
+.liquidity-bar {
+  height: 0.5rem;
+  background-color: #E5E7EB;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.liquidity-fill {
+  height: 100%;
+  background-color: #10B981;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.liquidity-fill.warning { background-color: #F59E0B; }
+.liquidity-fill.danger { background-color: #DC2626; }
+
+/* Botones de acción del header - 2x2 en móvil */
+.status-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.status-actions .btn {
+  padding: 0.625rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 44px; /* Touch target mínimo recomendado */
+  white-space: nowrap;
+}
+
+.status-actions .btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Cuerpo de la tarjeta de estado */
 .status-body {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
 }
 
 .info-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 0.5rem 0;
   border-bottom: 1px solid var(--light-background);
+  gap: 0.75rem;
 }
 
 .info-row:last-child {
   border-bottom: none;
+  padding-bottom: 0;
 }
 
-.info-row span:first-child {
+.info-row > span:first-child {
   color: var(--text-light);
   font-weight: 500;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0; /* Permite text-overflow */
 }
 
-.amount {
-  font-size: 1.1rem;
+.info-row .btn-icon-small {
+  flex-shrink: 0;
+  padding: 0.25rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.info-row .btn-icon-small:hover {
+  background-color: var(--light-background);
+}
+
+.info-row .amount {
+  flex-shrink: 0;
+  font-size: 0.95rem;
   font-weight: 700;
   font-family: 'Inter', monospace;
+  white-space: nowrap;
 }
 
-.amount.neutral {
+.amount.neutral { color: var(--text-dark); }
+.amount.positive { color: var(--success-color); }
+.amount.negative { color: var(--error-color); }
+.amount.warning { color: #F59E0B; }
+
+/* Total Neto resaltado */
+.info-row.total-row {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 2px solid var(--border-color);
+  border-bottom: none;
+}
+
+.info-row.total-row > span:first-child {
+  font-weight: 700;
   color: var(--text-dark);
-}
-
-.amount.positive {
-  color: var(--success-color);
-}
-
-.amount.negative {
-  color: var(--error-color);
-}
-
-/* === TARJETA DE ACCIONES (Derecha Arriba) === */
-.actions-title {
   font-size: 1rem;
-  color: var(--text-light);
-  margin-bottom: 15px;
+}
+
+.info-row.total-row .amount {
+  font-size: 1.25rem;
+  color: var(--primary-color);
+}
+
+/* ============================================================
+   4. TARJETA DE ACCIONES (CajaActionsCard)
+   ============================================================ */
+.actions-card {
+  border-left: 4px solid var(--primary-color);
+}
+
+.actions-title {
+  font-size: 0.9rem;
+  color: var(--text-dark);
+  margin-bottom: 0.75rem;
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  font-weight: 700;
 }
 
-.actions-card {
-  /* Asegura que haya espacio interno alrededor de todo el contenido */
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  /* Centra verticalmente si sobra espacio */
-}
-
+/* Grid de acciones - 1 columna en móvil muy pequeño, 2 en móvil estándar */
 .actions-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  /* Dos columnas iguales */
-  gap: 15px;
-  /* Espacio vital entre los botones (fila y columna) */
-  margin-top: 15px;
-  /* Separa los botones del título "Control de Efectivo" */
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
 }
 
-/* -------------------------------------------------------
-   CORRECCIÓN CRÍTICA DE BOTONES (Dark Mode Friendly)
-   -------------------------------------------------------
-*/
-/* Botón de Respaldo en la tarjeta de Estado */
-.btn-backup {
-  padding: 6px 12px;
-  font-size: 0.85rem;
-  background-color: var(--card-background-color);
-  border: 1px solid var(--primary-color);
-  /* Borde de color para resaltar sutilmente */
-  color: var(--primary-color);
+/* Botones de acción - touch targets grandes */
+.actions-grid button {
+  padding: 0.875rem 1rem;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 0.5rem;
   transition: all 0.2s ease;
+  cursor: pointer;
+  border: none;
+  text-align: center;
+  min-height: 52px; /* Touch target óptimo para móvil */
+}
+
+.actions-grid button:active {
+  transform: scale(0.98);
+}
+
+.actions-grid button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Botón Corte/Auditar - destacado, ocupa todo el ancho */
+.btn-audit {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, var(--text-dark) 0%, #334155 100%);
+  color: var(--card-background-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 0.95rem;
+}
+
+.btn-audit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Botones Entrada y Salida - lado a lado en la misma fila */
+.actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.btn-entry {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: var(--success-color);
+  border: 2px solid rgba(16, 185, 129, 0.3);
+}
+
+.btn-entry:hover:not(:disabled) {
+  background-color: var(--success-color);
+  color: white;
+  border-color: var(--success-color);
+}
+
+.btn-exit {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--error-color);
+  border: 2px solid rgba(239, 68, 68, 0.3);
+}
+
+.btn-exit:hover:not(:disabled) {
+  background-color: var(--error-color);
+  color: white;
+  border-color: var(--error-color);
+}
+
+/* Botón Ajuste - secundario */
+.btn-adjust {
+  grid-column: 1 / -1;
+  background-color: var(--light-background);
+  color: var(--text-dark);
+  border: 2px dashed var(--border-color);
+}
+
+.btn-adjust:hover:not(:disabled) {
+  background-color: var(--border-color);
+  border-style: solid;
+  color: var(--card-background-color);
+}
+
+/* Keyboard shortcuts - colapsable en móvil */
+.shortcuts-help {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background-color: #F8FAFC;
+  border-radius: 8px;
+  font-size: 0.7rem;
+}
+
+.shortcuts-help p {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: #475569;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.375rem;
+  color: #64748B;
+}
+
+.shortcuts-grid kbd {
+  padding: 0.125rem 0.375rem;
+  background-color: #E2E8F0;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-family: monospace;
+  margin-right: 0.25rem;
+}
+
+/* ============================================================
+   5. LISTAS Y ELEMENTOS (Movimientos, Historial)
+   ============================================================ */
+
+/* Header de sección */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin: 0;
+}
+
+.items-count {
+  font-size: 0.75rem;
+  color: var(--text-light);
   font-weight: 500;
 }
 
-.btn-backup:hover {
-  background-color: var(--primary-color);
-  color: white;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.btn-backup:active {
-  transform: translateY(0);
-}
-
-/* Loader pequeño para el botón */
-.spinner-small {
-  width: 12px;
-  height: 12px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  display: inline-block;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Botón Auditar (Principal) */
-/* --- CLASES UTILITARIAS DE ESTRUCTURA --- */
-.full-width {
-  grid-column: span 2;
-  width: 100%;
-}
-
-.half-width {
-  grid-column: span 1;
-  width: 100%;
-}
-
-/* --- CLASES ESTÉTICAS --- */
-.btn-audit {
-  padding: 12px;
-  font-weight: bold;
-  /* El resto de tus estilos de hover, dark mode, etc. se mantienen igual */
-}
-
-.half-width {
-  grid-column: span 1;
-  padding: 12px;
-}
-
-.btn-audit:hover {
-  background-color: black;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-}
-
-/* Botones Entrada/Salida (Estilos Base) */
-.btn-entry,
-.btn-exit {
-  padding: 1rem;
-  font-size: 1rem;
-  border-radius: 12px;
-  font-weight: 700;
-  width: 100%;
+/* Filtros y búsqueda */
+.filters-bar {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
 }
 
-/* Estilo específico Entrada (Verde suave) */
-.btn-entry {
-  background-color: var(--light-background);
-  /* Gris muy suave */
-  color: var(--success-color);
-  border: 1px solid var(--success-color);
-}
-
-.btn-entry:hover {
-  background-color: var(--success-color);
-  color: white;
-  transform: translateY(-2px);
-}
-
-/* Estilo específico Salida (Rojo suave) */
-.btn-exit {
-  background-color: var(--light-background);
-  color: var(--text-dark);
-  /* Texto oscuro por defecto */
+.filter-select,
+.search-input {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
   border: 1px solid var(--border-color);
-}
-
-.btn-exit:hover {
-  background-color: var(--light-background);
-  border-color: var(--text-dark);
-  transform: translateY(-2px);
-}
-
-/* Estilo específico Ajuste de Caja (Gris/Advertencia sutil) */
-.btn-adjust {
-  padding: 1rem;
-  font-size: 1rem;
-  border-radius: 12px;
-  font-weight: 700;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  background-color: var(--light-background);
+  font-size: 0.85rem;
+  background-color: var(--card-background-color);
   color: var(--text-dark);
-  border: 1px dashed var(--border-color); /* Borde punteado para diferenciarlo de transacciones normales */
+  min-height: 40px;
 }
 
-.btn-adjust:hover {
-  background-color: #e2e8f0; /* Un gris ligeramente más oscuro al pasar el cursor */
-  transform: translateY(-2px);
-  border-style: solid;
+.filter-select {
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-/* Modo oscuro para el botón de Ajuste */
-[data-theme="dark"] .btn-adjust {
-  background-color: rgba(255, 255, 255, 0.05);
-  color: #e2e8f0;
-  border-color: #475569;
+.search-input {
+  flex: 1;
+  min-width: 150px;
 }
 
-[data-theme="dark"] .btn-adjust:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  border-color: #94a3b8;
+.search-input:focus,
+.filter-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
-/* === HISTORIAL (Abajo) === */
+
+.btn-clear-filters {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: none;
+  background-color: var(--light-background);
+  color: var(--text-light);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  min-height: 40px;
+}
+
+.btn-clear-filters:hover {
+  background-color: var(--border-color);
+  color: var(--text-dark);
+}
+
+/* Listas */
 .history-list,
-#caja-movements-list {
+.movements-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -306,153 +493,550 @@
 .history-item,
 .movement-item {
   background-color: var(--light-background);
-  padding: 12px 16px;
+  padding: 0.875rem;
   border-radius: 10px;
-  transition: background-color 0.2s;
+  border: 1px solid transparent;
+  border-left: 4px solid;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .history-item:hover,
 .movement-item:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-  /* Efecto hover sutil */
+  background-color: var(--card-background-color);
+  border-color: var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
+/* Header del movimiento */
+.movement-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.movement-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+  flex: 1;
+  min-width: 0;
+}
+
+.movement-details {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.75rem;
+  color: var(--text-light);
+  gap: 0.25rem;
+}
+
+.movement-amount {
+  font-size: 1rem;
+  font-weight: 700;
+  font-family: 'Inter', monospace;
+  white-space: nowrap;
+}
+
+.movement-amount.positive { color: var(--success-color); }
+.movement-amount.negative { color: var(--error-color); }
+
+/* Badges en historial */
 .history-item .status-badge {
-  font-size: 0.7rem;
-  padding: 2px 8px;
+  font-size: 0.65rem;
+  padding: 0.25rem 0.625rem;
+  align-self: flex-start;
 }
 
 .status-badge.success {
-  background-color: #d1fae5;
-  color: #047857;
+  background-color: rgba(16, 185, 129, 0.15);
+  color: var(--success-color);
 }
 
 .status-badge.error {
-  background-color: #fee2e2;
-  color: #b91c1c;
+  background-color: rgba(239, 68, 68, 0.15);
+  color: var(--error-color);
 }
 
+/* Contenedores de secciones */
+#caja-movements-container,
+#caja-history-container {
+  margin-top: 0.5rem;
+}
+
+/* Empty states */
+.empty-state {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-light);
+  font-size: 0.85rem;
+}
+
+.empty-state-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  opacity: 0.5;
+}
+
+/* Paginación */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.pagination button {
+  padding: 0.5rem 0.875rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: var(--card-background-color);
+  color: var(--text-dark);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  min-height: 40px;
+}
+
+.pagination button:hover:not(:disabled) {
+  background-color: var(--light-background);
+  border-color: var(--primary-color);
+}
+
+.pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination span {
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+
+/* Loading spinner */
+.spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+.spinner-loader {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
 
 /* ============================================================
-   MEDIA QUERY ESCRITORIO (>= 900px)
+   6. MEDIA QUERIES - Progressive Enhancement
    ============================================================ */
-@media (min-width: 900px) {
+
+/* Tablets pequeñas (≥ 480px) - 2 columnas para status/actions */
+@media (min-width: 480px) {
+  .caja-grid {
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .caja-card {
+    padding: 1.125rem;
+  }
+
+  .status-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .status-badges {
+    flex-direction: row;
+  }
+
+  .status-actions {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .actions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .actions-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .filters-bar {
+    flex-wrap: nowrap;
+  }
+
+  .info-row .amount {
+    font-size: 1.05rem;
+  }
+
+  .info-row.total-row .amount {
+    font-size: 1.5rem;
+  }
+}
+
+/* Tablets grandes (≥ 640px) - Grid de 2 columnas */
+@media (min-width: 640px) {
   .caja-grid {
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto auto;
-    grid-template-areas:
-      "status actions"
-      "movements movements"
-      "history history";
-    align-items: stretch;
+    gap: 1.25rem;
+    padding: 1.25rem;
   }
 
-  .status-card {
-    grid-area: status;
-  }
-
-  .actions-card {
-    grid-area: actions;
-  }
-
-  #caja-movements-container {
-    grid-area: movements;
-  }
-
-  #caja-history-container {
-    grid-area: history;
+  .status-actions {
+    grid-template-columns: repeat(4, 1fr);
   }
 
   .actions-grid {
     grid-template-columns: 1fr 1fr;
-    grid-template-areas:
-      "audit audit"
-      "entry exit"
-      "adjust adjust";
+    gap: 0.75rem;
   }
 
   .btn-audit {
-    grid-area: audit;
-    height: 100%;
-  }
-
-  .btn-entry {
-    grid-area: entry;
-  }
-
-  .btn-exit {
-    grid-area: exit;
-  }
-
-  #caja-status-container:only-child {
     grid-column: 1 / -1;
-    max-width: 600px;
-    margin: 0 auto;
+  }
+
+  .history-list,
+  .movements-list {
+    gap: 0.75rem;
+  }
+
+  .section-title {
+    font-size: 1.125rem;
+  }
+}
+
+/* Tablets landscape / Desktop pequeño (≥ 768px) */
+@media (min-width: 768px) {
+  .caja-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    padding: 1.5rem;
+  }
+
+  .caja-card {
+    padding: 1.5rem;
+  }
+
+  .caja-card h3,
+  .subtitle {
+    font-size: 1.125rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .status-badge {
+    font-size: 0.75rem;
+    padding: 0.4375rem 0.875rem;
+  }
+
+  .info-row > span:first-child {
+    font-size: 0.9rem;
+  }
+
+  .info-row .amount {
+    font-size: 1.1rem;
+  }
+
+  .info-row.total-row > span:first-child {
+    font-size: 1.125rem;
+  }
+
+  .info-row.total-row .amount {
+    font-size: 1.625rem;
+  }
+
+  .actions-grid button {
+    padding: 1rem 1.25rem;
+    font-size: 0.95rem;
+    min-height: auto;
+  }
+
+  .btn-audit {
+    font-size: 1rem;
+    padding: 1.125rem !important;
+  }
+
+  .filters-bar {
+    gap: 0.75rem;
+  }
+
+  .filter-select,
+  .search-input,
+  .btn-clear-filters {
+    min-height: 44px;
+  }
+}
+
+/* Desktop (≥ 1024px) - Layout con grid areas */
+@media (min-width: 1024px) {
+  .caja-grid {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    max-width: 1400px;
+  }
+
+  .status-card {
+    grid-column: 1 / 2;
+    grid-row: 1;
+  }
+
+  .actions-card {
+    grid-column: 2 / 3;
+    grid-row: 1;
+  }
+
+  #caja-movements-container {
+    grid-column: 1 / 2;
+    grid-row: 2;
+  }
+
+  #caja-history-container {
+    grid-column: 2 / 3;
+    grid-row: 2;
+  }
+
+  /* En desktop, las listas pueden tener más altura */
+  .history-list,
+  .movements-list {
+    max-height: 500px;
+    overflow-y: auto;
+  }
+}
+
+/* Desktop grande (≥ 1280px) - 3 columnas */
+@media (min-width: 1280px) {
+  .caja-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "status status actions"
+      "movements movements history";
+  }
+
+  .status-card { grid-area: status; }
+  .actions-card { grid-area: actions; }
+  #caja-movements-container { grid-area: movements; }
+  #caja-history-container { grid-area: history; }
+
+  #caja-movements-container,
+  #caja-history-container {
+    max-height: 600px;
   }
 }
 
 /* ============================================================
-   AJUSTES ESPECÍFICOS MODO OSCURO
-   Aquí arreglamos la "descoordinación"
+   7. MODO OSCURO (Dark Mode)
    ============================================================ */
-[data-theme="dark"] .caja-card {
-  background-color: #1e293b;
-  /* Azul muy oscuro (Slate 800) */
-  border-color: #334155;
+[data-theme="dark"] {
+  --light-background: rgba(255, 255, 255, 0.05);
 }
 
-/* FIX DEL BOTÓN AUDITAR EN DARK MODE:
-   Lo hacemos Blanco (o gris muy claro) con texto Oscuro para máximo contraste.
-*/
+[data-theme="dark"] .status-card {
+  border-left-color: #475569;
+}
+
+[data-theme="dark"] .status-card:has(.status-badge.open) {
+  border-left-color: #10B981;
+}
+
+[data-theme="dark"] .actions-card {
+  border-left-color: #6366F1;
+}
+
 [data-theme="dark"] .btn-audit {
-  background-color: #f1f5f9;
-  /* Slate 100 (Casi blanco) */
+  background: linear-gradient(135deg, #f8fafc 0%, #cbd5e1 100%);
   color: #0f172a;
-  /* Slate 900 (Casi negro) */
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
 }
 
-[data-theme="dark"] .btn-audit:hover {
-  background-color: #ffffff;
-  /* Blanco puro al hover */
-  transform: translateY(-2px);
+[data-theme="dark"] .btn-audit:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
 }
 
-/* Ajustes para Entrada/Salida en Dark Mode */
 [data-theme="dark"] .btn-entry {
-  background-color: rgba(16, 185, 129, 0.1);
-  /* Verde muy transparente */
-  color: #34d399;
-  /* Verde brillante */
-  border-color: #059669;
-}
-
-[data-theme="dark"] .btn-entry:hover {
-  background-color: #059669;
-  color: white;
+  background-color: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
 }
 
 [data-theme="dark"] .btn-exit {
+  background-color: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+[data-theme="dark"] .btn-adjust {
   background-color: rgba(255, 255, 255, 0.05);
-  color: #cbd5e1;
-  /* Texto gris claro */
-  border-color: #475569;
+  color: var(--text-light);
+  border-color: var(--border-color);
 }
 
-[data-theme="dark"] .btn-exit:hover {
+[data-theme="dark"] .btn-adjust:hover:not(:disabled) {
   background-color: rgba(255, 255, 255, 0.1);
-  color: white;
 }
 
-/* Items del historial en modo oscuro */
 [data-theme="dark"] .history-item,
 [data-theme="dark"] .movement-item {
-  background-color: #0f172a;
-  /* Fondo más oscuro que la tarjeta */
-  border: 1px solid #334155;
+  background-color: rgba(255, 255, 255, 0.03);
 }
 
-[data-theme="dark"] .history-item:hover {
-  background-color: #1e293b;
-  border-color: #475569;
+[data-theme="dark"] .history-item:hover,
+[data-theme="dark"] .movement-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .liquidity-bar {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .shortcuts-help {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .shortcuts-help p {
+  color: #94A3B8;
+}
+
+[data-theme="dark"] .shortcuts-grid {
+  color: #64748B;
+}
+
+[data-theme="dark"] .shortcuts-grid kbd {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .filter-select,
+[data-theme="dark"] .search-input {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-color);
+  color: var(--text-dark);
+}
+
+[data-theme="dark"] .filter-select:focus,
+[data-theme="dark"] .search-input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+[data-theme="dark"] .btn-clear-filters {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-light);
+}
+
+[data-theme="dark"] .btn-clear-filters:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .section-header {
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .pagination {
+  border-top-color: var(--border-color);
+}
+
+[data-theme="dark"] .pagination button {
+  background-color: var(--card-background-color);
+  border-color: var(--border-color);
+  color: var(--text-dark);
+}
+
+[data-theme="dark"] .pagination button:hover:not(:disabled) {
+  background-color: var(--light-background);
+  border-color: var(--primary-color);
+}
+
+[data-theme="dark"] .pagination span {
+  color: var(--text-light);
+}
+
+[data-theme="dark"] .empty-state {
+  color: var(--text-light);
+}
+
+[data-theme="dark"] .empty-state-icon {
+  opacity: 0.4;
+}
+
+/* ============================================================
+   8. IMPRESIÓN (Print)
+   ============================================================ */
+@media print {
+  .actions-card,
+  .btn,
+  button,
+  nav,
+  header,
+  footer,
+  .modal,
+  .shortcuts-help,
+  .liquidity-progress {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  .caja-grid {
+    display: block !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .caja-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    margin-bottom: 1rem !important;
+    padding: 1rem !important;
+  }
+
+  .status-card {
+    border-left-width: 4px !important;
+    border-left-color: #000 !important;
+  }
+
+  .amount, .status-badge, * {
+    color: black !important;
+    background: transparent !important;
+    text-shadow: none !important;
+  }
+
+  .status-badge {
+    border: 1px solid black !important;
+    padding: 0.25rem 0.5rem !important;
+  }
+
+  .info-row {
+    border-bottom-color: #ccc !important;
+  }
 }
