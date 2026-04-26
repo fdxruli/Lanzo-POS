@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { Mail, HelpCircle, Wifi, WifiOff } from 'lucide-react';
+import {
+  Mail,
+  Wifi,
+  WifiOff,
+  Package,
+  ChevronRight,
+  CheckCircle2,
+  Zap,
+  Rocket
+} from 'lucide-react';
 import './WelcomeModal.css';
 import Logger from '../../services/Logger';
 import { getStableDeviceId } from '../../services/supabase';
 
-// Agrega tu correo real como string por si falla la variable de entorno
 const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL;
 
 export default function WelcomeModal() {
@@ -17,7 +25,6 @@ export default function WelcomeModal() {
   const handleLogin = useAppStore((state) => state.handleLogin);
   const handleFreeTrial = useAppStore((state) => state.handleFreeTrial);
 
-  // === MANEJO DE CONEXIÓN ===
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
@@ -33,10 +40,8 @@ export default function WelcomeModal() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Pre-cargar identificador de dispositivo
     const prewarmIdentity = async () => {
       if (!navigator.onLine) return;
-
       try {
         await getStableDeviceId();
         Logger.info("Identificador de dispositivo pre-cargado");
@@ -53,7 +58,6 @@ export default function WelcomeModal() {
     };
   }, []);
 
-  // === VALIDACIÓN DE LICENCIA ===
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -89,7 +93,6 @@ export default function WelcomeModal() {
     }
   };
 
-  // === PRUEBA GRATIS ===
   const handleTrialClick = async () => {
     if (!isOnline) {
       setErrorMessage('Se requiere conexión a internet para activar la prueba gratuita.');
@@ -118,7 +121,6 @@ export default function WelcomeModal() {
     }
   };
 
-  // === CONTACTO CON SOPORTE ===
   const handleSupportClick = () => {
     const envEmail = import.meta.env.VITE_SUPPORT_EMAIL;
     const supportEmail = (envEmail && envEmail !== 'undefined') ? envEmail : 'contacto.entrealas@gmail.com';
@@ -143,139 +145,170 @@ DESCRIBE TU PROBLEMA:
 
 ¡Gracias por su ayuda!`);
 
-    // 1. Copiar al portapapeles y avisar al usuario
     navigator.clipboard.writeText(supportEmail).then(() => {
-      // Opcional: Si tienes un sistema de "Toasts" o notificaciones, úsalo aquí.
-      // Si no, un alert simple es efectivo para este caso de soporte crítico.
       alert(`📧 Correo de soporte copiado: ${supportEmail}\n\nSi no se abre tu aplicación de correo, puedes escribirnos manualmente.`);
     }).catch(err => console.error("No se pudo copiar", err));
 
-    // 2. Intentar abrir la app de correo (sin abrir pestañas nuevas)
-    // El timeout da un respiro para que el alert o el copiado no interfieran
     setTimeout(() => {
       window.location.href = `mailto:${supportEmail}?subject=${subject}&body=${body}`;
     }, 500);
   };
 
   return (
-    <div className="modal welcome-modal-overlay" style={{ display: 'flex' }}>
+    <div className="modal welcome-modal-overlay">
       <div className="welcome-modal-content">
 
-        {/* TÍTULO */}
-        <h2>Bienvenido a Lanzo POS</h2>
-
-        {/* RESUMEN DE CARACTERÍSTICAS */}
-        <div className="welcome-summary">
-          <p style={{ marginBottom: '15px', fontWeight: 600, color: 'var(--text-dark)' }}>
-            Sistema completo para impulsar tu negocio:
-          </p>
-          <ul>
-            <li>Punto de Venta profesional</li>
-            <li>Control de inventario en tiempo real</li>
-            <li>Gestión de clientes y reportes</li>
-            <li>Tus datos seguros y privados</li>
-          </ul>
-        </div>
-
-        {/* BANNER DE ESTADO DE CONEXIÓN */}
-        {!isOnline && (
-          <div className="connection-banner offline">
-            <WifiOff size={18} />
-            <div>
-              <strong>Sin conexión a internet</strong>
-              <p>Conéctate para activar tu licencia o iniciar prueba</p>
-            </div>
-          </div>
-        )}
-
-        {isOnline && isLoading && (
-          <div className="connection-banner online">
-            <Wifi size={18} />
-            <span>Verificando con el servidor...</span>
-          </div>
-        )}
-
-        {/* FORMULARIO DE LICENCIA */}
-        <form id="license-form" onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="license-key">
-              ¿Tienes una licencia?
-            </label>
-            <input
-              className="form-input"
-              id="license-key"
-              type="text"
-              required
-              placeholder="LANZO-XXXX-XXXX-XXXX"
-              value={licenseKey}
-              onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
-              disabled={isLoading || !isOnline}
-              maxLength={23}
-              style={!isOnline ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
-            />
-
+        {/* SECCIÓN HERO */}
+        <div className="welcome-hero-section">
+          <div className="hero-brand">
+            <img src="/logIcon.svg" alt="Lanzo Logo" className="brand-icon" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
+            <span style={{ fontSize: '2.5rem', fontWeight: '800', letterSpacing: '-0.5px', lineHeight: '1' }}>Lanzo POS</span>
           </div>
 
-          <button
-            type="submit"
-            className="btn btn-primary btn-save"
-            disabled={isLoading || !isOnline || !licenseKey.trim()}
-            style={
-              (!isOnline || isLoading || !licenseKey.trim())
-                ? { opacity: 0.6, cursor: 'not-allowed' }
-                : {}
-            }
-          >
-            {isLoading ? 'Verificando...' : 'Validar Licencia'}
-          </button>
-
-          {/* DIVISOR */}
-          <div className="trial-divider">
-            <span>¿Primera vez?</span>
-          </div>
-
-          {/* BOTÓN DE PRUEBA GRATIS */}
-          <button
-            type="button"
-            className="btn btn-secondary btn-trial"
-            onClick={handleTrialClick}
-            disabled={isLoading || !isOnline}
-            style={
-              (!isOnline || isLoading)
-                ? { opacity: 0.6, cursor: 'not-allowed' }
-                : {}
-            }
-          >
-            {isLoading ? 'Activando...' : 'Probar Gratis 3 Meses'}
-          </button>
-
-          {/* MENSAJE DE TRANQUILIDAD */}
-          <div className="trial-info-box">
-            <p>
-              <strong>Sin compromisos:</strong> Al finalizar la prueba, podrás renovar tu licencia
-              <strong> totalmente gratis</strong> y seguir usando Lanzo.
+          <div className="hero-text-content">
+            <h1>Impulsa tu negocio hoy</h1>
+            <p className="hero-subtitle">
+              Gestiona ventas, inventario y clientes desde un solo lugar.
             </p>
           </div>
-        </form>
 
-        {/* ZONA DE ERRORES */}
-        {errorMessage && (
-          <div className="welcome-error-message">
-            {errorMessage}
+          {/* Carrusel de características en móvil, Grid en Desktop */}
+          <div className="hero-features-grid">
+            <div className="feature-card">
+              <div className="feature-icon-wrapper">
+                <Zap size={20} />
+              </div>
+              <div className="feature-card-text">
+                <h3>Punto de Venta Ágil</h3>
+                <p>Registra ventas en segundos con una interfaz intuitiva y muy fácil de usar.</p>
+              </div>
+            </div>
+
+            <div className="feature-card">
+              <div className="feature-icon-wrapper">
+                <Rocket size={20} />
+              </div>
+              <div className="feature-card-text">
+                <h3>Ideal para Emprender</h3>
+                <p>Potencia tu negocio sin pagar las altas suscripciones de otras aplicaciones.</p>
+              </div>
+            </div>
+
+            <div className="feature-card">
+              <div className="feature-icon-wrapper">
+                <WifiOff size={20} />
+              </div>
+              <div className="feature-card-text">
+                <h3>Siempre Disponible</h3>
+                <p>Tus datos son tuyos y se guardan en tu equipo. Sigue operando aunque no tengas internet.</p>
+              </div>
+            </div>
+
+            <div className="feature-card">
+              <div className="feature-icon-wrapper">
+                <Package size={20} />
+              </div>
+              <div className="feature-card-text">
+                <h3>Control Total</h3>
+                <p>Administra tu inventario, cuentas de clientes y reportes desde un solo lugar.</p>
+              </div>
+            </div>
           </div>
-        )}
-
-        {/* PIE DE PÁGINA CON SOPORTE */}
-        <div className="welcome-footer">
-          <button
-            type="button"
-            className="btn-support-link"
-            onClick={handleSupportClick}
-          >
-            <Mail size={16} />
-            <span>¿Necesitas ayuda? Contacta a Soporte</span>
-          </button>
         </div>
+
+        {/* SECCIÓN FORMULARIO (Bottom Sheet en Móviles) */}
+        <div className="welcome-form-section">
+
+          <div className="form-header">
+            <h2>Comienza ahora</h2>
+            <p>Ingresa tu licencia o inicia gratis</p>
+          </div>
+
+          {!isOnline && (
+            <div className="connection-alert offline">
+              <WifiOff size={18} />
+              <div className="alert-text">
+                <strong>Sin conexión a internet</strong>
+                <span>Requerida para iniciar sesión o activar prueba</span>
+              </div>
+            </div>
+          )}
+
+          {isOnline && isLoading && (
+            <div className="connection-alert loading">
+              <Wifi size={18} className="pulse-anim" />
+              <span>Conectando de forma segura...</span>
+            </div>
+          )}
+
+          <form id="welcome-form" onSubmit={handleSubmit}>
+            <div className="input-group">
+              <label htmlFor="license-key">Clave de Licencia</label>
+              <div className="input-wrapper">
+                <input
+                  id="license-key"
+                  type="text"
+                  required
+                  placeholder="LANZO-XXXX-XXXX-XXXX"
+                  value={licenseKey}
+                  onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+                  disabled={isLoading || !isOnline}
+                  maxLength={23}
+                  className={licenseKey ? 'has-value' : ''}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="btn-submit-license"
+              disabled={isLoading || !isOnline || !licenseKey.trim()}
+            >
+              <span>{isLoading ? 'Verificando...' : 'Acceder con Licencia'}</span>
+              {!isLoading && <ChevronRight size={18} />}
+            </button>
+
+            <div className="divider">
+              <span>¿No tienes licencia?</span>
+            </div>
+
+            <div className="trial-zone">
+              <ul className="trial-benefits">
+                <li><CheckCircle2 size={16} /> Sin tarjeta de crédito</li>
+                <li><CheckCircle2 size={16} /> Acceso total a funciones</li>
+                <li><CheckCircle2 size={16} /> Renovable gratis</li>
+              </ul>
+
+              <button
+                type="button"
+                className="btn-start-trial"
+                onClick={handleTrialClick}
+                disabled={isLoading || !isOnline}
+              >
+                Iniciar Prueba de 3 Meses
+              </button>
+            </div>
+          </form>
+
+          {errorMessage && (
+            <div className="error-toast">
+              <span className="error-icon">!</span>
+              <p>{errorMessage}</p>
+            </div>
+          )}
+
+          <div className="support-footer">
+            <button
+              type="button"
+              className="btn-support"
+              onClick={handleSupportClick}
+            >
+              <Mail size={16} />
+              ¿Necesitas ayuda? Contáctanos
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   );

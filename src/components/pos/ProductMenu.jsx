@@ -60,8 +60,22 @@ export default function ProductMenu({
   const [displayLimit, setDisplayLimit] = useState(50);
   const scrollContainerRef = useRef(null);
 
-  useEffect(() => {
+  // Guardamos las props anteriores para detectar cambios durante el renderizado
+  const [prevCategoryId, setPrevCategoryId] = useState(selectedCategoryId);
+  const [prevSearchTerm, setPrevSearchTerm] = useState(searchTerm);
+  const [prevProducts, setPrevProducts] = useState(products);
+
+  // Actualizamos el estado sincrónicamente durante el renderizado si las dependencias cambian.
+  // Esto evita el anti-patrón de hacer "setState" dentro de un useEffect.
+  if (selectedCategoryId !== prevCategoryId || searchTerm !== prevSearchTerm || products !== prevProducts) {
+    setPrevCategoryId(selectedCategoryId);
+    setPrevSearchTerm(searchTerm);
+    setPrevProducts(products);
     setDisplayLimit(50);
+  }
+
+  // El reseteo del scroll es una mutación del DOM, por lo tanto SÍ debe ir en un useEffect
+  useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }

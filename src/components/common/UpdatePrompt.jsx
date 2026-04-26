@@ -63,7 +63,15 @@ const UpdatePrompt = () => {
     };
   }, []);
 
-  if (!showUpdateModal) return null;
+  // Verificamos si el usuario ya descartó el banner en esta sesión
+  const isDismissed = sessionStorage.getItem('lanzo_update_dismissed') === 'true';
+
+  const handleClose = () => {
+    sessionStorage.setItem('lanzo_update_dismissed', 'true');
+    closeUpdateModal();
+  };
+
+  if (!showUpdateModal || isDismissed) return null;
 
   return (
     <div
@@ -98,7 +106,7 @@ const UpdatePrompt = () => {
           Nueva version disponible
         </h4>
         <button
-          onClick={closeUpdateModal}
+        onClick={handleClose}
           style={{
             background: 'none',
             border: 'none',

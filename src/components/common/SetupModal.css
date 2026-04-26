@@ -7,6 +7,7 @@
 #business-setup-modal {
   padding: 0 !important;
   align-items: flex-start;
+  background-color: var(--background-color); 
 }
 
 #business-setup-modal .modal-content.setup-content {
@@ -20,36 +21,78 @@
   display: flex;
   flex-direction: column;
   background-color: var(--background-color);
+  overflow: hidden;
 }
 
+/* Panel de Cabecera / Bienvenida */
 .setup-header {
   background-color: var(--card-background-color);
-  padding: 20px;
-  padding-top: max(20px, env(safe-area-inset-top));
+  padding: max(30px, env(safe-area-inset-top)) 20px 20px;
   text-align: center;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.setup-header-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 400px;
+}
+
+.setup-header-icon {
+  background-color: rgba(255, 59, 92, 0.1);
+  color: var(--primary-color);
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.header-icon-svg {
+  width: 32px;
+  height: 32px;
 }
 
 .setup-header h2 {
-  margin: 0 0 5px 0;
+  margin: 0 0 8px 0;
   color: var(--primary-color);
   font-size: 1.5rem;
+  font-weight: 800;
 }
 
 .setup-header p {
   color: var(--text-light);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   margin: 0;
+  line-height: 1.5;
+}
+
+/* Área del Formulario */
+.setup-form-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background-color: var(--background-color);
 }
 
 #business-setup-form {
-  padding: 15px;
-  overflow-y: auto;
-  flex: 1;
-  -webkit-overflow-scrolling: touch;
-  /* Scroll suave iOS */
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  padding: 20px;
+  padding-bottom: max(30px, env(safe-area-inset-bottom));
+  width: 100%;
+}
+
+.form-inner-container {
+  width: 100%;
 }
 
 /* --- ACORDEÓN --- */
@@ -57,25 +100,26 @@
   background-color: var(--card-background-color);
   border-radius: 12px;
   margin-bottom: 15px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   border: 1px solid var(--border-color);
   overflow: hidden;
+  transition: all 0.3s ease;
 }
 
 .accordion-item.open {
   border-color: var(--primary-color);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 15px rgba(255, 59, 92, 0.08);
 }
 
 .accordion-item.locked {
   opacity: 0.6;
-  background-color: #f3f4f6;
+  background-color: var(--light-background);
   pointer-events: none;
   border-style: dashed;
 }
 
 .accordion-header {
-  padding: 15px;
+  padding: 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -84,8 +128,8 @@
 }
 
 .accordion-item.open .accordion-header {
-  border-bottom: 1px solid var(--light-background);
-  background-color: rgba(99, 102, 241, 0.03);
+  border-bottom: 1px solid var(--border-color);
+  background-color: rgba(255, 59, 92, 0.02);
 }
 
 .header-title {
@@ -94,20 +138,21 @@
   gap: 12px;
   font-weight: 700;
   color: var(--text-dark);
-  font-size: 1rem;
+  font-size: 1.05rem;
 }
 
 .step-number {
   background-color: var(--light-background);
   color: var(--text-light);
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 800;
+  transition: all 0.3s ease;
 }
 
 .accordion-item.open .step-number {
@@ -124,37 +169,33 @@
   color: var(--success-color);
 }
 
-.icon-success {
-  color: var(--success-color);
-  margin-right: 10px;
-}
-
-.icon-locked {
-  color: var(--text-light);
-}
+.icon-success { color: var(--success-color); margin-right: 5px; }
+.icon-locked { color: var(--text-light); }
 
 .accordion-body {
-  padding: 15px;
+  padding: 20px;
   animation: slideDown 0.3s ease-out;
 }
 
 @keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* Forms */
+/* Utilidades del formulario */
 .form-row-split {
   display: flex;
   gap: 15px;
   flex-direction: row;
+}
+
+.flex-grow {
+  flex: 1;
+}
+
+.text-center {
+  text-align: center;
+  width: 100%;
 }
 
 .mini-logo-upload {
@@ -163,14 +204,24 @@
 }
 
 .logo-preview-wrapper {
-  width: 60px;
-  height: 60px;
+  width: 65px;
+  height: 65px;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--border-color);
+  border: 2px dashed var(--border-color);
   position: relative;
   cursor: pointer;
   background-color: var(--light-background);
+  transition: all 0.2s ease;
+}
+
+.logo-preview-wrapper.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.logo-preview-wrapper:hover:not(.disabled) {
+  border-color: var(--primary-color);
 }
 
 .logo-preview-wrapper img {
@@ -181,11 +232,8 @@
 
 .logo-preview-wrapper .overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.4);
+  top: 0; left: 0; width: 100%; height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -193,51 +241,73 @@
   transition: opacity 0.2s;
 }
 
-.logo-preview-wrapper:hover .overlay {
-  opacity: 1;
-}
+.logo-preview-wrapper:hover:not(.disabled) .overlay { opacity: 1; }
 
-/* Asegurar que el icono dentro del overlay no tenga opacidad extra */
-.logo-preview-wrapper .overlay svg {
-  opacity: 0.9;
+.hidden-input {
+  display: none;
 }
 
 /* Grid de Rubros */
-.rubro-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+.rubro-intro {
+  margin-bottom: 15px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.trial-badge {
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+  color: var(--primary-color);
+  background-color: var(--light-background);
+  padding: 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
   gap: 10px;
 }
 
-/* === TARJETA DE RUBRO (CORREGIDO) === */
+.trial-badge-icon {
+  flex-shrink: 0;
+}
+
+.rubro-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.rubro-grid.disabled-grid {
+  pointer-events: none;
+}
+
 .rubro-card {
-  border: 2px solid var(--light-background);
-  border-radius: 10px;
-  padding: 15px 10px; /* Un poco más de padding vertical */
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  padding: 18px 12px;
   text-align: center;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center; /* Centrado vertical */
-  gap: 8px; /* Espacio entre icono y texto */
+  justify-content: center;
+  gap: 10px;
   background-color: var(--card-background-color);
   transition: all 0.2s ease-in-out;
-  height: 100%; /* Para que tengan la misma altura si usamos grid */
-  min-height: 100px;
+  min-height: 110px;
 }
 
 .rubro-icon-wrapper {
-  color: var(--text-light); /* Color base del icono */
+  color: var(--text-light);
   transition: color 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Cuando la tarjeta está seleccionada, pintamos el icono del color primario */
-.rubro-card.selected .rubro-icon-wrapper {
-  color: var(--primary-color);
+.rubro-card:hover:not(.locked-by-license):not(.disabled) {
+  border-color: rgba(255, 59, 92, 0.4);
+  transform: translateY(-2px);
 }
 
 .rubro-label {
@@ -247,30 +317,60 @@
   line-height: 1.2;
 }
 
-/* ESTADO SELECCIONADO (Alta Prioridad) */
 .rubro-card.selected {
   border-color: var(--primary-color) !important;
-  /* Forzamos color de borde */
-  background-color: rgba(255, 59, 92, 0.05);
-  box-shadow: 0 0 0 2px rgba(255, 59, 92, 0.1);
-  /* Efecto de anillo */
+  background-color: rgba(255, 59, 92, 0.04);
+  box-shadow: 0 0 0 3px rgba(255, 59, 92, 0.1);
   transform: translateY(-2px);
-  /* Pequeño salto visual */
+}
+
+.rubro-card.selected .rubro-icon-wrapper {
+  color: var(--primary-color);
+}
+
+.rubro-card.locked-by-license {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.rubro-card.disabled {
+  opacity: 0.6;
+}
+
+.locked-badge-text {
+  font-size: 0.65rem;
+  color: var(--error-color);
+  margin-top: 2px;
+  font-weight: bold;
 }
 
 .error-message {
   color: var(--error-color);
   background-color: #fee2e2;
-  padding: 10px;
+  padding: 12px;
   border-radius: 8px;
-  margin-top: 15px;
+  margin-top: 20px;
   font-size: 0.9rem;
   text-align: center;
   font-weight: 600;
 }
 
+.terms-agreement-text {
+  margin: 25px 0 15px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.terms-link {
+  color: var(--primary-color);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .step-actions {
-  margin-top: 20px;
+  margin-top: 25px;
   display: flex;
   justify-content: flex-end;
 }
@@ -283,74 +383,151 @@
   width: 100%;
   padding: 16px;
   font-size: 1.1rem;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.header-text-desktop {
+  display: none; /* Oculto en móviles */
+}
+
+.header-text-mobile {
+  display: block; /* Visible en móviles */
+}
+
+/* Animación para que el cambio de texto tenga "vida" */
+@keyframes fadeInText {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in-text {
+  animation: fadeInText 0.4s ease-out forwards;
 }
 
 /* =========================================
-   2. MEDIA QUERY: ESCRITORIO (>= 768px)
+   2. MEDIA QUERY: ESCRITORIO FULLSCREEN
    ========================================= */
-@media (min-width: 480px) and (max-width: 767px) {
-  .rubro-grid {
-    gap: 12px;
-  }
-  .rubro-card {
-    padding: 14px;
-  }
-}
-
 @media (min-width: 768px) {
-  #business-setup-modal {
-    padding: 20px !important;
-    align-items: center;
+  /* Anulamos cualquier padding de modales estándar para forzar pantalla completa */
+  #business-setup-modal.fullscreen-modal {
+    padding: 0 !important;
   }
 
+  /* El layout principal pasa a ser fila: Izquierda (info) / Derecha (form) */
   #business-setup-modal .modal-content.setup-content {
-    width: 100%;
-    max-width: 550px;
-    height: auto;
-    max-height: 90vh;
-    border-radius: 24px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--border-color);
+    flex-direction: row;
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    max-height: 100vh;
+    border-radius: 0;
   }
 
+  /* --- MITAD IZQUIERDA --- */
   .setup-header {
-    padding: 25px 25px 15px 25px;
-    border-radius: 24px 24px 0 0;
+    flex: 0 0 45%; 
+    padding: 40px;
+    border-bottom: none;
+    border-right: 1px solid var(--border-color);
+    background: linear-gradient(135deg, var(--card-background-color) 0%, var(--light-background) 100%);
+    text-align: left;
+    align-items: center; 
+    justify-content: center; /* Centrado vertical en su mitad */
+  }
+
+  .setup-header-content {
+    align-items: flex-start; /* Alinear a la izquierda internamente */
+    max-width: 450px; /* Restricción para no estirar los textos */
+  }
+
+  .setup-header-icon {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 24px;
+  }
+
+  .header-icon-svg {
+    width: 40px;
+    height: 40px;
   }
 
   .setup-header h2 {
-    font-size: 1.8rem;
+    font-size: 2.5rem;
+    margin-bottom: 15px;
+    line-height: 1.2;
+  }
+
+  .header-text-mobile {
+    display: none;
+  }
+
+  .header-text-desktop {
+    display: block;
+  }
+  
+  /* Ajuste tipográfico para el nuevo texto */
+  .setup-header p {
+    font-size: 1.10rem;
+    line-height: 1.6;
+    color: var(--text-light);
+  }
+  
+  .setup-header p strong {
+    color: var(--text-dark);
+  }
+
+  /* --- MITAD DERECHA --- */
+  .setup-form-wrapper {
+    flex: 1; 
+    align-items: center; /* Centrar el formulario horizontalmente */
+    padding: 40px 20px;
   }
 
   #business-setup-form {
-    padding: 25px;
+    display: flex;
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* Restricción de ancho para usabilidad del formulario */
+  .form-inner-container {
+    max-width: 550px;
+    width: 100%;
+    /* Un ligero margen superior si la pantalla es muy alta */
+    margin-top: max(2vh, 20px); 
   }
 
   .rubro-grid {
+    grid-template-columns: repeat(3, 1fr); 
     gap: 15px;
   }
 }
 
 /* =========================================
-   3. MODO OSCURO (CORREGIDO PARA NO TAPAR SELECCIÓN)
+   3. MODO OSCURO
    ========================================= */
-
 [data-theme="dark"] .accordion-item.locked {
-  background-color: #1e1e24;
+  background-color: rgba(255, 255, 255, 0.02);
   border-color: #333;
 }
 
-/* Base de tarjeta en modo oscuro */
 [data-theme="dark"] .rubro-card {
   border-color: #333;
   background-color: #1f2937;
 }
 
-/* SELECCIONADO EN MODO OSCURO (Debe ir AL FINAL para ganar) */
 [data-theme="dark"] .rubro-card.selected {
   border-color: var(--primary-color) !important;
-  background-color: rgba(255, 59, 92, 0.15);
-  /* Fondo rojizo más visible */
-  box-shadow: 0 0 15px rgba(255, 59, 92, 0.2);
-  /* Resplandor */
+  background-color: rgba(255, 59, 92, 0.1);
+  box-shadow: 0 0 15px rgba(255, 59, 92, 0.15);
+}
+
+@media (min-width: 768px) {
+  [data-theme="dark"] .setup-header {
+    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+  }
 }

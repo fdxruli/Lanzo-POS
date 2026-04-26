@@ -1,0 +1,49 @@
+/* CajaActionsCard - Estilos específicos */
+
+/* Keyboard shortcuts */
+.shortcuts-help {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background-color: #F8FAFC;
+  border-radius: 8px;
+  font-size: 0.7rem;
+}
+
+.shortcuts-help p {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: #475569;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.375rem;
+  color: #64748B;
+}
+
+.shortcuts-grid kbd {
+  padding: 0.125rem 0.375rem;
+  background-color: #E2E8F0;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-family: monospace;
+  margin-right: 0.25rem;
+}
+
+/* Dark mode */
+[data-theme="dark"] .shortcuts-help {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .shortcuts-help p {
+  color: #94A3B8;
+}
+
+[data-theme="dark"] .shortcuts-grid {
+  color: #64748B;
+}
+
+[data-theme="dark"] .shortcuts-grid kbd {
+  background-color: rgba(255, 255, 255, 0.1);
+}

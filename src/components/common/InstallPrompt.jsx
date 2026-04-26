@@ -81,7 +81,15 @@ const InstallPrompt = () => {
     };
   }, [markInstalled, setDeferredPrompt, setInstallContext]);
 
-  if (!showInstallModal) return null;
+  // Verificamos si el usuario ya decidió ocultar el banner en este dispositivo
+  const isDismissed = localStorage.getItem('lanzo_install_dismissed') === 'true';
+
+  const handleClose = () => {
+    localStorage.setItem('lanzo_install_dismissed', 'true');
+    closeInstallModal();
+  };
+
+  if (!showInstallModal || isDismissed) return null;
 
   const overlayStyle = {
     position: 'fixed',
@@ -127,7 +135,7 @@ const InstallPrompt = () => {
 
   return (
     <div style={overlayStyle}>
-      <button style={closeBtnStyle} onClick={closeInstallModal} aria-label="Cerrar aviso de instalacion">
+      <button style={closeBtnStyle} onClick={handleClose} aria-label="Cerrar aviso de instalacion">
         x
       </button>
 
