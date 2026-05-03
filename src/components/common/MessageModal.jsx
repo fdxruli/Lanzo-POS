@@ -6,8 +6,9 @@ import './MessageModal.css';
 export default function MessageModal() {
   const { isOpen, message, onConfirm, options = {}, hide } = useMessageStore();
   
-  // --- ESTADO LOCAL PARA EL TOAST DE ALERTA ---
+  // --- ESTADO LOCAL PARA EL TOAST DE ALERTA Y ANIMACIÓN ---
   const [toastMsg, setToastMsg] = useState(null);
+  const [showShake, setShowShake] = useState(false);
 
   if (!isOpen) {
     return null;
@@ -43,17 +44,9 @@ export default function MessageModal() {
     if (isDismissible) {
       hide();
     } else {
-      // 1. EFECTO VISUAL: Temblor (Shake)
-      const modalContent = document.querySelector('.modal-content');
-      if (modalContent) {
-        // Pequeño zoom y regreso rápido para simular golpe
-        modalContent.style.transition = 'transform 0.1s';
-        modalContent.style.transform = 'scale(1.02)';
-        
-        setTimeout(() => {
-            modalContent.style.transform = 'scale(1)';
-        }, 100);
-      }
+      // 1. EFECTO VISUAL: Shake animation via React state + CSS
+      setShowShake(true);
+      setTimeout(() => setShowShake(false), 150);
 
       // 2. FEEDBACK VISUAL: Mostrar Toast
       showLocalToast('⚠️ Selecciona una opción para continuar');
@@ -67,7 +60,7 @@ export default function MessageModal() {
       style={{ display: 'flex' }}
       onClick={handleBackdropClick} 
     >
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className={`modal-content ${showShake ? 'shake-animation' : ''}`} onClick={(e) => e.stopPropagation()}>
         <h2 className={`modal-title ${options.type || ''}`}>
             {options.title || 'Mensaje'}
         </h2>

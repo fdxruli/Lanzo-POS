@@ -87,8 +87,8 @@ function Layout() {
       <Toaster
         position="top-center"
         containerStyle={{
-          zIndex: 99999999, // Un número ridículamente alto para asegurar que gane siempre
-          top: 20 // Opcional: para que no quede pegado al borde exacto si lo deseas
+          zIndex: 2000, // Z-index sensato y coherente con la arquitectura modal
+          top: 20
         }}
         // -------------------------
         toastOptions={{

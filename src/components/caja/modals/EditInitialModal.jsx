@@ -1,5 +1,5 @@
 // src/components/caja/modals/EditInitialModal.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 import { showMessageModal } from '../../../services/utils';
@@ -18,6 +18,7 @@ import Logger from '../../../services/Logger';
 const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = false }) => {
   const [amount, setAmount] = useState('');
   const [focusedElement, setFocusedElement] = useState(null);
+  const inputRef = useRef(null);
 
   // Inicializar al abrir el modal
   useEffect(() => {
@@ -60,11 +61,8 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
     document.addEventListener('keydown', handleEsc);
     document.addEventListener('keydown', handleTabKey);
 
-    // Enfocar el primer input al abrir
-    setTimeout(() => {
-      const firstInput = document.querySelector('.modal input[autoFocus]');
-      if (firstInput) firstInput.focus();
-    }, 100);
+    // Enfocar el input automáticamente
+    inputRef.current?.focus();
 
     return () => {
       document.removeEventListener('keydown', handleEsc);

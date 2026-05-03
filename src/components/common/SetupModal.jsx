@@ -1,5 +1,5 @@
 // src/components/common/SetupModal.jsx
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
 import LazyImage from './LazyImage';
@@ -50,6 +50,7 @@ export default function SetupModal() {
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState('info');
   const [showTerms, setShowTerms] = useState(false);
+  const nameInputRef = useRef(null);
 
   const licenseFeatures = licenseDetails?.features || {};
   const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
@@ -155,8 +156,7 @@ export default function SetupModal() {
     if (isStep1Complete) {
       setActiveSection('type');
     } else {
-      const nameInput = document.getElementById('setup-name-input');
-      if (nameInput) nameInput.focus();
+      nameInputRef.current?.focus();
     }
   };
 
@@ -216,6 +216,7 @@ export default function SetupModal() {
                     <div className="form-group">
                       <label className="form-label" htmlFor="setup-name-input">Nombre del Negocio *</label>
                       <input
+                        ref={nameInputRef}
                         id="setup-name-input"
                         className="form-input"
                         type="text"
