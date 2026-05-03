@@ -133,9 +133,9 @@ const CajaStatusCard = ({
             }}
           >
             {isBackupLoading ? (
-              <><span className="spinner-small"></span> Respaldo</>
+              <><span className="spinner-small"></span> <span>Respaldo</span></>
             ) : (
-              <><Save size={18} /> Respaldo</>
+              <><Save size={18} /> <span>Respaldo</span></>
             )}
           </button>
 

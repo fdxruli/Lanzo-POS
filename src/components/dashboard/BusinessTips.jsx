@@ -537,12 +537,12 @@ export default function BusinessTips({ sales, menu, customers }) {
           {showAIDashboard ? (
             <>
               <Bot size={24} color="var(--primary-color)" />
-              Agentes de IA
+              <span>Agentes de IA</span>
             </>
           ) : (
             <>
               <BrainCircuit size={24} color="var(--primary-color)" />
-              Inteligencia LANZO
+              <span>Inteligencia LANZO</span>
               {tips.length > 0 && tips[0].id === 'learning' && (
                 <span style={{
                   fontSize: '0.7rem',
@@ -580,12 +580,12 @@ export default function BusinessTips({ sales, menu, customers }) {
           {showAIDashboard ? (
             <>
               <BrainCircuit size={16} />
-              Modo Clásico
+              <span>Modo Clásico</span>
             </>
           ) : (
             <>
               <Bot size={16} />
-              Nuevo: Agentes IA
+              <span>Nuevo: Agentes IA</span>
             </>
           )}
         </button>
