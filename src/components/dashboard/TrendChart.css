@@ -1,0 +1,255 @@
+/* src/components/dashboard/TrendChart.css */
+
+/* ============================================
+   BASE STYLES (Mobile First - Default)
+   ============================================ */
+
+/* Recharts Container */
+.recharts-container {
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  position: relative;
+}
+
+.chart-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 150px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Custom Tooltip */
+.custom-tooltip {
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.tooltip-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0 0 4px 0;
+  font-weight: 500;
+}
+
+.tooltip-value {
+  font-size: 0.9rem;
+  color: var(--text-dark);
+  margin: 0;
+  font-weight: 700;
+}
+
+/* Bar Chart (Legacy SVG - mantener por compatibilidad) */
+.bar-chart-container {
+  width: 100%;
+  position: relative;
+}
+
+.bar-chart-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.bar-chart-bar {
+  transition: opacity 0.2s ease;
+}
+
+.bar-chart-bar:hover {
+  opacity: 1;
+}
+
+.bar-chart-label {
+  font-weight: 500;
+}
+
+/* Mini Line Chart */
+.mini-line-chart-container {
+  width: 100%;
+  position: relative;
+}
+
+.mini-line-chart-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.mini-chart-indicator {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mini-chart-indicator.positive {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.mini-chart-indicator.negative {
+  background-color: rgba(220, 38, 38, 0.15);
+  color: #dc2626;
+}
+
+/* Weekday Heatmap */
+.weekday-heatmap {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  padding: 12px 0;
+}
+
+.weekday-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.weekday-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.weekday-bar {
+  width: 100%;
+  min-height: 4px;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.weekday-bar:hover {
+  transform: scaleY(1.1);
+}
+
+.weekday-value {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Metric with Trend */
+.metric-trend-card {
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.metric-trend-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.metric-trend-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.metric-trend-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metric-trend-icon {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.metric-trend-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  line-height: 1.2;
+}
+
+.metric-trend-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.metric-trend-indicator.positive {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.metric-trend-indicator.negative {
+  background-color: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+/* ============================================
+   TABLET (>= 768px)
+   ============================================ */
+@media (min-width: 768px) {
+  .weekday-heatmap {
+    gap: 10px;
+  }
+
+  .weekday-label {
+    font-size: 0.7rem;
+  }
+
+  .weekday-value {
+    font-size: 0.65rem;
+  }
+
+  .metric-trend-card {
+    padding: 1.25rem;
+  }
+
+  .metric-trend-value {
+    font-size: 1.75rem;
+  }
+}
+
+/* ============================================
+   DESKTOP (>= 1024px)
+   ============================================ */
+@media (min-width: 1024px) {
+  .weekday-heatmap {
+    gap: 12px;
+  }
+
+  .weekday-label {
+    font-size: 0.75rem;
+  }
+
+  .weekday-value {
+    font-size: 0.7rem;
+  }
+
+  .metric-trend-card {
+    padding: 1.5rem;
+  }
+
+  .metric-trend-value {
+    font-size: 2rem;
+  }
+}

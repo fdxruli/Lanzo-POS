@@ -1,0 +1,248 @@
+/* src/components/dashboard/TopCustomers.css */
+
+/* ============================================
+   BASE STYLES (Mobile First - Default)
+   ============================================ */
+
+.top-customers-container {
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem;
+  width: 100%;
+}
+
+.top-customers-header {
+  margin-bottom: 1rem;
+}
+
+.top-customers-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dark);
+}
+
+.top-customers-title h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.top-customers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.top-customer-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--light-background);
+  transition: all 0.2s ease;
+}
+
+.top-customer-item:hover {
+  background: var(--border-color);
+  transform: translateX(4px);
+}
+
+.top-customer-gold {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.08) 100%);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.top-customer-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.avatar-letter {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: white;
+}
+
+.crown-icon {
+  color: #fbbf24;
+  filter: drop-shadow(0 2px 4px rgba(251, 191, 36, 0.4));
+}
+
+.top-customer-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.top-customer-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.top-customer-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.top-customer-badge {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: rgba(251, 191, 36, 0.2);
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.top-customer-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.top-customer-stat-total {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.top-customer-divider {
+  opacity: 0.5;
+}
+
+.top-customer-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.top-customer-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--card-background-color);
+  transition: all 0.2s ease;
+}
+
+.top-customer-contact-item:hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+.top-customers-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.top-customers-empty svg {
+  opacity: 0.5;
+  margin-bottom: 1rem;
+}
+
+.top-customers-empty p {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+}
+
+.top-customers-empty small {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+/* ============================================
+   TABLET (>= 768px)
+   ============================================ */
+@media (min-width: 768px) {
+  .top-customers-container {
+    padding: 1.25rem;
+  }
+
+  .top-customers-title h3 {
+    font-size: 1.1rem;
+  }
+
+  .top-customer-avatar {
+    width: 52px;
+    height: 52px;
+  }
+
+  .avatar-letter {
+    font-size: 1.3rem;
+  }
+
+  .top-customer-item {
+    padding: 12px;
+    gap: 16px;
+  }
+
+  .top-customer-name {
+    font-size: 0.95rem;
+  }
+
+  .top-customer-stats {
+    font-size: 0.8rem;
+  }
+
+  .top-customer-contact {
+    gap: 10px;
+  }
+
+  .top-customer-contact-item {
+    font-size: 0.75rem;
+    padding: 3px 8px;
+  }
+}
+
+/* ============================================
+   DESKTOP (>= 1024px)
+   ============================================ */
+@media (min-width: 1024px) {
+  .top-customers-container {
+    padding: 1.5rem;
+  }
+
+  .top-customers-title h3 {
+    font-size: 1.2rem;
+  }
+
+  .top-customer-avatar {
+    width: 60px;
+    height: 60px;
+  }
+
+  .avatar-letter {
+    font-size: 1.5rem;
+  }
+
+  .top-customer-item {
+    padding: 14px;
+    gap: 20px;
+  }
+}

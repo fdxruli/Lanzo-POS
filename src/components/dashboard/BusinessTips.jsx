@@ -1,12 +1,13 @@
 // src/components/dashboard/BusinessTips.jsx
 import React, { useMemo, useState, useCallback } from 'react';
-import { 
-  Star, TrendingUp, AlertTriangle, Lightbulb, DollarSign, Package, Users, 
+import {
+  Star, TrendingUp, AlertTriangle, Lightbulb, DollarSign, Package, Users,
   Target, Zap, Clock, ChefHat, Percent, Activity, CheckCircle, Info, BrainCircuit,
-  TrendingDown, Calendar, ArrowRight
+  TrendingDown, Calendar, ArrowRight, Bot
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { useSalesStore } from '../../store/useSalesStore';
+import AIAgentDashboard from './AIAgentDashboard';
 
 // ============================================================
 // 1. CONFIGURACIÓN Y CONSTANTES (Sin números mágicos)
@@ -478,11 +479,12 @@ const TipCard = ({ tip, isExpanded, onToggle }) => {
 
 export default function BusinessTips({ sales, menu, customers }) {
   const [expandedTipId, setExpandedTipId] = useState(null);
-  
+  const [showAIDashboard, setShowAIDashboard] = useState(false);
+
   // Consumimos stores necesarios
   const wasteLogs = useSalesStore(state => state.wasteLogs);
   const companyProfile = useAppStore(state => state.companyProfile);
-  
+
   // Memoizamos el tipo de negocio
   const businessType = useMemo(() => {
     let types = companyProfile?.business_type || [];
@@ -497,49 +499,128 @@ export default function BusinessTips({ sales, menu, customers }) {
     setExpandedTipId(prev => prev === id ? null : id);
   }, []);
 
+  // Toggle entre modo clásico y dashboard de IA
+  const toggleMode = useCallback(() => {
+    setShowAIDashboard(prev => !prev);
+    setExpandedTipId(null);
+  }, []);
+
   return (
     <div className="business-tips-container" style={{
       backgroundColor: 'var(--card-background-color)',
       borderRadius: '16px',
-      padding: '1.5rem',
       boxShadow: 'var(--box-shadow)',
       border: '1px solid var(--border-color)',
-      height: '100%'
+      height: '100%',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column'
     }}>
-      <h3 className="subtitle" style={{ 
-        marginBottom: '1.5rem', 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: '10px' 
+      {/* Header con toggle de modo */}
+      <div style={{
+        padding: '1.5rem',
+        borderBottom: '1px solid var(--border-color)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '1rem',
+        flexWrap: 'wrap'
       }}>
-        <BrainCircuit size={24} color="var(--primary-color)" />
-        Inteligencia LANZO
-        {tips.length > 0 && tips[0].id === 'learning' && (
-          <span style={{
-            fontSize: '0.7rem', 
-            backgroundColor: '#e0e7ff', 
-            color: '#4338ca', 
-            padding: '2px 8px', 
-            borderRadius: '10px'
-          }}>
-            Aprendiendo
-          </span>
-        )}
-      </h3>
+        <h3 className="subtitle" style={{
+          margin: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          flex: 1,
+          minWidth: 0
+        }}>
+          {showAIDashboard ? (
+            <>
+              <Bot size={24} color="var(--primary-color)" />
+              Agentes de IA
+            </>
+          ) : (
+            <>
+              <BrainCircuit size={24} color="var(--primary-color)" />
+              Inteligencia LANZO
+              {tips.length > 0 && tips[0].id === 'learning' && (
+                <span style={{
+                  fontSize: '0.7rem',
+                  backgroundColor: '#e0e7ff',
+                  color: '#4338ca',
+                  padding: '2px 8px',
+                  borderRadius: '10px'
+                }}>
+                  Aprendiendo
+                </span>
+              )}
+            </>
+          )}
+        </h3>
 
-      <div className="tips-list">
-        {tips.map((tip) => (
-          <TipCard 
-            key={tip.id} 
-            tip={tip} 
-            isExpanded={expandedTipId === tip.id} 
-            onToggle={() => handleToggle(tip.id)}
+        <button
+          onClick={toggleMode}
+          type="button"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.5rem 1rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            backgroundColor: showAIDashboard ? 'var(--light-background)' : 'var(--primary-color)',
+            color: showAIDashboard ? 'var(--text-dark)' : 'white',
+            fontSize: '0.8125rem',
+            fontWeight: '600',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          {showAIDashboard ? (
+            <>
+              <BrainCircuit size={16} />
+              Modo Clásico
+            </>
+          ) : (
+            <>
+              <Bot size={16} />
+              Nuevo: Agentes IA
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Contenido */}
+      <div style={{
+        flex: 1,
+        padding: '1.5rem',
+        overflow: 'auto'
+      }}>
+        {showAIDashboard ? (
+          <AIAgentDashboard
+            sales={sales}
+            menu={menu}
+            customers={customers}
+            wasteLogs={wasteLogs}
+            businessType={businessType}
           />
-        ))}
-        {tips.length === 0 && (
-          <p style={{ textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic' }}>
-            Todo parece estar en orden. ¡Sigue vendiendo para obtener más consejos!
-          </p>
+        ) : (
+          <div className="tips-list">
+            {tips.map((tip) => (
+              <TipCard
+                key={tip.id}
+                tip={tip}
+                isExpanded={expandedTipId === tip.id}
+                onToggle={() => handleToggle(tip.id)}
+              />
+            ))}
+            {tips.length === 0 && (
+              <p style={{ textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic' }}>
+                Todo parece estar en orden. ¡Sigue vendiendo para obtener más consejos!
+              </p>
+            )}
+          </div>
         )}
       </div>
     </div>
