@@ -1,5 +1,5 @@
 // src/hooks/useCaja.js
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { showMessageModal, generateID } from '../services/utils';
 import { loadDataPaginated, saveDataSafe, STORES, initDB, db } from '../services/db/index';
 import Logger from '../services/Logger';
@@ -74,7 +74,7 @@ export function useCaja() {
   
   const CACHE_TTL_MS = 5000; // 5 segundos de caché
 
-  const calcularTotalesSesion = async (fechaApertura, forceRefresh = false) => {
+  const calcularTotalesSesion = useCallback(async (fechaApertura, forceRefresh = false) => {
     const now = Date.now();
     const cacheKey = `totales_${fechaApertura}`;
     
@@ -130,9 +130,9 @@ export function useCaja() {
       Logger.error('Error calculando totales de sesion', e);
       return { ventasContado: '0', abonosFiado: '0' };
     }
-  };
+  }, []);
 
-  const autoAbrirCaja = async (montoFondoSiguienteTurno = '0') => {
+  const autoAbrirCaja = useCallback(async (montoFondoSiguienteTurno = '0') => {
     const montoInicialSafe = Money.init(montoFondoSiguienteTurno || 0);
 
     if (montoInicialSafe.lt(0)) {
@@ -157,7 +157,7 @@ export function useCaja() {
     const result = await saveDataSafe(STORES.CAJAS, nuevaCaja);
     if (!result.success) throw result.error;
     return nuevaCaja;
-  };
+  }, []);
 
   const ajustarMontoInicial = async (nuevoMonto) => {
     if (!cajaActual) return;
@@ -414,7 +414,7 @@ export function useCaja() {
     }
   };
 
-  const cargarMovimientos = async (cajaId) => {
+  const cargarMovimientos = useCallback(async (cajaId) => {
     try {
       const db = await initDB();
       const movimientos = await db.table(STORES.MOVIMIENTOS_CAJA)
@@ -425,7 +425,7 @@ export function useCaja() {
       Logger.error('Error cargando movimientos', loadError);
       setMovimientosCaja([]);
     }
-  };
+  }, []);
 
   const cargarEstadoCaja = useCallback(async () => {
     setIsLoading(true);
@@ -465,7 +465,7 @@ export function useCaja() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [autoAbrirCaja, cargarMovimientos, calcularTotalesSesion]);
 
   useEffect(() => {
     cargarEstadoCaja();

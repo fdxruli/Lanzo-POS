@@ -51,11 +51,19 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
                 (activeFilters.categoryId === null || activeFilters.categoryId === undefined) ||
                 item.categoryId === activeFilters.categoryId;
 
-            // Determinar si el producto está realmente agotado
-            const isOutOfStock =
-                (item.trackStock || item.batchManagement?.enabled) && getAvailableStock(item) <= 0;
+            // Si trackStock es false, el producto es venta libre aunque conserve
+            // batchManagement de registros anteriores.
+            const gestionaStock = item.trackStock !== false && (
+                item.trackStock === true || item.batchManagement?.enabled === true
+            );
+
+            // Determinar si el producto está agotado (solo aplica si gestiona stock)
+            const isOutOfStock = gestionaStock && getAvailableStock(item) <= 0;
 
             // Lógica excluyente:
+            // - Si outOfStockOnly=true: mostrar solo agotados
+            // - Si outOfStockOnly=false: mostrar todo EXCEPTO agotados
+            // - Los productos sin gestión de stock (trackStock=false) NUNCA se consideran agotados
             if (activeFilters.outOfStockOnly) {
                 return matchesCategory && isOutOfStock;
             } else {
