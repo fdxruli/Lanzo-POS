@@ -61,7 +61,8 @@ export default defineConfig({
           'vendor_utils': ['zustand'],
           'vendor_icons': ['lucide-react'],
           'vendor_supabase': ['@supabase/supabase-js'],
-          'vendor_heavy': ['react-zxing']
+          'vendor_heavy': ['react-zxing'],
+          'vendor_charts': ['recharts']
         }
       }
     }

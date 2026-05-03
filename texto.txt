@@ -1,46 +1,7 @@
-modo claro tipo Apple
+para cuando se quiera agregar la funcion de tener varios dispositivos hay que implementar una liveQuery de dexie en la capa de visualizacion que depache un evento de incalidacion de cache para obligar al store a hacer un fetch cunado detecte cambios externos.
 
-/* --- PALETA PRINCIPAL --- */
-  --primary-color: #111827;
-  --primary-hover: #000000;
-  --secondary-color: #2563EB;
+¿Exactamente qué eventos justifican el costo de red de una conexión en tiempo real persistente, y cuáles pueden vivir con eventual consistency (sincronización periódica o en segundo plano)?
 
-  /* --- ESTADOS --- */
-  --success-color: #10B981;
-  --warning-color: #F59E0B;
-  --error-color: #EF4444;
+¿Cómo va a operar el flujo de los meseros hacia la cocina si el internet falla durante 30 minutos? ¿Cuál es tu protocolo técnico para la degradación del servicio?
 
-  /* --- FONDOS --- */
-  --background-color: #FFFFFF;
-  --card-background-color: #F9FAFB;
-  --light-background: #F3F4F6;
-
-  /* --- BORDES --- */
-  --border-color: #E5E7EB;
-
-  /* --- TEXTOS --- */
-  --text-dark: #111827;
-  --text-color: #374151;
-  --text-light: #6B7280;
-
-modo oscuro super minimalista --solamente el background--
-[data-theme="dark"] {
-
-  /* --- FONDOS --- */
-  --background-color: #09090B;
-  --card-background-color: #18181B;
-  --light-background: #27272A;
-
-  /* --- BORDES --- */
-  --border-color: #3F3F46;
-
-  /* --- TEXTOS --- */
-  --text-dark: #FAFAFA;
-  --text-color: #D4D4D8;
-  --text-light: #A1A1AA;
-
-  /* --- SOMBRAS (más visibles en oscuro) --- */
-  --box-shadow: 0 6px 12px rgba(0,0,0,0.5);
-  --box-shadow-lg: 0 20px 40px rgba(0,0,0,0.7);
-
-}
+Cuando ocurra un conflicto inevitable (dos meseros vendiendo el último artículo disponible estando desconectados del nodo principal), ¿cuál es la regla de negocio para decidir quién gana y cómo informas del rechazo al cajero sin causar un problema operativo?

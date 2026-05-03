@@ -12,11 +12,13 @@
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.0.1",
+    "@google/genai": "^1.50.1",
     "@supabase/supabase-js": "^2.86.0",
     "@zxing/library": "^0.21.3",
     "big.js": "^7.0.1",
     "dexie": "^4.3.0",
     "dexie-react-hooks": "^4.2.0",
+    "es-toolkit": "^1.46.0",
     "lucide-react": "^0.553.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -25,6 +27,7 @@
     "react-virtualized-auto-sizer": "^1.0.26",
     "react-window": "^2.2.3",
     "react-zxing": "^2.1.0",
+    "recharts": "^3.8.1",
     "zod": "^4.1.13",
     "zustand": "^5.0.8"
   },

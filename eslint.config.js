@@ -34,7 +34,11 @@ export default [
       'eqeqeq': 'error',
       'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
       'prefer-const': 'error',
-      'no-var': 'error'
+      'no-var': 'error',
+      
+      // Permitir setState en effects para patrones de modales/initialization
+      // Ver: https://github.com/facebook/react/issues/16956
+      'react-hooks/set-state-in-effect': 'off'
     },
     settings: {
       react: { version: 'detect' }
