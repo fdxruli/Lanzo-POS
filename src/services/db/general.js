@@ -238,6 +238,84 @@ export const generalRepository = {
     }
   },
 
+  /**
+   * Eliminación suave con cascadeo configurable.
+   *
+   * PATRÓN UNIFICADO: Esta función centraliza todo el patrón de soft delete
+   * con opciones de cascadeo, reemplazando los tres patrones inconsistentes:
+   * - saveDataSafe + deleteDataSafe (manual)
+   * - recycleData
+   * - transacción directa (deleteCategoryCascading)
+   *
+   * @param {string} sourceStore - Tienda origen (ej: STORES.MENU)
+   * @param {string} trashStore - Tienda papelera (ej: STORES.DELETED_MENU)
+   * @param {string} id - ID del registro a eliminar
+   * @param {object} options - Opciones de cascadeo
+   * @param {object} options.cascade - Objeto con configuraciones de cascadeo
+   *   - updates: Array de { store, index, value, field } para modificar registros relacionados
+   *   - deletes: Array de { store, index, value } para eliminar registros relacionados
+   * @param {string} options.reason - Razón de eliminación (default: 'Eliminado por usuario')
+   * @returns {Promise<object>} { success: boolean, message?: string, error?: DatabaseError }
+   *
+   * @example
+   * // Eliminar producto moviendo a papelera
+   * softDeleteWithCascade(STORES.MENU, STORES.DELETED_MENU, productId)
+   *
+   * @example
+   * // Eliminar categoría con cascadeo a productos
+   * softDeleteWithCascade(STORES.CATEGORIES, STORES.DELETED_CATEGORIES, categoryId, {
+   *   cascade: {
+   *     updates: [
+   *       { store: STORES.MENU, index: 'categoryId', value: categoryId, field: 'categoryId', setTo: '' }
+   *     ]
+   *   }
+   * })
+   */
+  async softDeleteWithCascade(sourceStore, trashStore, id, options = {}) {
+    const { cascade = {}, reason = 'Eliminado por usuario' } = options;
+    const { updates = [], deletes = [] } = cascade;
+
+    try {
+      await db.transaction('rw', [sourceStore, ...updates.map(u => u.store), ...deletes.map(d => d.store)], async () => {
+        const item = await db.table(sourceStore).get(id);
+
+        if (!item) {
+          throw new Error('ItemNotFound');
+        }
+
+        const deletedItem = {
+          ...item,
+          deletedTimestamp: new Date().toISOString(),
+          deletedReason: reason,
+          originalStore: sourceStore
+        };
+
+        await db.table(trashStore).put(deletedItem);
+        await db.table(sourceStore).delete(id);
+
+        for (const update of updates) {
+          const { store, index, value, field, setTo } = update;
+          await db.table(store)
+            .where(index).equals(value)
+            .modify({ [field]: setTo });
+        }
+
+        for (const del of deletes) {
+          const { store, index, value } = del;
+          await db.table(store).where(index).equals(value).delete();
+        }
+      });
+
+      return { success: true };
+    } catch (error) {
+      if (error.message === 'ItemNotFound') {
+        return { success: false, message: 'El item ya no existe' };
+      }
+      if (error?.name === 'DatabaseError') throw error;
+      throw handleDexieError(error, `Soft Delete with Cascade ${sourceStore}`);
+    }
+  },
+
   async findByIndex(storeName, indexName, value) {
     try {
       return await db.table(storeName).where(indexName).equals(value).toArray();

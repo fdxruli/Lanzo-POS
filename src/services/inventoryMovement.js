@@ -37,13 +37,15 @@ export const sortBatchesByStrategy = (batches = [], strategy = 'fifo') => {
       const aExpiry = parseDate(a?.expiryDate);
       const bExpiry = parseDate(b?.expiryDate);
 
+      // Ambos tienen fecha: comparar por caducidad
       if (aExpiry && bExpiry) {
-        if (aExpiry.getTime() !== bExpiry.getTime()) {
-          return aExpiry.getTime() - bExpiry.getTime();
-        }
-      } else if (aExpiry || bExpiry) {
+        return aExpiry.getTime() - bExpiry.getTime();
+      }
+      // Solo uno tiene fecha: priorizar el que tiene fecha (más urgente)
+      if (aExpiry || bExpiry) {
         return aExpiry ? -1 : 1;
       }
+      // Ninguno tiene fecha: fallback a FIFO por createdAt
     }
 
     return sortByFifo(a, b);

@@ -102,11 +102,17 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, callbacks) =
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         Logger.error('❌ [Realtime] Error de conexión:', err || status);
         isConnecting = false;
-        activeChannel = null;
+        
+        // IMPORTANTE: Limpiar el canal fallido para no dejar "canales fantasma" 
+        // que sigan intentando conectarse y saturen la consola.
+        supabaseClient.removeChannel(channel).catch(() => {});
+        if (activeChannel === channel) activeChannel = null;
+        
         handleReconnect(licenseKey, deviceFingerprint, callbacks);
       } else if (status === 'CLOSED') {
         isConnecting = false;
         isReconnecting = false;
+        supabaseClient.removeChannel(channel).catch(() => {});
         if (activeChannel === channel) activeChannel = null;
       }
     });

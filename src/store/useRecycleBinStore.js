@@ -71,6 +71,7 @@ export const useRecycleBinStore = create((set, get) => ({
         case 'Categoría':
           targetStore = STORES.CATEGORIES;
           trashStore = STORES.DELETED_CATEGORIES;
+          itemToRestore.isActive = true;
           break;
         case 'Pedido':
           targetStore = STORES.SALES;

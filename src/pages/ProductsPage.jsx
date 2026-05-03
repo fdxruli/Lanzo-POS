@@ -1,6 +1,6 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { saveDataSafe, deleteDataSafe, saveBatchAndSyncProductSafe, loadData, saveData, deleteData, saveBulk, queryByIndex, STORES, deleteCategoryCascading, saveBatchAndSyncProduct, saveImageToDB } from '../services/database';
+import { saveDataSafe, deleteDataSafe, saveBatchAndSyncProductSafe, loadData, saveData, deleteData, saveBulk, queryByIndex, STORES, saveBatchAndSyncProduct, saveImageToDB, softDeleteWithCascadeSafe } from '../services/database';
 import { showMessageModal, generateID, fileToBase64 } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
@@ -21,6 +21,31 @@ import './ProductsPage.css';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom'
 
+const normalizeInventoryForSave = (productData, existingProduct = null) => {
+    const tracksInventory = productData.trackStock !== false;
+
+    if (!tracksInventory) {
+        return {
+            trackStock: false,
+            stock: 0,
+            minStock: null,
+            batchManagement: {
+                ...(existingProduct?.batchManagement || {}),
+                ...(productData.batchManagement || {}),
+                enabled: false
+            }
+        };
+    }
+
+    return {
+        trackStock: true,
+        batchManagement:
+            productData.batchManagement ||
+            existingProduct?.batchManagement ||
+            { enabled: true, selectionStrategy: 'fifo' }
+    };
+};
+
 export default function ProductsPage() {
     const [showDailyPrice, setShowDailyPrice] = useState(false);
     const [activeTab, setActiveTab] = useState('view-products');
@@ -39,16 +64,17 @@ export default function ProductsPage() {
     // --- CONEXIÓN AL NUEVO STORE DE PRODUCTOS ---
     const categories = useProductStore((state) => state.categories);
     const products = useProductStore((state) => state.menu);
+    const filters = useProductStore((state) => state.filters);
 
     const [editingProduct, setEditingProduct] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
-    const [isWizardMode, setIsWizardMode] = useState(true);
     const [, setShowDataTransfer] = useState(false);
 
     const setFilters = useProductStore((state) => state.setFilters);
     const refreshData = useProductStore((state) => state.loadInitialProducts);
+    const refreshCategories = useProductStore((state) => state.refreshCategories);
 
     useEffect(() => {
         setFilters({ categoryId: null, outOfStockOnly: false })
@@ -131,7 +157,7 @@ export default function ProductsPage() {
         const result = await saveDataSafe(STORES.CATEGORIES, categoryData);
 
         if (result.success) {
-            await refreshData();
+            await refreshCategories();
         } else {
             handleActionableError(result);
         }
@@ -144,19 +170,40 @@ export default function ProductsPage() {
 
         setIsLoading(true);
         try {
-            const catToDelete = categories.find(c => c.id === categoryId);
-            if (catToDelete) {
-                const deletedCat = { ...catToDelete, deletedTimestamp: new Date().toISOString() };
-                // Usamos versión segura
-                const res = await saveDataSafe(STORES.DELETED_CATEGORIES, deletedCat);
-                if (!res.success) throw res.error; // Re-lanzar para el catch
+            // PATRÓN UNIFICADO: softDeleteWithCascadeSafe con cascadeo a productos
+            const result = await softDeleteWithCascadeSafe(
+                STORES.CATEGORIES,
+                STORES.DELETED_CATEGORIES,
+                categoryId,
+                {
+                    reason: 'Eliminada desde Catálogo de Productos',
+                    cascade: {
+                        updates: [
+                            {
+                                store: STORES.MENU,
+                                index: 'categoryId',
+                                value: categoryId,
+                                field: 'categoryId',
+                                setTo: ''
+                            }
+                        ]
+                    }
+                }
+            );
+
+            if (!result.success) {
+                handleActionableError(result);
+                return;
             }
 
-            await deleteCategoryCascading(categoryId);
-            await refreshData();
+            await refreshCategories();
+            
+            if (filters.categoryId === categoryId) {
+                setFilters({ categoryId: null });
+            }
+
             showMessageModal('✅ Categoría eliminada.');
         } catch (error) {
-            // Si el error es de nuestro tipo DatabaseError
             if (error.name === 'DatabaseError') {
                 handleActionableError({ error });
             } else {
@@ -185,8 +232,10 @@ export default function ProductsPage() {
             let valueDifference = 0;
             let result;
 
+            const isEditingExistingProduct = Boolean(editingProduct?.id && !editingProduct?.isNew);
+
             // ID que usaremos (si es nuevo, usamos el que trae el wizard o generamos uno)
-            const productId = editingProduct?.id || productData.id || generateID('prod');
+            const productId = isEditingExistingProduct ? editingProduct.id : (productData.id || generateID('prod'));
 
             // --- 1. GUARDADO DEL PRODUCTO PADRE ---
 
@@ -202,7 +251,15 @@ export default function ProductsPage() {
             // porque eso no es un campo de la base de datos, es solo un transporte.
             delete baseProductData.quickVariants;
 
-            if (editingProduct && editingProduct.id) {
+            Object.assign(
+                baseProductData,
+                normalizeInventoryForSave(
+                    productData,
+                    isEditingExistingProduct ? editingProduct : null
+                )
+            );
+
+            if (isEditingExistingProduct) {
                 // Modo Edición
                 const updatedProduct = { ...editingProduct, ...baseProductData };
                 result = await saveDataSafe(STORES.MENU, updatedProduct);
@@ -213,7 +270,6 @@ export default function ProductsPage() {
                     stock: 0, // El stock real se sumará al crear los lotes abajo
                     isActive: true,
                     createdAt: new Date().toISOString(),
-                    batchManagement: { enabled: true, selectionStrategy: 'fifo' },
                 };
                 result = await saveDataSafe(STORES.MENU, newProduct);
             }
@@ -327,24 +383,19 @@ export default function ProductsPage() {
     const handleDeleteProduct = async (product) => {
         if (window.confirm(`¿Eliminar "${product.name}"?`)) {
             try {
-                product.deletedTimestamp = new Date().toISOString();
+                // PATRÓN UNIFICADO: softDeleteWithCascadeSafe reemplaza saveDataSafe + deleteDataSafe
+                const result = await softDeleteWithCascadeSafe(
+                    STORES.MENU,
+                    STORES.DELETED_MENU,
+                    product.id,
+                    { reason: 'Eliminado desde Catálogo de Productos' }
+                );
 
-                // 1. Mover a papelera (Seguro)
-                const resTrash = await saveDataSafe(STORES.DELETED_MENU, product);
-                if (!resTrash.success) {
-                    handleActionableError(resTrash);
+                if (!result.success) {
+                    handleActionableError(result);
                     return;
                 }
 
-                // 2. Borrar (Seguro)
-                const resDel = await deleteDataSafe(STORES.MENU, product.id);
-                if (!resDel.success) {
-                    handleActionableError(resDel);
-                    return;
-                }
-
-                // 3. Limpiar lotes (Lógica compleja, mantenemos genérica pero protegida)
-                // (Para simplificar, asumimos que queryByIndex es seguro internamente con executeWithRetry)
                 await refreshData();
                 showMessageModal('Producto eliminado.');
 
@@ -455,62 +506,13 @@ export default function ProductsPage() {
             {
                 activeTab === 'add-product' && (
                     <>
-                        {/* Toggle para cambiar entre modos (solo si es nuevo producto) */}
-                        {!editingProduct && (
-                            <div className="mode-selection-container">
-
-                                {/* Opción 1: Modo Asistido */}
-                                <label className={`mode-card ${isWizardMode ? 'selected' : ''}`}>
-                                    <input
-                                        type="radio"
-                                        name="product-mode" // Importante: mismo name para agruparlos
-                                        checked={isWizardMode}
-                                        onChange={() => setIsWizardMode(true)}
-                                        className="mode-radio"
-                                    />
-                                    <div className="mode-icon">✨</div>
-                                    <div className="mode-content">
-                                        <div className="mode-title">Modo Asistido</div>
-                                        <div className="mode-description">Guía paso a paso para principiantes.</div>
-                                    </div>
-                                    <div className="mode-check-indicator"></div>
-                                </label>
-
-                                {/* Opción 2: Modo Experto */}
-                                <label className={`mode-card ${!isWizardMode ? 'selected' : ''}`}>
-                                    <input
-                                        type="radio"
-                                        name="product-mode"
-                                        checked={!isWizardMode}
-                                        onChange={() => setIsWizardMode(false)}
-                                        className="mode-radio"
-                                    />
-                                    <div className="mode-icon">🛠️</div>
-                                    <div className="mode-content">
-                                        <div className="mode-title">Modo Experto</div>
-                                        <div className="mode-description">Control total de inventario y opciones.</div>
-                                    </div>
-                                    <div className="mode-check-indicator"></div>
-                                </label>
-                            </div>
-                        )}
-
-                        {isWizardMode && !editingProduct ? (
-                            <ProductWizard
-                                onSave={handleSaveProduct}
-                                onCancel={() => setActiveTab('view-products')}
-                                categories={categories}
-                            />
-                        ) : (
                             <ProductForm
                                 onSave={handleSaveProduct}
                                 onCancel={() => setActiveTab('view-products')}
                                 productToEdit={editingProduct}
                                 categories={categories}
                                 onOpenCategoryManager={() => setShowCategoryModal(true)}
-                            // ... props existentes ...
                             />
-                        )}
                     </>
                 )
             }
@@ -544,7 +546,7 @@ export default function ProductsPage() {
                 activeTab === 'categories' && (
                     <CategoryManager
                         categories={categories}
-                        onRefresh={refreshData}
+                        onRefresh={refreshCategories}
                         onDelete={handleDeleteCategory}
                     />
                 )
@@ -567,9 +569,7 @@ export default function ProductsPage() {
                 show={showCategoryModal}
                 onClose={() => setShowCategoryModal(false)}
                 categories={categories}
-                // Usamos refreshData porque es la función que sincroniza 
-                // el store con la base de datos tras un cambio
-                onRefresh={refreshData}
+                onRefresh={refreshCategories}
                 // Usamos handleDeleteCategory que ya tiene la lógica de 
                 // borrado en cascada y manejo de errores
                 onDelete={handleDeleteCategory}

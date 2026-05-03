@@ -48,10 +48,17 @@ const dedupeProducts = (groups, limit = DEFAULT_SEARCH_LIMIT) => {
     return deduped;
 };
 
-export const searchProductsInDB = async (searchTerm) => {
+export const searchProductsInDB = async (searchTerm, status = 'active') => {
     try {
         const normalizedTerm = normalizeSearchValue(searchTerm).trim();
         if (!normalizedTerm) return [];
+
+        const filterByStatus = (product) => {
+            const isActive = product?.isActive !== false;
+            if (status === 'active') return isActive;
+            if (status === 'inactive') return !isActive;
+            return true; // status === 'all'
+        };
 
         const productTable = db.table(STORES.MENU);
 
@@ -61,7 +68,7 @@ export const searchProductsInDB = async (searchTerm) => {
                     return await productTable
                         .where(indexName)
                         .startsWith(normalizedTerm)
-                        .filter((product) => isActiveProduct(product))
+                        .filter((product) => filterByStatus(product))
                         .limit(DEFAULT_SEARCH_LIMIT)
                         .toArray();
                 } catch {
@@ -83,7 +90,7 @@ export const searchProductsInDB = async (searchTerm) => {
 
         const fallbackResults = await productTable
             .filter((product) => {
-                if (!isActiveProduct(product)) return false;
+                if (!filterByStatus(product)) return false;
                 if (takenIds.has(product.id)) return false;
                 return matchesSearchTerm(product, normalizedTerm);
             })

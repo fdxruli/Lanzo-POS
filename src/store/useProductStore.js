@@ -1,9 +1,9 @@
 // src/store/useProductStore.js
 import { create } from 'zustand';
 import {
-    recycleData,
     loadDataPaginated,
-    STORES
+    STORES,
+    softDeleteWithCascadeSafe
 } from '../services/database';
 import Logger from '../services/Logger';
 import { categoriesRepository } from '../services/db/general';
@@ -41,6 +41,7 @@ export const useProductStore = create((set, get) => ({
     filters: {
         categoryId: null,
         outOfStockOnly: false,
+        status: 'active', // Puede ser 'active', 'inactive' o 'all'
     },
 
     /**
@@ -79,7 +80,8 @@ export const useProductStore = create((set, get) => ({
 
         const filtersChanged =
             resolvedFilters.categoryId !== currentFilters.categoryId ||
-            resolvedFilters.outOfStockOnly !== currentFilters.outOfStockOnly;
+            resolvedFilters.outOfStockOnly !== currentFilters.outOfStockOnly ||
+            resolvedFilters.status !== currentFilters.status;
 
         if (!filtersChanged) return;
 
@@ -124,6 +126,7 @@ export const useProductStore = create((set, get) => ({
                 cursor: targetCursor,
                 categoryId: state.filters.categoryId,
                 outOfStockOnly: state.filters.outOfStockOnly,
+                status: state.filters.status, // Lo pasamos directo a Dexie
                 timeIndex: 'createdAt',
             });
 
@@ -162,7 +165,10 @@ export const useProductStore = create((set, get) => ({
         set({ isLoading: true });
         try {
             const categories = await categoriesRepository.getActiveCategories();
-            set({ categories: categories || [], isLoading: false });
+            
+            // Defensa: Asegurarnos que siempre estén ordenadas numéricamente por su sortOrder
+            const sortedCategories = (categories || []).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+            set({ categories: sortedCategories, isLoading: false });
             // fetchPage leerá isLoading: false y podrá ejecutarse
             get().fetchPage('current');
         } catch (error) {
@@ -205,11 +211,12 @@ export const useProductStore = create((set, get) => ({
 
         set({ isLoading: true });
         try {
-            const result = await recycleData(
+            // PATRÓN UNIFICADO: softDeleteWithCascadeSafe reemplaza recycleData
+            const result = await softDeleteWithCascadeSafe(
                 STORES.MENU,
                 STORES.DELETED_MENU,
                 productId,
-                'Eliminado desde Catalogo'
+                { reason: 'Eliminado desde Catálogo' }
             );
 
             if (result.success) {
@@ -235,33 +242,7 @@ export const useProductStore = create((set, get) => ({
 
     refreshCategories: async () => {
         const categories = await categoriesRepository.getActiveCategories();
-        set({ categories: categories || [] });
-    },
-
-    deleteCategory: async (categoryId) => {
-        if (!window.confirm('¿Seguro que deseas eliminar esta categoría?')) return;
-
-        set({ isLoading: true });
-        try {
-            const result = await categoriesRepository.softDeleteCategory(categoryId);
-
-            if (result.success) {
-                set((state) => ({
-                    categories: state.categories.filter((cat) => cat.id !== categoryId),
-                    isLoading: false,
-                }));
-
-                // Si la categoría eliminada era el filtro activo, limpiamos
-                if (get().filters.categoryId === categoryId) {
-                    get().setFilters({ categoryId: null });
-                }
-            } else {
-                alert(result.message);
-                set({ isLoading: false });
-            }
-        } catch (error) {
-            Logger.error('Error eliminando categoría:', error);
-            set({ isLoading: false });
-        }
+        const sortedCategories = (categories || []).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        set({ categories: sortedCategories });
     },
 }));

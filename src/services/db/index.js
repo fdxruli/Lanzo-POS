@@ -64,6 +64,15 @@ export const saveBulkSafe = (storeName, dataArray) =>
 export const deleteDataSafe = (storeName, key) =>
     safeExecute(() => generalRepository.delete(storeName, key));
 
+/**
+ * Wrapper seguro para eliminación suave con cascadeo.
+ * Patrón unificado para reemplazar saveDataSafe+deleteDataSafe, recycleData y transacciones directas.
+ */
+export const softDeleteWithCascadeSafe = (sourceStore, trashStore, id, options = {}) =>
+    safeExecute(() =>
+        generalRepository.softDeleteWithCascade(sourceStore, trashStore, id, options)
+    );
+
 export const saveBatchAndSyncProductSafe = (batchData) =>
     safeExecute(() => productsRepository.saveBatchAndSyncProduct(batchData));
 
@@ -247,6 +256,7 @@ export const recycleData = (sourceStore, trashStore, key, reason) =>
  * @param {string}  options.searchTerm    - Texto libre (filtra name_lower y barcode).
  * @param {string|null} options.categoryId - ID de categoría. Null = todas.
  * @param {boolean} options.outOfStockOnly - Si true, solo productos sin stock.
+ * @param {string}  options.status        - Filtro de estado: 'active' | 'inactive' | 'all' (default 'active').
  * @param {string}  options.timeIndex     - Campo de ordenación/cursor (default 'createdAt').
  */
 export const loadDataPaginated = async (storeName, options = {}) => {
@@ -256,8 +266,17 @@ export const loadDataPaginated = async (storeName, options = {}) => {
         searchTerm = '',
         categoryId = null,
         outOfStockOnly = false,
+        status = 'active',
         timeIndex = 'createdAt'
     } = options;
+
+    // Función de filtro por status reutilizable
+    const matchesStatus = (item) => {
+        const isActive = item.isActive !== false;
+        if (status === 'active') return isActive;
+        if (status === 'inactive') return !isActive;
+        return true; // status === 'all'
+    };
 
     // Sólo aplicamos la lógica especializada para la tabla MENU.
     // Otras tablas (SALES, CUSTOMERS) siguen el camino genérico original.
@@ -289,11 +308,11 @@ export const loadDataPaginated = async (storeName, options = {}) => {
             // en memoria sobre createdAt no sea costoso.
             collection = cursor
                 ? categoryCollection.filter(item =>
-                    item.isActive !== false &&
+                    matchesStatus(item) &&
                     item[timeIndex] < cursor
                 )
                 : categoryCollection.filter(item =>
-                    item.isActive !== false
+                    matchesStatus(item)
                 );
 
         } else if (hasCategoryFilter && (hasSearchFilter || outOfStockOnly)) {
@@ -305,11 +324,14 @@ export const loadDataPaginated = async (storeName, options = {}) => {
                 .equals(categoryId);
 
             collection = categoryCollection.filter(item => {
-                if (item.isActive === false) return false;
+                if (!matchesStatus(item)) return false;
                 if (cursor && item[timeIndex] >= cursor) return false;
 
                 if (outOfStockOnly) {
-                    const gestionaStock = item.trackStock || item.batchManagement?.enabled;
+                    const gestionaStock = item.trackStock !== false && (
+                        item.trackStock === true || item.batchManagement?.enabled === true
+                    );
+                    // Solo considerar agotados los productos que gestionan stock Y tienen stock <= 0
                     if (!gestionaStock || getAvailableStock(item) > 0) return false;
                 }
 
@@ -341,9 +363,12 @@ export const loadDataPaginated = async (storeName, options = {}) => {
                 : db.table(STORES.MENU).orderBy(timeIndex).reverse();
 
             collection = baseCollection.filter(item => {
-                if (item.isActive === false) return false;
+                if (!matchesStatus(item)) return false;
 
-                const gestionaStock = item.trackStock || item.batchManagement?.enabled;
+                const gestionaStock = item.trackStock !== false && (
+                    item.trackStock === true || item.batchManagement?.enabled === true
+                );
+                // Solo considerar agotados los productos que gestionan stock Y tienen stock <= 0
                 if (!gestionaStock || getAvailableStock(item) > 0) return false;
 
                 if (hasSearchFilter) {
@@ -385,7 +410,7 @@ export const loadDataPaginated = async (storeName, options = {}) => {
             }
 
             collection = baseCollection.filter(item => {
-                if (item.isActive === false) return false;
+                if (!matchesStatus(item)) return false;
 
                 if (hasSearchFilter) {
                     // Fallback para productos legacy sin name_lower
@@ -492,17 +517,28 @@ export const queryBatchesByProductIdAndActive = async (productId, isActive = tru
 
 /**
  * Eliminación en cascada (Categoría -> Actualizar Productos)
+ * PATRÓN UNIFICADO: Usa softDeleteWithCascade internamente para consistencia.
  */
 export const deleteCategoryCascading = async (categoryId) => {
-    return safeExecute(async () => {
-        await db.transaction('rw', [db.table(STORES.CATEGORIES), db.table(STORES.MENU)], async () => {
-            await db.table(STORES.CATEGORIES).delete(categoryId);
-
-            await db.table(STORES.MENU)
-                .where('categoryId').equals(categoryId)
-                .modify({ categoryId: '' });
-        });
-    });
+    return softDeleteWithCascadeSafe(
+        STORES.CATEGORIES,
+        STORES.DELETED_CATEGORIES,
+        categoryId,
+        {
+            reason: 'Eliminada en cascada',
+            cascade: {
+                updates: [
+                    {
+                        store: STORES.MENU,
+                        index: 'categoryId',
+                        value: categoryId,
+                        field: 'categoryId',
+                        setTo: ''
+                    }
+                ]
+            }
+        }
+    );
 };
 
 /**

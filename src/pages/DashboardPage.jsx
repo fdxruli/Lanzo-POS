@@ -231,7 +231,7 @@ export default function DashboardPage() {
 
       {/* 1. ESTADÍSTICAS */}
       {activeTab === 'stats' && (
-        <StatsGrid stats={stats} />
+        <StatsGrid stats={stats} customers={customers} />
       )}
 
       {/* 2. REABASTECIMIENTO */}
