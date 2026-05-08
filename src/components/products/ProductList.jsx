@@ -46,9 +46,21 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
   const [showWaste, setShowWaste] = useState(false);
   const [productForWaste, setProductForWaste] = useState(null);
 
+  // LEER DE LA BD CENTRAL: Estado para el filtro desplegable de activos/inactivos
+  const statusFilter = useProductStore((state) => state.filters.status || 'active');
+  const setFilters = useProductStore((state) => state.setFilters);
+
   const categoryMap = useMemo(() => {
     return new Map(categories.map(cat => [cat.id, cat.name]));
   }, [categories]);
+
+  // Limpieza: Asegurar que al salir del inventario el filtro quede en "Solo Activos"
+  // para no contaminar el menú del Punto de Venta.
+  useEffect(() => {
+    return () => {
+      setFilters({ status: 'active' });
+    };
+  }, [setFilters]);
 
   useEffect(() => {
     let isActive = true;
@@ -69,7 +81,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
       }
 
       try {
-        const results = await searchProductsInDB(term);
+        const results = await searchProductsInDB(term, statusFilter);
         if (isActive) {
           setSearchResults(results);
         }
@@ -90,7 +102,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
     return () => {
       isActive = false;
     };
-  }, [debouncedTerm]);
+  }, [debouncedTerm, statusFilter]);
 
   const isSearchMode = debouncedTerm.trim().length > 0;
   const displayProducts = isSearchMode ? searchResults : products;
@@ -133,14 +145,26 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
           <span className="product-count">{displayProducts.length} items mostrados</span>
         </div>
 
-        <div className="search-box">
-          <span className="search-icon"><Icons.Search /></span>
-          <input
-            type="text"
-            placeholder={features.hasLabFields ? "Buscar: Nombre, Sustancia..." : "Buscar: Nombre, Código..."}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="search-box" style={{ flex: 1 }}>
+            <span className="search-icon"><Icons.Search /></span>
+            <input
+              type="text"
+              placeholder={features.hasLabFields ? "Buscar: Nombre, Sustancia..." : "Buscar: Nombre, Código..."}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setFilters({ status: e.target.value })}
+            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', backgroundColor: '#fff', outline: 'none', color: '#374151', minWidth: '140px' }}
+          >
+            <option value="all">Todos los estados</option>
+            <option value="active">Solo Activos</option>
+            <option value="inactive">Solo Inactivos</option>
+          </select>
         </div>
       </div>
 
@@ -158,7 +182,9 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
             // Alertas
             const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
-            const isTracked = item.trackStock || item.batchManagement?.enabled;
+            const isTracked = item.trackStock !== false && (
+                item.trackStock === true || item.batchManagement?.enabled === true
+            );
 
             // Unidad de medida
             const unitLabel = features.hasBulk

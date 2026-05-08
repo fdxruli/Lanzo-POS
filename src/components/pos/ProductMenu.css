@@ -5,7 +5,7 @@
 .pos-menu-container {
   background-color: var(--card-background-color);
   border-radius: var(--border-radius);
-  padding: 12px;
+  padding: 16px;
   box-shadow: var(--box-shadow);
   min-width: 0;
   display: flex;

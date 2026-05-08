@@ -42,6 +42,6 @@ export function buildBatchPayload({
       }
       : null,
     location: values.location || '',
-  updateGlobalPrice: features?.hasVariants ? false : Boolean(values.updateGlobalPrice)
+    updateGlobalPrice: features?.hasVariants ? false : Boolean(values.updateGlobalPrice)
   };
 }

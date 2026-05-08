@@ -24,7 +24,7 @@ export default function ProductWizard(props) {
         case 'farmacia':
         case 'fruteria':
         case 'papeleria':
-            return <GroceryWizard {...props} mainRubro="apparel" />;
+            return <GroceryWizard {...props} mainRubro={mainRubro} />;
 
         default:
             // Por defecto usamos el de Abarrotes pero en modo genérico

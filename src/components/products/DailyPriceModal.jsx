@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { saveData, saveBulkSafe, STORES } from '../../services/database';
+import { loadData, saveBulkSafe, STORES } from '../../services/database';
 import { showMessageModal } from '../../services/utils';
 // 1. IMPORTAR STORE PARA OBTENER CATEGORÍAS
 import { useProductStore } from '../../store/useProductStore';
@@ -35,33 +35,69 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
     };
 
     const handleSaveAll = async () => {
-        // ... (Lógica de guardado se mantiene igual)
-        const updates = [];
-        Object.keys(editedProducts).forEach(id => {
-            const original = products.find(p => p.id === id);
-            if (!original) return;
-            const changes = editedProducts[id];
-            if (changes.price !== original.price || changes.cost !== original.cost) {
+        try {
+            // Cargar el estado más reciente de la base de datos para comparar
+            const currentDbProducts = await loadData(STORES.MENU);
+            const updates = [];
+            const conflicts = [];
+
+            Object.keys(editedProducts).forEach(id => {
+                const originalProp = products.find(p => p.id === id);
+                if (!originalProp) return;
+
+                const latestDb = currentDbProducts.find(p => p.id === id);
+                if (!latestDb) return; // Si fue eliminado en la BD, lo saltamos
+
+                const changes = editedProducts[id];
+                const hasPriceChange = changes.price !== undefined && changes.price !== originalProp.price;
+                const hasCostChange = changes.cost !== undefined && changes.cost !== originalProp.cost;
+
+                if (!hasPriceChange && !hasCostChange) return;
+
+                // OCC: Detectar si el producto fue modificado por otra transacción/usuario
+                if (latestDb.updatedAt && originalProp.updatedAt && latestDb.updatedAt !== originalProp.updatedAt) {
+                    conflicts.push(latestDb.name);
+                }
+
+                // Mezclamos SOLO los precios nuevos sobre el estado MÁS RECIENTE de la BD
+                // Esto previene sobrescribir cambios de stock que hayan ocurrido mientras el modal estaba abierto
                 updates.push({
-                    ...original,
-                    price: changes.price !== undefined ? changes.price : original.price,
-                    cost: changes.cost !== undefined ? changes.cost : original.cost,
+                    ...latestDb,
+                    price: changes.price !== undefined ? changes.price : latestDb.price,
+                    cost: changes.cost !== undefined ? changes.cost : latestDb.cost,
                     updatedAt: new Date().toISOString()
                 });
+            });
+
+            if (updates.length === 0) {
+                onClose();
+                return;
             }
-        });
 
-        if (updates.length === 0) { onClose(); return; }
+            // Si hay conflictos, preguntamos al usuario si desea forzar sus precios
+            if (conflicts.length > 0) {
+                const confirmMessage = `⚠️ Atención: Los siguientes productos fueron modificados en el inventario mientras editabas:\n\n` +
+                                       `${conflicts.slice(0, 5).join(', ')}${conflicts.length > 5 ? ' y otros...' : ''}\n\n` +
+                                       `¿Deseas sobrescribir los precios de todos modos? (El stock registrado recientemente no se perderá).`;
+                
+                if (!window.confirm(confirmMessage)) {
+                    return; // Aborta el guardado
+                }
+            }
 
-        const result = await saveBulkSafe(STORES.MENU, updates);
-        if (result.success) {
-            await onRefresh();
-            showMessageModal(`✅ Precios actualizados para ${updates.length} productos.`);
-            setEditedProducts({});
-            onClose();
-        } else {
-            Logger.error(result.error);
-            showMessageModal(`Error al actualizar precios: ${result.error?.message}`);
+            const result = await saveBulkSafe(STORES.MENU, updates);
+            if (result.success) {
+                await onRefresh();
+                showMessageModal(`✅ Precios actualizados para ${updates.length} productos.`);
+                setEditedProducts({});
+                onClose();
+            } else {
+                Logger.error(result.error);
+                showMessageModal(`Error al actualizar precios: ${result.error?.message}`);
+            }
+        } catch (error) {
+            Logger.error("Error crítico en guardado de precios diarios:", error);
+            showMessageModal("Ocurrió un error al verificar la concurrencia de datos.");
         }
     };
 

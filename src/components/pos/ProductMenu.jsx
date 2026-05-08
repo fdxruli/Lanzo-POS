@@ -168,10 +168,11 @@ export default function ProductMenu({
     setSelectedProductForMod(null);
   }
 
-  // --- CORRECCIÓN AQUÍ ---
+  // --- Renderizado de información de stock ---
   const renderStockInfo = (item) => {
-    // Verificamos si tiene trackStock explícito O si tiene gestión de lotes habilitada (importados por CSV)
-    const isTracking = item.trackStock || item.batchManagement?.enabled;
+    const isTracking = item.trackStock !== false && (
+      item.trackStock === true || item.batchManagement?.enabled === true
+    );
 
     if (!isTracking) return <div className="stock-info no-stock-label" style={{ color: '#999' }}>---</div>;
 

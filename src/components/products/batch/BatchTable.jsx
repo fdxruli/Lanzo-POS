@@ -1,5 +1,6 @@
 import React from 'react';
 import { getBatchTableColumns } from './utils/tableColumns';
+import { getAvailableStock, getCommittedStock } from '../../../services/db/utils';
 
 const formatDate = (isoDate) => (isoDate ? new Date(isoDate).toLocaleDateString() : '-');
 
@@ -46,10 +47,21 @@ export default function BatchTable({
     }
 
     if (columnKey === 'stock') {
+      const availableStock = getAvailableStock(batch);
+      const committed = getCommittedStock(batch);
+      const hasCommitted = committed > 0;
+
       return (
-        <span className={`batch-badge ${batch.stock > 0 ? 'activo' : 'agotado'}`}>
-          {batch.stock}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+          <span className={`batch-badge ${availableStock > 0 ? 'activo' : 'agotado'}`}>
+            {availableStock}
+          </span>
+          {hasCommitted && (
+            <small style={{ color: 'var(--warning-color, #f59e0b)', fontSize: '0.75rem' }}>
+              -{committed} reserv.
+            </small>
+          )}
+        </div>
       );
     }
 

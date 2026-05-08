@@ -1,11 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
+import { useProductWizard } from '../../hooks/useProductWizard';
 
-// Importar los nuevos formularios
+// Importar los formularios expertos (para edición)
 import RestaurantProductForm from './forms/RestaurantProductForm.jsx';
 import PharmacyProductForm from './forms/PharmacyProductForm';
 import RetailProductForm from './forms/RetailProductForm';
+
+// Importar el nuevo Wizard
+import ProductFormWizard from './wizard/ProductFormWizard';
 
 import './ProductForm.css';
 
@@ -21,6 +25,7 @@ const RUBRO_LABELS = {
 
 export default function ProductForm(props) {
     const companyProfile = useAppStore(state => state.companyProfile);
+    const [isExpertMode, setIsExpertMode] = useState(false);
 
     // 1. OBTENER GIROS GLOBALES
     const globalBusinessTypes = useMemo(() => {
@@ -31,55 +36,145 @@ export default function ProductForm(props) {
     }, [companyProfile]);
 
     // 2. DETERMINAR EL CONTEXTO INICIAL
-    // Si se está editando, respetar el contexto guardado, si no, usar el primero de la lista global
     const initialContext = useMemo(() => {
         const savedContext = props.productToEdit?.rubroContext;
-        
-        // Verificamos si el rubro con el que se creó el producto AÚN existe en la configuración actual
         if (savedContext && globalBusinessTypes.includes(savedContext)) {
             return savedContext;
         }
-        
-        // Si es nuevo, o si el rubro guardado ya no es válido para la empresa actual, usar el predeterminado
         return globalBusinessTypes[0] || 'otro';
     }, [props.productToEdit, globalBusinessTypes]);
 
     const [activeRubroContext, setActiveRubroContext] = useState(initialContext);
-
-    // 3. OBTENER FEATURES DEL CONTEXTO
     const features = useFeatureConfig(activeRubroContext);
+
+    // 3. INITIALIZAR EL WIZARD (solo para productos nuevos en modo asistido)
+    const wizard = useProductWizard(props.productToEdit, activeRubroContext);
 
     // 4. FACTORY LOGIC: ELEGIR FORMULARIO
     const renderForm = () => {
-        switch (activeRubroContext) {
-            case 'food_service':
-            case 'restaurante':
-            case 'cafeteria':
-                return <RestaurantProductForm {...props} activeRubroContext={activeRubroContext} features={features} />;
-            
-            case 'farmacia':
-            case 'consultorio':
-                return <PharmacyProductForm {...props} activeRubroContext={activeRubroContext} features={features} />;
-            
-            case 'abarrotes':
-            case 'verduleria/fruteria':
-            case 'apparel':
-            case 'hardware':
-            case 'papeleria':
-            default:
-                // Retail maneja la mayoría de casos "comunes" (Tienda, Ropa, Ferretería)
-                return <RetailProductForm {...props} activeRubroContext={activeRubroContext} features={features} />;
+        // Si es edición O modo experto → usar formularios expertos
+        if (props.productToEdit || isExpertMode) {
+            switch (activeRubroContext) {
+                case 'food_service':
+                case 'restaurante':
+                case 'cafeteria':
+                    return <RestaurantProductForm {...props} activeRubroContext={activeRubroContext} features={features} />;
+
+                case 'farmacia':
+                case 'consultorio':
+                    return <PharmacyProductForm {...props} activeRubroContext={activeRubroContext} features={features} />;
+
+                case 'abarrotes':
+                case 'verduleria/fruteria':
+                case 'apparel':
+                case 'hardware':
+                case 'papeleria':
+                default:
+                    return <RetailProductForm {...props} activeRubroContext={activeRubroContext} features={features} />;
+            }
         }
+
+        // Producto nuevo en modo asistido → usar Wizard
+        return (
+            <ProductFormWizard
+                wizard={wizard}
+                categories={props.categories}
+                onOpenCategoryManager={props.onOpenCategoryManager}
+                activeRubroContext={activeRubroContext}
+                onSave={props.onSave}
+                onCancel={props.onCancel}
+                productToEdit={props.productToEdit}
+            />
+        );
     };
+
+    // Determinar si mostramos el selector de rubro
+    const showRubroSelector = !props.productToEdit && globalBusinessTypes.length > 1;
 
     return (
         <div className="product-form-container">
-            <h3 className="subtitle">
-                {props.productToEdit ? `Editar: ${props.productToEdit.name}` : 'Añadir Nuevo Producto'}
-            </h3>
+            <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                marginBottom: '20px' 
+            }}>
+                <h3 className="subtitle" style={{ margin: 0 }}>
+                    {props.productToEdit ? `Editar: ${props.productToEdit.name}` : 'Añadir Nuevo Producto'}
+                </h3>
+                
+                {/* Toggle Modo Asistido/Experto (solo para productos nuevos) */}
+                {!props.productToEdit && (
+                    <div style={{
+                        display: 'flex',
+                        backgroundColor: '#f1f5f9',
+                        borderRadius: '8px',
+                        padding: '4px',
+                        gap: '4px'
+                    }}>
+                        <button
+                            type="button"
+                            onClick={() => setIsExpertMode(false)}
+                            style={{
+                                padding: '8px 16px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: !isExpertMode ? 'white' : 'transparent',
+                                color: !isExpertMode ? 'var(--primary-color)' : '#64748b',
+                                fontWeight: !isExpertMode ? '600' : '400',
+                                fontSize: '0.9rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                boxShadow: !isExpertMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                            }}
+                        >
+                            ✨ Asistido
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setIsExpertMode(true)}
+                            style={{
+                                padding: '8px 16px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: isExpertMode ? 'white' : 'transparent',
+                                color: isExpertMode ? 'var(--primary-color)' : '#64748b',
+                                fontWeight: isExpertMode ? '600' : '400',
+                                fontSize: '0.9rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                boxShadow: isExpertMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                            }}
+                        >
+                            🛠️ Experto
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Descripción del modo seleccionado */}
+            {!props.productToEdit && (
+                <div style={{
+                    marginBottom: '20px',
+                    padding: '10px 14px',
+                    backgroundColor: isExpertMode ? '#f8fafc' : '#eff6ff',
+                    borderRadius: '8px',
+                    border: `1px solid ${isExpertMode ? '#e2e8f0' : '#bfdbfe'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px'
+                }}>
+                    <span style={{ fontSize: '1.2rem' }}>{isExpertMode ? '🛠️' : '✨'}</span>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: isExpertMode ? '#475569' : '#0c4a6e' }}>
+                        {isExpertMode 
+                            ? 'Modo experto: Todos los campos y opciones avanzadas disponibles. Ideal para productos complejos con recetas, variantes o configuración detallada.'
+                            : 'Modo asistido: Te guiamos paso a paso para registrar tu producto rápidamente. Perfecto para productos simples.'}
+                    </p>
+                </div>
+            )}
 
             {/* SELECTOR DE CONTEXTO (Solo si hay múltiples rubros y es producto nuevo) */}
-            {!props.productToEdit && globalBusinessTypes.length > 1 && (
+            {showRubroSelector && (
                 <div className="context-selector" style={{ marginBottom: '20px', padding: '12px', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
                     <label style={{ display: 'block', fontSize: '0.85rem', color: '#0369a1', marginBottom: '8px', fontWeight: 'bold' }}>
                         ¿A qué área pertenece este producto?

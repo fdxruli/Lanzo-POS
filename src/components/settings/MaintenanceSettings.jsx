@@ -44,9 +44,11 @@ export default function MaintenanceSettings() {
         if (result.details.length > 0) {
           console.log("Detalles de corrección:", result.details);
         }
+        // Sincronización obligatoria: actualizar estado global de productos
+        await loadInitialProducts();
       }
     } catch (e) {
-      alert("Error: " + e.message);
+      alert("Error: " + (e?.message || e));
     } finally {
       setIsProcessing(false);
     }
@@ -59,8 +61,10 @@ export default function MaintenanceSettings() {
     try {
       const result = await maintenanceTools.rebuildStats();
       alert(result.message);
+      // Sincronización obligatoria: actualizar estadísticas del dashboard
+      await loadStats(true);
     } catch (e) {
-      alert("Error: " + e.message);
+      alert("Error: " + (e?.message || e));
     } finally {
       setIsProcessing(false);
     }

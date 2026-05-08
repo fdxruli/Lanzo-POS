@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { saveBatchAndSyncProductSafe } from '../../../services/database';
+import { saveBatchAndSyncProductSafe } from '../../../services/db';
 import Logger from '../../../services/Logger';
 
 export default function BatchEditModal({ batchData, onClose, onSave }) {

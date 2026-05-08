@@ -17,7 +17,7 @@
  * @returns {{ valid: false, message: string } | { valid: true, parsed: { nStock: number, nCost: number, nPrice: number } }}
  */
 export function validateBatchInput(values) {
-  const nStock = Number.parseInt(values.stock, 10);
+  const nStock = Number.parseFloat(values.stock);
   const nCost = Number.parseFloat(values.cost);
   const nPrice = Number.parseFloat(values.price);
 
@@ -27,6 +27,14 @@ export function validateBatchInput(values) {
 
   if (nStock < 0) {
     return { valid: false, message: 'ERROR DE SEGURIDAD: No se permiten entradas de stock negativas.' };
+  }
+
+  if (nCost < 0) {
+    return { valid: false, message: 'ERROR DE SEGURIDAD: El costo no puede ser negativo.' };
+  }
+
+  if (nPrice < 0) {
+    return { valid: false, message: 'ERROR DE SEGURIDAD: El precio no puede ser negativo.' };
   }
 
   return {

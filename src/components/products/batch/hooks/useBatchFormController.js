@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStatsStore } from '../../../../store/useStatsStore';
 import { useCaja } from '../../../../hooks/useCaja';
-import { queryByIndex, STORES } from '../../../../services/database';
 import { showMessageModal } from '../../../../services/utils';
 import { buildBatchPayload } from '../utils/buildBatchPayload';
 import { validateBatchInput } from '../utils/validateBatchInput';
+import { productsRepository } from '../../../../services/db/products';
 
 const DEFAULT_FORM_VALUES = {
   cost: '',
@@ -160,10 +160,8 @@ export function useBatchFormController({
     // 2. VALIDAR SKU DUPLICADO
     const userSku = String(formValues.sku || '').trim();
     if (userSku) {
-      const existingBatches = await queryByIndex(STORES.PRODUCT_BATCHES, 'sku', userSku);
-      const isDuplicate = existingBatches.some((batch) => (
-        isEditing ? batch.id !== batchToEdit.id : true
-      ));
+      const existingProduct = await productsRepository.searchProductBySKU(userSku);
+      const isDuplicate = existingProduct && (!isEditing || existingProduct.batchId !== batchToEdit.id);
 
       if (isDuplicate) {
         showMessageModal(`El SKU "${userSku}" ya está en uso.`);
@@ -240,8 +238,7 @@ export function useBatchFormController({
     isEditing,
     onClose,
     onSave,
-    product,
-    calcularTotalTeorico
+    product
   ]);
 
   return {
