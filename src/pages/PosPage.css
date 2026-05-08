@@ -5,15 +5,10 @@
    ======================================== */
 
 .pos-page-layout {
-  /* Descontamos Header (~70px) + Ticker (~40px) + márgenes (~30px) */
-  height: calc(100vh - 140px);
-  max-height: calc(100vh - 140px);
-
-  /* ESTA ES LA CLAVE: Corta el scroll fantasma global de raíz */
-  overflow: hidden;
-
   display: flex;
   flex-direction: column;
+  height: 100vh; /* O el alto disponible */
+  overflow: hidden; /* Evita scrolls dobles indeseados */
 }
 
 .section-title {
