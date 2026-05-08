@@ -1,4 +1,5 @@
 /* src/components/dashboard/ExpirationAlert.css */
+/* Mobile-First Responsive Design */
 
 .expiration-widget {
   background-color: var(--card-background-color);
@@ -22,9 +23,22 @@
   text-align: center;
   color: var(--text-light);
   font-style: italic;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
 }
 
-/* --- EMPTY STATE (TODO BIEN) --- */
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* --- EMPTY STATE --- */
 .expiration-empty {
   display: flex;
   align-items: center;
@@ -32,11 +46,19 @@
   gap: var(--spacing-md);
   padding: var(--spacing-xl);
   border-left: 6px solid var(--success-color);
-  text-align: left; /* Alineado a la izquierda se ve más moderno */
+  text-align: left;
+  flex-direction: column;
 }
 
 .empty-icon {
-  font-size: 2.5rem;
+  color: var(--success-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-content {
+  text-align: center;
 }
 
 .empty-content h3 {
@@ -51,17 +73,35 @@
   font-size: 0.95rem;
 }
 
+.btn-restore {
+  margin-top: var(--spacing-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--secondary-color);
+  color: var(--secondary-color);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-restore:hover {
+  background: var(--secondary-color);
+  color: white;
+}
+
 /* --- HEADER VARIANTS --- */
 .widget-header {
   padding: var(--spacing-md) var(--spacing-lg);
   border-bottom: 1px solid var(--border-color);
-  background-color: var(--card-background-color); 
+  background-color: var(--card-background-color);
 }
 
-/* Critical: Rojo (Error) */
 .header-critical {
   border-left: 6px solid var(--error-color);
-  /* Fondo sutil usando opacidad sobre el color de la tarjeta */
   background: linear-gradient(90deg, rgba(255, 59, 92, 0.08) 0%, transparent 100%);
 }
 
@@ -69,23 +109,17 @@
   color: var(--error-color);
 }
 
-.header-critical .header-icon {
-  filter: drop-shadow(0 2px 4px rgba(255, 59, 92, 0.2));
-}
-
-/* Warning: Naranja/Amarillo (Warning) */
 .header-warning {
   border-left: 6px solid var(--warning-color);
   background: linear-gradient(90deg, rgba(255, 184, 0, 0.08) 0%, transparent 100%);
 }
 
 .header-warning h3 {
-  color: var(--warning-color); /* Ajustado para legibilidad */
+  color: var(--warning-color);
 }
 
-/* En modo oscuro, el amarillo a veces brilla mucho, ajustamos un poco el texto si es necesario */
 [data-theme="dark"] .header-warning h3 {
-  color: #fbbf24; 
+  color: #fbbf24;
 }
 
 .header-content {
@@ -95,131 +129,304 @@
 }
 
 .header-icon {
-  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
 }
 
-.widget-header h3 {
+.header-text h3 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 700;
 }
 
-.widget-header p {
+.header-text p {
   margin: 2px 0 0 0;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--text-light);
+  line-height: 1.3;
 }
 
-/* --- TABLE --- */
+/* --- WIDGET BODY --- */
 .widget-body {
-  padding: 0;
+  padding: var(--spacing-md);
 }
 
-.table-responsive {
-  width: 100%;
-  overflow-x: auto;
+/* --- CARDS GRID (Mobile First) --- */
+.expiration-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-md);
 }
 
-.expiration-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
+/* Tablet: 2 columns */
+@media (min-width: 640px) {
+  .expiration-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-.expiration-table th {
-  background-color: var(--light-background);
-  color: var(--text-light);
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  padding: 12px 16px;
-  text-align: left;
-  letter-spacing: 0.05em;
+/* Desktop: 3 columns */
+@media (min-width: 1024px) {
+  .expiration-cards-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
-.expiration-table td {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
-  color: var(--text-color);
-  vertical-align: middle;
-}
-
-.expiration-table tr:last-child td {
-  border-bottom: none;
-}
-
-.product-name {
-  color: var(--text-dark);
-}
-
-/* --- FILAS CON ESTADO --- */
-/* Usamos transparencia para que funcione en Dark Mode sobre el fondo oscuro */
-.row-expired {
-  background-color: rgba(255, 59, 92, 0.08); /* --error-color muy suave */
-}
-
-.row-expired td {
-  color: var(--error-color); /* Texto rojo para resaltar */
-}
-
-.row-urgent {
-  background-color: rgba(255, 184, 0, 0.08); /* --warning-color muy suave */
-}
-
-/* --- BADGES & PILLS --- */
-.badge-sku {
-  background: var(--light-background);
-  color: var(--text-light);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'Courier New', monospace;
-  font-size: 0.8rem;
+/* --- EXPIRATION CARD --- */
+.expiration-card {
+  background: var(--card-background-color);
   border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
 }
 
-.status-pill {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 12px;
+.expiration-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Card States */
+.card-expired {
+  border-color: var(--error-color);
+  background: linear-gradient(135deg, rgba(255, 59, 92, 0.05) 0%, transparent 100%);
+}
+
+.card-urgent {
+  border-color: var(--warning-color);
+  background: linear-gradient(135deg, rgba(255, 184, 0, 0.05) 0%, transparent 100%);
+}
+
+.card-normal {
+  border-color: var(--border-color);
+}
+
+/* Card Header */
+.card-header {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+}
+
+.card-product-info {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.card-icon {
+  color: var(--text-light);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.card-product-name {
+  margin: 0;
+  font-size: 0.95rem;
   font-weight: 600;
-  font-size: 0.75rem;
+  color: var(--text-dark);
+  line-height: 1.3;
+  word-break: break-word;
 }
 
-.pill-danger {
-  background-color: rgba(255, 59, 92, 0.15);
+.card-batch-sku {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 6px;
+  background: var(--light-background);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--text-light);
+  font-family: 'Courier New', monospace;
+}
+
+.card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.status-danger {
+  background: rgba(255, 59, 92, 0.15);
   color: var(--error-color);
 }
 
-.pill-warning {
-  background-color: rgba(255, 184, 0, 0.15);
+.status-warning {
+  background: rgba(255, 184, 0, 0.15);
   color: var(--warning-color);
 }
 
-.pill-info {
-  background-color: rgba(123, 97, 255, 0.15); /* Usando secondary color */
+.status-info {
+  background: rgba(123, 97, 255, 0.15);
   color: var(--secondary-color);
 }
 
-/* Utilidades */
-.text-center { text-align: center; }
-.text-right { text-align: right; }
-.fw-bold { font-weight: 600; }
+/* Card Body */
+.card-body {
+  padding: var(--spacing-sm) var(--spacing-md);
+  flex: 1;
+}
 
+.card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 0.85rem;
+}
+
+.card-row:not(:last-child) {
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.card-label {
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+.card-value {
+  color: var(--text-dark);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Contextual Info */
+.pharmacy-info,
+.food-info {
+  margin-top: var(--spacing-xs);
+  padding-top: var(--spacing-xs);
+  border-top: 1px dashed var(--border-color) !important;
+  gap: 6px;
+}
+
+.pharmacy-info .card-label,
+.food-info .card-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Card Actions */
+.card-actions {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.card-info-text {
+  font-size: 0.8rem;
+  color: var(--text-light);
+  font-style: italic;
+  width: 100%;
+}
+
+.btn-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex: 1;
+  min-width: calc(50% - 4px);
+}
+
+@media (min-width: 480px) {
+  .btn-action {
+    flex: none;
+    min-width: auto;
+  }
+}
+
+.btn-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-action .btn-label {
+  display: none;
+}
+
+@media (min-width: 480px) {
+  .btn-action .btn-label {
+    display: inline;
+  }
+}
+
+/* Action Button Variants */
+.btn-edit {
+  background: rgba(123, 97, 255, 0.1);
+  color: var(--secondary-color);
+}
+
+.btn-edit:hover:not(:disabled) {
+  border-color: var(--secondary-color);
+  background: var(--secondary-color);
+  color: white;
+}
+
+.btn-waste {
+  background: rgba(255, 184, 0, 0.1);
+  color: var(--warning-color);
+}
+
+.btn-waste:hover:not(:disabled) {
+  border-color: var(--warning-color);
+  background: var(--warning-color);
+  color: white;
+}
+
+.btn-ignore {
+  background: var(--light-background);
+  color: var(--text-light);
+}
+
+.btn-ignore:hover:not(:disabled) {
+  border-color: var(--text-light);
+  color: var(--text-dark);
+}
+
+/* --- VIEW MORE --- */
 .view-more {
   text-align: center;
-  padding: 10px;
+  padding: var(--spacing-md);
   background-color: var(--light-background);
   border-top: 1px solid var(--border-color);
   color: var(--text-light);
   font-size: 0.85rem;
+  margin-top: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
 }
 
-/* --- STRATEGY BOX (TIPS) --- */
+/* --- STRATEGY BOX --- */
 .strategy-box {
-  margin: var(--spacing-md);
+  margin-top: var(--spacing-md);
   padding: var(--spacing-md);
-  /* Usamos un color éxito muy suave */
-  background-color: rgba(0, 196, 140, 0.08); 
+  background-color: rgba(0, 196, 140, 0.08);
   border: 1px solid rgba(0, 196, 140, 0.2);
   border-radius: var(--border-radius-sm);
   display: flex;
@@ -228,7 +435,11 @@
 }
 
 .strategy-icon {
-  font-size: 1.4rem;
+  color: var(--success-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .strategy-content strong {
@@ -241,73 +452,16 @@
 .strategy-content p {
   margin: 0;
   font-size: 0.9rem;
-  color: var(--text-color); /* Texto normal para mejor lectura */
+  color: var(--text-color);
   opacity: 0.9;
   line-height: 1.4;
 }
 
-/* Ajuste específico para Dark Mode en la caja de estrategia si es necesario */
 [data-theme="dark"] .strategy-content p {
   color: var(--text-dark);
 }
 
-/* --- NUEVO: COLUMNA DE ACCIONES --- */
-.action-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.btn-action {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background-color: transparent;
-  font-size: 1.1rem;
-}
-
-.btn-action:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-/* Colores por acción */
-.btn-action.edit {
-  color: var(--secondary-color); /* Azul/Morado */
-  background-color: rgba(123, 97, 255, 0.1);
-}
-.btn-action.edit:hover {
-  border-color: var(--secondary-color);
-  background-color: var(--secondary-color);
-  color: white;
-}
-
-.btn-action.delete {
-  color: var(--error-color); /* Rojo */
-  background-color: rgba(255, 59, 92, 0.1);
-}
-.btn-action.delete:hover {
-  border-color: var(--error-color);
-  background-color: var(--error-color);
-  color: white;
-}
-
-.btn-action.ignore {
-  color: var(--text-light); /* Gris */
-  background-color: var(--light-background);
-}
-.btn-action.ignore:hover {
-  border-color: var(--text-dark);
-  color: var(--text-dark);
-}
-
-/* --- MINI MODAL DE EDICIÓN (Integrado) --- */
+/* --- MINI MODAL --- */
 .mini-modal-overlay {
   position: absolute;
   top: 0;
@@ -321,6 +475,7 @@
   justify-content: center;
   z-index: 10;
   animation: fadeIn 0.2s ease-out;
+  padding: var(--spacing-md);
 }
 
 [data-theme="dark"] .mini-modal-overlay {
@@ -329,29 +484,170 @@
 
 .mini-modal {
   background-color: var(--card-background-color);
-  padding: 20px;
   border-radius: 12px;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
   border: 1px solid var(--border-color);
-  width: 300px;
-  text-align: center;
+  width: 100%;
+  max-width: 360px;
+  overflow: hidden;
   animation: scaleUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-.mini-modal h4 {
-  margin-top: 0;
+.modal-header {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.modal-icon {
+  color: var(--secondary-color);
+}
+
+.modal-header h4 {
+  margin: 0;
   color: var(--text-dark);
+  font-size: 1rem;
+  flex: 1;
+}
+
+.modal-body {
+  padding: var(--spacing-md);
+}
+
+.modal-product-info {
+  margin-bottom: var(--spacing-md);
+}
+
+.modal-product-name {
+  margin: 0 0 var(--spacing-xs) 0;
+  font-size: 0.95rem;
+  color: var(--text-dark);
+  font-weight: 600;
+}
+
+.modal-batch-sku {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin: 0;
 }
 
 .date-input-group {
-  margin: 15px 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.date-input-group label {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+.date-input-group input[type="date"] {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background: var(--card-background-color);
+  color: var(--text-dark);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .modal-actions {
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
   display: flex;
-  gap: 10px;
-  justify-content: center;
+  gap: var(--spacing-sm);
 }
 
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes scaleUp { from { transform: scale(0.9); } to { transform: scale(1); } }
+.modal-actions button {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary {
+  background: var(--secondary-color);
+  color: white;
+  border: none;
+}
+
+.btn-secondary:hover {
+  opacity: 0.9;
+}
+
+.btn-cancel {
+  background: transparent;
+  color: var(--text-light);
+  border: 1px solid var(--border-color);
+}
+
+.btn-cancel:hover {
+  border-color: var(--text-dark);
+  color: var(--text-dark);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* --- RESPONSIVE ADJUSTMENTS --- */
+
+/* Extra small devices (320px - 375px) */
+@media (max-width: 375px) {
+  .header-text h3 {
+    font-size: 0.95rem;
+  }
+
+  .header-text p {
+    font-size: 0.8rem;
+  }
+
+  .card-product-name {
+    font-size: 0.9rem;
+  }
+
+  .card-actions {
+    flex-direction: column;
+  }
+
+  .btn-action {
+    width: 100%;
+    min-width: 100%;
+  }
+}
+
+/* Ensure cards don't overflow on very small screens */
+@media (max-width: 320px) {
+  .widget-body {
+    padding: var(--spacing-sm);
+  }
+
+  .card-header,
+  .card-body,
+  .card-actions {
+    padding-left: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
+  }
+
+  .strategy-box {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+}

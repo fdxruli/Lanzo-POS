@@ -28,7 +28,7 @@ const CajaActionsCard = ({
           onClick={onCorte}
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
         >
-          <Lock size={20} /> Corte de Caja (Cerrar Turno)
+          <Lock size={20} /> <span>Corte de Caja (Cerrar Turno)</span>
         </button>
 
         {/* Fila de Entrada y Salida - lado a lado */}
@@ -38,14 +38,14 @@ const CajaActionsCard = ({
             onClick={onEntrada}
             style={{ gap: '6px' }}
           >
-            <TrendingUp size={18} /> Entrada
+            <TrendingUp size={18} /> <span>Entrada</span>
           </button>
           <button
             className="btn btn-exit"
             onClick={onSalida}
             style={{ gap: '6px' }}
           >
-            <TrendingDown size={18} /> Salida
+            <TrendingDown size={18} /> <span>Salida</span>
           </button>
         </div>
 
@@ -65,16 +65,16 @@ const CajaActionsCard = ({
         <p>⌨️ Atajos de Teclado:</p>
         <div className="shortcuts-grid">
           <span>
-            <kbd>Ctrl+R</kbd> Refrescar
+            <kbd>Ctrl+R</kbd> <span>Refrescar</span>
           </span>
           <span>
-            <kbd>Ctrl+Shift+E</kbd> Entrada
+            <kbd>Ctrl+Shift+E</kbd> <span>Entrada</span>
           </span>
           <span>
-            <kbd>Ctrl+Shift+S</kbd> Salida
+            <kbd>Ctrl+Shift+S</kbd> <span>Salida</span>
           </span>
           <span>
-            <kbd>ESC</kbd> Cerrar modal
+            <kbd>ESC</kbd> <span>Cerrar modal</span>
           </span>
         </div>
       </div>

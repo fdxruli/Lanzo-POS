@@ -30,6 +30,8 @@ import {
 import { buildAgentPayload, DATE_RANGES, formatDateRangeLabel } from '../../utils/buildAgentPayload';
 import { buildPrompt, parseMarkdownResponse, validateAgentData } from '../../utils/aiPromptBuilder';
 import { analyzeWithAI, AIApiError, validateAIConnection, getAIConfigStatus } from '../../services/aiService';
+import { useAgentPreview } from '../../hooks/dashboard/useAgentPreview';
+import DataPreviewBanner from './DataPreviewBanner';
 import './AIAgentDashboard.css';
 
 // ============================================================
@@ -249,6 +251,23 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
     model: null
   });
 
+  const { preview, isCalculating: isPreviewLoading } = useAgentPreview(
+    selectedAgent,
+    selectedDateRange,
+    sales, menu, wasteLogs, customers
+  );
+
+  // 2. Control estricto de botón
+  const isDataEmpty = useMemo(() => {
+    if (!selectedAgent) return true;
+    if (selectedAgent === 'inventoryAuditor') return menu.length === 0;
+    if (selectedAgent === 'financialAnalyst') return sales.length === 0;
+    if (selectedAgent === 'customerStrategist') return customers.length === 0;
+    return false;
+  }, [selectedAgent, menu, sales, customers]);
+
+  const isButtonDisabled = isAnalyzing || !connectionStatus.isApiReady || isPreviewLoading || isDataEmpty;
+
   // Escuchar cambios de conexión y validar API
   useEffect(() => {
     const handleOnline = () => {
@@ -274,16 +293,14 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
   // Función para validar conexión con la API
   const validateConnection = async () => {
     setConnectionStatus(prev => ({ ...prev, isChecking: true }));
-
     const configStatus = getAIConfigStatus();
 
-    // Si no hay API Key, mostrar error inmediato
     if (!configStatus.hasKey) {
       setConnectionStatus({
         isOnline: navigator.onLine,
         isApiReady: false,
         isChecking: false,
-        error: 'API Key no configurada. Agrega VITE_AI_API_KEY en tu archivo .env',
+        error: `Falta API Key para ${configStatus.provider.toUpperCase()}`,
         provider: configStatus.provider,
         model: configStatus.model
       });
@@ -291,7 +308,8 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
     }
 
     try {
-      const result = await validateAIConnection({ timeoutMs: 15000 });
+      // Pasamos un timeout más corto (5s) para que la UI no se quede colgada
+      const result = await validateAIConnection({ timeoutMs: 5000 });
 
       setConnectionStatus({
         isOnline: navigator.onLine,
@@ -306,7 +324,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
         isOnline: navigator.onLine,
         isApiReady: false,
         isChecking: false,
-        error: error.message || 'Error al validar conexión',
+        error: `Error de API: ${error.message}`,
         provider: configStatus.provider,
         model: configStatus.model
       });
@@ -370,7 +388,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
 
     } catch (error) {
       console.error('Error en análisis IA:', error);
-      
+
       // Manejo específico de errores de la API de IA
       if (error instanceof AIApiError) {
         setAnalysisError(error.message);
@@ -464,13 +482,17 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
         </section>
       )}
 
+      {selectedAgent && selectedDateRange && (
+        <DataPreviewBanner preview={preview} isCalculating={isPreviewLoading} isDataEmpty={isDataEmpty} />
+      )}
+
       {/* Botón de Análisis */}
       {selectedAgent && selectedDateRange && (
         <section className="analyze-action">
           <button
             className="analyze-button"
             onClick={handleAnalyze}
-            disabled={isAnalyzing || !connectionStatus.isApiReady || connectionStatus.isChecking}
+            disabled={isButtonDisabled} // <-- Usa la constante
             type="button"
           >
             {isAnalyzing ? (

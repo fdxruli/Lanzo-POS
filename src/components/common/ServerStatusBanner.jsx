@@ -1,35 +1,53 @@
-// src/components/common/ServerStatusBanner.jsx
+import { useEffect, useRef, memo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import './ServerStatusBanner.css';
 
-export default function ServerStatusBanner() {
-    // Importamos la acción de cerrar
-    const { serverHealth, serverMessage, dismissServerAlert } = useAppStore();
+const ServerStatusBanner = () => {
+  const { serverHealth, serverMessage, dismissServerAlert } = useAppStore();
+  const autoCloseRef = useRef(null);
 
-    if (serverHealth === 'ok' || !serverMessage) return null;
+  useEffect(() => {
+    // Auto-cierra después de 8s si el servidor se recupera
+    if (serverHealth === 'ok' && serverMessage) {
+      autoCloseRef.current = setTimeout(() => {
+        dismissServerAlert();
+      }, 8000);
+    }
 
-    const isDegraded = serverHealth === 'degraded';
+    return () => clearTimeout(autoCloseRef.current);
+  }, [serverHealth, serverMessage, dismissServerAlert]);
 
-    return (
-        <div className={`server-status-banner ${isDegraded ? 'degraded' : 'down'}`}>
-            <div className="status-icon">
-                {isDegraded ? '🐢' : '🔧'}
-            </div>
+  if (serverHealth === 'ok' || !serverMessage) return null;
 
-            <div className="status-content">
-                <strong>{isDegraded ? 'Lentitud detectada' : 'Problemas con el proveedor base de datos'}</strong>
-                <p>{serverMessage}</p>
-                <small>No te preocupes, no es problemas tuyo o de Lanzo, puedes seguir vendiendo. Tu información se sincronizará cuando el servicio se normalice.</small>
-            </div>
+  const isDegraded = serverHealth === 'degraded';
 
-            {/* BOTÓN DE CERRAR (Interacción del usuario) */}
-            <button
-                className="banner-close-btn"
-                onClick={dismissServerAlert}
-                aria-label="Cerrar aviso"
-            >
-                ✕
-            </button>
-        </div>
-    );
-}
+  return (
+    <div 
+      className={`server-status-banner ${isDegraded ? 'degraded' : 'down'}`}
+      role="alert"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <div className="status-icon" aria-hidden="true">
+        {isDegraded ? '🐢' : '🔧'}
+      </div>
+
+      <div className="status-content">
+        <strong>{isDegraded ? 'Lentitud detectada' : 'Problemas de conexión'}</strong>
+        <p>{serverMessage}</p>
+        <small>Los datos se sincronizarán automáticamente cuando se normalice.</small>
+      </div>
+
+      <button
+        className="banner-close-btn"
+        onClick={dismissServerAlert}
+        aria-label="Cerrar notificación"
+        type="button"
+      >
+        ✕
+      </button>
+    </div>
+  );
+};
+
+export default memo(ServerStatusBanner);

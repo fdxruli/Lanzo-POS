@@ -1,56 +1,277 @@
-/* src/components/common/AbonoModal.css */
+/* src/components/customers/AbonoModal.css */
 
-.modal-content.abono-modal {
-  max-width: 450px;
+/* =========================================
+   1. ESTRUCTURA BASE (MOBILE FIRST)
+   ========================================= */
+
+.abono-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  max-width: 450px !important; /* Ligeramente más estrecho para resaltar foco numérico */
 }
 
-.abono-summary {
+/* --- HEADER --- */
+.abono-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.abono-header .modal-title {
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.3rem;
+}
+
+.abono-header .text-primary {
+  color: var(--primary-color);
+}
+
+.btn-icon-close {
+  background: transparent;
+  border: none;
+  color: var(--text-light);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.btn-icon-close:hover {
   background-color: var(--light-background);
-  padding: var(--spacing-md);
-  border-radius: var(--border-radius-sm);
-  margin-bottom: var(--spacing-lg);
-}
-
-.abono-summary p {
-  margin: 0;
-}
-
-.deuda-label {
-  margin-top: var(--spacing-sm);
-  font-weight: 500;
-  color: var(--text-dark);
-}
-
-.deuda-total {
-  font-size: 1.75rem;
-  font-weight: 700;
   color: var(--error-color);
 }
 
-.abono-modal .btn-secondary {
-  background-color: var(--secondary-color);
+/* --- TARJETA RESUMEN DEUDA --- */
+.abono-summary-card {
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 4px solid var(--error-color);
+}
+
+.cliente-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cliente-label {
+  font-size: 0.8rem;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.cliente-name {
+  font-weight: 700;
+  color: var(--text-dark);
+  font-size: 1.1rem;
+}
+
+.deuda-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.deuda-label {
+  color: var(--text-light);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.deuda-total {
+  color: var(--error-color);
+  font-weight: 800;
+  font-size: 1.5rem;
+}
+
+/* --- FORMULARIO Y ENTRADA DE MONTO --- */
+.abono-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-xs);
+}
+
+.abono-input-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.btn-saldar-quick {
+  background-color: rgba(0, 196, 140, 0.1);
+  color: var(--success-color);
+  border: 1px solid rgba(0, 196, 140, 0.2);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-saldar-quick:hover {
+  background-color: var(--success-color);
   color: white;
-  width: 100%;
-  margin-bottom: var(--spacing-sm);
 }
 
-.abono-modal .btn-secondary:hover {
-  opacity: 0.9;
-}
-
-.form-group-checkbox {
+.input-with-currency {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-lg);
 }
-.form-group-checkbox input[type="checkbox"] {
-  width: auto;
-  height: 20px;
-  width: 20px;
+
+.currency-symbol {
+  position: absolute;
+  left: 16px;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-light);
 }
-.form-group-checkbox label {
-  margin: 0;
+
+.abono-monto-input {
+  padding-left: 40px !important;
+  font-size: 1.5rem !important;
+  font-weight: 700;
+  height: 60px;
+  border-radius: var(--border-radius-sm);
+  color: var(--primary-color) !important;
+  background-color: var(--card-background-color);
+}
+
+.abono-monto-input::placeholder {
+  color: var(--border-color);
+  font-weight: 400;
+}
+
+.abono-monto-input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.validation-message.error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
   font-weight: 500;
+}
+
+/* --- CHECKBOX MODERNO PARA WHATSAPP --- */
+.abono-whatsapp-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--light-background);
+  padding: 12px 16px;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  transition: var(--transition);
+  margin-bottom: var(--spacing-xs);
+}
+
+.abono-whatsapp-toggle:hover {
+  border-color: var(--primary-color);
+  background-color: rgba(59, 130, 246, 0.03);
+}
+
+.toggle-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   color: var(--text-dark);
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.icon-whatsapp {
+  color: #25D366; /* Color oficial WhatsApp */
+}
+
+.abono-whatsapp-toggle input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+  margin: 0;
+}
+
+/* --- ACCIONES (BOTONES) --- */
+.abono-actions {
+  display: flex;
+  flex-direction: column; /* Apilados en móvil */
+  gap: 12px;
+  margin-top: var(--spacing-sm);
+}
+
+.abono-actions .btn {
+  width: 100%;
+  padding: 14px;
+  font-size: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+
+/* =========================================
+   2. ESCRITORIO / TABLET (>= 768px)
+   ========================================= */
+@media (min-width: 768px) {
+  .abono-actions {
+    flex-direction: row-reverse; /* Botón primario a la derecha */
+  }
+  
+  .abono-actions .btn {
+    flex: 1; /* Ocupan exactamente el mismo ancho */
+  }
+}
+
+/* =========================================
+   3. MODO OSCURO (COMPATIBILIDAD SISTEMA)
+   ========================================= */
+[data-theme="dark"] .abono-summary-card {
+  background-color: #450a0a; /* Fondo rojo muy oscuro para resaltar la deuda */
+  border-color: #991b1b;
+}
+
+[data-theme="dark"] .abono-summary-card .cliente-label,
+[data-theme="dark"] .abono-summary-card .deuda-label {
+  color: #fca5a5;
+}
+
+[data-theme="dark"] .abono-summary-card .deuda-total {
+  color: #f87171;
+}
+
+[data-theme="dark"] .btn-saldar-quick {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+[data-theme="dark"] .abono-whatsapp-toggle {
+  background-color: var(--light-background);
+  border-color: var(--border-color);
 }
