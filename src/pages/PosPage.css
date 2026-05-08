@@ -25,7 +25,8 @@
   /* min-height: 0 previene que flexbox se desborde internamente */
   min-height: 0;
   overflow: hidden;
-  gap: 20px;
+  gap: 16px;
+  padding: 0 16px;
 }
 
 .pos-grid .pos-order-container {
@@ -154,7 +155,7 @@
 
   .pos-grid {
     padding: 0 24px 100px 24px;
-    gap: 16px;
+    gap: 20px;
   }
 
   .floating-cart-bar {

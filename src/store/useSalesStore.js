@@ -136,20 +136,10 @@ export const useSalesStore = create((set, get) => ({
       });
 
       if (result.success) {
-        // 3. Determinar la profundidad de la vista actual del usuario.
-        // Si hay más de 50 elementos cargados, respetamos ese tamaño para no perder el contexto.
-        const targetLimit = Math.max(50, currentSales.length);
-
-        // 4. Recargar desde la BD con el límite ajustado.
-        // Al traer la misma cantidad de elementos (pero con uno borrado de la BD), 
-        // automáticamente el siguiente registro más antiguo "sube" para rellenar el hueco.
-        const { data: recentSales } = await loadDataPaginated(STORES.SALES, {
-          limit: targetLimit,
-          direction: 'prev',
-          timeIndex: 'timestamp'
-        });
-
-        set({ sales: recentSales || [] });
+        // 3. Actualizar estado local filtrando la venta eliminada (sin I/O adicional)
+        set(state => ({
+          sales: state.sales.filter(sale => sale.timestamp !== timestamp)
+        }));
       }
 
       return result;

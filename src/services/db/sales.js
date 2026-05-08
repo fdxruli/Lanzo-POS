@@ -530,15 +530,12 @@ export const salesRepository = {
 
     async getHistorySalesSince(isoDateString) {
         try {
-            const allSales = await db.table(STORES.SALES)
+            // Filtro aplicado en el iterador de Dexie, no en RAM
+            return await db.table(STORES.SALES)
                 .where('timestamp').aboveOrEqual(isoDateString)
+                .filter(sale => !sale.splitParentId && sale.status === SALE_STATUS.CLOSED)
                 .reverse()
                 .toArray();
-
-            return allSales.filter(sale =>
-                !sale.splitParentId &&
-                sale.status === SALE_STATUS.CLOSED
-            );
         } catch (error) {
             throw handleDexieError(error, 'Get History Sales Since');
         }

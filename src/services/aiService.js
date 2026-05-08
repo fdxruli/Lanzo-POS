@@ -8,8 +8,6 @@
  * Para producción, usar un backend proxy que oculte la API Key.
  */
 
-import Logger from './Logger';
-
 // ============================================================
 // 1. CONFIGURACIÓN Y CONSTANTES
 // ============================================================
@@ -17,9 +15,11 @@ import Logger from './Logger';
 // Modelos por defecto según el proveedor
 const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
-  google: 'gemini-2.5-flash',
+  google: 'gemini-2.5-flash-lite', // Recomendado sobre 2.5-lite si tienes problemas de parseo inicial
   anthropic: 'claude-3-5-sonnet-20241022',
-  local: 'llama3.2'
+  local: 'llama3.2',
+  deepseek: 'deepseek-chat', // Añadido
+  qwen: 'qwen-plus'          // Añadido
 };
 
 const DEFAULT_CONFIG = {
@@ -31,9 +31,14 @@ const DEFAULT_CONFIG = {
 const API_ENDPOINTS = {
   openai: 'https://api.openai.com/v1/chat/completions',
   anthropic: 'https://api.anthropic.com/v1/messages',
-  local: 'http://localhost:11434/v1/chat/completions', // Ollama
-  google: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
+  local: 'http://localhost:11434/v1/chat/completions',
+  google: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
+  deepseek: 'https://api.deepseek.com/v1/chat/completions', // API compatible con OpenAI
+  qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions' // API compatible con OpenAI
 };
+
+const OPENAI_COMPATIBLE_PROVIDERS = ['openai', 'local', 'deepseek', 'qwen'];
+const SUPPORTED_PROVIDERS = ['google', ...OPENAI_COMPATIBLE_PROVIDERS];
 
 // ============================================================
 // 2. MANEJO DE ERRORES ESPECÍFICOS
@@ -80,21 +85,48 @@ export class AIApiError extends Error {
 // 3. SERVICIO PRINCIPAL - UTILIDADES
 // ============================================================
 
+const resolveProvider = (provider) => {
+  return provider || import.meta.env.VITE_AI_PROVIDER || 'openai';
+};
+
+const getFirstConfiguredValue = (...values) => {
+  return values.find(value => typeof value === 'string' && value.trim().length > 0)?.trim();
+};
+
+const isProviderSupported = (provider) => SUPPORTED_PROVIDERS.includes(provider);
+
 /**
  * Obtiene la API Key desde variables de entorno
  * @returns {string} API Key
  * @throws {AIApiError} Si la API Key no está configurada
  */
-const getApiKey = () => {
-  const apiKey = import.meta.env.VITE_AI_API_KEY;
-  
+/**
+ * Obtiene la API Key correspondiente al proveedor seleccionado
+ */
+const getApiKey = (provider) => {
+  const resolvedProvider = resolveProvider(provider);
+  const keys = {
+    google: getFirstConfiguredValue(import.meta.env.VITE_GEMINI_API_KEY, import.meta.env.VITE_AI_API_KEY),
+    deepseek: getFirstConfiguredValue(import.meta.env.VITE_DEEPSEEK_API_KEY, import.meta.env.VITE_AI_API_KEY),
+    openai: getFirstConfiguredValue(import.meta.env.VITE_OPENAI_API_KEY, import.meta.env.VITE_AI_API_KEY),
+    local: 'no-key-required',
+    qwen: getFirstConfiguredValue(import.meta.env.VITE_QWEN_API_KEY, import.meta.env.VITE_AI_API_KEY),
+    anthropic: getFirstConfiguredValue(import.meta.env.VITE_ANTHROPIC_API_KEY)
+  };
+
+  if (!Object.prototype.hasOwnProperty.call(keys, resolvedProvider)) {
+    throw new AIApiError(`Proveedor "${resolvedProvider}" no soportado`, 400);
+  }
+
+  const apiKey = keys[resolvedProvider];
+
   if (!apiKey) {
     throw new AIApiError(
-      'API Key no configurada. Agrega VITE_AI_API_KEY en tu archivo .env',
+      `API Key para ${resolvedProvider} no configurada en el archivo .env`,
       401
     );
   }
-  
+
   return apiKey;
 };
 
@@ -110,14 +142,8 @@ const buildOpenAIPayload = (systemPrompt, userPrompt, config) => ({
   temperature: config.temperature ?? DEFAULT_CONFIG.temperature,
   max_tokens: config.maxTokens ?? DEFAULT_CONFIG.maxTokens,
   messages: [
-    {
-      role: 'system',
-      content: systemPrompt
-    },
-    {
-      role: 'user',
-      content: userPrompt
-    }
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt }
   ],
   stream: false
 });
@@ -128,16 +154,17 @@ const buildOpenAIPayload = (systemPrompt, userPrompt, config) => ({
  * se prependen al user prompt
  */
 const buildGeminiPayload = (systemPrompt, userPrompt, config) => ({
+  // Usar el campo oficial para instrucciones del sistema
+  systemInstruction: {
+    parts: [{ text: systemPrompt }]
+  },
   contents: [{
-    parts: [{
-      text: `${systemPrompt}\n\n${userPrompt}`
-    }]
+    role: "user",
+    parts: [{ text: userPrompt }]
   }],
   generationConfig: {
-    temperature: config.temperature ?? DEFAULT_CONFIG.temperature,
-    maxOutputTokens: config.maxTokens ?? DEFAULT_CONFIG.maxTokens,
-    topP: 0.95,
-    topK: 64
+    temperature: config.temperature ?? 0.2,
+    maxOutputTokens: config.maxTokens ?? 2048,
   }
 });
 
@@ -154,7 +181,7 @@ const parseOpenAIResponse = (data) => {
   }
 
   const choice = data.choices[0];
-  
+
   if (!choice.message || !choice.message.content) {
     throw new AIApiError('Respuesta de IA sin contenido válido', 500, data);
   }
@@ -171,7 +198,7 @@ const parseGeminiResponse = (data) => {
   }
 
   const candidate = data.candidates[0];
-  
+
   if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
     throw new AIApiError('Respuesta de Gemini sin contenido válido', 500, data);
   }
@@ -210,6 +237,7 @@ const executeOpenAIRequest = async (url, payload, apiKey, timeoutMs) => {
       signal: controller.signal
     });
 
+
     clearTimeout(timeoutId);
 
     if (!response.ok) {
@@ -226,30 +254,29 @@ const executeOpenAIRequest = async (url, payload, apiKey, timeoutMs) => {
     return data;
   } catch (error) {
     clearTimeout(timeoutId);
-    
+
     if (error instanceof AIApiError) {
       throw error;
     }
-    
+
     throw AIApiError.fromNetwork(error);
   }
 };
 
 /**
  * Ejecuta una solicitud a Google Gemini con timeout
- * Google Gemini usa la API Key en la URL, no en headers
+ * Google Gemini acepta la API Key por header; evita exponerla en la URL.
  */
 const executeGeminiRequest = async (url, payload, apiKey, timeoutMs) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const urlWithKey = `${url}?key=${apiKey}`;
-    
-    const response = await fetch(urlWithKey, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey
       },
       body: JSON.stringify(payload),
       signal: controller.signal
@@ -271,11 +298,11 @@ const executeGeminiRequest = async (url, payload, apiKey, timeoutMs) => {
     return data;
   } catch (error) {
     clearTimeout(timeoutId);
-    
+
     if (error instanceof AIApiError) {
       throw error;
     }
-    
+
     throw AIApiError.fromNetwork(error);
   }
 };
@@ -308,71 +335,38 @@ const executeGeminiRequest = async (url, payload, apiKey, timeoutMs) => {
  * );
  */
 export const analyzeWithAI = async (systemPrompt, userPrompt, config = {}) => {
-  // Validar inputs
-  if (!systemPrompt || typeof systemPrompt !== 'string') {
-    throw new AIApiError('systemPrompt es requerido y debe ser un string', 400);
-  }
-  
-  if (!userPrompt || typeof userPrompt !== 'string') {
-    throw new AIApiError('userPrompt es requerido y debe ser un string', 400);
-  }
+  if (!systemPrompt || !userPrompt) throw new AIApiError('Prompts requeridos', 400);
 
-  // Obtener API Key
-  const apiKey = getApiKey();
-
-  // Determinar proveedor
-  const provider = config.provider || import.meta.env.VITE_AI_PROVIDER || 'openai';
-
-  // Obtener modelo por defecto según el proveedor
+  const provider = resolveProvider(config.provider);
+  const apiKey = getApiKey(provider);
   const defaultModelForProvider = getDefaultModelForProvider(provider);
 
-  // Merge de configuración - priorizar: config > env > default por proveedor
   const mergedConfig = {
     ...DEFAULT_CONFIG,
     ...config,
     model: config.model || import.meta.env.VITE_AI_MODEL || defaultModelForProvider
   };
 
-  Logger.info('[AI Service] Enviando solicitud a IA:', {
-    model: mergedConfig.model,
-    provider,
-    systemPromptLength: systemPrompt.length,
-    userPromptLength: userPrompt.length
-  });
-
-  // Ejecutar según el proveedor
-  let data;
-  let content;
+  let data, content;
 
   if (provider === 'google') {
-    // Google Gemini
-    if (!API_ENDPOINTS.google) {
-      throw new AIApiError('Proveedor "google" no configurado', 400);
-    }
-
+    // FLUJO GEMINI
     const endpoint = API_ENDPOINTS.google.replace('{model}', mergedConfig.model);
     const payload = buildGeminiPayload(systemPrompt, userPrompt, mergedConfig);
-    
     data = await executeGeminiRequest(endpoint, payload, apiKey, mergedConfig.timeoutMs);
     content = parseGeminiResponse(data);
-  } else {
-    // OpenAI-compatible (OpenAI, Ollama, etc)
+  } else if (OPENAI_COMPATIBLE_PROVIDERS.includes(provider)) {
+    // FLUJO OPENAI Y COMPATIBLES (¡Aquí entran DeepSeek y Qwen mágicamente!)
     const endpoint = API_ENDPOINTS[provider];
-    
-    if (!endpoint) {
-      throw new AIApiError(`Proveedor "${provider}" no soportado`, 400);
-    }
+    if (!endpoint) throw new AIApiError(`Proveedor "${provider}" no soportado`, 400);
 
     const payload = buildOpenAIPayload(systemPrompt, userPrompt, mergedConfig);
+    // Para DeepSeek y Qwen, la key se envía exactamente igual que en OpenAI (Bearer Token)
     data = await executeOpenAIRequest(endpoint, payload, apiKey, mergedConfig.timeoutMs);
     content = parseOpenAIResponse(data);
+  } else {
+    throw new AIApiError(`Proveedor "${provider}" no soportado`, 400);
   }
-
-  Logger.info('[AI Service] Respuesta recibida:', {
-    model: mergedConfig.model,
-    provider,
-    contentLength: content.length
-  });
 
   return content;
 };
@@ -385,8 +379,12 @@ export const analyzeWithAI = async (systemPrompt, userPrompt, config = {}) => {
  * Verifica si la API Key es válida (sin hacer solicitud real)
  * @returns {boolean}
  */
-export const hasApiKey = () => {
-  return !!import.meta.env.VITE_AI_API_KEY;
+export const hasApiKey = (provider = resolveProvider()) => {
+  try {
+    return !!getApiKey(provider);
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -394,15 +392,18 @@ export const hasApiKey = () => {
  * @returns {{ configured: boolean, provider: string, hasKey: boolean, model: string }}
  */
 export const getAIConfigStatus = () => {
-  const hasKey = hasApiKey();
-  const provider = import.meta.env.VITE_AI_PROVIDER || 'openai';
+  const provider = resolveProvider();
+  const hasKey = hasApiKey(provider);
   const envModel = import.meta.env.VITE_AI_MODEL;
+  const supported = isProviderSupported(provider);
 
   return {
-    configured: hasKey,
+    configured: hasKey && supported,
     provider,
     hasKey,
-    model: envModel || DEFAULT_MODELS[provider] || DEFAULT_MODELS.openai
+    supported,
+    model: envModel || DEFAULT_MODELS[provider] || DEFAULT_MODELS.openai,
+    error: supported ? null : `Proveedor "${provider}" no soportado`
   };
 };
 
@@ -423,14 +424,15 @@ export const getDefaultModelForProvider = (provider) => {
  * @returns {Promise<{ valid: boolean, error?: string, provider: string, model: string }>}
  */
 export const validateAIConnection = async (options = {}) => {
-  const {
-    provider = import.meta.env.VITE_AI_PROVIDER || 'openai',
-    timeoutMs = 10000
-  } = options;
+  const provider = resolveProvider(options.provider);
+  const { timeoutMs = 10000 } = options;
+  const model =
+    options.model ||
+    import.meta.env.VITE_AI_MODEL ||
+    getDefaultModelForProvider(provider);
 
   try {
-    const apiKey = getApiKey();
-    const model = getDefaultModelForProvider(provider);
+    getApiKey(provider);
 
     // Hacer una solicitud mínima de prueba
     const testResponse = await analyzeWithAI(
@@ -466,7 +468,7 @@ export const validateAIConnection = async (options = {}) => {
       valid: false,
       error: error.message || 'Error de conexión',
       provider,
-      model: getDefaultModelForProvider(provider),
+      model,
       timestamp: new Date().toISOString()
     };
   }

@@ -126,50 +126,104 @@ export const formatDateRangeLabel = (rangeType, customStart = null, customEnd = 
  * @param {Array} wasteLogs - Mermas (ya cargadas en memoria)
  * @returns {Promise<Object>} - Payload agregado
  */
-export const buildInventoryPayload = async (start, end, menu = [], wasteLogs = []) => {
-  // Filtrar mermas en el rango
+export const buildInventoryPayload = async (start, end, menu = [], wasteLogs = [], sales = []) => {
+  // 1. Filtrar y detallar mermas
   const filteredWaste = wasteLogs.filter(w => {
     const wDate = new Date(w.timestamp);
     return wDate >= start && wDate <= end;
   });
 
-  // Agregar mermas
   const wasteByCategory = new Map();
+  const wasteByProduct = new Map();
+
   const totalWasteLoss = filteredWaste.reduce((sum, w) => {
+    // Agrupación por categoría
     const category = w.category || 'General';
-    const current = wasteByCategory.get(category) || { amount: 0, count: 0 };
+    const catCurrent = wasteByCategory.get(category) || { amount: 0, count: 0 };
     wasteByCategory.set(category, {
-      amount: current.amount + (w.lossAmount || 0),
-      count: current.count + 1
+      amount: catCurrent.amount + (w.lossAmount || 0),
+      count: catCurrent.count + 1
     });
+
+    // Agrupación por producto (Nuevo - vital para el auditor)
+    const productName = w.productName || 'Desconocido';
+    const prodCurrent = wasteByProduct.get(productName) || { amount: 0, count: 0 };
+    wasteByProduct.set(productName, {
+      amount: prodCurrent.amount + (w.lossAmount || 0),
+      count: prodCurrent.count + 1
+    });
+
     return sum + (w.lossAmount || 0);
   }, 0);
 
-  // Productos con stock bajo (simulado desde menú)
-  const lowStockProducts = menu
-    .filter(p => p.trackStock && p.stock > 0 && p.stock <= 5)
-    .slice(0, PAYLOAD_LIMITS.MAX_TOP_PRODUCTS)
-    .map(p => ({
-      name: p.name,
-      stock: p.stock,
-      category: p.categoryName
-    }));
+  // 2. Filtrar ventas y rastrear qué se vendió realmente
+  const filteredSales = sales.filter(s => {
+    const sDate = new Date(s.timestamp);
+    const isTestData = s.id?.includes('TEST_') || s.customerId === 'GENERIC' || s.items?.some(i => i.id?.includes('TEST_'));
+    return sDate >= start && sDate <= end && !isTestData;
+  });
 
-  // Productos sin stock
-  const outOfStockCount = menu.filter(p => p.trackStock && p.stock === 0).length;
+  const topProducts = aggregateTopProducts(filteredSales, PAYLOAD_LIMITS.MAX_TOP_PRODUCTS);
 
-  // Top productos más vendidos (agregado de ventas)
-  const topProducts = await aggregateTopProducts(start, end, PAYLOAD_LIMITS.MAX_TOP_PRODUCTS);
+  // Set de IDs de productos vendidos para detectar stock muerto real
+  const soldProductIds = new Set();
+  filteredSales.forEach(sale => {
+    sale.items?.forEach(item => soldProductIds.add(item.parentId || item.id));
+  });
 
-  // Productos por categoría
+  // 3. Análisis profundo del menú e inventario
+  let totalInventoryValuation = 0;
+  const lowStockProducts = [];
+  const outOfStockProducts = [];
+  const deadStockCandidates = [];
+
+  menu.forEach(p => {
+    if (!p.trackStock) return;
+
+    // Calcular capital inmovilizado
+    if (p.stock > 0) {
+      totalInventoryValuation += p.stock * (p.cost || 0);
+    }
+
+    // Clasificación de stock
+    if (p.stock === 0) {
+      if (outOfStockProducts.length < PAYLOAD_LIMITS.MAX_TOP_PRODUCTS) {
+        outOfStockProducts.push({ name: p.name, category: p.categoryName });
+      }
+    } else if (p.stock <= (p.minStock || 5)) { // Corrección: Usar minStock real
+      if (lowStockProducts.length < PAYLOAD_LIMITS.MAX_TOP_PRODUCTS) {
+        lowStockProducts.push({
+          name: p.name,
+          stock: p.stock,
+          minStock: p.minStock || 5,
+          category: p.categoryName
+        });
+      }
+    }
+
+    // Dead Stock Real: Tiene stock pero NO tuvo ventas en este rango de fechas
+    if (p.stock > 0 && !soldProductIds.has(p.id)) {
+      deadStockCandidates.push({
+        name: p.name,
+        stock: p.stock,
+        tiedCapital: p.stock * (p.cost || 0) // Cuánto dinero te está costando este stock muerto
+      });
+    }
+  });
+
+  // Ordenar dead stock por impacto de capital
+  const sortedDeadStock = deadStockCandidates
+    .sort((a, b) => b.tiedCapital - a.tiedCapital)
+    .slice(0, 5);
+
   const categoryStats = aggregateByCategory(menu);
 
   return {
     menuStats: {
       totalProducts: menu.length,
       productsWithStock: menu.filter(p => p.trackStock && p.stock > 0).length,
-      outOfStockCount,
-      lowStockCount: lowStockProducts.length,
+      totalInventoryValuation, // Nuevo: Capital atascado
+      outOfStockCount: menu.filter(p => p.trackStock && p.stock === 0).length,
       categoriesCount: Object.keys(categoryStats).length
     },
     wasteStats: {
@@ -177,122 +231,134 @@ export const buildInventoryPayload = async (start, end, menu = [], wasteLogs = [
       wasteTransactions: filteredWaste.length,
       topWasteCategories: Array.from(wasteByCategory.entries())
         .map(([category, data]) => ({ category, ...data }))
+        .sort((a, b) => b.amount - a.amount)
         .slice(0, 5),
-      avgWastePerTransaction: filteredWaste.length > 0
-        ? totalWasteLoss / filteredWaste.length
-        : 0
+      topWastedProducts: Array.from(wasteByProduct.entries()) // Nuevo: Visibilidad granular
+        .map(([product, data]) => ({ product, ...data }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 5),
+      avgWastePerTransaction: filteredWaste.length > 0 ? totalWasteLoss / filteredWaste.length : 0
     },
     inventoryAlerts: {
+      outOfStockProducts, // Nuevo: Qué falta exactamente
       lowStockProducts,
-      potentialDeadStock: menu
-        .filter(p => p.trackStock && p.stock > 10 && !topProducts.find(tp => tp.name === p.name))
-        .slice(0, 5)
-        .map(p => ({ name: p.name, stock: p.stock }))
+      potentialDeadStock: sortedDeadStock // Nuevo: Basado en falta de ventas y capital inmovilizado
     },
     topProducts
   };
 };
 
-/**
- * Construye payload para el Analista Financiero
- */
+// ============================================================
+// PAYLOAD: ANALISTA FINANCIERO
+// ============================================================
 export const buildFinancialPayload = async (start, end, sales = []) => {
-  // Filtrar ventas en rango
+  // Corrección: Filtrar ventas canceladas y datos de prueba
   const filteredSales = sales.filter(s => {
     const sDate = new Date(s.timestamp);
-    return sDate >= start && sDate <= end;
+    const isTestData = s.id?.includes('TEST_') || s.customerId === 'GENERIC' || s.items?.some(i => i.id?.includes('TEST_'));
+    const isCancelled = s.fulfillmentStatus === 'cancelled' || s.status === 'cancelled';
+    return sDate >= start && sDate <= end && !isTestData && !isCancelled;
   });
 
-  // Métricas básicas
-  const totalRevenue = filteredSales.reduce((sum, s) => sum + (s.total || 0), 0);
+  let totalRevenue = 0;
+  let totalCost = 0;
+  let totalDiscounts = 0;
+
+  filteredSales.forEach(s => {
+    totalRevenue += Number(s.total || 0);
+    totalDiscounts += Number(s.discount || 0); // Asumiendo que guardas el descuento
+
+    s.items?.forEach(item => {
+      totalCost += Number(item.cost || 0) * Number(item.quantity || 0);
+    });
+  });
+
+  const grossProfit = totalRevenue - totalCost;
+  const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+
   const totalTransactions = filteredSales.length;
   const avgTicket = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
 
-  // Agrupar por día de la semana
-  const revenueByDayOfWeek = aggregateByDayOfWeek(filteredSales);
-
-  // Agrupar por hora del día (para detectar picos)
-  const revenueByHour = aggregateByHour(filteredSales);
-
-  // Métodos de pago
-  const paymentMethods = aggregatePaymentMethods(filteredSales);
-
-  // Ticket promedio por tipo de orden
-  const ticketByOrderType = aggregateByOrderType(filteredSales);
-
-  // Proyección mensual
+  // Corrección: Evitar proyecciones irreales en rangos cortos
   const daysInRange = Math.max(1, (end - start) / (1000 * 60 * 60 * 24));
-  const projectedMonthly = (totalRevenue / daysInRange) * 30;
+  const projectedMonthly = daysInRange >= 7 ? (totalRevenue / daysInRange) * 30 : null;
 
   return {
     salesStats: {
       totalRevenue,
+      totalCost,          // Vital para el analista
+      grossProfit,        // Vital para el analista
+      grossMarginPct: Number(grossMargin.toFixed(2)),
+      totalDiscounts,
       totalTransactions,
       avgTicket,
-      projectedMonthly,
-      uniqueTickets: new Set(filteredSales.map(s => s.id)).size
+      projectedMonthly,   // Solo si el rango >= 7 días para ser estadísticamente válido
     },
     temporalPatterns: {
-      revenueByDayOfWeek,
-      peakHours: Object.entries(revenueByHour)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 3)
-        .map(([hour, revenue]) => ({ hour: `${hour}:00`, revenue })),
-      lowHours: Object.entries(revenueByHour)
-        .sort(([, a], [, b]) => a - b)
-        .slice(0, 2)
-        .map(([hour, revenue]) => ({ hour: `${hour}:00`, revenue }))
+      revenueByDayOfWeek: aggregateByDayOfWeek(filteredSales),
+      revenueByHour: aggregateByHour(filteredSales)
     },
-    paymentAnalysis: {
-      methods: paymentMethods,
-      mostUsedMethod: paymentMethods.length > 0 ? paymentMethods[0].method : 'N/A',
-      cashPercentage: paymentMethods.find(m => m.method === 'Efectivo')?.percentage || 0
-    },
-    orderTypeAnalysis: ticketByOrderType,
-    topProducts: await aggregateTopProducts(start, end, PAYLOAD_LIMITS.MAX_TOP_PRODUCTS)
+    paymentAnalysis: aggregatePaymentMethods(filteredSales),
+    orderTypeAnalysis: aggregateByOrderType(filteredSales),
+    topProducts: aggregateTopProducts(filteredSales, PAYLOAD_LIMITS.MAX_TOP_PRODUCTS)
   };
 };
 
-/**
- * Construye payload para el Estratega de Clientes
- */
+// ============================================================
+// PAYLOAD: ESTRATEGA DE CLIENTES
+// ============================================================
 export const buildCustomerPayload = async (start, end, customers = [], sales = []) => {
-  // Filtrar ventas en rango
   const filteredSales = sales.filter(s => {
     const sDate = new Date(s.timestamp);
-    return sDate >= start && sDate <= end;
+    const isTestData = s.id?.includes('TEST_') || s.customerId === 'GENERIC';
+    const isCancelled = s.fulfillmentStatus === 'cancelled' || s.status === 'cancelled';
+    return sDate >= start && sDate <= end && !isTestData && !isCancelled;
   });
 
-  // Clientes activos en el período
-  const activeCustomerIds = new Set(filteredSales.map(s => s.customerId).filter(Boolean));
+  // Corrección: Separar ventas registradas de ventas de mostrador (walk-ins)
+  let walkInTransactions = 0;
+  let walkInRevenue = 0;
+  let registeredRevenue = 0;
+
+  const activeCustomerIds = new Set();
+
+  filteredSales.forEach(s => {
+    if (!s.customerId || s.customerId === 'MOSTRADOR') {
+      walkInTransactions++;
+      walkInRevenue += Number(s.total || 0);
+    } else {
+      activeCustomerIds.add(s.customerId);
+      registeredRevenue += Number(s.total || 0);
+    }
+  });
+
   const activeCustomers = customers.filter(c => activeCustomerIds.has(c.id));
-
-  // Métricas de clientes
   const totalCustomers = customers.length;
-  const activeCustomersCount = activeCustomers.length;
-  const activeRate = totalCustomers > 0 ? (activeCustomersCount / totalCustomers) * 100 : 0;
 
-  // Deuda total
-  const totalDebt = customers.reduce((sum, c) => sum + (c.debt || 0), 0);
+  const totalDebt = customers.reduce((sum, c) => sum + Number(c.debt || 0), 0);
   const customersWithDebt = customers.filter(c => c.debt > 0);
 
-  // Top clientes por gasto
-  const customerSpending = aggregateCustomerSpending(filteredSales, customers);
-
-  // Recurrencia
-  const recurrenceStats = calculateRecurrence(filteredSales, customers);
-
-  // Ticket promedio por cliente
-  const avgTicketPerCustomer = activeCustomersCount > 0
-    ? filteredSales.reduce((sum, s) => sum + (s.total || 0), 0) / activeCustomersCount
-    : 0;
+  // Analizar qué compran los clientes registrados para perfilar
+  const registeredCategoryPreferences = new Map();
+  filteredSales.filter(s => s.customerId).forEach(sale => {
+    sale.items?.forEach(item => {
+      const cat = item.categoryName || 'General';
+      registeredCategoryPreferences.set(cat, (registeredCategoryPreferences.get(cat) || 0) + 1);
+    });
+  });
 
   return {
-    customerStats: {
-      totalCustomers,
-      activeCustomers: activeCustomersCount,
-      activeRate,
-      avgTicketPerCustomer,
+    audienceSplit: { // Vital: Entender qué proporción del negocio está anonimizada
+      totalTransactions: filteredSales.length,
+      walkInTransactions,
+      walkInRevenue,
+      registeredTransactions: filteredSales.length - walkInTransactions,
+      registeredRevenue,
+    },
+    customerBaseStats: {
+      totalRegisteredCustomers: totalCustomers,
+      activeThisPeriod: activeCustomers.length,
+      engagementRate: totalCustomers > 0 ? (activeCustomers.length / totalCustomers) * 100 : 0,
       newCustomersThisPeriod: activeCustomers.filter(c => {
         const created = new Date(c.createdAt);
         return created >= start && created <= end;
@@ -300,20 +366,38 @@ export const buildCustomerPayload = async (start, end, customers = [], sales = [
     },
     debtAnalysis: {
       totalDebt,
-      customersWithDebt: customersWithDebt.length,
-      avgDebt: customersWithDebt.length > 0 ? totalDebt / customersWithDebt.length : 0,
+      debtorCount: customersWithDebt.length,
       topDebtors: customersWithDebt
         .sort((a, b) => (b.debt || 0) - (a.debt || 0))
-        .slice(0, PAYLOAD_LIMITS.MAX_TOP_CUSTOMERS)
-        .map(c => ({ name: c.name, debt: c.debt, phone: c.phone }))
+        .slice(0, 5)
+        .map(c => ({ name: c.name, debt: c.debt }))
     },
     loyaltyInsights: {
-      topCustomers: customerSpending,
-      recurrenceRate: recurrenceStats.recurrenceRate,
-      avgVisitsPerCustomer: recurrenceStats.avgVisits,
-      oneTimeCustomers: recurrenceStats.oneTimeCustomers,
-      loyalCustomers: recurrenceStats.loyalCustomers
+      topSpenders: aggregateCustomerSpending(filteredSales, customers),
+      topCategoriesBoughtByRegistered: Array.from(registeredCategoryPreferences.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([category, count]) => ({ category, itemsBought: count })),
+      // Ya no usas un hardcodeo estricto, le pasas las métricas dinámicas de recurrencia
+      visitFrequency: calculateDynamicRecurrence(filteredSales)
     }
+  };
+};
+
+// Corrección de la función de recurrencia para entregar datos crudos en lugar de etiquetas
+const calculateDynamicRecurrence = (sales) => {
+  const customerVisits = new Map();
+  sales.forEach(sale => {
+    if (!sale.customerId || sale.customerId === 'MOSTRADOR') return;
+    customerVisits.set(sale.customerId, (customerVisits.get(sale.customerId) || 0) + 1);
+  });
+
+  const visits = Array.from(customerVisits.values());
+  return {
+    singleVisitCustomers: visits.filter(v => v === 1).length,
+    twoToThreeVisits: visits.filter(v => v >= 2 && v <= 3).length,
+    fourOrMoreVisits: visits.filter(v => v >= 4).length,
+    avgVisitsPerActiveCustomer: visits.length > 0 ? visits.reduce((a, b) => a + b, 0) / visits.length : 0
   };
 };
 
@@ -321,39 +405,34 @@ export const buildCustomerPayload = async (start, end, customers = [], sales = [
 // 4. FUNCIONES DE AGREGACIÓN AUXILIARES
 // ============================================================
 
-const aggregateTopProducts = async (start, end, limit = 10) => {
-  try {
-    const sales = await db.sales
-      .where('timestamp')
-      .between(start.getTime(), end.getTime())
-      .toArray();
+const aggregateTopProducts = (filteredSales, limit = 10) => {
+  const productMap = new Map();
 
-    const productMap = new Map();
+  filteredSales.forEach(sale => {
+    sale.items?.forEach(item => {
+      const id = item.parentId || item.id;
+      const current = productMap.get(id) || {
+        id,
+        name: item.name,
+        quantity: 0,
+        revenue: 0
+      };
 
-    sales.forEach(sale => {
-      sale.items?.forEach(item => {
-        const id = item.parentId || item.id;
-        const current = productMap.get(id) || {
-          id,
-          name: item.name,
-          quantity: 0,
-          revenue: 0
-        };
-        productMap.set(id, {
-          ...current,
-          quantity: current.quantity + (item.quantity || 0),
-          revenue: current.revenue + ((item.price || 0) * (item.quantity || 0))
-        });
+      // Casteo estricto para evitar concatenaciones de texto
+      const qty = Number(item.quantity || 0);
+      const price = Number(item.price || 0);
+
+      productMap.set(id, {
+        ...current,
+        quantity: current.quantity + qty,
+        revenue: current.revenue + (price * qty)
       });
     });
+  });
 
-    return Array.from(productMap.values())
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, limit);
-  } catch (error) {
-    console.error('Error aggregating top products:', error);
-    return [];
-  }
+  return Array.from(productMap.values())
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, limit);
 };
 
 const aggregateByCategory = (menu) => {
@@ -378,7 +457,7 @@ const aggregateByDayOfWeek = (sales) => {
     const current = stats.get(day) || { count: 0, revenue: 0 };
     stats.set(day, {
       count: current.count + 1,
-      revenue: current.revenue + (sale.total || 0)
+      revenue: current.revenue + Number(sale.total || 0)
     });
   });
 
@@ -393,7 +472,7 @@ const aggregateByHour = (sales) => {
     const current = hours.get(hour) || { count: 0, revenue: 0 };
     hours.set(hour, {
       count: current.count + 1,
-      revenue: current.revenue + (sale.total || 0)
+      revenue: current.revenue + Number(sale.total || 0)
     });
   });
 
@@ -409,7 +488,7 @@ const aggregatePaymentMethods = (sales) => {
     const current = methods.get(method) || { count: 0, revenue: 0 };
     methods.set(method, {
       count: current.count + 1,
-      revenue: current.revenue + (sale.total || 0)
+      revenue: current.revenue + Number(sale.total || 0)
     });
   });
 
@@ -431,7 +510,7 @@ const aggregateByOrderType = (sales) => {
     const current = types.get(type) || { count: 0, revenue: 0 };
     types.set(type, {
       count: current.count + 1,
-      revenue: current.revenue + (sale.total || 0)
+      revenue: current.revenue + Number(sale.total || 0)
     });
   });
 
@@ -455,7 +534,7 @@ const aggregateCustomerSpending = (sales, customers) => {
     customerMap.set(sale.customerId, {
       ...current,
       visits: current.visits + 1,
-      totalSpent: current.totalSpent + (sale.total || 0)
+      totalSpent: current.totalSpent + Number(sale.total || 0)
     });
   });
 
@@ -529,7 +608,7 @@ export const buildAgentPayload = async (agentType, dateRangeType, options = {}) 
     case AGENT_TYPES.INVENTORY_AUDITOR:
       payload = {
         ...payload,
-        ...(await buildInventoryPayload(start, end, menu, wasteLogs))
+        ...(await buildInventoryPayload(start, end, menu, wasteLogs, sales))
       };
       break;
 

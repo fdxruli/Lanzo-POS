@@ -293,7 +293,7 @@ export default function DashboardPage() {
 
       {/* 4. CONSEJOS */}
       {activeTab === 'tips' && (
-        <BusinessTips sales={sales} menu={menu} customers={customers} />
+        <BusinessTips sales={sales} menu={menu} customers={customers} wasteLogs={wasteLogs} />
       )}
 
       {/* 5. CADUCIDAD */}

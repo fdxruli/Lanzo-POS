@@ -284,7 +284,7 @@ export const parseMarkdownResponse = (markdown) => {
     }
   };
 
-  const emojiHeaderRegex = /^(\s*)([📊⚠️💡📈💰🎯📋]+)\s*(.+)$/;
+  const emojiHeaderRegex = /^(\s*)([📊⚠️💡📈💰🎯📋]+)\s*(.+)$/u;
   const bulletRegex = /^(\s*)[-*•]\s*(.+)$/;
   const numberedRegex = /^(\s*)\d+[.)]\s*(.+)$/;
 

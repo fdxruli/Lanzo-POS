@@ -9,7 +9,7 @@ import {
  * Corrige discrepancias entre: Stock del Producto Padre vs. Suma de sus Lotes.
  * La "Verdad Absoluta" serán siempre los Lotes (Batches).
  */
-export const fixStockInconsistencies = async () => {
+const fixStockInconsistencies = async () => {
   let corrections = 0;
   const log = [];
 
@@ -18,7 +18,27 @@ export const fixStockInconsistencies = async () => {
       const allProducts = await db.table(STORES.MENU).toArray();
 
       for (const product of allProducts) {
-        if (!product.trackStock) continue;
+        // Si el producto no gestiona stock, verificar si tiene lotes activos que purgar
+        if (!product.trackStock) {
+          const batches = await db.table(STORES.PRODUCT_BATCHES)
+            .where('productId').equals(product.id)
+            .toArray();
+
+          const activeBatches = batches.filter(batch => batch.isActive);
+          if (activeBatches.length > 0) {
+            // Desactivar lotes huérfanos para que no inflen reportes de inventario
+            for (const batch of activeBatches) {
+              await db.table(STORES.PRODUCT_BATCHES).update(batch.id, {
+                isActive: false,
+                stock: 0,
+                updatedAt: new Date().toISOString()
+              });
+              log.push(`Desactivado lote huérfano ${batch.id} del producto ${product.name}`);
+            }
+            corrections++;
+          }
+          continue;
+        }
 
         const batches = await db.table(STORES.PRODUCT_BATCHES)
           .where('productId').equals(product.id)
@@ -61,7 +81,7 @@ export const fixStockInconsistencies = async () => {
  * HERRAMIENTA 2: RECONSTRUCTOR DE GANANCIAS (HISTORICO)
  * Borra las estadisticas diarias y las reconstruye desde ventas cerradas.
  */
-export const rebuildDailyStats = async () => {
+const rebuildDailyStats = async () => {
   try {
     const productCostMap = await buildProductCostMap(db, STORES);
     const dailyStats = await rebuildDailyStatsCacheFromSales(db, STORES, productCostMap, console);
@@ -76,3 +96,14 @@ export const rebuildDailyStats = async () => {
     return { success: false, message: error.message };
   }
 };
+
+/**
+ * Objeto de herramientas de mantenimiento con nombres que coinciden con la UI
+ */
+export const maintenanceTools = {
+  fixStock: fixStockInconsistencies,
+  rebuildStats: rebuildDailyStats
+};
+
+// Exportaciones individuales para compatibilidad
+export { fixStockInconsistencies, rebuildDailyStats };

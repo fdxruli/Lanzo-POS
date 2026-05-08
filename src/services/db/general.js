@@ -332,6 +332,34 @@ export const generalRepository = {
       if (error?.name === 'DatabaseError') throw error;
       throw handleDexieError(error, `Bulk Get ${storeName}`);
     }
+  },
+
+  /**
+   * Eliminación masiva segura por claves.
+   * Usa bulkDelete de Dexie para operaciones eficientes en lote.
+   */
+  async bulkDelete(storeName, keys) {
+    try {
+      await db.table(storeName).bulkDelete(keys);
+      return { success: true };
+    } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
+      throw handleDexieError(error, `Bulk Delete ${storeName}`);
+    }
+  },
+
+  /**
+   * Limpia completamente una tienda (todos los registros).
+   * Usa clear() de Dexie para máxima eficiencia.
+   */
+  async clearStore(storeName) {
+    try {
+      await db.table(storeName).clear();
+      return { success: true };
+    } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
+      throw handleDexieError(error, `Clear Store ${storeName}`);
+    }
   }
 };
 

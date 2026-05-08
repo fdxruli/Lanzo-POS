@@ -1,11 +1,14 @@
 import { create } from 'zustand';
-import { 
-  loadData, 
-  saveDataSafe, 
-  deleteDataSafe, 
-  STORES 
+import {
+  loadData,
+  saveDataSafe,
+  deleteDataSafe,
+  bulkDeleteSafe,
+  STORES
 } from '../services/database';
 import Logger from '../services/Logger';
+
+const RECYCLE_BIN_LIMIT = 50;
 
 export const useRecycleBinStore = create((set, get) => ({
   deletedItems: [],
@@ -15,14 +18,14 @@ export const useRecycleBinStore = create((set, get) => ({
   loadRecycleBin: async () => {
     set({ isLoading: true });
     try {
-      // Cargamos todo desde las tiendas de "papelera"
+      // Limitamos a 50 registros recientes por tabla
       const [delMenu, delCust, delSales, delCats] = await Promise.all([
-        loadData(STORES.DELETED_MENU),
-        loadData(STORES.DELETED_CUSTOMERS),
-        loadData(STORES.DELETED_SALES),
-        loadData(STORES.DELETED_CATEGORIES)
+        loadData(STORES.DELETED_MENU).then(items => (items || []).slice(-RECYCLE_BIN_LIMIT)),
+        loadData(STORES.DELETED_CUSTOMERS).then(items => (items || []).slice(-RECYCLE_BIN_LIMIT)),
+        loadData(STORES.DELETED_SALES).then(items => (items || []).slice(-RECYCLE_BIN_LIMIT)),
+        loadData(STORES.DELETED_CATEGORIES).then(items => (items || []).slice(-RECYCLE_BIN_LIMIT))
       ]);
-      
+
       // Mapeamos para la vista unificada
       const allMovements = [
         ...(delMenu || []).map(p => ({ ...p, type: 'Producto', uniqueId: p.id, mainLabel: p.name })),
@@ -30,14 +33,14 @@ export const useRecycleBinStore = create((set, get) => ({
         ...(delSales || []).map(s => ({ ...s, type: 'Pedido', uniqueId: s.timestamp, mainLabel: `Pedido $${s.total}` })),
         ...(delCats || []).map(c => ({ ...c, type: 'Categoría', uniqueId: c.id, mainLabel: c.name }))
       ];
-      
+
       // Ordenar: Más reciente primero
       allMovements.sort((a, b) => new Date(b.deletedTimestamp || 0) - new Date(a.deletedTimestamp || 0));
-      
+
       set({ deletedItems: allMovements, isLoading: false });
-    } catch (e) { 
+    } catch (e) {
       Logger.error("Error cargando papelera", e);
-      set({ isLoading: false }); 
+      set({ isLoading: false });
     }
   },
 
@@ -62,7 +65,7 @@ export const useRecycleBinStore = create((set, get) => ({
         case 'Producto':
           targetStore = STORES.MENU;
           trashStore = STORES.DELETED_MENU;
-          itemToRestore.isActive = true; 
+          itemToRestore.isActive = true;
           break;
         case 'Cliente':
           targetStore = STORES.CUSTOMERS;
@@ -86,14 +89,18 @@ export const useRecycleBinStore = create((set, get) => ({
 
       // 1. Guardar en tienda original
       const saveResult = await saveDataSafe(targetStore, itemToRestore);
-      
+
       if (saveResult.success) {
         // 2. Si tuvo éxito, borrar de la papelera
         await deleteDataSafe(trashStore, key);
-        
-        // 3. Recargar papelera
-        await get().loadRecycleBin();
-        
+
+        // 3. Actualizar estado local (sin recargar toda la papelera)
+        set(state => ({
+          deletedItems: state.deletedItems.filter(i =>
+            (i.uniqueId !== item.uniqueId) && (i.timestamp !== item.timestamp)
+          )
+        }));
+
         if(item.type === 'Pedido') {
             alert("✅ Pedido devuelto al historial.");
         }
@@ -111,7 +118,7 @@ export const useRecycleBinStore = create((set, get) => ({
 
   // --- ELIMINAR PERMANENTEMENTE (Liberar espacio) ---
   permanentlyDelete: async (item) => {
-    // Confirmación extra de seguridad debería hacerse en el componente (UI), 
+    // Confirmación extra de seguridad debería hacerse en el componente (UI),
     // pero aquí ejecutamos la acción.
     set({ isLoading: true });
     try {
@@ -123,8 +130,8 @@ export const useRecycleBinStore = create((set, get) => ({
             case 'Producto': trashStore = STORES.DELETED_MENU; break;
             case 'Cliente': trashStore = STORES.DELETED_CUSTOMERS; break;
             case 'Categoría': trashStore = STORES.DELETED_CATEGORIES; break;
-            case 'Pedido': 
-                trashStore = STORES.DELETED_SALES; 
+            case 'Pedido':
+                trashStore = STORES.DELETED_SALES;
                 key = item.id || item.timestamp;
                 break;
             default: throw new Error("Tipo desconocido para eliminar");
@@ -132,10 +139,10 @@ export const useRecycleBinStore = create((set, get) => ({
 
         // Borrar definitivamente de la BD
         await deleteDataSafe(trashStore, key);
-        
+
         // Actualizar estado local (más rápido que recargar todo)
         set(state => ({
-            deletedItems: state.deletedItems.filter(i => 
+            deletedItems: state.deletedItems.filter(i =>
                 // Comparamos por ID o Timestamp según el caso para asegurar unicidad
                 (i.id !== item.id) && (i.timestamp !== item.timestamp)
             )
@@ -156,31 +163,43 @@ export const useRecycleBinStore = create((set, get) => ({
         const { deletedItems } = get();
         if (deletedItems.length === 0) return;
 
-        // Creamos una lista de promesas para borrar todo en paralelo
-        const deletePromises = deletedItems.map(item => {
-            let trashStore = '';
-            let key = item.id;
+        // Agrupar IDs por tienda para borrado masivo
+        const itemsByStore = {
+          [STORES.DELETED_MENU]: [],
+          [STORES.DELETED_CUSTOMERS]: [],
+          [STORES.DELETED_CATEGORIES]: [],
+          [STORES.DELETED_SALES]: []
+        };
 
-            switch (item.type) {
-                case 'Producto': trashStore = STORES.DELETED_MENU; break;
-                case 'Cliente': trashStore = STORES.DELETED_CUSTOMERS; break;
-                case 'Categoría': trashStore = STORES.DELETED_CATEGORIES; break;
-                case 'Pedido': 
-                    trashStore = STORES.DELETED_SALES; 
-                    key = item.id || item.timestamp;
-                    break;
-                default: return Promise.resolve(); // Ignorar desconocidos
-            }
-
-            return deleteDataSafe(trashStore, key);
+        deletedItems.forEach(item => {
+          switch (item.type) {
+            case 'Producto':
+              itemsByStore[STORES.DELETED_MENU].push(item.id);
+              break;
+            case 'Cliente':
+              itemsByStore[STORES.DELETED_CUSTOMERS].push(item.id);
+              break;
+            case 'Categoría':
+              itemsByStore[STORES.DELETED_CATEGORIES].push(item.id);
+              break;
+            case 'Pedido':
+              itemsByStore[STORES.DELETED_SALES].push(item.id || item.timestamp);
+              break;
+            default:
+              break;
+          }
         });
 
-        // Ejecutar todas las eliminaciones
+        // Ejecutar borrado masivo por tienda
+        const deletePromises = Object.entries(itemsByStore)
+          .filter(([_, keys]) => keys.length > 0)
+          .map(([store, keys]) => bulkDeleteSafe(store, keys));
+
         await Promise.all(deletePromises);
 
         // Limpiar estado
         set({ deletedItems: [] });
-        
+
     } catch (error) {
         Logger.error("Error vaciando papelera", error);
         alert("Hubo un problema al intentar vaciar la papelera.");

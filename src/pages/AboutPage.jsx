@@ -367,7 +367,7 @@ export default function AboutPage() {
         title={contactModal.title}
         description={contactModal.description}
         fields={contactModal.fields}
-        submitLabel="📧 Generar Correo"
+        submitLabel="Generar Correo"
       />
     </div>
   );

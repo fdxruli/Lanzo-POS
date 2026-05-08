@@ -64,6 +64,12 @@ export const saveBulkSafe = (storeName, dataArray) =>
 export const deleteDataSafe = (storeName, key) =>
     safeExecute(() => generalRepository.delete(storeName, key));
 
+export const bulkDeleteSafe = (storeName, keys) =>
+    safeExecute(() => generalRepository.bulkDelete(storeName, keys));
+
+export const clearStoreSafe = (storeName) =>
+    safeExecute(() => generalRepository.clearStore(storeName));
+
 /**
  * Wrapper seguro para eliminación suave con cascadeo.
  * Patrón unificado para reemplazar saveDataSafe+deleteDataSafe, recycleData y transacciones directas.
