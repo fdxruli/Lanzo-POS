@@ -2,6 +2,7 @@ import { db, STORES } from './dexie';
 import { handleDexieError, validateOrThrow, DatabaseError, DB_ERROR_CODES } from './utils';
 import { generateID } from '../utils';
 import { buildPhoneBuckets, summarizePhoneConflictGroups, toIndexedPhoneKey } from './customerPhoneUtils';
+import { normalizeCustomerDebtCents } from './customerDebtIndex';
 
 // Importamos los esquemas de validacion existentes
 import { productSchema } from '../../schemas/productSchema';
@@ -137,6 +138,9 @@ export const generalRepository = {
       if (storeName === STORES.CUSTOMERS) {
         applyCustomerWriteMetadata(dataToSave, existingRecord);
         await applyCustomerPhonePolicy(dataToSave, existingRecord);
+        dataToSave.debtCents = normalizeCustomerDebtCents(
+          dataToSave.debt ?? existingRecord?.debt ?? 0
+        );
       }
 
       const schema = SCHEMAS[storeName];
@@ -185,6 +189,7 @@ export const generalRepository = {
           const now = new Date().toISOString();
           processed.createdAt = processed.createdAt || now;
           processed.updatedAt = now;
+          processed.debtCents = normalizeCustomerDebtCents(processed.debt ?? 0);
         }
 
         return validateOrThrow(schema, processed, `Bulk Save ${storeName} (Index ${index})`);

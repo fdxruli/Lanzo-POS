@@ -8,6 +8,8 @@ import { runPostSaleEffects } from './postSaleEffects';
 import { Money } from '../../utils/moneyMath';
 import { generateID } from '../utils';
 import { SALE_STATUS } from './financialStats';
+import { syncMiddleware } from '../sync/syncMiddleware';
+import { conflictResolver } from '../sync/conflictResolver';
 
 export const processSaleCore = async ({
     order,
@@ -163,23 +165,86 @@ export const processSaleCore = async ({
             return { success: false, message: errorMessage };
         }
 
-        await runPostSaleEffects({
-            sale,
-            processedItems,
-            paymentData,
-            total,
-            companyName,
-            features,
-            loadData,
-            saveData,
-            STORES,
-            useStatsStore,
-            roundCurrency,
-            sendReceiptWhatsApp
-        });
+        // ✅ SOBERANÍA LOCAL ESTABLECIDA
+        // La venta está segura en IndexedDB. De aquí en adelante, el éxito es inconmutable.
+        // Los efectos secundarios se aíslan en un contexto no-bloqueante.
+
+        let postEffectsFailed = false;
+        let postEffectsError = null;
+        let inventoryChanges = null;
+
+        try {
+            await runPostSaleEffects({
+                sale,
+                processedItems,
+                paymentData,
+                total,
+                companyName,
+                features,
+                loadData,
+                saveData,
+                STORES,
+                useStatsStore,
+                roundCurrency,
+                sendReceiptWhatsApp
+            });
+        } catch (postError) {
+            // Captura el error, pero NO lo re-lanzamos. La venta ya está segura.
+            postEffectsFailed = true;
+            postEffectsError = {
+                message: postError.message || 'Error desconocido en efectos posteriores',
+                stack: postError.stack || null,
+                timestamp: new Date().toISOString()
+            };
+
+            Logger.warn('Post-Sale Effects Failed (Non-Blocking):', postEffectsError);
+
+            // 🛡️ NUEVO: Registrar cambios de inventario como PENDIENTES
+            // Esto previene que un pull posterior sobrescriba con datos viejos
+            inventoryChanges = {
+                saleId: sale.id,
+                timestamp: sale.timestamp,
+                items: processedItems.map(item => ({
+                    productId: item.id,
+                    quantity: item.quantity,
+                    batchId: item.batchId,
+                    priceAtSale: item.price,
+                    costAtSale: item.cost
+                })),
+                totalValue: sale.total,
+                reason: 'POST_SALE_EFFECTS_FAILED'
+            };
+
+            // Registrar en syncMiddleware para prevenir sobrescrituras
+            await syncMiddleware.registerLocalSaleChange(sale.id, inventoryChanges);
+            await conflictResolver.markAsPendingSync(
+                STORES.SALES,
+                {
+                    saleId: sale.id,
+                    inventoryChanges,
+                    status: SALE_STATUS.CLOSED
+                },
+                'POST_EFFECTS_SYNC_FAILED'
+            );
+
+            Logger.info(
+                `📌 Cambios de inventario registrados como PENDIENTES para prevenir sobrescrituras`,
+                { saleId: sale.id, itemsAffected: processedItems.length }
+            );
+        }
 
         Logger.timeEnd('Service:ProcessSale');
-        return { success: true, saleId: sale.timestamp };
+
+        // ✅ RETORNO RESILIENTE PWA
+        // Indica claramente: venta segura localmente, pero qué efectos fallaron
+        return {
+            success: true,
+            saleId: sale.timestamp,
+            postEffectsFailed,
+            postEffectsError: postEffectsFailed ? postEffectsError : null,
+            pendingSyncRequired: postEffectsFailed, // Trigger para Service Worker
+            inventoryChangesTracked: postEffectsFailed ? inventoryChanges : null
+        };
     } catch (error) {
         Logger.error('Service Error:', error);
         return { success: false, message: error.message };

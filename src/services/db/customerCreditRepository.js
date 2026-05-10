@@ -1,6 +1,7 @@
 import { generateID } from '../utils';
 import { db, STORES } from './dexie';
 import { DatabaseError, DB_ERROR_CODES } from './utils';
+import { normalizeCustomerDebtCents } from './customerDebtIndex';
 import { Money } from '../../utils/moneyMath'; // <-- OBLIGATORIO
 
 export const customerCreditRepository = {
@@ -55,6 +56,7 @@ export const customerCreditRepository = {
             const newDebtSafe = Money.subtract(currentDebtSafe, amountSafe);
             await db.table(STORES.CUSTOMERS).update(customerId, {
                 debt: Money.toExactString(newDebtSafe),
+                debtCents: normalizeCustomerDebtCents(newDebtSafe),
                 updatedAt: timestamp
             });
 
@@ -108,6 +110,7 @@ export const customerCreditRepository = {
 
             await db.table(STORES.CUSTOMERS).update(customerId, {
                 debt: exactDebtString,
+                debtCents: normalizeCustomerDebtCents(exactDebtString),
                 updatedAt: new Date().toISOString()
             });
 
@@ -148,10 +151,42 @@ export const customerCreditRepository = {
                         // Opcional pero recomendado: Asegurar que el formato de deuda del cliente
                         // ahora sea un string puro como dicta el nuevo estándar.
                         await db.table(STORES.CUSTOMERS).update(customer.id, {
-                            debt: Money.toExactString(debtSafe)
+                            debt: Money.toExactString(debtSafe),
+                            debtCents: normalizeCustomerDebtCents(debtSafe)
                         });
                     }
                 }
+            }
+        });
+    },
+
+    /**
+     * Actualiza el límite de crédito de todos los clientes de forma masiva y optimizada.
+     * @param {number|null} newLimit El nuevo límite a aplicar
+     * @param {boolean} overwriteCustomLimits Si es true, destruye los límites personalizados.
+     */
+    async bulkUpdateCreditLimits(newLimit, overwriteCustomLimits = false) {
+        return await db.transaction('rw', db.table(STORES.CUSTOMERS), async () => {
+            const timestamp = new Date().toISOString();
+
+            if (overwriteCustomLimits) {
+                // Opción Destructiva: Fuerza el valor a TODOS los registros.
+                // modify() se ejecuta a nivel de base de datos, es instantáneo.
+                await db.table(STORES.CUSTOMERS).toCollection().modify({
+                    creditLimit: newLimit,
+                    updatedAt: timestamp
+                });
+            } else {
+                // Opción Inteligente (Recomendada):
+                // Solo actualiza a los clientes que NO tienen un límite personalizado activo,
+                // o aquellos que tenían el límite global anterior.
+                // Requiere que el esquema soporte "creditLimit: null" para usar el global.
+                await db.table(STORES.CUSTOMERS)
+                    .filter(c => c.hasCustomLimit !== true)
+                    .modify({
+                        creditLimit: newLimit,
+                        updatedAt: timestamp
+                    });
             }
         });
     }

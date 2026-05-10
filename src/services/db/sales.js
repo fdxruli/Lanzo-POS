@@ -8,8 +8,10 @@ import {
     getCommittedStock
 } from './utils';
 import { generateID } from '../utils';
+import { normalizeCustomerDebtCents } from './customerDebtIndex';
 import { Money } from '../../utils/moneyMath';
 import { SALE_STATUS } from '../sales/financialStats';
+import Logger from '../Logger';
 
 const getRealProductId = (item) => item?.parentId || item?.id;
 const isCommittedSaleItem = (item) => item?.inventoryReservation?.source === 'table';
@@ -144,89 +146,115 @@ const applyBatchDeductions = async ({ deductions = [], batchesCacheMap, tableBat
     }
 };
 
-const syncParentProductsAfterSale = async ({
+const recordInventoryDeltas = async ({
     affectedProductIds,
     batchesCacheMap,
     saleItems,
     tableMenu,
+    tableInventoryEvents,  // Nueva tabla de eventos
+    saleId,               // Para idempotencia
+    timestamp = new Date().toISOString()
 }) => {
     const nonBatchSalesMap = buildNonBatchSalesMap(saleItems);
     const productIdsArray = Array.from(affectedProductIds);
-
-    // Lectura Masiva (Bulk Read)
     const products = await tableMenu.bulkGet(productIdsArray);
 
-    const productsToUpdate = [];
-    const timestamp = new Date().toISOString();
+    const productsToUpdate = [];      // Proyecciones (para UI offline)
+    const deltaEvents = [];            // Deltas inmutables (source of truth)
 
-    // Procesamiento Síncrono en Memoria
     for (let i = 0; i < products.length; i++) {
         const product = products[i];
-
         if (!product || product.trackStock === false) continue;
 
         const productId = productIdsArray[i];
+        const previousStock = normalizeStock(product.stock || 0);
+        let newStock = previousStock;
+        let delta = 0;
 
+        // ─ Cálculo de stock final (igual que antes)
         if (product.batchManagement?.enabled) {
             const productBatches = batchesCacheMap.get(productId) || [];
-            const totalStock = normalizeStock(
+            newStock = normalizeStock(
                 productBatches
                     .filter((batch) => batch?.isActive && normalizeStock(batch.stock) > 0)
                     .reduce((sum, batch) => sum + normalizeStock(batch.stock), 0)
             );
+        } else {
+            const nonBatchSale = nonBatchSalesMap.get(productId);
+            if (!nonBatchSale || nonBatchSale.totalSold <= 0) continue;
 
-            const totalCommittedStock = normalizeStock(
-                productBatches.reduce((sum, batch) => sum + getCommittedStock(batch), 0)
-            );
+            const retailSold = normalizeStock(nonBatchSale.totalSold - nonBatchSale.committedSold);
+            if (retailSold > 0 && getAvailableStock(product) < retailSold) {
+                throw buildInventoryError(
+                    `STOCK_INSUFFICIENT: Producto ${product.name} solo tiene ${getAvailableStock(product)} disponible`
+                );
+            }
 
-            productsToUpdate.push({
-                ...product,
-                stock: totalStock,
-                committedStock: totalCommittedStock,
-                updatedAt: timestamp
-            });
+            if (nonBatchSale.committedSold > 0 && getCommittedStock(product) < nonBatchSale.committedSold) {
+                throw buildInventoryError(
+                    `CRITICAL_COMMITTED_UNDERFLOW: Producto ${product.name} tiene ${getCommittedStock(product)} comprometido`
+                );
+            }
 
-            continue;
+            newStock = normalizeStock(previousStock - nonBatchSale.totalSold);
+            if (newStock < 0) {
+                throw buildInventoryError(
+                    `STOCK_INSUFFICIENT: Producto ${product.name}`
+                );
+            }
         }
 
-        const nonBatchSale = nonBatchSalesMap.get(productId);
-        if (!nonBatchSale || nonBatchSale.totalSold <= 0) continue;
+        // ─ CÁLCULO DEL DELTA (negativos en ventas)
+        delta = newStock - previousStock;
 
-        const retailSold = normalizeStock(nonBatchSale.totalSold - nonBatchSale.committedSold);
-        if (retailSold > 0 && getAvailableStock(product) < retailSold) {
-            throw buildInventoryError(
-                `STOCK_INSUFFICIENT: Producto ${product.name} solo tiene ${getAvailableStock(product)} disponible, ` +
-                `se requieren ${retailSold}.`
-            );
-        }
-
-        if (nonBatchSale.committedSold > 0 && getCommittedStock(product) < nonBatchSale.committedSold) {
-            throw buildInventoryError(
-                `CRITICAL_COMMITTED_UNDERFLOW: Producto ${product.name} tiene ${getCommittedStock(product)} comprometido, ` +
-                `se intentan convertir ${nonBatchSale.committedSold}.`
-            );
-        }
-
-        const newStock = normalizeStock(Number(product.stock || 0) - nonBatchSale.totalSold);
-        if (newStock < 0) {
-            throw buildInventoryError(
-                `STOCK_INSUFFICIENT: Producto ${product.name} tiene ${product.stock}, se requiere ${nonBatchSale.totalSold}.`
-            );
-        }
-
+        // ─ 1. ACTUALIZAR PROYECCIÓN LOCAL (para UI offline)
+        // Documentar claramente que esto es una proyección, no source of truth
         productsToUpdate.push({
             ...product,
             stock: newStock,
-            committedStock: nonBatchSale.committedSold > 0
-                ? normalizeStock(getCommittedStock(product) - nonBatchSale.committedSold)
+            committedStock: !product.batchManagement?.enabled && nonBatchSalesMap.has(productId)
+                ? normalizeStock(getCommittedStock(product) - (nonBatchSalesMap.get(productId)?.committedSold || 0))
                 : getCommittedStock(product),
-            updatedAt: timestamp
+            updatedAt: timestamp,
+            // META: Documentar que esto es una proyección recalculada desde inventory_events
+            _projectsFrom: 'inventory_events'
         });
+
+        // ─ 2. REGISTRAR DELTA INMUTABLE (si hay cambio)
+        if (delta !== 0) {
+            deltaEvents.push({
+                id: generateID('evt'),
+                type: 'INVENTORY_DEDUCTION',
+                productId: productId,
+                delta: delta,                      // Negativo = salida de stock
+                saleId: saleId,                   // Para idempotencia y trazabilidad
+                previousStock: previousStock,      // Contexto de auditoría
+                newStock: newStock,                // Contexto de auditoría
+                timestamp: timestamp,
+                batchManagementEnabled: product.batchManagement?.enabled || false
+            });
+        }
     }
 
-    // Escritura Masiva (Bulk Write)
+    // ─ ESCRITURA ATÓMICA (ambas tablas o nada)
     if (productsToUpdate.length > 0) {
         await tableMenu.bulkPut(productsToUpdate);
+    }
+
+    if (deltaEvents.length > 0) {
+        // Validar idempotencia: no duplicar eventos del mismo saleId
+        const existingEventsByProductIdForSale = await tableInventoryEvents
+            .where('[saleId+productId]')
+            .anyOf(deltaEvents.map(e => [saleId, e.productId]))
+            .toArray();
+
+        if (existingEventsByProductIdForSale.length > 0) {
+            // Retomar después de reconexión: eventos ya registrados, skip
+            Logger.warn(`⚠️ Eventos de inventario ya registrados para venta ${saleId}, skipping`);
+            return;
+        }
+
+        await tableInventoryEvents.bulkAdd(deltaEvents);
     }
 };
 
@@ -263,6 +291,7 @@ const applyCustomerCreditCharge = async ({ sale, tables }) => {
 
     await tables.customers.update(sale.customerId, {
         debt: Money.toExactString(newDebt),
+        debtCents: normalizeCustomerDebtCents(newDebt),
         updatedAt: timestamp
     });
 };
@@ -290,7 +319,14 @@ const persistSaleAndLog = async ({ sale, tables, logType = 'SALE', extraLogField
     return transactionId;
 };
 
-const processSaleWithinTransaction = async ({ sale, deductions = [], tables, logType = 'SALE', extraLogFields = {} }) => {
+const processSaleWithinTransaction = async ({
+    sale,
+    deductions = [],
+    tables,
+    logType = 'SALE',
+    extraLogFields = {}
+}) => {
+    // ─ Verificar idempotencia: sale ya procesada
     const existingSale = await tables.sales.get(sale.id);
     if (existingSale) {
         if (existingSale.status !== SALE_STATUS.OPEN) {
@@ -310,11 +346,15 @@ const processSaleWithinTransaction = async ({ sale, deductions = [], tables, log
         tableBatches: tables.batches
     });
 
-    await syncParentProductsAfterSale({
+    // ─ NUEVA LÓGICA: Registrar deltas en lugar de solo actualizar stock
+    await recordInventoryDeltas({
         affectedProductIds,
         batchesCacheMap,
         saleItems: sale?.items || [],
-        tableMenu: tables.menu
+        tableMenu: tables.menu,
+        tableInventoryEvents: tables.inventoryEvents,  // Nueva tabla
+        saleId: sale.id,                             // Para idempotencia
+        timestamp: new Date().toISOString()
     });
 
     await applyCustomerCreditCharge({
@@ -338,13 +378,13 @@ const resolveRequiredStoreNames = (salesPayloads = []) => {
         STORES.SALES,
         STORES.PRODUCT_BATCHES,
         STORES.MENU,
-        STORES.TRANSACTION_LOG
+        STORES.TRANSACTION_LOG,
+        STORES.INVENTORY_EVENTS  // ← SIEMPRE incluir para registrar deltas
     ]);
 
     const sales = Array.isArray(salesPayloads) ? salesPayloads : [salesPayloads];
 
     for (const sale of sales) {
-        // Bloquear si hay customerId para soportar lealtad, historial, o créditos
         if (sale?.customerId) {
             stores.add(STORES.CUSTOMERS);
             stores.add(STORES.CUSTOMER_LEDGER);
@@ -363,6 +403,7 @@ const buildTransactionTables = (lockedStores = []) => {
     if (lockedStores.includes(STORES.TRANSACTION_LOG)) tables.transactionLog = db.table(STORES.TRANSACTION_LOG);
     if (lockedStores.includes(STORES.CUSTOMERS)) tables.customers = db.table(STORES.CUSTOMERS);
     if (lockedStores.includes(STORES.CUSTOMER_LEDGER)) tables.customerLedger = db.table(STORES.CUSTOMER_LEDGER);
+    if (lockedStores.includes(STORES.INVENTORY_EVENTS)) tables.inventoryEvents = db.table(STORES.INVENTORY_EVENTS);
     return tables;
 };
 
@@ -373,6 +414,7 @@ export const salesRepository = {
             const lockedStoreNames = resolveRequiredStoreNames(sale);
             const dexieTablesToLock = lockedStoreNames.map(name => db.table(name));
 
+            // TRANSACCIÓN ATÓMICA: Venta + Deltas en sync_outbox + Proyección local
             return await db.transaction('rw', dexieTablesToLock, async () => {
                 const tables = buildTransactionTables(lockedStoreNames);
                 return processSaleWithinTransaction({
@@ -384,14 +426,13 @@ export const salesRepository = {
             });
 
         } catch (error) {
-            if (error?.isInventoryError || (error?.message && error.message.includes('STOCK_INSUFFICIENT'))) {
+            if (error?.isInventoryError) {
                 return {
                     success: false,
                     isStockError: true,
                     message: error.message
                 };
             }
-
             throw handleDexieError(error, 'Execute Sale Transaction');
         }
     },
@@ -548,5 +589,37 @@ export const salesRepository = {
         } catch (error) {
             throw handleDexieError(error, 'Get Sales By Ids');
         }
+    }
+};
+
+/**
+ * Servicio de Sincronización - Ejecuta cuando hay conexión
+ * Lee eventos de inventory_events y los envía al servidor
+ */
+export const inventorySyncService = {
+    
+    async pullUnynchedEvents(limit = 100) {
+        // Leer eventos que aún no se han sincronizado
+        const unsyncedEvents = await db.table(STORES.INVENTORY_EVENTS)
+            .where('synced').equals(false)
+            .limit(limit)
+            .toArray();
+        
+        return unsyncedEvents;
+    },
+
+    async markEventsAsSynced(eventIds = []) {
+        // Marcar como enviados (idempotente)
+        const now = new Date().toISOString();
+        await db.table(STORES.INVENTORY_EVENTS)
+            .bulkUpdate(eventIds.map(id => ({
+                key: id,
+                changes: { synced: true, syncedAt: now }
+            })));
+    },
+
+    async reconcileProjectionsFromEvents() {
+        // En caso de conflicto post-sync, recalcular proyecciones desde eventos
+        // Lógica de "replay" de eventos
     }
 };

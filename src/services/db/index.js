@@ -6,6 +6,7 @@ import { DatabaseError, DB_ERROR_CODES, getAvailableStock } from './utils';
 import { fixStockInconsistencies, rebuildDailyStats } from '../maintenance';
 import { layawayRepository } from './layaways';
 import { handleDexieError } from './utils';
+import { CUSTOMER_DEBT_SORT_INDEX, matchesCustomerSnapshot } from './customerDebtIndex';
 
 // ============================================================
 // EXPORTACIÓN DE CONSTANTES Y CLASES (Compatibilidad 100%)
@@ -216,6 +217,49 @@ export const getOrdersSince = salesRepository.getOrdersSince;
 
 export const recycleData = (sourceStore, trashStore, key, reason) =>
     generalRepository.recycle(sourceStore, trashStore, key, reason);
+
+export const loadCustomersByDebtPaginated = async (options = {}) => {
+    const {
+        limit = 50,
+        offset = 0,
+        snapshotAt = null
+    } = options;
+
+    try {
+        if (!db.isOpen()) {
+            await db.open();
+        }
+
+        const normalizedLimit = Math.max(1, Number(limit) || 50);
+        const normalizedOffset = Math.max(0, Number(offset) || 0);
+        const effectiveSnapshotAt = snapshotAt || new Date().toISOString();
+
+        const query = db.table(STORES.CUSTOMERS)
+            .orderBy(CUSTOMER_DEBT_SORT_INDEX)
+            .reverse()
+            .filter(customer =>
+                customer?.isActive !== false &&
+                matchesCustomerSnapshot(customer, effectiveSnapshotAt)
+            );
+
+        const rows = await query
+            .offset(normalizedOffset)
+            .limit(normalizedLimit + 1)
+            .toArray();
+
+        const hasMore = rows.length > normalizedLimit;
+        const data = hasMore ? rows.slice(0, normalizedLimit) : rows;
+
+        return {
+            data,
+            hasMore,
+            nextOffset: hasMore ? normalizedOffset + data.length : null,
+            snapshotAt: effectiveSnapshotAt
+        };
+    } catch (error) {
+        throw handleDexieError(error, 'loadCustomersByDebtPaginated');
+    }
+};
 
 
 // ============================================================
@@ -564,7 +608,7 @@ export const getImageFromDB = async (id) => {
     try {
         const record = await db.table(STORES.IMAGES).get(id);
         return record ? record.blob : null;
-    } catch (e) {
+    } catch {
         return null;
     }
 };
@@ -585,7 +629,7 @@ export const checkStorageQuota = async () => {
             };
         }
         return { warning: false };
-    } catch (e) {
+    } catch {
         return { warning: false };
     }
 };

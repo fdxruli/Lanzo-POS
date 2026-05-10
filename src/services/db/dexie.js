@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
 import { DB_NAME } from '../../config/dbConfig'; // Usamos tu config existente
 import { buildPhoneBuckets, toIndexedPhoneKey } from './customerPhoneUtils';
+import { CUSTOMER_DEBT_SORT_INDEX, normalizeCustomerDebtCents } from './customerDebtIndex';
 import { getLegacyFinancialSaleStatus } from '../sales/financialStats';
 import Logger from '../Logger';
 import { showMessage } from '../../store/useMessageStore';
@@ -35,6 +36,7 @@ export const STORES = {
   IMAGES: 'images',
   LAYAWAYS: 'layaways',
   CUSTOMER_LEDGER: 'customer_ledger',
+  INVENTORY_EVENTS: 'inventory_events'
 };
 
 class LanzoDatabase extends Dexie {
@@ -209,11 +211,55 @@ class LanzoDatabase extends Dexie {
       await initializeCommittedStock(STORES.MENU);
       await initializeCommittedStock(STORES.PRODUCT_BATCHES);
     });
+
+    this.version(11).stores({
+      [STORES.CUSTOMERS]: `id, createdAt, updatedAt, phone, &phoneKey, debtCents, ${CUSTOMER_DEBT_SORT_INDEX}`
+    }).upgrade(async tx => {
+      const now = new Date().toISOString();
+
+      await tx.table(STORES.CUSTOMERS).toCollection().modify(record => {
+        if (!record.createdAt) {
+          record.createdAt = record.updatedAt || now;
+        }
+
+        if (!record.updatedAt) {
+          record.updatedAt = record.createdAt || now;
+        }
+
+        record.debtCents = normalizeCustomerDebtCents(record.debt || 0);
+      });
+    });
+
+    this.version(12).stores({
+      [STORES.INVENTORY_EVENTS]: 'id, saleId, productId, timestamp, [saleId+productId], synced, [timestamp+synced]'
+    }).upgrade(async tx => {
+      // Si existen registros heredados, marcar como sincronizados
+      await tx.table(STORES.INVENTORY_EVENTS).toCollection().modify(record => {
+        if (!('synced' in record)) {
+          record.synced = false;
+          record.syncedAt = null;
+        }
+      });
+    });
   }
 }
 
 // Instancia Singleton
 export const db = new LanzoDatabase();
+
+db.table(STORES.CUSTOMERS).hook('creating', (_primaryKey, customer) => {
+  customer.debtCents = normalizeCustomerDebtCents(customer.debt || 0);
+});
+
+db.table(STORES.CUSTOMERS).hook('updating', (mods, _primaryKey, customer) => {
+  if (!Object.prototype.hasOwnProperty.call(mods, 'debt')) {
+    return undefined;
+  }
+
+  return {
+    debtCents: normalizeCustomerDebtCents(mods.debt ?? customer?.debt ?? 0)
+  };
+});
 
 // Variable de control para evitar múltiples invocaciones si Dexie emite el evento en ráfaga
 let isMigrationBlockHandled = false;

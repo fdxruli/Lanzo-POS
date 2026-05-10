@@ -8,50 +8,209 @@ import {
 import Logger from '../services/Logger';
 import { categoriesRepository } from '../services/db/general';
 
+// Variables privadas del módulo para gestionar listeners
+let broadcastChannel = null;
+let visibilityListener = null;
+let focusListener = null;
+let pageshowListener = null;
+let listenersInitialized = false;
+
+// De-duplicación: colapsa la ráfaga de eventos simultáneos (visibilitychange +
+// focus + pageshow) en una sola llamada. 300 ms es suficiente para absorber la
+// ráfaga sin bloquear actualizaciones legítimas tras horas de suspensión.
+let lastInvalidationTime = 0;
+const BURST_DEDUPE_MS = 300;
+
+// Bandera de reintento: si llega una invalidación mientras ya hay una en vuelo,
+// en lugar de descartarla silenciosamente, se programa exactamente un reintento.
+let pendingInvalidation = false;
+
 /**
- * Store de productos con paginación correcta delegada a Dexie.
+ * Establece los listeners globales para invalidación reactiva.
+ * Se ejecuta una sola vez por sesión.
  *
- * FUENTE DE VERDAD ÚNICA:
- * Este store conserva el caché paginado del catálogo y filtros globales
- * de categoría/agotados. La búsqueda por texto se maneja localmente en UI.
- *
- * CATEGORÍA ESPECIAL 'CAT_DYNAMIC_AGOTADOS':
- * No es un ID de categoría real en la BD. Cuando setFilters recibe este
- * valor en categoryId, lo intercepta y lo convierte en el flag outOfStockOnly.
- * De esta forma, loadDataPaginated recibe siempre filtros semánticamente
- * correctos y nunca busca en la BD por el ID literal 'CAT_DYNAMIC_AGOTADOS'.
+ * @param {Function} get - Función getter del store de Zustand
+ * @returns {Function} Función cleanup para desuscribirse
  */
+function setupReactiveListeners(get) {
+    if (listenersInitialized) return () => { };
+
+    listenersInitialized = true;
+
+    if (typeof window === 'undefined') return () => { };
+
+    // ─────────────────────────────────────────────────────────────────
+    // 1. BROADCAST CHANNEL: Sincronización cross-tab
+    // ─────────────────────────────────────────────────────────────────
+    try {
+        broadcastChannel = new BroadcastChannel('product-store-invalidation');
+        broadcastChannel.addEventListener('message', (event) => {
+            if (event.data?.type === 'db-changed') {
+                Logger.debug('[ProductStore] BroadcastChannel: db-changed detected', event.data);
+                get().invalidateAndReset();
+            }
+        });
+    } catch (error) {
+        Logger.warn('BroadcastChannel no soportado en este navegador:', error);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 2. VISIBILITY, FOCUS y PAGESHOW: Detección robusta de primer plano
+    //
+    // Se usan tres eventos complementarios:
+    // - visibilitychange → cubre cambios de pestaña y bloqueo de pantalla
+    // - focus           → complementa en desktop cuando visibilitychange
+    //                     no es suficiente (p. ej. cambio de ventana OS)
+    // - pageshow        → el más confiable para bfcache y vuelta de sleep;
+    //                     event.persisted === true indica restauración de caché
+    // ─────────────────────────────────────────────────────────────────
+    const handleWakeUp = (source) => {
+        Logger.debug(`[ProductStore] Wake-up detectado desde: ${source}`);
+        get().invalidateAndReset();
+    };
+
+    visibilityListener = () => {
+        if (document.visibilityState === 'visible') {
+            handleWakeUp('visibilitychange');
+        }
+    };
+
+    focusListener = () => {
+        handleWakeUp('focus');
+    };
+
+    pageshowListener = (event) => {
+        // event.persisted === true: la página fue restaurada de bfcache o sleep
+        if (event.persisted) {
+            handleWakeUp('pageshow(persisted)');
+        }
+    };
+
+    document.addEventListener('visibilitychange', visibilityListener);
+    window.addEventListener('focus', focusListener);
+    window.addEventListener('pageshow', pageshowListener);
+
+    // ─────────────────────────────────────────────────────────────────
+    // CLEANUP: Retornar función para desuscribirse
+    // ─────────────────────────────────────────────────────────────────
+    return () => {
+        listenersInitialized = false;
+        if (broadcastChannel) {
+            broadcastChannel.close();
+            broadcastChannel = null;
+        }
+        if (visibilityListener) {
+            document.removeEventListener('visibilitychange', visibilityListener);
+            visibilityListener = null;
+        }
+        if (focusListener) {
+            window.removeEventListener('focus', focusListener);
+            focusListener = null;
+        }
+        if (pageshowListener) {
+            window.removeEventListener('pageshow', pageshowListener);
+            pageshowListener = null;
+        }
+    };
+}
+
+/**
+ * Notifica a todas las pestañas que la BD ha cambiado.
+ * Se llama desde servicios que mutarán la BD (softDelete, create, etc.)
+ *
+ * @param {object} metadata - Información opcional sobre qué cambió
+ */
+export function broadcastDBChange(metadata = {}) {
+    if (broadcastChannel && broadcastChannel.readyState === 'connected') {
+        broadcastChannel.postMessage({
+            type: 'db-changed',
+            timestamp: Date.now(),
+            metadata,
+        });
+    }
+}
+
 export const useProductStore = create((set, get) => ({
     menu: [],
     categories: [],
     isLoading: false,
+    isInvalidating: false,
 
     // ── Motor de cursores ──────────────────────────────────────────
     cursorStack: [null],
     currentPageIndex: 0,
     hasMore: true,
 
-    /**
-     * Filtros que se envían directamente a loadDataPaginated.
-     *
-     * - categoryId    : ID real de categoría, o null para "todas"
-     * - outOfStockOnly: true cuando el usuario selecciona la categoría virtual
-     *                   'CAT_DYNAMIC_AGOTADOS'
-     */
     filters: {
         categoryId: null,
         outOfStockOnly: false,
-        status: 'active', // Puede ser 'active', 'inactive' o 'all'
+        status: 'active',
+    },
+
+    initialize: () => {
+        Logger.debug('[ProductStore] Initializing reactive listeners');
+        return setupReactiveListeners(get);
+    },
+
+    invalidateAndReset: () => {
+        const state = get();
+        const now = Date.now();
+
+        // PASO 1 – De-duplicación de ráfaga:
+        // Dos eventos que lleguen dentro de BURST_DEDUPE_MS se colapsan en uno.
+        // NO bloqueamos si la última invalidación fue hace > BURST_DEDUPE_MS
+        // (que es el caso legítimo tras horas de suspensión).
+        if (now - lastInvalidationTime < BURST_DEDUPE_MS) {
+            Logger.debug('[ProductStore] Invalidation burst deduplicated');
+            return;
+        }
+
+        // PASO 2 – Mutex con reintento:
+        // Si ya hay una invalidación en vuelo, programamos un reintento
+        // en lugar de descartar silenciosamente la petición.
+        if (state.isInvalidating) {
+            Logger.debug('[ProductStore] Invalidation in progress – scheduling retry');
+            pendingInvalidation = true;
+            return;
+        }
+
+        lastInvalidationTime = now;
+        Logger.info('[ProductStore] Executing hard invalidation + reset');
+
+        // 1. Bloquear nuevas llamadas (mutex)
+        set({ isInvalidating: true });
+
+        // 2. Purgar caché en memoria
+        set({
+            menu: [],
+            cursorStack: [null],
+            currentPageIndex: 0,
+            hasMore: true,
+        });
+
+        // 3. Rehidratar desde IndexedDB y liberar el bloqueo
+        get()
+            .fetchPage('current')
+            .catch((error) => {
+                Logger.error('[ProductStore] Error during invalidation re-fetch:', error);
+            })
+            .finally(() => {
+                set({ isInvalidating: false });
+                Logger.debug('[ProductStore] Invalidation complete');
+
+                // Si llegó una petición mientras estábamos en vuelo, ejecutarla ahora.
+                if (pendingInvalidation) {
+                    pendingInvalidation = false;
+                    Logger.info('[ProductStore] Executing pending invalidation after mutex release');
+                    // Resetear el tiempo para que no quede bloqueado por BURST_DEDUPE_MS
+                    lastInvalidationTime = 0;
+                    get().invalidateAndReset();
+                }
+            });
     },
 
     /**
      * Actualiza los filtros activos y reinicia la paginación desde el inicio.
-     *
-     * Intercepta la categoría virtual 'CAT_DYNAMIC_AGOTADOS' y la transforma
-     * en el flag outOfStockOnly antes de enviarla a la BD.
-     *
-     * @param {object} newFilters - Objeto parcial con los filtros a actualizar.
-     *   Puede contener: { categoryId?, outOfStockOnly? }
      */
     setFilters: (newFilters = {}) => {
         const { searchTerm, ...safeFilters } = newFilters;
@@ -59,19 +218,15 @@ export const useProductStore = create((set, get) => ({
         if (Object.keys(safeFilters).length === 0) return;
 
         const currentFilters = get().filters;
-
-        // Construcción del objeto de filtros resultante
         let resolvedFilters = { ...currentFilters, ...safeFilters };
 
-        // Interceptar la categoría virtual de agotados
         if (safeFilters.categoryId === 'CAT_DYNAMIC_AGOTADOS') {
             resolvedFilters = {
                 ...resolvedFilters,
-                categoryId: null,        // No existe en BD, no debe pasarse a Dexie
-                outOfStockOnly: true,    // El filtro semánticamente correcto
+                categoryId: null,
+                outOfStockOnly: true,
             };
         } else if ('categoryId' in safeFilters) {
-            // Cambio a una categoría real (o null = todas): limpiar el flag de agotados
             resolvedFilters = {
                 ...resolvedFilters,
                 outOfStockOnly: false,
@@ -87,22 +242,17 @@ export const useProductStore = create((set, get) => ({
 
         set({
             filters: resolvedFilters,
-            // Reiniciar paginación al cambiar cualquier filtro
             cursorStack: [null],
             currentPageIndex: 0,
             menu: [],
             hasMore: true,
         });
 
-        // Cargar la primera página con los nuevos filtros
         get().fetchPage('current');
     },
 
     /**
      * Motor de paginación por cursores.
-     * Solicita a loadDataPaginated los datos ya filtrados en la BD.
-     *
-     * @param {'current'|'next'|'prev'} direction
      */
     fetchPage: async (direction = 'current') => {
         const state = get();
@@ -120,13 +270,12 @@ export const useProductStore = create((set, get) => ({
         set({ isLoading: true });
 
         try {
-            // Todos los filtros se pasan a la BD. El cliente no filtra nada.
             const { data, nextCursor } = await loadDataPaginated(STORES.MENU, {
                 limit: 50,
                 cursor: targetCursor,
                 categoryId: state.filters.categoryId,
                 outOfStockOnly: state.filters.outOfStockOnly,
-                status: state.filters.status, // Lo pasamos directo a Dexie
+                status: state.filters.status,
                 timeIndex: 'createdAt',
             });
 
@@ -150,26 +299,16 @@ export const useProductStore = create((set, get) => ({
 
     /**
      * Carga inicial: categorías + primera página de productos.
-     * Se llama una sola vez al montar PosPage.
-     *
-     * No llama fetchPage directamente para evitar colisión con el flag isLoading.
-     * En su lugar, carga las categorías y luego delega a fetchPage respetando
-     * el estado actual del store.
      */
     loadInitialProducts: async () => {
-        // Si ya hay una carga en vuelo, no hacemos nada.
-        // Esto previene la doble ejecución si el componente monta dos veces
-        // en StrictMode o si se llama desde dos lugares simultáneamente.
         if (get().isLoading) return;
 
         set({ isLoading: true });
         try {
             const categories = await categoriesRepository.getActiveCategories();
-            
-            // Defensa: Asegurarnos que siempre estén ordenadas numéricamente por su sortOrder
             const sortedCategories = (categories || []).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
             set({ categories: sortedCategories, isLoading: false });
-            // fetchPage leerá isLoading: false y podrá ejecutarse
             get().fetchPage('current');
         } catch (error) {
             Logger.error('Error loading initial data:', error);
@@ -178,21 +317,12 @@ export const useProductStore = create((set, get) => ({
     },
 
     /**
-     * Comprueba si existen productos agotados en el catálogo completo
-     * para decidir si mostrar la categoría virtual 'CAT_DYNAMIC_AGOTADOS'.
-     *
-     * Se ejecuta una única vez al cargar el catálogo. No hace full-scan:
-     * aprovecha el índice de la tabla y detiene el cursor al primer resultado.
-     *
-     * @returns {Promise<boolean>}
+     * Comprueba si existen productos agotados.
      */
     checkHasOutOfStockProducts: async () => {
         try {
-            // Usamos Dexie directamente para una consulta puntual.
-            // No importamos db aquí para evitar acoplamiento circular;
-            // delegamos al método que ya existe en loadDataPaginated.
             const { data } = await loadDataPaginated(STORES.MENU, {
-                limit: 1,              // Solo necesitamos saber si existe al menos uno
+                limit: 1,
                 cursor: null,
                 categoryId: null,
                 outOfStockOnly: true,
@@ -211,7 +341,6 @@ export const useProductStore = create((set, get) => ({
 
         set({ isLoading: true });
         try {
-            // PATRÓN UNIFICADO: softDeleteWithCascadeSafe reemplaza recycleData
             const result = await softDeleteWithCascadeSafe(
                 STORES.MENU,
                 STORES.DELETED_MENU,
@@ -225,7 +354,12 @@ export const useProductStore = create((set, get) => ({
                     isLoading: false,
                 }));
 
-                // Si la página quedó vacía, retrocedemos
+                broadcastDBChange({
+                    action: 'product-deleted',
+                    productId,
+                    timestamp: Date.now(),
+                });
+
                 const { menu, currentPageIndex } = get();
                 if (menu.length === 0 && currentPageIndex > 0) {
                     get().fetchPage('prev');

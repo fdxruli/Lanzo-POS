@@ -1,4 +1,4 @@
-import { DB_NAME, DB_VERSION } from '../config/dbConfig.js';
+import { DB_NAME } from '../config/dbConfig.js';
 import Logger from '../services/Logger.js';
 import { Money } from '../utils/moneyMath.js';
 
@@ -10,7 +10,7 @@ const getDB = async () => {
   if (activeDB) return activeDB;
 
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(DB_NAME);
 
     request.onsuccess = (e) => {
       activeDB = e.target.result;

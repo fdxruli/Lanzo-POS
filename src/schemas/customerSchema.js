@@ -7,6 +7,7 @@ export const customerSchema = z.object({
   phoneKey: z.string().optional().or(z.literal('')).nullable(),
   address: z.string().optional().or(z.literal('')),
   debt: z.coerce.number().default(0),
+  debtCents: z.coerce.number().int().default(0),
   creditLimit: z.coerce.number().min(0).default(0),
 
   // Metadatos
