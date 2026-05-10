@@ -9,7 +9,7 @@ import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
 import VariantInventoryView from '../components/products/VarianteInvetoryView';
 
-import { useProductStore } from '../store/useProductStore';
+import { useProductStore, broadcastDBChange } from '../store/useProductStore';
 import { useStatsStore } from '../store/useStatsStore';
 
 import BatchManager from '../components/products/BatchManager';
@@ -158,6 +158,15 @@ export default function ProductsPage() {
 
         if (result.success) {
             await refreshCategories();
+            
+            // ─────────────────────────────────────────────────────────────
+            // REACTIVIDAD: Notificar a otras pestañas que la BD cambió
+            // ─────────────────────────────────────────────────────────────
+            broadcastDBChange({
+                action: 'category-saved',
+                categoryId: categoryData.id,
+                timestamp: Date.now(),
+            });
         } else {
             handleActionableError(result);
         }
@@ -348,6 +357,15 @@ export default function ProductsPage() {
                 showMessageModal(editingProduct ? '¡Actualizado exitosamente!' : '¡Producto creado exitosamente!');
                 setEditingProduct(null);
 
+                // ─────────────────────────────────────────────────────────────
+                // REACTIVIDAD: Notificar a otras pestañas que la BD cambió
+                // ─────────────────────────────────────────────────────────────
+                broadcastDBChange({
+                    action: editingProduct ? 'product-updated' : 'product-created',
+                    productId: productId,
+                    timestamp: Date.now(),
+                });
+
                 // Volvemos a la vista principal
                 if (productData.productType === 'ingredient') setActiveTab('ingredients');
                 else setActiveTab('view-products');
@@ -420,6 +438,16 @@ export default function ProductsPage() {
 
             if (result.success) {
                 await refreshData();
+                
+                // ─────────────────────────────────────────────────────────────
+                // REACTIVIDAD: Notificar a otras pestañas que la BD cambió
+                // ─────────────────────────────────────────────────────────────
+                broadcastDBChange({
+                    action: 'product-status-changed',
+                    productId: product.id,
+                    isActive: updatedProduct.isActive,
+                    timestamp: Date.now(),
+                });
             } else {
                 handleActionableError(result);
             }

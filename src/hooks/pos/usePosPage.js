@@ -1,7 +1,8 @@
 // src/hooks/usePosPage.js
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useOrderStore } from '../../store/useOrderStore';
+import { useProductStore } from '../../store/useProductStore';
 import { useCaja } from '../useCaja';
 import { useInventoryMovement } from '../useInventoryMovement';
 import { showMessageModal } from '../../services/utils';
@@ -35,6 +36,14 @@ export function usePosPage() {
 
     // ── Estado local ───────────────────────────────────────────────
     const [toastMsg, setToastMsg] = useState(null);
+
+    // ──────────────────────────────────────────────────────────────
+    // REACTIVIDAD: Inicializar listeners reactivos del ProductStore
+    // ──────────────────────────────────────────────────────────────
+    useEffect(() => {
+        const cleanup = useProductStore.getState().initialize();
+        return cleanup;
+    }, []);
 
     // ── Helpers ────────────────────────────────────────────────────
     const showToast = useCallback((msg) => {

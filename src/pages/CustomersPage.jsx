@@ -1,5 +1,5 @@
 // src/pages/CustomersPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
@@ -15,13 +15,26 @@ import { customerCreditRepository } from '../services/db/customerCreditRepositor
 import { generateID } from '../services/utils';
 import {
   saveDataSafe,
-  loadDataPaginated,
+  loadCustomersByDebtPaginated,
   loadData,
   STORES,
   recycleData,
   DB_ERROR_CODES
 } from '../services/database';
-import { ChevronDown, Loader2 } from 'lucide-react';
+
+const PAGE_SIZE = 50;
+
+const mergeUniqueCustomers = (currentCustomers, nextCustomers) => {
+  const seenIds = new Set(currentCustomers.map(customer => customer.id));
+
+  const uniqueNextCustomers = nextCustomers.filter(customer => {
+    if (!customer?.id || seenIds.has(customer.id)) return false;
+    seenIds.add(customer.id);
+    return true;
+  });
+
+  return [...currentCustomers, ...uniqueNextCustomers];
+};
 
 export default function CustomersPage() {
   const navigate = useNavigate();
@@ -30,21 +43,20 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [nextCursor, setNextCursor] = useState(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [snapshotAt, setSnapshotAt] = useState(null);
   const [hasMore, setHasMore] = useState(true);
-  const PAGE_SIZE = 50;
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
   const [whatsAppLoading, setWhatsAppLoading] = useState(null);
   const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
+  const requestVersionRef = useRef(0);
+  const requestInFlightRef = useRef(false);
 
   const { cajaActual } = useCaja();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
-
-  useEffect(() => {
-    loadInitialCustomers();
-  }, []);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -67,56 +79,89 @@ export default function CustomersPage() {
     }
   };
 
-  const loadInitialCustomers = async () => {
-    setLoading(true);
+  const loadCustomersPage = useCallback(async ({
+    targetOffset = 0,
+    replace = false,
+    snapshotOverride = null
+  } = {}) => {
+    const requestVersion = ++requestVersionRef.current;
+    requestInFlightRef.current = true;
+
+    if (replace) {
+      setLoading(true);
+      setIsLoadingMore(false);
+    } else {
+      setIsLoadingMore(true);
+    }
+
     try {
-      const { data = [], nextCursor: newCursor = null } = await loadDataPaginated(STORES.CUSTOMERS, {
+      const {
+        data = [],
+        hasMore: nextHasMore = false,
+        snapshotAt: resolvedSnapshotAt = snapshotOverride
+      } = await loadCustomersByDebtPaginated({
         limit: PAGE_SIZE,
-        cursor: null,
-        timeIndex: 'createdAt'
+        offset: targetOffset,
+        snapshotAt: snapshotOverride
       });
+
+      if (requestVersionRef.current !== requestVersion) return;
+
       const safeData = Array.isArray(data) ? data : [];
-      setCustomers(safeData);
-      setNextCursor(newCursor);
-      setHasMore(Boolean(newCursor));
+
+      setCustomers(prevCustomers =>
+        replace ? safeData : mergeUniqueCustomers(prevCustomers, safeData)
+      );
+      setOffset(replace ? safeData.length : targetOffset + safeData.length);
+      setSnapshotAt(resolvedSnapshotAt || null);
+      setHasMore(Boolean(nextHasMore));
     } catch (error) {
-      Logger.error("Error cargando clientes:", error);
-      setCustomers([]);
-      setNextCursor(null);
-      setHasMore(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+      if (requestVersionRef.current !== requestVersion) return;
 
-  const loadMoreCustomers = async () => {
-    if (!hasMore || !nextCursor) return;
-    setLoading(true);
-    try {
-      const { data = [], nextCursor: newCursor = null } = await loadDataPaginated(STORES.CUSTOMERS, {
-        limit: PAGE_SIZE,
-        cursor: nextCursor,
-        timeIndex: 'createdAt'
-      });
+      Logger.error(
+        replace ? 'Error cargando clientes:' : 'Error paginando clientes por deuda:',
+        error
+      );
 
-      const safeNextData = Array.isArray(data) ? data : [];
-
-      if (safeNextData.length > 0) {
-        setCustomers(prev => [...prev, ...safeNextData]);
-        setNextCursor(newCursor);
-        setHasMore(Boolean(newCursor));
-      } else {
-        setNextCursor(null);
-        setHasMore(false);
+      if (replace) {
+        setCustomers([]);
+        setOffset(0);
+        setSnapshotAt(null);
       }
-    } catch (error) {
-      Logger.error("Error paginando:", error);
-      setNextCursor(null);
+
       setHasMore(false);
     } finally {
-      setLoading(false);
+      if (requestVersionRef.current === requestVersion) {
+        requestInFlightRef.current = false;
+        setLoading(false);
+        setIsLoadingMore(false);
+      }
     }
-  };
+  }, []);
+
+  const loadInitialCustomers = useCallback(async () => {
+    const freshSnapshot = new Date().toISOString();
+
+    await loadCustomersPage({
+      targetOffset: 0,
+      replace: true,
+      snapshotOverride: freshSnapshot
+    });
+  }, [loadCustomersPage]);
+
+  useEffect(() => {
+    loadInitialCustomers();
+  }, [loadInitialCustomers]);
+
+  const loadMoreCustomers = useCallback(async () => {
+    if (loading || isLoadingMore || requestInFlightRef.current || !hasMore) return;
+
+    await loadCustomersPage({
+      targetOffset: offset,
+      replace: false,
+      snapshotOverride: snapshotAt
+    });
+  }, [hasMore, isLoadingMore, loadCustomersPage, loading, offset, snapshotAt]);
 
   const handleActionableError = (result) => {
     const message = result?.error?.message || result?.message || 'Error en base de datos.';
@@ -448,44 +493,21 @@ ${itemsString}
           customerToEdit={editingCustomer}
         />
       ) : (
-        <>
-          <CustomerList
-            customers={customers}
-            isLoading={loading && customers.length === 0} // Solo loading full si está vacío
-            onEdit={handleEditCustomer}
-            onDelete={handleDeleteCustomer}
-            onViewHistory={handleViewHistory}
-            onAbonar={handleOpenAbono}
-            onViewLayaways={handleOpenLayaways}
-            onWhatsApp={handleWhatsApp}
-            onWhatsAppLoading={whatsAppLoading}
-          />
-
-          {/* BOTÓN CARGAR MÁS */}
-{hasMore && (
-  <div style={{ textAlign: 'center', padding: '20px' }}>
-    <button
-      className="btn btn-secondary"
-      onClick={loadMoreCustomers}
-      disabled={loading}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-    >
-      {loading ? (
-        <>
-          {/* Ojo: Necesitarás agregar una animación en tu CSS para que gire, ej: className="spin" */}
-          <Loader2 size={18} /> 
-          Cargando...
-        </>
-      ) : (
-        <>
-          <ChevronDown size={18} /> 
-          Cargar más clientes
-        </>
-      )}
-    </button>
-  </div>
-)}
-        </>
+        <CustomerList
+          customers={customers}
+          isLoading={loading && customers.length === 0}
+          isLoadingMore={isLoadingMore}
+          hasMore={hasMore}
+          onLoadMore={loadMoreCustomers}
+          onRefreshList={loadInitialCustomers}
+          onEdit={handleEditCustomer}
+          onDelete={handleDeleteCustomer}
+          onViewHistory={handleViewHistory}
+          onAbonar={handleOpenAbono}
+          onViewLayaways={handleOpenLayaways}
+          onWhatsApp={handleWhatsApp}
+          onWhatsAppLoading={whatsAppLoading}
+        />
       )}
 
       <PurchaseHistoryModal
