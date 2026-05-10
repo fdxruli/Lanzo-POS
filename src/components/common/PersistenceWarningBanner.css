@@ -1,0 +1,197 @@
+/**
+ * PersistenceWarningBanner.css
+ * Banner de advertencia de modo volátil — igual de prominente que el banner offline
+ */
+
+/* --- Base: Mobile First --- */
+.persistence-warning-banner {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  z-index: 11000;
+
+  /* Naranja rojizo: más urgente que una advertencia, menos que un error fatal */
+  background: linear-gradient(135deg, #f97316 0%, #dc2626 100%);
+  color: white;
+  padding: 1rem;
+  border-radius: 12px;
+  box-shadow:
+    0 10px 25px -5px rgba(249, 115, 22, 0.5),
+    0 8px 10px -6px rgba(0, 0, 0, 0.15);
+
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+
+  animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(4px);
+}
+
+/* Variante crítica: rojo intenso */
+.persistence-warning-banner.is-critical {
+  background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+  box-shadow:
+    0 10px 25px -5px rgba(220, 38, 38, 0.6),
+    0 8px 10px -6px rgba(0, 0, 0, 0.2);
+}
+
+/* --- Contenido --- */
+.persistence-warning-banner .banner-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.persistence-warning-banner .banner-icon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+  animation: pulse 2.5s ease-in-out infinite;
+}
+
+.persistence-warning-banner .banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.persistence-warning-banner .banner-text strong {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+  line-height: 1.25;
+}
+
+.persistence-warning-banner .banner-text p {
+  font-size: 0.82rem;
+  margin: 0;
+  line-height: 1.45;
+  opacity: 0.95;
+}
+
+/* --- Botones --- */
+.persistence-warning-banner .banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.persistence-warning-banner .banner-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.65rem 0.875rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  transition: transform 0.1s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.persistence-warning-banner .banner-btn:active {
+  transform: scale(0.97);
+}
+
+.persistence-warning-banner .banner-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* Botón principal: blanco con color del banner */
+.persistence-warning-banner .banner-btn--primary {
+  background-color: white;
+  color: #c2410c;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.persistence-warning-banner .banner-btn--primary:hover:not(:disabled) {
+  background-color: #fff7ed;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+}
+
+/* Botón secundario: semi-transparente */
+.persistence-warning-banner .banner-btn--secondary {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.persistence-warning-banner .banner-btn--secondary:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Botón de cierre ✕ */
+.persistence-warning-banner .banner-btn--dismiss {
+  flex: none;
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  background-color: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.persistence-warning-banner .banner-btn--dismiss:hover {
+  background-color: rgba(255, 255, 255, 0.28);
+}
+
+/* Texto de estado */
+.persistence-warning-banner .banner-status {
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  opacity: 0.9;
+  padding: 0 0.5rem;
+}
+
+/* --- Desktop: barra superior completa --- */
+@media (min-width: 768px) {
+  .persistence-warning-banner {
+    top: 0;
+    left: 0;
+    right: 0;
+    border-radius: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.5rem;
+    gap: 1.5rem;
+  }
+
+  .persistence-warning-banner .banner-actions {
+    width: auto;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+
+  .persistence-warning-banner .banner-btn {
+    flex: none;
+    min-width: 0;
+  }
+}
+
+/* --- Animaciones --- */
+@keyframes slideDown {
+  from {
+    transform: translateY(-110%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}

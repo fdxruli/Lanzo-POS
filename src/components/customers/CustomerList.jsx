@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Users, Settings, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Users, Settings, AlertTriangle } from 'lucide-react';
 import CustomerCard from './CustomerCard';
 import { useAppStore } from '../../store/useAppStore'; // Para guardar la config global
+import { customerCreditRepository } from '../../services/db/customerCreditRepository';
 import './CustomerList.css';
 
 // --- SUB-COMPONENTE: Modal de Configuración de Crédito ---
@@ -73,6 +74,10 @@ const CreditConfigModal = ({ isOpen, onClose, currentGlobal, onSaveGlobal, isSav
 export default function CustomerList({
     customers,
     isLoading,
+    isLoadingMore,
+    hasMore,
+    onLoadMore,
+    onRefreshList,
     onEdit,
     onDelete,
     onViewHistory,
@@ -90,19 +95,15 @@ export default function CustomerList({
         return companyProfile?.settings_default_credit_limit || 0;
     }, [companyProfile]);
 
-    const [displayLimit, setDisplayLimit] = useState(20);
-    const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [isSavingConfig, setIsSavingConfig] = useState(false);
 
     const observerRef = useRef(null);
     const sentinelRef = useRef(null);
 
-    const safeCustomers = Array.isArray(customers) ? customers : [];
-    // Ordenar clientes: Prioridad a los que deben más
-    const sortedCustomers = useMemo(() => {
-        return [...safeCustomers].sort((a, b) => (parseFloat(b.debt) || 0) - (parseFloat(a.debt) || 0));
-    }, [safeCustomers]);
+    const safeCustomers = useMemo(() => (
+        Array.isArray(customers) ? customers : []
+    ), [customers]);
 
     const stats = useMemo(() => {
         const totalDebt = safeCustomers.reduce((acc, c) => acc + (parseFloat(c.debt) || 0), 0);
@@ -116,56 +117,41 @@ export default function CustomerList({
         return { totalDebt, overLimitCount };
     }, [safeCustomers]);
 
-    useEffect(() => { setDisplayLimit(20); }, [customers]);
-
-    const visibleCustomers = sortedCustomers.slice(0, displayLimit);
-    const hasMore = displayLimit < sortedCustomers.length;
-
     // --- INFINITE SCROLL ---
     useEffect(() => {
-        if (isLoadingMore || !hasMore) return;
+        if (isLoadingMore || !hasMore || typeof onLoadMore !== 'function') return;
         const observerCallback = (entries) => {
             const [entry] = entries;
             if (entry.isIntersecting) {
-                setIsLoadingMore(true);
-                setTimeout(() => {
-                    setDisplayLimit((prev) => prev + 20);
-                    setIsLoadingMore(false);
-                }, 300);
+                onLoadMore();
             }
         };
         const options = { root: null, rootMargin: '100px', threshold: 0.1 };
         observerRef.current = new IntersectionObserver(observerCallback, options);
         if (sentinelRef.current) observerRef.current.observe(sentinelRef.current);
         return () => { if (observerRef.current) observerRef.current.disconnect(); };
-    }, [isLoadingMore, hasMore]);
+    }, [hasMore, isLoadingMore, onLoadMore]);
 
     // --- MANEJADORES DE CONFIGURACIÓN ---
     const handleSaveGlobalLimit = async (newLimit, applyToAll) => {
         setIsSavingConfig(true);
         try {
-            // 1. Guardar la preferencia global en el perfil de la empresa
-            const updatedProfile = {
+            await updateCompanyProfile({
                 ...companyProfile,
                 settings_default_credit_limit: newLimit
-            };
-            // Nota: updateCompanyProfile usualmente espera solo los campos a cambiar, 
-            // pero para asegurar consistencia pasamos el objeto necesario
-            await updateCompanyProfile(updatedProfile);
+            });
 
-            // 2. Si seleccionó "Aplicar a todos", actualizamos masivamente
-            if (applyToAll && customers.length > 0) {
-                // Aquí usamos onEdit para actualizar. 
-                // NOTA: Para producción con miles de clientes, esto debería ser una llamada de backend dedicada.
-                // Como es local/Dexie, iteramos:
-                const updates = customers.map(c => ({
-                    ...c,
-                    creditLimit: newLimit
-                }));
+            if (applyToAll) {
+                // Nota crítica: Al pasar 'true', estás DESTRUYENDO cualquier límite 
+                // personalizado que le hayas dado a un cliente en específico.
+                await customerCreditRepository.bulkUpdateCreditLimits(newLimit, true);
 
-                // Ejecutamos las actualizaciones (simulado secuencial para no bloquear UI)
-                for (const updatedCustomer of updates) {
-                    await onEdit(updatedCustomer);
+                // Obligamos al componente padre a vaciar su estado local 
+                // y volver a consultar la base de datos desde la página 1.
+                if (typeof onRefreshList === 'function') {
+                    await onRefreshList();
+                } else {
+                    console.warn("Se requiere onRefreshList para actualizar la UI después de cambios masivos.");
                 }
             }
             setShowConfigModal(false);
@@ -194,7 +180,7 @@ export default function CustomerList({
                 <Users size={48} style={{ opacity: 0.3 }} />
                 <p>No hay clientes registrados.</p>
                 <span style={{ fontSize: '0.85rem', opacity: 0.8 }}>
-                    Haz clic en "Añadir Cliente" para comenzar.
+                    Haz clic en Añadir Cliente para comenzar.
                 </span>
                 {/* Botón de config inicial */}
                 <button
@@ -258,7 +244,7 @@ export default function CustomerList({
             </div>
 
             <div id="customer-list" className="customer-list" aria-label="Lista de clientes">
-                {visibleCustomers.map((customer) => (
+                {safeCustomers.map((customer) => (
                     <CustomerCard
                         key={customer.id}
                         customer={customer}
@@ -290,7 +276,7 @@ export default function CustomerList({
             )}
 
             <div style={{ textAlign: 'center', color: '#999', fontSize: '0.8rem', marginTop: '10px', paddingBottom: '20px' }}>
-                Mostrando {visibleCustomers.length} de {sortedCustomers.length} clientes
+                Mostrando {safeCustomers.length} cliente{safeCustomers.length === 1 ? '' : 's'}{hasMore ? '...' : ''}
             </div>
 
             {/* Modal de Configuración */}
@@ -304,3 +290,5 @@ export default function CustomerList({
         </div>
     );
 }
+
+
