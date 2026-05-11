@@ -9,6 +9,9 @@
   flex-direction: column;
   height: 100vh; /* O el alto disponible */
   overflow: hidden; /* Evita scrolls dobles indeseados */
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .section-title {
@@ -27,6 +30,19 @@
   overflow: hidden;
   gap: 16px;
   padding: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 767px) {
+  .pos-grid {
+    gap: 0;
+  }
+
+  .pos-grid > .pos-menu-container {
+    flex: 1 1 100%;
+  }
 }
 
 .pos-grid .pos-order-container {
