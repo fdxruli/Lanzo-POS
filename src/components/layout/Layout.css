@@ -8,6 +8,7 @@
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    height: 100dvh;
     background-color: var(--background-color);
     overflow-x: hidden;
 }
@@ -17,6 +18,7 @@
     display: flex;
     flex-direction: column;
     width: 100%;
+    min-height: 0;
 }
 
 /* CORRECCIÓN IMPORTANTE: 
@@ -30,6 +32,16 @@
     padding-bottom: 120px;
     box-sizing: border-box;
     animation: fadeIn 0.3s ease-out;
+}
+
+.page-container-pos {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding-left: 0;
+    padding-right: 0;
+    padding-bottom: calc(65px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
 }
 
 /* Animación de entrada suave para todas las páginas */
@@ -53,6 +65,7 @@
 @media (min-width: 1024px) {
     .app-layout {
         flex-direction: row;
+        height: auto;
         /* Cambiamos a disposición horizontal (Sidebar + Contenido) */
         background-color: #f3f4f6;
         /* Fondo gris suave para contraste en escritorio */
@@ -78,6 +91,12 @@
         padding-bottom: 60px;
         max-width: 1600px;
         margin: 0 auto;
+    }
+
+    .page-container-pos {
+        padding: 30px;
+        padding-bottom: 60px;
+        overflow-x: visible;
     }
 
     /* --- Scrollbar Personalizado (Estético para Desktop) --- */
