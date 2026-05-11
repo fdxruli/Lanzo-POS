@@ -237,7 +237,7 @@ export default function ProductMenu({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        style={{ height: '100%', flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '5px' }}
+        style={{ height: '100%', flex: 1, minHeight: 0, overflowY: 'auto', boxSizing: 'border-box' }}
       >
         <div id="menu-items" className="menu-items-grid" aria-label="Elementos del menú">
 

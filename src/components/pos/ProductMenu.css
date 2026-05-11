@@ -12,6 +12,9 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 @media (min-width: 768px) {
@@ -98,7 +101,8 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: var(--spacing-md);
-  padding: 4px;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .menu-item {
@@ -233,10 +237,14 @@
 
 
 @media (max-width: 480px) {
+  .pos-menu-container {
+    padding: 8px 6px;
+  }
+
   .menu-items-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
-    padding: 2px;
+    padding: 0;
   }
 
   .menu-item {
