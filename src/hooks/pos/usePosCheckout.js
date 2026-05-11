@@ -1,6 +1,7 @@
 // src/hooks/usePosCheckout.js
 import { useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
+import { broadcastDBChange } from '../../store/useProductStore';
 import { showMessageModal } from '../../services/utils';
 
 /**
@@ -108,6 +109,7 @@ export function usePosCheckout({
                 prescription.setTempPrescriptionData(null);
                 mobileCart.closeCart();
                 showMessageModal('✅ ¡Venta registrada correctamente!');
+                broadcastDBChange({ action: 'sale-completed', saleId: result.saleId });
                 await posSearch.refreshOutOfStock();
                 await fetchActiveTablesCount();
             } else {

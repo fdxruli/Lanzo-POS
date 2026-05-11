@@ -2,6 +2,7 @@
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useOrderStore } from '../../store/useOrderStore';
+import { broadcastDBChange } from '../../store/useProductStore';
 import { processSale } from '../../services/salesService';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
@@ -135,6 +136,7 @@ export function useCheckoutFlow({
                 clearSession();
                 closeMobileCart?.();
                 showMessageModal('✅ ¡Venta registrada correctamente!');
+                broadcastDBChange({ action: 'sale-completed', saleId: result.saleId });
 
                 // Recargamos catálogo y re-chequeamos agotados tras cada venta
                 await refreshData();
