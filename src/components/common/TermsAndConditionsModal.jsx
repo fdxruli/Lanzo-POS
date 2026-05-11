@@ -1,8 +1,101 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Shield, CheckCircle, Loader2, AlertCircle } from 'lucide-react'; 
 import { fetchLegalTerms, acceptLegalTerms } from '../../services/supabase'; 
 import Logger from '../../services/Logger';
 import './TermsAndConditionsModal.css';
+
+// 🔒 SEGURIDAD: Sanitizador de HTML para prevenir XSS.
+// Usa una whitelist estricta de tags y atributos permitidos.
+// Para máxima protección, instalar DOMPurify: npm install dompurify
+// y reemplazar esta función por: import DOMPurify from 'dompurify'; → DOMPurify.sanitize(html)
+const ALLOWED_TAGS = new Set([
+  'h1','h2','h3','h4','h5','h6','p','br','hr','ul','ol','li',
+  'strong','em','b','i','u','s','del','ins','mark','small','sub','sup',
+  'a','span','div','section','article','header','footer','nav','main',
+  'table','thead','tbody','tfoot','tr','th','td','caption','colgroup','col',
+  'blockquote','pre','code','abbr','address','cite','q','dfn','time',
+  'details','summary','figure','figcaption','dl','dt','dd'
+]);
+
+const ALLOWED_ATTRS = new Set([
+  'href','title','class','id','style','target','rel',
+  'colspan','rowspan','scope','headers','align','valign',
+  'datetime','cite','lang','dir','role','aria-label','aria-describedby'
+]);
+
+const DANGEROUS_URL_PATTERN = /^\s*(javascript|data|vbscript)\s*:/i;
+
+function sanitizeHTML(dirtyHTML) {
+  if (!dirtyHTML || typeof dirtyHTML !== 'string') return '';
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(dirtyHTML, 'text/html');
+
+    const cleanNode = (node) => {
+      const walker = doc.createTreeWalker(node, NodeFilter.SHOW_ELEMENT);
+      const nodesToRemove = [];
+
+      // Fase 1: Recolectar nodos peligrosos
+      let current = walker.nextNode();
+      while (current) {
+        const tagName = current.tagName.toLowerCase();
+
+        if (!ALLOWED_TAGS.has(tagName)) {
+          nodesToRemove.push(current);
+          current = walker.nextNode();
+          continue;
+        }
+
+        // Limpiar atributos peligrosos
+        const attrs = Array.from(current.attributes);
+        for (const attr of attrs) {
+          const attrName = attr.name.toLowerCase();
+
+          // Eliminar event handlers (onclick, onerror, onload, etc.)
+          if (attrName.startsWith('on')) {
+            current.removeAttribute(attr.name);
+            continue;
+          }
+
+          // Eliminar atributos no permitidos
+          if (!ALLOWED_ATTRS.has(attrName)) {
+            current.removeAttribute(attr.name);
+            continue;
+          }
+
+          // Sanitizar URLs en href y src
+          if ((attrName === 'href' || attrName === 'src') && DANGEROUS_URL_PATTERN.test(attr.value)) {
+            current.removeAttribute(attr.name);
+          }
+        }
+
+        // Forzar target=_blank y rel=noopener en links
+        if (tagName === 'a') {
+          current.setAttribute('target', '_blank');
+          current.setAttribute('rel', 'noopener noreferrer');
+        }
+
+        current = walker.nextNode();
+      }
+
+      // Fase 2: Remover nodos peligrosos (reemplazar con su texto plano)
+      for (const node of nodesToRemove) {
+        const textContent = doc.createTextNode(node.textContent || '');
+        node.parentNode?.replaceChild(textContent, node);
+      }
+    };
+
+    cleanNode(doc.body);
+    return doc.body.innerHTML;
+  } catch (error) {
+    Logger.error('Error sanitizando HTML de términos legales:', error);
+    // Fallback seguro: devolver solo texto plano
+    const div = document.createElement('div');
+    div.textContent = dirtyHTML;
+    return div.innerHTML;
+  }
+}
 
 // Agregamos el prop 'readOnly' por defecto en false, pero lo usaremos en true casi siempre
 export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = false, isUpdateNotification = false }) {
@@ -100,7 +193,7 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
                 </div>
             ) : (
                 <div className="terms-document-wrapper">
-                    <div className="terms-dynamic-content" dangerouslySetInnerHTML={{ __html: termsData.content_html }} />
+                    <div className="terms-dynamic-content" dangerouslySetInnerHTML={{ __html: sanitizeHTML(termsData.content_html) }} />
                     
                     {/* Solo mostramos el texto legal del footer si NO es solo lectura */}
                     {!readOnly && (
