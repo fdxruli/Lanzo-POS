@@ -26,7 +26,7 @@
   min-height: 0;
   overflow: hidden;
   gap: 16px;
-  padding: 0 16px;
+  padding: 0;
 }
 
 .pos-grid .pos-order-container {

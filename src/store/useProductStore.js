@@ -57,13 +57,34 @@ function setupReactiveListeners(get) {
     // ─────────────────────────────────────────────────────────────────
     // 2. VISIBILITY, FOCUS y PAGESHOW: Detección robusta de primer plano
     //
-    // Se usan tres eventos complementarios:
-    // - visibilitychange → cubre cambios de pestaña y bloqueo de pantalla
-    // - focus           → complementa en desktop cuando visibilitychange
-    //                     no es suficiente (p. ej. cambio de ventana OS)
-    // - pageshow        → el más confiable para bfcache y vuelta de sleep;
-    //                     event.persisted === true indica restauración de caché
+    // Se usan tres eventos complementarios para cubrir todos los
+    // escenarios de "vuelta a primer plano" en desktop y mobile:
+    //
+    // - visibilitychange → Evento primario. Cubre:
+    //     • Cambio de pestaña (desktop y mobile)
+    //     • Bloqueo/desbloqueo de pantalla (Android/iOS)
+    //     • Minimizar/restaurar app (Android Chrome, Safari iOS PWA)
+    //
+    // - focus → Evento complementario solo para desktop. Cubre:
+    //     • Cambio de ventana a nivel de OS (Alt-Tab) cuando el
+    //       navegador NO dispara visibilitychange (caso edge en
+    //       algunos navegadores desktop).
+    //     GUARDA: Solo actúa si document.visibilityState === 'visible'
+    //     para evitar invalidaciones redundantes con visibilitychange.
+    //
+    // - pageshow → Evento de restauración. Cubre:
+    //     • bfcache: event.persisted === true (navegar con botón atrás)
+    //     • Deep sleep prolongado: en Android/iOS, si el SO descarta
+    //       la página del bfcache pero mantiene el tab vivo, pageshow
+    //       se dispara con persisted=false. Para cubrir este caso,
+    //       se invalida si pasaron >60s desde la última invalidación.
+    //
+    // PROTECCIÓN: La ráfaga de eventos simultáneos (visibilitychange +
+    // focus + pageshow) se colapsa en una sola llamada por
+    // BURST_DEDUPE_MS (300ms) + mutex en invalidateAndReset().
     // ─────────────────────────────────────────────────────────────────
+    const DEEP_SLEEP_THRESHOLD_MS = 60_000; // 60 segundos
+
     const handleWakeUp = (source) => {
         Logger.debug(`[ProductStore] Wake-up detectado desde: ${source}`);
         get().invalidateAndReset();
@@ -75,14 +96,31 @@ function setupReactiveListeners(get) {
         }
     };
 
+    // FIX 1: El listener de focus ahora solo dispara si el documento
+    // está realmente visible. Evita invalidaciones espurias por Alt-Tab
+    // rápidos o cambios de ventana donde visibilitychange ya actuó.
     focusListener = () => {
-        handleWakeUp('focus');
+        if (document.visibilityState === 'visible') {
+            handleWakeUp('focus');
+        }
     };
 
+    // FIX 2: pageshow ahora cubre dos escenarios:
+    // - persisted === true  → restauración de bfcache (comportamiento original)
+    // - persisted === false → deep sleep prolongado en mobile. En Android/iOS,
+    //   cuando el SO mata el bfcache pero la pestaña sigue viva, pageshow se
+    //   dispara sin persisted=true. Invalidamos solo si ha pasado suficiente
+    //   tiempo (>60s) para distinguir de una navegación normal.
     pageshowListener = (event) => {
-        // event.persisted === true: la página fue restaurada de bfcache o sleep
         if (event.persisted) {
             handleWakeUp('pageshow(persisted)');
+        } else {
+            // Deep sleep sin bfcache: solo invalidar si ha pasado tiempo
+            // suficiente para que los datos en memoria estén potencialmente stale.
+            const elapsed = Date.now() - lastInvalidationTime;
+            if (elapsed > DEEP_SLEEP_THRESHOLD_MS) {
+                handleWakeUp('pageshow(deep-sleep)');
+            }
         }
     };
 

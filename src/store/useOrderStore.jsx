@@ -639,6 +639,8 @@ export const useOrderStore = create(
   )
 );
 
-if (typeof window !== 'undefined') {
+// 🔒 SEGURIDAD: Solo exponer el store en desarrollo para debugging.
+// En producción, esto queda completamente oculto para evitar manipulación vía DevTools.
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
   window.hackStore = useOrderStore;
 }

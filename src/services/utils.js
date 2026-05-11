@@ -453,12 +453,7 @@ export const checkInternetConnection = async () => {
   }
 };
 
-export const getStableDeviceId = () => {
-  let deviceId = localStorage.getItem('lanzo_device_id');
-  if (!deviceId) {
-    // Generar un ID simple si no existe
-    deviceId = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
-    localStorage.setItem('lanzo_device_id', deviceId);
-  }
-  return deviceId;
-};
+// 🔒 SEGURIDAD: Re-exportamos la versión robusta de getStableDeviceId desde supabase.js
+// que usa FingerprintJS + reconciliación localStorage/IndexedDB.
+// La versión anterior usaba Math.random() sin respaldo, causando posible desincronización de identidad.
+export { getStableDeviceId } from './supabase';
