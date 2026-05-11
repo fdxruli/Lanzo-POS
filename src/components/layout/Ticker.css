@@ -23,6 +23,9 @@
   /* CAPAS - ASEGURA QUE SE VEA ENCIMA DE OTROS PANELES */
   z-index: 50; 
   flex-shrink: 0; /* Prohíbe que el flexbox lo encoja */
+
+  /* Cursor por defecto */
+  cursor: default;
 }
 
 /* === EL RIEL (Wrapper) === */
@@ -45,7 +48,7 @@
   display: flex;
   align-items: center;
   
-  /* Animación */
+  /* Animación - la duración se controla vía style inline */
   animation: ticker 35s linear infinite;
   /* Inicia fuera de la pantalla a la derecha */
   transform: translateX(100vw); 
@@ -55,16 +58,79 @@
   min-width: 100%;
 }
 
+/* === PAUSA AL HOVER === */
+.ticker-move:hover {
+  animation-play-state: paused;
+}
+
 /* === ÍTEM INDIVIDUAL === */
 .ticker-item {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 0 3rem;
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--text-dark);
+  transition: opacity 0.2s ease;
 }
 
-/* === ANIMACIÓN === */
+/* === ÍTEMS CLICABLES === */
+.ticker-item-clickable {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.ticker-item-clickable:hover {
+  opacity: 0.75;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.ticker-item-clickable:focus-visible {
+  outline: 2px solid var(--primary-color, #3b82f6);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ============================================================
+   NIVELES DE URGENCIA (Colores de alerta)
+   ============================================================ */
+
+/* Urgencia CRÍTICA — Rojo con animación de pulso sutil */
+.ticker-item.urgency-critical {
+  color: var(--error-color, #dc2626);
+  font-weight: 800;
+}
+
+.ticker-item.urgency-critical svg {
+  animation: urgency-pulse 2s ease-in-out infinite;
+}
+
+/* Urgencia ADVERTENCIA — Naranja/ámbar */
+.ticker-item.urgency-warning {
+  color: var(--warning-color, #f59e0b);
+  font-weight: 700;
+}
+
+/* Urgencia INFO — Color por defecto */
+.ticker-item.urgency-info {
+  color: var(--text-dark);
+}
+
+/* Animación de pulso para ícono de urgencia crítica */
+@keyframes urgency-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.15);
+  }
+}
+
+/* === ANIMACIÓN DEL TICKER === */
 @keyframes ticker {
   0% {
     /* Empieza al borde derecho de la pantalla */
@@ -96,8 +162,39 @@
   letter-spacing: 1px;
 }
 
-.notification-ticker-container.priority-warning .ticker-move {
-  animation-duration: 25s; 
+/* Dentro de priority-warning, los íconos de urgencia no necesitan pulso separado */
+.notification-ticker-container.priority-warning .ticker-item svg {
+  animation: none;
+}
+
+.notification-ticker-container.priority-warning .ticker-item-clickable:hover {
+  opacity: 0.85;
+}
+
+/* ============================================================
+   ACCESIBILIDAD: Movimiento reducido
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .ticker-move {
+    animation: none !important;
+    position: relative;
+    transform: none;
+    overflow-x: auto;
+    white-space: normal;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 16px;
+  }
+
+  .ticker-item.urgency-critical svg {
+    animation: none !important;
+  }
+
+  .notification-ticker-container {
+    height: auto;
+    min-height: 55px;
+  }
 }
 
 /* ============================================================
