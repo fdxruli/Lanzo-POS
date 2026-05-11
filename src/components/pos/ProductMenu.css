@@ -13,6 +13,7 @@
   height: 100%;
   min-height: 0;
   width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -31,6 +32,8 @@
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-lg);
   align-items: center;
+  min-width: 0;
+  width: 100%;
 }
 
 #pos-product-search {
@@ -61,6 +64,9 @@
   display: flex;
   gap: 8px;
   overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .category-filters::-webkit-scrollbar {
@@ -103,6 +109,9 @@
   gap: var(--spacing-md);
   padding: 0;
   box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .menu-item {
@@ -115,6 +124,7 @@
   cursor: pointer;
   transition: var(--transition);
   border-left: 5px solid transparent;
+  min-width: 0;
 }
 
 .menu-item:hover {
@@ -239,6 +249,7 @@
 @media (max-width: 480px) {
   .pos-menu-container {
     padding: 8px 6px;
+    border-radius: 0;
   }
 
   .menu-items-grid {
