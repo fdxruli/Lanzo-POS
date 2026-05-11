@@ -1,9 +1,8 @@
 // src/components/dashboard/StatsGrid.jsx
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   TrendingUp,
   ShoppingBag,
-  CreditCard,
   DollarSign,
   Package,
   Activity,
@@ -12,15 +11,13 @@ import {
   Globe,
   BarChart2,
   AlertTriangle,
-  Clock,
   TrendingDown
 } from 'lucide-react';
 import { useSalesStore } from '../../store/useSalesStore';
 import './StatsGrid.css';
-import Ticker from '../layout/Ticker';
 import TopProducts from './TopProducts';
 import TopCustomers from './TopCustomers';
-import { AreaTrendChart, BarWeekdayChart, MiniLineChart, WeekdayHeatmap, MetricWithTrend } from './TrendChart';
+import { AreaTrendChart, BarWeekdayChart } from './TrendChart';
 
 // Periodos disponibles
 const TIME_PERIODS = {
@@ -219,7 +216,7 @@ export default function StatsGrid({ stats, customers = [] }) {
         if (parts.length !== 3) {
           return { name: 'Fecha inválida', value: Number(value) || 0 };
         }
-        const [year, month, day] = parts;
+        const [, month, day] = parts;
         return { name: `${day}/${month}`, value: Number(value) || 0 };
       });
 
@@ -269,11 +266,17 @@ export default function StatsGrid({ stats, customers = [] }) {
 
       if (step >= steps) {
         clearInterval(timer);
+        setAnimatedValues({
+          revenue: metrics.revenue,
+          profit: metrics.totalProfit,
+          orders: metrics.orders,
+          items: metrics.items
+        });
       }
     }, interval);
 
     return () => clearInterval(timer);
-  }, [timeRange]); // Únicamente timeRange como dependencia
+  }, [metrics.revenue, metrics.totalProfit, metrics.orders, metrics.items]);
 
   return (
     <div className="stats-container-wrapper">
@@ -291,7 +294,7 @@ export default function StatsGrid({ stats, customers = [] }) {
 
         {/* Selector de periodo - Mobile first: scroll horizontal */}
         <div className="time-filter-scroll">
-          {Object.entries(TIME_PERIODS).map(([key, { label, days }]) => (
+          {Object.entries(TIME_PERIODS).map(([key, { label }]) => (
             <button
               key={key}
               className={`filter-pill ${timeRange === key ? 'active' : ''}`}
@@ -307,7 +310,7 @@ export default function StatsGrid({ stats, customers = [] }) {
       </div>
 
       {/* Gráfica de evolución temporal */}
-      {metrics.evolutionData.length > 1 && (
+      {metrics.evolutionData.length > 0 && (
         <div className="stats-evolution-card">
           <div className="evolution-header">
             <div className="evolution-title">
@@ -320,7 +323,6 @@ export default function StatsGrid({ stats, customers = [] }) {
             </div>
           </div>
           <AreaTrendChart
-            key={`area-${timeRange}`}
             data={metrics.evolutionData}
             height={200}
             color={metrics.revenueTrend >= 0 ? 'var(--success-color, #10b981)' : 'var(--error-color, #dc2626)'}
@@ -452,7 +454,6 @@ export default function StatsGrid({ stats, customers = [] }) {
             </div>
             <div style={{ marginTop: '10px' }}>
               <BarWeekdayChart
-                key={`bar-${timeRange}`}
                 data={metrics.dailyRevenue}
                 height={260}
               />

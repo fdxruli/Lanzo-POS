@@ -1,5 +1,5 @@
 // src/components/dashboard/TrendChart.jsx
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import {
   AreaChart,
   Area,
@@ -39,10 +39,43 @@ const CustomTooltip = ({ active, payload }) => {
   return null;
 };
 
+class ChartErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <ChartFallback height={this.props.height} />;
+    }
+
+    return this.props.children;
+  }
+}
+
+const ChartFallback = ({ height = 180 }) => (
+  <div className="chart-empty-state" style={{ minHeight: height }}>
+    <p>No se pudo mostrar la grafica</p>
+  </div>
+);
+
 /**
  * Gráfica de área con Recharts para evolución temporal
  */
 export function AreaTrendChart({ data, height = 200, color = 'var(--primary-color)' }) {
+  const gradientId = useId().replace(/:/g, '');
+
   // Validar y normalizar datos
   const normalizedData = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -51,53 +84,55 @@ export function AreaTrendChart({ data, height = 200, color = 'var(--primary-colo
       value: Number(item?.value) || 0
     }));
   }, [data]);
+  const resetKey = useMemo(
+    () => normalizedData.map(item => `${item.name}:${item.value}`).join('|'),
+    [normalizedData]
+  );
 
   if (normalizedData.length === 0) {
-    return (
-      <div className="chart-empty-state">
-        <p>No hay datos disponibles</p>
-      </div>
-    );
+    return <ChartFallback height={height} />;
   }
 
   return (
-    <div className="recharts-container" style={{ minHeight: height }}>
-      <ResponsiveContainer width="100%" height={height}>
-        <AreaChart data={normalizedData}>
-          <defs>
-            <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-              <stop offset="95%" stopColor={color} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" opacity={0.5} />
-          <XAxis
-            dataKey="name"
-            tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
-            axisLine={{ stroke: 'var(--border-color)' }}
-            tickLine={{ stroke: 'var(--border-color)' }}
-            minTickGap={10}
-          />
-          <YAxis
-            tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
-            axisLine={false}
-            tickLine={false}
-            tickFormatter={formatCurrency}
-            width={60}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Area
-            type="monotone"
-            dataKey="value"
-            stroke={color}
-            strokeWidth={2}
-            fillOpacity={1}
-            fill="url(#colorRevenue)"
-            animationDuration={500}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
+    <ChartErrorBoundary resetKey={resetKey} height={height}>
+      <div className="recharts-container" style={{ minHeight: height }}>
+        <ResponsiveContainer width="100%" height={height}>
+          <AreaChart data={normalizedData}>
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" opacity={0.5} />
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
+              axisLine={{ stroke: 'var(--border-color)' }}
+              tickLine={{ stroke: 'var(--border-color)' }}
+              minTickGap={10}
+            />
+            <YAxis
+              tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={formatCurrency}
+              width={60}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke={color}
+              strokeWidth={2}
+              fillOpacity={1}
+              fill={`url(#${gradientId})`}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </ChartErrorBoundary>
   );
 }
 
@@ -113,43 +148,45 @@ export function BarWeekdayChart({ data, height = 180 }) {
       value: Number(item?.value) || 0
     }));
   }, [data]);
+  const resetKey = useMemo(
+    () => normalizedData.map(item => `${item.name}:${item.value}`).join('|'),
+    [normalizedData]
+  );
 
   if (normalizedData.length === 0) {
-    return (
-      <div className="chart-empty-state">
-        <p>No hay datos disponibles</p>
-      </div>
-    );
+    return <ChartFallback height={height} />;
   }
 
   return (
-    <div className="recharts-container" style={{ minHeight: height }}>
-      <ResponsiveContainer width="100%" height={height}>
-        <RechartsBarChart data={normalizedData}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" opacity={0.5} />
-          <XAxis
-            dataKey="name"
-            tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-            axisLine={{ stroke: 'var(--border-color)' }}
-            tickLine={{ stroke: 'var(--border-color)' }}
-          />
-          <YAxis
-            tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
-            axisLine={false}
-            tickLine={false}
-            tickFormatter={formatCurrency}
-            width={60}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Bar
-            dataKey="value"
-            fill="var(--primary-color)"
-            radius={[4, 4, 0, 0]}
-            animationDuration={500}
-          />
-        </RechartsBarChart>
-      </ResponsiveContainer>
-    </div>
+    <ChartErrorBoundary resetKey={resetKey} height={height}>
+      <div className="recharts-container" style={{ minHeight: height }}>
+        <ResponsiveContainer width="100%" height={height}>
+          <RechartsBarChart data={normalizedData}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" opacity={0.5} />
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+              axisLine={{ stroke: 'var(--border-color)' }}
+              tickLine={{ stroke: 'var(--border-color)' }}
+            />
+            <YAxis
+              tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={formatCurrency}
+              width={60}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Bar
+              dataKey="value"
+              fill="var(--primary-color)"
+              radius={[4, 4, 0, 0]}
+              isAnimationActive={false}
+            />
+          </RechartsBarChart>
+        </ResponsiveContainer>
+      </div>
+    </ChartErrorBoundary>
   );
 }
 
