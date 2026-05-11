@@ -7,7 +7,9 @@
 .pos-page-layout {
   display: flex;
   flex-direction: column;
-  height: 100vh; /* O el alto disponible */
+  flex: 1;
+  height: 100%;
+  min-height: 0;
   overflow: hidden; /* Evita scrolls dobles indeseados */
   width: 100%;
   max-width: 100%;
@@ -24,7 +26,8 @@
 
 .pos-grid {
   display: flex;
-  height: 100%;
+  flex: 1;
+  height: auto;
   /* min-height: 0 previene que flexbox se desborde internamente */
   min-height: 0;
   overflow: hidden;
@@ -42,6 +45,10 @@
 
   .pos-grid > .pos-menu-container {
     flex: 1 1 100%;
+  }
+
+  .floating-pos-bar {
+    bottom: calc(73px + env(safe-area-inset-bottom));
   }
 }
 
