@@ -44,6 +44,7 @@ const InstallPrompt = () => {
   const closeInstallModal = useAppStore((state) => state.closeInstallModal);
   const requestInstall = useAppStore((state) => state.requestInstall);
   const markInstalled = useAppStore((state) => state.markInstalled);
+  const showUpdateModal = useAppStore((state) => state.showUpdateModal);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -69,15 +70,28 @@ const InstallPrompt = () => {
       markInstalled();
     };
 
+    const handleDisplayModeChange = (e) => {
+      if (e.matches) {
+        setInstallContext({
+          isIOS: checkIsIOS(),
+          isStandalone: true
+        });
+      }
+    };
+
     syncInstallContext();
     syncPromptFromWindow();
 
     window.addEventListener('lanzo-pwa-ready', handlePromptReady);
     window.addEventListener('appinstalled', handleInstalled);
 
+    const mql = window.matchMedia('(display-mode: standalone)');
+    mql.addEventListener('change', handleDisplayModeChange);
+
     return () => {
       window.removeEventListener('lanzo-pwa-ready', handlePromptReady);
       window.removeEventListener('appinstalled', handleInstalled);
+      mql.removeEventListener('change', handleDisplayModeChange);
     };
   }, [markInstalled, setDeferredPrompt, setInstallContext]);
 
@@ -89,7 +103,9 @@ const InstallPrompt = () => {
     closeInstallModal();
   };
 
-  if (!showInstallModal || isDismissed) return null;
+  // Priorizamos el modal de actualización para no saturar al usuario,
+  // y verificamos si ya se descartó este modal.
+  if (!showInstallModal || isDismissed || showUpdateModal) return null;
 
   const overlayStyle = {
     position: 'fixed',
