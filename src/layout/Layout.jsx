@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
@@ -12,23 +12,60 @@ import { Toaster } from 'react-hot-toast';
 import { useAppStore } from '../../store/useAppStore';
 import './Layout.css';
 import Logger from '../../services/Logger';
-
-// 1. IMPORTA EL COMPONENTE AQUÍ
-import InstallPrompt from '../common/InstallPrompt'; 
+import { GLOBAL_ALERT } from '../../config/botContext';
+import { lazy, Suspense } from 'react';
+import { useOrderStore } from '../../store/useOrderStore';
+const AssistantBot = lazy(() => import('../common/AssistantBot'));
 
 function Layout() {
   const loadStats = useStatsStore(state => state.loadStats);
   const loadProducts = useProductStore(state => state.loadInitialProducts);
   const loadSales = useSalesStore(state => state.loadRecentSales);
 
+  const reconcileOrphanedOrders = useOrderStore(state => state.reconcileOrphanedOrders);
+
   const licenseDetails = useAppStore(state => state.licenseDetails);
   const initializeApp = useAppStore(state => state.initializeApp);
 
+  const showAssistantBot = useAppStore(state => state.showAssistantBot);
+
+  const { pathname } = useLocation();
+  const isPosPage = pathname === '/';
+
   useEffect(() => {
-    Logger.log("🚀 Inicializando Stores modulares...");
-    loadStats();
-    loadProducts();
-    loadSales();
+    // Restablece el scroll del documento principal
+    window.scrollTo(0, 0);
+
+    // Si tu CSS hace que el scroll ocurra dentro de un contenedor específico 
+    // en lugar del body, también restablecemos el scroll de ese contenedor:
+    const contentWrapper = document.querySelector('.content-wrapper');
+    const pageContainer = document.querySelector('.page-container');
+
+    if (contentWrapper) contentWrapper.scrollTo(0, 0);
+    if (pageContainer) pageContainer.scrollTo(0, 0);
+  }, [pathname]);
+
+  useEffect(() => {
+    const initializeData = async () => {
+      Logger.log("🚀 Inicializando Stores modulares y auditoría...");
+
+      // A. PRIMERO: Ejecutar el recolector de basura de inventario
+      try {
+        const result = await reconcileOrphanedOrders();
+        if (result?.count > 0) {
+          Logger.log(`🧹 Se liberó el inventario de ${result.count} órdenes abandonadas.`);
+        }
+      } catch (error) {
+        Logger.error("Fallo durante la reconciliación de órdenes:", error);
+      }
+
+      // B. DESPUÉS: Cargar la información a la UI (ahora con el stock real)
+      loadStats();
+      loadProducts();
+      loadSales();
+    };
+
+    initializeData();
   }, []);
 
   useEffect(() => {
@@ -37,8 +74,8 @@ function Layout() {
         const now = new Date();
         const expires = new Date(licenseDetails.expiresAt);
         if (now > expires) {
-           Logger.log("🕒 El tiempo de licencia ha expirado. Re-verificando estado...");
-           initializeApp(); 
+          Logger.log("🕒 El tiempo de licencia ha expirado. Re-verificando estado...");
+          initializeApp();
         }
       }
     }, 60000);
@@ -48,8 +85,13 @@ function Layout() {
 
   return (
     <div className="app-layout">
-      <Toaster 
+      <Toaster
         position="top-center"
+        containerStyle={{
+          zIndex: 2000, // Z-index sensato y coherente con la arquitectura modal
+          top: 20
+        }}
+        // -------------------------
         toastOptions={{
           style: {
             background: '#333',
@@ -67,12 +109,12 @@ function Layout() {
           },
         }}
       />
-      
+
       <Navbar />
 
       <div className="content-wrapper">
         <Ticker />
-        <div className="page-container">
+        <div className={`page-container ${isPosPage ? 'page-container-pos' : ''}`}>
           <Outlet />
         </div>
       </div>
@@ -82,8 +124,11 @@ function Layout() {
       <DataSafetyModal />
       <BackupReminder />
 
-      {/* 2. AGRÉGALO AQUÍ AL FINAL (Discreto pero accesible globalmente) */}
-      <InstallPrompt /> 
+      {(showAssistantBot || (GLOBAL_ALERT && GLOBAL_ALERT.active && !localStorage.getItem(`lanzo_alert_${GLOBAL_ALERT.id}`))) && (
+        <Suspense fallback={null}>
+          <AssistantBot />
+        </Suspense>
+      )}
 
     </div>
   );
