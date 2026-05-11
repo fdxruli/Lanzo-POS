@@ -320,6 +320,7 @@ export default function StatsGrid({ stats, customers = [] }) {
             </div>
           </div>
           <AreaTrendChart
+            key={`area-${timeRange}`}
             data={metrics.evolutionData}
             height={200}
             color={metrics.revenueTrend >= 0 ? 'var(--success-color, #10b981)' : 'var(--error-color, #dc2626)'}
@@ -451,6 +452,7 @@ export default function StatsGrid({ stats, customers = [] }) {
             </div>
             <div style={{ marginTop: '10px' }}>
               <BarWeekdayChart
+                key={`bar-${timeRange}`}
                 data={metrics.dailyRevenue}
                 height={260}
               />
