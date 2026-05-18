@@ -141,11 +141,58 @@
   text-overflow: ellipsis;
 }
 
+/* Contenedor central de los controles */
 .scanned-item-controls {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  background-color: var(--surface-color, #f3f4f6);
+  border-radius: var(--border-radius-sm, 6px);
+  padding: 4px;
+  min-width: 90px;
+  border: 1px solid #e5e7eb;
+}
+
+/* Botones de + y - */
+.scanner-qty-btn {
+  background-color: white;
+  border: 1px solid #d1d5db;
+  color: var(--text-color, #374151);
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap: var(--spacing-xs);
+  font-weight: bold;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  padding: 0;
+}
+
+.scanner-qty-btn:hover:not(:disabled) {
+  background-color: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+.scanner-qty-btn:active:not(:disabled) {
+  background-color: #d1d5db;
+}
+
+.scanner-qty-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* El valor numérico */
+.scanner-qty-value {
+  font-weight: 700;
+  font-size: 1rem;
+  min-width: 24px;
+  text-align: center;
+  color: var(--primary-color, #111827);
+  user-select: none;
 }
 
 .scanned-item-price {
@@ -412,4 +459,67 @@
 .scan-feedback-message:has(⚠️),
 .scan-feedback-message:has(❌) {
   background-color: var(--error-color);
+}
+
+.scanner-error-banner {
+  background-color: #fee2e2;
+  /* Fondo rojo claro */
+  border: 1px solid #ef4444;
+  /* Borde rojo fuerte */
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  flex-shrink: 0;
+  /* Evita que el contenedor principal lo aplaste */
+}
+
+.scanner-error-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.scanner-error-header p {
+  color: #b91c1c;
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.unknown-codes-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 80px;
+  /* Caso límite: Restringir altura para que no rompa el Layout */
+  overflow-y: auto;
+  /* Permitir scroll si hay muchos errores */
+}
+
+.unknown-badge {
+  background-color: #ef4444;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: monospace;
+  font-weight: bold;
+}
+
+.btn-clear-errors {
+  background: transparent;
+  border: 1px solid #b91c1c;
+  color: #b91c1c;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-clear-errors:active {
+  background: #b91c1c;
+  color: white;
 }

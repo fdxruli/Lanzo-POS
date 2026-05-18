@@ -48,6 +48,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const [cameraError, setCameraError] = useState(null);
   const [scanFeedback, setScanFeedback] = useState('');
   const [scanCount, setScanCount] = useState(0);
+  const [unknownCodes, setUnknownCodes] = useState([]);
 
   const mode = onScanSuccess ? 'single' : 'pos';
 
@@ -70,6 +71,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const resetModalState = useCallback(() => {
     clearAllTimeouts();
     setScannedItems([]);
+    setUnknownCodes([]);
     setIsScanning(false);
     setIsConfirming(false);
     setCameraError(null);
@@ -91,6 +93,40 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     }, REACTIVATION_DELAY_MS);
   }, [clearAllTimeouts]);
 
+  // Lógica para incrementar cantidad sin re-escanear
+  const handleAddQuantity = useCallback((productInfo) => {
+    if (isConfirming) return;
+
+    // Extraemos solo la info base del producto, ignorando los campos agrupados
+    const { quantity, uniqueLineId, ...baseProduct } = productInfo;
+
+    setScannedItems((prevItems) => [
+      ...prevItems,
+      {
+        ...baseProduct,
+        quantity: 1, // Siempre 1 en el registro plano
+        uniqueLineId: buildScanLineId(baseProduct),
+      },
+    ]);
+  }, [isConfirming]);
+
+  // Lógica para decrementar cantidad
+  const handleRemoveQuantity = useCallback((productId) => {
+    if (isConfirming) return;
+
+    setScannedItems((prevItems) => {
+      // Encontrar el último escaneo de este producto
+      const lastIndex = prevItems.map(item => item.id).lastIndexOf(productId);
+
+      // Si no existe, no hacemos nada (caso borde de seguridad)
+      if (lastIndex === -1) return prevItems;
+
+      const newItems = [...prevItems];
+      newItems.splice(lastIndex, 1); // Removemos solo ese elemento
+      return newItems;
+    });
+  }, [isConfirming]);
+
   const handleClose = useCallback(() => {
     resetModalState();
     onClose();
@@ -104,8 +140,22 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         const product = await resolveWithCache(code);
 
         if (!product) {
-          playErrorBeep();
-          setScanFeedback(`No encontrado: ${code}`);
+          playErrorBeep(); // Asegúrate de que este sonido sea drásticamente diferente al beep normal
+          if (navigator.vibrate) navigator.vibrate([200, 100, 200]); // Patrón de vibración de error (más agresivo)
+
+          // Registrar el código no encontrado agrupando intentos
+          setUnknownCodes(prev => {
+            const existingCode = prev.find(item => item.code === code);
+            if (existingCode) {
+              return prev.map(item =>
+                item.code === code ? { ...item, attempts: item.attempts + 1 } : item
+              );
+            }
+            return [...prev, { code, attempts: 1 }];
+          });
+
+          setScanFeedback(`Falló: ${code}`);
+          scheduleReactivation(); // Importante: reactivar el escáner para que no se congele
           return;
         }
 
@@ -258,9 +308,8 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   return (
     <div id="scanner-modal" className="modal" style={{ display: 'flex' }}>
       <div
-        className={`modal-content scanner-modal-content ${
-          mode === 'pos' ? 'pos-scan-mode' : 'simple-scan-mode'
-        }`}
+        className={`modal-content scanner-modal-content ${mode === 'pos' ? 'pos-scan-mode' : 'simple-scan-mode'
+          }`}
       >
         <h2 className="modal-title">
           Escanear Codigos{scanCount > 0 ? ` (${scanCount})` : ''}
@@ -346,6 +395,23 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           {mode === 'pos' && (
             <div className="scanner-results-container">
               <h3 className="subtitle">Carrito Temporal</h3>
+              {unknownCodes.length > 0 && (
+                <div className="scanner-error-banner">
+                  <div className="scanner-error-header">
+                    <p>⚠️ Productos no registrados:</p>
+                    <button className="btn-clear-errors" onClick={() => setUnknownCodes([])}>
+                      Descartar fallos
+                    </button>
+                  </div>
+                  <div className="unknown-codes-list">
+                    {unknownCodes.map((item) => (
+                      <span key={item.code} className="unknown-badge">
+                        {item.code} {item.attempts > 1 && `(x${item.attempts})`}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="scanned-items-list">
                 {groupedScannedItems.length === 0 ? (
                   <p className="empty-message" style={{ padding: '2rem 0' }}>
@@ -368,12 +434,29 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                       >
                         {item.name}
                       </span>
-                      <span
-                        className="scanned-item-controls"
-                        style={{ margin: '0 10px', fontWeight: 'bold' }}
-                      >
-                        x{item.quantity}
-                      </span>
+                      <div className="scanned-item-controls">
+                        <button
+                          type="button"
+                          className="scanner-qty-btn"
+                          onClick={() => handleRemoveQuantity(item.id)}
+                          disabled={isConfirming}
+                          title="Reducir cantidad"
+                        >
+                          {item.quantity === 1 ? '🗑️' : '-'}
+                        </button>
+
+                        <span className="scanner-qty-value">{item.quantity}</span>
+
+                        <button
+                          type="button"
+                          className="scanner-qty-btn"
+                          onClick={() => handleAddQuantity(item)}
+                          disabled={isConfirming}
+                          title="Aumentar cantidad"
+                        >
+                          +
+                        </button>
+                      </div>
                       <span className="scanned-item-price">
                         ${(item.price * item.quantity).toFixed(2)}
                       </span>
