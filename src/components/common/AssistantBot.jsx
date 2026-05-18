@@ -1,8 +1,8 @@
-// src/components/common/AssistantBot.jsx (V4.2 - OPTIMIZADO)
+// src/components/common/AssistantBot.jsx (V5.0 - CON WEB WORKER)
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getSmartContext, getQuickActions, GLOBAL_ALERT, getCriticalAlert } from '../../config/botContext';
+import { getSmartContext, getQuickActions, GLOBAL_ALERT, getCriticalAlert, initializeGlobalAlert } from '../../config/botContext';
 import {
   X, Wrench, AlertTriangle, ExternalLink, Send,
   Sparkles, HelpCircle, Lightbulb,
@@ -14,11 +14,7 @@ import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore';
 import { useStatsStore } from '../../store/useStatsStore';
 
-import {
-  detectIntent,
-  extractEntities,
-  generateResponse,
-} from '../../utils/botIntelligence';
+import { useBotWorker } from '../../hooks/useBotWorker';
 
 // ─── SELECTORES ESTABLES (fuera del componente) ──────────────────────────────
 // Definirlos fuera evita que se recreen en cada render del componente
@@ -56,6 +52,9 @@ const AssistantBot = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // ─── INTEGRACIÓN CON WEB WORKER ─────────────────────────────────────────────
+  const { askBot, isReady, error: workerError } = useBotWorker();
+
   // ─── ESTADO LOCAL ───────────────────────────────────────────────────────────
   const [showGlobalAlert, setShowGlobalAlert] = useState(HAS_PENDING_ALERT);
   const [isOpen, setIsOpen] = useState(HAS_PENDING_ALERT);
@@ -91,7 +90,8 @@ const AssistantBot = () => {
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }, [licenseDetails?.expires_at]); // Solo se recalcula si cambia la fecha de expiración
 
-  // botData: ya no incluye lowStockCount ni cartTotal (vienen de selectores propios)
+  // botData: objeto de contexto para el bot (compatible con Worker)
+  // IMPORTANTE: Solo datos serializables, no funciones ni objetos complejos
   const botData = useMemo(() => ({
     cartCount: cartOrder.length,
     cartTotal,
@@ -129,6 +129,11 @@ const AssistantBot = () => {
   }, [context, location.pathname, botData.businessType]);
 
   // ─── EFECTOS ────────────────────────────────────────────────────────────────
+
+  // Inicializar alerta global (solo en main thread, seguro para Worker)
+  useEffect(() => {
+    initializeGlobalAlert();
+  }, []);
 
   // La alerta global es una constante — solo necesitamos verificarla al montar
   // No hay dependencias que cambien en runtime
@@ -175,6 +180,10 @@ const AssistantBot = () => {
     if (target) setTimeout(() => navigate(target), 0);
   }, [navigate]);
 
+  /**
+   * Handler de envío de mensajes usando el Web Worker
+   * REEMPLAZA la llamada síncrona anterior por procesamiento asíncrono
+   */
   const handleSendMessage = useCallback(async () => {
     if (!userInput.trim()) return;
 
@@ -187,10 +196,8 @@ const AssistantBot = () => {
     setIsTyping(true);
 
     try {
-      const intent = detectIntent(currentInput);
-      const entities = extractEntities(currentInput);
-      entities.originalMessage = currentInput;
-      const response = await generateResponse(intent, entities, botData);
+      // USAR EL WEB WORKER: Llamada asíncrona sin bloquear el Event Loop
+      const response = await askBot(currentInput, botData);
 
       setMessages((prev) => [
         ...prev,
@@ -205,19 +212,35 @@ const AssistantBot = () => {
         },
       ]);
     } catch (error) {
-      console.error('Error en bot intelligence:', error);
+       
+      console.error('[AssistantBot] Error en worker:', error);
+
+      // Mensaje de error específico según el tipo de error
+      let errorMessage = 'Tuve un error procesando tu solicitud. Por favor intenta de nuevo.';
+
+      if (error.code === 'WORKER_TIMEOUT') {
+        errorMessage = 'La respuesta está tomando demasiado tiempo. Intenta con una pregunta más simple.';
+      } else if (error.code === 'WORKER_NOT_INITIALIZED') {
+        errorMessage = 'El asistente no está disponible. Recarga la página para intentar de nuevo.';
+      } else if (!isReady) {
+        errorMessage = 'El asistente está cargando. Espera un momento e intenta de nuevo.';
+      }
+
       setMessages((prev) => [
         ...prev,
         {
           type: 'bot',
-          message: 'Tuve un error procesando tu solicitud. Por favor intenta de nuevo.',
           timestamp: Date.now(),
+          title: '⚠️ Error',
+          message: errorMessage,
+          tips: workerError ? [`Detalle técnico: ${workerError}`] : [],
+          actions: [],
         },
       ]);
     } finally {
       setIsTyping(false);
     }
-  }, [userInput, botData]);
+  }, [userInput, botData, askBot, isReady, workerError]);
 
   // ─── VALORES DERIVADOS SIMPLES (sin memo, son baratos) ──────────────────────
   const hasActiveAlert =
@@ -235,7 +258,7 @@ const AssistantBot = () => {
           <div className="bot-header">
             <span className="bot-title">
               {chatMode ? (
-                <><Sparkles size={16} style={{ marginRight: '6px' }} />Asistente IA</>
+                <><Sparkles size={16} style={{ marginRight: '6px' }} />Asistente IA {isReady ? '' : '(cargando...)'}</>
               ) : showGlobalAlert ? '⚠️ Importante'
                 : criticalAlert ? 'Atención Requerida'
                 : (context?.title || 'Lanzo Bot')}
@@ -294,6 +317,11 @@ const AssistantBot = () => {
                         <button onClick={() => setUserInput('¿Qué productos tienen stock bajo?')}>¿Qué productos tienen stock bajo?</button>
                         <button onClick={() => setUserInput('¿Quién me debe dinero?')}>¿Quién me debe dinero?</button>
                       </div>
+                      {!isReady && (
+                        <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#666' }}>
+                          ⏳ Inicializando motor de procesamiento...
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -362,15 +390,16 @@ const AssistantBot = () => {
                   <input
                     type="text"
                     className="chat-input"
-                    placeholder="Escribe tu pregunta..."
+                    placeholder={isReady ? "Escribe tu pregunta..." : "Cargando asistente..."}
                     value={userInput}
                     onChange={(e) => setUserInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                    disabled={!isReady || isTyping}
                   />
                   <button
                     className="send-btn"
                     onClick={handleSendMessage}
-                    disabled={!userInput.trim()}
+                    disabled={!userInput.trim() || !isReady || isTyping}
                   >
                     <Send size={18} color="#ffffff" strokeWidth={2} />
                   </button>
@@ -400,60 +429,57 @@ const AssistantBot = () => {
                       </button>
                     )}
                   </div>
-                ) : (
-                  <p className="context-message">{context?.message}</p>
-                )}
-
-                {quickActions?.length > 0 && (
-                  <div className="bot-actions">
-                    <small className="actions-label">Acciones rápidas:</small>
-                    <div className="actions-grid">
-                      {quickActions.map((action, idx) => (
-                        <button
-                          key={idx}
-                          className={`quick-action-btn ${action.highlight ? 'highlight' : ''}`}
-                          onClick={() => handleQuickAction(action)}
-                        >
-                          <span className="action-icon">{action.icon}</span>
-                          <span className="action-label">{action.label}</span>
-                          <ExternalLink size={12} className="action-arrow" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
+                ) : null}
+                <p className="bot-message">{context?.message || '¿En qué puedo ayudarte hoy?'}</p>
                 {context?.tips?.length > 0 && (
                   <div className="bot-tips">
-                    <small>💡 Tips:</small>
-                    <ul>
-                      {context.tips.map((tip, idx) => <li key={idx}>{tip}</li>)}
-                    </ul>
+                    {context.tips.map((tip, i) => (
+                      <div key={i} className="tip-item">
+                        <Lightbulb size={14} />
+                        <span>{tip}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </>
             )}
           </div>
+
+          {!chatMode && !showGlobalAlert && quickActions.length > 0 && (
+            <div className="bot-actions">
+              {quickActions.slice(0, 4).map((action, idx) => (
+                <button
+                  key={idx}
+                  className="quick-action-btn"
+                  onClick={() => handleQuickAction(action)}
+                >
+                  {action.icon && <span className="action-icon">{action.icon}</span>}
+                  <span className="action-label">{action.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      <button
-        className={`lanzo-bot-avatar ${hasActiveAlert ? 'has-alert' : ''} ${chatMode && isOpen ? 'chat-active' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
-        aria-label="Asistente Virtual"
-        title={showGlobalAlert ? '⚠️ Tienes un mensaje importante' : 'Abrir asistente'}
-      >
-        {hasActiveAlert ? (
-          <AlertTriangle size={24} color="white" />
-        ) : chatMode && isOpen ? (
-          <Sparkles size={24} color="white" />
-        ) : (
-          <img src="/boticon.svg" alt="Asistente" className="bot-icon-svg" />
-        )}
-        {!isOpen && (lowStockCount > 0 || licenseDays <= 7 || criticalAlert || showGlobalAlert) && (
-          <span className="notification-dot" />
-        )}
-      </button>
+      {!isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          className={`lanzo-bot-fab ${hasActiveAlert ? 'pulse' : ''}`}
+          title={hasActiveAlert ? 'Tienes una alerta importante' : 'Abrir asistente'}
+        >
+          {hasActiveAlert ? (
+            <AlertTriangle size={24} color="#fff" />
+          ) : (
+            <img
+              src="/boticon.svg"
+              alt="Bot"
+              width="28"
+              height="28"
+            />
+          )}
+        </button>
+      )}
     </div>
   );
 };

@@ -1,17 +1,14 @@
-// src/components/common/ScannerModal.jsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useZxing } from 'react-zxing';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
-import { useOrderStore } from '../../store/useOrderStore';
-import { productsRepository } from '../../services/db/products';
-import { db, STORES } from '../../services/db/dexie';
-import { getAvailableStock } from '../../services/db/utils';
+import {
+  useOrderStore,
+  summarizeScannedProducts,
+} from '../../store/useOrderStore';
+import { resolveWithCache } from '../../services/barcodeCache';
+import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import './ScannerModal.css';
 import Logger from '../../services/Logger';
-
-// ---------------------------------------------------------------------------
-// Constantes de configuración
-// ---------------------------------------------------------------------------
 
 const CAMERA_CONSTRAINTS = {
   video: {
@@ -22,7 +19,6 @@ const CAMERA_CONSTRAINTS = {
   audio: false,
 };
 
-// FIX #3: Usar BarcodeFormat enum en lugar de strings, y DecodeHintType como clave
 const SCAN_HINTS = new Map([
   [
     DecodeHintType.POSSIBLE_FORMATS,
@@ -35,332 +31,229 @@ const SCAN_HINTS = new Map([
   ],
 ]);
 
-const DEBOUNCE_MS = 1500;
-const FEEDBACK_RESET_MS = 1000;
+const REACTIVATION_DELAY_MS = 500;
+const FEEDBACK_RESET_MS = 800;
 
-// ---------------------------------------------------------------------------
-// Utilidades
-// ---------------------------------------------------------------------------
-
-/**
- * Genera un beep ultraligero con la Web Audio API.
- * No lanza error si el contexto no está disponible.
- */
-const playBeep = (freq = 1200, type = 'sine') => {
-  try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    gain.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.1);
-  } catch (e) {
-    Logger.warn('Audio no disponible', e);
-  }
-};
-
-/**
- * Devuelve un precio parseado y saneado (nunca NaN ni negativo).
- */
-const safePrice = (value) => {
-  const parsed = parseFloat(value);
-  return !isNaN(parsed) && parsed >= 0 ? parsed : 0;
-};
-
-// ---------------------------------------------------------------------------
-// Componente principal
-// ---------------------------------------------------------------------------
+const buildScanLineId = (product) =>
+  `${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
-  const currentOrder = useOrderStore((state) => state.order);
-  const setOrder = useOrderStore((state) => state.setOrder);
+  const addMultipleScannedProducts = useOrderStore(
+    (state) => state.addMultipleScannedProducts
+  );
 
   const [scannedItems, setScannedItems] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [scanFeedback, setScanFeedback] = useState('');
-
-  // FIX #4: scanCount como estado para que actualice la UI
   const [scanCount, setScanCount] = useState(0);
 
   const mode = onScanSuccess ? 'single' : 'pos';
 
-  // Referencias de control
-  const lastScannedRef = useRef({ code: null, time: 0 });
   const processingRef = useRef(false);
-
-  // FIX #2: Referencia para cancelar el setTimeout pendiente
+  const pauseTimeoutRef = useRef(null);
   const feedbackTimeoutRef = useRef(null);
 
-  // ---------------------------------------------------------------------------
-  // Helpers internos
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Cancela cualquier timeout de feedback pendiente.
-   * Llamado antes de iniciar uno nuevo y en el cleanup.
-   */
-  const clearFeedbackTimeout = useCallback(() => {
+  const clearAllTimeouts = useCallback(() => {
     if (feedbackTimeoutRef.current) {
       clearTimeout(feedbackTimeoutRef.current);
       feedbackTimeoutRef.current = null;
     }
+
+    if (pauseTimeoutRef.current) {
+      clearTimeout(pauseTimeoutRef.current);
+      pauseTimeoutRef.current = null;
+    }
   }, []);
 
-  /**
-   * Reactiva el escáner tras procesar un código,
-   * mostrando el feedback durante FEEDBACK_RESET_MS.
-   */
-  const reactivateScanner = useCallback(() => {
-    clearFeedbackTimeout();
+  const resetModalState = useCallback(() => {
+    clearAllTimeouts();
+    setScannedItems([]);
+    setIsScanning(false);
+    setIsConfirming(false);
+    setCameraError(null);
+    setScanFeedback('');
+    setScanCount(0);
+    processingRef.current = false;
+  }, [clearAllTimeouts]);
+
+  const scheduleReactivation = useCallback(() => {
+    clearAllTimeouts();
+
     feedbackTimeoutRef.current = setTimeout(() => {
-      setIsScanning(true);
-      processingRef.current = false;
       setScanFeedback('');
-      feedbackTimeoutRef.current = null;
     }, FEEDBACK_RESET_MS);
-  }, [clearFeedbackTimeout]);
 
-  // ---------------------------------------------------------------------------
-  // Procesamiento del código escaneado (FIX #5: useCallback con deps estables)
-  // ---------------------------------------------------------------------------
+    pauseTimeoutRef.current = setTimeout(() => {
+      processingRef.current = false;
+      setIsScanning(true);
+    }, REACTIVATION_DELAY_MS);
+  }, [clearAllTimeouts]);
 
-  const processScannedCode = useCallback(async (code) => {
-    try {
-      setScanFeedback(`Buscando: ${code}...`);
+  const handleClose = useCallback(() => {
+    resetModalState();
+    onClose();
+  }, [onClose, resetModalState]);
 
-      // 1. Buscar por código de barras (producto padre)
-      let product = await productsRepository.searchByBarcode(code);
+  const processScannedCode = useCallback(
+    async (code) => {
+      try {
+        setScanFeedback(`Buscando: ${code}...`);
 
-      // 2. Fallback: buscar por SKU (lote / variante)
-      if (!product) {
-        product = await productsRepository.searchProductBySKU(code);
-      }
+        const product = await resolveWithCache(code);
 
-      if (product) {
-        let finalPrice = safePrice(product.price);
-        let finalCost = safePrice(product.cost);
-        let displayName = product.name;
-        let batchId = product.batchId ?? null;
-
-        if (product.isVariant) {
-          // Variante específica identificada por SKU
-          displayName = `${product.name} (${product.variantName})`;
-        } else if (product.batchManagement?.enabled) {
-          // Producto con gestión de lotes: aplicar FIFO desde Dexie
-          try {
-            const activeBatches = await db
-              .table(STORES.PRODUCT_BATCHES)
-              .where('productId')
-              .equals(product.id)
-              .filter((b) => b.isActive && getAvailableStock(b) > 0)
-              .sortBy('createdAt');
-
-            if (activeBatches?.length > 0) {
-              const [currentBatch] = activeBatches; // FIFO: primer elemento
-              finalPrice = safePrice(currentBatch.price) || finalPrice;
-              finalCost = safePrice(currentBatch.cost) || finalCost;
-              batchId = currentBatch.id;
-            }
-          } catch (batchError) {
-            Logger.warn('Error cargando lotes FIFO en escáner:', batchError);
-          }
+        if (!product) {
+          playErrorBeep();
+          setScanFeedback(`No encontrado: ${code}`);
+          return;
         }
 
-        const safeProduct = {
-          ...product,
-          name: displayName,
-          price: finalPrice,
-          cost: finalCost,
-          originalPrice: finalPrice,
-          batchId,
-          stock: 0,
-        };
-
-        if (product.isVariant && batchId) {
-          const currentBatch = await db.table(STORES.PRODUCT_BATCHES).get(batchId);
-          safeProduct.stock = currentBatch ? getAvailableStock(currentBatch) : getAvailableStock(product);
-        } else {
-          safeProduct.stock = getAvailableStock(product);
-        }
-
-        setScannedItems((prev) => {
-          // Agrupar por id + batchId para no mezclar variantes del mismo producto
-          const existingIndex = prev.findIndex(
-            (i) => i.id === safeProduct.id && i.batchId === safeProduct.batchId
-          );
-          if (existingIndex >= 0) {
-            const updated = [...prev];
-            updated[existingIndex] = {
-              ...updated[existingIndex],
-              quantity: updated[existingIndex].quantity + 1,
-            };
-            return updated;
-          }
-          return [...prev, { ...safeProduct, quantity: 1 }];
-        });
-
-        setScanFeedback(`✅ ${safeProduct.name} — $${finalPrice.toFixed(2)}`);
-      } else {
-        playBeep(200, 'sawtooth'); // Tono grave de error
-        setScanFeedback(`⚠️ No encontrado: ${code}`);
+        setScannedItems((prevItems) => [
+          ...prevItems,
+          {
+            ...product,
+            quantity: 1,
+            uniqueLineId: buildScanLineId(product),
+          },
+        ]);
+        setScanFeedback(`OK ${product.name} - $${product.price.toFixed(2)}`);
+      } catch (error) {
+        Logger.error('Error procesando codigo escaneado:', error);
+        playErrorBeep();
+        setScanFeedback('Error de base de datos');
+      } finally {
+        scheduleReactivation();
       }
-    } catch (error) {
-      Logger.error('Error procesando código escaneado:', error);
-      setScanFeedback('❌ Error de base de datos');
-    } finally {
-      reactivateScanner();
+    },
+    [scheduleReactivation]
+  );
+
+  const handleConfirmScan = useCallback(async () => {
+    if (mode !== 'pos' || scannedItems.length === 0 || isConfirming) {
+      return;
     }
-  }, [reactivateScanner]);
 
-  // ---------------------------------------------------------------------------
-  // ZXing: gestiona el stream de cámara internamente (no usar getUserMedia aparte)
-  // ---------------------------------------------------------------------------
+    setIsConfirming(true);
+    setIsScanning(false);
+    clearAllTimeouts();
+    processingRef.current = true;
 
-  const { ref: videoRef } = useZxing({
-    paused: !show || !isScanning,
-    onDecodeResult(result) {
-      const code = result.getText();
-      const now = Date.now();
+    try {
+      const result = addMultipleScannedProducts(scannedItems);
 
-      // Debounce: ignorar el mismo código dentro de DEBOUNCE_MS
-      if (
-        lastScannedRef.current.code === code &&
-        now - lastScannedRef.current.time < DEBOUNCE_MS
-      ) {
+      if (!result?.success || result.failedCount > 0) {
+        playErrorBeep();
+        Logger.warn('Confirmacion parcial del carrito temporal del escaner.', {
+          addedCount: result?.addedCount || 0,
+          incrementedCount: result?.incrementedCount || 0,
+          failedCount: result?.failedCount || 0,
+        });
+      }
+
+      if (!result?.success) {
+        setScanFeedback('No se pudo confirmar el escaneo');
+        processingRef.current = false;
+        setIsConfirming(false);
+        setIsScanning(true);
         return;
       }
 
-      if (processingRef.current) return;
+      handleClose();
+    } catch (error) {
+      Logger.error('Error confirmando carrito temporal del escaner:', error);
+      playErrorBeep();
+      setScanFeedback('No se pudo confirmar el escaneo');
+      processingRef.current = false;
+      setIsConfirming(false);
+      setIsScanning(true);
+    }
+  }, [
+    addMultipleScannedProducts,
+    clearAllTimeouts,
+    handleClose,
+    isConfirming,
+    mode,
+    scannedItems,
+  ]);
 
-      lastScannedRef.current = { code, time: now };
+  const { ref: videoRef } = useZxing({
+    paused: !show || !isScanning || isConfirming,
+    onDecodeResult(result) {
+      const code = result.getText();
+
+      if (processingRef.current || isConfirming) {
+        return;
+      }
+
       processingRef.current = true;
-      setScanCount((c) => c + 1); // FIX #4: actualiza UI
+      setIsScanning(false);
+      setScanCount((count) => count + 1);
 
-      // MODO SIMPLE: devuelve el código y cierra
       if (onScanSuccess) {
         playBeep(1200, 'sine');
         if (navigator.vibrate) navigator.vibrate(50);
         onScanSuccess(code);
-        handleClose(true);
+        handleClose();
         return;
       }
 
-      // MODO POS: agregar al carrito temporal
-      setIsScanning(false);
       playBeep(1000, 'sine');
       if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
       processScannedCode(code);
     },
     onError(error) {
-      // NotFoundException se dispara constantemente cuando no hay código visible; se ignora
-      if (error.name === 'NotFoundException') return;
+      if (error.name === 'NotFoundException') {
+        return;
+      }
 
       if (error.name === 'NotAllowedError') {
-        setCameraError('❌ Permiso de cámara denegado.');
-      } else if (error.name === 'NotFoundError') {
-        setCameraError('❌ No se encontró cámara en este dispositivo.');
-      } else {
-        Logger.warn('Advertencia ZXing:', error.message);
+        setCameraError('Permiso de camara denegado.');
+        return;
       }
+
+      if (error.name === 'NotFoundError') {
+        setCameraError('No se encontro camara en este dispositivo.');
+        return;
+      }
+
+      Logger.warn('Advertencia ZXing:', error.message);
     },
     constraints: CAMERA_CONSTRAINTS,
     hints: SCAN_HINTS,
-    timeBetweenDecodingAttempts: 250,
+    timeBetweenDecodingAttempts: 150,
   });
-
-  // ---------------------------------------------------------------------------
-  // Ciclo de vida: inicialización / limpieza al abrir y cerrar el modal
-  // ---------------------------------------------------------------------------
 
   useEffect(() => {
     if (show) {
-      // Resetear estado al abrir
+      setScannedItems([]);
       setIsScanning(true);
+      setIsConfirming(false);
       setCameraError(null);
       setScanFeedback('');
       setScanCount(0);
-      lastScannedRef.current = { code: null, time: 0 };
       processingRef.current = false;
-    } else {
-      // Detener escaneo y cancelar timeouts pendientes al cerrar
-      setIsScanning(false);
-      setScanFeedback('');
-      clearFeedbackTimeout(); // FIX #2
+      return () => {
+        clearAllTimeouts();
+      };
     }
 
+    resetModalState();
+
     return () => {
-      // FIX #2: garantizar limpieza también en desmontaje del componente
-      clearFeedbackTimeout();
+      clearAllTimeouts();
     };
-  }, [show, clearFeedbackTimeout]);
+  }, [show, clearAllTimeouts, resetModalState]);
 
-  // ---------------------------------------------------------------------------
-  // Acciones del usuario
-  // ---------------------------------------------------------------------------
-
-  const handleConfirmScan = useCallback(() => {
-    const newOrder = [...currentOrder];
-
-    scannedItems.forEach((scannedItem) => {
-      const existingInOrder = newOrder.find(
-        (item) =>
-          item.id === scannedItem.id && item.batchId === scannedItem.batchId
-      );
-      if (existingInOrder) {
-        if (existingInOrder.saleType === 'unit') {
-          existingInOrder.quantity += scannedItem.quantity;
-        }
-      } else {
-        newOrder.push(scannedItem);
-      }
-    });
-
-    setOrder(newOrder);
-    handleClose(true);
-  }, [scannedItems, currentOrder, setOrder]);
-
-  const handleClose = useCallback(
-    (force = false) => {
-      if (!force && scannedItems.length > 0) {
-        if (!window.confirm('¿Cerrar sin agregar los productos escaneados?')) {
-          return;
-        }
-      }
-      clearFeedbackTimeout(); // FIX #2: cancelar timeout al cerrar manualmente
-      setScannedItems([]);
-      setIsScanning(false);
-      setCameraError(null);
-      setScanFeedback('');
-      setScanCount(0);
-      lastScannedRef.current = { code: null, time: 0 };
-      processingRef.current = false;
-      onClose();
-    },
-    [scannedItems, onClose, clearFeedbackTimeout]
-  );
-
-  // ---------------------------------------------------------------------------
-  // Derived state
-  // ---------------------------------------------------------------------------
-
-  const totalScaneado = scannedItems.reduce(
-    (sum, item) => sum + item.price * item.quantity,
+  const groupedScannedItems = summarizeScannedProducts(scannedItems);
+  const totalScaneado = groupedScannedItems.reduce(
+    (total, item) => total + item.price * item.quantity,
     0
   );
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
-
-  if (!show) return null;
+  if (!show) {
+    return null;
+  }
 
   return (
     <div id="scanner-modal" className="modal" style={{ display: 'flex' }}>
@@ -369,13 +262,11 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           mode === 'pos' ? 'pos-scan-mode' : 'simple-scan-mode'
         }`}
       >
-        {/* Título con conteo de escaneos (FIX #4: ahora sí actualiza la UI) */}
         <h2 className="modal-title">
-          Escanear Códigos{scanCount > 0 ? ` (${scanCount})` : ''}
+          Escanear Codigos{scanCount > 0 ? ` (${scanCount})` : ''}
         </h2>
 
         <div className="scanner-main-container">
-          {/* ── Área de video ── */}
           <div className="scanner-video-container">
             {cameraError ? (
               <div className="camera-error-feedback">
@@ -384,10 +275,12 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                   onClick={() => {
                     setCameraError(null);
                     setIsScanning(true);
+                    processingRef.current = false;
                   }}
                   className="btn btn-secondary"
+                  disabled={isConfirming}
                 >
-                  🔄 Reintentar
+                  Reintentar
                 </button>
               </div>
             ) : (
@@ -439,26 +332,29 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {isScanning ? '📷 Centra el código aquí' : '⏳ Procesando...'}
+                    {isConfirming
+                      ? 'Guardando carrito temporal...'
+                      : isScanning
+                        ? 'Centra el codigo aqui'
+                        : 'Procesando...'}
                   </div>
                 </div>
               </>
             )}
           </div>
 
-          {/* ── Carrito temporal (solo en modo POS) ── */}
           {mode === 'pos' && (
             <div className="scanner-results-container">
               <h3 className="subtitle">Carrito Temporal</h3>
               <div className="scanned-items-list">
-                {scannedItems.length === 0 ? (
+                {groupedScannedItems.length === 0 ? (
                   <p className="empty-message" style={{ padding: '2rem 0' }}>
                     Escanea tu primer producto
                   </p>
                 ) : (
-                  scannedItems.map((item, index) => (
+                  groupedScannedItems.map((item, index) => (
                     <div
-                      key={`${item.id}-${item.batchId ?? index}`}
+                      key={item.uniqueLineId || `${item.id}-${item.batchId ?? index}`}
                       className="scanned-item"
                     >
                       <span
@@ -493,20 +389,22 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           )}
         </div>
 
-        {/* ── Acciones ── */}
         <div className="scanner-actions">
           {mode === 'pos' && (
             <button
               className="btn btn-process"
               onClick={handleConfirmScan}
-              disabled={scannedItems.length === 0}
+              disabled={scannedItems.length === 0 || isConfirming}
             >
-              Confirmar ({scannedItems.length})
+              {isConfirming
+                ? 'Confirmando...'
+                : `Confirmar (${scannedItems.length})`}
             </button>
           )}
           <button
             className="btn btn-cancel"
-            onClick={() => handleClose(false)}
+            onClick={handleClose}
+            disabled={isConfirming}
           >
             Cancelar
           </button>

@@ -29,7 +29,8 @@ function Layout() {
 
   const showAssistantBot = useAppStore(state => state.showAssistantBot);
 
-  const location = useLocation();
+  const { pathname } = useLocation();
+  const isPosPage = pathname === '/';
 
   useEffect(() => {
     // Restablece el scroll del documento principal
@@ -42,7 +43,7 @@ function Layout() {
 
     if (contentWrapper) contentWrapper.scrollTo(0, 0);
     if (pageContainer) pageContainer.scrollTo(0, 0);
-  }, [location.pathname]);
+  }, [pathname]);
 
   useEffect(() => {
     const initializeData = async () => {
@@ -113,7 +114,7 @@ function Layout() {
 
       <div className="content-wrapper">
         <Ticker />
-        <div className="page-container">
+        <div className={`page-container ${isPosPage ? 'page-container-pos' : ''}`}>
           <Outlet />
         </div>
       </div>
