@@ -81,9 +81,17 @@ const splitStockByRatio = (totalQuantity, partQuantity, wholeQuantity) => {
     return normalizeQuantity(ratioValue.toString());
 };
 
-const splitInventoryReservationByQuantity = ({ reservation, quantityA, totalQuantity }) => {
+/**
+ * Split inventory reservation into N parts based on quantities per ticket.
+ * @param {Object} params
+ * @param {Object} params.reservation - The parent reservation
+ * @param {number[]} params.quantitiesPerTicket - Array of quantities for each ticket
+ * @param {number} params.totalQuantity - Total quantity to distribute
+ * @returns {Array<Object|null>} Array of reservations (one per ticket), or null if no reservation
+ */
+const splitInventoryReservationByQuantity = ({ reservation, quantitiesPerTicket, totalQuantity }) => {
     if (!reservation || reservation.source !== 'table') {
-        return { reservationA: null, reservationB: null };
+        return quantitiesPerTicket.map(() => null);
     }
 
     const committedQuantity = normalizeQuantity(reservation.committedQuantity || 0);
@@ -91,66 +99,91 @@ const splitInventoryReservationByQuantity = ({ reservation, quantityA, totalQuan
         ? reservation.committedBatches
         : [];
 
-    const committedQuantityA = splitStockByRatio(committedQuantity, quantityA, totalQuantity);
-    const committedQuantityB = normalizeQuantity(committedQuantity - committedQuantityA);
+    const total = normalizeQuantity(totalQuantity);
+    const n = quantitiesPerTicket.length;
 
-    const batchesA = [];
-    const batchesB = [];
+    // Split committedQuantity proportionally
+    const splitCommittedQuantities = quantitiesPerTicket.map((qty) =>
+        splitStockByRatio(committedQuantity, qty, total)
+    );
+
+    // Adjust for rounding errors: ensure sum equals original
+    const sumSplit = splitCommittedQuantities.reduce((a, b) => a + b, 0);
+    const remainder = normalizeQuantity(committedQuantity - sumSplit);
+    if (remainder !== 0 && splitCommittedQuantities.length > 0) {
+        // Add remainder to first non-zero ticket
+        const firstNonZeroIdx = splitCommittedQuantities.findIndex((q) => q > 0);
+        if (firstNonZeroIdx !== -1) {
+            splitCommittedQuantities[firstNonZeroIdx] = normalizeQuantity(
+                splitCommittedQuantities[firstNonZeroIdx] + remainder
+            );
+        }
+    }
+
+    // Split batches for each ticket
+    const splitBatchesPerTicket = quantitiesPerTicket.map(() => []);
 
     committedBatches.forEach((batchUsage) => {
         const batchTotal = normalizeQuantity(batchUsage.quantity || 0);
-        const batchA = splitStockByRatio(batchTotal, quantityA, totalQuantity);
-        const batchB = normalizeQuantity(batchTotal - batchA);
 
-        if (batchA > 0) {
-            batchesA.push({
-                batchId: batchUsage.batchId,
-                ingredientId: batchUsage.ingredientId,
-                quantity: batchA,
-                cost: toFiniteNumber(batchUsage.cost, 0)
-            });
+        // Split batch across tickets proportionally
+        const batchSplits = quantitiesPerTicket.map((qty) =>
+            splitStockByRatio(batchTotal, qty, total)
+        );
+
+        // Adjust batch remainder
+        const sumBatchSplits = batchSplits.reduce((a, b) => a + b, 0);
+        const batchRemainder = normalizeQuantity(batchTotal - sumBatchSplits);
+        if (batchRemainder !== 0 && batchSplits.length > 0) {
+            const firstNonZeroIdx = batchSplits.findIndex((q) => q > 0);
+            if (firstNonZeroIdx !== -1) {
+                batchSplits[firstNonZeroIdx] = normalizeQuantity(
+                    batchSplits[firstNonZeroIdx] + batchRemainder
+                );
+            }
         }
 
-        if (batchB > 0) {
-            batchesB.push({
-                batchId: batchUsage.batchId,
-                ingredientId: batchUsage.ingredientId,
-                quantity: batchB,
-                cost: toFiniteNumber(batchUsage.cost, 0)
-            });
-        }
+        // Assign splits to tickets
+        batchSplits.forEach((splitQty, ticketIdx) => {
+            if (splitQty > 0) {
+                splitBatchesPerTicket[ticketIdx].push({
+                    batchId: batchUsage.batchId,
+                    ingredientId: batchUsage.ingredientId,
+                    quantity: splitQty,
+                    cost: toFiniteNumber(batchUsage.cost, 0)
+                });
+            }
+        });
     });
 
-    return {
-        reservationA: {
-            source: 'table',
-            committedQuantity: committedQuantityA,
-            committedBatches: batchesA
-        },
-        reservationB: {
-            source: 'table',
-            committedQuantity: committedQuantityB,
-            committedBatches: batchesB
-        }
-    };
+    // Build reservation objects for each ticket
+    return quantitiesPerTicket.map((_, idx) => ({
+        source: 'table',
+        committedQuantity: splitCommittedQuantities[idx],
+        committedBatches: splitBatchesPerTicket[idx]
+    }));
 };
 
-const toLabel = (value) => String(value || '').trim().toUpperCase();
+const toLabel = (value) => String(value || '').trim();
 
 const getTicketDefinitionByLabel = (tickets = [], label) =>
-    (tickets || []).find((ticket) => toLabel(ticket?.label) === label) || null;
+    (tickets || []).find((ticket) => toLabel(ticket?.label) === toLabel(label)) || null;
 
+/**
+ * Build allocation map for N tickets dynamically.
+ * @param {Array} tickets - Array of ticket definitions
+ * @param {number} itemCount - Number of line items
+ * @returns {Map<string, Map<number, number>>} Map of label -> (lineIndex -> quantity)
+ */
 const buildAllocationMap = (tickets = [], itemCount = 0) => {
-    const mapByLabel = {
-        A: new Map(),
-        B: new Map()
-    };
+    const mapByLabel = new Map();
 
     (tickets || []).forEach((ticket) => {
         const label = toLabel(ticket?.label);
-        if (!mapByLabel[label]) return;
+        if (!label) return;
 
         const lines = Array.isArray(ticket?.lines) ? ticket.lines : [];
+        const ticketMap = new Map();
 
         lines.forEach((line) => {
             const lineIndex = Number(line?.lineIndex);
@@ -164,56 +197,67 @@ const buildAllocationMap = (tickets = [], itemCount = 0) => {
                 throw new Error(`Cantidad negativa en ticket ${label}, línea ${lineIndex}.`);
             }
 
-            const current = mapByLabel[label].get(lineIndex) || 0;
-            mapByLabel[label].set(lineIndex, normalizeQuantity(current + quantity));
+            const current = ticketMap.get(lineIndex) || 0;
+            ticketMap.set(lineIndex, normalizeQuantity(current + quantity));
         });
+
+        mapByLabel.set(label, ticketMap);
     });
 
     return mapByLabel;
 };
 
-const buildChildItemsFromAllocation = ({ parentItems, allocationMap }) => {
-    const childItems = {
-        A: [],
-        B: []
-    };
+/**
+ * Build child items from allocation map for N tickets.
+ * @param {Object} params
+ * @param {Array} params.parentItems - Parent order items
+ * @param {Map} params.allocationMap - Map of label -> (lineIndex -> quantity)
+ * @param {Array} params.ticketLabels - Array of ticket labels in order
+ * @returns {Map<string, Array>} Map of label -> items array
+ */
+const buildChildItemsFromAllocation = ({ parentItems, allocationMap, ticketLabels }) => {
+    const childItems = new Map();
+
+    // Initialize empty arrays for each ticket
+    ticketLabels.forEach((label) => childItems.set(label, []));
 
     parentItems.forEach((item, lineIndex) => {
         const totalQuantity = normalizeQuantity(item.quantity || 0);
-        const quantityA = normalizeQuantity(allocationMap.A.get(lineIndex) || 0);
-        const quantityB = normalizeQuantity(allocationMap.B.get(lineIndex) || 0);
 
-        const distributed = normalizeQuantity(quantityA + quantityB);
+        // Collect quantities for each ticket
+        const quantitiesPerTicket = ticketLabels.map((label) => {
+            const ticketMap = allocationMap.get(label);
+            return ticketMap ? normalizeQuantity(ticketMap.get(lineIndex) || 0) : 0;
+        });
+
+        const distributed = normalizeQuantity(quantitiesPerTicket.reduce((a, b) => a + b, 0));
         if (distributed !== totalQuantity) {
-            throw new Error(`La línea ${lineIndex + 1} no está balanceada entre A y B.`);
+            throw new Error(`La línea ${lineIndex + 1} no está balanceada. Suma: ${distributed}, Esperado: ${totalQuantity}`);
         }
 
         const reservation = normalizeReservation(item.inventoryReservation);
-        if (!reservation) {
-            throw new Error(`La línea ${lineIndex + 1} no tiene reserva comprometida válida.`);
-        }
 
-        const { reservationA, reservationB } = splitInventoryReservationByQuantity({
-            reservation,
-            quantityA,
-            totalQuantity
+        // Split reservation for all tickets
+        const splitReservations = reservation
+            ? splitInventoryReservationByQuantity({
+                reservation,
+                quantitiesPerTicket,
+                totalQuantity
+            })
+            : quantitiesPerTicket.map(() => null);
+
+        // Assign items to each ticket
+        ticketLabels.forEach((label, idx) => {
+            const quantity = quantitiesPerTicket[idx];
+            if (quantity > 0) {
+                const childItem = {
+                    ...structuredClone(item),
+                    quantity,
+                    inventoryReservation: splitReservations[idx]
+                };
+                childItems.get(label).push(childItem);
+            }
         });
-
-        if (quantityA > 0) {
-            childItems.A.push({
-                ...structuredClone(item),
-                quantity: quantityA,
-                inventoryReservation: reservationA
-            });
-        }
-
-        if (quantityB > 0) {
-            childItems.B.push({
-                ...structuredClone(item),
-                quantity: quantityB,
-                inventoryReservation: reservationB
-            });
-        }
     });
 
     return childItems;
@@ -230,21 +274,34 @@ const calculateItemsTotalCents = (items = []) => {
 
 const centsToMoneyString = (cents) => Money.toExactString(Money.fromCents(cents));
 
-const buildTicketAdjustments = ({ mode, parentTotalCents, baseA, baseB }) => {
+/**
+ * Build ticket adjustments for N-way split.
+ * Distributes the remainder cents (parentTotalCents % N) to the first X tickets.
+ * @param {Object} params
+ * @param {string} params.mode - 'equal' or 'manual'
+ * @param {number} params.parentTotalCents - Total cents of parent order
+ * @param {number[]} params.baseCentsArray - Array of base cents per ticket
+ * @returns {number[]} Array of adjustment cents per ticket
+ */
+const buildTicketAdjustments = ({ mode, parentTotalCents, baseCentsArray }) => {
+    const n = baseCentsArray.length;
+
     if (mode === 'equal') {
-        const targetA = Math.ceil(parentTotalCents / 2);
-        const targetB = Math.floor(parentTotalCents / 2);
-        return {
-            A: targetA - baseA,
-            B: targetB - baseB
-        };
+        const basePerTicket = Math.floor(parentTotalCents / n);
+        const remainder = parentTotalCents % n;
+
+        // Distribute remainder: first 'remainder' tickets get +1 cent
+        return baseCentsArray.map((_, idx) => {
+            const target = basePerTicket + (idx < remainder ? 1 : 0);
+            return target - baseCentsArray[idx];
+        });
     }
 
-    const remainder = parentTotalCents - (baseA + baseB);
-    return {
-        A: remainder,
-        B: 0
-    };
+    // Manual mode: all remainder goes to first ticket
+    const totalBase = baseCentsArray.reduce((a, b) => a + b, 0);
+    const remainder = parentTotalCents - totalBase;
+
+    return baseCentsArray.map((_, idx) => (idx === 0 ? remainder : 0));
 };
 
 const toMoneySafe = (value, fallback = '0') => {
@@ -343,13 +400,20 @@ const ensureValidSplitRequest = ({ parentSale, mode, tickets }) => {
         throw new Error('Modo de división inválido.');
     }
 
-    if (!Array.isArray(tickets) || tickets.length !== 2) {
-        throw new Error('Se requieren exactamente dos tickets (A y B).');
+    if (!Array.isArray(tickets) || tickets.length < 2) {
+        throw new Error('Se requieren al menos dos tickets para dividir.');
     }
 
-    const ticketLabels = new Set(tickets.map((ticket) => toLabel(ticket?.label)));
-    if (!(ticketLabels.has('A') && ticketLabels.has('B'))) {
-        throw new Error('Los tickets deben etiquetarse como A y B.');
+    // Validate unique labels
+    const labels = tickets.map((t) => toLabel(t?.label));
+    const uniqueLabels = new Set(labels);
+    if (uniqueLabels.size !== labels.length) {
+        throw new Error('Los tickets deben tener etiquetas únicas.');
+    }
+
+    // Validate each ticket has a label
+    if (labels.some((l) => !l)) {
+        throw new Error('Todos los tickets deben tener una etiqueta válida.');
     }
 };
 
@@ -439,29 +503,38 @@ export const splitOpenTableOrderCore = async ({
             };
         }
 
+        // Extract ticket labels in order
+        const ticketLabels = tickets.map((t) => toLabel(t.label));
+
         const allocationMap = buildAllocationMap(tickets, parentItems.length);
         const childItems = buildChildItemsFromAllocation({
             parentItems,
-            allocationMap
+            allocationMap,
+            ticketLabels
         });
 
-        if (childItems.A.length === 0 || childItems.B.length === 0) {
-            throw new Error('Cada ticket debe contener al menos un producto.');
+        // Validate each ticket has at least one item
+        for (const label of ticketLabels) {
+            if (childItems.get(label).length === 0) {
+                throw new Error(`El ticket ${label} debe contener al menos un producto.`);
+            }
         }
 
         const allProducts = await getRelevantProducts({ parentItems, loadMultipleData, STORES });
 
-        const baseCentsByLabel = {
-            A: calculateItemsTotalCents(childItems.A),
-            B: calculateItemsTotalCents(childItems.B)
-        };
+        // Calculate base cents for each ticket
+        const baseCentsByLabel = new Map();
+        ticketLabels.forEach((label) => {
+            baseCentsByLabel.set(label, calculateItemsTotalCents(childItems.get(label)));
+        });
 
         const parentTotalCents = Money.toCents(parentSale.total || 0);
+        const baseCentsArray = ticketLabels.map((label) => baseCentsByLabel.get(label));
+
         const adjustments = buildTicketAdjustments({
             mode,
             parentTotalCents,
-            baseA: baseCentsByLabel.A,
-            baseB: baseCentsByLabel.B
+            baseCentsArray
         });
 
         const childDefinitions = [];
@@ -469,11 +542,13 @@ export const splitOpenTableOrderCore = async ({
         const splitGroupId = generateID('spl');
         const currentIsoTime = new Date().toISOString();
 
-        for (const label of ['A', 'B']) {
+        // Process each ticket dynamically
+        for (let i = 0; i < ticketLabels.length; i++) {
+            const label = ticketLabels[i];
             const ticketDefinition = getTicketDefinitionByLabel(tickets, label);
-            const ticketItems = childItems[label];
-            const baseTicketCents = baseCentsByLabel[label];
-            const ticketAdjustmentCents = adjustments[label];
+            const ticketItems = childItems.get(label);
+            const baseTicketCents = baseCentsByLabel.get(label);
+            const ticketAdjustmentCents = adjustments[i];
             const ticketTotalCents = baseTicketCents + ticketAdjustmentCents;
 
             if (ticketTotalCents < 0) {
@@ -584,4 +659,3 @@ export const splitOpenTableOrderCore = async ({
         };
     }
 };
-

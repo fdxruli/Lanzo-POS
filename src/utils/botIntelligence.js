@@ -708,8 +708,12 @@ export const generateResponse = async (intent, entities) => {
 
 /**
  * Genera sugerencias basadas en contexto y hora del día
+ * @param {Object} options - Opciones de configuración
+ * @param {string|null} [options.lastBackupDate] - Fecha del último respaldo (ISO string)
+ * @returns {Promise<Object|null>} La sugerencia más importante o null
  */
-export const getProactiveSuggestions = async () => {
+export const getProactiveSuggestions = async (options = {}) => {
+  const { lastBackupDate } = options;
   const suggestions = [];
   const now = new Date();
   const hour = now.getHours();
@@ -718,8 +722,7 @@ export const getProactiveSuggestions = async () => {
   
   // Sugerencia: Hacer respaldo (Viernes tarde)
   if (day === 5 && hour >= 16 && hour <= 19) {
-    const lastBackup = localStorage.getItem('last_backup_date');
-    const lastDate = lastBackup ? new Date(lastBackup) : null;
+    const lastDate = lastBackupDate ? new Date(lastBackupDate) : null;
     
     if (!lastDate || (now - lastDate) > 7 * 24 * 60 * 60 * 1000) {
       suggestions.push({

@@ -557,11 +557,14 @@ export const queryByIndex = async (storeName, indexName, value) => {
 
 /**
  * Consulta específica de lotes por producto y estado
+ * ⚡ OPTIMIZACIÓN: Usa índice compuesto [productId+isActive] para mejor rendimiento
  */
 export const queryBatchesByProductIdAndActive = async (productId, isActive = true) => {
+    if (!productId) throw new Error("queryBatchesByProductIdAndActive: productId es requerido y no puede ser nulo/indefinido");
+
     return await db.table(STORES.PRODUCT_BATCHES)
-        .where('productId').equals(productId)
-        .filter(batch => Boolean(batch.isActive) === Boolean(isActive))
+        .where('[productId+isActive]')
+        .equals([productId, isActive])
         .toArray();
 };
 

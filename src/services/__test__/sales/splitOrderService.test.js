@@ -190,4 +190,159 @@ describe('splitOpenTableOrderCore', () => {
     expect(Number(childA.roundingAdjustment) + Number(childB.roundingAdjustment)).toBeCloseTo(0.01, 5);
     expect(Number(childA.total) + Number(childB.total)).toBeCloseTo(5.01, 5);
   });
+
+  describe('N-way split (dynamic tickets)', () => {
+    it('splits into 4 tickets with correct remainder distribution', async () => {
+      const parentSale = {
+        ...buildParentSale(),
+        total: '10.03',
+        items: [
+          {
+            id: 'prod-1',
+            name: 'Producto 1',
+            quantity: 4,
+            price: 2.50,
+            inventoryReservation: {
+              source: 'table',
+              committedQuantity: 4,
+              committedBatches: []
+            }
+          }
+        ]
+      };
+
+      const deps = makeDeps(parentSale);
+
+      const result = await splitOpenTableOrderCore(
+        makeParams(parentSale, {
+          mode: 'equal',
+          tickets: [
+            { label: 'T1', paymentData: { paymentMethod: 'efectivo', amountPaid: '2.51', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] },
+            { label: 'T2', paymentData: { paymentMethod: 'efectivo', amountPaid: '2.51', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] },
+            { label: 'T3', paymentData: { paymentMethod: 'efectivo', amountPaid: '2.51', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] },
+            { label: 'T4', paymentData: { paymentMethod: 'efectivo', amountPaid: '2.50', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] }
+          ]
+        }),
+        deps
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.childSaleIds).toHaveLength(4);
+
+      const payload = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0];
+      const totals = payload.childPayloads.map((c) => Number(c.sale.total));
+
+      // 10.03 / 4 = 2.5075 -> floor = 2.50, remainder = 3 cents
+      // First 3 tickets get +1 cent = 2.51
+      expect(totals).toContain(2.51);
+      expect(totals).toContain(2.50);
+      expect(totals.reduce((a, b) => a + b, 0)).toBeCloseTo(10.03, 5);
+    });
+
+    it('rejects split with fewer than 2 tickets', async () => {
+      const parentSale = buildParentSale();
+      const deps = makeDeps(parentSale);
+
+      const result = await splitOpenTableOrderCore(
+        makeParams(parentSale, {
+          tickets: [
+            { label: 'T1', paymentData: { paymentMethod: 'efectivo', amountPaid: '500', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 2 }] }
+          ]
+        }),
+        deps
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('al menos dos tickets');
+    });
+
+    it('rejects split with duplicate labels', async () => {
+      const parentSale = buildParentSale();
+      const deps = makeDeps(parentSale);
+
+      const result = await splitOpenTableOrderCore(
+        makeParams(parentSale, {
+          tickets: [
+            { label: 'A', paymentData: { paymentMethod: 'efectivo', amountPaid: '250', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] },
+            { label: 'A', paymentData: { paymentMethod: 'efectivo', amountPaid: '250', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] }
+          ]
+        }),
+        deps
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('etiquetas únicas');
+    });
+
+    it('rejects split when a ticket has no items', async () => {
+      const parentSale = buildParentSale();
+      const deps = makeDeps(parentSale);
+
+      const result = await splitOpenTableOrderCore(
+        makeParams(parentSale, {
+          tickets: [
+            { label: 'T1', paymentData: { paymentMethod: 'efectivo', amountPaid: '500', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 2 }] },
+            { label: 'T2', paymentData: { paymentMethod: 'efectivo', amountPaid: '0', sendReceipt: false }, lines: [] }
+          ]
+        }),
+        deps
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('al menos un producto');
+    });
+
+    it('correctly splits inventory reservations for N tickets', async () => {
+      const parentSale = {
+        ...buildParentSale(),
+        items: [
+          {
+            id: 'prod-1',
+            name: 'Producto 1',
+            quantity: 6,
+            price: 100,
+            inventoryReservation: {
+              source: 'table',
+              committedQuantity: 6,
+              committedBatches: [
+                { batchId: 'batch-1', ingredientId: 'ing-1', quantity: 6, cost: 50 }
+              ]
+            }
+          }
+        ]
+      };
+
+      const deps = makeDeps(parentSale);
+
+      const result = await splitOpenTableOrderCore(
+        makeParams(parentSale, {
+          mode: 'manual',
+          tickets: [
+            { label: 'T1', paymentData: { paymentMethod: 'efectivo', amountPaid: '200', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 2 }] },
+            { label: 'T2', paymentData: { paymentMethod: 'efectivo', amountPaid: '200', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 2 }] },
+            { label: 'T3', paymentData: { paymentMethod: 'efectivo', amountPaid: '200', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 2 }] }
+          ]
+        }),
+        deps
+      );
+
+      expect(result.success).toBe(true);
+
+      const payload = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0];
+      const childT1 = payload.childPayloads.find((c) => c.sale.splitLabel === 'T1');
+      const childT2 = payload.childPayloads.find((c) => c.sale.splitLabel === 'T2');
+      const childT3 = payload.childPayloads.find((c) => c.sale.splitLabel === 'T3');
+
+      // Each ticket should have proportional reservation
+      expect(childT1.sale.items[0].inventoryReservation.committedQuantity).toBe(2);
+      expect(childT2.sale.items[0].inventoryReservation.committedQuantity).toBe(2);
+      expect(childT3.sale.items[0].inventoryReservation.committedQuantity).toBe(2);
+
+      // Sum of batch quantities should equal original
+      const totalBatchQty = childT1.sale.items[0].inventoryReservation.committedBatches[0].quantity +
+        childT2.sale.items[0].inventoryReservation.committedBatches[0].quantity +
+        childT3.sale.items[0].inventoryReservation.committedBatches[0].quantity;
+      expect(totalBatchQty).toBe(6);
+    });
+  });
 });

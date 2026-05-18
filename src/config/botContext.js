@@ -19,11 +19,18 @@ export const GLOBAL_ALERT = {
 };
 
 // AUTO-SILENCIAR PARA USUARIOS NUEVOS:
-// Si el usuario no tiene una licencia guardada (es su primera vez entrando a la app),
-// marcamos la alerta como leída automáticamente para no confundirlo con avisos de versiones pasadas.
-if (typeof localStorage !== 'undefined' && !localStorage.getItem('lanzo_license') && GLOBAL_ALERT.active) {
-  localStorage.setItem(`lanzo_alert_${GLOBAL_ALERT.id}`, 'true');
-}
+// NOTA: Esta función debe ser llamada explícitamente desde el hilo principal,
+// nunca se ejecuta automáticamente al importar para ser compatible con Web Workers.
+export const initializeGlobalAlert = () => {
+  // Solo ejecutar en entorno de navegador (no Worker)
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return;
+  }
+
+  if (!localStorage.getItem('lanzo_license') && GLOBAL_ALERT.active) {
+    localStorage.setItem(`lanzo_alert_${GLOBAL_ALERT.id}`, 'true');
+  }
+};
 
 // 2. Función para obtener acciones rápidas (solicitada por AssistantBot)
 export const getQuickActions = (pathname, rubroType = 'abarrotes') => {
