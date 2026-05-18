@@ -31,7 +31,7 @@ export function useLayawayFlow({
         customer,
         clearOrder,
         getTotalPrice
-    } = useOrderStore();
+    } = useOrderStore.getState();
 
     const total = getTotalPrice();
 

@@ -53,13 +53,13 @@ export function useCheckoutFlow({
         getTotalPrice,
         tableData,
         saveOrderAsOpen
-    } = useOrderStore();
+    } = useOrderStore.getState();
 
     const total = getTotalPrice();
 
     // Usamos ref para evitar condiciones de carrera en doble-click
     const isSaleInProgressRef = useRef(false);
-    const { setOrder: setOrderState } = useOrderStore();
+    const { setOrder: setOrderState } = useOrderStore.getState();
 
     // ── Flujo de pago ──────────────────────────────────────────────
     const handleInitiateCheckout = useCallback(() => {

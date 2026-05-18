@@ -5,6 +5,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { splitOpenTableOrder } from '../../services/salesService';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
+import { db, STORES } from '../../services/db/dexie';
+import { SALE_STATUS } from '../../services/sales/financialStats';
 
 /**
  * Hook para manejar la gestión de mesas (tables) del POS.
@@ -21,7 +23,8 @@ import { showMessageModal } from '../../services/utils';
  *   handleLoadOpenOrder: (orderId: string) => void,
  *   handleQuickTableAction: (targetOrder: Object, actionType: 'checkout' | 'split') => Promise<void>,
  *   handleOpenSplitBill: () => void,
- *   handleConfirmSplitBill: (splitPayload: Object) => Promise<void>
+ *   handleConfirmSplitBill: (splitPayload: Object) => Promise<void>,
+ *   handleAnnulKitchenRejectedOrder: (order: Object) => Promise<{ success: boolean, message?: string, cancelled?: boolean }>
  * }}
  */
 export function useTableManagement({
@@ -29,10 +32,10 @@ export function useTableManagement({
     closeModal,
     refreshData,
     checkHasOutOfStockProducts,
-    fetchActiveTablesCount
+    fetchActiveTablesCount,
+    features
 }) {
     const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
-    const features = useAppStore((state) => state.features);
     const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
     const {
@@ -42,14 +45,14 @@ export function useTableManagement({
         saveOrderAsOpen,
         loadOpenOrder,
         tableData
-    } = useOrderStore();
+    } = useOrderStore.getState();
 
     // ── Guardar orden abierta ──────────────────────────────────────
     const handleSaveAsOpen = useCallback(async () => {
         if (!features?.hasTables) return;
 
         const currentTableData = useOrderStore.getState().tableData;
-        const isUpdating = Boolean(useOrderStore.getState().activeOrderId);
+        const isUpdating = Boolean(useOrderStore.getState().isSavedOrder);
 
         if (!currentTableData || currentTableData.trim() === '') {
             const promptedName = window.prompt('Por favor, ingresa un identificador para la mesa (Ej: Mesa 2, Barra, Cliente):');
@@ -62,6 +65,41 @@ export function useTableManagement({
 
         const result = await saveOrderAsOpen();
         if (result.success) {
+            // 🔧 FIX: Cambiar fulfillmentStatus a 'pending' para que NO se recargue como "en edición"
+            // cuando se regrese del OrderPage al POS
+            try {
+                const orderId = useOrderStore.getState().activeOrderId || result.id;
+                await db.table(STORES.SALES).update(orderId, {
+                    fulfillmentStatus: 'pending',
+                    updatedAt: new Date().toISOString()
+                });
+            } catch (err) {
+                console.error("Error actualizando fulfillmentStatus a pending:", err);
+                // Continuamos aunque falle, la orden ya está guardada
+            }
+
+            // Eliminar la orden de la sesión activa tras enviarla a la cocina (Mesas)
+            try {
+                const currentId = useOrderStore.getState().activeOrderId || result.id;
+                // Si la función importada useActiveOrders está disponible
+                const { useActiveOrders } = await import('./useActiveOrders.js');
+                const state = useActiveOrders.getState();
+                
+                // Si hay más órdenes activas cambiamos a otra, si no cerramos
+                const nextOrders = new Map(state.activeOrders);
+                nextOrders.delete(currentId);
+                useActiveOrders.setState({ activeOrders: nextOrders });
+                
+                if (nextOrders.size > 0) {
+                    state.switchOrder(Array.from(nextOrders.keys())[0]);
+                } else {
+                    useActiveOrders.setState({ currentOrderId: null });
+                    state.createOrder();
+                }
+            } catch (err) {
+                console.error("No se pudo cerrar la pestaña activa:", err);
+            }
+
             // Cerrar modal móvil si está abierto
             const modalState = document.querySelector('.modal[style*="z-index: 10005"]');
             if (modalState) {
@@ -150,6 +188,51 @@ export function useTableManagement({
             console.error("Error al cargar la mesa para acción rápida:", error);
         }
     }, [order, executeLoadOpenOrder, closeModal, openModal]);
+
+    /**
+     * Anula en sistema una venta abierta rechazada en cocina (sale del modal de mesas).
+     */
+    const handleAnnulKitchenRejectedOrder = useCallback(async (targetOrder) => {
+        if (!features?.hasTables) {
+            return { success: false, message: 'Mesas no disponibles.' };
+        }
+        if (!targetOrder?.id) {
+            return { success: false, message: 'Orden inválida.' };
+        }
+        if (
+            targetOrder.status !== SALE_STATUS.OPEN
+            || targetOrder.fulfillmentStatus !== 'cancelled'
+        ) {
+            return {
+                success: false,
+                message: 'Solo se puede anular desde aquí una comanda abierta y rechazada en cocina.'
+            };
+        }
+
+        const ok = window.confirm(
+            '¿Anular esta venta en el sistema? Se liberará el stock comprometido y desaparecerá de mesas y cocina. No genera cobro.'
+        );
+        if (!ok) {
+            return { success: false, cancelled: true };
+        }
+
+        try {
+            const { useActiveOrders } = await import('./useActiveOrders.js');
+            const result = await useActiveOrders.getState().cancelOpenSaleByIdFromPos(targetOrder.id);
+
+            if (result.success) {
+                showMessageModal('Venta anulada correctamente.', null, { type: 'success' });
+                await fetchActiveTablesCount();
+            } else {
+                showMessageModal(result.message || 'No se pudo anular la venta.', null, { type: 'error' });
+            }
+            return result;
+        } catch (error) {
+            Logger.error('Error anulando comanda rechazada en cocina:', error);
+            showMessageModal(error?.message || 'Error al anular la venta.', null, { type: 'error' });
+            return { success: false, message: error?.message };
+        }
+    }, [features?.hasTables, fetchActiveTablesCount]);
 
     // ── Split Bill ─────────────────────────────────────────────────
     const handleOpenSplitBill = useCallback(() => {
@@ -240,6 +323,7 @@ export function useTableManagement({
         handleLoadOpenOrder,
         handleQuickTableAction,
         handleOpenSplitBill,
-        handleConfirmSplitBill
+        handleConfirmSplitBill,
+        handleAnnulKitchenRejectedOrder
     };
 }

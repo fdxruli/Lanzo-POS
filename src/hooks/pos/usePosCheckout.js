@@ -3,6 +3,7 @@ import { useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { broadcastDBChange } from '../../store/useProductStore';
 import { showMessageModal } from '../../services/utils';
+import { useActiveOrders } from './useActiveOrders';
 
 /**
  * Hook para manejar el flujo completo de checkout del POS.
@@ -112,6 +113,20 @@ export function usePosCheckout({
                 broadcastDBChange({ action: 'sale-completed', saleId: result.saleId });
                 await posSearch.refreshOutOfStock();
                 await fetchActiveTablesCount();
+
+                const { currentOrderId } = useActiveOrders.getState();
+                if (currentOrderId) {
+                    try {
+                        await useActiveOrders.getState().closeOrder(currentOrderId, {
+                            method: result.paymentMethod,
+                            amount: result.amount || pos.total,
+                            timestamp: new Date().toISOString()
+                        });
+                    } catch (error) {
+                        console.error('Error cerrando orden en activeOrders:', error);
+                        // No interrumpir el flujo, la orden ya está cerrada en BD
+                    }
+                }
             } else {
                 if (result.errorType === 'RACE_CONDITION') {
                     showMessageModal('⚠️ El sistema está muy ocupado. Por favor intenta cobrar de nuevo.');

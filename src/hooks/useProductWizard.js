@@ -15,6 +15,7 @@ export function useProductWizard(productToEdit, activeRubroContext) {
     const [name, setName] = useState(productToEdit?.name || '');
     const [barcode, setBarcode] = useState(productToEdit?.barcode || '');
     const [categoryId, setCategoryId] = useState(productToEdit?.categoryId || '');
+    const [isScannerOpen, setIsScannerOpen] = useState(false);
 
     // Estados del Paso 2 - Inventario
     const [doesTrackStock, setDoesTrackStock] = useState(
@@ -178,6 +179,7 @@ export function useProductWizard(productToEdit, activeRubroContext) {
         name, setName,
         barcode, setBarcode,
         categoryId, setCategoryId,
+        isScannerOpen, setIsScannerOpen,
         step1Errors: stepErrors[1],
 
         // Paso 2 - Inventario

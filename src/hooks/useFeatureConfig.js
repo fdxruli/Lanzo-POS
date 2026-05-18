@@ -34,9 +34,10 @@ export function useFeatureConfig(specificRubro = null) {
 
   const config = useMemo(() => {
     let companyRubros = [];
+
     if (Array.isArray(businessTypes)) {
-      companyRubros = businessTypes;
-    } else if (typeof businessTypes === 'string') {
+      companyRubros = businessTypes.filter(Boolean); // Asegura que no tenga valores vacíos
+    } else if (typeof businessTypes === 'string' && businessTypes.trim()) {
       companyRubros = businessTypes.split(',').map(s => s.trim()).filter(Boolean);
     }
 

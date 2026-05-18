@@ -1,7 +1,6 @@
 // src/hooks/usePos.js
 import { useFeatureConfig } from '../useFeatureConfig';
 import { usePosModals, useMobileCartModal } from './usePosModals';
-import { useBarcodeScanner } from './useBarcodeScanner';
 import { usePosSearch } from './usePosSearch';
 import { useTableManagement } from './useTableManagement';
 import { useLayawayFlow } from './useLayawayFlow';
@@ -12,7 +11,7 @@ import { usePosCheckout } from './usePosCheckout';
 
 /**
  * Hook maestro que combina TODOS los hooks del POS en una sola interfaz.
- * Este es el único hook que el componente PosPage necesita consumir.
+ * Este es el Ãºnico hook que el componente PosPage necesita consumir.
  *
  * @returns {Object} Toda la data y handlers necesarios para el POS
  *
@@ -24,34 +23,32 @@ import { usePosCheckout } from './usePosCheckout';
  * // pos.features.* - Feature flags
  */
 export function usePos() {
-    // ── Feature flags ──────────────────────────────────────────────
+    // â”€â”€ Feature flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const features = useFeatureConfig();
 
-    // ── Estado y acciones básicas ──────────────────────────────────
+    // â”€â”€ Estado y acciones bÃ¡sicas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const pos = usePosPage();
 
-    // ── UI: Modales ────────────────────────────────────────────────
+    // â”€â”€ UI: Modales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const modals = usePosModals();
     const mobileCart = useMobileCartModal();
 
-    // ── UI: Búsqueda ───────────────────────────────────────────────
+    // â”€â”€ UI: BÃºsqueda â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const search = usePosSearch({ debounceMs: 300 });
 
-    // ── Estado derivado ────────────────────────────────────────────
+    // â”€â”€ Estado derivado â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const tablesCount = useActiveTablesCount(features.hasTables);
 
-    // ── Estados especializados ─────────────────────────────────────
+    // â”€â”€ Estados especializados â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const prescription = usePrescriptionFlow(modals);
 
-    // ── Scanner ────────────────────────────────────────────────────
-    useBarcodeScanner(pos.processBarcode);
-
-    // ── Lógica de negocio ──────────────────────────────────────────
+    // â”€â”€ LÃ³gica de negocio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const tables = useTableManagement({
         ...modals,
         refreshData: search.refreshOutOfStock,
         checkHasOutOfStockProducts: () => {},
-        fetchActiveTablesCount: tablesCount.fetchActiveTablesCount
+        fetchActiveTablesCount: tablesCount.fetchActiveTablesCount,
+        features
     });
 
     const layaway = useLayawayFlow({
@@ -59,7 +56,7 @@ export function usePos() {
         showToast: pos.showToast
     });
 
-    // ── Checkout ───────────────────────────────────────────────────
+    // â”€â”€ Checkout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const checkout = usePosCheckout({
         pos,
         posSearch: search,
@@ -70,7 +67,7 @@ export function usePos() {
         fetchActiveTablesCount: tablesCount.fetchActiveTablesCount
     });
 
-    // ── Interfaz unificada ─────────────────────────────────────────
+    // â”€â”€ Interfaz unificada â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     return {
         // Feature flags
         features: {
@@ -93,6 +90,7 @@ export function usePos() {
             searchTerm: search.searchTerm,
             hasOutOfStockItems: search.hasOutOfStockItems,
             activeTablesCount: tablesCount.activeTablesCount,
+            kitchenRejectedOpenCount: tablesCount.kitchenRejectedOpenCount,
             toastMsg: pos.toastMsg,
             prescriptionItems: prescription.prescriptionItems,
             tempPrescriptionData: prescription.tempPrescriptionData
@@ -123,12 +121,14 @@ export function usePos() {
             handleQuickTableAction: tables.handleQuickTableAction,
             handleOpenSplitBill: tables.handleOpenSplitBill,
             handleConfirmSplitBill: tables.handleConfirmSplitBill,
+            fetchActiveTablesCount: tablesCount.fetchActiveTablesCount,
+            handleAnnulKitchenRejectedOrder: tables.handleAnnulKitchenRejectedOrder,
 
             // Apartados
             handleInitiateLayaway: layaway.handleInitiateLayaway,
             handleConfirmLayaway: layaway.handleConfirmLayaway,
 
-            // Prescripción
+            // PrescripciÃ³n
             handlePrescriptionConfirm: prescription.handlePrescriptionConfirm,
             setPrescriptionItems: prescription.setPrescriptionItems,
             setTempPrescriptionData: prescription.setTempPrescriptionData
