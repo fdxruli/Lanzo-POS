@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
 import { getProductAlerts, showMessageModal } from '../../services/utils';
 import { getAvailableStock } from '../../services/db/utils';
@@ -7,28 +7,39 @@ import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import VariantSelectorModal from './VariantSelectorModal';
 import './ProductMenu.css';
-import { Camera, ScanLine } from 'lucide-react';
+import { ScanLine } from 'lucide-react';
+
+let globalAudioCtx = null;
 
 const playBeep = (freq = 1200, type = 'sine') => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
 
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    // Solo lo creamos la primera vez
+    if (!globalAudioCtx) {
+      globalAudioCtx = new AudioContext();
+    }
+
+    // Los navegadores móviles suspenden el audio, hay que despertarlo
+    if (globalAudioCtx.state === 'suspended') {
+      globalAudioCtx.resume();
+    }
+
+    const osc = globalAudioCtx.createOscillator();
+    const gain = globalAudioCtx.createGain();
 
     osc.type = type;
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    osc.frequency.setValueAtTime(freq, globalAudioCtx.currentTime);
 
-    gain.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, globalAudioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.00001, globalAudioCtx.currentTime + 0.1);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(globalAudioCtx.destination);
 
     osc.start();
-    osc.stop(ctx.currentTime + 0.1);
+    osc.stop(globalAudioCtx.currentTime + 0.1);
   } catch (e) {
     console.warn("Audio error", e);
   }

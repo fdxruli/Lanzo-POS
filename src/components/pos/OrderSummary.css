@@ -655,6 +655,15 @@
   transform: scale(0.96);
 }
 
+.btn-mesas-header--mobile {
+  font-size: 0.82rem;
+  padding: 6px 10px;
+}
+
+.btn-mesas-header--kitchen-rejected {
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.95);
+}
+
 /* Contador de mesas activas */
 .active-tables-count {
   background-color: white;

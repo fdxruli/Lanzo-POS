@@ -1,215 +1,389 @@
 /* =========================================
-   1. BASE: MOBILE FIRST (Pantallas pequeñas)
+   Mesas — mobile first
+   Selectores compuestos: pisan .modal / .modal-content de index.css
    ========================================= */
 
-.tables-modal-overlay {
+.modal.tables-modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   display: flex;
   align-items: flex-end;
-  /* En móvil, anclamos el modal al fondo (Bottom Sheet) */
   justify-content: center;
   z-index: 10030;
   padding: 0;
-  /* Eliminamos el padding para maximizar el uso de pantalla */
-  background: rgba(0, 0, 0, 0.6);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(6px);
 }
 
-.tables-modal-content {
+.modal-content.tables-modal-content {
   width: 100%;
-  max-height: 90vh;
-  /* Deja un respiro arriba para indicar que es un modal */
+  max-width: none;
+  max-height: calc(92vh - env(safe-area-inset-top, 0px) - 8px);
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
   background: var(--card-background-color, #fff);
-  border-radius: 16px 16px 0 0;
-  /* Redondeado solo en la parte superior */
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
-  /* Opcional: animación suave de entrada desde abajo */
-  animation: slideUp 0.3s ease-out;
+  position: relative;
+  animation: tablesModalSlideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-@keyframes slideUp {
+@keyframes tablesModalSlideUp {
   from {
-    transform: translateY(100%);
+    transform: translateY(12%);
+    opacity: 0.92;
   }
 
   to {
     transform: translateY(0);
+    opacity: 1;
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .modal-content.tables-modal-content {
+    animation: none;
+  }
+}
+
+.tables-modal-handle {
+  flex-shrink: 0;
+  width: 40px;
+  height: 4px;
+  margin: 10px auto 4px;
+  border-radius: 999px;
+  background: var(--border-color, #d1d5db);
+  opacity: 0.85;
+}
+
+.tables-modal-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.tables-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+
 .tables-header {
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px;
+  padding: 12px 16px 14px;
+  padding-top: max(8px, env(safe-area-inset-top, 0px));
   border-bottom: 1px solid var(--border-color, #eee);
+  background: var(--card-background-color, #fff);
 }
 
 .tables-header-info {
   display: flex;
   flex-direction: column;
-  /* Apilamos título y buscador en móvil */
-  gap: 12px;
-  flex-grow: 1;
-  width: 100%;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
 .tables-header h2 {
   margin: 0;
-  font-size: 1.25rem;
-  /* Ligeramente más compacto */
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-color, #1f2937);
+}
+
+.tables-header-summary {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-light, #6b7280);
+  line-height: 1.4;
+}
+
+.tables-subsection-title {
+  margin: 0 0 8px;
+  padding: 0 16px;
+  font-size: 1rem;
+  font-weight: 600;
   color: var(--text-color, #333);
 }
 
-.tables-search-input {
+.tables-subsection-hint {
+  margin: 0 0 12px;
+  padding: 0 16px;
+  font-size: 0.8125rem;
+  color: var(--text-light, #666);
+  line-height: 1.45;
+}
+
+.tables-kitchen-cancelled-block {
+  padding-top: 8px;
+  border-bottom: 1px solid var(--border-color, #eee);
+  margin-bottom: 8px;
+}
+
+.tables-in-service-block {
+  padding-top: 8px;
+}
+
+.table-card--kitchen-cancelled {
+  border-color: #c62828;
+  box-shadow: 0 0 0 1px rgba(198, 40, 40, 0.12);
+}
+
+.table-card-kitchen-banner {
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #5d1a1a;
+  background: #ffebee;
+  border-bottom: 1px solid #ffcdd2;
+}
+
+.tables-search-container {
   width: 100%;
-  max-width: 100%;
-  /* Ocupa todo el ancho disponible */
-  padding: 12px;
-  /* Área táctil más grande */
-  border: 1px solid var(--border-color, #ccc);
-  border-radius: 8px;
+}
+
+.tables-search-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 10px;
   font-size: 1rem;
-  /* OBLIGATORIO: previene el auto-zoom en iOS Safari */
+  line-height: 1.35;
+  color: var(--text-color, #111827);
+  background: var(--background-color, #f9fafb);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+
+.tables-search-input::placeholder {
+  color: var(--text-light, #9ca3af);
 }
 
 .tables-search-input:focus {
   border-color: var(--primary-color, #2e7d32);
+  background: var(--card-background-color, #fff);
+  box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.22);
 }
 
-/* Modificamos el botón de cerrar para que cuadre arriba a la derecha */
-.btn-cancel {
-  padding: 8px 12px;
-  font-size: 0.9rem;
+.tables-modal-close.btn-cancel {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #d1d5db);
+  background: var(--background-color, #f3f4f6);
+  color: var(--text-color, #374151);
+  cursor: pointer;
   white-space: nowrap;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.tables-modal-close.btn-cancel:hover {
+  background: var(--light-background, #e5e7eb);
+  border-color: var(--text-light, #9ca3af);
+}
+
+.tables-loading,
+.tables-error,
+.tables-empty {
+  margin: 20px 16px 24px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.tables-loading {
+  color: var(--text-light, #6b7280);
+  background: var(--background-color, #f3f4f6);
+}
+
+.tables-error {
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.tables-empty {
+  color: var(--text-light, #6b7280);
+  background: var(--background-color, #f9fafb);
+  border: 1px dashed var(--border-color, #e5e7eb);
 }
 
 .tables-grid {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  overflow-y: auto;
-  padding: 16px;
-  padding-bottom: 32px;
-  /* Evita que el borde inferior del dispositivo tape la última tarjeta */
-  scrollbar-width: thin;
+  gap: 14px;
+  padding: 12px 16px 8px;
 }
+
+/* =========================================
+   TARJETA DE ORDEN - NUEVO DISEÑO
+   ========================================= */
 
 .table-card {
   background: var(--card-background-color, #fff);
-  border: 1px solid var(--border-color, #e0e0e0);
-  border-radius: 10px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   height: max-content;
-  /* CRÍTICO: Fuerza a la tarjeta a crecer según sus hijos envueltos */
   flex-shrink: 0;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.table-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--primary-color, #2e7d32);
 }
 
 .table-card-body {
   padding: 16px;
   cursor: default;
-  /* Cambiado de pointer a default */
 }
 
+/* Header: Nombre de mesa + hora */
 .table-card-title {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .table-card-title h3 {
   margin: 0;
   font-size: 1.15rem;
-  color: var(--text-color, #333);
-  font-weight: 600;
+  color: var(--text-color, #1f2937);
+  font-weight: 700;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.01em;
 }
 
 .table-time {
-  font-size: 0.8rem;
-  color: var(--text-light, #666);
-  background: var(--background-color, #f0f0f0);
-  padding: 4px 8px;
-  border-radius: 6px;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-light, #6b7280);
+  background: var(--background-color, #f3f4f6);
+  padding: 5px 10px;
+  border-radius: 20px;
   white-space: nowrap;
 }
 
+/* Stats: Total prominente + Items secundario */
 .table-card-stats {
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
-  background: var(--background-color, #f5f5f5);
-  padding: 12px;
-  border-radius: 8px;
+  gap: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--background-color, #f9fafb) 0%, var(--card-background-color, #fff) 100%);
+  border-radius: 12px;
+  border: 1px solid var(--border-color, #e5e7eb);
 }
 
 .stat-item {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+}
+
+.stat-item:first-child {
+  flex-shrink: 0;
+}
+
+.stat-item:last-child {
+  align-items: flex-end;
 }
 
 .stat-label {
-  font-size: 0.75rem;
-  color: var(--text-light, #777);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-light, #6b7280);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 2px;
+  letter-spacing: 0.05em;
 }
 
 .stat-value {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-color, #222);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-color, #374151);
 }
 
+/* Total destacado como elemento principal */
 .total-highlight {
+  font-size: 1.5rem;
+  font-weight: 800;
   color: var(--primary-color, #2e7d32);
+  letter-spacing: -0.02em;
 }
 
-/* ACORDEÓN */
+/* Botón de acordeón */
 .btn-accordion-toggle {
   width: 100%;
   background: transparent;
   border: none;
-  border-top: 1px solid var(--border-color, #eee);
-  padding: 12px;
-  /* Aumentado para mejor interacción táctil */
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  padding: 12px 16px;
   font-size: 0.85rem;
-  color: var(--text-light, #666);
+  font-weight: 500;
+  color: var(--text-light, #6b7280);
   cursor: pointer;
   text-align: center;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
+.btn-accordion-toggle:hover {
+  background: var(--background-color, #f9fafb);
+  color: var(--text-color, #374151);
+}
+
+/* Acordeón de productos */
 .table-card-accordion {
   display: grid;
   grid-template-rows: 0fr;
   transition: grid-template-rows 0.3s ease-out;
-  background: var(--background-color, #fcfcfc);
+  background: var(--background-color, #f9fafb);
 }
 
 .table-card-accordion.expanded {
   grid-template-rows: 1fr;
-  border-bottom: 1px solid var(--border-color, #eee);
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
 }
 
 .accordion-items-list {
   min-height: 0;
-  /* OBLIGATORIO para que grid-template-rows: 0fr funcione sin desbordamientos invisibles */
   overflow: hidden;
-  max-height: 180px;
+  max-height: 220px;
   overflow-y: auto;
 }
 
@@ -217,8 +391,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 16px;
-  font-size: 0.85rem;
+  padding: 12px 16px;
+  font-size: 0.875rem;
   border-bottom: 1px solid var(--border-color-light, #f0f0f0);
 }
 
@@ -227,156 +401,340 @@
 }
 
 .item-qty {
-  font-weight: 600;
-  color: var(--text-light, #555);
-  min-width: 25px;
+  font-weight: 700;
+  color: var(--primary-color, #2e7d32);
+  min-width: 32px;
+  font-size: 0.9rem;
 }
 
 .item-name {
   flex-grow: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin: 0 10px;
-  color: var(--text-color, #333);
+  margin: 0 12px;
+  color: var(--text-color, #374151);
+  font-weight: 500;
 }
 
 .item-price {
   font-weight: 600;
-  color: var(--text-color, #333);
-}
-
-/* --- ACCIONES RÁPIDAS --- */
-.table-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  /* CRÍTICO: Permite que los botones pasen a una segunda línea si no caben */
-  border-top: 1px solid var(--border-color, #e0e0e0);
-  background: transparent;
-}
-
-.table-card-actions button {
-  flex: 1 1 30%;
-  /* Ocupan proporciones iguales, o crecen si hay espacio */
-  min-width: 90px;
-  /* Evita que el botón desaparezca en anchos extremos */
-  padding: 14px 8px;
-  /* Reducción ligera del padding horizontal */
-  border: none;
-  font-weight: 600;
+  color: var(--text-color, #374151);
   font-size: 0.9rem;
-  cursor: pointer;
-  transition: background 0.2s ease, filter 0.2s ease;
-}
-
-.btn-quick-edit {
-  color: #ffffff;
-  background: #3b82f6;
-  border-right: 1px solid var(--border-color, #e0e0e0) !important;
-}
-
-.btn-quick-edit:hover {
-  filter: brightness(0.9);
-}
-
-.btn-quick-split {
-  color: var(--text-color, #333);
-  background: transparent;
-  border-right: 1px solid var(--border-color, #e0e0e0) !important;
-}
-
-.btn-quick-split:hover {
-  background: var(--hover-background-color, rgba(128, 128, 128, 0.1));
-}
-
-.btn-quick-checkout {
-  color: #ffffff;
-  background: var(--primary-color, #4CAF50) !important;
-}
-
-.btn-quick-checkout:hover {
-  filter: brightness(0.9);
 }
 
 /* =========================================
-   2. MEDIA QUERIES (Tablets y Escritorio)
+   BOTONES DE ACCIÓN - NUEVO ORDEN
    ========================================= */
 
-@media (min-width: 768px) {
-  .tables-modal-overlay {
-    align-items: center;
-    /* Centramos el modal en la pantalla verticalmente */
-    padding: 40px 20px;
+.table-card-actions {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  background: transparent;
+  gap: 0;
+}
+
+/* Estado: Cancelada en cocina - Anular primero */
+.table-card-actions--with-annul {
+  flex-direction: column;
+}
+
+.table-card-actions--with-annul .btn-annull-kitchen {
+  width: 100%;
+  min-height: 48px;
+  padding: 14px 16px;
+  border: none;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s ease, filter 0.2s ease;
+  color: #fff;
+  background: #c62828;
+}
+
+.table-card-actions--with-annul .btn-annull-kitchen:hover:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.table-card-actions--with-annul .btn-annull-kitchen:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Botón Cobrar - Primario (Verde) */
+.btn-quick-checkout {
+  order: 1;
+  width: 100%;
+  min-height: 52px;
+  padding: 16px;
+  border: none;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #ffffff;
+  background: var(--primary-color, #2e7d32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-quick-checkout:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 2px 8px rgba(46, 125, 50, 0.4);
+}
+
+.btn-quick-checkout:active {
+  transform: translateY(1px);
+}
+
+/* Botón Editar - Secundario (Azul) */
+.btn-quick-edit {
+  order: 2;
+  width: 100%;
+  min-height: 48px;
+  padding: 14px 16px;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #ffffff;
+  background: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-quick-edit:hover {
+  filter: brightness(1.1);
+  background: #2563eb;
+}
+
+/* Botón Separar - Terciario (Neutral) */
+.btn-quick-split {
+  order: 3;
+  width: 100%;
+  min-height: 48px;
+  padding: 14px 16px;
+  border: none;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text-color, #374151);
+  background: var(--background-color, #f9fafb);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-quick-split:hover {
+  background: var(--hover-background-color, #e5e7eb);
+}
+
+/* =========================================
+   RESPONSIVE - TABLET Y DESKTOP
+   ========================================= */
+
+/* Teléfonos más anchos: botones en fila */
+@media (min-width: 480px) {
+  .table-card-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 
-  .tables-modal-content {
-    max-width: 1000px;
-    max-height: 85vh;
-    border-radius: 12px;
-    /* Bordes redondeados en todas las esquinas */
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
-    animation: none;
-    /* Quitamos la animación de slide-up en escritorio si lo deseas */
+  /* Botón Cobrar: más ancho */
+  .btn-quick-checkout {
+    flex: 2 1 50%;
+    order: 3;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  /* Botones Editar y Separar: al lado */
+  .btn-quick-edit {
+    flex: 1 1 25%;
+    order: 1;
+    border-top: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .btn-quick-split {
+    flex: 1 1 25%;
+    order: 2;
+    border-top: none;
+    border-right: 1px solid var(--border-color, #e5e7eb);
+  }
+
+  /* Estado cancelada en cocina */
+  .table-card-actions--with-annul {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .table-card-actions--with-annul .btn-annull-kitchen {
+    flex: 1 1 100%;
+    order: 0;
+  }
+
+  .table-card-actions--with-annul .btn-quick-edit {
+    flex: 1 1 33.33%;
+    order: 1;
+  }
+
+  .table-card-actions--with-annul .btn-quick-split {
+    flex: 1 1 33.33%;
+    order: 2;
+  }
+
+  .table-card-actions--with-annul .btn-quick-checkout {
+    flex: 1 1 33.33%;
+    order: 3;
+  }
+}
+
+/* Tablet / Desktop */
+@media (min-width: 768px) {
+  .modal.tables-modal-overlay {
+    align-items: center;
+    padding: 24px;
+    padding-left: max(24px, env(safe-area-inset-left, 0px));
+    padding-right: max(24px, env(safe-area-inset-right, 0px));
+    padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .modal-content.tables-modal-content {
+    width: min(100%, 1040px);
+    max-height: calc(88vh - 32px);
+    border-radius: 16px;
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
+    animation: tablesModalDesktopIn 0.22s ease-out;
+  }
+
+  @keyframes tablesModalDesktopIn {
+    from {
+      opacity: 0;
+      transform: scale(0.98) translateY(6px);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modal-content.tables-modal-content {
+      animation: none;
+    }
+  }
+
+  .tables-modal-handle {
+    display: none;
   }
 
   .tables-header {
     flex-direction: row;
-    /* Colocamos info y botón cerrar en la misma línea */
     align-items: center;
     padding: 20px 24px;
+    padding-top: 20px;
   }
 
   .tables-header-info {
     flex-direction: row;
-    /* Título y buscador uno al lado del otro */
+    flex-wrap: wrap;
     align-items: center;
-    gap: 24px;
+    gap: 16px 24px;
   }
 
   .tables-header h2 {
     font-size: 1.5rem;
   }
 
+  .tables-header-summary {
+    flex: 1 1 auto;
+    min-width: 200px;
+  }
+
+  .tables-search-container {
+    width: auto;
+    flex: 0 1 320px;
+    min-width: 200px;
+  }
+
   .tables-search-input {
     max-width: 320px;
-    /* Restringimos el ancho del input en escritorio */
+  }
+
+  .tables-subsection-title,
+  .tables-subsection-hint {
+    padding-left: 24px;
+    padding-right: 24px;
   }
 
   .tables-grid {
     display: grid;
-    /* Aquí sí usamos Grid */
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 20px;
-    padding: 24px;
+    padding: 16px 24px 24px;
   }
 
+  .tables-loading,
+  .tables-error,
+  .tables-empty {
+    margin-left: 24px;
+    margin-right: 24px;
+  }
+
+  /* Tarjetas más refinadas en desktop */
   .table-card {
-    height: auto;
     align-self: start;
-    /* CRÍTICO: Evita que tarjetas con pocos items se estiren para igualar a una mesa con 20 items en la misma fila */
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
   }
 
   .table-card:hover {
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
     border-color: var(--primary-color, #2e7d32);
     transform: translateY(-2px);
-    /* Pequeño feedback visual en desktop */
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .table-card:hover {
+      transform: none;
+    }
+  }
+
+  /* Botones en desktop: todos en fila */
+  .table-card-actions {
+    flex-direction: row;
+  }
+
+  .btn-quick-checkout {
+    flex: 2 1 40%;
+    order: 3;
+  }
+
+  .btn-quick-edit {
+    flex: 1 1 30%;
+    order: 1;
+  }
+
+  .btn-quick-split {
+    flex: 1 1 30%;
+    order: 2;
   }
 }
 
-@media (max-width: 420px) {
-
-  /* En móviles, le damos toda la fila superior al botón principal (Editar), 
-     y dejamos Separar/Cobrar en la fila inferior para evitar que el texto se corte */
-  .btn-quick-edit {
-    flex: 1 1 100%;
-    border-right: none !important;
-    border-bottom: 1px solid var(--border-color, #e0e0e0);
-    padding: 16px 12px;
-  }
-
-  .btn-quick-split,
-  .btn-quick-checkout {
-    flex: 1 1 50%;
+/* Pantallas grandes: más espacio */
+@media (min-width: 1200px) {
+  .tables-grid {
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
   }
 }

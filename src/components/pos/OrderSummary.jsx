@@ -1,7 +1,8 @@
 // src/components/pos/OrderSummary.jsx
 import { useOrderStore } from '../../store/useOrderStore';
 import { ChevronDown, Trash2 } from 'lucide-react';
-import { useFeatureConfig } from '../../hooks/useFeatureConfig'
+import { useFeatureConfig } from '../../hooks/useFeatureConfig';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import './OrderSummary.css';
 
 export default function OrderSummary({
@@ -15,15 +16,18 @@ export default function OrderSummary({
   onSaveOpenOrder,
   onOpenTables,
   activeTablesCount = 0,
+  kitchenRejectedOpenCount = 0,
 }) {
   const order = useOrderStore((state) => state.order);
   const tableData = useOrderStore((state) => state.tableData);
   const activeOrderId = useOrderStore((state) => state.activeOrderId);
-  const isEditMode = Boolean(activeOrderId);
+  const isEditMode = useOrderStore((state) => state.isSavedOrder);
   const features = useFeatureConfig();
   // Nos aseguramos de tener 'removeItem' disponible
   const { updateItemQuantity, removeItem, clearSession, getTotalPrice, setTableData } = useOrderStore.getState();
   const total = getTotalPrice();
+
+  const tablesBadgeTotal = activeTablesCount + kitchenRejectedOpenCount;
 
   const handleQuantityChange = (id, change) => {
     // ... (lógica existente para unitarios)
@@ -59,32 +63,66 @@ export default function OrderSummary({
         borderBottom: isMobileModal ? '1px solid var(--border-color)' : 'none',
         paddingBottom: isMobileModal ? '10px' : '0',
         // ESTILOS DINÁMICOS DE EDICIÓN
-        backgroundColor: isEditMode ? '#fffbeb' : 'transparent',
-        border: isEditMode ? '2px dashed #f59e0b' : 'none',
-        padding: isEditMode ? '10px' : '0',
-        borderRadius: isEditMode ? '8px' : '0'
+        backgroundColor: (isEditMode && showRestaurantActions) ? '#fffbeb' : 'transparent',
+        border: (isEditMode && showRestaurantActions) ? '2px dashed #f59e0b' : 'none',
+        padding: (isEditMode && showRestaurantActions) ? '10px' : '0',
+        borderRadius: (isEditMode && showRestaurantActions) ? '8px' : '0'
       }}>
-        <h2 style={{ margin: 0, fontSize: isMobileModal ? '1.2rem' : '1.5rem', color: isEditMode ? '#b45309' : 'inherit' }}>
-          {isEditMode ? `✏️ Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido')}
+        <h2 style={{
+          margin: 0,
+          fontSize: isMobileModal ? '1.2rem' : '1.5rem',
+          color: (isEditMode && showRestaurantActions) ? '#b45309' : 'inherit'
+        }}>
+          {showRestaurantActions
+            ? (isEditMode ? `✏️ Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
+            : (tableData ? `🛒 Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
+          }
         </h2>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {!isMobileModal && showRestaurantActions && (
             <button
+              type="button"
               onClick={onOpenTables}
-              className="btn-mesas-header"
+              className={`btn-mesas-header${kitchenRejectedOpenCount > 0 ? ' btn-mesas-header--kitchen-rejected' : ''}`}
+              title={
+                kitchenRejectedOpenCount > 0
+                  ? 'Hay comandas rechazadas en cocina. Abra mesas para anular venta o gestionar.'
+                  : undefined
+              }
             >
               Mesas
-              {activeTablesCount > 0 && (
+              {tablesBadgeTotal > 0 && (
                 <span className="active-tables-count">
-                  {activeTablesCount}
+                  {tablesBadgeTotal}
                 </span>
               )}
             </button>
           )}
 
+          {isMobileModal && showRestaurantActions && onOpenTables && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose?.();
+                onOpenTables();
+              }}
+              className={`btn-mesas-header btn-mesas-header--mobile${kitchenRejectedOpenCount > 0 ? ' btn-mesas-header--kitchen-rejected' : ''}`}
+              title={
+                kitchenRejectedOpenCount > 0
+                  ? 'Hay comandas rechazadas en cocina'
+                  : 'Ver mesas'
+              }
+            >
+              Mesas
+              {tablesBadgeTotal > 0 && (
+                <span className="active-tables-count">{tablesBadgeTotal}</span>
+              )}
+            </button>
+          )}
+
           {isMobileModal && (
-            <button onClick={onClose} style={{ background: 'none', border: 'none', padding: '5px', cursor: 'pointer' }}>
+            <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', padding: '5px', cursor: 'pointer' }}>
               <ChevronDown size={24} />
             </button>
           )}
@@ -230,7 +268,7 @@ export default function OrderSummary({
               </button>
             )}
 
-            {showRestaurantActions && canSplitOrder && (
+            {showRestaurantActions && canSplitOrder && isEditMode && (
               <button
                 className="process-btn split-btn"
                 onClick={onOpenSplit}
@@ -256,16 +294,16 @@ export default function OrderSummary({
               </button>
             )}
             <button className="clear-btn" onClick={() => {
-              const confirmMessage = isEditMode
+              const confirmMessage = (isEditMode && showRestaurantActions)
                 ? '¿Descartar los cambios no guardados y salir de la mesa?'
                 : '¿Vaciar carrito?';
 
               if (window.confirm(confirmMessage)) {
-                clearSession();
+                useActiveOrders.getState().cancelCurrentOrder();
                 if (isMobileModal) onClose();
               }
             }}>
-              {isEditMode ? 'Salir sin guardar' : 'Cancelar'}
+              {(isEditMode && showRestaurantActions) ? 'Salir sin guardar' : 'Cancelar'}
             </button>
           </div>
         </>

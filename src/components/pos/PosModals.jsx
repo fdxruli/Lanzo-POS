@@ -30,7 +30,9 @@ export default function PosModals({
         handlePrescriptionConfirm,
         handleConfirmLayaway,
         handleLoadOpenOrder,
-        handleQuickTableAction
+        handleQuickTableAction,
+        fetchActiveTablesCount,
+        handleAnnulKitchenRejectedOrder
     } = handlers;
 
     const {
@@ -53,6 +55,8 @@ export default function PosModals({
                     onSelectOrder={handleLoadOpenOrder}
                     onCheckoutOrder={(order) => handleQuickTableAction(order, 'checkout')}
                     onSplitOrder={(order) => handleQuickTableAction(order, 'split')}
+                    onAfterTablesLoad={fetchActiveTablesCount}
+                    onAnnulKitchenRejectedOrder={handleAnnulKitchenRejectedOrder}
                 />
             )}
 
@@ -117,7 +121,9 @@ PosModals.propTypes = {
         handlePrescriptionConfirm: PropTypes.func.isRequired,
         handleConfirmLayaway: PropTypes.func.isRequired,
         handleLoadOpenOrder: PropTypes.func.isRequired,
-        handleQuickTableAction: PropTypes.func.isRequired
+        handleQuickTableAction: PropTypes.func.isRequired,
+        fetchActiveTablesCount: PropTypes.func,
+        handleAnnulKitchenRejectedOrder: PropTypes.func
     }).isRequired,
     data: PropTypes.shape({
         order: PropTypes.array.isRequired,

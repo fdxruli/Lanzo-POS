@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { db, STORES } from '../../services/db';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import './TablesView.css';
@@ -32,7 +32,23 @@ const getItemsCount = (items) => {
   return items.length;
 };
 
-const TableCard = ({ order, onSelectOrder, onCheckoutOrder, onSplitOrder }) => {
+const isCancelledFromKitchen = (order) => order?.fulfillmentStatus === 'cancelled';
+
+const filterOrdersBySearch = (orders, searchTerm) => {
+  if (!searchTerm.trim()) return orders;
+  const lowerSearch = searchTerm.toLowerCase();
+  return orders.filter((order) => getTableLabel(order).toLowerCase().includes(lowerSearch));
+};
+
+const TableCard = ({
+  order,
+  onSelectOrder,
+  onCheckoutOrder,
+  onSplitOrder,
+  cancelledFromKitchen = false,
+  onAnnulKitchenRejected,
+  annulSubmitting = false,
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const items = Array.isArray(order.items) ? order.items : [];
 
@@ -42,7 +58,15 @@ const TableCard = ({ order, onSelectOrder, onCheckoutOrder, onSplitOrder }) => {
   };
 
   return (
-    <div className="table-card">
+    <div
+      className={`table-card${cancelledFromKitchen ? ' table-card--kitchen-cancelled' : ''}`}
+    >
+      {cancelledFromKitchen && (
+        <div className="table-card-kitchen-banner" role="status">
+          Cancelada desde cocina: esta comanda ya no se prepara. Use &quot;Anular venta&quot; para
+          cerrarla en sistema o abra en POS si debe ajustar cobro.
+        </div>
+      )}
       {/* ERROR CORREGIDO: Se eliminó el onClick del body para evitar toques accidentales al hacer scroll en móvil */}
       <div className="table-card-body">
         <div className="table-card-title">
@@ -83,16 +107,31 @@ const TableCard = ({ order, onSelectOrder, onCheckoutOrder, onSplitOrder }) => {
         </div>
       </div>
 
-      <div className="table-card-actions">
+      <div
+        className={`table-card-actions${cancelledFromKitchen ? ' table-card-actions--with-annul' : ''}`}
+      >
+        {cancelledFromKitchen && onAnnulKitchenRejected && (
+          <button
+            type="button"
+            className="btn-annull-kitchen"
+            disabled={annulSubmitting}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAnnulKitchenRejected(order);
+            }}
+          >
+            {annulSubmitting ? 'Anulando…' : 'Anular venta'}
+          </button>
+        )}
         <button
           type="button"
-          className="btn-quick-edit" 
+          className="btn-quick-edit"
           onClick={(e) => {
             e.stopPropagation();
             onSelectOrder?.(order.id);
           }}
         >
-          Editar / Añadir
+          {cancelledFromKitchen ? 'Abrir en POS' : 'Editar / Añadir'}
         </button>
 
         <button
@@ -125,25 +164,46 @@ export default function TablesView({
   onClose,
   onSelectOrder,
   onCheckoutOrder,
-  onSplitOrder
+  onSplitOrder,
+  onAfterTablesLoad,
+  onAnnulKitchenRejectedOrder,
 }) {
-  const [openOrders, setOpenOrders] = useState([]);
+  const [openSalesRows, setOpenSalesRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [annullingOrderId, setAnnullingOrderId] = useState(null);
 
-  useEffect(() => {
-    if (!show) {
-      setSearchTerm('');
-      return undefined;
-    }
+  const { ordersInService, ordersCancelledInKitchen } = useMemo(() => {
+    const inService = [];
+    const cancelledKitchen = [];
+    openSalesRows.forEach((row) => {
+      if (isCancelledFromKitchen(row)) cancelledKitchen.push(row);
+      else inService.push(row);
+    });
+    return { ordersInService: inService, ordersCancelledInKitchen: cancelledKitchen };
+  }, [openSalesRows]);
 
-    let isActive = true;
+  const filteredInService = useMemo(
+    () => filterOrdersBySearch(ordersInService, searchTerm),
+    [ordersInService, searchTerm]
+  );
 
-    const fetchOpenOrders = async () => {
-      setIsLoading(true);
-      setErrorMessage('');
+  const filteredCancelledKitchen = useMemo(
+    () => filterOrdersBySearch(ordersCancelledInKitchen, searchTerm),
+    [ordersCancelledInKitchen, searchTerm]
+  );
 
+  const hasSearchHits =
+    filteredInService.length > 0 || filteredCancelledKitchen.length > 0;
+  const hasStoredRows = openSalesRows.length > 0;
+
+  const loadOpenSalesRows = useCallback(
+    async (withLoadingOverlay) => {
+      if (withLoadingOverlay) {
+        setIsLoading(true);
+        setErrorMessage('');
+      }
       try {
         const rows = await db
           .table(STORES.SALES)
@@ -157,96 +217,193 @@ export default function TablesView({
           return rightDate - leftDate;
         });
 
-        if (isActive) setOpenOrders(rows);
+        setOpenSalesRows(rows);
+        try {
+          onAfterTablesLoad?.();
+        } catch {
+          /* opcional */
+        }
       } catch (error) {
-        if (isActive) {
-          setOpenOrders([]);
+        if (withLoadingOverlay) {
+          setOpenSalesRows([]);
           setErrorMessage(error?.message || 'Error al cargar las mesas activas.');
         }
       } finally {
-        if (isActive) setIsLoading(false);
+        if (withLoadingOverlay) setIsLoading(false);
       }
-    };
+    },
+    [onAfterTablesLoad]
+  );
 
-    fetchOpenOrders();
+  useEffect(() => {
+    if (!show) {
+      setSearchTerm('');
+      return undefined;
+    }
+
+    let isActive = true;
+
+    (async () => {
+      await loadOpenSalesRows(true);
+      if (!isActive) return;
+    })();
 
     return () => {
       isActive = false;
     };
-  }, [show]);
+  }, [show, loadOpenSalesRows]);
 
-  const filteredOrders = useMemo(() => {
-    if (!searchTerm.trim()) return openOrders;
-    const lowerSearch = searchTerm.toLowerCase();
-    return openOrders.filter(order =>
-      getTableLabel(order).toLowerCase().includes(lowerSearch)
-    );
-  }, [openOrders, searchTerm]);
+  const handleAnnulKitchenRejected = useCallback(
+    async (order) => {
+      if (!onAnnulKitchenRejectedOrder) return;
+      setAnnullingOrderId(order.id);
+      try {
+        const result = await onAnnulKitchenRejectedOrder(order);
+        if (result?.success) {
+          await loadOpenSalesRows(false);
+        }
+      } finally {
+        setAnnullingOrderId(null);
+      }
+    },
+    [onAnnulKitchenRejectedOrder, loadOpenSalesRows]
+  );
 
-  // ERROR CORREGIDO: Interceptores para obligar al cierre del modal tras elegir una acción.
-  const handleSelectAndClose = (orderId) => {
-    onSelectOrder?.(orderId);
-    onClose?.(); 
-  };
+  const handleSelectAndClose = useCallback(
+    (orderId) => {
+      onSelectOrder?.(orderId);
+      onClose?.();
+    },
+    [onSelectOrder, onClose]
+  );
 
-  const handleCheckoutAndClose = (order) => {
-    onCheckoutOrder?.(order);
-    onClose?.();
-  };
+  const handleCheckoutAndClose = useCallback(
+    (order) => {
+      onCheckoutOrder?.(order);
+      onClose?.();
+    },
+    [onCheckoutOrder, onClose]
+  );
 
-  const handleSplitAndClose = (order) => {
-    onSplitOrder?.(order);
-    onClose?.();
-  };
+  const handleSplitAndClose = useCallback(
+    (order) => {
+      onSplitOrder?.(order);
+      onClose?.();
+    },
+    [onSplitOrder, onClose]
+  );
 
   if (!show) return null;
 
   return (
-    <div className="modal tables-modal-overlay" onClick={onClose}>
+    <div
+      className="modal tables-modal-overlay"
+      role="presentation"
+      onClick={onClose}
+    >
       <div
         className="modal-content tables-modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tables-modal-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="tables-header">
-          <div className="tables-header-info">
-            <h2>Mesas activas ({filteredOrders.length})</h2>
-            <div className="tables-search-container">
-              <input
-                type="text"
-                placeholder="Buscar mesa u orden..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="tables-search-input"
-              />
+        <div className="tables-modal-handle" aria-hidden="true" />
+        <div className="tables-modal-shell">
+          <header className="tables-header">
+            <div className="tables-header-info">
+              <h2 id="tables-modal-title">Mesas</h2>
+              <p className="tables-header-summary">
+                En servicio: {filteredInService.length}
+                {ordersCancelledInKitchen.length > 0 && (
+                  <>
+                    {' '}
+                    · Rechazadas en cocina: {filteredCancelledKitchen.length}
+                  </>
+                )}
+              </p>
+              <div className="tables-search-container">
+                <input
+                  type="search"
+                  enterKeyHint="search"
+                  placeholder="Buscar mesa u orden..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="tables-search-input"
+                  autoComplete="off"
+                />
+              </div>
             </div>
+            <button
+              type="button"
+              className="btn-cancel tables-modal-close"
+              onClick={onClose}
+            >
+              Cerrar
+            </button>
+          </header>
+
+          <div className="tables-modal-body">
+            {isLoading && <div className="tables-loading">Cargando mesas…</div>}
+            {!isLoading && errorMessage && (
+              <div className="tables-error" role="alert">
+                {errorMessage}
+              </div>
+            )}
+            {!isLoading && !errorMessage && !hasStoredRows && (
+              <div className="tables-empty">No hay mesas activas en este momento.</div>
+            )}
+            {!isLoading && !errorMessage && hasStoredRows && !hasSearchHits && (
+              <div className="tables-empty">No se encontraron mesas con esa búsqueda.</div>
+            )}
+
+            {!isLoading && !errorMessage && filteredCancelledKitchen.length > 0 && (
+              <div className="tables-kitchen-cancelled-block">
+                <h3 className="tables-subsection-title">
+                  Rechazadas en cocina ({filteredCancelledKitchen.length})
+                </h3>
+                <p className="tables-subsection-hint">
+                  Cocina canceló la preparación. Para quitarla del listado use &quot;Anular venta&quot;
+                  (libera stock y cierra la venta sin cobro). Si debe cobrar o corregir, use Abrir en
+                  POS.
+                </p>
+                <div className="tables-grid">
+                  {filteredCancelledKitchen.map((order) => (
+                    <TableCard
+                      key={order.id}
+                      order={order}
+                      cancelledFromKitchen
+                      onSelectOrder={handleSelectAndClose}
+                      onCheckoutOrder={handleCheckoutAndClose}
+                      onSplitOrder={handleSplitAndClose}
+                      onAnnulKitchenRejected={handleAnnulKitchenRejected}
+                      annulSubmitting={annullingOrderId === order.id}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!isLoading && !errorMessage && filteredInService.length > 0 && (
+              <div className="tables-in-service-block">
+                <h3 className="tables-subsection-title">
+                  En servicio ({filteredInService.length})
+                </h3>
+                <div className="tables-grid">
+                  {filteredInService.map((order) => (
+                    <TableCard
+                      key={order.id}
+                      order={order}
+                      onSelectOrder={handleSelectAndClose}
+                      onCheckoutOrder={handleCheckoutAndClose}
+                      onSplitOrder={handleSplitAndClose}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-          <button type="button" className="btn-cancel" onClick={onClose}>
-            Cerrar
-          </button>
         </div>
-
-        {isLoading && <div className="tables-loading">Cargando mesas...</div>}
-        {!isLoading && errorMessage && <div className="tables-error">{errorMessage}</div>}
-        {!isLoading && !errorMessage && openOrders.length === 0 && (
-          <div className="tables-empty">No hay mesas activas en este momento.</div>
-        )}
-        {!isLoading && !errorMessage && openOrders.length > 0 && filteredOrders.length === 0 && (
-          <div className="tables-empty">No se encontraron mesas con esa búsqueda.</div>
-        )}
-
-        {!isLoading && !errorMessage && filteredOrders.length > 0 && (
-          <div className="tables-grid">
-            {filteredOrders.map((order) => (
-              <TableCard
-                key={order.id}
-                order={order}
-                onSelectOrder={handleSelectAndClose}
-                onCheckoutOrder={handleCheckoutAndClose}
-                onSplitOrder={handleSplitAndClose}
-              />
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

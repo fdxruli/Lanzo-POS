@@ -16,7 +16,8 @@ export default function MobilePosCart({
     onOpenTables,
     showRestaurantActions,
     canSplitOrder,
-    activeTablesCount
+    activeTablesCount,
+    kitchenRejectedOpenCount
 }) {
     if (!isOpen) return null;
 
@@ -50,6 +51,7 @@ export default function MobilePosCart({
                     onSaveOpenOrder={onSaveOpenOrder}
                     onOpenTables={onOpenTables}
                     activeTablesCount={activeTablesCount}
+                    kitchenRejectedOpenCount={kitchenRejectedOpenCount}
                 />
             </div>
         </div>
@@ -66,5 +68,6 @@ MobilePosCart.propTypes = {
     onOpenTables: PropTypes.func.isRequired,
     showRestaurantActions: PropTypes.bool.isRequired,
     canSplitOrder: PropTypes.bool.isRequired,
-    activeTablesCount: PropTypes.number.isRequired
+    activeTablesCount: PropTypes.number.isRequired,
+    kitchenRejectedOpenCount: PropTypes.number.isRequired
 };

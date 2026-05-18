@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { loadData, STORES } from '../../services/database';
 import { Money } from '../../utils/moneyMath';
 import { normalizeStock } from '../../services/db/utils';
 import './SplitBillModal.css';
 
-const SIDES = ['A', 'B'];
+const MIN_TICKETS = 2;
+const MAX_TICKETS = 8;
 
 const toQuantity = (value) => {
   const parsed = Number(value);
@@ -14,59 +15,81 @@ const toQuantity = (value) => {
 
 const isUnitItem = (item) => item?.saleType === 'unit' || !item?.saleType;
 
-const buildEqualAllocations = (order = []) => (
-  (order || []).map((item) => {
+/**
+ * Generate ticket labels: T1, T2, T3... (avoiding A/B bias)
+ * @param {number} count - Number of tickets
+ * @returns {string[]} Array of labels
+ */
+const generateTicketLabels = (count) =>
+  Array.from({ length: count }, (_, i) => `T${i + 1}`);
+
+/**
+ * Build equal allocations for N tickets.
+ * All products start in the Pool (unassigned), not auto-distributed.
+ * @param {Array} order - Order items
+ * @param {number} ticketCount - Number of tickets
+ * @returns {Array} Allocations array with pool quantities
+ */
+const buildEqualAllocations = (order = [], ticketCount = 2) => {
+  if (ticketCount < MIN_TICKETS) ticketCount = MIN_TICKETS;
+  if (ticketCount > MAX_TICKETS) ticketCount = MAX_TICKETS;
+
+  return (order || []).map((item) => {
     const totalQuantity = toQuantity(item?.quantity || 0);
-    const quantityA = isUnitItem(item)
-      ? Math.floor(totalQuantity / 2)
-      : toQuantity(totalQuantity / 2);
 
-    const quantityB = toQuantity(totalQuantity - quantityA);
-
+    // All quantity starts in pool
     return {
-      quantityA: toQuantity(quantityA),
-      quantityB
+      poolQuantity: totalQuantity,
+      ticketQuantities: Array(ticketCount).fill(0)
     };
-  })
-);
+  });
+};
 
+/**
+ * Calculate ticket totals and adjustments for N tickets.
+ * @param {Object} params
+ * @returns {Object} Math results for all tickets
+ */
 const calculateTicketMath = ({ order = [], allocations = [], mode = 'manual', total = 0 }) => {
-  const baseCents = { A: 0, B: 0 };
+  const ticketCount = allocations[0]?.ticketQuantities?.length || MIN_TICKETS;
+  const baseCents = Array(ticketCount).fill(0);
 
   (order || []).forEach((item, index) => {
-    const allocation = allocations[index] || { quantityA: 0, quantityB: 0 };
-    const quantityA = toQuantity(allocation.quantityA);
-    const quantityB = toQuantity(allocation.quantityB);
+    const allocation = allocations[index];
+    if (!allocation) return;
 
-    const lineTotalA = Money.multiply(item?.price || 0, quantityA);
-    const lineTotalB = Money.multiply(item?.price || 0, quantityB);
+    const price = item?.price || 0;
 
-    baseCents.A += Money.toCents(lineTotalA);
-    baseCents.B += Money.toCents(lineTotalB);
+    allocation.ticketQuantities.forEach((qty, ticketIdx) => {
+      const lineTotal = Money.multiply(price, qty);
+      baseCents[ticketIdx] += Money.toCents(lineTotal);
+    });
   });
 
   const parentCents = Money.toCents(total || 0);
-  const adjustments = { A: 0, B: 0 };
+  const adjustments = Array(ticketCount).fill(0);
 
   if (mode === 'equal') {
-    const targetA = Math.ceil(parentCents / 2);
-    const targetB = Math.floor(parentCents / 2);
-    adjustments.A = targetA - baseCents.A;
-    adjustments.B = targetB - baseCents.B;
+    // Distribute remainder to first tickets
+    const basePerTicket = Math.floor(parentCents / ticketCount);
+    const remainder = parentCents % ticketCount;
+
+    baseCents.forEach((base, idx) => {
+      const target = basePerTicket + (idx < remainder ? 1 : 0);
+      adjustments[idx] = target - base;
+    });
   } else {
-    const remainder = parentCents - (baseCents.A + baseCents.B);
-    adjustments.A = remainder;
-    adjustments.B = 0;
+    // Manual: remainder goes to first ticket
+    const totalBase = baseCents.reduce((a, b) => a + b, 0);
+    adjustments[0] = parentCents - totalBase;
   }
 
   return {
     parentCents,
     baseCents,
     adjustments,
-    totalsCents: {
-      A: baseCents.A + adjustments.A,
-      B: baseCents.B + adjustments.B
-    }
+    totalsCents: baseCents.map((base, idx) => base + adjustments[idx]),
+    ticketCount
   };
 };
 
@@ -80,28 +103,42 @@ const toMoneySafe = (value, fallback = '0') => {
 
 const formatMoneyFromCents = (cents) => Money.toNumber(Money.fromCents(cents)).toFixed(2);
 
-const buildTicketLines = (allocations, side) => (
-  (allocations || []).map((allocation, lineIndex) => {
-    const quantity = side === 'A' ? toQuantity(allocation?.quantityA) : toQuantity(allocation?.quantityB);
-    if (quantity <= 0) return null;
-    return { lineIndex, quantity };
-  }).filter(Boolean)
-);
+/**
+ * Build ticket lines for a specific ticket index.
+ * @param {Array} allocations - Full allocations array
+ * @param {number} ticketIdx - Ticket index
+ * @returns {Array} Line items for the ticket
+ */
+const buildTicketLines = (allocations, ticketIdx) =>
+  (allocations || [])
+    .map((allocation, lineIndex) => {
+      const quantity = toQuantity(allocation?.ticketQuantities?.[ticketIdx] || 0);
+      if (quantity <= 0) return null;
+      return { lineIndex, quantity };
+    })
+    .filter(Boolean);
 
-const initialPaymentsState = () => ({
-  A: {
-    paymentMethod: 'efectivo',
-    amountPaid: '',
-    customerId: '',
-    sendReceipt: false
-  },
-  B: {
-    paymentMethod: 'efectivo',
-    amountPaid: '',
-    customerId: '',
-    sendReceipt: false
-  }
-});
+/**
+ * Initialize payments state for N tickets.
+ * @param {number} count - Number of tickets
+ * @param {number[]} totalsCents - Initial totals per ticket
+ * @returns {Object} Payments state
+ */
+const initialPaymentsState = (count, totalsCents = []) => {
+  const state = {};
+  const labels = generateTicketLabels(count);
+
+  labels.forEach((label, idx) => {
+    state[label] = {
+      paymentMethod: 'efectivo',
+      amountPaid: formatMoneyFromCents(totalsCents[idx] || 0),
+      customerId: '',
+      sendReceipt: false
+    };
+  });
+
+  return state;
+};
 
 export default function SplitBillModal({
   show,
@@ -111,39 +148,30 @@ export default function SplitBillModal({
   onConfirm,
   isCajaOpen = true
 }) {
-  const [mode, setMode] = useState('equal');
+  const [splitCount, setSplitCount] = useState(2);
+  const [mode, setMode] = useState('manual');
   const [allocations, setAllocations] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [payments, setPayments] = useState(initialPaymentsState);
+  const [payments, setPayments] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const ticketLabels = useMemo(() => generateTicketLabels(splitCount), [splitCount]);
+
+  // Initialize modal state when shown
   useEffect(() => {
     if (!show) return;
 
-    const equalAllocations = buildEqualAllocations(order);
+    const initialAllocations = buildEqualAllocations(order, splitCount);
     const initialMath = calculateTicketMath({
       order,
-      allocations: equalAllocations,
-      mode: 'equal',
+      allocations: initialAllocations,
+      mode: 'manual',
       total
     });
 
-    setMode('equal');
-    setAllocations(equalAllocations);
-    setPayments({
-      A: {
-        paymentMethod: 'efectivo',
-        amountPaid: formatMoneyFromCents(initialMath.totalsCents.A),
-        customerId: '',
-        sendReceipt: false
-      },
-      B: {
-        paymentMethod: 'efectivo',
-        amountPaid: formatMoneyFromCents(initialMath.totalsCents.B),
-        customerId: '',
-        sendReceipt: false
-      }
-    });
+    setMode('manual');
+    setAllocations(initialAllocations);
+    setPayments(initialPaymentsState(splitCount, initialMath.totalsCents));
     setIsSubmitting(false);
 
     const fetchCustomers = async () => {
@@ -152,133 +180,323 @@ export default function SplitBillModal({
     };
 
     fetchCustomers();
-  }, [show, order, total]);
+  }, [show, order, total, splitCount]);
 
-  const ticketMath = useMemo(() => calculateTicketMath({ order, allocations, mode, total }), [order, allocations, mode, total]);
+  // Recalculate when splitCount changes
+  useEffect(() => {
+    if (!show || allocations.length === 0) return;
 
+    // Rebuild allocations for new ticket count, preserving pool
+    const newAllocations = order.map((item, idx) => {
+      const current = allocations[idx];
+      const totalQuantity = toQuantity(item?.quantity || 0);
+
+      // Sum currently assigned quantities
+      const currentlyAssigned = current?.ticketQuantities
+        ? current.ticketQuantities.reduce((a, b) => a + b, 0)
+        : 0;
+
+      const poolQuantity = toQuantity(totalQuantity - currentlyAssigned);
+
+      // Resize ticket quantities array
+      const newTicketQuantities = Array(splitCount).fill(0);
+      if (current?.ticketQuantities) {
+        current.ticketQuantities.forEach((qty, i) => {
+          if (i < splitCount) newTicketQuantities[i] = qty;
+        });
+      }
+
+      return {
+        poolQuantity,
+        ticketQuantities: newTicketQuantities
+      };
+    });
+
+    setAllocations(newAllocations);
+  }, [splitCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ticketMath = useMemo(
+    () => calculateTicketMath({ order, allocations, mode, total }),
+    [order, allocations, mode, total]
+  );
+
+  // Update payment amounts when totals change
+  useEffect(() => {
+    if (!show) return;
+
+    setPayments((prev) => {
+      const newPayments = {};
+      ticketLabels.forEach((label, idx) => {
+        const current = prev[label] || {};
+        newPayments[label] = {
+          ...current,
+          amountPaid: formatMoneyFromCents(ticketMath.totalsCents[idx] || 0)
+        };
+      });
+      return newPayments;
+    });
+  }, [ticketMath.totalsCents, ticketLabels, show]);
+
+  /**
+   * Validation for N-way split.
+   * Validates: pool empty, each ticket has items, totals match, credit limits.
+   */
   const splitValidationError = useMemo(() => {
     if (!Array.isArray(order) || order.length === 0) {
       return 'No hay productos para dividir.';
     }
 
-    let hasA = false;
-    let hasB = false;
+    const ticketCount = ticketLabels.length;
 
+    // Check pool is empty (all items assigned)
     for (let index = 0; index < order.length; index += 1) {
       const item = order[index];
-      const allocation = allocations[index] || { quantityA: 0, quantityB: 0 };
+      const allocation = allocations[index];
+
+      if (!allocation) continue;
 
       const totalQuantity = toQuantity(item?.quantity || 0);
-      const quantityA = toQuantity(allocation.quantityA);
-      const quantityB = toQuantity(allocation.quantityB);
+      const assigned = allocation.ticketQuantities.reduce((a, b) => a + b, 0);
 
-      if (toQuantity(quantityA + quantityB) !== totalQuantity) {
-        return `La línea ${index + 1} no está balanceada.`;
+      if (toQuantity(assigned) !== totalQuantity) {
+        return `El producto "${item.name}" tiene cantidad sin asignar en el Pool.`;
       }
-
-      if (quantityA > 0) hasA = true;
-      if (quantityB > 0) hasB = true;
     }
 
-    if (!hasA || !hasB) {
-      return 'Cada ticket debe tener al menos un producto.';
+    // Check each ticket has at least one item
+    for (let t = 0; t < ticketCount; t++) {
+      const hasItems = allocations.some((alloc) =>
+        toQuantity(alloc?.ticketQuantities?.[t] || 0) > 0
+      );
+      if (!hasItems) {
+        return `El Ticket ${ticketLabels[t]} debe tener al menos un producto.`;
+      }
     }
 
-    if (ticketMath.totalsCents.A + ticketMath.totalsCents.B !== ticketMath.parentCents) {
-      return 'Los totales A/B no cuadran con la orden padre.';
+    // Verify totals sum correctly
+    const totalChildren = ticketMath.totalsCents.reduce((a, b) => a + b, 0);
+    if (totalChildren !== ticketMath.parentCents) {
+      return 'Los totales de los tickets no cuadran con la orden padre.';
     }
 
-    if (!isCajaOpen && (payments.A.paymentMethod === 'efectivo' || payments.B.paymentMethod === 'efectivo')) {
-      return 'Necesitas una caja abierta para cobrar tickets en efectivo.';
+    // Caja validation
+    if (!isCajaOpen) {
+      const hasCashPayment = ticketLabels.some(
+        (label) => payments[label]?.paymentMethod === 'efectivo'
+      );
+      if (hasCashPayment) {
+        return 'Necesitas una caja abierta para cobrar tickets en efectivo.';
+      }
     }
 
+    // Payment validation with debt accumulator
     const debtAccumulator = new Map();
 
-    for (const side of SIDES) {
-      const ticketTotal = Money.fromCents(ticketMath.totalsCents[side]);
-      const payment = payments[side];
+    for (let t = 0; t < ticketCount; t++) {
+      const label = ticketLabels[t];
+      const ticketTotal = Money.fromCents(ticketMath.totalsCents[t]);
+      const payment = payments[label];
+
+      if (!payment) {
+        return `Configuración de pago faltante para ticket ${label}.`;
+      }
+
       const paid = toMoneySafe(payment.amountPaid, '0');
 
       if (paid.lt(0)) {
-        return `Monto inválido en ticket ${side}.`;
+        return `Monto inválido en ticket ${label}.`;
       }
 
       if (payment.paymentMethod === 'efectivo') {
         if (paid.lt(ticketTotal)) {
-          return `El ticket ${side} en efectivo requiere monto completo.`;
+          return `El ticket ${label} en efectivo requiere monto completo.`;
         }
         continue;
       }
 
-      if (!payment.customerId) {
-        return `El ticket ${side} a fiado requiere cliente.`;
+      if (payment.paymentMethod === 'fiado') {
+        if (!payment.customerId) {
+          return `El ticket ${label} a fiado requiere cliente.`;
+        }
+
+        if (paid.gt(ticketTotal)) {
+          return `El abono del ticket ${label} no puede ser mayor al total.`;
+        }
+
+        const customer = customers.find((c) => c.id === payment.customerId);
+        if (!customer) {
+          return `Cliente inválido en ticket ${label}.`;
+        }
+
+        const saldo = Money.subtract(ticketTotal, paid);
+        const currentDebt = toMoneySafe(customer.debt, '0');
+        const limit = toMoneySafe(customer.creditLimit, '0');
+        const pending = debtAccumulator.get(customer.id) || Money.init(0);
+        const projected = Money.add(Money.add(currentDebt, pending), saldo);
+
+        if (limit.eq(0) || projected.gt(limit)) {
+          return `El ticket ${label} excede el límite de crédito de ${customer.name}.`;
+        }
+
+        debtAccumulator.set(customer.id, Money.add(pending, saldo));
       }
-
-      if (paid.gt(ticketTotal)) {
-        return `El abono del ticket ${side} no puede ser mayor al total.`;
-      }
-
-      const customer = customers.find((candidate) => candidate.id === payment.customerId);
-      if (!customer) {
-        return `Cliente inválido en ticket ${side}.`;
-      }
-
-      const saldo = Money.subtract(ticketTotal, paid);
-      const currentDebt = toMoneySafe(customer.debt, '0');
-      const limit = toMoneySafe(customer.creditLimit, '0');
-      const pending = debtAccumulator.get(customer.id) || Money.init(0);
-      const projected = Money.add(Money.add(currentDebt, pending), saldo);
-
-      if (limit.eq(0) || projected.gt(limit)) {
-        return `El ticket ${side} excede el límite de crédito de ${customer.name}.`;
-      }
-
-      debtAccumulator.set(customer.id, Money.add(pending, saldo));
     }
 
     return null;
-  }, [order, allocations, ticketMath, payments, customers, isCajaOpen]);
+  }, [order, allocations, ticketLabels, ticketMath, payments, customers, isCajaOpen]);
 
-  const updateQuantity = (lineIndex, side, value) => {
-    setAllocations((previous) => {
-      const next = [...previous];
-      const current = next[lineIndex] || { quantityA: 0, quantityB: 0 };
-      const item = order[lineIndex];
-      const totalQuantity = toQuantity(item?.quantity || 0);
-      const isUnit = isUnitItem(item);
+  /**
+   * Move quantity from Pool to a specific ticket.
+   * @param {number} lineIndex - Product line index
+   * @param {number} ticketIdx - Ticket index to add to
+   * @param {number} delta - Amount to move (positive)
+   */
+  const moveToTicket = useCallback((lineIndex, ticketIdx, delta) => {
+    setAllocations((prev) => {
+      const next = [...prev];
+      const current = next[lineIndex];
+      if (!current) return prev;
 
-      const parsedValue = toQuantity(value);
-      const clamped = Math.min(parsedValue, totalQuantity);
-      const safeValue = isUnit ? Math.round(clamped) : clamped;
+      const poolQty = toQuantity(current.poolQuantity);
+      const moveQty = Math.min(delta, poolQty);
 
-      if (side === 'A') {
-        const quantityA = toQuantity(safeValue);
-        const quantityB = toQuantity(totalQuantity - quantityA);
-        next[lineIndex] = { ...current, quantityA, quantityB };
-      } else {
-        const quantityB = toQuantity(safeValue);
-        const quantityA = toQuantity(totalQuantity - quantityB);
-        next[lineIndex] = { ...current, quantityA, quantityB };
-      }
+      if (moveQty <= 0) return prev;
+
+      const newTicketQuantities = [...current.ticketQuantities];
+      newTicketQuantities[ticketIdx] = toQuantity(newTicketQuantities[ticketIdx] + moveQty);
+
+      next[lineIndex] = {
+        ...current,
+        poolQuantity: toQuantity(poolQty - moveQty),
+        ticketQuantities: newTicketQuantities
+      };
 
       return next;
     });
-  };
+  }, []);
 
-  const updatePayment = (side, field, value) => {
-    setPayments((previous) => ({
-      ...previous,
-      [side]: {
-        ...previous[side],
+  /**
+   * Move quantity from a ticket back to Pool.
+   * @param {number} lineIndex - Product line index
+   * @param {number} ticketIdx - Ticket index to remove from
+   * @param {number} delta - Amount to move (positive)
+   */
+  const moveToPool = useCallback((lineIndex, ticketIdx, delta) => {
+    setAllocations((prev) => {
+      const next = [...prev];
+      const current = next[lineIndex];
+      if (!current) return prev;
+
+      const ticketQty = toQuantity(current.ticketQuantities[ticketIdx]);
+      const moveQty = Math.min(delta, ticketQty);
+
+      if (moveQty <= 0) return prev;
+
+      const newTicketQuantities = [...current.ticketQuantities];
+      newTicketQuantities[ticketIdx] = toQuantity(ticketQty - moveQty);
+
+      next[lineIndex] = {
+        ...current,
+        poolQuantity: toQuantity(current.poolQuantity + moveQty),
+        ticketQuantities: newTicketQuantities
+      };
+
+      return next;
+    });
+  }, []);
+
+  /**
+   * Move all remaining quantity from Pool to a specific ticket.
+   * @param {number} lineIndex - Product line index
+   * @param {number} ticketIdx - Ticket index
+   */
+  const moveAllToTicket = useCallback((lineIndex, ticketIdx) => {
+    setAllocations((prev) => {
+      const next = [...prev];
+      const current = next[lineIndex];
+      if (!current) return prev;
+
+      const poolQty = toQuantity(current.poolQuantity);
+      if (poolQty <= 0) return prev;
+
+      const newTicketQuantities = [...current.ticketQuantities];
+      newTicketQuantities[ticketIdx] = toQuantity(newTicketQuantities[ticketIdx] + poolQty);
+
+      next[lineIndex] = {
+        ...current,
+        poolQuantity: 0,
+        ticketQuantities: newTicketQuantities
+      };
+
+      return next;
+    });
+  }, []);
+
+  /**
+   * Move all quantity from a ticket back to Pool.
+   * @param {number} lineIndex - Product line index
+   * @param {number} ticketIdx - Ticket index
+   */
+  const moveAllToPool = useCallback((lineIndex, ticketIdx) => {
+    setAllocations((prev) => {
+      const next = [...prev];
+      const current = next[lineIndex];
+      if (!current) return prev;
+
+      const ticketQty = toQuantity(current.ticketQuantities[ticketIdx]);
+      if (ticketQty <= 0) return prev;
+
+      const newTicketQuantities = [...current.ticketQuantities];
+      newTicketQuantities[ticketIdx] = 0;
+
+      next[lineIndex] = {
+        ...current,
+        poolQuantity: toQuantity(current.poolQuantity + ticketQty),
+        ticketQuantities: newTicketQuantities
+      };
+
+      return next;
+    });
+  }, []);
+
+  const updatePayment = (label, field, value) => {
+    setPayments((prev) => ({
+      ...prev,
+      [label]: {
+        ...prev[label],
         [field]: value
       }
     }));
   };
 
+  const handleSplitCountChange = (newCount) => {
+    const count = Math.max(MIN_TICKETS, Math.min(MAX_TICKETS, Number(newCount) || MIN_TICKETS));
+    setSplitCount(count);
+  };
+
   const handleModeChange = (nextMode) => {
     setMode(nextMode);
     if (nextMode === 'equal') {
-      setAllocations(buildEqualAllocations(order));
+      // Auto-distribute pool equally among all tickets
+      setAllocations((prev) =>
+        prev.map((alloc) => {
+          const total = toQuantity(alloc.poolQuantity) +
+            alloc.ticketQuantities.reduce((a, b) => a + b, 0);
+          const perTicket = Math.floor(total / splitCount);
+          const remainder = total % splitCount;
+
+          const newTicketQuantities = Array(splitCount).fill(perTicket);
+          // Add remainder to first tickets
+          for (let i = 0; i < remainder; i++) {
+            newTicketQuantities[i] += 1;
+          }
+
+          return {
+            poolQuantity: 0,
+            ticketQuantities: newTicketQuantities
+          };
+        })
+      );
     }
   };
 
@@ -294,27 +512,27 @@ export default function SplitBillModal({
     try {
       const payload = {
         mode,
-        tickets: SIDES.map((side) => {
-          const ticketTotal = Money.fromCents(ticketMath.totalsCents[side]);
-          const paidInput = toMoneySafe(payments[side].amountPaid || 0, '0');
-          const amountPaid = payments[side].paymentMethod === 'efectivo'
+        tickets: ticketLabels.map((label, idx) => {
+          const ticketTotal = Money.fromCents(ticketMath.totalsCents[idx]);
+          const paidInput = toMoneySafe(payments[label]?.amountPaid || 0, '0');
+          const amountPaid = payments[label]?.paymentMethod === 'efectivo'
             ? (paidInput.gt(ticketTotal) ? ticketTotal : paidInput)
             : paidInput;
 
-          const saldoPendiente = payments[side].paymentMethod === 'fiado'
+          const saldoPendiente = payments[label]?.paymentMethod === 'fiado'
             ? Money.subtract(ticketTotal, amountPaid)
             : Money.init(0);
 
           return {
-            label: side,
+            label,
             paymentData: {
-              paymentMethod: payments[side].paymentMethod,
+              paymentMethod: payments[label]?.paymentMethod,
               amountPaid: Money.toExactString(amountPaid),
               saldoPendiente: Money.toExactString(saldoPendiente),
-              customerId: payments[side].customerId || null,
-              sendReceipt: Boolean(payments[side].sendReceipt)
+              customerId: payments[label]?.customerId || null,
+              sendReceipt: Boolean(payments[label]?.sendReceipt)
             },
-            lines: buildTicketLines(allocations, side)
+            lines: buildTicketLines(allocations, idx)
           };
         })
       };
@@ -334,7 +552,7 @@ export default function SplitBillModal({
       onClick={onClose}
       role="button"
       tabIndex={0}
-      aria-label="Cerrar modal de split bill"
+      aria-label="Cerrar modal de dividir cuenta"
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           onClose();
@@ -346,143 +564,243 @@ export default function SplitBillModal({
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Split bill A/B"
+        aria-label="Dividir cuenta"
+        style={{ maxWidth: '1200px', width: '95%' }}
       >
-        <h2>Split Bill A/B</h2>
+        <h2>Dividir Cuenta</h2>
 
-        <div className="split-mode-row">
-          <button
-            type="button"
-            className={`btn-method ${mode === 'manual' ? 'active' : ''}`}
-            onClick={() => handleModeChange('manual')}
-          >
-            Manual
-          </button>
-          <button
-            type="button"
-            className={`btn-method ${mode === 'equal' ? 'active' : ''}`}
-            onClick={() => handleModeChange('equal')}
-          >
-            Equitativo
-          </button>
+        <div className="split-controls-row">
+          <div className="split-count-selector">
+            <label htmlFor="splitCount">Número de tickets:</label>
+            <select
+              id="splitCount"
+              value={splitCount}
+              onChange={(e) => handleSplitCountChange(e.target.value)}
+              disabled={isSubmitting}
+            >
+              {Array.from({ length: MAX_TICKETS - MIN_TICKETS + 1 }, (_, i) => i + MIN_TICKETS).map(
+                (num) => (
+                  <option key={num} value={num}>
+                    {num} tickets
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          <div className="split-mode-row">
+            <button
+              type="button"
+              className={`btn-method ${mode === 'manual' ? 'active' : ''}`}
+              onClick={() => handleModeChange('manual')}
+            >
+              Manual
+            </button>
+            <button
+              type="button"
+              className={`btn-method ${mode === 'equal' ? 'active' : ''}`}
+              onClick={() => handleModeChange('equal')}
+            >
+              Equitativo
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="split-lines-table-wrap">
-            <table className="split-lines-table">
-              <thead>
-                <tr>
-                  <th>Producto</th>
-                  <th>Total</th>
-                  <th>Ticket A</th>
-                  <th>Ticket B</th>
-                </tr>
-              </thead>
-              <tbody>
+          {/* Main Content: Pool + Tickets Grid */}
+          <div className="split-main-content">
+            {/* Pool Section */}
+            <div className="split-pool-section">
+              <h3>Pool de Productos (Por Asignar)</h3>
+              <div className="split-pool-list">
                 {order.map((item, index) => {
-                  const allocation = allocations[index] || { quantityA: 0, quantityB: 0 };
-                  const step = isUnitItem(item) ? '1' : '0.0001';
-                  const totalQuantity = toQuantity(item.quantity || 0);
+                  const allocation = allocations[index];
+                  if (!allocation) return null;
+
+                  const poolQty = toQuantity(allocation.poolQuantity);
+                  const totalQty = toQuantity(item.quantity || 0);
+                  const step = isUnitItem(item) ? 1 : 0.0001;
+
+                  // If fully assigned, show as completed
+                  if (poolQty <= 0) {
+                    return (
+                      <div key={`${item.id || 'line'}-${index}`} className="split-pool-item completed">
+                        <div className="split-pool-item-info">
+                          <span className="split-pool-item-name">{item.name}</span>
+                          <span className="split-pool-item-price">
+                            ${Money.toNumber(item.price || 0).toFixed(2)} c/u
+                          </span>
+                        </div>
+                        <div className="split-pool-item-status">✓ Asignado</div>
+                      </div>
+                    );
+                  }
 
                   return (
-                    <tr key={`${item.id || 'line'}-${index}`}>
-                      <td>
-                        <div className="split-line-name">{item.name}</div>
-                        <div className="split-line-price">${Money.toNumber(item.price || 0).toFixed(2)} c/u</div>
-                      </td>
-                      <td>{totalQuantity}</td>
-                      <td>
-                        <input
-                          type="number"
-                          min="0"
-                          max={totalQuantity}
-                          step={step}
-                          value={allocation.quantityA}
-                          onChange={(event) => updateQuantity(index, 'A', event.target.value)}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          min="0"
-                          max={totalQuantity}
-                          step={step}
-                          value={allocation.quantityB}
-                          onChange={(event) => updateQuantity(index, 'B', event.target.value)}
-                        />
-                      </td>
-                    </tr>
+                    <div key={`${item.id || 'line'}-${index}`} className="split-pool-item">
+                      <div className="split-pool-item-info">
+                        <span className="split-pool-item-name">{item.name}</span>
+                        <span className="split-pool-item-price">
+                          ${Money.toNumber(item.price || 0).toFixed(2)} c/u
+                        </span>
+                        <span className="split-pool-item-qty">
+                          Disponible: {poolQty} / {totalQty}
+                        </span>
+                      </div>
+                      <div className="split-pool-item-actions">
+                        {ticketLabels.map((label, tIdx) => (
+                          <button
+                            key={label}
+                            type="button"
+                            className="btn-pool-move"
+                            onClick={() => moveToTicket(index, tIdx, step)}
+                            disabled={poolQty < step || isSubmitting}
+                            title={`Mover a ${label}`}
+                          >
+                            → {label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className="btn-pool-move-all"
+                          onClick={() => {
+                            // Distribute to first ticket with capacity, or first available
+                            for (let t = 0; t < ticketLabels.length; t++) {
+                              if (poolQty > 0) {
+                                moveAllToTicket(index, t);
+                                break;
+                              }
+                            }
+                          }}
+                          disabled={poolQty <= 0 || isSubmitting}
+                        >
+                          Todo →
+                        </button>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
 
-          <div className="split-summary-grid">
-            {SIDES.map((side) => {
-              const ticketTotalCents = ticketMath.totalsCents[side];
-              const adjustment = ticketMath.adjustments[side];
-              const payment = payments[side];
+            {/* Tickets Grid */}
+            <div className="split-tickets-grid">
+              {ticketLabels.map((label, tIdx) => {
+                const ticketTotalCents = ticketMath.totalsCents[tIdx];
+                const adjustment = ticketMath.adjustments[tIdx];
+                const payment = payments[label] || {};
 
-              return (
-                <div key={side} className="split-ticket-card">
-                  <h3>Ticket {side}</h3>
-                  <p className="split-ticket-total">${formatMoneyFromCents(ticketTotalCents)}</p>
-                  <p className="split-ticket-adjustment">
-                    Ajuste contable: {adjustment >= 0 ? '+' : ''}${formatMoneyFromCents(adjustment)}
-                  </p>
+                // Calculate items in this ticket
+                const ticketItems = order
+                  .map((item, idx) => ({
+                    item,
+                    qty: toQuantity(allocations[idx]?.ticketQuantities?.[tIdx] || 0),
+                    lineIndex: idx
+                  }))
+                  .filter((x) => x.qty > 0);
 
-                  <label>
-                    Método de pago
-                    <select
-                      value={payment.paymentMethod}
-                      onChange={(event) => updatePayment(side, 'paymentMethod', event.target.value)}
-                    >
-                      <option value="efectivo">Efectivo</option>
-                      <option value="fiado">Fiado</option>
-                    </select>
-                  </label>
+                return (
+                  <div key={label} className="split-ticket-card">
+                    <div className="split-ticket-header">
+                      <h3>Ticket {label}</h3>
+                      <p className="split-ticket-total">
+                        ${formatMoneyFromCents(ticketTotalCents)}
+                      </p>
+                      {adjustment !== 0 && (
+                        <p className="split-ticket-adjustment">
+                          Ajuste: {adjustment >= 0 ? '+' : ''}${formatMoneyFromCents(adjustment)}
+                        </p>
+                      )}
+                    </div>
 
-                  <label>
-                    {payment.paymentMethod === 'efectivo' ? 'Monto recibido' : 'Abono'}
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={payment.amountPaid}
-                      onChange={(event) => updatePayment(side, 'amountPaid', event.target.value)}
-                    />
-                  </label>
+                    <div className="split-ticket-items">
+                      {ticketItems.length === 0 ? (
+                        <p className="split-ticket-empty">Sin productos</p>
+                      ) : (
+                        ticketItems.map(({ item, qty, lineIndex }) => (
+                          <div key={lineIndex} className="split-ticket-item">
+                            <span className="split-ticket-item-name">{item.name}</span>
+                            <span className="split-ticket-item-qty">× {qty}</span>
+                            <button
+                              type="button"
+                              className="btn-item-remove"
+                              onClick={() => moveToPool(lineIndex, tIdx, isUnitItem(item) ? 1 : 0.0001)}
+                              disabled={isSubmitting}
+                              title="Quitar uno"
+                            >
+                              −
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-item-remove-all"
+                              onClick={() => moveAllToPool(lineIndex, tIdx)}
+                              disabled={isSubmitting}
+                              title="Quitar todo"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
 
-                  {payment.paymentMethod === 'fiado' && (
-                    <label>
-                      Cliente
-                      <select
-                        value={payment.customerId}
-                        onChange={(event) => updatePayment(side, 'customerId', event.target.value)}
-                      >
-                        <option value="">Selecciona cliente</option>
-                        {customers.map((customer) => (
-                          <option key={customer.id} value={customer.id}>
-                            {customer.name} ({customer.phone})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
+                    <div className="split-ticket-payment">
+                      <label>
+                        Método de pago
+                        <select
+                          value={payment.paymentMethod}
+                          onChange={(e) => updatePayment(label, 'paymentMethod', e.target.value)}
+                          disabled={isSubmitting}
+                        >
+                          <option value="efectivo">Efectivo</option>
+                          <option value="fiado">Fiado</option>
+                        </select>
+                      </label>
 
-                  <label className="split-receipt-toggle">
-                    <input
-                      type="checkbox"
-                      checked={payment.sendReceipt}
-                      onChange={(event) => updatePayment(side, 'sendReceipt', event.target.checked)}
-                      disabled={payment.paymentMethod === 'fiado' && !payment.customerId}
-                    />
-                    Enviar ticket por WhatsApp
-                  </label>
-                </div>
-              );
-            })}
+                      <label>
+                        {payment.paymentMethod === 'efectivo' ? 'Monto recibido' : 'Abono'}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={payment.amountPaid}
+                          onChange={(e) => updatePayment(label, 'amountPaid', e.target.value)}
+                          disabled={isSubmitting}
+                        />
+                      </label>
+
+                      {payment.paymentMethod === 'fiado' && (
+                        <label>
+                          Cliente
+                          <select
+                            value={payment.customerId}
+                            onChange={(e) => updatePayment(label, 'customerId', e.target.value)}
+                            disabled={isSubmitting}
+                          >
+                            <option value="">Selecciona cliente</option>
+                            {customers.map((customer) => (
+                              <option key={customer.id} value={customer.id}>
+                                {customer.name} ({customer.phone})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+
+                      <label className="split-receipt-toggle">
+                        <input
+                          type="checkbox"
+                          checked={payment.sendReceipt}
+                          onChange={(e) => updatePayment(label, 'sendReceipt', e.target.checked)}
+                          disabled={payment.paymentMethod === 'fiado' && !payment.customerId}
+                        />
+                        Enviar ticket por WhatsApp
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {splitValidationError && (
@@ -490,10 +808,19 @@ export default function SplitBillModal({
           )}
 
           <div className="split-actions">
-            <button type="submit" className="btn btn-confirm" disabled={Boolean(splitValidationError) || isSubmitting}>
+            <button
+              type="submit"
+              className="btn btn-confirm"
+              disabled={Boolean(splitValidationError) || isSubmitting}
+            >
               {isSubmitting ? 'Procesando...' : 'Confirmar Split y Cobro'}
             </button>
-            <button type="button" className="btn btn-cancel-payment" onClick={onClose} disabled={isSubmitting}>
+            <button
+              type="button"
+              className="btn btn-cancel-payment"
+              onClick={onClose}
+              disabled={isSubmitting}
+            >
               Cancelar
             </button>
           </div>
@@ -502,4 +829,3 @@ export default function SplitBillModal({
     </div>
   );
 }
-

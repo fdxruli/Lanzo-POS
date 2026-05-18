@@ -1,13 +1,42 @@
 .split-bill-modal {
-  max-width: 1100px;
+  max-width: 1200px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.split-controls-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.split-count-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.split-count-selector label {
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.split-count-selector select {
+  padding: 6px 12px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid var(--border-color);
+  font-size: 1rem;
 }
 
 .split-mode-row {
   display: flex;
   gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-md);
 }
 
+/* Legacy table styles - kept for backwards compatibility */
 .split-lines-table-wrap {
   overflow-x: auto;
   margin-bottom: var(--spacing-lg);
@@ -39,6 +68,162 @@
   color: var(--text-light);
 }
 
+/* New N-way Split Layout */
+.split-main-content {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  min-height: 400px;
+}
+
+@media (max-width: 900px) {
+  .split-main-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Pool Section */
+.split-pool-section {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--light-background);
+  display: flex;
+  flex-direction: column;
+  max-height: 600px;
+}
+
+.split-pool-section h3 {
+  margin: 0;
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 1rem;
+  background-color: var(--primary-color);
+  color: white;
+  border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0;
+}
+
+.split-pool-list {
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  flex: 1;
+}
+
+.split-pool-item {
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.split-pool-item.completed {
+  background-color: #e8f5e9;
+  border-color: #4caf50;
+  opacity: 0.8;
+}
+
+.split-pool-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.split-pool-item-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+}
+
+.split-pool-item-price {
+  font-size: 0.8rem;
+  color: var(--text-light);
+}
+
+.split-pool-item-qty {
+  font-size: 0.85rem;
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.split-pool-item-status {
+  font-size: 0.85rem;
+  color: #4caf50;
+  font-weight: 600;
+}
+
+.split-pool-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--spacing-xs);
+}
+
+.btn-pool-move {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  border: 1px solid var(--primary-color);
+  background: white;
+  color: var(--primary-color);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-pool-move:hover:not(:disabled) {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-pool-move:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-pool-move-all {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  border: 1px solid var(--success-color, #4caf50);
+  background: white;
+  color: var(--success-color, #4caf50);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-pool-move-all:hover:not(:disabled) {
+  background: var(--success-color, #4caf50);
+  color: white;
+}
+
+.btn-pool-move-all:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Tickets Grid */
+.split-tickets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--spacing-md);
+  align-content: start;
+}
+
+@media (max-width: 1200px) {
+  .split-tickets-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .split-tickets-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .split-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -49,34 +234,138 @@
 .split-ticket-card {
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
-  padding: var(--spacing-md);
-  display: grid;
-  gap: var(--spacing-sm);
-  background-color: var(--light-background);
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.split-ticket-card h3 {
+.split-ticket-header {
+  background-color: var(--primary-color);
+  color: white;
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.split-ticket-header h3 {
   margin: 0;
   font-size: 1rem;
 }
 
 .split-ticket-total {
-  font-size: 1.4rem;
+  font-size: 1.3rem;
   font-weight: 700;
-  margin: 0;
-  color: var(--text-dark);
+  margin: 4px 0 0 0;
+  color: white;
 }
 
 .split-ticket-adjustment {
-  margin: 0;
+  margin: 4px 0 0 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.8rem;
+}
+
+.split-ticket-items {
+  flex: 1;
+  padding: var(--spacing-sm);
+  max-height: 200px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.split-ticket-empty {
+  text-align: center;
   color: var(--text-light);
+  font-style: italic;
+  padding: var(--spacing-md);
+  margin: 0;
+}
+
+.split-ticket-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background-color: var(--light-background);
+  border-radius: var(--border-radius-sm);
+  margin-bottom: var(--spacing-xs);
   font-size: 0.85rem;
 }
 
-.split-ticket-card label {
-  display: grid;
+.split-ticket-item-name {
+  flex: 1;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.split-ticket-item-qty {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.btn-item-remove {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  border: 1px solid var(--error-color, #f44336);
+  background: white;
+  color: var(--error-color, #f44336);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-item-remove:hover:not(:disabled) {
+  background: var(--error-color, #f44336);
+  color: white;
+}
+
+.btn-item-remove-all {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  border: 1px solid var(--error-color, #f44336);
+  background: var(--error-color, #f44336);
+  color: white;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-item-remove-all:hover:not(:disabled) {
+  background: #d32f2f;
+  border-color: #d32f2f;
+}
+
+.split-ticket-payment {
+  padding: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.split-ticket-payment label {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
   font-size: 0.85rem;
+}
+
+.split-ticket-payment input,
+.split-ticket-payment select {
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.9rem;
 }
 
 .split-receipt-toggle {
