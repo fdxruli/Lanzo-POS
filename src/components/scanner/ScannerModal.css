@@ -10,7 +10,7 @@
    ============================================ */
 
 #scanner-modal {
-  z-index: var(--z-modal-top, 9999) !important;
+  z-index: 9999 !important;
 }
 
 /* ============================================
@@ -26,8 +26,10 @@
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100vh; /* Fallback */
-  height: 100dvh; /* Dynamic viewport height (modern browsers) */
+  height: 100vh;
+  /* Fallback */
+  height: 100dvh;
+  /* Dynamic viewport height (modern browsers) */
   margin: 0;
   padding: 0;
   background-color: var(--background-color, #000);
@@ -79,9 +81,12 @@
 .scanner-video-container {
   position: relative;
   width: 100%;
-  height: 55%; /* 50-55% de la altura */
-  min-height: 55%;
-  flex: 0 0 55%;
+  height: 30%;
+  /* <-- Reducido de 55% a 30% */
+  min-height: 30%;
+  /* <-- Reducido de 55% a 30% */
+  flex: 0 0 30%;
+  /* <-- Reducido de 55% a 30% */
   background-color: #000;
   overflow: hidden;
   border-radius: 0;
@@ -95,7 +100,8 @@
 #scanner-video {
   width: 100%;
   height: 100%;
-  object-fit: cover; /* Llena el área sin distorsionar */
+  object-fit: cover;
+  /* Llena el área sin distorsionar */
 }
 
 /* Botón de cierre flotante (X) - Posicionado sobre el video */
@@ -145,15 +151,18 @@
 
 .scanner-results-container {
   width: 100%;
-  height: 45%; /* 45-50% restante */
-  flex: 1 1 45%;
+  height: 70%;
+  /* <-- Aumentado de 45% a 70% */
+  flex: 1 1 70%;
+  /* <-- Aumentado de 45% a 70% */
   display: flex;
   flex-direction: column;
   background-color: var(--light-background, #f5f5f5);
   border-radius: var(--border-radius-lg, 16px) var(--border-radius-lg, 16px) 0 0;
   padding: var(--spacing-md, 16px);
   overflow: hidden;
-  margin-top: -16px; /* Superposición sutil con el video */
+  margin-top: -16px;
+  /* Superposición sutil con el video */
   z-index: 5;
   position: relative;
 }
@@ -189,7 +198,8 @@
   align-items: center;
   padding: var(--spacing-sm, 8px);
   border-bottom: 1px solid var(--border-color, #eee);
-  min-height: 44px; /* Touch target mínimo */
+  min-height: 44px;
+  /* Touch target mínimo */
 }
 
 .scanned-item:last-child {
@@ -309,7 +319,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px; /* Touch target accesible */
+  min-height: 48px;
+  /* Touch target accesible */
 }
 
 /* ============================================
@@ -449,6 +460,7 @@
 */
 
 @media (min-width: 768px) {
+
   /* Modal con backdrop en escritorio */
   #scanner-modal {
     position: fixed;
@@ -456,7 +468,8 @@
     left: 0;
     width: 100vw;
     height: 100vh;
-    background-color: rgba(0, 0, 0, 0.6); /* Backdrop oscuro */
+    background-color: rgba(0, 0, 0, 0.6);
+    /* Backdrop oscuro */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -690,445 +703,456 @@
 
   .scanner-total-label {
     color: var(--text-color, #e0e0e0);
-    }
   }
-  
-  /* ============================================
+}
+
+/* ============================================
      12. RETÍCULA DE ESCANEO (FASE 2)
      ============================================
      Reemplaza el hack de box-shadow con SVG corners
      y animación láser optimizada por hardware
   */
-  
-  .scanner-reticle {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 70%;
-    height: 40%;
-    pointer-events: none;
-    z-index: 5;
-  }
-  
-  /* Esquinas de la retícula */
-  .reticle-corner {
-    filter: drop-shadow(0 0 4px rgba(40, 167, 69, 0.6));
-  }
-  
-  /* Línea láser animada - translateY para aceleración por hardware */
-  .scanner-laser {
-    position: absolute;
-    left: 5%;
-    right: 5%;
-    height: 2px;
-    background: linear-gradient(
-      90deg,
+
+.scanner-reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 70%;
+  height: 40%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Esquinas de la retícula */
+.reticle-corner {
+  filter: drop-shadow(0 0 4px rgba(40, 167, 69, 0.6));
+}
+
+/* Línea láser animada - translateY para aceleración por hardware */
+.scanner-laser {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  height: 2px;
+  background: linear-gradient(90deg,
       transparent,
       rgba(40, 167, 69, 0.8) 20%,
       rgba(40, 167, 69, 1) 50%,
       rgba(40, 167, 69, 0.8) 80%,
-      transparent
-    );
-    box-shadow: 0 0 8px rgba(40, 167, 69, 0.8), 0 0 16px rgba(40, 167, 69, 0.4);
-    opacity: 0;
+      transparent);
+  box-shadow: 0 0 8px rgba(40, 167, 69, 0.8), 0 0 16px rgba(40, 167, 69, 0.4);
+  opacity: 0;
+  transform: translateY(0);
+  top: 0;
+}
+
+.scanner-laser.scanning {
+  opacity: 1;
+  animation: laserScan 2.5s ease-in-out infinite;
+}
+
+@keyframes laserScan {
+
+  0%,
+  100% {
     transform: translateY(0);
-    top: 0;
+    opacity: 0.6;
   }
-  
-  .scanner-laser.scanning {
+
+  50% {
+    /* Cambiamos 0.4 por 0.3 para que no baje más allá de la cámara */
+    transform: translateY(calc(100dvh * 0.3 - 2px));
     opacity: 1;
-    animation: laserScan 2.5s ease-in-out infinite;
   }
-  
-  @keyframes laserScan {
-    0%, 100% {
-      transform: translateY(0);
-      opacity: 0.6;
-    }
-    50% {
-      transform: translateY(calc(100dvh * 0.4 - 2px)); /* Altura del contenedor */
-      opacity: 1;
-    }
-  }
-  
-  /* Texto de estado debajo de la retícula */
-  .scanner-status-text {
-    position: absolute;
-    bottom: -40px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: white;
-    font-size: 0.9rem;
-    font-weight: 500;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-    white-space: nowrap;
-    padding: 6px 12px;
-    background-color: rgba(0, 0, 0, 0.5);
-    border-radius: var(--border-radius-sm, 4px);
-    backdrop-filter: blur(4px);
-  }
-  
-  /* Icono base para scanner */
-  .scanner-icon {
-    width: 20px;
-    height: 20px;
-  }
-  
-  /* Icono de acción para botones */
-  .scanner-action-icon {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-  }
-  
-  /* ============================================
+}
+
+/* Texto de estado debajo de la retícula */
+.scanner-status-text {
+  position: absolute;
+  bottom: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  padding: 6px 12px;
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: var(--border-radius-sm, 4px);
+  backdrop-filter: blur(4px);
+}
+
+/* Icono base para scanner */
+.scanner-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Icono de acción para botones */
+.scanner-action-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* ============================================
      13. SISTEMA DE FEEDBACK TOAST (FASE 2)
      ============================================
      Reemplaza el overlay invasivo con una píldora
      flotante no invasiva
   */
-  
-  /* Toast base */
-  .scan-toast {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%) translateY(20px);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 20px;
-    border-radius: 50px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    color: white;
-    background-color: var(--success-color, #28a745);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    z-index: 20;
+
+/* Toast base */
+.scan-toast {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-radius: 50px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: white;
+  background-color: var(--success-color, #28a745);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  animation: toastSlideIn 0.25s ease forwards;
+  max-width: 90%;
+  min-width: 200px;
+  justify-content: center;
+}
+
+/* Estados del toast */
+.scan-toast-success {
+  background-color: var(--success-color, #28a745);
+}
+
+.scan-toast-error {
+  background-color: var(--error-color, #dc3545);
+}
+
+.scan-toast-info {
+  background-color: var(--info-color, #17a2b8);
+}
+
+/* Icono dentro del toast */
+.scan-toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.scan-toast-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.5;
+}
+
+/* Mensaje del toast */
+.scan-toast-message {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Animaciones del toast - Solo opacity y translateY */
+@keyframes toastSlideIn {
+  from {
     opacity: 0;
-    pointer-events: none;
-    animation: toastSlideIn 0.25s ease forwards;
-    max-width: 90%;
-    min-width: 200px;
-    justify-content: center;
+    transform: translateX(-50%) translateY(20px);
   }
-  
-  /* Estados del toast */
-  .scan-toast-success {
-    background-color: var(--success-color, #28a745);
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
-  
-  .scan-toast-error {
-    background-color: var(--error-color, #dc3545);
+}
+
+@keyframes toastSlideOut {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
-  
-  .scan-toast-info {
-    background-color: var(--info-color, #17a2b8);
+
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
   }
-  
-  /* Icono dentro del toast */
-  .scan-toast-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  
-  .scan-toast-icon svg {
-    width: 20px;
-    height: 20px;
-    stroke-width: 2.5;
-  }
-  
-  /* Mensaje del toast */
-  .scan-toast-message {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  
-  /* Animaciones del toast - Solo opacity y translateY */
-  @keyframes toastSlideIn {
-    from {
-      opacity: 0;
-      transform: translateX(-50%) translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-  }
-  
-  @keyframes toastSlideOut {
-    from {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateX(-50%) translateY(-10px);
-    }
-  }
-  
-  /* Icono de error de cámara */
-  .camera-error-icon {
-    margin-bottom: var(--spacing-md, 16px);
-  }
-  
-  .camera-error-icon svg {
-    width: 48px;
-    height: 48px;
-    stroke-width: 1.5;
-    color: var(--error-color, #dc3545);
-  }
-  
-  /* Icono de carrito vacío */
-  .empty-cart-icon {
-    width: 48px;
-    height: 48px;
-    margin-bottom: var(--spacing-sm, 8px);
-    color: var(--text-light, #999);
-    opacity: 0.6;
-  }
-  
-  /* ============================================
+}
+
+/* Icono de error de cámara */
+.camera-error-icon {
+  margin-bottom: var(--spacing-md, 16px);
+}
+
+.camera-error-icon svg {
+  width: 48px;
+  height: 48px;
+  stroke-width: 1.5;
+  color: var(--error-color, #dc3545);
+}
+
+/* Icono de carrito vacío */
+.empty-cart-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--spacing-sm, 8px);
+  color: var(--text-light, #999);
+  opacity: 0.6;
+}
+
+/* ============================================
      14. MEJORAS DE ACCESIBILIDAD TÁCTIL (FASE 2)
      ============================================
      Touch targets mínimos de 44px, iconos SVG
      limpios, sin emojis
   */
-  
-  /* Controles de cantidad mejorados */
-  .scanned-item-controls {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    background-color: var(--card-background-color, #fff);
-    border-radius: var(--border-radius, 8px);
-    padding: 4px;
-    border: 1px solid var(--border-color, #ddd);
-    min-width: 140px;
-    flex-shrink: 0;
-  }
-  
-  /* Botones de acción con touch target de 44px */
-  .scanner-qty-btn {
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: transparent;
-    border: none;
-    border-radius: var(--border-radius-sm, 4px);
-    color: var(--primary-color, #007bff);
-    cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
-    flex-shrink: 0;
-    padding: 0;
-  }
-  
-  .scanner-qty-btn:hover:not(:disabled) {
-    background-color: var(--light-background, #f0f0f0);
-  }
-  
-  .scanner-qty-btn:active:not(:disabled) {
-    background-color: var(--border-color, #ddd);
-    transform: scale(0.95);
-  }
-  
-  .scanner-qty-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  
-  /* Variante para iconos de acción */
-  .scanner-qty-btn--action {
-    color: var(--text-color, #333);
-  }
-  
-  .scanner-qty-btn--action:hover:not(:disabled) {
-    background-color: rgba(0, 0, 0, 0.05);
-    color: var(--primary-color, #007bff);
-  }
-  
-  /* Botón de eliminar con color de error */
-  .scanner-qty-btn--action .scanner-action-icon {
-    color: var(--error-color, #dc3545);
-  }
-  
-  .scanner-qty-btn--action:hover:not(:disabled) .scanner-action-icon {
-    color: var(--error-color, #dc3545);
-  }
-  
-  /* Valor de cantidad */
-  .scanner-qty-value {
-    font-weight: 700;
-    font-size: 1rem;
-    min-width: 32px;
-    text-align: center;
-    color: var(--text-color, #333);
-    user-select: none;
-    padding: 0 4px;
-  }
-  
-  /* Grid de item escaneado optimizado */
-  .scanned-item {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    gap: var(--spacing-sm, 8px);
-    align-items: center;
-    padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
-    border-bottom: 1px solid var(--border-color, #eee);
-    min-height: 60px; /* Espacio para touch targets */
-  }
-  
-  .scanned-item-name {
-    font-weight: 500;
-    font-size: 0.95rem;
-    color: var(--text-color, #333);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0; /* Permite que el ellipsis funcione en grid */
-    padding-right: var(--spacing-sm, 8px);
-  }
-  
-  .scanned-item-price {
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--primary-color, #007bff);
-    text-align: right;
-    min-width: 70px;
-    flex-shrink: 0;
-    padding-left: var(--spacing-sm, 8px);
-  }
-  
-  /* ============================================
+
+/* Controles de cantidad mejorados */
+.scanned-item-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background-color: var(--card-background-color, #fff);
+  border-radius: var(--border-radius, 8px);
+  padding: 4px;
+  border: 1px solid var(--border-color, #ddd);
+  min-width: 140px;
+  flex-shrink: 0;
+}
+
+/* Botones de acción con touch target de 44px */
+.scanner-qty-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent;
+  border: none;
+  border-radius: var(--border-radius-sm, 4px);
+  color: var(--primary-color, #007bff);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.scanner-qty-btn:hover:not(:disabled) {
+  background-color: var(--light-background, #f0f0f0);
+}
+
+.scanner-qty-btn:active:not(:disabled) {
+  background-color: var(--border-color, #ddd);
+  transform: scale(0.95);
+}
+
+.scanner-qty-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Variante para iconos de acción */
+.scanner-qty-btn--action {
+  color: var(--text-color, #333);
+}
+
+.scanner-qty-btn--action:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: var(--primary-color, #007bff);
+}
+
+/* Botón de eliminar con color de error */
+.scanner-qty-btn--action .scanner-action-icon {
+  color: var(--error-color, #dc3545);
+}
+
+.scanner-qty-btn--action:hover:not(:disabled) .scanner-action-icon {
+  color: var(--error-color, #dc3545);
+}
+
+/* Valor de cantidad */
+.scanner-qty-value {
+  font-weight: 700;
+  font-size: 1rem;
+  min-width: 32px;
+  text-align: center;
+  color: var(--text-color, #333);
+  user-select: none;
+  padding: 0 4px;
+}
+
+/* Grid de item escaneado optimizado */
+.scanned-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--spacing-sm, 8px);
+  align-items: center;
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  border-bottom: 1px solid var(--border-color, #eee);
+  min-height: 60px;
+  /* Espacio para touch targets */
+}
+
+.scanned-item-name {
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--text-color, #333);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  /* Permite que el ellipsis funcione en grid */
+  padding-right: var(--spacing-sm, 8px);
+}
+
+.scanned-item-price {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--primary-color, #007bff);
+  text-align: right;
+  min-width: 70px;
+  flex-shrink: 0;
+  padding-left: var(--spacing-sm, 8px);
+}
+
+/* ============================================
      15. MEDIA QUERY ADICIONALES PARA FASE 2
      ============================================ */
-  
-  @media (min-width: 768px) {
-    /* Retícula más grande en escritorio */
-    .scanner-reticle {
-      width: 60%;
-      height: 50%;
-    }
-  
-    /* Láser con altura ajustada para escritorio */
-    @keyframes laserScan {
-      0%, 100% {
-        transform: translateY(0);
-        opacity: 0.6;
-      }
-      50% {
-        transform: translateY(calc(50vh - 2px)); /* Aproximado para escritorio */
-        opacity: 1;
-      }
-    }
-  
-    /* Toast más grande en escritorio */
-    .scan-toast {
-      padding: 14px 24px;
-      font-size: 1rem;
-      bottom: 30px;
-    }
-  
-    .scan-toast-icon svg {
-      width: 22px;
-      height: 22px;
-    }
-  
-    /* Texto de estado más grande */
-    .scanner-status-text {
-      font-size: 1rem;
-      bottom: -50px;
-      padding: 8px 16px;
-    }
-  
-    /* Grid de item más espacioso en escritorio */
-    .scanned-item {
-      grid-template-columns: 2fr auto auto;
-      padding: var(--spacing-md, 12px);
-      min-height: 68px;
-    }
-  
-    .scanned-item-name {
-      font-size: 1rem;
-    }
-  
-    .scanned-item-controls {
-      min-width: 150px;
-    }
-  
-    .scanner-qty-btn {
-      width: 40px;
-      height: 40px;
-    }
-  
-    .scanner-qty-value {
-      font-size: 1.05rem;
-      min-width: 36px;
-    }
-  
-    .scanned-item-price {
-      font-size: 1rem;
-      min-width: 80px;
-    }
+
+@media (min-width: 768px) {
+
+  /* Retícula más grande en escritorio */
+  .scanner-reticle {
+    width: 60%;
+    height: 50%;
   }
-  
-  /* Ajustes específicos para móviles pequeños */
-  @media (max-width: 375px) {
-    .scanner-reticle {
-      width: 80%;
-      height: 35%;
+
+  /* Láser con altura ajustada para escritorio */
+  @keyframes laserScan {
+
+    0%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.6;
     }
-  
-    .scanned-item {
-      grid-template-columns: 1fr auto;
-      grid-template-rows: auto auto;
-      gap: var(--spacing-xs, 4px);
-      padding: var(--spacing-xs, 4px);
-    }
-  
-    .scanned-item-name {
-      grid-column: 1 / -1;
-      font-size: 0.9rem;
-    }
-  
-    .scanned-item-controls {
-      grid-column: 1;
-      justify-self: start;
-    }
-  
-    .scanned-item-price {
-      grid-column: 2;
-      justify-self: end;
-    }
-  
-    .scan-toast {
-      padding: 10px 16px;
-      font-size: 0.9rem;
-      min-width: 160px;
-    }
-  }
-  
-  /* Soporte para prefers-reduced-motion actualizado */
-  @media (prefers-reduced-motion: reduce) {
-    .scanner-laser.scanning {
-      animation: none;
-      opacity: 0.8;
-    }
-  
-    .scan-toast {
-      animation: none;
+
+    50% {
+      transform: translateY(calc(50vh - 2px));
+      /* Aproximado para escritorio */
       opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-  
-    .reticle-corner {
-      filter: none;
     }
   }
+
+  /* Toast más grande en escritorio */
+  .scan-toast {
+    padding: 14px 24px;
+    font-size: 1rem;
+    bottom: 30px;
+  }
+
+  .scan-toast-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Texto de estado más grande */
+  .scanner-status-text {
+    font-size: 1rem;
+    bottom: -50px;
+    padding: 8px 16px;
+  }
+
+  /* Grid de item más espacioso en escritorio */
+  .scanned-item {
+    grid-template-columns: 2fr auto auto;
+    padding: var(--spacing-md, 12px);
+    min-height: 68px;
+  }
+
+  .scanned-item-name {
+    font-size: 1rem;
+  }
+
+  .scanned-item-controls {
+    min-width: 150px;
+  }
+
+  .scanner-qty-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .scanner-qty-value {
+    font-size: 1.05rem;
+    min-width: 36px;
+  }
+
+  .scanned-item-price {
+    font-size: 1rem;
+    min-width: 80px;
+  }
+}
+
+/* Ajustes específicos para móviles pequeños */
+@media (max-width: 375px) {
+  .scanner-reticle {
+    width: 80%;
+    height: 35%;
+  }
+
+  .scanned-item {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: var(--spacing-xs, 4px);
+    padding: var(--spacing-xs, 4px);
+  }
+
+  .scanned-item-name {
+    grid-column: 1 / -1;
+    font-size: 0.9rem;
+  }
+
+  .scanned-item-controls {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .scanned-item-price {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .scan-toast {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    min-width: 160px;
+  }
+}
+
+/* Soporte para prefers-reduced-motion actualizado */
+@media (prefers-reduced-motion: reduce) {
+  .scanner-laser.scanning {
+    animation: none;
+    opacity: 0.8;
+  }
+
+  .scan-toast {
+    animation: none;
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .reticle-corner {
+    filter: none;
+  }
+}
