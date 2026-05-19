@@ -1,4 +1,4 @@
-import ScannerModal from '../../common/ScannerModal';
+import ScannerModal from '../../scanner/ScannerModal';
 import CategorySelect from '../forms/CategorySelect';
 
 export default function Step1Basicos({

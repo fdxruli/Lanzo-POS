@@ -1,5 +1,5 @@
 import React from 'react';
-import ScannerModal from '../../common/ScannerModal';
+import ScannerModal from '../../scanner/ScannerModal';
 import CategorySelect from './CategorySelect';
 
 const getMarginColor = (marginVal) => {

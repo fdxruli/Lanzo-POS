@@ -6,7 +6,7 @@ import {
     Barcode, ArrowLeft, Check, ChevronRight, Scale, Box,
     FileText, Users, ChevronDown, ChevronUp, Trash2, ShieldAlert, Pill, AlertTriangle
 } from 'lucide-react';
-import ScannerModal from '../../common/ScannerModal';
+import ScannerModal from '../../scanner/ScannerModal';
 import '../ProductWizard.css'; // Asegúrate de que este CSS exista o usa estilos en línea como fallback
 import { showMessageModal } from '../../../services/utils';
 
