@@ -381,9 +381,8 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   return (
     <div id="scanner-modal" className="modal" style={{ display: 'flex' }}>
       <div
-        className={`modal-content scanner-modal-content ${
-          mode === 'pos' ? 'pos-scan-mode' : 'simple-scan-mode'
-        }`}
+        className={`modal-content scanner-modal-content ${mode === 'pos' ? 'pos-scan-mode' : 'simple-scan-mode'
+          }`}
       >
         <h2 className="modal-title">
           Escanear Codigos{scanCount > 0 ? ` (${scanCount})` : ''}
@@ -431,13 +430,15 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
         {mode === 'pos' && (
           <div className="scanner-actions">
-            <button
-              className="btn btn-process"
-              onClick={handleConfirmScan}
-              disabled={items.length === 0 || isConfirming}
-            >
-              {isConfirming ? 'Confirmando...' : `Confirmar (${itemCount})`}
-            </button>
+            <div className="scanner-actions" style={{ marginTop: '16px' }}>
+              <button
+                className="btn btn-process"
+                onClick={handleConfirmScan}
+                disabled={items.length === 0 || isConfirming}
+              >
+                {isConfirming ? 'Confirmando...' : `Confirmar (${itemCount})`}
+              </button>
+            </div>
           </div>
         )}
       </div>
