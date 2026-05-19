@@ -69,9 +69,12 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100%;
+  flex: 1;
+  /* ✅ Usa espacio disponible pero deja lugar para botón */
   gap: 0;
   margin: 0;
+  min-height: 0;
+  /* ✅ Permite que flex funcione correctamente */
 }
 
 /* ============================================
@@ -151,21 +154,23 @@
 
 .scanner-results-container {
   width: 100%;
-  height: 70%;
-  /* <-- Aumentado de 45% a 70% */
-  flex: 1 1 70%;
-  /* <-- Aumentado de 45% a 70% */
+  flex: 1 1 auto;
+  /* ✅ Usa espacio pero sin altura fija */
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* ✅ Permite que flex ajuste internamente */
   background-color: var(--light-background, #f5f5f5);
   border-radius: var(--border-radius-lg, 16px) var(--border-radius-lg, 16px) 0 0;
   padding: var(--spacing-md, 16px);
-  overflow: hidden;
+  overflow-y: auto;
+  /* ✅ Scroll vertical si es necesario */
+  overflow-x: hidden;
   margin-top: -16px;
-  /* Superposición sutil con el video */
   z-index: 5;
   position: relative;
+  margin-bottom: var(--spacing-md, 16px);
+  /* ✅ Espacio para el botón */
 }
 
 /* Subtítulo del carrito */
@@ -190,6 +195,8 @@
   border-top: 1px solid var(--border-color, #ddd);
   border-bottom: 1px solid var(--border-color, #ddd);
   padding: var(--spacing-xs, 4px) 0;
+  max-height: calc(100% - 100px);
+  /* ✅ Reserva espacio para total y botón */
 }
 
 /* Item individual */
@@ -535,8 +542,12 @@
     flex: 1 1 50%;
     border-radius: var(--border-radius, 8px);
     margin-top: 0;
+    margin-bottom: 0;
+    /* ✅ Sin margin en desktop */
     padding: var(--spacing-md, 16px);
-    max-height: none;
+    max-height: 100%;
+    overflow-y: auto;
+    /* ✅ Asegurar scroll en desktop si es necesario */
   }
 
   .scanner-results-container .subtitle {
