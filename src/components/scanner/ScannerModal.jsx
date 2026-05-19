@@ -2,10 +2,9 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
-  memo,
-  useMemo,
 } from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
 import { resolveWithCache } from '../../services/barcodeCache';
@@ -41,6 +40,7 @@ const SCAN_HINTS = new Map([
 ]);
 
 const REACTIVATION_DELAY_MS = 500;
+const FEEDBACK_CLEAR_DELAY_MS = 800;
 
 /**
  * Icono X (cerrar) SVG
@@ -65,22 +65,6 @@ const CloseIcon = () => (
  * Componente de Feedback Memoizado
  * Aísla las actualizaciones de feedback para evitar re-renders del modal completo
  */
-const ScanFeedback = memo(({ message, onClear }) => {
-  useEffect(() => {
-    if (!message) return;
-
-    const timer = setTimeout(() => {
-      onClear();
-    }, 800);
-
-    return () => clearTimeout(timer);
-  }, [message, onClear]);
-
-  return message;
-});
-
-ScanFeedback.displayName = 'ScanFeedback';
-
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const addMultipleScannedProducts = useOrderStore(
     (state) => state.addMultipleScannedProducts
@@ -106,7 +90,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const [scanCount, setScanCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const mode = useMemo(() => (onScanSuccess ? 'single' : 'pos'), [onScanSuccess]);
+  const mode = onScanSuccess ? 'single' : 'pos';
 
   // Refs para control de flujo sin causar re-renders
   const processingLockRef = useRef(false);
@@ -126,12 +110,24 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     };
   }, []);
 
-  // Limpiar feedback - memoizado para estabilidad de referencia
-  const clearFeedback = useCallback(() => {
+  const clearFeedback = useEffectEvent(() => {
     if (isMountedRef.current) {
       setScanFeedback('');
     }
-  }, []);
+  });
+
+  // El feedback ya se muestra dentro del viewport; aqui solo controlamos su expiracion.
+  useEffect(() => {
+    if (!scanFeedback) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      clearFeedback();
+    }, FEEDBACK_CLEAR_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [scanFeedback]);
 
   // Reactivar escaneo lógico después del delay (sin pausar video)
   const scheduleReactivation = useCallback(() => {
@@ -445,8 +441,6 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           </div>
         )}
       </div>
-
-      <ScanFeedback message={scanFeedback} onClear={clearFeedback} />
     </div>
   );
 }
