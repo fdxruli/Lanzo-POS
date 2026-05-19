@@ -57,47 +57,36 @@ export const searchProductsInDB = async (searchTerm, status = 'active') => {
             const isActive = product?.isActive !== false;
             if (status === 'active') return isActive;
             if (status === 'inactive') return !isActive;
-            return true; // status === 'all'
+            return true;
         };
 
         const productTable = db.table(STORES.MENU);
 
-        const indexedResults = await Promise.all(
-            INDEX_SEARCH_FIELDS.map(async (indexName) => {
-                try {
-                    return await productTable
-                        .where(indexName)
-                        .startsWith(normalizedTerm)
-                        .filter((product) => filterByStatus(product))
-                        .limit(DEFAULT_SEARCH_LIMIT)
-                        .toArray();
-                } catch {
-                    // Compatibilidad: si un índice aún no existe en una versión vieja,
-                    // seguimos con el resto y cubrimos con fallback.
-                    return [];
-                }
-            })
-        );
+        // BÚSQUEDA POR NOMBRE (usa startsWith - eficiente)
+        const nameResults = await productTable
+            .where('name_lower')
+            .startsWith(normalizedTerm)
+            .filter((product) => filterByStatus(product))
+            .limit(DEFAULT_SEARCH_LIMIT)
+            .toArray();
 
-        const dedupedIndexedResults = dedupeProducts(indexedResults, DEFAULT_SEARCH_LIMIT);
-        if (dedupedIndexedResults.length >= DEFAULT_SEARCH_LIMIT) {
-            return dedupedIndexedResults;
-        }
+        const takenIds = new Set(nameResults.map((p) => p.id));
 
-        const takenIds = new Set(dedupedIndexedResults.map((product) => product.id));
-        const remainingSlots = DEFAULT_SEARCH_LIMIT - dedupedIndexedResults.length;
-        const fallbackLimit = Math.max(DEFAULT_SEARCH_LIMIT * 10, remainingSlots * 4);
-
-        const fallbackResults = await productTable
+        // BÚSQUEDA POR CÓDIGO/SKU (búsqueda global - siempre se ejecuta)
+        const codeResults = await productTable
             .filter((product) => {
                 if (!filterByStatus(product)) return false;
                 if (takenIds.has(product.id)) return false;
-                return matchesSearchTerm(product, normalizedTerm);
+
+                // Busca por código o SKU con contains (no solo startsWith)
+                const barcode = normalizeSearchValue(product?.barcode);
+                const sku = normalizeSearchValue(product?.sku);
+                return barcode.includes(normalizedTerm) || sku.includes(normalizedTerm);
             })
-            .limit(fallbackLimit)
+            .limit(DEFAULT_SEARCH_LIMIT - nameResults.length)
             .toArray();
 
-        return dedupeProducts([dedupedIndexedResults, fallbackResults], DEFAULT_SEARCH_LIMIT);
+        return [...nameResults, ...codeResults];
     } catch (error) {
         throw handleDexieError(error, 'searchProductsInDB');
     }
