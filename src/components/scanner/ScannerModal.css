@@ -1,129 +1,195 @@
-/*
- * Estilos completos para ScannerModal.jsx
+/**
+ * ScannerModal.css - Mobile-First Architecture
+ * ============================================
+ * Diseño inmersivo tipo "BottomSheet" para móvil,
+ * modal tradicional flotante para escritorio.
  */
 
-/* * Nivel de apilamiento (z-index)
- * Asegura que el modal del escáner aparezca encima de otros modales.
- */
+/* ============================================
+   1. VARIABLES Y Z-INDEX
+   ============================================ */
+
 #scanner-modal {
-  z-index: var(--z-modal-top) !important;
+  z-index: var(--z-modal-top, 9999) !important;
 }
 
-/* * Estilos del visor de la cámara (Video y Overlay)
- * (Estos estilos eran para el overlay manual, puede que los 
- * necesites o no con 'react-zxing', pero los muevo por si acaso).
- */
-#scanner-container {
-  position: relative;
-  width: 100%;
-  /* Proporción para estabilizar el video */
-  aspect-ratio: 16 / 9;
-  background-color: #000;
-  border-radius: var(--border-radius-sm);
-  overflow: hidden;
-  /* Muy importante */
-}
+/* ============================================
+   2. ESTILOS BASE (MOBILE-FIRST)
+   ============================================
+   Todo fuera de media queries es exclusivamente
+   para vista móvil (pantalla completa inmersiva)
+*/
 
-#scanner-video {
-  /* Hacemos que el video llene el contenedor */
-  position: absolute;
+/* Contenedor principal del modal - Pantalla completa en móvil */
+#scanner-modal {
+  position: fixed;
   top: 0;
   left: 0;
+  width: 100vw;
+  height: 100vh; /* Fallback */
+  height: 100dvh; /* Dynamic viewport height (modern browsers) */
+  margin: 0;
+  padding: 0;
+  background-color: var(--background-color, #000);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Ocultar backdrop en móvil (experiencia inmersiva) */
+#scanner-modal::before {
+  display: none;
+}
+
+/* Contenido del modal - Sin bordes ni márgenes en móvil */
+.modal-content.scanner-modal-content {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background-color: var(--background-color, #000);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-/* * Estilos del Layout del Modal (Escritorio)
- */
-
-/* Ajustar el tamaño del modal para dar más espacio */
-.modal-content.scanner-modal-content {
-  max-width: 800px;
-  /* Más ancho */
-  width: 95%;
+/* Título oculto en móvil (ahorro de espacio) */
+.scanner-modal-content .modal-title {
+  display: none;
 }
 
-/* Contenedor principal para dividir video y resultados */
+/* Contenedor principal flex - Layout vertical en móvil */
 .scanner-main-container {
   display: flex;
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  gap: 0;
+  margin: 0;
 }
 
-/*
- * ======================================================
- * ¡AQUÍ ESTÁ LA CORRECCIÓN PRINCIPAL!
- *
- * Movimos 'position: relative', 'overflow', 'border-radius'
- * y 'background-color' aquí (a la regla base) para que 
- * apliquen en ESCRITORIO y no solo en móvil.
- * ======================================================
- */
+/* ============================================
+   3. CONTENEDOR DE VIDEO (MÓVIL)
+   ============================================ */
+
 .scanner-video-container {
-  flex: 1;
-  min-width: 0;
   position: relative;
-  overflow: hidden;
-  border-radius: var(--border-radius-sm);
+  width: 100%;
+  height: 55%; /* 50-55% de la altura */
+  min-height: 55%;
+  flex: 0 0 55%;
   background-color: #000;
+  overflow: hidden;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Proporción para mantener estabilidad */
-  aspect-ratio: 16 / 9;
-  min-height: 300px;
-  /* Altura mínima para escritorio */
 }
 
-/*
- * ======================================================
- * ¡NUEVA REGLA AÑADIDA!
- * Para estilizar el mensaje de error de la cámara.
- * ======================================================
- */
-.camera-error-feedback {
-  padding: var(--spacing-md);
-  text-align: center;
-  color: var(--text-dark);
-  background-color: var(--light-background); /* En lugar de #333 */
+/* El video llena el contenedor */
+.scanner-video-container video,
+#scanner-video {
   width: 100%;
+  height: 100%;
+  object-fit: cover; /* Llena el área sin distorsionar */
 }
 
-.camera-error-feedback p {
-  color: var(--error-color); /* Mejor indicar que es un error visualmente */
-  margin-bottom: var(--spacing-md);
-  font-weight: 600;
+/* Botón de cierre flotante (X) - Posicionado sobre el video */
+.scanner-close-btn {
+  position: absolute;
+  top: var(--spacing-sm, 8px);
+  right: var(--spacing-sm, 8px);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.5);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 10;
+  transition: background-color 0.2s ease;
+  padding: 0;
 }
 
+.scanner-close-btn:hover,
+.scanner-close-btn:active {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+.scanner-close-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Icono X SVG */
+.scanner-close-btn svg {
+  width: 24px;
+  height: 24px;
+  color: white;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+/* ============================================
+   4. CONTENEDOR DE RESULTADOS (MÓVIL)
+   ============================================ */
 
 .scanner-results-container {
-  flex: 1;
+  width: 100%;
+  height: 45%; /* 45-50% restante */
+  flex: 1 1 45%;
   display: flex;
   flex-direction: column;
-  background-color: var(--light-background);
-  border-radius: var(--border-radius-sm);
-  padding: var(--spacing-md);
+  background-color: var(--light-background, #f5f5f5);
+  border-radius: var(--border-radius-lg, 16px) var(--border-radius-lg, 16px) 0 0;
+  padding: var(--spacing-md, 16px);
+  overflow: hidden;
+  margin-top: -16px; /* Superposición sutil con el video */
+  z-index: 5;
+  position: relative;
 }
 
-/* Lista de productos escaneados */
+/* Subtítulo del carrito */
+.scanner-results-container .subtitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-sm, 8px) 0;
+  color: var(--text-color, #333);
+  flex-shrink: 0;
+}
+
+/* ============================================
+   5. LISTA DE ITEMS ESCANEADOS (MÓVIL)
+   ============================================ */
+
 .scanned-items-list {
-  flex-grow: 1;
+  flex: 1;
   overflow-y: auto;
-  max-height: 250px;
-  margin-bottom: var(--spacing-md);
-  border-top: 1px solid var(--border-color); /* CORREGIDO */
-  border-bottom: 1px solid var(--border-color); /* CORREGIDO */
-  padding: var(--spacing-sm) 0;
+  overflow-x: hidden;
+  margin-bottom: var(--spacing-sm, 8px);
+  border-top: 1px solid var(--border-color, #ddd);
+  border-bottom: 1px solid var(--border-color, #ddd);
+  padding: var(--spacing-xs, 4px) 0;
 }
 
+/* Item individual */
 .scanned-item {
   display: grid;
-  grid-template-columns: 2fr 1.5fr auto auto;
-  gap: var(--spacing-sm);
+  grid-template-columns: 1fr auto auto;
+  gap: var(--spacing-sm, 8px);
   align-items: center;
-  padding: var(--spacing-sm);
-  border-bottom: 1px solid var(--border-color); /* CORREGIDO */
+  padding: var(--spacing-sm, 8px);
+  border-bottom: 1px solid var(--border-color, #eee);
+  min-height: 44px; /* Touch target mínimo */
 }
 
 .scanned-item:last-child {
@@ -132,374 +198,937 @@
 
 .scanned-item-name {
   font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--text-color, #333);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Contenedor central de los controles */
+/* Controles de cantidad */
 .scanned-item-controls {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: var(--light-background); /* CORREGIDO */
-  border-radius: var(--border-radius-sm);
-  padding: 4px;
+  background-color: var(--card-background-color, #fff);
+  border-radius: var(--border-radius-sm, 4px);
+  padding: 2px 4px;
   min-width: 90px;
-  border: 1px solid var(--border-color); /* CORREGIDO */
+  border: 1px solid var(--border-color, #ddd);
 }
 
 .scanner-qty-btn {
-  background-color: var(--card-background-color); /* Se adapta al tema */
-  border: 1px solid var(--border-color);
-  color: var(--text-color);
-  border-radius: 4px;
-  width: 28px;
-  height: 28px;
+  background-color: transparent;
+  border: none;
+  color: var(--primary-color, #007bff);
+  border-radius: var(--border-radius-sm, 4px);
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  font-size: 1rem;
+  font-size: 1.1rem;
   cursor: pointer;
-  transition: var(--transition); /* Usar tu variable global */
+  transition: background-color 0.2s ease;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .scanner-qty-btn:hover:not(:disabled) {
-  background-color: var(--light-background);
-  border-color: var(--text-light);
+  background-color: var(--light-background, #f0f0f0);
 }
 
 .scanner-qty-btn:active:not(:disabled) {
-  background-color: var(--border-color);
+  background-color: var(--border-color, #ddd);
+}
+
+.scanner-qty-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .scanner-qty-value {
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.95rem;
   min-width: 24px;
   text-align: center;
-  color: var(--text-dark); /* En lugar de forzar negro/azul oscuro */
+  color: var(--text-color, #333);
   user-select: none;
 }
 
 .scanned-item-price {
   font-weight: 600;
-  color: var(--primary-color);
+  font-size: 0.9rem;
+  color: var(--primary-color, #007bff);
   text-align: right;
+  min-width: 60px;
 }
 
-/* Contenedor del total y botones de acción */
+/* ============================================
+   6. TOTAL Y ACCIONES (MÓVIL)
+   ============================================ */
+
 .scanner-total-container {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-top: var(--spacing-md);
-  border-top: 2px solid var(--border-color); /* CORREGIDO */
+  padding: var(--spacing-sm, 8px) 0;
+  border-top: 2px solid var(--border-color, #ddd);
+  margin-bottom: var(--spacing-sm, 8px);
+  flex-shrink: 0;
 }
 
+.scanner-total-label {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text-color, #333);
+}
+
+.scanner-total-amount {
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--primary-color, #007bff);
+}
+
+/* Acciones - Botón Confirmar (sin Cancelar en móvil) */
 .scanner-actions {
   display: flex;
-  gap: var(--spacing-md);
-  justify-content: flex-end;
-  /* Alinea los botones a la derecha */
+  gap: var(--spacing-md, 16px);
+  justify-content: stretch;
+  flex-shrink: 0;
 }
 
 .scanner-actions .btn {
-  width: auto;
-  /* Ancho automático para los botones */
+  flex: 1;
+  width: 100%;
+  padding: var(--spacing-md, 12px);
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: var(--border-radius, 8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px; /* Touch target accesible */
 }
 
+/* ============================================
+   7. MODO SIMPLE (SIN CARRITO) - MÓVIL
+   ============================================ */
 
-/* * Estilos para los modos condicionales (simple vs. POS)
- */
+/* En modo simple, el video ocupa todo */
+.modal-content.simple-scan-mode .scanner-video-container {
+  height: 100%;
+  min-height: 100%;
+  flex: 1 1 100%;
+}
 
-/* Por defecto, los elementos del modo POS (carrito) están ocultos */
+/* Ocultar resultados y acciones en modo simple */
 .modal-content.simple-scan-mode .scanner-results-container,
-.modal-content.simple-scan-mode .scanner-actions .btn-process {
+.modal-content.simple-scan-mode .scanner-actions {
   display: none;
 }
 
-/* En modo simple, el contenedor de video ocupa todo el espacio */
-.modal-content.simple-scan-mode .scanner-main-container {
-  flex-direction: column;
-}
-
-/* En modo simple, el botón de cancelar es la única acción visible */
-.modal-content.simple-scan-mode .scanner-actions {
-  justify-content: center;
-}
-
-/* Cuando estamos en modo POS, mostramos los elementos del carrito */
+/* En modo POS, mostrar elementos del carrito */
 .modal-content.pos-scan-mode .scanner-results-container,
-.modal-content.pos-scan-mode .scanner-actions .btn-process {
-  display: flex;
-  /* O 'block' según el elemento */
-}
-
-/* Y aplicamos el layout de dos columnas */
-.modal-content.pos-scan-mode .scanner-main-container {
-  display: flex;
-  flex-direction: row;
-  gap: var(--spacing-lg);
-}
-
 .modal-content.pos-scan-mode .scanner-actions {
-  justify-content: flex-end;
+  display: flex;
 }
 
-
-/* * ======================================================
- * ESTILOS RESPONSIVOS PARA MÓVIL (Como solicitaste)
- * ======================================================
- */
-@media (max-width: 768px) {
-  .modal-content.scanner-modal-content {
-    max-width: 95%;
-    /* Ajuste a casi el ancho completo del móvil */
-    width: auto;
-    padding: var(--spacing-md);
-  }
-
-  /*
-   * NOTA: Este estilo .modal-title es muy genérico.
-   * Si rompe otros modales, debes hacerlo más específico,
-   * ej: .scanner-modal-content .modal-title
-   */
-  .modal-title {
-    text-align: center;
-    margin-bottom: var(--spacing-md);
-  }
-
-  /* Ajustes para el contenedor principal en móvil */
-  .scanner-main-container {
-    flex-direction: column !important;
-    /* Apila los elementos verticalmente SIEMPRE en móvil */
-    gap: var(--spacing-md);
-  }
-
-  /*
-   * ======================================================
-   * REGLA MÓVIL SIMPLIFICADA
-   *
-   * Ya no necesita 'position', 'overflow', 'border-radius'
-   * o 'background-color' porque los heredará de la base.
-   * ======================================================
-   */
-  .scanner-video-container {
-    width: 100%;
-    /* El video ocupa todo el ancho disponible */
-    height: 200px;
-    /* Altura fija para el video en móvil */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    /* overflow: hidden; <-- Heredado */
-    /* position: relative; <-- Heredado */
-    /* border-radius: var(--border-radius-sm); <-- Heredado */
-    /* background-color: black; <-- Heredado */
-  }
-
-  /* * NOTA: Es posible que react-zxing ignore esto, 
-   * pero #scanner-video es como se llamaba tu video original.
-   */
-  #scanner-video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    /* Cubre el área manteniendo la relación de aspecto */
-  }
-
-  .scanner-results-container {
-    width: 100%;
-    /* Ocupa todo el ancho */
-    max-height: 180px;
-    /* Limitar la altura de los resultados */
-    padding: var(--spacing-sm);
-  }
-
-  .scanned-items-list {
-    max-height: 100px;
-    /* Altura más compacta para la lista de productos */
-    margin-bottom: var(--spacing-sm);
-    padding: var(--spacing-xs) 0;
-  }
-
-  .scanned-item {
-    grid-template-columns: 1fr auto auto;
-    /* Nombre, controles/precio, eliminar */
-    gap: var(--spacing-xs);
-    padding: var(--spacing-xs);
-    font-size: 0.9rem;
-    /* Tamaño de fuente más pequeño */
-  }
-
-  .scanned-item-name {
-    font-size: 0.9rem;
-    white-space: normal;
-    /* Permite que el nombre se envuelva */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-height: 2.4em;
-    /* Mostrar hasta 2 líneas */
-    line-height: 1.2em;
-  }
-
-  .scanned-item-controls {
-    flex-shrink: 0;
-    /* Evita que los botones se encojan */
-    min-width: 80px;
-    /* Ancho mínimo para que los botones sean usables */
-  }
-
-  /* * NOTA: La clase .quantity-btn está definida en OrderSummary.css,
-   * pero el escáner tenía su propia versión. 
-   * ¡Cuidado con conflictos!
-   */
-  .scanner-modal-content .quantity-btn {
-    width: 28px;
-    /* Botones de cantidad más pequeños */
-    height: 28px;
-    font-size: 0.9rem;
-    padding: 0;
-  }
-
-  .scanner-modal-content .quantity-value {
-    min-width: 20px;
-    /* Asegura espacio para la cantidad */
-    text-align: center;
-  }
-
-  .scanned-item-price {
-    font-size: 0.9rem;
-    text-align: right;
-  }
-
-  .scanner-modal-content .remove-item-btn {
-    width: 28px;
-    /* Botón de eliminar más pequeño */
-    height: 28px;
-    font-size: 0.9rem;
-    padding: 0;
-  }
-
-  .scanner-total-container {
-    padding-top: var(--spacing-sm);
-    font-size: 1.1rem;
-  }
-
-  .scanner-actions {
-    flex-direction: column;
-    /* Pone "Cancelar" arriba de "Confirmar" */
-    gap: var(--spacing-sm);
-    width: 100%;
-  }
-
-  .scanner-actions .btn {
-    width: 100%;
-    /* Los botones ocupan todo el ancho */
-    padding: var(--spacing-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
+/* El botón procesar solo visible en modo POS */
+.modal-content.pos-scan-mode .btn-process {
+  display: flex;
 }
 
-/* Overlay de feedback de escaneo */
-.scan-feedback-overlay {
+.modal-content.simple-scan-mode .btn-process {
+  display: none;
+}
+
+/* ============================================
+   8. FEEDBACK Y OVERLAYS (LEGACY - DEPRECATED)
+   ============================================
+   NOTA: El sistema de feedback overlay ha sido
+   reemplazado por el sistema Toast en la sección 13.
+   Estos estilos se mantienen por compatibilidad
+   temporal pero no deben usarse.
+*/
+
+/* Mensaje de error de cámara */
+.camera-error-feedback {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  z-index: 10;
-  pointer-events: none;
-  animation: feedbackFadeIn 0.2s ease;
-}
-
-@keyframes feedbackFadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-.scan-feedback-message {
-  background-color: var(--success-color);
+  background-color: rgba(0, 0, 0, 0.85);
   color: white;
-  padding: var(--spacing-lg) var(--spacing-xl);
-  border-radius: var(--border-radius);
-  font-size: 1.2rem;
-  font-weight: 600;
+  padding: var(--spacing-lg, 24px);
   text-align: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 5;
 }
 
-/* Feedback de error */
-.scan-feedback-message:has(⚠️),
-.scan-feedback-message:has(❌) {
-  background-color: var(--error-color);
+.camera-error-feedback p {
+  color: var(--error-color, #ff6b6b);
+  margin-bottom: var(--spacing-md, 16px);
+  font-weight: 600;
+  font-size: 1rem;
 }
+
+/* ============================================
+   9. BANNER DE CÓDIGOS DESCONOCIDOS
+   ============================================ */
 
 .scanner-error-banner {
-  /* Emulamos el fondo claro usando rgba con tu color de error */
-  background-color: rgba(255, 59, 92, 0.1); 
-  border: 1px solid var(--error-color);
-  border-radius: var(--border-radius-sm);
-  padding: var(--spacing-sm);
-  margin-bottom: var(--spacing-md);
+  background-color: rgba(255, 59, 92, 0.1);
+  border: 1px solid var(--error-color, #dc3545);
+  border-radius: var(--border-radius-sm, 4px);
+  padding: var(--spacing-sm, 8px);
+  margin-bottom: var(--spacing-sm, 8px);
   flex-shrink: 0;
 }
 
+.scanner-error-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-xs, 4px);
+}
+
 .scanner-error-header p {
-  color: var(--error-color);
+  color: var(--error-color, #dc3545);
   margin: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.unknown-badge {
-  background-color: var(--error-color);
-  color: white; /* Aquí es correcto forzar blanco por contraste */
-  padding: 4px 8px;
-  border-radius: 4px;
   font-size: 0.85rem;
-  font-family: monospace;
-  font-weight: bold;
-}
-
-.btn-clear-errors {
-  background: transparent;
-  border: 1px solid var(--error-color);
-  color: var(--error-color);
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: bold;
-  cursor: pointer;
-  padding: 4px 8px;
-  transition: var(--transition);
-}
-
-.btn-clear-errors:hover, /* Añadido para mejor UX */
-.btn-clear-errors:active {
-  background: var(--error-color);
-  color: white;
+  font-weight: 600;
 }
 
 .unknown-codes-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-height: 80px;
-  /* Caso límite: Restringir altura para que no rompa el Layout */
+  max-height: 60px;
   overflow-y: auto;
-  /* Permitir scroll si hay muchos errores */
 }
+
+.unknown-badge {
+  background-color: var(--error-color, #dc3545);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-family: monospace;
+  font-weight: bold;
+}
+
+.btn-clear-errors {
+  background: transparent;
+  border: 1px solid var(--error-color, #dc3545);
+  color: var(--error-color, #dc3545);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-clear-errors:hover,
+.btn-clear-errors:active {
+  background: var(--error-color, #dc3545);
+  color: white;
+}
+
+/* ============================================
+   10. MEDIA QUERY DESKTOP (min-width: 768px)
+   ============================================
+   Sobrescribe los estilos base para comportarse
+   como modal tradicional centrado en escritorio
+*/
+
+@media (min-width: 768px) {
+  /* Modal con backdrop en escritorio */
+  #scanner-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.6); /* Backdrop oscuro */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-lg, 24px);
+  }
+
+  /* Contenido del modal - Estilo tradicional flotante */
+  .modal-content.scanner-modal-content {
+    width: 95%;
+    max-width: 900px;
+    max-height: 90vh;
+    height: auto;
+    margin: auto;
+    padding: var(--spacing-lg, 24px);
+    border-radius: var(--border-radius-lg, 16px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    background-color: var(--card-background-color, #fff);
+    overflow: hidden;
+  }
+
+  /* Título visible en escritorio */
+  .scanner-modal-content .modal-title {
+    display: block;
+    margin: 0 0 var(--spacing-md, 16px) 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-color, #333);
+    text-align: left;
+  }
+
+  /* Layout horizontal en escritorio */
+  .scanner-main-container {
+    flex-direction: row;
+    gap: var(--spacing-lg, 24px);
+    height: auto;
+    min-height: 400px;
+    max-height: calc(90vh - 140px);
+  }
+
+  /* Contenedor de video - Tamaño fijo en escritorio */
+  .scanner-video-container {
+    width: 50%;
+    height: auto;
+    min-height: 350px;
+    flex: 1 1 50%;
+    border-radius: var(--border-radius, 8px);
+    aspect-ratio: 4 / 3;
+  }
+
+  /* Botón de cierre reposicionado */
+  .scanner-close-btn {
+    top: var(--spacing-md, 16px);
+    right: var(--spacing-md, 16px);
+    background-color: rgba(0, 0, 0, 0.4);
+  }
+
+  /* Contenedor de resultados - Layout horizontal */
+  .scanner-results-container {
+    width: 50%;
+    height: auto;
+    flex: 1 1 50%;
+    border-radius: var(--border-radius, 8px);
+    margin-top: 0;
+    padding: var(--spacing-md, 16px);
+    max-height: none;
+  }
+
+  .scanner-results-container .subtitle {
+    font-size: 1.1rem;
+    margin-bottom: var(--spacing-md, 12px);
+  }
+
+  /* Lista de items más espaciosa */
+  .scanned-items-list {
+    max-height: 280px;
+    margin-bottom: var(--spacing-md, 12px);
+  }
+
+  .scanned-item {
+    grid-template-columns: 2fr 1.5fr auto;
+    padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  }
+
+  .scanned-item-name {
+    font-size: 1rem;
+  }
+
+  .scanner-qty-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 1rem;
+  }
+
+  .scanner-qty-value {
+    font-size: 1rem;
+  }
+
+  .scanned-item-price {
+    font-size: 1rem;
+    min-width: 80px;
+  }
+
+  /* Total y acciones */
+  .scanner-total-container {
+    padding: var(--spacing-md, 12px) 0;
+    margin-bottom: var(--spacing-md, 12px);
+  }
+
+  .scanner-total-label {
+    font-size: 1.1rem;
+  }
+
+  .scanner-total-amount {
+    font-size: 1.4rem;
+  }
+
+  .scanner-actions {
+    justify-content: flex-end;
+    gap: var(--spacing-md, 16px);
+  }
+
+  .scanner-actions .btn {
+    width: auto;
+    flex: 0 0 auto;
+    min-width: 120px;
+    padding: var(--spacing-sm, 8px) var(--spacing-lg, 24px);
+  }
+
+  /* Modo simple en escritorio - Video más pequeño */
+  .modal-content.simple-scan-mode .scanner-main-container {
+    flex-direction: column;
+    align-items: center;
+    min-height: auto;
+  }
+
+  .modal-content.simple-scan-mode .scanner-video-container {
+    width: 100%;
+    max-width: 500px;
+    height: 350px;
+    aspect-ratio: 4 / 3;
+  }
+
+  /* Banner de errores más espacioso */
+  .scanner-error-banner {
+    padding: var(--spacing-md, 12px);
+    margin-bottom: var(--spacing-md, 12px);
+  }
+
+  .unknown-codes-list {
+    max-height: 80px;
+  }
+}
+
+/* ============================================
+   11. UTILIDADES Y ESTADOS
+   ============================================ */
+
+/* Estado de carga */
+.scanner-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-light, #999);
+  font-size: 1rem;
+}
+
+/* Estado vacío del carrito */
+.empty-cart-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-light, #999);
+  text-align: center;
+  padding: var(--spacing-lg, 24px);
+}
+
+.empty-cart-message p {
+  margin: var(--spacing-sm, 8px) 0;
+  font-size: 0.95rem;
+}
+
+/* Scrollbar personalizado */
+.scanned-items-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scanned-items-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scanned-items-list::-webkit-scrollbar-thumb {
+  background-color: var(--border-color, #ddd);
+  border-radius: 3px;
+}
+
+.scanned-items-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-light, #999);
+}
+
+/* Soporte para prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .scan-feedback-overlay {
+    animation: none;
+  }
+
+  .scanner-close-btn,
+  .scanner-qty-btn,
+  .btn-clear-errors {
+    transition: none;
+  }
+}
+
+/* Soporte para modo oscuro (si el sistema lo soporta) */
+@media (prefers-color-scheme: dark) {
+  .scanner-results-container {
+    background-color: var(--card-background-color, #1e1e1e);
+  }
+
+  .scanned-item-controls {
+    background-color: var(--background-color, #121212);
+    border-color: var(--border-color, #333);
+  }
+
+  .scanner-qty-value,
+  .scanned-item-name {
+    color: var(--text-color, #e0e0e0);
+  }
+
+  .scanner-total-label {
+    color: var(--text-color, #e0e0e0);
+    }
+  }
+  
+  /* ============================================
+     12. RETÍCULA DE ESCANEO (FASE 2)
+     ============================================
+     Reemplaza el hack de box-shadow con SVG corners
+     y animación láser optimizada por hardware
+  */
+  
+  .scanner-reticle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 70%;
+    height: 40%;
+    pointer-events: none;
+    z-index: 5;
+  }
+  
+  /* Esquinas de la retícula */
+  .reticle-corner {
+    filter: drop-shadow(0 0 4px rgba(40, 167, 69, 0.6));
+  }
+  
+  /* Línea láser animada - translateY para aceleración por hardware */
+  .scanner-laser {
+    position: absolute;
+    left: 5%;
+    right: 5%;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(40, 167, 69, 0.8) 20%,
+      rgba(40, 167, 69, 1) 50%,
+      rgba(40, 167, 69, 0.8) 80%,
+      transparent
+    );
+    box-shadow: 0 0 8px rgba(40, 167, 69, 0.8), 0 0 16px rgba(40, 167, 69, 0.4);
+    opacity: 0;
+    transform: translateY(0);
+    top: 0;
+  }
+  
+  .scanner-laser.scanning {
+    opacity: 1;
+    animation: laserScan 2.5s ease-in-out infinite;
+  }
+  
+  @keyframes laserScan {
+    0%, 100% {
+      transform: translateY(0);
+      opacity: 0.6;
+    }
+    50% {
+      transform: translateY(calc(100dvh * 0.4 - 2px)); /* Altura del contenedor */
+      opacity: 1;
+    }
+  }
+  
+  /* Texto de estado debajo de la retícula */
+  .scanner-status-text {
+    position: absolute;
+    bottom: -40px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+    white-space: nowrap;
+    padding: 6px 12px;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: var(--border-radius-sm, 4px);
+    backdrop-filter: blur(4px);
+  }
+  
+  /* Icono base para scanner */
+  .scanner-icon {
+    width: 20px;
+    height: 20px;
+  }
+  
+  /* Icono de acción para botones */
+  .scanner-action-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+  
+  /* ============================================
+     13. SISTEMA DE FEEDBACK TOAST (FASE 2)
+     ============================================
+     Reemplaza el overlay invasivo con una píldora
+     flotante no invasiva
+  */
+  
+  /* Toast base */
+  .scan-toast {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    border-radius: 50px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: white;
+    background-color: var(--success-color, #28a745);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    z-index: 20;
+    opacity: 0;
+    pointer-events: none;
+    animation: toastSlideIn 0.25s ease forwards;
+    max-width: 90%;
+    min-width: 200px;
+    justify-content: center;
+  }
+  
+  /* Estados del toast */
+  .scan-toast-success {
+    background-color: var(--success-color, #28a745);
+  }
+  
+  .scan-toast-error {
+    background-color: var(--error-color, #dc3545);
+  }
+  
+  .scan-toast-info {
+    background-color: var(--info-color, #17a2b8);
+  }
+  
+  /* Icono dentro del toast */
+  .scan-toast-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  
+  .scan-toast-icon svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 2.5;
+  }
+  
+  /* Mensaje del toast */
+  .scan-toast-message {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  /* Animaciones del toast - Solo opacity y translateY */
+  @keyframes toastSlideIn {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+  
+  @keyframes toastSlideOut {
+    from {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-10px);
+    }
+  }
+  
+  /* Icono de error de cámara */
+  .camera-error-icon {
+    margin-bottom: var(--spacing-md, 16px);
+  }
+  
+  .camera-error-icon svg {
+    width: 48px;
+    height: 48px;
+    stroke-width: 1.5;
+    color: var(--error-color, #dc3545);
+  }
+  
+  /* Icono de carrito vacío */
+  .empty-cart-icon {
+    width: 48px;
+    height: 48px;
+    margin-bottom: var(--spacing-sm, 8px);
+    color: var(--text-light, #999);
+    opacity: 0.6;
+  }
+  
+  /* ============================================
+     14. MEJORAS DE ACCESIBILIDAD TÁCTIL (FASE 2)
+     ============================================
+     Touch targets mínimos de 44px, iconos SVG
+     limpios, sin emojis
+  */
+  
+  /* Controles de cantidad mejorados */
+  .scanned-item-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background-color: var(--card-background-color, #fff);
+    border-radius: var(--border-radius, 8px);
+    padding: 4px;
+    border: 1px solid var(--border-color, #ddd);
+    min-width: 140px;
+    flex-shrink: 0;
+  }
+  
+  /* Botones de acción con touch target de 44px */
+  .scanner-qty-btn {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    border: none;
+    border-radius: var(--border-radius-sm, 4px);
+    color: var(--primary-color, #007bff);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  
+  .scanner-qty-btn:hover:not(:disabled) {
+    background-color: var(--light-background, #f0f0f0);
+  }
+  
+  .scanner-qty-btn:active:not(:disabled) {
+    background-color: var(--border-color, #ddd);
+    transform: scale(0.95);
+  }
+  
+  .scanner-qty-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  
+  /* Variante para iconos de acción */
+  .scanner-qty-btn--action {
+    color: var(--text-color, #333);
+  }
+  
+  .scanner-qty-btn--action:hover:not(:disabled) {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--primary-color, #007bff);
+  }
+  
+  /* Botón de eliminar con color de error */
+  .scanner-qty-btn--action .scanner-action-icon {
+    color: var(--error-color, #dc3545);
+  }
+  
+  .scanner-qty-btn--action:hover:not(:disabled) .scanner-action-icon {
+    color: var(--error-color, #dc3545);
+  }
+  
+  /* Valor de cantidad */
+  .scanner-qty-value {
+    font-weight: 700;
+    font-size: 1rem;
+    min-width: 32px;
+    text-align: center;
+    color: var(--text-color, #333);
+    user-select: none;
+    padding: 0 4px;
+  }
+  
+  /* Grid de item escaneado optimizado */
+  .scanned-item {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: var(--spacing-sm, 8px);
+    align-items: center;
+    padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+    border-bottom: 1px solid var(--border-color, #eee);
+    min-height: 60px; /* Espacio para touch targets */
+  }
+  
+  .scanned-item-name {
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--text-color, #333);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0; /* Permite que el ellipsis funcione en grid */
+    padding-right: var(--spacing-sm, 8px);
+  }
+  
+  .scanned-item-price {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--primary-color, #007bff);
+    text-align: right;
+    min-width: 70px;
+    flex-shrink: 0;
+    padding-left: var(--spacing-sm, 8px);
+  }
+  
+  /* ============================================
+     15. MEDIA QUERY ADICIONALES PARA FASE 2
+     ============================================ */
+  
+  @media (min-width: 768px) {
+    /* Retícula más grande en escritorio */
+    .scanner-reticle {
+      width: 60%;
+      height: 50%;
+    }
+  
+    /* Láser con altura ajustada para escritorio */
+    @keyframes laserScan {
+      0%, 100% {
+        transform: translateY(0);
+        opacity: 0.6;
+      }
+      50% {
+        transform: translateY(calc(50vh - 2px)); /* Aproximado para escritorio */
+        opacity: 1;
+      }
+    }
+  
+    /* Toast más grande en escritorio */
+    .scan-toast {
+      padding: 14px 24px;
+      font-size: 1rem;
+      bottom: 30px;
+    }
+  
+    .scan-toast-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+  
+    /* Texto de estado más grande */
+    .scanner-status-text {
+      font-size: 1rem;
+      bottom: -50px;
+      padding: 8px 16px;
+    }
+  
+    /* Grid de item más espacioso en escritorio */
+    .scanned-item {
+      grid-template-columns: 2fr auto auto;
+      padding: var(--spacing-md, 12px);
+      min-height: 68px;
+    }
+  
+    .scanned-item-name {
+      font-size: 1rem;
+    }
+  
+    .scanned-item-controls {
+      min-width: 150px;
+    }
+  
+    .scanner-qty-btn {
+      width: 40px;
+      height: 40px;
+    }
+  
+    .scanner-qty-value {
+      font-size: 1.05rem;
+      min-width: 36px;
+    }
+  
+    .scanned-item-price {
+      font-size: 1rem;
+      min-width: 80px;
+    }
+  }
+  
+  /* Ajustes específicos para móviles pequeños */
+  @media (max-width: 375px) {
+    .scanner-reticle {
+      width: 80%;
+      height: 35%;
+    }
+  
+    .scanned-item {
+      grid-template-columns: 1fr auto;
+      grid-template-rows: auto auto;
+      gap: var(--spacing-xs, 4px);
+      padding: var(--spacing-xs, 4px);
+    }
+  
+    .scanned-item-name {
+      grid-column: 1 / -1;
+      font-size: 0.9rem;
+    }
+  
+    .scanned-item-controls {
+      grid-column: 1;
+      justify-self: start;
+    }
+  
+    .scanned-item-price {
+      grid-column: 2;
+      justify-self: end;
+    }
+  
+    .scan-toast {
+      padding: 10px 16px;
+      font-size: 0.9rem;
+      min-width: 160px;
+    }
+  }
+  
+  /* Soporte para prefers-reduced-motion actualizado */
+  @media (prefers-reduced-motion: reduce) {
+    .scanner-laser.scanning {
+      animation: none;
+      opacity: 0.8;
+    }
+  
+    .scan-toast {
+      animation: none;
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  
+    .reticle-corner {
+      filter: none;
+    }
+  }

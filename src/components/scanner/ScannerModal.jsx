@@ -1,5 +1,12 @@
 // src/components/scanner/ScannerModal.jsx
-import { useCallback, useEffect, useState, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  memo,
+  useMemo,
+} from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
 import { resolveWithCache } from '../../services/barcodeCache';
 import { playBeep, playErrorBeep } from '../../services/audioBeep';
@@ -35,6 +42,45 @@ const SCAN_HINTS = new Map([
 
 const REACTIVATION_DELAY_MS = 500;
 
+/**
+ * Icono X (cerrar) SVG
+ */
+const CloseIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+/**
+ * Componente de Feedback Memoizado
+ * Aísla las actualizaciones de feedback para evitar re-renders del modal completo
+ */
+const ScanFeedback = memo(({ message, onClear }) => {
+  useEffect(() => {
+    if (!message) return;
+
+    const timer = setTimeout(() => {
+      onClear();
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [message, onClear]);
+
+  return message;
+});
+
+ScanFeedback.displayName = 'ScanFeedback';
+
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const addMultipleScannedProducts = useOrderStore(
     (state) => state.addMultipleScannedProducts
@@ -56,52 +102,80 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   } = useScannerCart();
 
   const [scanFeedback, setScanFeedback] = useState('');
-  const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [scanCount, setScanCount] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const mode = onScanSuccess ? 'single' : 'pos';
-  const processingRef = useRef(false);
+  const mode = useMemo(() => (onScanSuccess ? 'single' : 'pos'), [onScanSuccess]);
+
+  // Refs para control de flujo sin causar re-renders
+  const processingLockRef = useRef(false);
   const pauseTimeoutRef = useRef(null);
-  const feedbackTimeoutRef = useRef(null);
+  const isMountedRef = useRef(true);
 
-  const clearAllTimeouts = useCallback(() => {
-    if (feedbackTimeoutRef.current) {
-      clearTimeout(feedbackTimeoutRef.current);
-      feedbackTimeoutRef.current = null;
+  // Cleanup al desmontar
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      if (pauseTimeoutRef.current) {
+        clearTimeout(pauseTimeoutRef.current);
+        pauseTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  // Limpiar feedback - memoizado para estabilidad de referencia
+  const clearFeedback = useCallback(() => {
+    if (isMountedRef.current) {
+      setScanFeedback('');
     }
+  }, []);
+
+  // Reactivar escaneo lógico después del delay (sin pausar video)
+  const scheduleReactivation = useCallback(() => {
+    if (pauseTimeoutRef.current) {
+      clearTimeout(pauseTimeoutRef.current);
+    }
+
+    pauseTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current) {
+        processingLockRef.current = false;
+        setIsProcessing(false);
+      }
+      pauseTimeoutRef.current = null;
+    }, REACTIVATION_DELAY_MS);
+  }, []);
+
+  // Cerrar modal - limpieza completa
+  const handleClose = useCallback(() => {
     if (pauseTimeoutRef.current) {
       clearTimeout(pauseTimeoutRef.current);
       pauseTimeoutRef.current = null;
     }
-  }, []);
 
-  const scheduleReactivation = useCallback(() => {
-    clearAllTimeouts();
-
-    pauseTimeoutRef.current = setTimeout(() => {
-      processingRef.current = false;
-      setIsScanning(true);
-    }, REACTIVATION_DELAY_MS);
-  }, [clearAllTimeouts]);
-
-  const handleClose = useCallback(() => {
-    clearAllTimeouts();
+    processingLockRef.current = false;
+    setIsProcessing(false);
     clearCart();
     setScanFeedback('');
-    setIsScanning(false);
     setCameraError(null);
     setScanCount(0);
     onClose();
-  }, [clearAllTimeouts, clearCart, onClose]);
+  }, [clearCart, onClose]);
 
+  // Procesar código escaneado con protección contra race conditions
   const processScannedCode = useCallback(
     async (code) => {
-      try {
-        setScanFeedback(`Buscando: ${code}...`);
-        setIsScanning(false);
+      if (!isMountedRef.current) return;
 
+      setScanFeedback(`Buscando: ${code}...`);
+
+      try {
         const product = await resolveWithCache(code);
+
+        // Verificar si el componente sigue montado antes de actualizar estado
+        if (!isMountedRef.current) return;
 
         if (!product) {
           playErrorBeep();
@@ -117,6 +191,8 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         setScanFeedback(`OK ${product.name} - $${product.price.toFixed(2)}`);
         scheduleReactivation();
       } catch (error) {
+        if (!isMountedRef.current) return;
+
         Logger.error('Error procesando codigo escaneado:', error);
         playErrorBeep();
         setScanFeedback('Error de base de datos');
@@ -126,17 +202,20 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     [addItem, addUnknownCode, scheduleReactivation]
   );
 
+  // Handler de decodificación con bloqueo lógico estricto
   const handleDecodeResult = useCallback(
     (result) => {
-      const code = result.getText();
-
-      if (processingRef.current || isConfirming) {
+      // Bloqueo lógico: ignorar si está procesando o confirmando
+      if (processingLockRef.current || isConfirming) {
         return;
       }
 
-      processingRef.current = true;
+      const code = result.getText();
+      processingLockRef.current = true;
+      setIsProcessing(true);
       setScanCount((count) => count + 1);
 
+      // Modo simple: escanear y cerrar inmediatamente
       if (mode === 'single' && onScanSuccess) {
         playBeep(1200, 'sine');
         if (navigator.vibrate) navigator.vibrate(50);
@@ -145,6 +224,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
         return;
       }
 
+      // Modo POS: procesar y mantener abierto
       playBeep(1000, 'sine');
       if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
       processScannedCode(code);
@@ -152,6 +232,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     [isConfirming, mode, onScanSuccess, processScannedCode, handleClose]
   );
 
+  // Manejo de errores de cámara
   const handleError = useCallback((error) => {
     if (error.name === 'NotFoundException') {
       return;
@@ -170,8 +251,10 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     Logger.warn('Advertencia ZXing:', error.message);
   }, []);
 
+  // Hook useZxing - SIEMPRE activo cuando show=true e isConfirming=false
+  // La pausa lógica se maneja via processingLockRef, NO via paused
   const { ref: videoRef } = useZxing({
-    paused: !show || !isScanning || isConfirming,
+    paused: !show || isConfirming, // Solo pausar por condiciones de UI, no por lógica
     onDecodeResult: handleDecodeResult,
     onError: handleError,
     constraints: CAMERA_CONSTRAINTS,
@@ -179,23 +262,30 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     timeBetweenDecodingAttempts: 150,
   });
 
+  // Retry de cámara
   const handleRetryCamera = useCallback(() => {
     setCameraError(null);
-    processingRef.current = false;
-    setIsScanning(true);
+    processingLockRef.current = false;
+    setIsProcessing(false);
   }, []);
 
+  // Confirmar carrito con manejo robusto de errores
   const handleConfirmScan = useCallback(async () => {
     if (mode !== 'pos' || items.length === 0 || isConfirming) {
       return;
     }
 
+    if (pauseTimeoutRef.current) {
+      clearTimeout(pauseTimeoutRef.current);
+      pauseTimeoutRef.current = null;
+    }
+
     setIsConfirming(true);
-    setIsScanning(false);
-    clearAllTimeouts();
+    processingLockRef.current = true;
+    setIsProcessing(true);
 
     try {
-      // Convert grouped items to flat array for the store
+      // Convertir items agrupados a array plano
       const flatItems = items.flatMap((item) =>
         Array.from({ length: item.quantity }, () => ({
           ...item,
@@ -206,33 +296,68 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
       const result = addMultipleScannedProducts(flatItems);
 
-      if (!result?.success || result.failedCount > 0) {
+      if (!isMountedRef.current) return;
+
+      // Analizar resultado detalladamente
+      const hasPartialSuccess =
+        (result?.addedCount || 0) > 0 || (result?.incrementedCount || 0) > 0;
+      const hasFailures = (result?.failedCount || 0) > 0;
+
+      if (hasFailures) {
         playErrorBeep();
         Logger.warn('Confirmacion parcial del carrito temporal del escaner.', {
           addedCount: result?.addedCount || 0,
           incrementedCount: result?.incrementedCount || 0,
           failedCount: result?.failedCount || 0,
         });
-      }
 
-      if (!result?.success) {
-        setScanFeedback('No se pudo confirmar el escaneo');
-        setIsConfirming(false);
-        setIsScanning(true);
+        if (!hasPartialSuccess) {
+          // Fallo total - no reanudar escaneo automáticamente
+          setScanFeedback(
+            `Error: No se pudo agregar ningun producto (${result?.failedCount} fallos)`
+          );
+          setIsConfirming(false);
+          setIsProcessing(false);
+          // No reactivar processingLockRef - requiere acción del usuario
+          return;
+        }
+
+        // Éxito parcial - notificar pero cerrar modal
+        setScanFeedback(
+          `Agregados ${result?.addedCount || 0}, ${result?.failedCount} fallos`
+        );
+        // Pequeño delay para que el usuario vea el mensaje
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            handleClose();
+          }
+        }, 1000);
         return;
       }
 
+      if (!result?.success) {
+        // Fallo completo sin detalles
+        playErrorBeep();
+        setScanFeedback('No se pudo confirmar el escaneo');
+        setIsConfirming(false);
+        setIsProcessing(false);
+        return;
+      }
+
+      // Éxito total
       handleClose();
     } catch (error) {
+      if (!isMountedRef.current) return;
+
       Logger.error('Error confirmando carrito temporal del escaner:', error);
       playErrorBeep();
-      setScanFeedback('No se pudo confirmar el escaneo');
+      setScanFeedback('Error critico al confirmar');
       setIsConfirming(false);
-      setIsScanning(true);
+      setIsProcessing(false);
+      // No reactivar processingLockRef - requiere acción del usuario
     }
   }, [
     addMultipleScannedProducts,
-    clearAllTimeouts,
     handleClose,
     isConfirming,
     items,
@@ -240,35 +365,18 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     setIsConfirming,
   ]);
 
-  // Reset feedback after scan
-  useEffect(() => {
-    if (scanFeedback && !isConfirming) {
-      const timeout = setTimeout(() => {
-        setScanFeedback('');
-        if (!processingRef.current) {
-          setIsScanning(true);
-        }
-      }, 800);
-      return () => clearTimeout(timeout);
-    }
-  }, [scanFeedback, isConfirming]);
-
-  // Initialize when modal opens
+  // Inicialización cuando se abre el modal
   useEffect(() => {
     if (show) {
       clearCart();
       setScanFeedback('');
-      setIsScanning(true);
-      setIsConfirming(false);
       setCameraError(null);
       setScanCount(0);
-      processingRef.current = false;
+      processingLockRef.current = false;
+      setIsProcessing(false);
+      setIsConfirming(false);
     }
-
-    return () => {
-      clearAllTimeouts();
-    };
-  }, [show, clearCart, clearAllTimeouts, setIsConfirming]);
+  }, [show, clearCart, setIsConfirming]);
 
   if (!show) {
     return null;
@@ -287,11 +395,21 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
         <div className="scanner-main-container">
           <div className="scanner-video-container">
+            <button
+              className="scanner-close-btn"
+              onClick={handleClose}
+              disabled={isConfirming}
+              aria-label="Cerrar escaner"
+              title="Cerrar"
+            >
+              <CloseIcon />
+            </button>
+
             <CameraViewport
               videoRef={videoRef}
               cameraError={cameraError}
               scanFeedback={scanFeedback}
-              isScanning={isScanning}
+              isScanning={!isProcessing && !isConfirming}
               isConfirming={isConfirming}
               onRetryCamera={handleRetryCamera}
             />
@@ -315,27 +433,20 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           )}
         </div>
 
-        <div className="scanner-actions">
-          {mode === 'pos' && (
+        {mode === 'pos' && (
+          <div className="scanner-actions">
             <button
               className="btn btn-process"
               onClick={handleConfirmScan}
               disabled={items.length === 0 || isConfirming}
             >
-              {isConfirming
-                ? 'Confirmando...'
-                : `Confirmar (${itemCount})`}
+              {isConfirming ? 'Confirmando...' : `Confirmar (${itemCount})`}
             </button>
-          )}
-          <button
-            className="btn btn-cancel"
-            onClick={handleClose}
-            disabled={isConfirming}
-          >
-            Cancelar
-          </button>
-        </div>
+          </div>
+        )}
       </div>
+
+      <ScanFeedback message={scanFeedback} onClear={clearFeedback} />
     </div>
   );
 }
