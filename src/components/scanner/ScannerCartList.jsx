@@ -1,6 +1,4 @@
 // src/components/scanner/ScannerCartList.jsx
-import React from 'react';
-
 /**
  * Icono de menos (stroke-width: 2, fill: none)
  */

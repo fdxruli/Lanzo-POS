@@ -1,6 +1,4 @@
 // src/components/scanner/CameraViewport.jsx
-import React from 'react';
-
 /**
  * Icono de menos/menos (stroke-width: 2, fill: none)
  */

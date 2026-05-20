@@ -430,15 +430,14 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
         {mode === 'pos' && (
           <div className="scanner-actions">
-            <div className="scanner-actions" style={{ marginTop: '16px' }}>
-              <button
-                className="btn btn-process"
-                onClick={handleConfirmScan}
-                disabled={items.length === 0 || isConfirming}
-              >
-                {isConfirming ? 'Confirmando...' : `Confirmar (${itemCount})`}
-              </button>
-            </div>
+            <button
+              type="button"
+              className="btn btn-primary scanner-confirm-btn"
+              onClick={handleConfirmScan}
+              disabled={items.length === 0 || isConfirming}
+            >
+              {isConfirming ? 'Confirmando...' : `Confirmar (${itemCount})`}
+            </button>
           </div>
         )}
       </div>

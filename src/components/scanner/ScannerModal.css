@@ -316,6 +316,7 @@
   gap: var(--spacing-md, 16px);
   justify-content: stretch;
   flex-shrink: 0;
+  margin-top: var(--spacing-md, 16px);
 }
 
 .scanner-actions .btn {
@@ -330,6 +331,20 @@
   justify-content: center;
   min-height: 48px;
   /* Touch target accesible */
+}
+
+.scanner-confirm-btn {
+  border-color: var(--primary-color, #3b82f6);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+}
+
+.scanner-confirm-btn:hover:not(:disabled) {
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.22);
+}
+
+.scanner-confirm-btn:disabled {
+  box-shadow: none;
+  opacity: 0.65;
 }
 
 /* ============================================
@@ -609,6 +624,10 @@
     flex: 0 0 auto;
     min-width: 120px;
     padding: var(--spacing-sm, 8px) var(--spacing-lg, 24px);
+  }
+
+  .scanner-confirm-btn {
+    min-width: 180px;
   }
 
   /* Modo simple en escritorio - Video más pequeño */
