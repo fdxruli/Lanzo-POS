@@ -106,14 +106,7 @@ export function usePosCheckout({
             });
 
             if (result.success) {
-                pos.clearSession();
-                prescription.setTempPrescriptionData(null);
-                mobileCart.closeCart();
-                showMessageModal('✅ ¡Venta registrada correctamente!');
-                broadcastDBChange({ action: 'sale-completed', saleId: result.saleId });
-                await posSearch.refreshOutOfStock();
-                await fetchActiveTablesCount();
-
+                // 1. PRIMERO: Cerrar la orden en activeOrders para desvincularla
                 const { currentOrderId } = useActiveOrders.getState();
                 if (currentOrderId) {
                     try {
@@ -124,9 +117,18 @@ export function usePosCheckout({
                         });
                     } catch (error) {
                         console.error('Error cerrando orden en activeOrders:', error);
-                        // No interrumpir el flujo, la orden ya está cerrada en BD
                     }
                 }
+
+                // 2. DESPUÉS: Limpiar la sesión local de UI de forma segura
+                pos.clearSession();
+                prescription.setTempPrescriptionData(null);
+                mobileCart.closeCart();
+
+                showMessageModal('✅ ¡Venta registrada correctamente!');
+                broadcastDBChange({ action: 'sale-completed', saleId: result.saleId });
+                await posSearch.refreshOutOfStock();
+                await fetchActiveTablesCount();
             } else {
                 if (result.errorType === 'RACE_CONDITION') {
                     showMessageModal('⚠️ El sistema está muy ocupado. Por favor intenta cobrar de nuevo.');
