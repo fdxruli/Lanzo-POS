@@ -44,7 +44,10 @@ const CajaStatusCard = ({
     const inicial = Money.init(cajaActual.monto_inicial || 0);
     const ventas = Money.init(totalesTurno.ventasContado || 0);
     const abonos = Money.init(totalesTurno.abonosFiado || 0);
-    const entradas = Money.init(cajaActual.entradas_efectivo || 0);
+    const entradasNormales = Money.init(cajaActual.entradas_efectivo || 0);
+    const entradasAnomalas = Money.init(cajaActual.ingresos_efectivo || 0);
+    const entradas = Money.add(entradasNormales, entradasAnomalas);
+
     const salidas = Money.init(cajaActual.salidas_efectivo || 0);
 
     const subtotalIngresos = Money.add(inicial, ventas);
