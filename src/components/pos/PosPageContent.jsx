@@ -89,6 +89,8 @@ const PosPageContent = ({ data, ui, actions, features }) => {
 
     const ordersCount = activeOrders.size;
     const singleOrder = ordersCount === 1 ? Array.from(activeOrders.values())[0] : null;
+    const openTablesShortcutTotal = data.activeTablesCount + data.kitchenRejectedOpenCount;
+    const hasMobileFloatingBar = (features.hasTables && openTablesShortcutTotal > 0) || data.totalItemsCount > 0;
 
     return (
         <>
@@ -116,7 +118,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
             )}
 
             {/* Layout principal */}
-            <div className="pos-page-layout">
+            <div className={`pos-page-layout${hasMobileFloatingBar ? ' pos-page-layout--with-floating-bar' : ''}`}>
                 <div className="pos-grid">
                     <ProductMenu
                         products={data.menuVisual}
