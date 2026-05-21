@@ -112,7 +112,7 @@ function Layout() {
 
       <Navbar />
 
-      <div className="content-wrapper">
+      <div className={`content-wrapper ${isPosPage ? 'content-wrapper--pos' : ''}`.trim()}>
         <Ticker />
         <div className={`page-container ${isPosPage ? 'page-container-pos' : ''}`}>
           <Outlet />
