@@ -18,6 +18,8 @@ import './StatsGrid.css';
 import TopProducts from './TopProducts';
 import TopCustomers from './TopCustomers';
 import { AreaTrendChart, BarWeekdayChart } from './TrendChart';
+import { getOrdersSince, loadData as loadDBData, STORES } from '../../services/db/index';
+
 
 // Periodos disponibles
 const TIME_PERIODS = {
@@ -31,6 +33,10 @@ const TIME_PERIODS = {
 export default function StatsGrid({ stats, customers = [] }) {
   const sales = useSalesStore((state) => state.sales);
   const [timeRange, setTimeRange] = useState('today');
+  const [filteredSales, setFilteredSales] = useState([]);
+  const [prevPeriodSales, setPrevPeriodSales] = useState([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+
   const [animatedValues, setAnimatedValues] = useState({
     revenue: 0,
     profit: 0,
@@ -38,56 +44,75 @@ export default function StatsGrid({ stats, customers = [] }) {
     items: 0
   });
 
+  const recentSalesLength = sales?.length || 0;
+  const latestSaleId = sales?.[0]?.id || null;
+
+  useEffect(() => {
+    async function loadPeriodSales() {
+      setIsLoadingData(true);
+      try {
+        const now = new Date();
+        const period = TIME_PERIODS[timeRange];
+
+        let startDate = null;
+        if (period.days === 1) {
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        } else if (period.days === 'month') {
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        } else if (period.days !== Infinity) {
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          startDate.setDate(startDate.getDate() - (period.days - 1));
+        }
+
+        let prevPeriodStart = null;
+        if (period.days === 1) {
+          prevPeriodStart = null;
+        } else if (period.days === 'month') {
+          prevPeriodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        } else if (period.days !== Infinity) {
+          const prevPeriodEnd = new Date(startDate);
+          prevPeriodEnd.setDate(prevPeriodEnd.getDate() - 1);
+          prevPeriodStart = new Date(prevPeriodEnd);
+          prevPeriodStart.setDate(prevPeriodStart.getDate() - (period.days - 1));
+        }
+
+        let current = [];
+        let previous = [];
+
+        if (period.days === Infinity) {
+          const allSales = await loadDBData(STORES.SALES);
+          current = allSales || [];
+        } else {
+          const queryStart = prevPeriodStart || startDate;
+          const salesData = await getOrdersSince(queryStart.toISOString());
+
+          if (prevPeriodStart) {
+            current = salesData.filter(s => new Date(s.timestamp) >= startDate);
+            previous = salesData.filter(s => new Date(s.timestamp) >= prevPeriodStart && new Date(s.timestamp) < startDate);
+          } else {
+            current = salesData.filter(s => new Date(s.timestamp) >= startDate);
+          }
+        }
+
+        const validCurrent = current.filter(sale => sale.fulfillmentStatus !== 'cancelled' && sale.status !== 'open' && sale.status !== 'cancelled');
+        const validPrev = previous.filter(sale => sale.fulfillmentStatus !== 'cancelled' && sale.status !== 'open' && sale.status !== 'cancelled');
+
+        setFilteredSales(validCurrent);
+        setPrevPeriodSales(validPrev);
+
+      } catch (err) {
+        console.error("Error loading period sales", err);
+      } finally {
+        setIsLoadingData(false);
+      }
+    }
+    loadPeriodSales();
+  }, [timeRange, recentSalesLength, latestSaleId]);
+
   // Calcular métricas para el periodo seleccionado
   const metrics = useMemo(() => {
     const now = new Date();
     const period = TIME_PERIODS[timeRange];
-
-    // Calcular fecha de inicio del periodo (a las 00:00:00)
-    let startDate = null;
-
-    if (period.days === 1) {
-      // Hoy: desde las 00:00
-      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    } else if (period.days === 'month') {
-      // Este mes: desde el día 1 a las 00:00
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-    } else if (period.days === Infinity) {
-      // Todo el historial
-      startDate = null;
-    } else {
-      // Últimos N días: desde hace (N-1) días a las 00:00 hasta hoy
-      // Ej: "7 días" = hoy + 6 días anteriores = 7 días totales
-      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      startDate.setDate(startDate.getDate() - (period.days - 1));
-    }
-
-    // Filtrar ventas por periodo
-    const filteredSales = sales.filter(sale => {
-      if (sale.fulfillmentStatus === 'cancelled') return false;
-
-      const saleDate = new Date(sale.timestamp);
-
-      if (period.days === 1) {
-        // Hoy: desde las 00:00
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        return saleDate >= startOfDay;
-      }
-
-      if (period.days === 'month') {
-        // Este mes
-        return saleDate.getMonth() === now.getMonth() &&
-          saleDate.getFullYear() === now.getFullYear();
-      }
-
-      if (period.days === Infinity) {
-        // Todo el historial
-        return true;
-      }
-
-      // Últimos N días: venta >= startDate
-      return saleDate >= startDate;
-    });
 
     // Calcular métricas principales
     let revenue = 0;
@@ -100,9 +125,10 @@ export default function StatsGrid({ stats, customers = [] }) {
     let hasMissingCosts = false;
 
     filteredSales.forEach(sale => {
-      revenue += Number(sale.total) || 0;
+      const parsedTotal = parseFloat(String(sale.total).replace(/[^0-9.-]+/g, ""));
+      revenue += isNaN(parsedTotal) ? 0 : parsedTotal;
 
-      sale.items.forEach(item => {
+      (sale.items || []).forEach(item => {
         items += item.quantity;
         const rawCost = item.cost;
         const itemRevenue = (item.price || 0) * item.quantity;
@@ -121,35 +147,9 @@ export default function StatsGrid({ stats, customers = [] }) {
     const totalProfit = profitConfirmed + estimatedProfit;
 
     const avgTicket = orders > 0 ? revenue / orders : 0;
-    //const marginPercent = validRevenue > 0 ? (profit / validRevenue) * 100 : 0;
-    //const coveragePercent = revenue > 0 ? (validRevenue / revenue) * 100 : 100;
     const marginPercent = revenue > 0 ? (totalProfit / revenue) * 100 : 0;
 
     // Calcular métricas del periodo anterior para tendencia
-    let prevPeriodStart = null;
-
-    if (period.days === 1) {
-      // No hay comparación para "hoy"
-      prevPeriodStart = null;
-    } else if (period.days === 'month') {
-      // Mes anterior completo (primer día del mes anterior)
-      prevPeriodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    } else if (period.days !== Infinity) {
-      // Periodo anterior de mismos días
-      // El periodo anterior termina el día antes de startDate
-      const prevPeriodEnd = new Date(startDate);
-      prevPeriodEnd.setDate(prevPeriodEnd.getDate() - 1);
-      // Calcular inicio: mismo número de días que el periodo actual
-      prevPeriodStart = new Date(prevPeriodEnd);
-      prevPeriodStart.setDate(prevPeriodStart.getDate() - (period.days - 1));
-    }
-
-    const prevPeriodSales = prevPeriodStart !== null ? sales.filter(sale => {
-      if (sale.fulfillmentStatus === 'cancelled') return false;
-      const saleDate = new Date(sale.timestamp);
-      return saleDate >= prevPeriodStart && saleDate < startDate;
-    }) : [];
-
     let prevRevenue = 0;
     prevPeriodSales.forEach(sale => {
       prevRevenue += Number(sale.total) || 0;
@@ -164,7 +164,7 @@ export default function StatsGrid({ stats, customers = [] }) {
       const dayIndex = new Date(sale.timestamp).getDay();
       dailyRevenueMap[dayIndex] = (dailyRevenueMap[dayIndex] || 0) + (Number(sale.total) || 0);
     });
-    
+
     const dailyRevenue = [];
     if (period.days <= 7) {
       // Para periodos cortos (Hoy, 7 días), ordenamos dinámicamente para que el eje X termine en "Hoy"
@@ -182,10 +182,8 @@ export default function StatsGrid({ stats, customers = [] }) {
     }
 
     // Evolución diaria para mini gráfica (formato Recharts)
-    // Generar todos los días del periodo (incluso si no hay ventas)
     const dayMap = new Map();
 
-    // Inicializar todos los días del periodo con valor 0
     const periodStart = period.days === 'month'
       ? new Date(now.getFullYear(), now.getMonth(), 1)
       : (period.days === Infinity
@@ -195,6 +193,16 @@ export default function StatsGrid({ stats, customers = [] }) {
     if (periodStart !== null) {
       const currentDate = new Date(periodStart);
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      // CORRECCIÓN: Inyectar punto de anclaje (ayer con valor 0) si el periodo es 1 día 
+      // para permitir el trazo del área en Recharts.
+      if (period.days === 1) {
+        const yesterday = new Date(currentDate);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const dateKeyYesterday = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+        dayMap.set(dateKeyYesterday, 0);
+      }
+
       while (currentDate <= today) {
         const dateKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
         dayMap.set(dateKey, 0);
@@ -202,7 +210,6 @@ export default function StatsGrid({ stats, customers = [] }) {
       }
     }
 
-    // Agregar ventas reales
     filteredSales.forEach(sale => {
       const d = new Date(sale.timestamp);
       const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -235,17 +242,16 @@ export default function StatsGrid({ stats, customers = [] }) {
       revenueTrend,
       dailyRevenue,
       evolutionData,
-      // Nuevos datos informativos:
       confirmedRevenue,
-      unconfirmedRevenue
+      unconfirmedRevenue,
+      filteredSales
     };
-  }, [stats, sales, timeRange]);
+  }, [stats, filteredSales, prevPeriodSales, timeRange]);
 
   const formatCurrency = (val) =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
 
-  // Animación de conteo - se dispara al cambiar timeRange usando los valores de metrics directamente
-  // Animación de conteo - reacciona a los cambios en las métricas para mostrar la info en cuanto cargue
+  // Animación de conteo — reacciona a los cambios en las métricas
   useEffect(() => {
     const duration = 300;
     const steps = 15;
@@ -461,14 +467,14 @@ export default function StatsGrid({ stats, customers = [] }) {
           </div>
         )}
 
-        {/* Productos más vendidos */}
+        {/* Productos más vendidos — filteredSales respeta el periodo y excluye abiertas/canceladas */}
         <div className="stats-insight-card" style={{ width: '100%' }}>
-          <TopProducts sales={sales} limit={5} />
+          <TopProducts sales={metrics.filteredSales} limit={5} />
         </div>
 
-        {/* Clientes frecuentes */}
+        {/* Clientes frecuentes — filteredSales respeta el periodo y excluye abiertas/canceladas */}
         <div className="stats-insight-card" style={{ width: '100%' }}>
-          <TopCustomers sales={sales} customers={customers} limit={5} />
+          <TopCustomers sales={metrics.filteredSales} customers={customers} limit={5} />
         </div>
       </div>
     </div>

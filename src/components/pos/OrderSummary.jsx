@@ -74,8 +74,8 @@ export default function OrderSummary({
           color: (isEditMode && showRestaurantActions) ? '#b45309' : 'inherit'
         }}>
           {showRestaurantActions
-            ? (isEditMode ? `✏️ Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
-            : (tableData ? `🛒 Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
+            ? (isEditMode ? `Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
+            : (tableData ? `Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
           }
         </h2>
 

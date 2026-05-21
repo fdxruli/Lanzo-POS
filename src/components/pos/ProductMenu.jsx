@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useOrderStore } from '../../store/useOrderStore';
-import { getProductAlerts, showMessageModal } from '../../services/utils';
-import { getAvailableStock } from '../../services/db/utils';
-import LazyImage from '../common/LazyImage';
+import { showMessageModal } from '../../services/utils';
+import ProductCard from './ProductCard';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import VariantSelectorModal from './VariantSelectorModal';
@@ -56,12 +55,11 @@ export default function ProductMenu({
   showOutofStockCategory
 }) {
   const addSmartItem = useOrderStore((state) => state.addSmartItem);
-  const addItemToOrder = useOrderStore((state) => state.addItem);
   const features = useFeatureConfig();
 
   // --- ESTADOS PARA MODIFICADORES (Restaurantes) ---
   const [modModalOpen, setModModalOpen] = useState(false);
-  const [selectedProductFormMod, setSelectedProductForMod] = useState(null);
+  const [selectedProductForMod, setSelectedProductForMod] = useState(null);
 
   // --- ESTADOS PARA VARIANTES (Ropa/Zapatos) ---
   const [variantModalOpen, setVariantModalOpen] = useState(false);
@@ -71,21 +69,13 @@ export default function ProductMenu({
   const [displayLimit, setDisplayLimit] = useState(50);
   const scrollContainerRef = useRef(null);
 
-  // Guardamos las props anteriores para detectar cambios durante el renderizado
-  const [prevCategoryId, setPrevCategoryId] = useState(selectedCategoryId);
-  const [prevSearchTerm, setPrevSearchTerm] = useState(searchTerm);
-  const [prevProducts, setPrevProducts] = useState(products);
-
-  // Actualizamos el estado sincrónicamente durante el renderizado si las dependencias cambian.
-  // Esto evita el anti-patrón de hacer "setState" dentro de un useEffect.
-  if (selectedCategoryId !== prevCategoryId || searchTerm !== prevSearchTerm || products !== prevProducts) {
-    setPrevCategoryId(selectedCategoryId);
-    setPrevSearchTerm(searchTerm);
-    setPrevProducts(products);
+  // --- EFECTO: Resetear displayLimit cuando cambian filtros de búsqueda ---
+  // Reemplaza el anti-patrón de mutación de estado durante renderizado
+  useEffect(() => {
     setDisplayLimit(50);
-  }
+  }, [selectedCategoryId, searchTerm, products]);
 
-  // El reseteo del scroll es una mutación del DOM, por lo tanto SÍ debe ir en un useEffect
+  // --- EFECTO: Resetear scroll al cambiar filtros ---
   useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
@@ -108,12 +98,9 @@ export default function ProductMenu({
     return products.slice(0, displayLimit);
   }, [products, displayLimit]);
 
-  // --- HANDLERS ---
   // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (ADAPTABLE POR RUBRO) ---
-  const handleProductClick = (product, isOutOfStock) => {
-    // 0. Seguridad de Stock
-    if (isOutOfStock) return;
-
+  // MEMOIZADO: Evita re-renders de ProductCard cuando se escribe en el buscador
+  const handleCardClick = useCallback((product) => {
     // ---------------------------------------------------------
     // CASO 1: BOUTIQUE / ROPA / ZAPATERÍA
     // Si el negocio maneja variantes (features.hasVariants es true) 
@@ -163,38 +150,45 @@ export default function ProductMenu({
         { type: 'warning', duration: 3000 }
       );
     }
-  };
+  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem]);
 
-  const handleConfirmVariants = (variantItem) => {
+  const handleConfirmVariants = useCallback((variantItem) => {
     // Como ya viene el lote seleccionado del modal, addSmartItem 
     // detectará que ya trae batchId y lo pasará directo. Es seguro.
     addSmartItem(variantItem);
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
-  }
+  }, [addSmartItem]);
 
-  const handleConfirmModifiers = (customizedProduct) => {
+  const handleConfirmModifiers = useCallback((customizedProduct) => {
     addSmartItem(customizedProduct);
     setModModalOpen(false);
     setSelectedProductForMod(null);
-  }
+  }, [addSmartItem]);
 
-  // --- Renderizado de información de stock ---
-  const renderStockInfo = (item) => {
-    const isTracking = item.trackStock !== false && (
-      item.trackStock === true || item.batchManagement?.enabled === true
-    );
+  // --- HANDLERS DE CIERRE DE MODALES ---
+  const handleCloseVariantModal = useCallback(() => {
+    setVariantModalOpen(false);
+    setSelectedProductForVariant(null);
+  }, []);
 
-    if (!isTracking) return <div className="stock-info no-stock-label" style={{ color: '#999' }}>---</div>;
+  const handleCloseModModal = useCallback(() => {
+    setModModalOpen(false);
+    setSelectedProductForMod(null);
+  }, []);
 
-    const unit = item.saleType === 'bulk' ? ` ${item.bulkData?.purchase?.unit || 'Granel'}` : ' U';
-    const availableStock = getAvailableStock(item);
+  // --- HANDLERS DE CATEGORÍAS Y BÚSQUEDA ---
+  const handleCategoryClick = useCallback((categoryId) => {
+    onSelectCategory?.(categoryId);
+  }, [onSelectCategory]);
 
-    // Mostramos stock si es mayor a 0, de lo contrario AGOTADO
-    return availableStock > 0
-      ? <div className="stock-info">Stock: {availableStock}{unit}</div>
-      : <div className="stock-info out-of-stock-label">AGOTADO</div>;
-  };
+  const handleSearchChange = useCallback((e) => {
+    onSearchChange?.(e.target.value);
+  }, [onSearchChange]);
+
+  const handleScannerClick = useCallback(() => {
+    onOpenScanner?.();
+  }, [onOpenScanner]);
 
   return (
     <div className="pos-menu-container">
@@ -203,7 +197,7 @@ export default function ProductMenu({
       <div id="category-filters" className="category-filters">
         <button
           className={`category-filter-btn ${selectedCategoryId === null ? 'active' : ''}`}
-          onClick={() => onSelectCategory(null)}
+          onClick={() => handleCategoryClick(null)}
         >
           Todos
         </button>
@@ -211,7 +205,7 @@ export default function ProductMenu({
           <button
             key={cat.id}
             className={`category-filter-btn ${selectedCategoryId === cat.id ? 'active' : ''}`}
-            onClick={() => onSelectCategory(cat.id)}
+            onClick={() => handleCategoryClick(cat.id)}
           >
             {cat.name}
           </button>
@@ -219,7 +213,7 @@ export default function ProductMenu({
         {showOutofStockCategory && (
           <button
             className={`category-filter-btn ${selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'active' : ''}`}
-            onClick={() => onSelectCategory('CAT_DYNAMIC_AGOTADOS')}
+            onClick={() => handleCategoryClick('CAT_DYNAMIC_AGOTADOS')}
             style={{
               border: '1px solid var(--error-color, #ff4444)',
               color: selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'white' : 'var(--error-color, #ff4444)',
@@ -238,9 +232,14 @@ export default function ProductMenu({
           className="form-input"
           placeholder="Buscar por Nombre, Código o SKU"
           value={searchTerm}
-          onChange={(e) => onSearchChange(e.target.value)}
+          onChange={handleSearchChange}
         />
-        <button id="scan-barcode-btn" className="btn btn-scan" title="Escanear" onClick={onOpenScanner}>
+        <button 
+          id="scan-barcode-btn" 
+          className="btn btn-scan" 
+          title="Escanear" 
+          onClick={handleScannerClick}
+        >
           <ScanLine size={20} />
         </button>
       </div>
@@ -267,72 +266,14 @@ export default function ProductMenu({
               </div>
             )
           ) : (
-            visibleProducts.map((item) => {
-              const { isLowStock, isNearingExpiry, isOutOfStock } = getProductAlerts(item);
-              const hasModifiers = features.hasModifiers && item.modifiers && item.modifiers.length > 0;
-              const hasVariants = features.hasVariants && item.batchManagement?.enabled;
-
-              const itemClasses = ['menu-item', isLowStock ? 'low-stock-warning' : '', isNearingExpiry ? 'nearing-expiry-warning' : '', isOutOfStock ? 'out-of-stock' : ''].filter(Boolean).join(' ');
-
-              return (
-                <div
-                  key={item.id}
-                  className={itemClasses}
-                  onClick={() => handleProductClick(item, isOutOfStock)}
-                  role="button"
-                  tabIndex={isOutOfStock ? -1 : 0}
-                  aria-disabled={isOutOfStock}
-                  aria-label={`${item.name} precio ${item.price}`}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      handleProductClick(item, isOutOfStock);
-                    }
-                  }}
-                >
-                  {isOutOfStock && <div className="stock-overlay">Agotado</div>}
-
-                  {hasModifiers && !isOutOfStock && (
-                    <div className="modifier-badge" style={{ position: 'absolute', top: '5px', left: '5px', background: 'var(--primary-color)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', zIndex: 2 }}>
-                      ✨ Extras
-                    </div>
-                  )}
-
-                  {hasVariants && !isOutOfStock && (
-                    <div className="modifier-badge" style={{ position: 'absolute', top: '5px', left: '5px', background: 'var(--secondary-color)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', zIndex: 2 }}>
-                      🎨 Opciones
-                    </div>
-                  )}
-
-                  {features.hasLabFields && (item.requiresPrescription || (item.prescriptionType && item.prescriptionType !== 'otc')) && !isOutOfStock && (
-                    <div className="prescription-badge" style={{
-                      position: 'absolute',
-                      top: (hasModifiers || hasVariants) ? '30px' : '5px',
-                      left: '5px',
-                      background: '#FF3B5C',
-                      color: 'white',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      fontSize: '0.7rem',
-                      fontWeight: 'bold',
-                      zIndex: 2,
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                    }}>
-                      Receta
-                    </div>
-                  )}
-
-                  <LazyImage className="menu-item-image" src={item.image} alt={item.name} />
-                  <h3 className="menu-item-name">{item.name}</h3>
-                  <p className="menu-item-price">
-                    {/* Agregamos (item.price || 0) para evitar el crash */}
-                    ${(item.price || 0).toFixed(2)}
-                    {item.saleType === 'bulk' && <span className="menu-item-unit"> / {item.bulkData?.purchase?.unit || 'kg'}</span>}
-                  </p>
-                  {renderStockInfo(item)}
-                </div>
-              );
-            })
+            visibleProducts.map((item) => (
+              <ProductCard
+                key={item.id}
+                product={item}
+                features={features}
+                onCardClick={handleCardClick}
+              />
+            ))
           )}
 
           {visibleProducts.length < products.length && visibleProducts.length > 0 && (
@@ -345,14 +286,14 @@ export default function ProductMenu({
 
       <ProductModifiersModal
         show={modModalOpen}
-        onClose={() => { setModModalOpen(false); setSelectedProductForMod(null); }}
-        product={selectedProductFormMod}
+        onClose={handleCloseModModal}
+        product={selectedProductForMod}
         onConfirm={handleConfirmModifiers}
       />
 
       <VariantSelectorModal
         show={variantModalOpen}
-        onClose={() => { setVariantModalOpen(false); setSelectedProductForVariant(null); }}
+        onClose={handleCloseVariantModal}
         product={selectedProductForVariant}
         onConfirm={handleConfirmVariants}
       />

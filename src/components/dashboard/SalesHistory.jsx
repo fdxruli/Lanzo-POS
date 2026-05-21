@@ -60,42 +60,46 @@ export default function SalesHistory({ sales, onDeleteSale }) {
                 <div className="sale-item">
 
                   {/* Cabecera de la venta */}
-                  <div className="sale-header">
-                    <div className="sale-date">
-                      {new Date(sale.timestamp).toLocaleString()}
-                      {isSplitParent && (
-                        <span className="split-badge">Cuentas Separadas</span>
-                      )}
+                    <div className="sale-header">
+                      <div className="sale-date">
+                        {new Date(sale.timestamp).toLocaleString()}
+                        {isSplitParent && (
+                          <span className="split-badge">Cuentas Separadas</span>
+                        )}
+                      </div>
+                      <div className={`sale-total ${isSplitParent ? 'split-total' : ''}`}>
+                        ${(parseFloat(String(sale.total).replace(/[^0-9.-]+/g, '')) || 0).toFixed(2)}
+                      </div>
                     </div>
-                    <div className={`sale-total ${isSplitParent ? 'split-total' : ''}`}>
-                      ${(Number(sale.total) || 0).toFixed(2)}
-                    </div>
-                  </div>
 
                   <div className="sale-item-info">
                     {/* Lista de Productos del Padre */}
-                    <ul>
-                      {sale.items.map(item => {
-                        const isCostMissing = item.cost === null || item.cost === undefined;
-                        return (
-                          <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span className={isSplitParent ? 'text-muted-strike' : ''}>
-                              {item.quantity}x {item.name}
-                            </span>
-
-                            {item.requiresPrescription && (
-                              <span className="prescription-tag">(Controlado)</span>
-                            )}
-
-                            {isCostMissing && !isSplitParent && (
-                              <span className="warning-cost-tag" title="Vendido sin costo de compra registrado.">
-                                ⚠️ Sin Costo
+                    {(sale.items || []).length === 0 ? (
+                      <p className="text-muted" style={{ fontSize: '0.85rem', margin: '4px 0' }}>Sin detalle de productos</p>
+                    ) : (
+                      <ul>
+                        {(sale.items || []).map(item => {
+                          const isCostMissing = item.cost === null || item.cost === undefined;
+                          return (
+                            <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span className={isSplitParent ? 'text-muted-strike' : ''}>
+                                {item.quantity}x {item.name}
                               </span>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
+
+                              {item.requiresPrescription && (
+                                <span className="prescription-tag">(Controlado)</span>
+                              )}
+
+                              {isCostMissing && !isSplitParent && (
+                                <span className="warning-cost-tag" title="Vendido sin costo de compra registrado.">
+                                  ⚠️ Sin Costo
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </div>
 
                   {/* Acciones y Acordeón Lazy Load */}

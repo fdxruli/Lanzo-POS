@@ -30,11 +30,13 @@ const PosPageContent = ({ data, ui, actions, features }) => {
             try {
                 setIsInitializing(true);
 
-                // 1. Cargar órdenes abiertas de BD
+                // 1. Linkear stores PRIMERO para sincronización bidireccional
+                //    (esto es CRÍTICO: debe ocurrir antes de loadOrdersFromDB)
+                useOrderStore.getState().linkWithActiveOrders(useActiveOrders);
+
+                // 2. Cargar órdenes abiertas de BD y localStorage
                 await loadOrdersFromDB();
 
-                // 2. Linkear stores para sincronización bidireccional
-                useOrderStore.getState().linkWithActiveOrders(useActiveOrders);
             } catch (error) {
                 console.error('Error en inicialización de órdenes:', error);
                 // Crear orden por defecto si falla
@@ -175,6 +177,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                 onClose={ui.closeModal}
                 handlers={{
                     handleProcessOrder: actions.handleProcessOrder,
+                    handlePaymentModalClose: actions.handlePaymentModalClose,
                     handleConfirmSplitBill: actions.handleConfirmSplitBill,
                     handleQuickCajaSubmit: actions.handleQuickCajaSubmit,
                     handlePrescriptionConfirm: actions.handlePrescriptionConfirm,
@@ -234,6 +237,7 @@ PosPageContent.propTypes = {
         handleInitiateLayaway: PropTypes.func.isRequired,
         handleSaveAsOpen: PropTypes.func.isRequired,
         handleProcessOrder: PropTypes.func.isRequired,
+        handlePaymentModalClose: PropTypes.func.isRequired,
         handleConfirmSplitBill: PropTypes.func.isRequired,
         handleQuickCajaSubmit: PropTypes.func.isRequired,
         handlePrescriptionConfirm: PropTypes.func.isRequired,

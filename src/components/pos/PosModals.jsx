@@ -25,6 +25,7 @@ export default function PosModals({
 }) {
     const {
         handleProcessOrder,
+        handlePaymentModalClose,
         handleConfirmSplitBill,
         handleQuickCajaSubmit,
         handlePrescriptionConfirm,
@@ -69,7 +70,7 @@ export default function PosModals({
             {/* Modal de Pago */}
             <PaymentModal
                 show={activeModal === 'payment'}
-                onClose={() => onClose('payment')}
+                onClose={handlePaymentModalClose}
                 onConfirm={handleProcessOrder}
                 total={total}
             />
@@ -116,6 +117,7 @@ PosModals.propTypes = {
     onClose: PropTypes.func.isRequired,
     handlers: PropTypes.shape({
         handleProcessOrder: PropTypes.func.isRequired,
+        handlePaymentModalClose: PropTypes.func.isRequired,
         handleConfirmSplitBill: PropTypes.func.isRequired,
         handleQuickCajaSubmit: PropTypes.func.isRequired,
         handlePrescriptionConfirm: PropTypes.func.isRequired,
