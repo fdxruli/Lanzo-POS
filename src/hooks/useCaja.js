@@ -27,20 +27,20 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // Función de retry con backoff exponencial
 const retryWithBackoff = async (operation, maxAttempts = CAJA_CONFIG.RETRY_ATTEMPTS, context = '') => {
   let lastError;
-  
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await operation();
     } catch (error) {
       lastError = error;
       const isConcurrencyError = error.message?.includes('CONCURRENCY_ERROR');
-      
+
       // No retries en errores de concurrencia - requieren acción del usuario
       if (isConcurrencyError) {
         Logger.warn(`[Caja] ${context}: Error de concurrencia no reintentable`);
         throw error;
       }
-      
+
       if (attempt < maxAttempts) {
         const delayMs = CAJA_CONFIG.RETRY_DELAY_MS * Math.pow(2, attempt - 1);
         Logger.warn(`[Caja] ${context}: Reintento ${attempt + 1}/${maxAttempts} en ${delayMs}ms`);
@@ -48,7 +48,7 @@ const retryWithBackoff = async (operation, maxAttempts = CAJA_CONFIG.RETRY_ATTEM
       }
     }
   }
-  
+
   throw lastError;
 };
 
@@ -71,18 +71,18 @@ export function useCaja() {
     teoricoTimestamp: 0,
     teoricoData: null
   });
-  
+
   const CACHE_TTL_MS = 5000; // 5 segundos de caché
 
   const calcularTotalesSesion = useCallback(async (fechaApertura, forceRefresh = false) => {
     const now = Date.now();
     const cacheKey = `totales_${fechaApertura}`;
-    
+
     // Verificar caché (solo si no es forceRefresh)
-    if (!forceRefresh && 
-        totalesCacheRef.current.data && 
-        totalesCacheRef.current.cacheKey === cacheKey &&
-        (now - totalesCacheRef.current.timestamp) < CACHE_TTL_MS) {
+    if (!forceRefresh &&
+      totalesCacheRef.current.data &&
+      totalesCacheRef.current.cacheKey === cacheKey &&
+      (now - totalesCacheRef.current.timestamp) < CACHE_TTL_MS) {
       return totalesCacheRef.current.data;
     }
 
@@ -101,16 +101,25 @@ export function useCaja() {
 
       // OPTIMIZACIÓN: Procesamiento en paralelo con reducción de iteraciones
       for (const sale of sales) {
-        // Filtro temprano para evitar procesamiento innecesario
         if (!isFinanciallyClosedSale(sale)) continue;
 
-        const method = sale.paymentMethod;
-        if (method === 'efectivo') {
-          contadoSafe = Money.add(contadoSafe, sale.total || 0);
-        } else if (method === 'fiado') {
+        // Normalización del método de pago
+        const method = sale.paymentMethod?.toLowerCase();
+
+        // Condición estricta: Es efectivo si el método es 'efectivo', 'cash', 
+        // o si no hay método pero existe 'paymentData.amount'
+        const isEfectivo = method === 'efectivo' || method === 'cash' ||
+          (!method && sale.paymentData?.amount > 0);
+
+        const isFiado = method === 'fiado';
+
+        if (isEfectivo) {
+          // Tomar el total del campo prioritario
+          const montoVenta = sale.total || sale.paymentData?.amount || 0;
+          contadoSafe = Money.add(contadoSafe, montoVenta);
+        } else if (isFiado) {
           abonosSafe = Money.add(abonosSafe, sale.abono || 0);
         }
-        // Ignorar otros métodos de pago para totales de efectivo
       }
 
       const result = {
@@ -335,7 +344,7 @@ export function useCaja() {
     if (esEntrada) {
       const totalActualSafe = Money.init(await calcularTotalTeorico(true));
       const totalPostEntradaSafe = Money.add(totalActualSafe, montoSafe);
-      
+
       if (totalPostEntradaSafe.gt(CAJA_CONFIG.MAX_CASH_THRESHOLD)) {
         Logger.warn(
           `[Caja] Alerta: Entrada de $${Money.toNumber(montoSafe).toFixed(2)} ` +
@@ -348,7 +357,6 @@ export function useCaja() {
 
     try {
       // INTENTO CON RETRY para operaciones transaccionales
-      const versionEsperada = cajaActual.updatedAt || cajaActual.fecha_apertura;
       const movimientoId = `mov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const movimiento = {
         id: movimientoId,
@@ -364,11 +372,6 @@ export function useCaja() {
           const cajaDb = await db.table(STORES.CAJAS).get(cajaActual.id);
           if (!cajaDb) {
             throw new Error("CRITICAL: La caja no existe en la base de datos.");
-          }
-
-          const currentVersion = cajaDb.updatedAt || cajaDb.fecha_apertura;
-          if (currentVersion !== versionEsperada) {
-            throw new Error("CONCURRENCY_ERROR: La caja fue modificada por otra operación. Por favor recarga e intenta de nuevo.");
           }
 
           if (esEntrada) {
@@ -389,15 +392,15 @@ export function useCaja() {
 
       setCajaActual(cajaGuardada);
       setMovimientosCaja((prev) => [...prev, movimiento]);
-      
+
       // Invalidar caché de totales después de un movimiento
       totalesCacheRef.current = { ...totalesCacheRef.current, teoricoTimestamp: 0 };
-      
+
       return true;
 
     } catch (movementError) {
       Logger.error('Error registrando movimiento de caja', movementError);
-      
+
       const isConcurrencyError = movementError.message?.includes('CONCURRENCY_ERROR');
       if (isConcurrencyError) {
         showMessageModal(
@@ -408,7 +411,7 @@ export function useCaja() {
       } else {
         showMessageModal(movementError.message || 'Error al registrar el movimiento de caja.', null, { type: 'error' });
       }
-      
+
       await sincronizarEstadoCaja();
       return false;
     }
@@ -471,6 +474,22 @@ export function useCaja() {
     cargarEstadoCaja();
   }, [cargarEstadoCaja]);
 
+  useEffect(() => {
+    // Solo hacer polling si hay una caja abierta
+    if (!cajaActual || cajaActual.estado !== 'abierta') return;
+
+    const POLLING_INTERVAL = 10000; // 10 segundos
+
+    const intervalId = setInterval(() => {
+      // Forzar recalculo ignorando la caché actual
+      calcularTotalesSesion(cajaActual.fecha_apertura, true).then(nuevosTotales => {
+        setTotalesTurno(nuevosTotales);
+      });
+    }, POLLING_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [cajaActual, calcularTotalesSesion]);
+
   const sincronizarEstadoCaja = useCallback(async () => {
     await cargarEstadoCaja();
   }, [cargarEstadoCaja]);
@@ -480,24 +499,28 @@ export function useCaja() {
 
     const now = Date.now();
 
+    const totalesTurnoKey = `${totalesTurno.ventasContado}_${totalesTurno.abonosFiado}`;
+
     // Verificar caché primero
     if (!forceRefresh &&
-        totalesCacheRef.current.teoricoData &&
-        totalesCacheRef.current.teoricoCajaId === cajaActual.id &&
-        (now - totalesCacheRef.current.teoricoTimestamp) < CACHE_TTL_MS) {
+      totalesCacheRef.current.teoricoData &&
+      totalesCacheRef.current.teoricoCajaId === cajaActual.id &&
+      totalesCacheRef.current.totalesTurnoKey === totalesTurnoKey &&
+      (now - totalesCacheRef.current.teoricoTimestamp) < CACHE_TTL_MS) {
       return totalesCacheRef.current.teoricoData;
     }
 
     try {
-      // Forzar refresh de totales si se solicita
-      if (forceRefresh) {
-        await calcularTotalesSesion(cajaActual.fecha_apertura, true);
-      }
+      const freshTotales = forceRefresh
+        ? await calcularTotalesSesion(cajaActual.fecha_apertura, true)
+        : totalesTurno;
 
       const inicialSafe = Money.init(cajaActual.monto_inicial || 0);
-      const ventasSafe = Money.init(totalesTurno.ventasContado || 0);
-      const abonosSafe = Money.init(totalesTurno.abonosFiado || 0);
-      const entradasSafe = Money.init(cajaActual.entradas_efectivo || 0);
+      const ventasSafe = Money.init(freshTotales.ventasContado || 0);
+      const abonosSafe = Money.init(freshTotales.abonosFiado || 0);
+      const entradasNormales = Money.init(cajaActual.entradas_efectivo || 0);
+      const entradasAnomalas = Money.init(cajaActual.ingresos_efectivo || 0);
+      const entradasSafe = Money.add(entradasNormales, entradasAnomalas);
       const salidasSafe = Money.init(cajaActual.salidas_efectivo || 0);
 
       const ingresosTotales = Money.add(
@@ -513,7 +536,8 @@ export function useCaja() {
         ...totalesCacheRef.current,
         teoricoTimestamp: now,
         teoricoData: result,
-        teoricoCajaId: cajaActual.id
+        teoricoCajaId: cajaActual.id,
+        totalesTurnoKey
       };
 
       return result;
@@ -561,10 +585,10 @@ export function useCaja() {
     );
 
     // Obtener conteo de movimientos
-    const movimientosEntrada = movimientosCaja.filter(m => 
+    const movimientosEntrada = movimientosCaja.filter(m =>
       m.tipo === 'entrada' || m.tipo === 'ajuste_entrada'
     ).length;
-    const movimientosSalida = movimientosCaja.filter(m => 
+    const movimientosSalida = movimientosCaja.filter(m =>
       m.tipo === 'salida' || m.tipo === 'ajuste_salida'
     ).length;
 
@@ -619,7 +643,7 @@ export function useCaja() {
     try {
       const resumen = await obtenerResumenEstadistico();
       const fechaCorte = new Date().toISOString().split('T')[0];
-      
+
       // Construir CSV
       const headers = [
         'Concepto',
@@ -667,8 +691,8 @@ export function useCaja() {
         ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
       ].join('\n');
 
-      const blob = new Blob(["\ufeff" + csvContent], { 
-        type: 'text/csv;charset=utf-8;' 
+      const blob = new Blob(["\ufeff" + csvContent], {
+        type: 'text/csv;charset=utf-8;'
       });
 
       return {
@@ -687,7 +711,7 @@ export function useCaja() {
    */
   const descargarReporteCaja = useCallback(async () => {
     const resultado = await exportarReporteCajaCSV();
-    
+
     if (!resultado.success) {
       showMessageModal(`Error al exportar: ${resultado.error}`, null, { type: 'error' });
       return;
@@ -701,7 +725,7 @@ export function useCaja() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    
+
     showMessageModal('Reporte de caja exportado correctamente.');
   }, [exportarReporteCajaCSV]);
 
