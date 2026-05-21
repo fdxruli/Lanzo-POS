@@ -126,8 +126,8 @@ export const executeBatchWithPaymentSafe = async (batchData, paymentInfo, expect
                     throw new Error("CONCURRENCY_ERROR: La caja ha sido modificada por otra transacción. Por favor, recarga y vuelve a intentar.");
                 }
 
-                const fondoInicial = Number(caja.monto_inicial || caja.fondo_inicial || 0);
-                const ingresosEfectivo = Number(caja.ingresos_efectivo || 0);
+                const fondoInicial = Number(caja.monto_inicial || 0);
+                const ingresosEfectivo = Number(caja.entradas_efectivo || 0);
                 const salidasEfectivo = Number(caja.salidas_efectivo || 0);
                 const dineroDisponible = fondoInicial + ingresosEfectivo - salidasEfectivo;
 
@@ -143,7 +143,7 @@ export const executeBatchWithPaymentSafe = async (batchData, paymentInfo, expect
                     id: `mov-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                     caja_id: caja.id,
                     tipo: 'salida',
-                    monto: parseFloat(paymentInfo.monto),
+                    monto: String(paymentInfo.monto),
                     concepto: paymentInfo.concepto,
                     fecha: new Date().toISOString()
                 };
