@@ -129,8 +129,8 @@ export default function CajaPage() {
       const tagName = document.activeElement?.tagName?.toLowerCase();
       const isInput = tagName === 'input' || tagName === 'textarea';
 
-      // Ctrl+R: Refrescar estado de caja
-      if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+      // Alt+R: Refrescar estado de caja
+      if (e.altKey && (e.key === 'r' || e.key === 'R')) {
         if (!isInput) {
           e.preventDefault();
           sincronizarEstadoCaja();
