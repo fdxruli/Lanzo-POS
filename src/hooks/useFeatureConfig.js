@@ -28,8 +28,12 @@ const FEATURE_TIERS = {
   'daily_pricing': 'pro',
 };
 
+const EMPTY_ARRAY = [];
+
 export function useFeatureConfig(specificRubro = null) {
-  const businessTypes = useAppStore((state) => state.companyProfile?.business_type) || [];
+  const rawBusinessTypes = useAppStore((state) => state.companyProfile?.business_type);
+  
+  const businessTypes = rawBusinessTypes || EMPTY_ARRAY; 
   const licenseDetails = useAppStore((state) => state.licenseDetails);
 
   const config = useMemo(() => {

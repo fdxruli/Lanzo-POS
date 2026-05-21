@@ -7,6 +7,7 @@ import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
+import { useActiveOrders } from './useActiveOrders';
 
 /**
  * Hook para manejar la gestión de mesas (tables) del POS.
@@ -33,7 +34,8 @@ export function useTableManagement({
     refreshData,
     checkHasOutOfStockProducts,
     fetchActiveTablesCount,
-    features
+    features,
+    handleInitiateCheckout
 }) {
     const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
     const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
@@ -117,6 +119,37 @@ export function useTableManagement({
     const executeLoadOpenOrder = useCallback(async (orderId, silent = false) => {
         const result = await loadOpenOrder(orderId);
         if (result.success) {
+            // CORRECCIÓN: Registrar la orden en useActiveOrders.
+            // loadOpenOrder solo actualiza useOrderStore (order, activeOrderId, tableData).
+            // Si la orden no está en el map de useActiveOrders, lockOrderForCheckout
+            // la rechazará con "La orden no existe en sesión", bloqueando el checkout.
+            //
+            // Sincronizamos el estado del store con activeOrders usando la orden
+            // ya hidratada desde la BD, garantizando consistencia entre ambos stores.
+            try {
+                const activeOrdersState = useActiveOrders.getState();
+                const { order: loadedOrder, activeOrderId: loadedOrderId, tableData: loadedTableData } = useOrderStore.getState();
+
+                if (loadedOrderId && !activeOrdersState.activeOrders.has(loadedOrderId)) {
+                    const nextOrders = new Map(activeOrdersState.activeOrders);
+                    nextOrders.set(loadedOrderId, {
+                        id: loadedOrderId,
+                        items: Array.isArray(loadedOrder) ? loadedOrder : [],
+                        tableData: loadedTableData || null,
+                        createdAt: new Date().toISOString(),
+                        total: 0,
+                        isSaved: true
+                    });
+                    useActiveOrders.setState({
+                        activeOrders: nextOrders,
+                        currentOrderId: loadedOrderId
+                    });
+                }
+            } catch (syncErr) {
+                console.error('[useTableManagement] Error sincronizando orden con activeOrders:', syncErr);
+                // No es fatal: el checkout puede continuar si la orden ya está en activeOrders
+            }
+
             if (!silent) {
                 closeModal('tables');
                 showMessageModal('Mesa cargada en el pedido actual.');
@@ -177,7 +210,17 @@ export function useTableManagement({
                 closeModal('tables');
 
                 if (actionType === 'checkout') {
-                    openModal('payment');
+                    // CORRECCIÓN: Delegar al flujo oficial de checkout.
+                    // Llamar handleInitiateCheckout en lugar de openModal('payment') directamente
+                    // garantiza que siempre se genere el snapshot inmutable y se adquiera
+                    // el lock atómico sobre la orden antes de abrir el modal de pagos.
+                    if (typeof handleInitiateCheckout === 'function') {
+                        await handleInitiateCheckout();
+                    } else {
+                        // Fallback de seguridad: nunca debería llegar aquí
+                        console.error('[useTableManagement] handleInitiateCheckout no está disponible.');
+                        openModal('payment');
+                    }
                 } else if (actionType === 'split') {
                     openModal('split');
                 }
@@ -187,7 +230,7 @@ export function useTableManagement({
         } catch (error) {
             console.error("Error al cargar la mesa para acción rápida:", error);
         }
-    }, [order, executeLoadOpenOrder, closeModal, openModal]);
+    }, [order, executeLoadOpenOrder, closeModal, openModal, handleInitiateCheckout]);
 
     /**
      * Anula en sistema una venta abierta rechazada en cocina (sale del modal de mesas).

@@ -42,6 +42,8 @@ export const useActiveOrders = create(
     activeOrders: new Map(),
     currentOrderId: null,
     isLoading: false,
+    /** Flag local: true mientras la orden activa está en proceso de cobro */
+    isCurrentOrderLocked: false,
 
     /**
      * @returns {Object|null} La orden activa siendo editada
@@ -118,32 +120,19 @@ export const useActiveOrders = create(
 
       set({ currentOrderId: orderId });
 
-      // 🔥 VALIDACIÓN CRÍTICA: Evaluar estado de supervivencia del carrito principal
-      const cartState = useOrderStore.getState();
-      const isSameOrder = cartState.activeOrderId === orderId;
-      const cartHasItems = Array.isArray(cartState.order) && cartState.order.length > 0;
-      const tabIsEmpty = !Array.isArray(order.items) || order.items.length === 0;
 
-      // Si es la misma orden y el carrito salvó los datos pero la pestaña no, 
-      // invertimos el flujo: la pestaña se reconstruye a partir del carrito.
-      if (isSameOrder && cartHasItems && tabIsEmpty) {
-        const nextOrders = new Map(get().activeOrders);
-        nextOrders.set(orderId, {
-          ...order,
-          items: cartState.order,
-          tableData: cartState.tableData,
-          total: typeof cartState.getTotalPrice === 'function' ? cartState.getTotalPrice() : 0
-        });
-        set({ activeOrders: nextOrders });
-        return; // Detenemos la ejecución aquí para NO vaciar el store.
-      }
 
-      // Flujo normal: Forzar la actualización inmediata del carrito principal
       useOrderStore.setState({
         order: order.items || [],
         tableData: order.tableData || null,
-        activeOrderId: orderId
+        activeOrderId: orderId,
+        _isSyncing: true // Previene que el subscriber devuelva un array vacío accidental por la condición de carrera
       });
+
+      // Liberamos el flag inmediatamente después en el micro-task
+      setTimeout(() => {
+        useOrderStore.setState({ _isSyncing: false });
+      }, 0);
     },
 
     /**
@@ -553,10 +542,17 @@ export const useActiveOrders = create(
      * Carga órdenes abiertas desde BD y las inicializa en sesión
      * Se ejecuta al montar PosPageContent
      * 🔧 FIX: Solo carga órdenes que NO han sido enviadas a cocina (fulfillmentStatus !== 'pending')
+     * 🔧 FIX 2: Recupera PRIMERO órdenes del localStorage para evitar pérdidas en recarga rápida
      */
     loadOrdersFromDB: async () => {
       try {
         const state = get();
+
+        // 1️⃣ PASO CRÍTICO: Recuperar órdenes del localStorage que NO fueron guardadas en BD
+        // (esto preserva carritos abiertos que no se guardaron explícitamente)
+        const persistedOrdersMap = new Map(state.activeOrders);
+
+        // 2️⃣ Luego cargar desde BD para enriquecer/actualizar
         const allOpenSales = await db.table(STORES.SALES)
           .where('status')
           .equals(SALE_STATUS.OPEN)
@@ -568,25 +564,10 @@ export const useActiveOrders = create(
           !sale.fulfillmentStatus || sale.fulfillmentStatus === 'open'
         );
 
-        if (openSales.length === 0) {
-          if (state.activeOrders.size > 0) {
-            const persistedCurrentOrderId = state.currentOrderId && state.activeOrders.has(state.currentOrderId)
-              ? state.currentOrderId
-              : Array.from(state.activeOrders.keys())[0];
-
-            if (persistedCurrentOrderId) {
-              get().switchOrder(persistedCurrentOrderId);
-              return;
-            }
-          }
-
-          // Si no hay órdenes abiertas, crear una nueva
-          get().createOrder();
-          return;
-        }
-
-        // Mapear órdenes de BD a estructura interna
+        // 3️⃣ Crear mapa consolidado: localStorage + BD
         const ordersMap = new Map();
+
+        // Primero agregar órdenes guardadas en BD
         openSales.forEach(sale => {
           ordersMap.set(sale.id, {
             id: sale.id,
@@ -599,32 +580,61 @@ export const useActiveOrders = create(
           });
         });
 
-        state.activeOrders.forEach((draftOrder, orderId) => {
-          // Ignoramos borradores vacíos si ya estamos cargando órdenes reales de la BD
-          const isEmptyDraft = (!draftOrder.items || draftOrder.items.length === 0) && !draftOrder.tableData && !draftOrder.customer;
+        // Luego PRESERVAR órdenes que estaban en localStorage pero no en BD
+        persistedOrdersMap.forEach((draftOrder, orderId) => {
+          const existing = ordersMap.get(orderId);
 
-          // 1. Descartar basura: Ignoramos el borrador temporal SOLO si está completamente vacío,
-          // ya hay otras ventas abiertas, y esta orden en particular no existe en la base de datos.
-          if (isEmptyDraft && openSales.length > 0 && !ordersMap.has(orderId)) {
-            return;
+          if (existing) {
+            // Orden existe en BD: fusionar datos, pero priorizar items del localStorage si son más recientes
+            const draftItems = Array.isArray(draftOrder.items) ? draftOrder.items : [];
+            const dbItems = Array.isArray(existing.items) ? existing.items : [];
+
+            // Si localStorage tiene items y BD no (o tiene menos), usar localStorage
+            ordersMap.set(orderId, {
+              ...existing,
+              items: draftItems.length > 0 ? draftItems : dbItems,
+              tableData: normalizeTableData(draftOrder.tableData ?? existing.tableData ?? null),
+              isSaved: existing.isSaved
+            });
+          } else {
+            // Orden está en localStorage pero NO en BD: preservarla como borrador
+            const draftItems = Array.isArray(draftOrder.items) ? draftOrder.items : [];
+            const isEmptyDraft = draftItems.length === 0 && !draftOrder.tableData && !draftOrder.customer;
+
+            // 🔥 FIX: Si la orden es la activa y useOrderStore tiene los items (pero el tab no por fallo de guardado),
+            // NO la consideramos vacía y rescatamos los items.
+            const cartState = useOrderStore.getState();
+            const isActiveInCart = cartState.activeOrderId === orderId;
+            const cartHasItems = Array.isArray(cartState.order) && cartState.order.length > 0;
+            const isActuallyEmpty = isEmptyDraft && !(isActiveInCart && cartHasItems);
+
+            // 🔥 IMPORTANT: NUNCA descartar órdenes del localStorage, incluso si parecen vacías
+            ordersMap.set(orderId, {
+              ...draftOrder,
+              items: isActiveInCart && cartHasItems && draftItems.length === 0 ? cartState.order : draftItems,
+              tableData: normalizeTableData(draftOrder.tableData ?? null),
+              isSaved: false
+            });
           }
-
-          // 2. Prioridad de hidratación: Extraemos la versión de la base de datos si existe.
-          const currentRecord = ordersMap.get(orderId) || {};
-
-          // 3. Fusión de estados: Sobrescribimos el registro de BD (currentRecord) 
-          // con el estado en memoria (draftOrder). Esto garantiza que los items agregados 
-          // justo antes de recargar no se pierdan.
-          ordersMap.set(orderId, {
-            ...currentRecord,
-            ...draftOrder,
-            isSaved: currentRecord.isSaved || draftOrder.isSaved || false,
-            tableData: normalizeTableData(draftOrder.tableData ?? currentRecord.tableData ?? null)
-          });
         });
+
+        // 4️⃣ Si no hay órdenes en total, crear una nueva vacía
+        if (ordersMap.size === 0) {
+          const newOrderId = generateID('sal');
+          ordersMap.set(newOrderId, {
+            id: newOrderId,
+            items: [],
+            customer: null,
+            tableData: null,
+            createdAt: new Date().toISOString(),
+            total: 0,
+            isSaved: false
+          });
+        }
 
         set({ activeOrders: ordersMap });
 
+        // 5️⃣ Activar orden: preferir la que estaba activa, o la primera disponible
         const nextCurrentOrderId = state.currentOrderId && ordersMap.has(state.currentOrderId)
           ? state.currentOrderId
           : Array.from(ordersMap.keys())[0];
@@ -652,6 +662,139 @@ export const useActiveOrders = create(
     },
 
     /**
+     * Bloquea la orden para el proceso de cobro.
+     *
+     * Implementa un bloqueo atómico en Dexie usando una transacción de lectura-escritura.
+     * Si la orden ya está bloqueada por otra sesión/dispositivo, rechaza inmediatamente.
+     * Al persistir `isLockedForCheckout` en la BD, el middleware de sync propagará
+     * el estado a otras tablets; éstas deben leer este flag y deshabilitar su UI.
+     *
+     * @param {string} orderId - ID de la orden a bloquear
+     * @returns {Promise<{ success: boolean, reason?: string }>}
+     */
+    lockOrderForCheckout: async (orderId) => {
+      if (!orderId) return { success: false, reason: 'ID de orden requerido.' };
+
+      const state = get();
+      const order = state.activeOrders.get(orderId);
+      if (!order) return { success: false, reason: 'La orden no existe en sesión.' };
+
+      try {
+        let lockAcquired = false;
+
+        // Transacción atómica: read-then-write sin ventana de carrera.
+        // Si dos tablets ejecutan esto al mismo tiempo, solo una verá
+        // `isLockedForCheckout === false` y podrá escribir el lock.
+        await db.transaction('rw', db.table(STORES.SALES), async () => {
+          const existing = await db.table(STORES.SALES).get(orderId);
+
+          // La orden puede no estar en DB todavía (borrador en memoria)
+          if (existing && existing.isLockedForCheckout === true) {
+            // Otro dispositivo ya tomó el lock → abortar
+            lockAcquired = false;
+            return; // Dexie aborta la transacción si lanzamos, usamos flag en su lugar
+          }
+
+          const lockedAt = new Date().toISOString();
+
+          if (existing) {
+            await db.table(STORES.SALES).update(orderId, {
+              isLockedForCheckout: true,
+              lockedAt
+            });
+          } else {
+            // La orden aún no fue persistida: la insertamos con el lock ya puesto.
+            await db.table(STORES.SALES).put({
+              id: orderId,
+              items: order.items || [],
+              total: order.total || 0,
+              tableData: order.tableData || null,
+              status: 'open',
+              isLockedForCheckout: true,
+              lockedAt
+            });
+          }
+
+          lockAcquired = true;
+        });
+
+        if (!lockAcquired) {
+          console.warn(
+            `[lockOrderForCheckout] Orden ${orderId} ya está bloqueada por otro proceso.`
+          );
+          return { success: false, reason: 'La orden ya está siendo cobrada desde otro dispositivo.' };
+        }
+
+        // Actualizar memoria en memoria (inmutabilidad)
+        const lockedAt = new Date().toISOString();
+        const nextOrders = new Map(state.activeOrders);
+        nextOrders.set(orderId, {
+          ...order,
+          isLockedForCheckout: true,
+          lockedAt
+        });
+
+        set({
+          activeOrders: nextOrders,
+          // Si la orden bloqueada es la activa, activamos el flag de UI
+          isCurrentOrderLocked: state.currentOrderId === orderId ? true : state.isCurrentOrderLocked
+        });
+
+        return { success: true };
+      } catch (error) {
+        console.error('[lockOrderForCheckout] Error al adquirir el lock:', error);
+        return { success: false, reason: error?.message || 'Error interno al bloquear la orden.' };
+      }
+    },
+
+    /**
+     * Libera el bloqueo de cobro de una orden.
+     * Se debe llamar tanto en éxito (después de procesar el pago) como en caso de error
+     * (si el usuario cancela el modal de pago) para dejar la orden editable de nuevo.
+     *
+     * @param {string} orderId - ID de la orden a desbloquear
+     * @returns {Promise<{ success: boolean }>}
+     */
+    unlockOrder: async (orderId) => {
+      if (!orderId) return { success: false };
+
+      const state = get();
+
+      try {
+        // Liberar en BD
+        const existing = await db.table(STORES.SALES).get(orderId);
+        if (existing) {
+          await db.table(STORES.SALES).update(orderId, {
+            isLockedForCheckout: false,
+            lockedAt: null
+          });
+        }
+
+        // Liberar en memoria
+        const order = state.activeOrders.get(orderId);
+        if (order) {
+          const nextOrders = new Map(state.activeOrders);
+          nextOrders.set(orderId, {
+            ...order,
+            isLockedForCheckout: false,
+            lockedAt: null
+          });
+
+          set({
+            activeOrders: nextOrders,
+            isCurrentOrderLocked:
+              state.currentOrderId === orderId ? false : state.isCurrentOrderLocked
+          });
+        }
+
+        return { success: true };
+      } catch (error) {
+        console.error('[unlockOrder] Error al liberar el lock:', error);
+        return { success: false };
+      }
+    },
+
+    /**
      * Obtiene la orden actual lista para edición
      * Sincroniza automáticamente con useOrderStore
      */
@@ -671,9 +814,44 @@ export const useActiveOrders = create(
     }
   }), {
     name: 'lanzo-active-orders-storage',
-    storage: createJSONStorage(() => (
-      typeof window !== 'undefined' ? window.localStorage : noopStorage
-    )),
+    storage: createJSONStorage(() => ({
+      getItem: (name) => {
+        if (typeof window === 'undefined') return null;
+        try {
+          return window.localStorage.getItem(name);
+        } catch (e) {
+          console.error(`[safeActiveOrdersStorage] Error reading ${name}`, e);
+          return null;
+        }
+      },
+      setItem: (name, value) => {
+        if (typeof window === 'undefined') return;
+        try {
+          window.localStorage.setItem(name, value);
+        } catch (e) {
+          console.warn(`[safeActiveOrdersStorage] Quota exceeded for ${name}. Cleaning up...`);
+          try {
+            for (let i = window.localStorage.length - 1; i >= 0; i--) {
+              const key = window.localStorage.key(i);
+              if (key && key.startsWith('lanzo-') && key !== name && key !== 'lanzo-cart-storage' && key !== 'lanzo-inventory-storage') {
+                window.localStorage.removeItem(key);
+              }
+            }
+            window.localStorage.setItem(name, value);
+          } catch (cleanupError) {
+            console.error(`[safeActiveOrdersStorage] Failed to save ${name} after cleanup`, cleanupError);
+          }
+        }
+      },
+      removeItem: (name) => {
+        if (typeof window === 'undefined') return;
+        try {
+          window.localStorage.removeItem(name);
+        } catch (e) {
+          console.error(`[safeActiveOrdersStorage] Error removing ${name}`, e);
+        }
+      }
+    })),
     partialize: (state) => ({
       activeOrders: Array.from(state.activeOrders.entries()),
       currentOrderId: state.currentOrderId

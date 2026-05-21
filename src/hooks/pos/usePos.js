@@ -42,21 +42,9 @@ export function usePos() {
     // â”€â”€ Estados especializados â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const prescription = usePrescriptionFlow(modals);
 
-    // â”€â”€ LÃ³gica de negocio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const tables = useTableManagement({
-        ...modals,
-        refreshData: search.refreshOutOfStock,
-        checkHasOutOfStockProducts: () => {},
-        fetchActiveTablesCount: tablesCount.fetchActiveTablesCount,
-        features
-    });
-
-    const layaway = useLayawayFlow({
-        ...modals,
-        showToast: pos.showToast
-    });
-
-    // â”€â”€ Checkout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Checkout ──────────────────────────────────────────────────────────────────────────
+    // IMPORTANTE: checkout debe instanciarse ANTES que tables para poder
+    // pasar handleInitiateCheckout como dependencia de useTableManagement.
     const checkout = usePosCheckout({
         pos,
         posSearch: search,
@@ -65,6 +53,21 @@ export function usePos() {
         prescription,
         features,
         fetchActiveTablesCount: tablesCount.fetchActiveTablesCount
+    });
+
+    // ── Lógica de negocio ──────────────────────────────────────────────────────────────────
+    const tables = useTableManagement({
+        ...modals,
+        refreshData: search.refreshOutOfStock,
+        checkHasOutOfStockProducts: () => {},
+        fetchActiveTablesCount: tablesCount.fetchActiveTablesCount,
+        features,
+        handleInitiateCheckout: checkout.handleInitiateCheckout
+    });
+
+    const layaway = useLayawayFlow({
+        ...modals,
+        showToast: pos.showToast
     });
 
     // â”€â”€ Interfaz unificada â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -113,6 +116,7 @@ export function usePos() {
             // Checkout
             handleInitiateCheckout: checkout.handleInitiateCheckout,
             handleProcessOrder: checkout.handleProcessOrder,
+            handlePaymentModalClose: checkout.handlePaymentModalClose,
             handleQuickCajaSubmit: checkout.handleQuickCajaSubmit,
 
             // Mesas
