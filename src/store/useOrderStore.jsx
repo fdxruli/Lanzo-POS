@@ -170,7 +170,7 @@ const backupCorruptedState = (rawData) => {
   try {
     const backupKeys = [];
 
-    // 1. Recolección segura: Extraer primero para evitar saltos de índice 
+    // 1. Recolección segura: Extraer primero para evitar saltos de índice
     // si mutamos el localStorage durante la iteración.
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -205,8 +205,6 @@ const backupCorruptedState = (rawData) => {
   }
 };
 
-let saveTimeout = null;
-
 const safeStorage = {
   getItem: (name) => {
     let rawItem = null;
@@ -235,12 +233,9 @@ const safeStorage = {
     }
   },
   setItem: (name, value) => {
-    // Retrasamos la escritura en disco 300ms. 
-    // Si el usuario toca 5 productos rápido, solo guarda 1 vez al final.
-    if (saveTimeout) clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
-      safeLocalStorageSet(name, value);
-    }, 300);
+    // Guardar inmediatamente para garantizar recuperación en recarga
+    // (el debounce causaba pérdida de datos si se recargaba antes de 300ms)
+    safeLocalStorageSet(name, value);
   },
   removeItem: (name) => {
     try {
@@ -260,6 +255,12 @@ export const useOrderStore = create(
       isSavedOrder: false,
       _activeOrdersHook: null,
       _isSyncing: false,
+      /**
+       * Flag de UI: true cuando la orden activa tiene isLockedForCheckout === true.
+       * Úsalo en la UI para deshabilitar botones de agregar/eliminar/limpiar
+       * mientras el pago está en curso.
+       */
+      isCartLocked: false,
 
       get currentOrder() {
         const hook = get()._activeOrdersHook;
@@ -289,29 +290,57 @@ export const useOrderStore = create(
             const currentStoreOrder = get().order || [];
             const incomingItems = currentOrder.items || [];
 
-            // 🔥 FIX: Prevención de pérdida de datos al recargar la página
-            // Si el carrito principal sobrevivió con items pero la pestaña viene vacía, 
-            // rescatamos los items y los devolvemos a la pestaña en lugar de borrarlos.
-            if (incomingItems.length === 0 && currentStoreOrder.length > 0) {
-              const nextOrders = new Map(activeState.activeOrders);
-              nextOrders.set(activeState.currentOrderId, {
-                ...currentOrder,
-                items: currentStoreOrder,
-                tableData: get().tableData,
-                total: typeof get().getTotalPrice === 'function' ? get().getTotalPrice() : 0
-              });
-              activeOrdersHook.setState({ activeOrders: nextOrders });
-            } else {
-              // Comportamiento normal: sincronizar lo de la pestaña al carrito
+            // ── INMUNIZACIÓN: Orden bloqueada entrante ──────────────────────────
+            // Si la orden que llega del gestor ya está bloqueada para cobro
+            // (propagada desde otra tablet vía sync), aceptamos los datos
+            // PERO activamos el flag isCartLocked para que la UI deshabilite
+            // las acciones de edición localmente.
+            if (currentOrder.isLockedForCheckout === true) {
               set({
                 order: incomingItems,
                 tableData: currentOrder.tableData || null,
                 activeOrderId: currentOrder.id,
-                isSavedOrder: Boolean(currentOrder.isSaved)
+                isSavedOrder: Boolean(currentOrder.isSaved),
+                isCartLocked: true,
+                _isSyncing: false,
               });
+              return;
             }
+
+            // Comportamiento normal: sincronizar lo de la pestaña al carrito
+            set({
+              order: incomingItems,
+              tableData: currentOrder.tableData || null,
+              activeOrderId: currentOrder.id,
+              isSavedOrder: Boolean(currentOrder.isSaved),
+              isCartLocked: false,
+            });
           } else if (activeState.currentOrderId === null) {
-            get().clearSession();
+            // 🔥 FIX: Prevención de pérdida catastrófica.
+            // Si activeOrders perdió el currentOrderId (ej. corrupción o vaciado),
+            // pero useOrderStore AÚN TIENE items, forzamos a recrear la pestaña.
+            const currentStoreOrder = get().order || [];
+            if (currentStoreOrder.length > 0) {
+              const newOrderId = get().activeOrderId || `sal_${Date.now()}`;
+              const nextOrders = new Map(activeState.activeOrders);
+              nextOrders.set(newOrderId, {
+                id: newOrderId,
+                items: currentStoreOrder,
+                customer: get().customer,
+                tableData: get().tableData,
+                total: typeof get().getTotalPrice === 'function' ? get().getTotalPrice() : 0,
+                createdAt: new Date().toISOString(),
+                isSaved: false
+              });
+              activeOrdersHook.setState({
+                activeOrders: nextOrders,
+                currentOrderId: newOrderId
+              });
+              
+              set({ activeOrderId: newOrderId });
+            } else {
+              get().clearSession();
+            }
           }
 
           set({ _isSyncing: false });
@@ -340,6 +369,19 @@ export const useOrderStore = create(
 
             const currentOrder = activeOrders.get(currentOrderId);
             if (!currentOrder) return;
+
+            // ── CORTACIRCUITOS: Bloqueo de escritura durante el cobro ──────────
+            // Si la orden activa ya fue marcada como `isLockedForCheckout`, cualquier
+            // cambio en el carrito (incluido el vaciado que dispara el bug de tickets
+            // en $0.00) es rechazado silenciosamente. El estado en BD permanece intacto.
+            if (currentOrder.isLockedForCheckout === true) {
+              console.warn(
+                '[useOrderStore → useActiveOrders] Intento de mutación rechazado: Orden en proceso de pago.',
+                { orderId: currentOrderId }
+              );
+              return;
+            }
+            // ─────────────────────────────────────────────────────────────────────
 
             set({ _isSyncing: true });
 
@@ -963,6 +1005,7 @@ export const useOrderStore = create(
         const state = get();
         const currentActiveId = state.activeOrderId;
         const now = new Date();
+        const LOCK_TTL_MINUTES = 15; // TTL configurable para órdenes atascadas en checkout
 
         try {
           // 1. Obtener TODAS las órdenes con estado 'open' en Dexie
@@ -973,7 +1016,30 @@ export const useOrderStore = create(
 
           if (openSales.length === 0) return { success: true, count: 0 };
 
-          // 2. Filtrar para encontrar las huérfanas.
+          // 1.5. Liberar órdenes atascadas en cobro (Garbage Collection de Bloqueos)
+          let unlockedCount = 0;
+          for (const sale of openSales) {
+            if (sale.isLockedForCheckout && sale.lockedAt) {
+              const lockedDate = new Date(sale.lockedAt);
+              const minutesLocked = (now - lockedDate) / (1000 * 60);
+
+              // Tolerancia al margen de error por transacciones extremadamente lentas
+              if (minutesLocked > LOCK_TTL_MINUTES) {
+                await db.table(STORES.SALES).update(sale.id, {
+                  isLockedForCheckout: false,
+                  lockedAt: null,
+                  updatedAt: now.toISOString()
+                });
+                console.warn(`[Garbage Collector] Orden ${sale.id} liberada. Estuvo atascada en cobro por ${Math.round(minutesLocked)} minutos.`);
+                unlockedCount++;
+                
+                // Actualizamos localmente para no interferir con la lógica de orfandad real
+                sale.isLockedForCheckout = false;
+              }
+            }
+          }
+
+          // 2. Filtrar para encontrar las huérfanas reales (abandono total)
           // Condición: No es la orden activa actual Y tiene cierta antigüedad para evitar colisiones.
           const orphanedSales = openSales.filter((sale) => {
             if (sale.id === currentActiveId) return false;
@@ -986,27 +1052,29 @@ export const useOrderStore = create(
             return hoursDiff > 2;
           });
 
-          if (orphanedSales.length === 0) return { success: true, count: 0 };
+          if (orphanedSales.length === 0 && unlockedCount === 0) return { success: true, count: 0 };
 
-          console.warn(`🧹 Encontradas ${orphanedSales.length} órdenes huérfanas. Reconciliando inventario...`);
+          if (orphanedSales.length > 0) {
+            console.warn(`🧹 Encontradas ${orphanedSales.length} órdenes huérfanas. Reconciliando inventario...`);
 
-          // 3. Procesar y liberar stock
-          for (const orphan of orphanedSales) {
-            const itemsToRelease = getSellableItems(orphan.items); // Asegúrate de que esta función esté al alcance
+            // 3. Procesar y liberar stock
+            for (const orphan of orphanedSales) {
+              const itemsToRelease = getSellableItems(orphan.items); // Asegúrate de que esta función esté al alcance
 
-            if (itemsToRelease.length > 0) {
-              await releaseCommittedStock(itemsToRelease, { db, STORES });
+              if (itemsToRelease.length > 0) {
+                await releaseCommittedStock(itemsToRelease, { db, STORES });
+              }
+
+              // 4. Neutralizar la orden (No borrarla, cambiar estado para auditoría)
+              await db.table(STORES.SALES).update(orphan.id, {
+                status: 'cancelled', // Te recomiendo agregar SALE_STATUS.CANCELLED a tus constantes
+                notes: 'Sistema: Orden abandonada y stock liberado automáticamente.',
+                updatedAt: now.toISOString()
+              });
             }
-
-            // 4. Neutralizar la orden (No borrarla, cambiar estado para auditoría)
-            await db.table(STORES.SALES).update(orphan.id, {
-              status: 'cancelled', // Te recomiendo agregar SALE_STATUS.CANCELLED a tus constantes
-              notes: 'Sistema: Orden abandonada y stock liberado automáticamente.',
-              updatedAt: now.toISOString()
-            });
           }
 
-          return { success: true, count: orphanedSales.length };
+          return { success: true, count: orphanedSales.length, unlocked: unlockedCount };
 
         } catch (error) {
           console.error('❌ Falla crítica en la reconciliación de inventario:', error);
@@ -1015,7 +1083,7 @@ export const useOrderStore = create(
       },
     }),
     {
-      name: 'lanzo-cart-storage', // Nombre único en LocalStorage para no mezclar datos
+      name: 'lanzo-cart-storage',
       storage: createJSONStorage(() => safeStorage),
       partialize: (state) => ({
         order: state.order,

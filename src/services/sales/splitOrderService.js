@@ -643,8 +643,6 @@ export const splitOpenTableOrderCore = async ({
             });
         }
 
-        Logger.timeEnd('Service:SplitOpenTableOrder');
-
         return {
             success: true,
             splitGroupId,
@@ -657,5 +655,7 @@ export const splitOpenTableOrderCore = async ({
             success: false,
             message: error?.message || 'No se pudo dividir/cobrar la cuenta.'
         };
+    } finally {
+        Logger.timeEnd('Service:SplitOpenTableOrder');
     }
 };

@@ -1,4 +1,5 @@
 import { db } from '../database';
+import { useSalesStore } from '../../store/useSalesStore';
 
 export const runPostSaleEffects = async ({
     sale,
@@ -28,6 +29,12 @@ export const runPostSaleEffects = async ({
             0
         );
         await useStatsStore.getState().updateStatsForNewSale(sale, costOfGoodsSold);
+
+        // Actualizar el historial de ventas recientes en el store para que el
+        // Dashboard (StatsGrid y SalesHistory) reflejen la venta de inmediato.
+        useSalesStore.getState().loadRecentSales().catch(
+            e => Logger?.error('Error actualizando ventas recientes post-venta', e)
+        );
 
         // 4. Enviar WhatsApp (En segundo plano)
         if (paymentData.sendReceipt && paymentData.customerId) {

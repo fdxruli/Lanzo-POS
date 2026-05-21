@@ -232,9 +232,6 @@ export const processSaleCore = async ({
                 { saleId: sale.id, itemsAffected: processedItems.length }
             );
         }
-
-        Logger.timeEnd('Service:ProcessSale');
-
         // ✅ RETORNO RESILIENTE PWA
         // Indica claramente: venta segura localmente, pero qué efectos fallaron
         return {
@@ -248,5 +245,7 @@ export const processSaleCore = async ({
     } catch (error) {
         Logger.error('Service Error:', error);
         return { success: false, message: error.message };
+    } finally {
+        Logger.timeEnd('Service:ProcessSale');
     }
 };

@@ -556,16 +556,22 @@ export const queryByIndex = async (storeName, indexName, value) => {
 };
 
 /**
- * Consulta específica de lotes por producto y estado
- * ⚡ OPTIMIZACIÓN: Usa índice compuesto [productId+isActive] para mejor rendimiento
+ * Consulta específica de lotes por producto y estado.
+ *
+ * NOTA: IndexedDB/IDBKeyRange NO acepta booleanos como claves válidas en
+ * índices compuestos (solo admite string, number, Date y ArrayBuffer).
+ * Por eso consultamos únicamente por `productId` (clave segura) y luego
+ * filtramos `isActive` en memoria — evita el DataError de IDBKeyRange.
  */
 export const queryBatchesByProductIdAndActive = async (productId, isActive = true) => {
     if (!productId) throw new Error("queryBatchesByProductIdAndActive: productId es requerido y no puede ser nulo/indefinido");
 
-    return await db.table(STORES.PRODUCT_BATCHES)
-        .where('[productId+isActive]')
-        .equals([productId, isActive])
+    const allBatches = await db.table(STORES.PRODUCT_BATCHES)
+        .where('productId')
+        .equals(productId)
         .toArray();
+
+    return allBatches.filter(batch => batch.isActive === isActive);
 };
 
 /**

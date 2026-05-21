@@ -78,10 +78,14 @@ export const searchProductsInDB = async (searchTerm, status = 'active') => {
                 if (!filterByStatus(product)) return false;
                 if (takenIds.has(product.id)) return false;
 
-                // Busca por código o SKU con contains (no solo startsWith)
+                // Busca por código, SKU o nombre con contains (no solo startsWith)
                 const barcode = normalizeSearchValue(product?.barcode);
                 const sku = normalizeSearchValue(product?.sku);
-                return barcode.includes(normalizedTerm) || sku.includes(normalizedTerm);
+                const name = normalizeSearchValue(product?.name_lower || product?.name);
+                
+                return barcode.includes(normalizedTerm) || 
+                       sku.includes(normalizedTerm) || 
+                       name.includes(normalizedTerm);
             })
             .limit(DEFAULT_SEARCH_LIMIT - nameResults.length)
             .toArray();
