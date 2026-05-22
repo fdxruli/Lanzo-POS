@@ -61,7 +61,8 @@ export default function StatsGrid({ stats, customers = [] }) {
 
         let prevPeriodStart = null;
         if (period.days === 1) {
-          prevPeriodStart = null;
+          prevPeriodStart = new Date(startDate);
+          prevPeriodStart.setDate(prevPeriodStart.getDate() - 1);
         } else if (period.days === 'month') {
           prevPeriodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         } else if (period.days !== Infinity) {
@@ -150,7 +151,16 @@ export default function StatsGrid({ stats, customers = [] }) {
       prevRevenue += Number(sale.total) || 0;
     });
 
-    const revenueTrend = prevRevenue > 0 ? ((revenue - prevRevenue) / prevRevenue) * 100 : 0;
+    let revenueTrend = 0;
+    if (period.days === Infinity) {
+      revenueTrend = null;
+    } else if (prevRevenue > 0) {
+      revenueTrend = ((revenue - prevRevenue) / prevRevenue) * 100;
+    } else if (revenue > 0) {
+      revenueTrend = 100;
+    } else {
+      revenueTrend = 0;
+    }
 
     // Datos para gráficas - ventas por día de semana
     const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -287,15 +297,17 @@ export default function StatsGrid({ stats, customers = [] }) {
               <Activity size={18} />
               <span>Tendencia de Ventas</span>
             </div>
-            <div className={`evolution-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
-              {metrics.revenueTrend >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-              <span>{metrics.revenueTrend >= 0 ? '+' : ''}{metrics.revenueTrend.toFixed(1)}%</span>
-            </div>
+            {metrics.revenueTrend !== null && (
+              <div className={`evolution-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
+                {metrics.revenueTrend >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                <span>{metrics.revenueTrend >= 0 ? '+' : ''}{metrics.revenueTrend.toFixed(1)}%</span>
+              </div>
+            )}
           </div>
           <AreaTrendChart
             data={metrics.evolutionData}
             height={200}
-            color={metrics.revenueTrend >= 0 ? 'var(--success-color, #10b981)' : 'var(--error-color, #dc2626)'}
+            color={metrics.revenueTrend >= 0 || metrics.revenueTrend === null ? 'var(--success-color, #10b981)' : 'var(--error-color, #dc2626)'}
           />
         </div>
       )}
@@ -310,10 +322,12 @@ export default function StatsGrid({ stats, customers = [] }) {
           <div className="card-content">
             <span className="card-label">Ventas</span>
             <h2 className="card-value-main">{formatCurrency(metrics.revenue || 0)}</h2>
-            <div className={`card-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
-              {metrics.revenueTrend >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              <span>{metrics.revenueTrend >= 0 ? '+' : ''}{metrics.revenueTrend.toFixed(1)}% vs periodo anterior</span>
-            </div>
+            {metrics.revenueTrend !== null && (
+              <div className={`card-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
+                {metrics.revenueTrend >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                <span>{metrics.revenueTrend >= 0 ? '+' : ''}{metrics.revenueTrend.toFixed(1)}% vs periodo anterior</span>
+              </div>
+            )}
           </div>
         </div>
 
