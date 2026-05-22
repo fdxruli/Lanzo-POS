@@ -37,12 +37,7 @@ export default function StatsGrid({ stats, customers = [] }) {
   const [prevPeriodSales, setPrevPeriodSales] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
-  const [animatedValues, setAnimatedValues] = useState({
-    revenue: 0,
-    profit: 0,
-    orders: 0,
-    items: 0
-  });
+
 
   const recentSalesLength = sales?.length || 0;
   const latestSaleId = sales?.[0]?.id || null;
@@ -251,38 +246,7 @@ export default function StatsGrid({ stats, customers = [] }) {
   const formatCurrency = (val) =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
 
-  // Animación de conteo — reacciona a los cambios en las métricas
-  useEffect(() => {
-    const duration = 300;
-    const steps = 15;
-    const interval = duration / steps;
 
-    let step = 0;
-    const timer = setInterval(() => {
-      step++;
-      const progress = step / steps;
-      const easeProgress = 1 - Math.pow(1 - progress, 3);
-
-      setAnimatedValues(prev => ({
-        revenue: prev.revenue + (metrics.revenue - prev.revenue) * easeProgress,
-        profit: prev.profit + (metrics.totalProfit - prev.profit) * easeProgress,
-        orders: Math.round(prev.orders + (metrics.orders - prev.orders) * easeProgress),
-        items: Math.round(prev.items + (metrics.items - prev.items) * easeProgress)
-      }));
-
-      if (step >= steps) {
-        clearInterval(timer);
-        setAnimatedValues({
-          revenue: metrics.revenue,
-          profit: metrics.totalProfit,
-          orders: metrics.orders,
-          items: metrics.items
-        });
-      }
-    }, interval);
-
-    return () => clearInterval(timer);
-  }, [metrics.revenue, metrics.totalProfit, metrics.orders, metrics.items]);
 
   return (
     <div className="stats-container-wrapper">
@@ -345,7 +309,7 @@ export default function StatsGrid({ stats, customers = [] }) {
           </div>
           <div className="card-content">
             <span className="card-label">Ventas</span>
-            <h2 className="card-value-main">{formatCurrency(animatedValues.revenue || 0)}</h2>
+            <h2 className="card-value-main">{formatCurrency(metrics.revenue || 0)}</h2>
             <div className={`card-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
               {metrics.revenueTrend >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
               <span>{metrics.revenueTrend >= 0 ? '+' : ''}{metrics.revenueTrend.toFixed(1)}% vs periodo anterior</span>
@@ -360,7 +324,7 @@ export default function StatsGrid({ stats, customers = [] }) {
           </div>
           <div className="card-content">
             <span className="card-label">Ganancia Estimada</span>
-            <h2 className="card-value-main">{formatCurrency(animatedValues.profit || 0)}</h2>
+            <h2 className="card-value-main">{formatCurrency(metrics.totalProfit || 0)}</h2>
 
             {metrics.hasMissingCosts && metrics.coveragePercent < 100 ? (
               <div className="error-message-inline" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: '6px', gap: '6px' }}>
@@ -394,7 +358,7 @@ export default function StatsGrid({ stats, customers = [] }) {
             <span className="card-label">Pedidos</span>
             <ShoppingBag size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{animatedValues.orders || 0}</div>
+          <div className="card-value-small">{metrics.orders || 0}</div>
           <small className="text-muted">Tickets cobrados</small>
         </div>
 
@@ -414,7 +378,7 @@ export default function StatsGrid({ stats, customers = [] }) {
             <span className="card-label">Prod. Vendidos</span>
             <Package size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{animatedValues.items || 0}</div>
+          <div className="card-value-small">{metrics.items || 0}</div>
           <small className="text-muted">Unidades entregadas</small>
         </div>
 
