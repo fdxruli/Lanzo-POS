@@ -300,7 +300,7 @@ export default function StatsGrid({ stats, customers = [] }) {
             {metrics.revenueTrend !== null && (
               <div className={`evolution-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
                 {metrics.revenueTrend >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                <span>{metrics.revenueTrend >= 0 ? '+' : ''}{metrics.revenueTrend.toFixed(1)}%</span>
+                <span>{`${metrics.revenueTrend >= 0 ? '+' : ''}${metrics.revenueTrend.toFixed(1)}%`}</span>
               </div>
             )}
           </div>
@@ -325,7 +325,7 @@ export default function StatsGrid({ stats, customers = [] }) {
             {metrics.revenueTrend !== null && (
               <div className={`card-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
                 {metrics.revenueTrend >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                <span>{metrics.revenueTrend >= 0 ? '+' : ''}{metrics.revenueTrend.toFixed(1)}% vs periodo anterior</span>
+                <span>{`${metrics.revenueTrend >= 0 ? '+' : ''}${metrics.revenueTrend.toFixed(1)}% vs periodo anterior`}</span>
               </div>
             )}
           </div>
@@ -344,22 +344,22 @@ export default function StatsGrid({ stats, customers = [] }) {
               <div className="error-message-inline" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: '6px', gap: '6px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ fontSize: '0.85rem', fontWeight: '500' }}>
-                    <strong>{formatCurrency(metrics.profitConfirmed)}</strong> confirmada
+                    <strong>{formatCurrency(metrics.profitConfirmed)}</strong>{` confirmada`}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ fontSize: '0.85rem' }}>
-                    + <strong>{formatCurrency(metrics.estimatedProfit)}</strong> estimada (sin costo)
+                    {`+ `}<strong>{formatCurrency(metrics.estimatedProfit)}</strong>{` estimada (sin costo)`}
                   </span>
                 </div>
                 <small style={{ color: 'var(--text-muted)', fontSize: '0.70rem', marginTop: '2px', lineHeight: '1.2' }}>
-                  Total: {formatCurrency(metrics.totalProfit)} | {metrics.coveragePercent.toFixed(1)}% tiene costo registrado
+                  {`Total: ${formatCurrency(metrics.totalProfit)} | ${metrics.coveragePercent.toFixed(1)}% tiene costo registrado`}
                 </small>
               </div>
             ) : (
               <div className="card-mini-stats">
                 <span className="mini-stat-pill">
-                  Margen: <strong>{metrics.marginPercent.toFixed(1)}%</strong>
+                  {`Margen: `}<strong>{`${metrics.marginPercent.toFixed(1)}%`}</strong>
                 </span>
               </div>
             )}
