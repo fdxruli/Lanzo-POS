@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 
 const ShareIcon = () => (
@@ -39,12 +39,15 @@ const InstallPrompt = () => {
   const isIOS = useAppStore((state) => state.isIOS);
   const showInstallModal = useAppStore((state) => state.showInstallModal);
   const isInstalling = useAppStore((state) => state.isInstalling);
+  const isInstallable = useAppStore((state) => state.isInstallable);
   const setInstallContext = useAppStore((state) => state.setInstallContext);
   const setDeferredPrompt = useAppStore((state) => state.setDeferredPrompt);
   const closeInstallModal = useAppStore((state) => state.closeInstallModal);
   const requestInstall = useAppStore((state) => state.requestInstall);
   const markInstalled = useAppStore((state) => state.markInstalled);
   const showUpdateModal = useAppStore((state) => state.showUpdateModal);
+
+  const prevIsInstallableRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -70,6 +73,14 @@ const InstallPrompt = () => {
       markInstalled();
     };
 
+    // 🔧 NUEVA FUNCIONALIDAD: Limpiar localStorage cuando se desinstale la app
+    const handleUninstalled = () => {
+      localStorage.removeItem('lanzo_install_dismissed');
+      // Resincronizar para que vuelva a mostrar el prompt
+      syncInstallContext();
+      syncPromptFromWindow();
+    };
+
     const handleDisplayModeChange = (e) => {
       if (e.matches) {
         setInstallContext({
@@ -84,6 +95,7 @@ const InstallPrompt = () => {
 
     window.addEventListener('lanzo-pwa-ready', handlePromptReady);
     window.addEventListener('appinstalled', handleInstalled);
+    window.addEventListener('appuninstalled', handleUninstalled); // ← Nuevo listener
 
     const mql = window.matchMedia('(display-mode: standalone)');
     mql.addEventListener('change', handleDisplayModeChange);
@@ -91,9 +103,19 @@ const InstallPrompt = () => {
     return () => {
       window.removeEventListener('lanzo-pwa-ready', handlePromptReady);
       window.removeEventListener('appinstalled', handleInstalled);
+      window.removeEventListener('appuninstalled', handleUninstalled); // ← Limpiar listener
       mql.removeEventListener('change', handleDisplayModeChange);
     };
   }, [markInstalled, setDeferredPrompt, setInstallContext]);
+
+  // 🔧 NUEVA FUNCIONALIDAD: Resetear "dismissado" cuando vuelve a ser instalable
+  useEffect(() => {
+    // Si cambió de NO instalable a instalable, limpiar el flag de dismissado
+    if (isInstallable && !prevIsInstallableRef.current) {
+      localStorage.removeItem('lanzo_install_dismissed');
+    }
+    prevIsInstallableRef.current = isInstallable;
+  }, [isInstallable]);
 
   // Verificamos si el usuario ya decidió ocultar el banner en este dispositivo
   const isDismissed = localStorage.getItem('lanzo_install_dismissed') === 'true';
