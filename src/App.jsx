@@ -16,9 +16,10 @@ import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
 import InstallPrompt from './components/common/InstallPrompt';
 import PersistenceWarningBanner from './components/common/PersistenceWarningBanner';
-import BackupReminder from './components/common/BackupRemider';
+import BackupReminder from './components/common/BackupReminder';
 import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
+import { AlertTriangle, XCircle } from 'lucide-react';
 
 const MAX_RETRIES = 3;
 const lazyRetry = (importFn, componentName = 'Component') => {
@@ -50,7 +51,7 @@ const lazyRetry = (importFn, componentName = 'Component') => {
             height: '100vh', display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center'
           }}>
-            <h2 style={{ fontSize: '2rem' }}>⚠️</h2>
+            <AlertTriangle size={48} className="text-yellow-500 mb-4" />
             <h3>Error de carga del módulo</h3>
             <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
             <button
@@ -143,7 +144,7 @@ function App() {
         height: '100vh', display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '20px'
       }}>
-        <h1 style={{ fontSize: '3rem' }}>⛔</h1>
+        <XCircle size={64} className="text-red-500 mb-4" />
         <h2>Aplicación ya abierta</h2>
         <p>Lanzo POS ya está abierto en otra pestaña o ventana.</p>
         <p>Por seguridad de tus datos, usa solo una pestaña a la vez.</p>

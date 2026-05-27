@@ -1,8 +1,158 @@
 import { db, STORES } from './db/dexie';
-import {
-  buildProductCostMap,
-  rebuildDailyStatsCacheFromSales
-} from './sales/financialStats';
+import { isFinanciallyClosedSale } from './sales/financialStats';
+import { Money } from '../utils/moneyMath';
+
+const DEFAULT_REBUILD_WINDOW_DAYS = 30;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+const toIsoDateKey = (value) => new Date(value).toISOString().split('T')[0];
+
+const startOfDay = (value) => {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const endOfDay = (value) => {
+  const date = new Date(value);
+  date.setHours(23, 59, 59, 999);
+  return date;
+};
+
+const normalizeRebuildRange = ({
+  startDate = null,
+  endDate = null,
+  days = DEFAULT_REBUILD_WINDOW_DAYS,
+  fullHistory = false
+} = {}) => {
+  if (fullHistory) {
+    return {
+      fullHistory: true,
+      startIso: null,
+      endIso: null,
+      startDateKey: null,
+      endDateKey: null
+    };
+  }
+
+  let effectiveStart;
+  let effectiveEnd;
+
+  if (startDate || endDate) {
+    effectiveStart = startDate ? startOfDay(startDate) : new Date(0);
+    effectiveEnd = endDate ? endOfDay(endDate) : endOfDay(new Date());
+  } else {
+    const safeDays = Math.max(1, Number(days) || DEFAULT_REBUILD_WINDOW_DAYS);
+    effectiveEnd = endOfDay(new Date());
+    effectiveStart = startOfDay(new Date(effectiveEnd.getTime() - ((safeDays - 1) * DAY_IN_MS)));
+  }
+
+  if (effectiveStart.getTime() > effectiveEnd.getTime()) {
+    throw new Error('La fecha inicial no puede ser mayor a la fecha final.');
+  }
+
+  return {
+    fullHistory: false,
+    startIso: effectiveStart.toISOString(),
+    endIso: effectiveEnd.toISOString(),
+    startDateKey: toIsoDateKey(effectiveStart),
+    endDateKey: toIsoDateKey(effectiveEnd)
+  };
+};
+
+const loadSalesForRebuild = async ({ fullHistory, startIso, endIso }) => {
+  if (fullHistory) {
+    return db.table(STORES.SALES).toArray();
+  }
+
+  if (startIso && endIso) {
+    return db.table(STORES.SALES)
+      .where('timestamp')
+      .between(startIso, endIso, true, true)
+      .toArray();
+  }
+
+  if (startIso) {
+    return db.table(STORES.SALES)
+      .where('timestamp')
+      .aboveOrEqual(startIso)
+      .toArray();
+  }
+
+  if (endIso) {
+    return db.table(STORES.SALES)
+      .where('timestamp')
+      .belowOrEqual(endIso)
+      .toArray();
+  }
+
+  return db.table(STORES.SALES).toArray();
+};
+
+const buildDailyStatsFromTicketHistory = (sales = []) => {
+  const dailyMap = new Map();
+  let processedOrders = 0;
+  let anomaliesFound = 0;
+
+  (sales || []).forEach((sale) => {
+    if (!isFinanciallyClosedSale(sale)) return;
+    if (!sale?.timestamp || Number.isNaN(Date.parse(sale.timestamp))) return;
+
+    processedOrders += 1;
+
+    const dateKey = toIsoDateKey(sale.timestamp);
+    if (!dailyMap.has(dateKey)) {
+      dailyMap.set(dateKey, {
+        id: dateKey,
+        date: dateKey,
+        revenue: Money.init(0),
+        validRevenue: Money.init(0),
+        profit: Money.init(0),
+        orders: 0,
+        itemsSold: Money.init(0),
+        hasMissingCosts: false
+      });
+    }
+
+    const dayStat = dailyMap.get(dateKey);
+    dayStat.revenue = Money.add(dayStat.revenue, sale.total || 0);
+    dayStat.orders += 1;
+
+    if (!Array.isArray(sale.items)) return;
+
+    sale.items.forEach((item) => {
+      const qty = Money.init(item?.quantity || 0);
+      const qtyNumber = Number(qty.round(3).toString());
+      const lineRevenue = Money.multiply(item?.price || 0, qty);
+      const rawCost = item?.cost;
+      const hasMissingCost = rawCost === undefined || rawCost === null || rawCost === '';
+      const normalizedCost = hasMissingCost ? 0 : rawCost;
+      const unitProfit = Money.subtract(item?.price || 0, normalizedCost);
+      const lineProfit = Money.multiply(unitProfit, qty);
+
+      dayStat.itemsSold = Money.add(dayStat.itemsSold, qty);
+      dayStat.validRevenue = Money.add(dayStat.validRevenue, lineRevenue);
+      dayStat.profit = Money.add(dayStat.profit, lineProfit);
+
+      if (hasMissingCost) {
+        dayStat.hasMissingCosts = true;
+        anomaliesFound += qtyNumber > 0 ? qtyNumber : 0;
+      }
+    });
+  });
+
+  return {
+    processedOrders,
+    anomaliesFound,
+    dailyStats: Array.from(dailyMap.values()).map((stat) => ({
+      ...stat,
+      revenue: Money.toNumber(stat.revenue),
+      validRevenue: Money.toNumber(stat.validRevenue),
+      profit: Money.toNumber(stat.profit),
+      itemsSold: Number(stat.itemsSold.round(3).toString())
+    }))
+  };
+};
 
 /**
  * HERRAMIENTA 1: SINCRONIZADOR MAESTRO DE STOCK
@@ -81,15 +231,44 @@ const fixStockInconsistencies = async () => {
  * HERRAMIENTA 2: RECONSTRUCTOR DE GANANCIAS (HISTORICO)
  * Borra las estadisticas diarias y las reconstruye desde ventas cerradas.
  */
-const rebuildDailyStats = async () => {
+const rebuildDailyStats = async (options = {}) => {
   try {
-    const productCostMap = await buildProductCostMap(db, STORES);
-    const dailyStats = await rebuildDailyStatsCacheFromSales(db, STORES, productCostMap, console);
-    const processedOrders = dailyStats.reduce((sum, day) => sum + (day.orders || 0), 0);
+    const range = normalizeRebuildRange(options);
+    const sales = await loadSalesForRebuild(range);
+    const {
+      dailyStats,
+      processedOrders,
+      anomaliesFound
+    } = buildDailyStatsFromTicketHistory(sales);
+
+    await db.transaction('rw', [db.table(STORES.DAILY_STATS)], async () => {
+      if (range.fullHistory) {
+        await db.table(STORES.DAILY_STATS).clear();
+      } else {
+        await db.table(STORES.DAILY_STATS)
+          .where('id')
+          .between(range.startDateKey, range.endDateKey, true, true)
+          .delete();
+      }
+
+      if (dailyStats.length > 0) {
+        await db.table(STORES.DAILY_STATS).bulkPut(dailyStats);
+      }
+    });
+
+    const rangeLabel = range.fullHistory
+      ? 'todo el historial'
+      : `${range.startDateKey} a ${range.endDateKey}`;
+    const anomalyLabel = anomaliesFound > 0
+      ? ` Se encontraron ${anomaliesFound} productos vendidos sin costo registrado; se calcularon con costo 0.`
+      : '';
 
     return {
       success: true,
-      message: `Historial reconstruido exitosamente (${processedOrders} ventas cerradas procesadas).`
+      processedOrders,
+      anomaliesFound,
+      range,
+      message: `Historial reconstruido exitosamente para ${rangeLabel} (${processedOrders} ventas cerradas procesadas).${anomalyLabel}`
     };
   } catch (error) {
     console.error('Error en rebuildDailyStats:', error);

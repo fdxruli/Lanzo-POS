@@ -252,6 +252,7 @@ export const useOrderStore = create(
       order: [],
       activeOrderId: null,
       tableData: null,
+      folio: null,
       isSavedOrder: false,
       _activeOrdersHook: null,
       _isSyncing: false,
@@ -300,6 +301,7 @@ export const useOrderStore = create(
                 order: incomingItems,
                 tableData: currentOrder.tableData || null,
                 activeOrderId: currentOrder.id,
+                folio: currentOrder.folio || null,
                 isSavedOrder: Boolean(currentOrder.isSaved),
                 isCartLocked: true,
                 _isSyncing: false,
@@ -312,6 +314,7 @@ export const useOrderStore = create(
               order: incomingItems,
               tableData: currentOrder.tableData || null,
               activeOrderId: currentOrder.id,
+              folio: currentOrder.folio || null,
               isSavedOrder: Boolean(currentOrder.isSaved),
               isCartLocked: false,
             });
@@ -328,6 +331,7 @@ export const useOrderStore = create(
                 items: currentStoreOrder,
                 customer: get().customer,
                 tableData: get().tableData,
+                folio: get().folio || null,
                 total: typeof get().getTotalPrice === 'function' ? get().getTotalPrice() : 0,
                 createdAt: new Date().toISOString(),
                 isSaved: false
@@ -354,6 +358,17 @@ export const useOrderStore = create(
 
           if (activeState.currentOrderId !== prevActiveState.currentOrderId) {
             syncActiveOrderToStore(activeState);
+            return;
+          }
+
+          // Sync lock state changes dynamically
+          if (activeState.currentOrderId) {
+            const currentOrder = activeState.activeOrders.get(activeState.currentOrderId);
+            const prevOrder = prevActiveState.activeOrders.get(activeState.currentOrderId);
+            
+            if (currentOrder && prevOrder && currentOrder.isLockedForCheckout !== prevOrder.isLockedForCheckout) {
+              set({ isCartLocked: Boolean(currentOrder.isLockedForCheckout) });
+            }
           }
         });
 
@@ -366,6 +381,10 @@ export const useOrderStore = create(
             const { currentOrderId, activeOrders } = hookState;
 
             if (!currentOrderId) return;
+            
+            // Si el store principal acaba de ser limpiado o cambió de orden,
+            // no debemos sobreescribir la orden activa con datos vacíos o cruzados.
+            if (storeState.activeOrderId !== currentOrderId) return;
 
             const currentOrder = activeOrders.get(currentOrderId);
             if (!currentOrder) return;
@@ -866,6 +885,7 @@ export const useOrderStore = create(
         order: [],
         activeOrderId: null,
         tableData: null,
+        folio: null,
         isSavedOrder: false,
       }),
 
@@ -889,6 +909,7 @@ export const useOrderStore = create(
             order: Array.isArray(sale.items) ? sale.items : [],
             activeOrderId: sale.id,
             tableData: toSessionTableData(sale.tableData),
+            folio: sale.folio || null,
             isSavedOrder: true,
           });
 
@@ -1088,7 +1109,8 @@ export const useOrderStore = create(
       partialize: (state) => ({
         order: state.order,
         activeOrderId: state.activeOrderId,
-        tableData: state.tableData
+        tableData: state.tableData,
+        folio: state.folio
       }),
     }
   )

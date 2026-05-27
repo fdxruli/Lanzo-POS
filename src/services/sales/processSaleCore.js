@@ -10,6 +10,7 @@ import { generateID } from '../utils';
 import { SALE_STATUS } from './financialStats';
 import { syncMiddleware } from '../sync/syncMiddleware';
 import { conflictResolver } from '../sync/conflictResolver';
+import { evaluator } from '../BackupRiskEvaluator';
 
 export const processSaleCore = async ({
     order,
@@ -41,14 +42,43 @@ export const processSaleCore = async ({
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
-        // ✅ 2. AQUI VA LA MEJORA (Validación Temprana de Total)
-        // Movemos esto hacia arriba. Antes estaba después del stockValidation.
+        // 🔥 CORRECCIÓN ESTRUCTURAL: SOBERANÍA DEL TOTAL
+        // 1. Recalcular la verdad absoluta desde los productos que se van a procesar
         let totalNum;
         try {
-            totalNum = Money.init(total);
-            if (totalNum.lt(0)) throw new Error();
-        } catch {
-            throw new Error('El total de la venta no es numéricamente válido.');
+            const totalRealNum = itemsToProcess.reduce((sum, item) => {
+                const price = Money.init(item.price || 0);
+                const qty = Money.init(item.quantity || 0);
+                const discount = Money.init(item.discount || 0); // Por si manejas descuentos por ítem
+
+                // Subtotal = (Precio * Cantidad) - Descuento
+                const subtotalItem = Money.sub(Money.mul(price, qty), discount);
+                return Money.add(sum, subtotalItem);
+            }, Money.init(0));
+
+            // 2. Auditar el parámetro enviado por el frontend
+            const totalFrontendNum = Money.init(total);
+
+            if (totalFrontendNum.lt(0) || totalRealNum.lt(0)) {
+                throw new Error('El total de la venta no puede ser negativo.');
+            }
+
+            // 3. Ecuación de discrepancia (Tolerancia máxima de $0.05 por posibles redondeos de JS)
+            const diferencia = Math.abs(Number(totalFrontendNum) - Number(totalRealNum));
+            if (diferencia > 0.05) {
+                Logger.warn('⚠️ Discrepancia financiera crítica detectada (Front vs Back):', {
+                    enviadoFront: Number(totalFrontendNum),
+                    calculadoBackend: Number(totalRealNum)
+                });
+                throw new Error(`Inconsistencia en el carrito: Los productos suman $${Number(totalRealNum).toFixed(2)}, pero la orden indica $${Number(totalFrontendNum).toFixed(2)}.`);
+            }
+
+            // 4. Imponer la verdad del backend: 
+            // Aunque el frontend mande un total, a partir de aquí el sistema usará el total matemático real.
+            totalNum = totalRealNum;
+
+        } catch (e) {
+            throw new Error(e.message || 'Error al auditar el total financiero de la venta.');
         }
 
         // NUEVO: Defensa estricta de variables financieras
@@ -144,10 +174,13 @@ export const processSaleCore = async ({
             paymentMethod: paymentData.paymentMethod,
             abono: Money.toExactString(abonoSeguro),
             saldoPendiente: Money.toExactString(saldoSeguro),
+            dueDate: paymentData.dueDate ? new Date(paymentData.dueDate).toISOString() : null,
+            creditStatus: paymentData.paymentMethod === 'fiado' ? 'VIGENTE' : null,
             status: SALE_STATUS.CLOSED,
             fulfillmentStatus: features.hasKDS ? 'pending' : 'completed',
             prescriptionDetails: tempPrescriptionData || null,
-            postEffectsCompleted: false
+            postEffectsCompleted: false,
+            syncStatus: 'PENDING'
         };
 
         const transactionResult = await executeSaleTransactionSafe(sale, batchesToDeduct);
@@ -216,27 +249,32 @@ export const processSaleCore = async ({
             };
 
             // Registrar en syncMiddleware para prevenir sobrescrituras
-            await syncMiddleware.registerLocalSaleChange(sale.id, inventoryChanges);
-            await conflictResolver.markAsPendingSync(
-                STORES.SALES,
-                {
-                    saleId: sale.id,
-                    inventoryChanges,
-                    status: SALE_STATUS.CLOSED
-                },
-                'POST_EFFECTS_SYNC_FAILED'
-            );
+            // [Fase 1]: Desacoplar Ventas del Middleware temporalmente
+            // await syncMiddleware.registerLocalSaleChange(sale.id, inventoryChanges);
+            // await conflictResolver.markAsPendingSync(
+            //     STORES.SALES,
+            //     {
+            //         saleId: sale.id,
+            //         inventoryChanges,
+            //         status: SALE_STATUS.CLOSED
+            //     },
+            //     'POST_EFFECTS_SYNC_FAILED'
+            // );
 
             Logger.info(
                 `📌 Cambios de inventario registrados como PENDIENTES para prevenir sobrescrituras`,
                 { saleId: sale.id, itemsAffected: processedItems.length }
             );
         }
+        // ✅ Llamada silenciosa al evaluador de riesgo para prevenir Falacia del Estado Volátil (Volumen en memoria sin recarga)
+        evaluator.ping();
+
         // ✅ RETORNO RESILIENTE PWA
         // Indica claramente: venta segura localmente, pero qué efectos fallaron
         return {
             success: true,
             saleId: sale.timestamp,
+            folio: sale.folio,
             postEffectsFailed,
             postEffectsError: postEffectsFailed ? postEffectsError : null,
             pendingSyncRequired: postEffectsFailed, // Trigger para Service Worker

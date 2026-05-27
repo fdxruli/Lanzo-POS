@@ -38,10 +38,37 @@ export const createUISlice = (set, get) => ({
     set({ showAssistantBot: value });
   },
 
+  enableMultipleOrders: (() => {
+    try {
+      const saved = localStorage.getItem('lanzo_enable_multiple_orders');
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch (e) {
+      return false;
+    }
+  })(),
+
+  setEnableMultipleOrders: (value) => {
+    try {
+      localStorage.setItem('lanzo_enable_multiple_orders', JSON.stringify(value));
+    } catch (e) {
+      Logger.error('Error al guardar la preferencia de multiples ordenes:');
+    }
+    set({ enableMultipleOrders: value });
+  },
+
   setBackupLoading: (value) => {
     set({ isBackupLoading: Boolean(value) });
   },
 
   startBackupLoading: () => set({ isBackupLoading: true }),
-  stopBackupLoading: () => set({ isBackupLoading: false })
+  stopBackupLoading: () => set({ isBackupLoading: false }),
+
+  // --- Estados de Interrupción y Respaldo ---
+  isStorageCritical: false,
+  isTransactionInProgress: false,
+  isVolatileDismissed: false,
+
+  setStorageCritical: (value) => set({ isStorageCritical: Boolean(value) }),
+  setTransactionInProgress: (value) => set({ isTransactionInProgress: Boolean(value) }),
+  setVolatileDismissed: (value) => set({ isVolatileDismissed: Boolean(value) })
 });

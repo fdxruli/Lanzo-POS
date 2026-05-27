@@ -3,6 +3,7 @@ import { db, STORES } from './dexie';
 import { DatabaseError, DB_ERROR_CODES } from './utils';
 import { normalizeCustomerDebtCents } from './customerDebtIndex';
 import { Money } from '../../utils/moneyMath'; // <-- OBLIGATORIO
+import { registrarMovimientoCajaEnTransaccion } from '../cajaService';
 
 export const customerCreditRepository = {
     /**
@@ -10,7 +11,7 @@ export const customerCreditRepository = {
      * La validación de la deuda ocurre DENTRO del candado transaccional, 
      * no confiando en el estado del cliente que viene del Frontend.
      */
-    async processPayment(customerId, amount, paymentMethod = 'efectivo', cajaId, note = '') {
+    async processPayment(customerId, amount, paymentMethod = 'efectivo', cajaId, note = '', allocations = null) {
         // 1. Defensa y sanitización inicial
         const amountSafe = Money.init(amount);
 
@@ -22,7 +23,8 @@ export const customerCreditRepository = {
             db.table(STORES.CUSTOMERS),
             db.table(STORES.CUSTOMER_LEDGER),
             db.table(STORES.CAJAS),
-            db.table(STORES.MOVIMIENTOS_CAJA)
+            db.table(STORES.MOVIMIENTOS_CAJA),
+            db.table(STORES.SALES)
         ], async () => {
             const customer = await db.table(STORES.CUSTOMERS).get(customerId);
             if (!customer) {
@@ -60,28 +62,67 @@ export const customerCreditRepository = {
                 updatedAt: timestamp
             });
 
-            // 5. Registrar el ingreso en la Caja Activa protegiendo los valores
-            if (cajaId) {
-                const caja = await db.table(STORES.CAJAS).get(cajaId);
-                if (!caja || caja.estado !== 'abierta') {
-                    throw new Error("Transacción abortada: La caja no está abierta.");
+            // 5. Aplicar Abono a Notas (FIFO o Específicas)
+            if (allocations && allocations.length > 0) {
+                let totalAllocated = Money.init(0);
+                for (const alloc of allocations) {
+                    totalAllocated = Money.add(totalAllocated, alloc.amountApplied);
                 }
 
-                const currentCajaIngresos = Money.init(caja.ingresos_efectivo || 0);
-                const newCajaIngresos = Money.add(currentCajaIngresos, amountSafe);
+                // Prevenir que la suma de asignaciones exceda el abono reportado
+                if (totalAllocated.gt(amountSafe)) {
+                    throw new Error("La suma de las asignaciones excede el abono total.");
+                }
 
-                await db.table(STORES.CAJAS).update(cajaId, {
-                    ingresos_efectivo: Money.toExactString(newCajaIngresos)
-                });
+                for (const alloc of allocations) {
+                    const sale = await db.table(STORES.SALES).get(alloc.saleId);
+                    if (sale && sale.saldoPendiente > 0) {
+                        const amountToApply = Money.init(alloc.amountApplied);
+                        const currentSaldo = Money.init(sale.saldoPendiente);
 
-                await db.table(STORES.MOVIMIENTOS_CAJA).add({
-                    id: generateID('mov'),
-                    caja_id: cajaId,
-                    tipo: 'ingreso',
-                    monto: Money.toExactString(amountSafe),
-                    concepto: `Abono de cliente: ${customer.name}`,
-                    fecha: timestamp
-                });
+                        // Bloquear sub-desbordamiento (saldo negativo)
+                        const finalAmountToApply = amountToApply.gt(currentSaldo) ? currentSaldo : amountToApply;
+                        const newSaldo = Money.subtract(currentSaldo, finalAmountToApply);
+
+                        await db.table(STORES.SALES).update(alloc.saleId, {
+                            saldoPendiente: Money.toNumber(newSaldo),
+                            creditStatus: newSaldo.lte(0) ? 'PAGADO' : 'PARCIAL'
+                        });
+                    }
+                }
+            } else {
+                let remainingAmount = amountSafe;
+                const pendingSales = await db.table(STORES.SALES)
+                    .where('customerId').equals(customerId)
+                    .and(s => s.paymentMethod === 'fiado' && s.saldoPendiente > 0)
+                    .sortBy('timestamp'); // Ascendente
+
+                for (const sale of pendingSales) {
+                    if (remainingAmount.lte(0)) break;
+
+                    const currentSaldo = Money.init(sale.saldoPendiente);
+                    const amountToApply = remainingAmount.gte(currentSaldo) ? currentSaldo : remainingAmount;
+                    const newSaldo = Money.subtract(currentSaldo, amountToApply);
+
+                    await db.table(STORES.SALES).update(sale.id, {
+                        saldoPendiente: Money.toNumber(newSaldo),
+                        creditStatus: newSaldo.lte(0) ? 'PAGADO' : 'PARCIAL'
+                    });
+
+                    remainingAmount = Money.subtract(remainingAmount, amountToApply);
+                }
+            }
+
+            // 6. Registrar el ingreso en la Caja usando el servicio centralizado.
+            //    Usamos registrarMovimientoCajaEnTransaccion (variante inline) porque
+            //    ya estamos dentro de una transacción Dexie activa.
+            if (cajaId) {
+                await registrarMovimientoCajaEnTransaccion(
+                    cajaId,
+                    'entrada',
+                    amountSafe,
+                    `Abono de cliente: ${customer.name}`
+                );
             }
 
             return { success: true, newDebt: Money.toExactString(newDebtSafe), ledgerId };
@@ -115,6 +156,75 @@ export const customerCreditRepository = {
             });
 
             return exactDebtString;
+        });
+    },
+
+    /**
+     * AUTO-HEAL: Sincroniza los tickets individuales con la deuda global actual.
+     * Usa lógica LIFO (reparte la deuda desde la compra más reciente a la más antigua)
+     * para liquidar automáticamente los "tickets fantasma".
+     */
+    async healCustomerSalesDebt(customerId) {
+        return await db.transaction('rw', [
+            db.table(STORES.CUSTOMERS),
+            db.table(STORES.SALES)
+        ], async () => {
+            const customer = await db.table(STORES.CUSTOMERS).get(customerId);
+            if (!customer) return { success: false };
+
+            const currentDebtSafe = Money.init(customer.debt || 0);
+
+            // Obtener TODAS las ventas a crédito (pagadas o no)
+            const allFiadoSales = await db.table(STORES.SALES)
+                .where('customerId').equals(customerId)
+                .and(s => s.paymentMethod === 'fiado')
+                .sortBy('timestamp');
+
+            // Invertir para aplicar LIFO (Priorizar deuda a los tickets más recientes)
+            allFiadoSales.reverse();
+
+            let remainingDebtToAllocate = currentDebtSafe;
+            const salesToUpdate = [];
+
+            for (const sale of allFiadoSales) {
+                const totalSafe = Money.init(sale.total || 0);
+                const abonoSafe = Money.init(sale.abono || 0);
+                // La deuda original de esta nota
+                const originalDebtOfSale = Money.subtract(totalSafe, abonoSafe);
+
+                if (originalDebtOfSale.lte(0)) {
+                    if (sale.saldoPendiente !== 0 || sale.creditStatus !== 'PAGADO') {
+                        salesToUpdate.push({ ...sale, saldoPendiente: 0, creditStatus: 'PAGADO' });
+                    }
+                    continue;
+                }
+
+                // ¿Cuánta deuda le toca a este ticket? (Lo máximo es su deuda original)
+                const debtForThisSale = remainingDebtToAllocate.gte(originalDebtOfSale)
+                    ? originalDebtOfSale
+                    : remainingDebtToAllocate;
+
+                remainingDebtToAllocate = Money.subtract(remainingDebtToAllocate, debtForThisSale);
+
+                const newSaldo = Money.toNumber(debtForThisSale);
+                const newStatus = debtForThisSale.lte(0) ? 'PAGADO' : 'PARCIAL';
+
+                // Solo empujar a la actualización si el ticket estaba descuadrado
+                if (sale.saldoPendiente !== newSaldo || sale.creditStatus !== newStatus) {
+                    salesToUpdate.push({
+                        ...sale,
+                        saldoPendiente: newSaldo,
+                        creditStatus: newStatus
+                    });
+                }
+            }
+
+            // Actualizar la base de datos de un solo golpe
+            if (salesToUpdate.length > 0) {
+                await db.table(STORES.SALES).bulkPut(salesToUpdate);
+            }
+
+            return { success: true, healedCount: salesToUpdate.length };
         });
     },
 
@@ -189,5 +299,69 @@ export const customerCreditRepository = {
                     });
             }
         });
+    },
+
+    /**
+     * Tarea en segundo plano para sanear las discrepancias de deuda en toda la base de datos de forma segura.
+     */
+    async runGlobalAutoHealBackground() {
+        try {
+            // Prevenir concurrencia entre pestañas con Web Locks API
+            if (navigator.locks) {
+                await navigator.locks.request('lanzo_auto_heal_debt', { mode: 'exclusive', ifAvailable: true }, async (lock) => {
+                    if (!lock) {
+                        console.log("Auto-heal de deudas: Otra pestaña ya está ejecutando la tarea.");
+                        return;
+                    }
+                    await this._executeAutoHeal();
+                });
+            } else {
+                // Fallback a localStorage si Web Locks no está disponible
+                const lockKey = 'lanzo_auto_heal_debt_lock';
+                const lastRun = localStorage.getItem(lockKey);
+                if (lastRun && (Date.now() - parseInt(lastRun)) < 1000 * 60 * 60) {
+                    return; // Corrió hace menos de 1 hora
+                }
+                localStorage.setItem(lockKey, Date.now().toString());
+                await this._executeAutoHeal();
+            }
+        } catch (error) {
+            console.error("Error en runGlobalAutoHealBackground:", error);
+        }
+    },
+
+    /**
+     * Método interno que realiza el saneamiento de tickets fantasma de todos los clientes.
+     */
+    async _executeAutoHeal() {
+        console.log("Iniciando saneamiento global de deudas de clientes (Auto-Heal)...");
+        try {
+            // Buscar clientes con deuda reportada
+            const customersWithDebt = await db.table(STORES.CUSTOMERS)
+                .filter(c => Number(c.debt) > 0 || Number(c.debt) < 0)
+                .toArray();
+
+            let healedCount = 0;
+            for (const customer of customersWithDebt) {
+                const result = await this.healCustomerSalesDebt(customer.id);
+                if (result && result.success && result.healedCount > 0) {
+                    healedCount++;
+                }
+            }
+            console.log(`Auto-heal completado. Se sanearon los tickets de ${healedCount} clientes.`);
+        } catch (error) {
+            console.error("Fallo durante _executeAutoHeal:", error);
+        }
     }
 };
+
+// Enganchar el auto-heal al inicio de la base de datos sin bloquear el renderizado
+db.on('ready', () => {
+    // Usamos setTimeout para empujar la ejecución al final del event loop
+    // asegurando que Dexie.js termine de abrir y React pueda renderizar.
+    setTimeout(() => {
+        customerCreditRepository.runGlobalAutoHealBackground().catch(err => {
+            console.error("Error en hook de background auto-heal:", err);
+        });
+    }, 3000);
+});

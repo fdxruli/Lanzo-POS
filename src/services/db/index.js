@@ -7,6 +7,7 @@ import { fixStockInconsistencies, rebuildDailyStats } from '../maintenance';
 import { layawayRepository } from './layaways';
 import { handleDexieError } from './utils';
 import { CUSTOMER_DEBT_SORT_INDEX, matchesCustomerSnapshot } from './customerDebtIndex';
+import { evaluator } from '../BackupRiskEvaluator';
 
 // ============================================================
 // EXPORTACIÓN DE CONSTANTES Y CLASES (Compatibilidad 100%)
@@ -197,7 +198,11 @@ export const deleteData = (storeName, key) => generalRepository.delete(storeName
 export const saveData = async (storeName, data) => {
     try {
         if (!db.isOpen()) await db.open();
-        return await generalRepository.save(storeName, data);
+        const result = await generalRepository.save(storeName, data);
+        if ([STORES.MENU, STORES.SALES, STORES.CUSTOMERS].includes(storeName)) {
+            evaluator.ping();
+        }
+        return result;
     } catch (error) {
         if (error.name === 'DatabaseClosedError') {
             console.warn(`[DB] Escritura omitida en ${storeName}: La base de datos está cerrada.`);
@@ -206,7 +211,13 @@ export const saveData = async (storeName, data) => {
         throw error;
     }
 };
-export const saveBulk = (storeName, data) => generalRepository.saveBulk(storeName, data);
+export const saveBulk = (storeName, data) => {
+    const promise = generalRepository.saveBulk(storeName, data);
+    if ([STORES.MENU, STORES.SALES, STORES.CUSTOMERS].includes(storeName)) {
+        evaluator.ping();
+    }
+    return promise;
+};
 
 export const searchProductByBarcode = productsRepository.searchByBarcode;
 export { searchProductsInDB };

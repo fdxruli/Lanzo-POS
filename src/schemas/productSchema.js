@@ -7,33 +7,33 @@ export const productSchema = z.object({
   barcode: z.string().trim().optional().or(z.literal('')),
   description: z.string().optional().or(z.literal('')),
   rubroContext: z.string().optional(),
-  
+
   // Relaciones y Multimedia
   categoryId: z.string().optional().or(z.literal('')),
-  image: z.any().optional(), 
+  image: z.any().optional(),
   location: z.string().optional(),
 
   // Precios y Costos
   price: z.coerce.number().min(0).default(0),
   cost: z.coerce.number().min(0).default(0),
-  
+
   // Stock e Inventario
   stock: z.coerce.number().default(0),
   committedStock: z.coerce.number().default(0),
-  minStock: z.coerce.number().nullable().optional(),
-  maxStock: z.coerce.number().nullable().optional(),
+  minStock: z.coerce.number().catch(null).nullable().optional(),
+  maxStock: z.coerce.number().catch(null).nullable().optional(),
   trackStock: z.boolean().default(true),
   isActive: z.boolean().default(true),
-  
+
   // Tipos y Lógica de Negocio
   productType: z.enum(['sellable', 'ingredient']).default('sellable'),
   saleType: z.enum(['unit', 'bulk']).default('unit'),
-  
+
   // Objetos Complejos
   bulkData: z.object({
     purchase: z.object({ unit: z.string().optional() }).optional()
   }).optional(),
-  
+
   conversionFactor: z.object({
     enabled: z.boolean().optional(),
     factor: z.coerce.number().optional(),
@@ -45,28 +45,28 @@ export const productSchema = z.object({
     selectionStrategy: z.string().optional()
   }).optional(),
 
-  recipe: z.array(z.any()).optional(), 
+  recipe: z.array(z.any()).optional(),
   modifiers: z.array(z.any()).optional(),
   wholesaleTiers: z.array(z.any()).optional(),
 
   // --- CORRECCIÓN FARMACIA ---
   // Agregamos los campos exactos que envía PharmacyProductForm.jsx
-  
+
   // 1. Tipo de Prescripción (Vital para que no se resetee a OTC)
   prescriptionType: z.enum(['otc', 'antibiotic', 'controlled']).optional(),
 
   // 2. Datos Específicos (Nombres en inglés como los envía el formulario)
   activeSubstance: z.string().optional(),
   laboratory: z.string().optional(),
-  
+
   // Mantenemos compatibilidad con versiones anteriores o backups (Nombres en español)
   sustancia: z.string().optional().nullable(),
   laboratorio: z.string().optional().nullable(),
   requiresPrescription: z.boolean().optional(),
   presentation: z.string().optional().nullable(),
-  
+
   // Caducidad
-  shelfLife: z.string().optional().nullable(), 
+  shelfLife: z.string().optional().nullable(),
 
   // Fechas
   createdAt: z.string().optional(),

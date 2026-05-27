@@ -319,6 +319,24 @@ const persistSaleAndLog = async ({ sale, tables, logType = 'SALE', extraLogField
     return transactionId;
 };
 
+const generateStoreCode = (companyName) => {
+    if (!companyName || typeof companyName !== 'string') return 'LZ';
+
+    // Limpiamos espacios extras y convertimos a mayúsculas
+    const nameParts = companyName.trim().toUpperCase().split(/\s+/).filter(Boolean);
+
+    if (nameParts.length === 0) return 'LZ';
+
+    if (nameParts.length >= 2) {
+        // Dos o más palabras: Primera letra de las dos primeras palabras (Ej: "Entre Alas" -> "EA")
+        return nameParts[0][0] + nameParts[1][0];
+    } else {
+        // Una palabra: Primeras dos letras (Ej: "Gary" -> "GA")
+        const word = nameParts[0];
+        return word.length === 1 ? `${word}X` : word.substring(0, 2);
+    }
+};
+
 const processSaleWithinTransaction = async ({
     sale,
     deductions = [],
@@ -362,6 +380,35 @@ const processSaleWithinTransaction = async ({
         tables
     });
 
+    // ─ NUEVA LÓGICA: Generar Folio Secuencial
+    if (!sale.folio) {
+        let nextSeq = 1;
+        if (tables.sequences) {
+            const seqRecord = await tables.sequences.get('sale_folio');
+            nextSeq = seqRecord ? seqRecord.value + 1 : 1;
+            await tables.sequences.put({ id: 'sale_folio', value: nextSeq });
+        }
+
+        let storeCode = 'LZ'; // Valor por defecto general del sistema
+        let terminalId = '01';
+
+        if (tables.company) {
+            const companies = await tables.company.toArray();
+            if (companies.length > 0) {
+                const company = companies[0];
+                // Busca en las propiedades posibles del perfil
+                const companyName = company.name || company.business_name || '';
+
+                // 1. Usa storeCode manual si existe en DB
+                // 2. Si no, lo genera dinámicamente del nombre
+                storeCode = company.storeCode || generateStoreCode(companyName);
+                terminalId = company.terminalId || '01';
+            }
+        }
+
+        sale.folio = `${storeCode}-${terminalId}-${String(nextSeq).padStart(6, '0')}`;
+    }
+
     const transactionId = await persistSaleAndLog({
         sale,
         tables,
@@ -379,7 +426,9 @@ const resolveRequiredStoreNames = (salesPayloads = []) => {
         STORES.PRODUCT_BATCHES,
         STORES.MENU,
         STORES.TRANSACTION_LOG,
-        STORES.INVENTORY_EVENTS  // ← SIEMPRE incluir para registrar deltas
+        STORES.INVENTORY_EVENTS,  // ← SIEMPRE incluir para registrar deltas
+        STORES.SEQUENCES,
+        STORES.COMPANY
     ]);
 
     const sales = Array.isArray(salesPayloads) ? salesPayloads : [salesPayloads];
@@ -404,6 +453,8 @@ const buildTransactionTables = (lockedStores = []) => {
     if (lockedStores.includes(STORES.CUSTOMERS)) tables.customers = db.table(STORES.CUSTOMERS);
     if (lockedStores.includes(STORES.CUSTOMER_LEDGER)) tables.customerLedger = db.table(STORES.CUSTOMER_LEDGER);
     if (lockedStores.includes(STORES.INVENTORY_EVENTS)) tables.inventoryEvents = db.table(STORES.INVENTORY_EVENTS);
+    if (lockedStores.includes(STORES.SEQUENCES)) tables.sequences = db.table(STORES.SEQUENCES);
+    if (lockedStores.includes(STORES.COMPANY)) tables.company = db.table(STORES.COMPANY);
     return tables;
 };
 
@@ -597,14 +648,14 @@ export const salesRepository = {
  * Lee eventos de inventory_events y los envía al servidor
  */
 export const inventorySyncService = {
-    
+
     async pullUnynchedEvents(limit = 100) {
         // Leer eventos que aún no se han sincronizado
         const unsyncedEvents = await db.table(STORES.INVENTORY_EVENTS)
             .where('synced').equals(false)
             .limit(limit)
             .toArray();
-        
+
         return unsyncedEvents;
     },
 

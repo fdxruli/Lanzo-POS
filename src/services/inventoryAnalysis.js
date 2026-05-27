@@ -24,8 +24,16 @@ const getUrgencyLevel = (daysRemaining) => {
   return 'medium';
 };
 
-export const buildLowStockProductsReport = (products = [], options = {}) => {
+// Actualiza la firma para recibir el nuevo parámetro 'batches'
+export const buildLowStockProductsReport = (products = [], batches = [], options = {}) => {
   const { limit } = options;
+
+  // Indexar lotes por ID de producto
+  const batchesByProductId = (batches || []).reduce((acc, batch) => {
+    if (!acc[batch.productId]) acc[batch.productId] = [];
+    acc[batch.productId].push(batch);
+    return acc;
+  }, {});
 
   const report = (products || [])
     .filter((product) => {
@@ -46,6 +54,23 @@ export const buildLowStockProductsReport = (products = [], options = {}) => {
       const deficit = Math.ceil(rawDeficit);
       const urgency = minStock > 0 ? currentStock / minStock : 1;
 
+      // RESOLUCIÓN DE PROVEEDOR
+      let resolvedSupplier = product?.lastSupplier || product?.supplier;
+
+      // Si no hay proveedor directo y el producto usa lotes, lo buscamos en su historial
+      if (!resolvedSupplier && product?.hasBatches) {
+        const productBatches = batchesByProductId[product.id] || [];
+
+        // Ordenamos para priorizar el lote más reciente que tenga la propiedad 'supplier'
+        const latestBatchWithSupplier = productBatches
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          .find(b => b.supplier && b.supplier.trim() !== '');
+
+        if (latestBatchWithSupplier) {
+          resolvedSupplier = latestBatchWithSupplier.supplier;
+        }
+      }
+
       return {
         ...product,
         id: product?.id,
@@ -58,7 +83,7 @@ export const buildLowStockProductsReport = (products = [], options = {}) => {
         targetStock,
         deficit,
         suggestedOrder: deficit,
-        supplierName: product?.supplier || 'Proveedor General',
+        supplierName: resolvedSupplier || 'Sin Proveedor Asignado', // Uso de la variable resuelta
         unit: product?.saleType === 'bulk'
           ? (product?.bulkData?.purchase?.unit || 'kg')
           : 'pza',
@@ -156,8 +181,13 @@ export const buildExpiringProductsReport = ({
 
 export const getLowStockProductsReport = async (options = {}) => {
   try {
-    const products = await loadData(STORES.MENU);
-    return buildLowStockProductsReport(products || [], options);
+    // Corrección: Cargar tanto el MENU como los lotes en paralelo.
+    const [products, batches] = await Promise.all([
+      loadData(STORES.MENU),
+      loadData(STORES.PRODUCT_BATCHES)
+    ]);
+    // Pasamos los lotes a la función constructora
+    return buildLowStockProductsReport(products || [], batches || [], options);
   } catch (error) {
     Logger.error('Error calculando reporte de stock bajo:', error);
     return [];

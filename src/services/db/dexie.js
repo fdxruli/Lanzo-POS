@@ -36,7 +36,8 @@ export const STORES = {
   IMAGES: 'images',
   LAYAWAYS: 'layaways',
   CUSTOMER_LEDGER: 'customer_ledger',
-  INVENTORY_EVENTS: 'inventory_events'
+  INVENTORY_EVENTS: 'inventory_events',
+  SEQUENCES: 'sequences'
 };
 
 class LanzoDatabase extends Dexie {
@@ -239,6 +240,31 @@ class LanzoDatabase extends Dexie {
           record.synced = false;
           record.syncedAt = null;
         }
+      });
+    });
+
+    this.version(13).stores({
+      [STORES.SEQUENCES]: 'id'
+    });
+
+    // Versión 14: Sanitización de datos históricos (Single Source of Truth - Caja)
+    // Limpia la deuda técnica de nomenclaturas incorrectas en movimientos y cajas.
+    this.version(14).stores({}).upgrade(async tx => {
+      // 1. Normalizar movimientos con tipo legacy 'ingreso' → 'entrada'
+      await tx.table(STORES.MOVIMIENTOS_CAJA).toCollection().modify(record => {
+        if (record.tipo === 'ingreso') {
+          record.tipo = 'entrada';
+        }
+      });
+
+      // 2. Consolidar campo fantasma 'ingresos_efectivo' → 'entradas_efectivo' en cajas
+      await tx.table(STORES.CAJAS).toCollection().modify(record => {
+        const ingresosAnomalo = Number(record.ingresos_efectivo || 0);
+        if (ingresosAnomalo > 0) {
+          const currentEntradas = Number(record.entradas_efectivo || 0);
+          record.entradas_efectivo = String(currentEntradas + ingresosAnomalo);
+        }
+        delete record.ingresos_efectivo;
       });
     });
   }

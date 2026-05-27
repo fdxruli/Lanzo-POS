@@ -190,6 +190,7 @@ export const productsRepository = {
                         cost: newCost,
                         price: newPrice,
                         hasBatches: true,
+                        lastSupplier: normalizedBatchData.supplier || product.lastSupplier || product.supplier,
                         updatedAt: new Date().toISOString()
                     };
 

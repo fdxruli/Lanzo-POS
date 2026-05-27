@@ -22,7 +22,13 @@ export const Money = {
   
   subtract: (a, b) => Money.init(a).minus(Money.init(b)),
   
+  // Alias retrocompatibles: parte del código aún usa la API corta.
+  sub: (a, b) => Money.subtract(a, b),
+  
   multiply: (a, b) => Money.init(a).times(Money.init(b)),
+  
+  // Alias retrocompatible para evitar fallos en flujos de venta existentes.
+  mul: (a, b) => Money.multiply(a, b),
   
   divide: (a, b) => {
     const divisor = Money.init(b);
