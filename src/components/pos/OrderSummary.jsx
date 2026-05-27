@@ -3,7 +3,21 @@ import { useOrderStore } from '../../store/useOrderStore';
 import { ChevronDown, Trash2 } from 'lucide-react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import { db, STORES } from '../../services/db/dexie';
+import { useState, useEffect } from 'react';
 import './OrderSummary.css';
+
+const generateStoreCode = (companyName) => {
+  if (!companyName || typeof companyName !== 'string') return 'LZ';
+  const nameParts = companyName.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (nameParts.length === 0) return 'LZ';
+  if (nameParts.length >= 2) {
+    return nameParts[0][0] + nameParts[1][0];
+  } else {
+    const word = nameParts[0];
+    return word.length === 1 ? `${word}X` : word.substring(0, 2);
+  }
+};
 
 export default function OrderSummary({
   onOpenPayment,
@@ -23,6 +37,39 @@ export default function OrderSummary({
   const activeOrderId = useOrderStore((state) => state.activeOrderId);
   const isEditMode = useOrderStore((state) => state.isSavedOrder);
   const features = useFeatureConfig();
+
+  const [estimatedFolio, setEstimatedFolio] = useState('');
+
+  useEffect(() => {
+    const fetchEstimatedFolio = async () => {
+      try {
+        let nextSeq = 1;
+        const seqRecord = await db.table(STORES.SEQUENCES).get('sale_folio');
+        if (seqRecord) {
+          nextSeq = seqRecord.value + 1;
+        }
+
+        let storeCode = 'LZ'; // Por defecto sistema
+        let terminalId = '01';
+
+        const companies = await db.table(STORES.COMPANY).toArray();
+        if (companies.length > 0) {
+          const company = companies[0];
+          const companyName = company.name || company.business_name || '';
+
+          storeCode = company.storeCode || generateStoreCode(companyName);
+          terminalId = company.terminalId || '01';
+        }
+
+        setEstimatedFolio(`${storeCode}-${terminalId}-${String(nextSeq).padStart(6, '0')}`);
+      } catch (error) {
+        console.error('Error fetching estimated folio:', error);
+      }
+    };
+
+    fetchEstimatedFolio();
+  }, [order.length]);
+
   // Nos aseguramos de tener 'removeItem' disponible
   const { updateItemQuantity, removeItem, clearSession, getTotalPrice, setTableData } = useOrderStore.getState();
   const total = getTotalPrice();
@@ -71,12 +118,22 @@ export default function OrderSummary({
         <h2 style={{
           margin: 0,
           fontSize: isMobileModal ? '1.2rem' : '1.5rem',
-          color: (isEditMode && showRestaurantActions) ? '#b45309' : 'inherit'
+          color: (isEditMode && showRestaurantActions) ? '#b45309' : 'inherit',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px'
         }}>
-          {showRestaurantActions
-            ? (isEditMode ? `Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
-            : (tableData ? `Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
-          }
+          <span>
+            {showRestaurantActions
+              ? (isEditMode ? `Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
+              : (tableData ? `Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
+            }
+          </span>
+          {estimatedFolio && !isEditMode && (
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>
+              Folio Est.: {estimatedFolio}
+            </span>
+          )}
         </h2>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

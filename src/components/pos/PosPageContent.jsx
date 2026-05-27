@@ -12,6 +12,7 @@ import { useState, useEffect } from 'react';
 import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { useOrderStore } from '../../store/useOrderStore';
+import { useAppStore } from '../../store/useAppStore';
 
 /**
  * Contenido principal de la página POS.
@@ -21,6 +22,7 @@ import { useOrderStore } from '../../store/useOrderStore';
 const PosPageContent = ({ data, ui, actions, features }) => {
     const activeOrdersState = useActiveOrders();
     const { activeOrders, currentOrderId, createOrder, switchOrder, cancelOrder, loadOrdersFromDB } = activeOrdersState;
+    const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
     const [isPausing, setIsPausing] = useState(false);
     const [isInitializing, setIsInitializing] = useState(true);
 
@@ -106,7 +108,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                 </div>
             )}
 
-            {!features.hasTables && ordersCount >= 1 && (
+            {!features.hasTables && ordersCount >= 1 && enableMultipleOrders && (
                 <OrderTabs
                     activeOrders={activeOrders}
                     currentOrderId={currentOrderId}

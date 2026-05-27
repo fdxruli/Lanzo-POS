@@ -16,6 +16,7 @@ import {
     AlertTriangle,
     CheckCircle
 } from 'lucide-react';
+import { getSafeCustomerDebt, formatCustomerDebt } from '../../utils/customerUtils';
 import './LayawayModal.css';
 
 export default function LayawayModal({ show, onClose, onConfirm, total, customer: preSelectedCustomer }) {
@@ -107,7 +108,7 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
             return;
         }
 
-        const deudaActual = Number(selectedCustomer.debt) || 0;
+        const deudaActual = getSafeCustomerDebt(selectedCustomer.debt);
         const limiteCredito = Number(selectedCustomer.creditLimit) || 0;
 
         if (limiteCredito > 0 && (deudaActual + remaining) > limiteCredito) {
@@ -210,7 +211,7 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
                                             {selectedCustomer.creditLimit > 0 && (
                                                 <span style={{ fontSize: '0.85rem', color: '#4a5568', display: 'flex', alignItems: 'center', gap: '5px' }}>
                                                     <CreditCard size={14} /> Límite: ${selectedCustomer.creditLimit} |
-                                                    Deuda: ${(Number(selectedCustomer.debt) || 0).toFixed(2)}
+                                                    Deuda: $${formatCustomerDebt(selectedCustomer.debt)}
                                                 </span>
                                             )}
                                         </div>

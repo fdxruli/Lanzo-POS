@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clipboard, Truck, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { getLowStockProductsReport } from '../../services/inventoryAnalysis';
-import { showMessageModal } from '../../services/utils';
+import { showMessageModal, getProductAlerts, LOW_STOCK_THRESHOLD } from '../../services/utils';
+import { getAvailableStock } from '../../services/db/utils';
 import Logger from '../../services/Logger';
 import './RestockSuggestion.css';
 
@@ -34,18 +35,6 @@ const FALLBACK_SUPPLIER = 'Sin Proveedor Asignado';
 const toSafeNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-/**
- * Valida que un string de proveedor sea válido
- * @param {string|null|undefined} supplier - Nombre del proveedor
- * @returns {string} - Nombre normalizado o fallback
- */
-const normalizeSupplier = (supplier) => {
-  if (!supplier || typeof supplier !== 'string' || supplier.trim() === '') {
-    return FALLBACK_SUPPLIER;
-  }
-  return supplier.trim();
 };
 
 /**
@@ -138,6 +127,7 @@ export default function RestockSuggestion() {
 
   /**
    * Carga el reporte de productos con stock bajo
+   * IMPORTANTE: Esta función ahora usa los MISMOS CRITERIOS que el Ticker para garantizar consistencia
    * @param {boolean} isManualSync - Indica si es una sincronización manual
    */
   const loadReport = useCallback(async (isManualSync = false) => {
@@ -154,18 +144,33 @@ export default function RestockSuggestion() {
       const report = await getLowStockProductsReport();
       
       // Validación defensiva de datos
-      const validatedReport = (report || []).map((item) => ({
-        ...item,
-        id: item?.id || `fallback-${Date.now()}-${Math.random()}`,
-        name: item?.name || 'Producto sin nombre',
-        currentStock: toSafeNumber(item?.currentStock ?? item?.stock, 0),
-        minStock: toSafeNumber(item?.minStock, 0),
-        suggestedOrder: toSafeNumber(item?.suggestedOrder, 1),
-        supplierName: normalizeSupplier(item?.supplierName ?? item?.supplier),
-        unit: item?.unit || 'pza',
-        isActive: item?.isActive !== false
-      }))
-      .filter((item) => item.isActive);
+      // ALINEACIÓN CON TICKER: Usar getProductAlerts para detectar stock bajo
+      const validatedReport = (report || [])
+        .map((item) => {
+          // Usar los mismos criterios que el Ticker para detectar alertas
+          const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
+          const availableStock = getAvailableStock(item);
+          
+          return {
+            ...item,
+            id: item?.id || `fallback-${Date.now()}-${Math.random()}`,
+            name: item?.name || 'Producto sin nombre',
+            currentStock: toSafeNumber(availableStock, 0), // Usar stock disponible (sin comprometido)
+            availableStock: toSafeNumber(availableStock, 0),
+            physicalStock: toSafeNumber(item?.stock, 0),
+            minStock: toSafeNumber(item?.minStock, 0),
+            suggestedOrder: toSafeNumber(item?.suggestedOrder, 1),
+            supplierName: item?.supplierName || FALLBACK_SUPPLIER,
+            unit: item?.unit || 'pza',
+            isActive: item?.isActive !== false,
+            // Flags de alerta sincronizadas con Ticker
+            hasLowStock: isLowStock,
+            isNearingExpiry,
+            expiryDays
+          };
+        })
+        // ALINEACIÓN: Filtrar solo productos que tengan stock bajo (como el Ticker)
+        .filter((item) => item.isActive && item.hasLowStock);
 
       setLowStockItems(validatedReport);
       
@@ -216,7 +221,7 @@ export default function RestockSuggestion() {
     const groups = {};
     
     lowStockItems.forEach((item) => {
-      const supplier = normalizeSupplier(item.supplierName);
+      const supplier = item.supplierName;
       
       if (!groups[supplier]) {
         groups[supplier] = [];
@@ -225,8 +230,8 @@ export default function RestockSuggestion() {
       groups[supplier].push({
         ...item,
         // Validación defensiva de números para renderizado
-        currentStock: toSafeNumber(item.currentStock, 0),
-        minStock: toSafeNumber(item.minStock, 0),
+        currentStock: toSafeNumber(item.currentStock, 0),        availableStock: toSafeNumber(item.availableStock, 0),
+        physicalStock: toSafeNumber(item.physicalStock, 0),        minStock: toSafeNumber(item.minStock, 0),
         suggestedOrder: toSafeNumber(item.suggestedOrder, 1)
       });
     });
@@ -484,10 +489,17 @@ export default function RestockSuggestion() {
                     <tr key={item.id}>
                       <td className="product-name">{item.name}</td>
                       <td className="stock-cell">
-                        {item.currentStock}
-                        <span className="stock-min">
-                          min: {item.minStock}
-                        </span>
+                        <div className="stock-info">
+                          <span className="current-stock">{item.availableStock}</span>
+                          {item.physicalStock !== item.availableStock && (
+                            <span className="committed-info" title="Stock físico - Stock comprometido">
+                              ({item.physicalStock} fís.)
+                            </span>
+                          )}
+                          <span className="stock-min">
+                            min: {item.minStock}
+                          </span>
+                        </div>
                       </td>
                       <td className="order-cell">
                         {item.suggestedOrder} {item.unit}

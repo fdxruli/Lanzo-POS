@@ -26,11 +26,13 @@
 }
 
 /* APUNTAMOS AL DIV DEL SCROLL (el que tiene el ref) */
-.pos-menu-container > div[style*="overflowY"] {
+.pos-menu-scroll {
   flex: 1; /* Ocupa el espacio restante */
   height: auto !important; /* Sobreescribimos el inline style si es necesario */
   overflow-y: auto !important;
   min-height: 0;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: var(--pos-menu-bottom-clearance, 24px);
 }
 
 @media (min-width: 768px) {
@@ -561,9 +563,9 @@
   }
 }
 
-@media (max-width: 767px) {
-  .pos-menu-container > div[style*="overflowY"] {
-    padding-bottom: 96px;
+@media (max-width: 1023px) {
+  .pos-menu-scroll {
+    padding-bottom: var(--pos-menu-bottom-clearance, 24px);
   }
 }
 
@@ -584,7 +586,7 @@
 
   /* APUNTAMOS AL DIV DEL SCROLL (el que tiene el ref) */
   /* Normalmente es el div directo después de los controles */
-  .pos-menu-container > div[style*="overflowY"] {
+  .pos-menu-scroll {
     flex: 1; /* Ocupa el espacio restante */
     height: auto !important; /* Sobreescribimos el inline style si es necesario */
     overflow-y: auto !important;

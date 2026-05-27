@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { compressImage } from '../../services/utils';
 import Logger from '../../services/Logger';
 // Se importaron nuevos iconos de lucide-react (Store, Phone, MapPin, Image, Sun, Moon, Monitor)
@@ -25,6 +26,11 @@ export default function GeneralSettings() {
 
   const showAssistantBot = useAppStore((state) => state.showAssistantBot);
   const setShowAssistantBot = useAppStore((state) => state.setShowAssistantBot);
+
+  const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
+  const setEnableMultipleOrders = useAppStore((state) => state.setEnableMultipleOrders);
+  
+  const activeOrdersCount = useActiveOrders((state) => state.activeOrders.size);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -379,6 +385,88 @@ export default function GeneralSettings() {
               borderRadius: '50%',
               boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
               transform: showAssistantBot ? 'translateX(24px)' : 'translateX(0)'
+            }}></span>
+          </label>
+        </div>
+      </div>
+
+      {/* SECCIÓN MÚLTIPLES ÓRDENES */}
+      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+        <h3 className="subtitle">Múltiples Órdenes</h3>
+
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '12px',
+          backgroundColor: 'var(--bg-light)',
+          borderRadius: '8px',
+          border: '1px solid var(--border-color)',
+          opacity: activeOrdersCount > 1 ? 0.7 : 1
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              backgroundColor: enableMultipleOrders ? '#EBF8FF' : '#EDF2F7',
+              padding: '8px',
+              borderRadius: '50%',
+              color: enableMultipleOrders ? '#3182CE' : '#A0AEC0',
+              transition: 'all 0.3s ease'
+            }}>
+              <FileText size={24} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Pestañas de Órdenes Simultáneas</span>
+              <p>Permite atender a múltiples clientes a la vez usando pestañas (tabs).</p>
+              <p> Aún en desarrollo. Revisa tus ventas despues de cerrarlas</p>
+              <br />
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                {enableMultipleOrders ? 'Múltiples órdenes activadas.' : 'Solo se permite una orden a la vez.'}
+              </span>
+              {activeOrdersCount > 1 && (
+                <span style={{ fontSize: '0.85rem', color: '#E53E3E', marginTop: '4px', fontWeight: 500 }}>
+                  Debes cerrar, cobrar o cancelar todas las órdenes secundarias en el POS antes de desactivar esta función.
+                </span>
+              )}
+            </div>
+          </div>
+
+          <label style={{
+            position: 'relative',
+            display: 'inline-block',
+            width: '50px',
+            height: '26px',
+            cursor: activeOrdersCount > 1 ? 'not-allowed' : 'pointer',
+            flexShrink: 0,
+            userSelect: 'none'
+          }}>
+            <input
+              type="checkbox"
+              checked={!!enableMultipleOrders}
+              onChange={(e) => {
+                if (activeOrdersCount > 1) return;
+                setEnableMultipleOrders(e.target.checked);
+              }}
+              disabled={activeOrdersCount > 1}
+              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+            />
+
+            <span style={{
+              position: 'absolute', cursor: activeOrdersCount > 1 ? 'not-allowed' : 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: enableMultipleOrders ? 'var(--primary-color)' : '#CBD5E0',
+              transition: 'background-color .4s',
+              borderRadius: '34px',
+              opacity: activeOrdersCount > 1 ? 0.6 : 1
+            }}></span>
+
+            <span style={{
+              position: 'absolute', content: '""', height: '20px', width: '20px',
+              left: '3px',
+              bottom: '3px',
+              backgroundColor: 'white',
+              transition: 'transform .4s',
+              borderRadius: '50%',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              transform: enableMultipleOrders ? 'translateX(24px)' : 'translateX(0)'
             }}></span>
           </label>
         </div>

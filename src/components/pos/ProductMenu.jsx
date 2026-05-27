@@ -245,6 +245,7 @@ export default function ProductMenu({
       </div>
 
       <div
+        className="pos-menu-scroll"
         ref={scrollContainerRef}
         onScroll={handleScroll}
         style={{ height: '100%', flex: 1, minHeight: 0, overflowY: 'auto', boxSizing: 'border-box' }}

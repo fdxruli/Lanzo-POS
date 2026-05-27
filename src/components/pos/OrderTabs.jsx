@@ -30,8 +30,18 @@ const OrderTabs = ({
           const itemCount = (order.items || []).reduce((acc, item) => acc + (Number(item.quantity) || 0), 0);
 
           // Generate a display name
+          let displayName = '';
           const shortId = order.id.replace('sal-', '').substring(0, 4).toUpperCase();
-          const displayName = order.tableData || `Orden #${shortId}`;
+          
+          if (order.folio && order.tableData) {
+            displayName = `${order.tableData} | F-${order.folio}`;
+          } else if (order.folio) {
+            displayName = `Folio ${order.folio}`;
+          } else if (order.tableData) {
+            displayName = order.tableData;
+          } else {
+            displayName = `Orden #${shortId}`;
+          }
 
           return (
             <div

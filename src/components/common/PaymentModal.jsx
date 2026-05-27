@@ -1,6 +1,6 @@
 // src/components/common/PaymentModal.jsx
 import React, { useState, useEffect } from 'react';
-import { loadData, saveData, STORES } from '../../services/database';
+import { loadData, saveData, STORES, db } from '../../services/database';
 import QuickAddCustomerModal from './QuickAddCustomerModal';
 import './PaymentModal.css';
 import Logger from '../../services/Logger';
@@ -21,6 +21,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const [filteredCustomers, setFilteredCustomers] = useState([]);
 
   const [sendReceipt, setSendReceipt] = useState(true);
+  const [dueDate, setDueDate] = useState('');
+  const [hasOverdueCredit, setHasOverdueCredit] = useState(false);
 
   // --- 1. NUEVO: Estado para bloquear doble clic ---
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,8 +52,40 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       setPaymentMethod('efectivo');
       setSendReceipt(true);
       setIsSubmitting(false);
+      setDueDate('');
+      setHasOverdueCredit(false);
     }
   }, [show, total, paymentMethod]);
+
+  // --- NUEVO: Verificación de Morosidad ---
+  useEffect(() => {
+    if (show && paymentMethod === 'fiado' && selectedCustomerId) {
+      const checkOverdue = async () => {
+        try {
+          const customerSales = await db.table(STORES.SALES)
+            .where('customerId').equals(selectedCustomerId)
+            .toArray();
+            
+          const todayStr = new Date().toISOString().split('T')[0];
+          
+          const hasOverdue = customerSales.some(s => 
+            s.paymentMethod === 'fiado' && 
+            s.creditStatus === 'VIGENTE' &&
+            s.dueDate && 
+            s.dueDate.split('T')[0] < todayStr
+          );
+          
+          setHasOverdueCredit(hasOverdue);
+        } catch (error) {
+          Logger.error("Error al verificar morosidad:", error);
+          setHasOverdueCredit(false);
+        }
+      };
+      checkOverdue();
+    } else {
+      setHasOverdueCredit(false);
+    }
+  }, [show, paymentMethod, selectedCustomerId]);
 
   const safeTotal = Money.init(total);
 
@@ -84,9 +118,12 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     ? "Este cliente no tiene crédito autorizado."
     : `Excede el límite de crédito ($${Money.toNumber(limit)}). Deuda final $${Money.toNumber(projectedDebt)}.`;
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isDueDateValid = isFiado ? (dueDate && dueDate >= todayStr) : true;
+
   const canConfirm = isEfectivo
     ? safePaid.gte(safeTotal)
-    : (selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit);
+    : (selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit && isDueDateValid);
 
   // Handler para el input (Control Estricto de Strings)
   const handleAmountChange = (e) => {
@@ -127,7 +164,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
         customerId: selectedCustomerId,
         paymentMethod: paymentMethod,
         saldoPendiente: Money.toExactString(saldoPendiente),
-        sendReceipt: sendReceipt
+        sendReceipt: sendReceipt,
+        dueDate: isFiado && dueDate ? new Date(dueDate).toISOString() : null
       });
     } catch (error) {
       Logger.error("Error al procesar pago:", error);
@@ -169,8 +207,13 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     setPaymentMethod(method);
     if (method === 'efectivo') {
       setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString());
+      setDueDate('');
+      setHasOverdueCredit(false);
     } else {
       setAmountPaid('');
+      const defaultDate = new Date();
+      defaultDate.setDate(defaultDate.getDate() + 15);
+      setDueDate(defaultDate.toISOString().split('T')[0]);
     }
   }
 
@@ -211,7 +254,49 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                     </div>
                   </div>
 
-                  <div className="form-group customer-search-wrapper">
+                  {isFiado && (
+                    <div className="form-group" style={{ marginTop: '15px' }}>
+                      <label className="form-label" htmlFor="due-date-input">
+                        Fecha de Vencimiento:
+                      </label>
+                      <input
+                        id="due-date-input"
+                        type="date"
+                        className="form-input"
+                        value={dueDate}
+                        min={new Date().toISOString().split('T')[0]}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        required
+                        style={{ width: '100%', boxSizing: 'border-box' }}
+                      />
+                      {dueDate && dueDate < new Date().toISOString().split('T')[0] && (
+                        <p style={{ color: 'var(--error-color)', fontSize: '0.8rem', marginTop: '5px' }}>
+                          La fecha de vencimiento no puede ser menor a la actual.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {isFiado && hasOverdueCredit && (
+                    <div style={{
+                      marginTop: '15px',
+                      padding: '10px',
+                      borderRadius: '6px',
+                      backgroundColor: '#fed7d7',
+                      color: '#c53030',
+                      border: '1px solid #feb2b2',
+                      fontSize: '0.85rem'
+                    }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span>⚠️</span>
+                        <div>
+                          <strong>Atención:</strong> Este cliente tiene saldos vencidos anteriores.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="form-group customer-search-wrapper" style={{ marginTop: '15px' }}>
                     <label className="form-label" htmlFor="sale-customer-input">
                       {isFiado ? 'Asignar a Cliente (Obligatorio):' : 'Asignar a Cliente (Opcional):'}
                     </label>

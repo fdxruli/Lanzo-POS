@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { useStatsStore } from '../../store/useStatsStore';
-import { loadData, saveBulkSafe, STORES, archiveOldData } from '../../services/database';
+import { archiveOldData } from '../../services/database';
 import Logger from '../../services/Logger';
 import DataTransferModal from '../products/DataTransferModal';
 import { useProductStore } from '../../store/useProductStore';
 import { maintenanceTools } from '../../services/db';
 import { BarChart2, Package, Archive, Database, Download } from 'lucide-react';
+import { evaluator } from '../../services/BackupRiskEvaluator';
+
+const DEFAULT_REBUILD_DAYS = 30;
 
 export default function MaintenanceSettings() {
   const loadStats = useStatsStore((state) => state.loadStats);
@@ -14,7 +17,9 @@ export default function MaintenanceSettings() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleArchive = async () => {
-    if (!confirm("Esto descargará y BORRARÁ las ventas de hace más de 6 meses para acelerar el sistema. ¿Continuar?")) return;
+    if (!confirm("Esto descargara y BORRARA las ventas de hace mas de 6 meses para acelerar el sistema. Continuar?")) return;
+
+    setIsProcessing(true);
     try {
       const oldSales = await archiveOldData(6);
       if (oldSales.length > 0) {
@@ -24,14 +29,23 @@ export default function MaintenanceSettings() {
         a.href = url;
         a.download = `ARCHIVO_HISTORICO_${new Date().toISOString()}.json`;
         a.click();
-        await loadStats(true);
-        alert(`✅ Se archivaron y limpiaron ${oldSales.length} ventas antiguas.`);
+
+        const currentLastBackup = parseInt(localStorage.getItem('last_backup_mutation_count') || '0', 10);
+        if (currentLastBackup > 0) {
+          const newBaseline = Math.max(0, currentLastBackup - oldSales.length);
+          localStorage.setItem('last_backup_mutation_count', newBaseline.toString());
+        }
+
+        evaluator.ping();
+        alert(`Se han archivado y eliminado ${oldSales.length} ventas antiguas correctamente.`);
       } else {
-        alert("No hay ventas antiguas para archivar.");
+        alert('No hay ventas con mas de 6 meses de antiguedad para archivar.');
       }
-    } catch (e) {
-      Logger.error(e);
-      alert("Error al archivar.");
+    } catch (error) {
+      Logger.error('Error archivando datos:', error);
+      alert('Ocurrio un error al intentar archivar el historial.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -42,29 +56,40 @@ export default function MaintenanceSettings() {
       if (result.success) {
         alert(result.message);
         if (result.details.length > 0) {
-          console.log("Detalles de corrección:", result.details);
+          console.log('Detalles de correccion:', result.details);
         }
-        // Sincronización obligatoria: actualizar estado global de productos
         await loadInitialProducts();
       }
     } catch (e) {
-      alert("Error: " + (e?.message || e));
+      alert(`Error: ${e?.message || e}`);
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleRebuildStats = async () => {
-    if (!confirm("Esto recalculará todas las ganancias históricas basándose en las ventas guardadas. ¿Continuar?")) return;
+    const confirmation = window.prompt(
+      [
+        `Esto reconstruirá los reportes de los últimos ${DEFAULT_REBUILD_DAYS} días basándose ÚNICAMENTE en lo que quedó guardado en cada ticket histórico.`,
+        'NO actualiza a costos de hoy.',
+        'Escribe CONFIRMAR para ejecutar.'
+      ].join('\n\n')
+    );
+
+    if (confirmation === null) return;
+
+    if (confirmation.trim() !== 'CONFIRMAR') {
+      alert('Confirmación inválida. Debes escribir exactamente CONFIRMAR para ejecutar esta acción.');
+      return;
+    }
 
     setIsProcessing(true);
     try {
-      const result = await maintenanceTools.rebuildStats();
+      const result = await maintenanceTools.rebuildStats({ days: DEFAULT_REBUILD_DAYS });
       alert(result.message);
-      // Sincronización obligatoria: actualizar estadísticas del dashboard
-      await loadStats(true);
+      await loadStats(false);
     } catch (e) {
-      alert("Error: " + (e?.message || e));
+      alert(`Error: ${e?.message || e}`);
     } finally {
       setIsProcessing(false);
     }
@@ -80,26 +105,25 @@ export default function MaintenanceSettings() {
         </p>
 
         <div className="maintenance-grid">
-          {/* HERRAMIENTA 1 */}
           <div className="maintenance-tool-card">
             <div className="tool-info">
               <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <BarChart2 size={20} /> Reparar Ganancias
+                <BarChart2 size={20} /> Reconstruir Reportes desde Historial
               </h4>
-              <p>- Recalcula reportes históricos con costos actuales si ves negativos.</p>
+              <p>- Recalcula los reportes basándose ÚNICAMENTE en lo que se cobró en cada ticket histórico. NO actualiza a costos de hoy.</p>
+              <p>- Por defecto reconstruye solo los últimos 30 días para no congelar el dispositivo.</p>
             </div>
             <button className="btn btn-secondary" onClick={handleRebuildStats} disabled={isProcessing}>
-              {isProcessing ? '...' : ' Ejecutar'}
+              {isProcessing ? 'Reconstruyendo...' : 'Reconstruir Reportes desde Historial'}
             </button>
           </div>
 
-          {/* HERRAMIENTA 2 */}
           <div className="maintenance-tool-card">
             <div className="tool-info">
               <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Package size={20} /> Sincronizar Stock
               </h4>
-              <p>- Corrige discrepancias si ves "Agotado" pero tienes lotes.</p>
+              <p>- Corrige discrepancias si ves &quot;Agotado&quot; pero tienes lotes.</p>
               <p>- Este problema puede llegar a presentarse despues de una actualizacion del sistema</p>
             </div>
             <button className="btn btn-primary" onClick={handleFixStock} disabled={isProcessing}>
@@ -107,33 +131,31 @@ export default function MaintenanceSettings() {
             </button>
           </div>
 
-          {/* HERRAMIENTA 3 */}
           <div className="maintenance-tool-card" style={{ borderColor: '#7c3aed' }}>
             <div className="tool-info">
               <h4 style={{ color: '#7c3aed', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Archive size={20} /> Archivar Historial
               </h4>
-              <p>- Limpia ventas antiguas para acelerar. </p>
-              <p>- Se descargará un archivo JSON con las ventas eliminadas.</p>
-              <p>- Recomendado cada 6 meses o más.</p>
+              <p>- Limpia ventas antiguas para acelerar.</p>
+              <p>- Se descargara un archivo JSON con las ventas eliminadas.</p>
+              <p>- Recomendado cada 6 meses o mas.</p>
             </div>
-            <button 
-              className="btn btn-secondary" 
-              onClick={handleArchive} 
+            <button
+              className="btn btn-secondary"
+              onClick={handleArchive}
               style={{ backgroundColor: '#7c3aed', color: 'white', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
             >
               <Archive size={16} /> Archivar
             </button>
           </div>
 
-          {/* HERRAMIENTA 4 */}
           <div className="maintenance-tool-card" style={{ borderColor: '#3b82f6' }}>
             <div className="tool-info">
               <h4 style={{ color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Database size={20} /> Respaldo y Datos
               </h4>
               <p>- Exporta tu base de datos o importa un respaldo.</p>
-              <p>- Carga masiva de productos vía CSV/JSON.</p>
+              <p>- Carga masiva de productos via CSV/JSON.</p>
             </div>
             <button
               className="btn btn-secondary"
@@ -150,7 +172,8 @@ export default function MaintenanceSettings() {
         onClose={() => setShowDataTransfer(false)}
         onRefresh={async () => {
           await loadInitialProducts();
-          await loadStats(true);
+          await maintenanceTools.rebuildStats({ fullHistory: true });
+          await loadStats(false);
         }}
       />
     </div>

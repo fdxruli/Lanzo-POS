@@ -4,27 +4,21 @@
  * Se muestra como barra fija en la parte superior cuando los datos NO están
  * protegidos contra evicción del navegador (isVolatile === true).
  *
- * Comportamiento:
- * - El usuario puede cerrarlo, pero reaparece en la próxima sesión si el riesgo persiste
- * - En modo crítico (almacenamiento lleno) NO se puede cerrar
- * - Detecta el navegador/OS y muestra instrucciones específicas
- * - Incluye botón para hacer respaldo inmediato
- * - Se oculta automáticamente si la persistencia es concedida
+ * Comportamiento Refactorizado (Fase 3):
+ * - Ya no gestiona respaldos. Su única meta es proteger el entorno.
+ * - Bloqueo Estricto: Si isCritical === true, se bloquea la app con un overlay opaco.
+ * - Si el usuario cierra el banner volátil, informa al estado global para mostrar ⚠️ en el Navbar.
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import { AlertCircle, ShieldAlert, Lock, Loader, X, Apple, Flame, Chrome, Waves, Globe } from 'lucide-react';
 import usePersistentStorage from '../../hooks/usePersistentStorage';
 import { storageManager } from '../../services/storageManager';
-import {
-  downloadBackupSmart,
-  BACKUP_ABORT_REASON,
-} from '../../services/dataTransfer';
+import { useAppStore } from '../../store/useAppStore';
 import Logger from '../../services/Logger';
 import './PersistenceWarningBanner.css';
+import { downloadBackupSmart } from '../../services/dataTransfer';
 
-/**
- * Detecta el navegador/OS para mostrar instrucciones correctas
- */
 function detectBrowser() {
   const ua = navigator.userAgent;
   const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
@@ -41,37 +35,68 @@ function detectBrowser() {
 }
 
 const INSTRUCTIONS = {
-  safari: {
-    icon: '🍎',
-    steps: 'Toca Compartir → "Agregar a pantalla de inicio" para proteger tus datos.',
-  },
-  firefox: {
-    icon: '🦊',
-    steps: 'Instala la app: menú ⋯ → "Instalar" o visita el sitio frecuentemente.',
-  },
-  chrome: {
-    icon: '🌐',
-    steps: 'Instala la app: menú ⋮ → "Instalar aplicación" o "Agregar a pantalla de inicio".',
-  },
-  edge: {
-    icon: '🌊',
-    steps: 'Instala la app: menú … → "Aplicaciones" → "Instalar este sitio".',
-  },
-  other: {
-    icon: '🌐',
-    steps: 'Instala la app como PWA desde el menú de tu navegador para proteger tus datos.',
-  },
+  safari: { icon: <Apple size={18} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />, steps: 'Toca Compartir → "Agregar a pantalla de inicio" para proteger tus datos.' },
+  firefox: { icon: <Flame size={18} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom', color: '#f97316' }} />, steps: 'Instala la app: menú ⋯ → "Instalar" o visita el sitio frecuentemente.' },
+  chrome: { icon: <Chrome size={18} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />, steps: 'Instala la app: menú ⋮ → "Instalar aplicación" o "Agregar a pantalla de inicio".' },
+  edge: { icon: <Waves size={18} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom', color: '#3b82f6' }} />, steps: 'Instala la app: menú … → "Aplicaciones" → "Instalar este sitio".' },
+  other: { icon: <Globe size={18} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />, steps: 'Instala la app como PWA desde el menú de tu navegador para proteger tus datos.' },
+};
+
+// Sub-componente de bloqueo duro
+const CriticalStorageLockScreen = () => {
+  const isBackupLoading = useAppStore(state => state.isBackupLoading);
+  const setBackupLoading = useAppStore(state => state.setBackupLoading);
+
+  const handleEmergencyBackup = async () => {
+    setBackupLoading(true);
+    try {
+      await downloadBackupSmart();
+      alert('Respaldo de emergencia completado. Ahora libera espacio en tu dispositivo.');
+    } catch (e) {
+      alert('Fallo al respaldar.');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+      background: 'rgba(0,0,0,0.95)', color: '#fff', zIndex: 2147483647,
+      display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+      padding: '2rem', textAlign: 'center', fontFamily: 'sans-serif'
+    }}>
+      <AlertCircle color="#ff4444" size={64} style={{ marginBottom: '1rem' }} />
+      <h1 style={{ color: '#ff4444', marginBottom: '1rem' }}>Operación Pausada: Almacenamiento Crítico</h1>
+      <p style={{ fontSize: '1.25rem', maxWidth: '600px', lineHeight: '1.5', color: '#e5e7eb', marginBottom: '2rem' }}>
+        El disco duro de este dispositivo está casi lleno. Continuar operando el Punto de Venta en este estado provocará corrupción o pérdida silenciosa de datos de ventas.
+      </p>
+      <div style={{ background: '#450a0a', padding: '1.5rem', borderRadius: '8px', border: '1px solid #7f1d1d' }}>
+        <p style={{ margin: 0, color: '#fca5a5', fontWeight: 'bold' }}>
+          Por favor, libera espacio en el disco duro o haz un respaldo inmediato desde la configuración, luego recarga la página.
+        </p>
+      </div>
+      <button
+        onClick={handleEmergencyBackup}
+        disabled={isBackupLoading}
+        style={{ marginTop: '1rem', padding: '1rem 2rem', fontSize: '1.2rem', background: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+      >
+        {isBackupLoading ? 'Generando...' : 'Descargar Respaldo de Emergencia'}
+      </button>
+    </div>
+  );
 };
 
 export const PersistenceWarningBanner = () => {
-  const { isVolatile, isCritical, persistenceState, isRequestingPersistence, requestPersistence } =
-    usePersistentStorage();
-  const [dismissed, setDismissed] = useState(false);
-  const [isBackingUp, setIsBackingUp] = useState(false);
+  const { isVolatile, isCritical, persistenceState, isRequestingPersistence } = usePersistentStorage();
   const [browser] = useState(() => detectBrowser());
   const [deferredPrompt, setDeferredPrompt] = useState(null);
 
-  // Capturar el evento de instalación PWA (Chrome/Edge/Firefox)
+  const setStorageCritical = useAppStore(state => state.setStorageCritical);
+  const isVolatileDismissed = useAppStore(state => state.isVolatileDismissed);
+  const setVolatileDismissed = useAppStore(state => state.setVolatileDismissed);
+
+  // Capturar el evento de instalación PWA
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
@@ -98,116 +123,79 @@ export const PersistenceWarningBanner = () => {
     }
   }, []);
 
-  const handleBackup = useCallback(async () => {
-    if (isBackingUp) return;
-    setIsBackingUp(true);
-    try {
-      const result = await downloadBackupSmart();
-      if (result.success) {
-        Logger.info('Respaldo generado correctamente desde banner de persistencia');
-      } else if (result.reason !== BACKUP_ABORT_REASON) {
-        alert('No se pudo generar el respaldo. Intenta desde Configuración → Respaldo.');
-      }
-    } catch (err) {
-      Logger.error('Error en respaldo desde banner:', err);
-      alert('Error al generar respaldo. Intenta de nuevo.');
-    } finally {
-      setIsBackingUp(false);
-    }
-  }, [isBackingUp]);
-
-  // Si pasa a estado crítico (disco lleno), re-mostrar aunque el usuario lo haya cerrado
+  // Control estricto de bloqueo (Bloqueo Duro)
   useEffect(() => {
-    if (isCritical) setDismissed(false);
-  }, [isCritical]);
+    setStorageCritical(isCritical);
+    // Si se vuelve crítico, forzamos a que reaparezca
+    if (isCritical) {
+      setVolatileDismissed(false);
+    }
+  }, [isCritical, setStorageCritical, setVolatileDismissed]);
 
-  // No mostrar si no hay problema, o si el usuario lo cerró (excepto crítico)
-  if ((!isVolatile && !isCritical) || dismissed) return null;
+  if (isCritical) {
+    return <CriticalStorageLockScreen />;
+  }
+
+  // Si no hay riesgo volátil, o si el usuario lo ocultó, no renderizamos el banner grande.
+  // (El ícono flotante se maneja en el Navbar)
+  if (!isVolatile || isVolatileDismissed) return null;
 
   const instruction = INSTRUCTIONS[browser];
   const isDenied = persistenceState === 'denied' || persistenceState === 'unsupported';
   const canRetry = persistenceState === 'prompt' || persistenceState === 'unknown';
 
   return (
-    <div
-      className={`persistence-warning-banner ${isCritical ? 'is-critical' : ''}`}
-      role="alert"
-      aria-live="polite"
-    >
+    <div className="persistence-warning-banner" role="alert" aria-live="polite">
       <div className="banner-content">
         <div className="banner-icon" aria-hidden="true">
-          {isCritical ? '🔴' : '🛡️'}
+          <ShieldAlert size={28} />
         </div>
         <div className="banner-text">
-          <strong>
-            {isCritical
-              ? 'Almacenamiento Crítico — Haz un respaldo ahora'
-              : 'Datos sin protección — Riesgo de pérdida'}
-          </strong>
+          <strong>Datos sin protección — Riesgo de pérdida</strong>
           <p>
-            {isCritical
-              ? 'El disco está casi lleno. Las ventas pueden fallar al guardarse.'
-              : 'Tus datos viven solo en este dispositivo y pueden borrarse si el navegador libera espacio.'}
-            {isDenied && !isCritical && (
-              <> {instruction.icon} {instruction.steps}</>
-            )}
+            Tus datos viven solo en este dispositivo y pueden borrarse si el navegador libera espacio.
+            {isDenied && <> {instruction.icon} {instruction.steps}</>}
           </p>
         </div>
       </div>
 
       <div className="banner-actions">
-        {/* Botón de respaldo — siempre disponible */}
-        <button
-          id="persistence-banner-backup-btn"
-          className="banner-btn banner-btn--primary"
-          onClick={handleBackup}
-          disabled={isBackingUp}
-          title="Descargar copia de seguridad completa"
-        >
-          {isBackingUp ? '⏳ Respaldando...' : '💾 Respaldar ahora'}
-        </button>
-
-        {/* Botón de instalación PWA si el navegador lo soporta */}
         {deferredPrompt && (
           <button
-            id="persistence-banner-install-btn"
             className="banner-btn banner-btn--secondary"
             onClick={handleInstall}
             title="Instalar como aplicación para proteger datos"
           >
-            📲 Instalar app
+            Instalar app
           </button>
         )}
 
-        {/* Reintentar persistencia si aún hay posibilidad */}
         {canRetry && !isRequestingPersistence && (
           <button
-            id="persistence-banner-persist-btn"
             className="banner-btn banner-btn--secondary"
             onClick={handleRequestPersistence}
             title="Solicitar permiso de almacenamiento persistente"
+            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
           >
-            🔒 Proteger datos
+            <Lock size={16} /> Proteger datos
           </button>
         )}
 
         {isRequestingPersistence && (
-          <span className="banner-status">⏳ Solicitando...</span>
+          <span className="banner-status" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Loader size={16} className="animate-spin" /> Solicitando...
+          </span>
         )}
 
-        {/* Botón de cierre — solo en modo no-crítico.
-            El banner reaparece en la próxima sesión si el riesgo persiste. */}
-        {!isCritical && (
-          <button
-            id="persistence-banner-dismiss-btn"
-            className="banner-btn banner-btn--dismiss"
-            onClick={() => setDismissed(true)}
-            title="Cerrar (reaparecerá en la próxima sesión)"
-            aria-label="Cerrar aviso de almacenamiento"
-          >
-            ✕
-          </button>
-        )}
+        <button
+          className="banner-btn banner-btn--dismiss"
+          onClick={() => setVolatileDismissed(true)}
+          title="Cerrar"
+          aria-label="Cerrar aviso de almacenamiento"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <X size={16} />
+        </button>
       </div>
     </div>
   );
