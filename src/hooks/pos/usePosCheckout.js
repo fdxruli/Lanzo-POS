@@ -53,6 +53,7 @@ export function usePosCheckout({
     fetchActiveTablesCount
 }) {
     const verifySessionIntegrity = pos.verifySessionIntegrity;
+    const abrirCaja = pos.abrirCaja;
 
     /**
      * Snapshot inmutable de la orden al momento de iniciar el cobro.
@@ -208,6 +209,23 @@ export function usePosCheckout({
             return;
         }
 
+        if (paymentData.paymentMethod === 'fiado') {
+            if (!paymentData.dueDate) {
+                showMessageModal('⚠️ Fecha de vencimiento es requerida para ventas a crédito.');
+                checkoutSnapshotRef.current = null;
+                modal.closeModal('payment');
+                return;
+            }
+            const todayStr = new Date().toISOString().split('T')[0];
+            const dueDateStr = paymentData.dueDate.split('T')[0];
+            if (dueDateStr < todayStr) {
+                showMessageModal('⚠️ La fecha de vencimiento no puede ser en el pasado.');
+                checkoutSnapshotRef.current = null;
+                modal.closeModal('payment');
+                return;
+            }
+        }
+
         // ── Redirección a Caja Rápida ──────────────────────────────
         // El snapshot NO se destruye aquí. El flujo esperado es:
         //   closeModal('payment') → openModal('quickCaja') → handleQuickCajaSubmit
@@ -256,7 +274,6 @@ export function usePosCheckout({
 
                 // 2. DESPUÉS: Limpiar sesión local de UI.
                 //    Se invoca DESPUÉS de que la orden dejó de existir en el gestor.
-                pos.clearSession();
                 prescription.setTempPrescriptionData(null);
                 mobileCart.closeCart();
 
@@ -317,7 +334,6 @@ export function usePosCheckout({
     }, [
         verifySessionIntegrity,
         pos.cajaActual,
-        pos.clearSession,
         posSearch,
         features,
         prescription,
@@ -334,14 +350,14 @@ export function usePosCheckout({
     // El checkoutSnapshotRef sigue vivo desde handleInitiateCheckout
     // porque el flujo efectivo/caja NO lo destruye.
     const handleQuickCajaSubmit = useCallback(async (monto) => {
-        const success = await pos.abrirCaja(monto);
+        const success = await abrirCaja(monto);
         if (success) {
             modal.closeModal('quickCaja');
             modal.openModal('payment'); // ← snapshot aún válido en checkoutSnapshotRef ✓
         } else {
             modal.closeModal('quickCaja');
         }
-    }, [pos.abrirCaja, modal]);
+    }, [abrirCaja, modal]);
 
     return {
         handleInitiateCheckout,

@@ -5,52 +5,7 @@ import { loadDataPaginated, saveDataSafe, STORES, initDB, db } from '../services
 import Logger from '../services/Logger';
 import { Money } from '../utils/moneyMath';
 import { isFinanciallyClosedSale } from '../services/sales/financialStats';
-
-const MOVIMIENTO_TIPOS = {
-  ENTRADA: 'entrada',
-  SALIDA: 'salida',
-  AJUSTE_ENTRADA: 'ajuste_entrada',
-  AJUSTE_SALIDA: 'ajuste_salida'
-};
-
-// Configuración de límites y retry
-const CAJA_CONFIG = {
-  MAX_CASH_THRESHOLD: 50000, // Límite máximo sugerido en caja (configurable)
-  RETRY_ATTEMPTS: 3,
-  RETRY_DELAY_MS: 300,
-  CONCURRENCY_ERROR_MESSAGE: 'La caja fue modificada por otra transacción. Recarga e intenta de nuevo.'
-};
-
-// Helper para delay en retry
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Función de retry con backoff exponencial
-const retryWithBackoff = async (operation, maxAttempts = CAJA_CONFIG.RETRY_ATTEMPTS, context = '') => {
-  let lastError;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      const isConcurrencyError = error.message?.includes('CONCURRENCY_ERROR');
-
-      // No retries en errores de concurrencia - requieren acción del usuario
-      if (isConcurrencyError) {
-        Logger.warn(`[Caja] ${context}: Error de concurrencia no reintentable`);
-        throw error;
-      }
-
-      if (attempt < maxAttempts) {
-        const delayMs = CAJA_CONFIG.RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-        Logger.warn(`[Caja] ${context}: Reintento ${attempt + 1}/${maxAttempts} en ${delayMs}ms`);
-        await delay(delayMs);
-      }
-    }
-  }
-
-  throw lastError;
-};
+import { registrarMovimientoCaja, MOVIMIENTO_TIPOS, CAJA_CONFIG } from '../services/cajaService';
 
 export function useCaja() {
   const [cajaActual, setCajaActual] = useState(null);
@@ -148,24 +103,84 @@ export function useCaja() {
       throw new Error('No se puede abrir una caja con monto inicial negativo.');
     }
 
-    const nuevaCaja = {
-      id: generateID('caja'),
-      fecha_apertura: new Date().toISOString(),
-      monto_inicial: Money.toExactString(montoInicialSafe),
-      estado: 'abierta',
-      fecha_cierre: null,
-      monto_cierre: null,
-      ventas_efectivo: '0',
-      entradas_efectivo: '0',
-      salidas_efectivo: '0',
-      diferencia: null,
-      es_auto_apertura: true,
-      updatedAt: new Date().toISOString() // Sello de versión inicial
-    };
+    const db = await initDB();
 
-    const result = await saveDataSafe(STORES.CAJAS, nuevaCaja);
-    if (!result.success) throw result.error;
+    const nuevaCaja = await db.transaction('rw', db.table(STORES.CAJAS), async () => {
+      const cajasAbiertas = await db.table(STORES.CAJAS)
+        .where('estado')
+        .equals('abierta')
+        .count();
+
+      if (cajasAbiertas > 0) {
+        throw new Error('Inconsistencia grave: Intento de abrir una caja cuando ya existe otra abierta.');
+      }
+
+      const caja = {
+        id: generateID('caja'),
+        fecha_apertura: new Date().toISOString(),
+        monto_inicial: Money.toExactString(montoInicialSafe),
+        estado: 'abierta',
+        fecha_cierre: null,
+        monto_cierre: null,
+        ventas_efectivo: '0',
+        entradas_efectivo: '0',
+        salidas_efectivo: '0',
+        diferencia: null,
+        es_auto_apertura: true,
+        updatedAt: new Date().toISOString()
+      };
+
+      await db.table(STORES.CAJAS).put(caja);
+      return caja;
+    });
+
     return nuevaCaja;
+  }, []);
+
+  const obtenerCajaAbiertaMasReciente = useCallback(async () => {
+    const db = await initDB();
+    const cajasAbiertas = await db.table(STORES.CAJAS)
+      .where('estado')
+      .equals('abierta')
+      .toArray();
+
+    if (cajasAbiertas.length === 0) {
+      return null;
+    }
+
+    if (cajasAbiertas.length === 1) {
+      return cajasAbiertas[0];
+    }
+
+    Logger.warn(`[Caja] Se detectaron ${cajasAbiertas.length} cajas abiertas. Iniciando proceso de auto-sanación.`);
+
+    const cajasOrdenadas = cajasAbiertas.sort((a, b) => {
+      const tiempoA = new Date(a.fecha_apertura || 0).getTime();
+      const tiempoB = new Date(b.fecha_apertura || 0).getTime();
+      return tiempoA - tiempoB;
+    });
+
+    const cajaActiva = cajasOrdenadas.pop();
+    const cajasFantasma = cajasOrdenadas;
+
+    await db.transaction('rw', db.table(STORES.CAJAS), async () => {
+      const ceroSeguro = Money.toExactString(Money.init(0));
+      for (const caja of cajasFantasma) {
+        caja.estado = 'cerrada';
+        caja.fecha_cierre = new Date().toISOString();
+        caja.monto_cierre = ceroSeguro;
+        caja.diferencia = ceroSeguro;
+        caja.monto_fondo_siguiente_turno = ceroSeguro;
+        caja.comentarios_auditoria = 'Cierre forzado automático: Inconsistencia de sistema (múltiples cajas abiertas).';
+        caja.updatedAt = new Date().toISOString();
+
+        await db.table(STORES.CAJAS).put(caja);
+      }
+    });
+
+    Logger.log(`[Caja] Auto-sanación completada. Se cerraron ${cajasFantasma.length} cajas fantasma.`);
+
+    return cajaActiva;
   }, []);
 
   const ajustarMontoInicial = async (nuevoMonto) => {
@@ -356,41 +371,12 @@ export function useCaja() {
     }
 
     try {
-      // INTENTO CON RETRY para operaciones transaccionales
-      const movimientoId = `mov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const movimiento = {
-        id: movimientoId,
-        caja_id: cajaActual.id,
-        tipo,
-        monto: Money.toExactString(montoSafe),
-        concepto: conceptoLimpio,
-        fecha: new Date().toISOString()
-      };
+      // Delegación al servicio centralizado (Single Source of Truth)
+      const { cajaActualizada, movimiento } = await registrarMovimientoCaja(
+        cajaActual.id, tipo, Money.toExactString(montoSafe), conceptoLimpio
+      );
 
-      const cajaGuardada = await retryWithBackoff(async () => {
-        return await db.transaction('rw', [db.table(STORES.CAJAS), db.table(STORES.MOVIMIENTOS_CAJA)], async () => {
-          const cajaDb = await db.table(STORES.CAJAS).get(cajaActual.id);
-          if (!cajaDb) {
-            throw new Error("CRITICAL: La caja no existe en la base de datos.");
-          }
-
-          if (esEntrada) {
-            const currentEntradas = Money.init(cajaDb.entradas_efectivo || 0);
-            cajaDb.entradas_efectivo = Money.toExactString(Money.add(currentEntradas, montoSafe));
-          } else {
-            const currentSalidas = Money.init(cajaDb.salidas_efectivo || 0);
-            cajaDb.salidas_efectivo = Money.toExactString(Money.add(currentSalidas, montoSafe));
-          }
-
-          cajaDb.updatedAt = new Date().toISOString();
-          await db.table(STORES.CAJAS).put(cajaDb);
-          await db.table(STORES.MOVIMIENTOS_CAJA).put(movimiento);
-
-          return cajaDb;
-        });
-      }, CAJA_CONFIG.RETRY_ATTEMPTS, `registrarMovimiento ${tipo} $${Money.toNumber(montoSafe).toFixed(2)}`);
-
-      setCajaActual(cajaGuardada);
+      setCajaActual(cajaActualizada);
       setMovimientosCaja((prev) => [...prev, movimiento]);
 
       // Invalidar caché de totales después de un movimiento
@@ -433,6 +419,8 @@ export function useCaja() {
   const cargarEstadoCaja = useCallback(async () => {
     setIsLoading(true);
     try {
+      let cajaActiva = await obtenerCajaAbiertaMasReciente();
+
       const response = await loadDataPaginated(STORES.CAJAS, {
         limit: 20,
         direction: 'prev',
@@ -440,7 +428,6 @@ export function useCaja() {
       });
 
       const cajasRecientes = response?.data || [];
-      let cajaActiva = cajasRecientes.find((c) => c.estado === 'abierta');
       const ultimaCaja = cajasRecientes.find((c) => c.estado === 'cerrada');
 
       if (!cajaActiva) {
@@ -468,7 +455,7 @@ export function useCaja() {
     } finally {
       setIsLoading(false);
     }
-  }, [autoAbrirCaja, cargarMovimientos, calcularTotalesSesion]);
+  }, [autoAbrirCaja, cargarMovimientos, calcularTotalesSesion, obtenerCajaAbiertaMasReciente]);
 
   useEffect(() => {
     cargarEstadoCaja();
@@ -479,16 +466,32 @@ export function useCaja() {
     if (!cajaActual || cajaActual.estado !== 'abierta') return;
 
     const POLLING_INTERVAL = 10000; // 10 segundos
+    const cajaIdActual = cajaActual.id;
+    const updatedAtConocido = cajaActual.updatedAt;
 
-    const intervalId = setInterval(() => {
-      // Forzar recalculo ignorando la caché actual
+    const intervalId = setInterval(async () => {
+      try {
+        // Re-leer la caja desde DB para detectar modificaciones externas
+        // (ej: abonos procesados por customerCreditRepository.processPayment)
+        const freshDb = await initDB();
+        const freshCaja = await freshDb.table(STORES.CAJAS).get(cajaIdActual);
+
+        if (freshCaja && freshCaja.updatedAt !== updatedAtConocido) {
+          setCajaActual(freshCaja);
+          await cargarMovimientos(cajaIdActual);
+        }
+      } catch (e) {
+        Logger.error('[Caja] Error en refresh polling de caja', e);
+      }
+
+      // Forzar recalculo de ventas/abonos ignorando la caché actual
       calcularTotalesSesion(cajaActual.fecha_apertura, true).then(nuevosTotales => {
         setTotalesTurno(nuevosTotales);
       });
     }, POLLING_INTERVAL);
 
     return () => clearInterval(intervalId);
-  }, [cajaActual, calcularTotalesSesion]);
+  }, [cajaActual, calcularTotalesSesion, cargarMovimientos]);
 
   const sincronizarEstadoCaja = useCallback(async () => {
     await cargarEstadoCaja();
@@ -518,9 +521,7 @@ export function useCaja() {
       const inicialSafe = Money.init(cajaActual.monto_inicial || 0);
       const ventasSafe = Money.init(freshTotales.ventasContado || 0);
       const abonosSafe = Money.init(freshTotales.abonosFiado || 0);
-      const entradasNormales = Money.init(cajaActual.entradas_efectivo || 0);
-      const entradasAnomalas = Money.init(cajaActual.ingresos_efectivo || 0);
-      const entradasSafe = Money.add(entradasNormales, entradasAnomalas);
+      const entradasSafe = Money.init(cajaActual.entradas_efectivo || 0);
       const salidasSafe = Money.init(cajaActual.salidas_efectivo || 0);
 
       const ingresosTotales = Money.add(

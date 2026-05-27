@@ -346,4 +346,33 @@ describe('useActiveOrders', () => {
       { db, STORES }
     );
   });
+
+  it('removeOrder limpia la orden vendida y crea una nueva si era la ultima', async () => {
+    const { result } = renderHook(() => useActiveOrders());
+    let soldOrderId;
+    act(() => { soldOrderId = result.current.createOrder(); });
+
+    act(() => {
+      const order = result.current.activeOrders.get(soldOrderId);
+      const map = new Map(result.current.activeOrders);
+      map.set(soldOrderId, {
+        ...order,
+        items: [{ id: 'p1', quantity: 1, price: 10 }],
+        isLockedForCheckout: true
+      });
+      useActiveOrders.setState({ activeOrders: map, isCurrentOrderLocked: true });
+    });
+
+    const mockStore = useOrderStore.getState();
+
+    await act(async () => {
+      await result.current.removeOrder(soldOrderId);
+    });
+
+    expect(result.current.activeOrders.has(soldOrderId)).toBe(false);
+    expect(result.current.activeOrders.size).toBe(1);
+    expect(result.current.currentOrderId).toBe('sal-mock2');
+    expect(result.current.isCurrentOrderLocked).toBe(false);
+    expect(mockStore.clearSession).toHaveBeenCalled();
+  });
 });

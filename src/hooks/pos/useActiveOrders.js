@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useOrderStore } from '../../store/useOrderStore';
+import { useAppStore } from '../../store/useAppStore';
 import { generateID } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
@@ -86,6 +87,11 @@ export const useActiveOrders = create(
       // Ya no se bloquea la creación de nuevas órdenes vacías
       // para permitir abrir pestañas a clientes que se atrasan.
 
+      const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
+      if (!enableMultipleOrders && state.activeOrders.size >= 1) {
+        return null; // Block creation if multiple orders are disabled and there's already one
+      }
+
       if (state.activeOrders.size >= 10) {
         throw new Error("Límite máximo de 10 órdenes simultáneas alcanzado.");
       }
@@ -97,7 +103,8 @@ export const useActiveOrders = create(
         customer: customerId ? { id: customerId } : null,
         tableData: normalizeTableData(tableData),
         createdAt: new Date().toISOString(),
-        total: 0
+        total: 0,
+        folio: null
       };
 
       const nextOrders = new Map(state.activeOrders);
@@ -118,7 +125,10 @@ export const useActiveOrders = create(
       const order = state.activeOrders.get(orderId);
       if (!order) return;
 
-      set({ currentOrderId: orderId });
+      set({
+        currentOrderId: orderId,
+        isCurrentOrderLocked: Boolean(order.isLockedForCheckout)
+      });
 
 
 
@@ -140,6 +150,48 @@ export const useActiveOrders = create(
      * @param {string} orderId - ID de la orden
      * @param {Object} product - Producto a agregar
      */
+    // Elimina una orden ya procesada del gestor local sin tocar su estado final en BD.
+    removeOrder: async (orderId) => {
+      set({ isLoading: true });
+      try {
+        const state = get();
+        if (!orderId) throw new Error("Se requiere el ID de la orden.");
+
+        if (!state.activeOrders.has(orderId)) {
+          return { success: true };
+        }
+
+        const nextOrders = new Map(state.activeOrders);
+        nextOrders.delete(orderId);
+
+        set({
+          activeOrders: nextOrders,
+          isCurrentOrderLocked:
+            state.currentOrderId === orderId ? false : state.isCurrentOrderLocked
+        });
+
+        if (state.currentOrderId === orderId) {
+          useOrderStore.getState().clearSession();
+          if (nextOrders.size > 0) {
+            get().switchOrder(Array.from(nextOrders.keys())[0]);
+          } else {
+            set({ currentOrderId: null });
+            get().createOrder();
+          }
+        } else if (useOrderStore.getState().activeOrderId === orderId) {
+          useOrderStore.getState().clearSession();
+        }
+
+        return { success: true };
+      } catch (error) {
+        console.error("Error al eliminar la orden de la sesion:", error);
+        throw error;
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    // Agrega item a una orden especifica.
     addItemToOrder: async (orderId, product) => {
       const state = get();
       if (!state.activeOrders.has(orderId)) return;
@@ -216,57 +268,83 @@ export const useActiveOrders = create(
      * Cancela la orden actual completamente (vacía carrito, libera stock, borra pestaña y DB)
      */
     cancelCurrentOrder: async () => {
+      const state = get();
+      const orderId = state.currentOrderId;
+      if (!orderId) return;
+
+      const order = state.activeOrders.get(orderId);
+      if (order?.isLockedForCheckout) {
+        throw new Error("No se puede cancelar una orden en proceso de pago.");
+      }
+
       set({ isLoading: true });
       try {
-        const state = get();
-        const orderId = state.currentOrderId;
-        if (!orderId) return;
+        const isSaved = order?.isSaved;
+        let existsInDB = false;
+        let existing = null;
 
-        // 1. Eliminar de la sesión activa INMEDIATAMENTE para la UI
-        const nextOrders = new Map(state.activeOrders);
-        nextOrders.delete(orderId);
-        set({ activeOrders: nextOrders });
-
-        // 2. Limpiar store principal y cambiar de orden
-        useOrderStore.getState().clearSession();
-        if (nextOrders.size > 0) {
-          get().switchOrder(Array.from(nextOrders.keys())[0]);
-        } else {
-          set({ currentOrderId: null });
-          get().createOrder();
+        if (isSaved) {
+          try {
+            existing = await db.table(STORES.SALES).get(orderId);
+            existsInDB = !!existing;
+          } catch (e) {
+            console.error("Error al verificar orden en BD:", e);
+          }
         }
 
-        // 3. Limpieza profunda en DB (background)
-        // 2. Actualizar DB de forma segura
-        try {
-          const existing = await db.table(STORES.SALES).get(orderId);
-
-          // CORRECCIÓN: Si la orden existe en DB, la cancelamos SIEMPRE, sin importar 
-          // si su status exacto era SALE_STATUS.OPEN, para evitar que resurja al recargar.
-          if (existing) {
+        if (existsInDB && existing) {
+          try {
             const itemsToRelease = getSellableItems(existing.items);
             if (itemsToRelease.length > 0) {
-              try {
-                // Validamos que la función importada exista antes de llamarla
-                if (typeof releaseCommittedStock === 'function') {
-                  await releaseCommittedStock(itemsToRelease, { db, STORES });
-                }
-              } catch (stockErr) {
-                console.error("Error liberando stock en cancelOrder:", stockErr);
+              if (typeof releaseCommittedStock === 'function') {
+                await releaseCommittedStock(itemsToRelease, { db, STORES });
               }
             }
+          } catch (stockErr) {
+            console.error("Error liberando stock en cancelCurrentOrder:", stockErr);
+          }
+
+          try {
+            const noteLine = "Sistema: Orden cancelada desde POS";
+            const mergedNotes = existing.notes && String(existing.notes).trim()
+              ? `${existing.notes}\n${noteLine}`
+              : noteLine;
 
             await db.table(STORES.SALES).update(orderId, {
               status: SALE_STATUS.CANCELLED || 'cancelled',
               fulfillmentStatus: 'cancelled',
-              notes: 'Sistema: Orden cancelada por el usuario desde pestañas de POS.',
+              notes: mergedNotes,
               updatedAt: new Date().toISOString()
             });
+          } catch (dbErr) {
+            console.error("Error actualizando DB en cancelCurrentOrder:", dbErr);
           }
-        } catch (dbErr) {
-          console.error("Error actualizando DB en cancelOrder:", dbErr);
         }
 
+        // 1. Eliminar de la sesión activa y UI
+        try {
+          const nextOrders = new Map(get().activeOrders);
+          nextOrders.delete(orderId);
+
+          const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
+          if (!enableMultipleOrders) {
+            nextOrders.clear();
+            set({ activeOrders: nextOrders, currentOrderId: null });
+            useOrderStore.getState().clearSession();
+            get().createOrder();
+          } else {
+            set({ activeOrders: nextOrders });
+            useOrderStore.getState().clearSession();
+            if (nextOrders.size > 0) {
+              get().switchOrder(Array.from(nextOrders.keys())[0]);
+            } else {
+              set({ currentOrderId: null });
+              get().createOrder();
+            }
+          }
+        } catch (uiErr) {
+          console.error("Error actualizando UI en cancelCurrentOrder:", uiErr);
+        }
       } catch (error) {
         console.error("Error al cancelar la orden:", error);
       } finally {
@@ -280,51 +358,87 @@ export const useActiveOrders = create(
      * vuelva a aparecer al recargar la pagina.
      */
     cancelOrder: async (orderId) => {
+      if (!orderId) throw new Error("Se requiere el ID de la orden.");
+      const state = get();
+      const order = state.activeOrders.get(orderId);
+      if (!order) throw new Error("La orden no existe en sesion.");
+
+      if (order.isLockedForCheckout) {
+        throw new Error("No se puede cancelar una orden en proceso de pago.");
+      }
+
       set({ isLoading: true });
       try {
-        const state = get();
-        if (!orderId) throw new Error("Se requiere el ID de la orden.");
+        const isSaved = order.isSaved;
+        let existsInDB = false;
+        let existing = null;
 
-        const order = state.activeOrders.get(orderId);
-        if (!order) throw new Error("La orden no existe en sesion.");
-
-        // 1. Actualizar UI inmediatamente
-        const nextOrders = new Map(state.activeOrders);
-        nextOrders.delete(orderId);
-        set({ activeOrders: nextOrders });
-
-        if (state.currentOrderId === orderId) {
-          useOrderStore.getState().clearSession();
-          if (nextOrders.size > 0) {
-            get().switchOrder(Array.from(nextOrders.keys())[0]);
-          } else {
-            set({ currentOrderId: null });
-            get().createOrder();
+        if (isSaved) {
+          try {
+            existing = await db.table(STORES.SALES).get(orderId);
+            existsInDB = !!existing;
+          } catch (e) {
+            console.error("Error al verificar orden en BD:", e);
           }
         }
 
-        // 2. Actualizar DB de forma segura
-        try {
-          const existing = await db.table(STORES.SALES).get(orderId);
-          if (existing && existing.status === SALE_STATUS.OPEN) {
+        if (existsInDB && existing) {
+          try {
             const itemsToRelease = getSellableItems(existing.items);
             if (itemsToRelease.length > 0) {
-              try {
+              if (typeof releaseCommittedStock === 'function') {
                 await releaseCommittedStock(itemsToRelease, { db, STORES });
-              } catch (stockErr) {
-                console.error("Error liberando stock en cancelOrder:", stockErr);
               }
             }
+          } catch (stockErr) {
+            console.error("Error liberando stock en cancelOrder:", stockErr);
+          }
+
+          try {
+            const noteLine = "Sistema: Orden cancelada desde POS";
+            const mergedNotes = existing.notes && String(existing.notes).trim()
+              ? `${existing.notes}\n${noteLine}`
+              : noteLine;
 
             await db.table(STORES.SALES).update(orderId, {
               status: SALE_STATUS.CANCELLED || 'cancelled',
               fulfillmentStatus: 'cancelled',
-              notes: 'Sistema: Orden cancelada por el usuario desde pestanas de POS.',
+              notes: mergedNotes,
               updatedAt: new Date().toISOString()
             });
+          } catch (dbErr) {
+            console.error("Error actualizando DB en cancelOrder:", dbErr);
           }
-        } catch (dbErr) {
-          console.error("Error actualizando DB en cancelOrder:", dbErr);
+        }
+
+        // 1. Actualizar UI inmediatamente
+        try {
+          const nextOrders = new Map(get().activeOrders);
+          nextOrders.delete(orderId);
+
+          const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
+          if (!enableMultipleOrders) {
+            nextOrders.clear();
+            set({ activeOrders: nextOrders, currentOrderId: null });
+            useOrderStore.getState().clearSession();
+            get().createOrder();
+          } else {
+            set({ activeOrders: nextOrders });
+
+            if (state.currentOrderId === orderId) {
+              useOrderStore.getState().clearSession();
+              if (nextOrders.size > 0) {
+                get().switchOrder(Array.from(nextOrders.keys())[0]);
+              } else {
+                set({ currentOrderId: null });
+                get().createOrder();
+              }
+            } else if (useOrderStore.getState().activeOrderId === orderId) {
+              useOrderStore.getState().clearSession();
+            }
+          }
+        } catch (uiErr) {
+          console.error("Error actualizando UI en cancelOrder:", uiErr);
         }
 
         return { success: true };
@@ -380,19 +494,28 @@ export const useActiveOrders = create(
         const nextOrders = new Map(state.activeOrders);
         if (nextOrders.has(orderId)) {
           nextOrders.delete(orderId);
-          set({ activeOrders: nextOrders });
         }
 
-        if (state.currentOrderId === orderId) {
+        const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
+        if (!enableMultipleOrders) {
+          nextOrders.clear();
+          set({ activeOrders: nextOrders, currentOrderId: null });
           useOrderStore.getState().clearSession();
-          if (nextOrders.size > 0) {
-            get().switchOrder(Array.from(nextOrders.keys())[0]);
-          } else {
-            set({ currentOrderId: null });
-            get().createOrder();
+          get().createOrder();
+        } else {
+          set({ activeOrders: nextOrders });
+
+          if (state.currentOrderId === orderId) {
+            useOrderStore.getState().clearSession();
+            if (nextOrders.size > 0) {
+              get().switchOrder(Array.from(nextOrders.keys())[0]);
+            } else {
+              set({ currentOrderId: null });
+              get().createOrder();
+            }
+          } else if (useOrderStore.getState().activeOrderId === orderId) {
+            useOrderStore.getState().clearSession();
           }
-        } else if (useOrderStore.getState().activeOrderId === orderId) {
-          useOrderStore.getState().clearSession();
         }
 
         return { success: true };
@@ -421,17 +544,26 @@ export const useActiveOrders = create(
         // Removemos la orden de la sesión para que el usuario tenga feedback instantáneo
         const nextOrders = new Map(state.activeOrders);
         nextOrders.delete(orderId);
-        set({ activeOrders: nextOrders });
 
-        // Si era la activa, cambiamos a otra
-        if (state.currentOrderId === orderId) {
+        const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
+        if (!enableMultipleOrders) {
+          nextOrders.clear();
+          set({ activeOrders: nextOrders, currentOrderId: null });
           useOrderStore.getState().clearSession();
-          if (nextOrders.size > 0) {
-            const firstAvailable = Array.from(nextOrders.keys())[0];
-            get().switchOrder(firstAvailable);
-          } else {
-            set({ currentOrderId: null });
-            get().createOrder();
+          get().createOrder();
+        } else {
+          set({ activeOrders: nextOrders });
+
+          // Si era la activa, cambiamos a otra
+          if (state.currentOrderId === orderId) {
+            useOrderStore.getState().clearSession();
+            if (nextOrders.size > 0) {
+              const firstAvailable = Array.from(nextOrders.keys())[0];
+              get().switchOrder(firstAvailable);
+            } else {
+              set({ currentOrderId: null });
+              get().createOrder();
+            }
           }
         }
 
@@ -519,14 +651,24 @@ export const useActiveOrders = create(
 
         const nextOrders = new Map(get().activeOrders);
         nextOrders.delete(orderId);
-        set({ activeOrders: nextOrders });
 
-        if (state.currentOrderId === orderId) {
+        const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
+        if (!enableMultipleOrders) {
+          nextOrders.clear();
+          set({ activeOrders: nextOrders, currentOrderId: null });
           useOrderStore.getState().clearSession();
-          if (nextOrders.size > 0) {
-            get().switchOrder(Array.from(nextOrders.keys())[0]);
-          } else {
-            set({ currentOrderId: null });
+          get().createOrder();
+        } else {
+          set({ activeOrders: nextOrders });
+
+          if (state.currentOrderId === orderId) {
+            useOrderStore.getState().clearSession();
+            if (nextOrders.size > 0) {
+              get().switchOrder(Array.from(nextOrders.keys())[0]);
+            } else {
+              set({ currentOrderId: null });
+              get().createOrder(); // <-- Aseguramos la creación de una orden si el carrito queda vacío
+            }
           }
         }
 
@@ -576,7 +718,8 @@ export const useActiveOrders = create(
             tableData: normalizeTableData(sale.tableData),
             createdAt: sale.timestamp || new Date().toISOString(),
             total: sale.total || 0,
-            isSaved: true
+            isSaved: true,
+            folio: sale.folio || null
           });
         });
 
@@ -594,7 +737,8 @@ export const useActiveOrders = create(
               ...existing,
               items: draftItems.length > 0 ? draftItems : dbItems,
               tableData: normalizeTableData(draftOrder.tableData ?? existing.tableData ?? null),
-              isSaved: existing.isSaved
+              isSaved: existing.isSaved,
+              folio: draftOrder.folio ?? existing.folio ?? null
             });
           } else {
             // Orden está en localStorage pero NO en BD: preservarla como borrador
@@ -613,7 +757,8 @@ export const useActiveOrders = create(
               ...draftOrder,
               items: isActiveInCart && cartHasItems && draftItems.length === 0 ? cartState.order : draftItems,
               tableData: normalizeTableData(draftOrder.tableData ?? null),
-              isSaved: false
+              isSaved: false,
+              folio: draftOrder.folio ?? null
             });
           }
         });
@@ -628,7 +773,8 @@ export const useActiveOrders = create(
             tableData: null,
             createdAt: new Date().toISOString(),
             total: 0,
-            isSaved: false
+            isSaved: false,
+            folio: null
           });
         }
 

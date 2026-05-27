@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
 import { customerCreditRepository } from '../services/db/customerCreditRepository';
+import { db } from '../services/db/dexie';
 import { generateID } from '../services/utils';
 import {
   saveDataSafe,
@@ -21,6 +22,7 @@ import {
   recycleData,
   DB_ERROR_CODES
 } from '../services/database';
+import { getSafeCustomerDebt, formatCustomerDebt } from '../utils/customerUtils';
 
 const PAGE_SIZE = 50;
 
@@ -55,8 +57,32 @@ export default function CustomersPage() {
   const requestVersionRef = useRef(0);
   const requestInFlightRef = useRef(false);
 
-  const { cajaActual } = useCaja();
+  const { cajaActual, sincronizarEstadoCaja } = useCaja();
   const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
+
+  const resolveOpenCaja = useCallback(async () => {
+    if (cajaActual?.estado === 'abierta') {
+      return cajaActual;
+    }
+
+    const cajasAbiertas = await db.table(STORES.CAJAS)
+      .where('estado')
+      .equals('abierta')
+      .toArray();
+
+    if (cajasAbiertas.length === 0) {
+      return null;
+    }
+
+    return cajasAbiertas.reduce((masReciente, caja) => {
+      if (!masReciente) return caja;
+
+      const aperturaActual = new Date(caja.fecha_apertura || 0).getTime();
+      const aperturaMasReciente = new Date(masReciente.fecha_apertura || 0).getTime();
+
+      return aperturaActual > aperturaMasReciente ? caja : masReciente;
+    }, null);
+  }, [cajaActual]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -199,7 +225,7 @@ export default function CustomersPage() {
   const handleSaveCustomer = async (customerData) => {
     try {
       const id = editingCustomer ? editingCustomer.id : generateID('cust');
-      const existingDebt = editingCustomer ? (parseFloat(editingCustomer.debt) || 0) : 0;
+      const existingDebt = editingCustomer ? getSafeCustomerDebt(editingCustomer.debt) : 0;
       const dataToSave = { ...customerData, id, debt: existingDebt };
 
       const result = await saveDataSafe(STORES.CUSTOMERS, dataToSave);
@@ -236,7 +262,7 @@ export default function CustomersPage() {
       const customer = customers.find(c => c.id === customerId);
 
       // Validación de negocio (Deuda)
-      if (customer && customer.debt > 0) {
+      if (customer && getSafeCustomerDebt(customer.debt) > 0) {
         showMessageModal('No se puede eliminar un cliente con deuda pendiente.', null, { type: 'error' });
         return;
       }
@@ -278,11 +304,18 @@ export default function CustomersPage() {
     setIsHistoryModalOpen(true);
   };
 
-  const handleOpenAbono = (customer) => {
-    if (!cajaActual || cajaActual.estado !== 'abierta') {
+  const handleOpenAbono = async (customer) => {
+    const cajaVigente = await resolveOpenCaja();
+
+    if (!cajaVigente) {
       showMessageModal('Debes tener una caja abierta para registrar un abono.');
       return;
     }
+
+    if (!cajaActual || cajaActual.id !== cajaVigente.id || cajaActual.estado !== 'abierta') {
+      await sincronizarEstadoCaja();
+    }
+
     setSelectedCustomer(customer);
     setIsAbonoModalOpen(true);
   };
@@ -299,17 +332,19 @@ export default function CustomersPage() {
     setIsLayawayModalOpen(false);
   };
 
-  const handleConfirmAbono = async (customer, amount, sendReceipt) => {
+  const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null) => {
     try {
       // 1. Verificación estricta de pre-condiciones en UI
-      if (!cajaActual || cajaActual.estado !== 'abierta') {
+      const cajaVigente = await resolveOpenCaja();
+
+      if (!cajaVigente) {
         showMessageModal('Debes tener una caja abierta para registrar un abono.');
         handleCloseModals();
         return;
       }
 
       const concepto = `Abono de cliente: ${customer.name}`;
-      const deudaAnterior = customer.debt || 0; // Capturamos para el recibo antes de mutar
+      const deudaAnterior = getSafeCustomerDebt(customer.debt); // Capturamos para el recibo antes de mutar
 
       // 2. Ejecutar la transacción Atómica (Ledger + Cliente + Caja)
       // Delegamos TODO al repositorio. Si algo falla aquí, Dexie hace rollback automático.
@@ -317,8 +352,9 @@ export default function CustomersPage() {
         customer.id,
         amount,
         'efectivo',
-        cajaActual.id,
-        concepto
+        cajaVigente.id,
+        concepto,
+        allocations
       );
 
       // 3. Manejo del Caso de Éxito
@@ -329,6 +365,10 @@ export default function CustomersPage() {
         // Recargar la lista de clientes para que la UI refleje la nueva deuda
         loadInitialCustomers();
 
+        // Sincronizar estado de caja para reflejar la entrada de efectivo
+        // y el nuevo movimiento inmediatamente (sin esperar el polling)
+        await sincronizarEstadoCaja();
+
         // 4. Enviar Recibo (Opcional) usando la deuda real calculada por la BD (result.newDebt)
         if (sendReceipt) {
           const message =
@@ -338,7 +378,7 @@ export default function CustomersPage() {
             `Hemos registrado tu abono:\n\n` +
             `Monto Abonado: *$${amount.toFixed(2)}*\n` +
             `Deuda Anterior: $${deudaAnterior.toFixed(2)}\n` +
-            `*Saldo Restante: $${result.newDebt.toFixed(2)}*\n\n` +
+            `*Saldo Restante: $${Number(result.newDebt || 0).toFixed(2)}*\n\n` +
             `¡Gracias por tu pago!`;
 
           sendWhatsAppMessage(customer.phone, message);
@@ -369,7 +409,7 @@ export default function CustomersPage() {
     let message = '';
 
     try {
-      if (customer.debt > 0) {
+      if (getSafeCustomerDebt(customer.debt) > 0) {
         const allSales = await loadData(STORES.SALES);
 
         // 1. Obtener ventas a crédito históricas (ordenadas de la más reciente a la más antigua)
@@ -382,7 +422,7 @@ export default function CustomersPage() {
           .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
         // 2. Distribuir la deuda actual entre las notas más recientes (Lógica LIFO inversa)
-        let remainingDebtToAllocate = customer.debt;
+        let remainingDebtToAllocate = getSafeCustomerDebt(customer.debt);
         const salesToReport = [];
 
         for (const sale of fiadoSales) {
@@ -408,7 +448,7 @@ Hola *${customer.name}*,
 
 A continuación el detalle de su saldo pendiente con nosotros.
 
-*DEUDA TOTAL A LA FECHA: $${Number(customer.debt || 0).toFixed(2)}*
+*DEUDA TOTAL A LA FECHA: $${formatCustomerDebt(customer.debt)}*
 --------------------------------
 *Detalle de notas pendientes:*
 `;
@@ -535,6 +575,3 @@ ${itemsString}
     </>
   );
 }
-
-
-

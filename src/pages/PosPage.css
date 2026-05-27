@@ -5,6 +5,7 @@
    ======================================== */
 
 .pos-page-layout {
+  --pos-menu-bottom-clearance: 24px;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -38,7 +39,15 @@
   box-sizing: border-box;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
+  .pos-page-layout {
+    --pos-menu-bottom-clearance: calc(96px + env(safe-area-inset-bottom));
+  }
+
+  .pos-page-layout.pos-page-layout--with-floating-bar {
+    --pos-menu-bottom-clearance: calc(176px + env(safe-area-inset-bottom));
+  }
+
   .pos-grid {
     gap: 0;
   }
