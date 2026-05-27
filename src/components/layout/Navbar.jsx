@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
+import usePersistentStorage from '../../hooks/usePersistentStorage';
+import { useBackupRiskStore } from '../../services/BackupRiskEvaluator';
 import Logo from '../common/Logo';
 import {
   Store,
@@ -15,13 +17,20 @@ import {
   ChefHat,
   TrendingUp,
   Download,
-  RefreshCw
+  RefreshCw,
+  ShieldAlert,
+  AlertCircle
 } from 'lucide-react';
 import './Navbar.css';
 
 function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const features = useFeatureConfig();
+
+  const { isVolatile } = usePersistentStorage();
+  const isVolatileDismissed = useAppStore(state => state.isVolatileDismissed);
+  const setVolatileDismissed = useAppStore(state => state.setVolatileDismissed);
+  const backupRiskLevel = useBackupRiskStore(state => state.riskLevel);
 
   const updateAvailable = useAppStore((state) => state.updateAvailable);
   const isInstallable = useAppStore((state) => state.isInstallable);
@@ -115,7 +124,7 @@ function Navbar() {
     <>
       {!isAboutPage && (
         <div className="mobile-top-bar">
-          <div className="mobile-brand" style={{ width: '100%', justifyContent: 'center' }}>
+          <div className="mobile-brand" style={{ width: '100%', justifyContent: 'center', position: 'relative' }}>
             <Logo style={{ height: '40px', width: 'auto' }} />
           </div>
         </div>
@@ -196,8 +205,27 @@ function Navbar() {
               aria-disabled={isBackupLoading}
               tabIndex={isBackupLoading ? -1 : 0}
             >
-              {link.icon}
-              {link.label}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {link.icon}
+                {link.label}
+              </div>
+              {link.to === '/configuracion' && (
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  {backupRiskLevel === 1 && <span title="Respaldo recomendado" style={{ display: 'flex', alignItems: 'center' }}><AlertCircle size={18} color="#ff4444" /></span>}
+                  {isVolatile && isVolatileDismissed && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation(); // ¡Crítico!
+                        setVolatileDismissed(false);
+                        if (closeMenu) closeMenu();
+                      }}
+                      title="Riesgo de pérdida de datos"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                    ><ShieldAlert size={18} color="#d97706" /></button>
+                  )}
+                </div>
+              )}
             </NavLink>
           ))}
 
@@ -308,8 +336,21 @@ function Navbar() {
             onClick={handleProtectedNavClick}
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
           >
-            <Settings size={20} /> Configuracion
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Settings size={20} /> Configuracion
+            </div>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {backupRiskLevel === 1 && <span title="Respaldo recomendado" style={{ display: 'flex', alignItems: 'center' }}><AlertCircle size={18} color="#ff4444" /></span>}
+              {isVolatile && isVolatileDismissed && (
+                <button
+                  onClick={(e) => { e.preventDefault(); setVolatileDismissed(false); }}
+                  title="Riesgo de pérdida de datos"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                ><ShieldAlert size={18} color="#d97706" /></button>
+              )}
+            </div>
           </NavLink>
 
           <NavLink

@@ -4,7 +4,6 @@ import Navbar from './Navbar';
 import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
 import DataSafetyModal from '../common/DataSafetyModal';
-import BackupReminder from '../common/BackupRemider';
 import { useStatsStore } from '../../store/useStatsStore';
 import { useSalesStore } from '../../store/useSalesStore';
 import { useProductStore } from '../../store/useProductStore';
@@ -122,7 +121,6 @@ function Layout() {
       {/* Modales Globales */}
       <MessageModal />
       <DataSafetyModal />
-      <BackupReminder />
 
       {(showAssistantBot || (GLOBAL_ALERT && GLOBAL_ALERT.active && !localStorage.getItem(`lanzo_alert_${GLOBAL_ALERT.id}`))) && (
         <Suspense fallback={null}>
