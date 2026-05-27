@@ -37,7 +37,7 @@ export default function BatchProductSearch({
         </button>
       )}
 
-      {showSuggestions && searchTerm && (
+      {showSuggestions && searchTerm && filteredProducts.length > 0 && (
         <div className="product-suggestions-list" aria-label="Sugerencias de productos">
           {filteredProducts.map((product) => (
             <button

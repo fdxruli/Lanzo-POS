@@ -39,19 +39,18 @@ const CajaStatusCard = ({
 }) => {
   // Cálculo del total actual en tiempo real ESTRICTO
   let totalEnCajaSafe = Money.init(0);
+  let entradasTotalesSafe = Money.init(0);
 
   if (cajaActual) {
     const inicial = Money.init(cajaActual.monto_inicial || 0);
     const ventas = Money.init(totalesTurno.ventasContado || 0);
     const abonos = Money.init(totalesTurno.abonosFiado || 0);
-    const entradasNormales = Money.init(cajaActual.entradas_efectivo || 0);
-    const entradasAnomalas = Money.init(cajaActual.ingresos_efectivo || 0);
-    const entradas = Money.add(entradasNormales, entradasAnomalas);
+    entradasTotalesSafe = Money.init(cajaActual.entradas_efectivo || 0);
 
     const salidas = Money.init(cajaActual.salidas_efectivo || 0);
 
     const subtotalIngresos = Money.add(inicial, ventas);
-    const subtotalExtras = Money.add(abonos, entradas);
+    const subtotalExtras = Money.add(abonos, entradasTotalesSafe);
     const ingresosTotales = Money.add(subtotalIngresos, subtotalExtras);
 
     totalEnCajaSafe = Money.subtract(ingresosTotales, salidas);
@@ -231,9 +230,10 @@ const CajaStatusCard = ({
         <div className="info-row">
           <span>Entradas Extras</span>
           <span className="amount positive">
-            + ${Money.toNumber(cajaActual?.entradas_efectivo || 0).toFixed(2)}
+            + ${Money.toNumber(entradasTotalesSafe).toFixed(2)}
           </span>
         </div>
+
         <div className="info-row">
           <span>Salidas (Gastos)</span>
           <span className="amount negative">

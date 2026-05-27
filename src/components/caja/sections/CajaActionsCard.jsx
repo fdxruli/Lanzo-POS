@@ -37,6 +37,7 @@ const CajaActionsCard = ({
             className="btn btn-entry"
             onClick={onEntrada}
             style={{ gap: '6px' }}
+            disabled={isBackupLoading}
           >
             <TrendingUp size={18} /> <span>Entrada</span>
           </button>
@@ -44,6 +45,7 @@ const CajaActionsCard = ({
             className="btn btn-exit"
             onClick={onSalida}
             style={{ gap: '6px' }}
+            disabled={isBackupLoading}
           >
             <TrendingDown size={18} /> <span>Salida</span>
           </button>
@@ -65,7 +67,7 @@ const CajaActionsCard = ({
         <p>⌨️ Atajos de Teclado:</p>
         <div className="shortcuts-grid">
           <span>
-            <kbd>Ctrl+R</kbd> <span>Refrescar</span>
+            <kbd>Alt+R</kbd> <span>Refrescar</span>
           </span>
           <span>
             <kbd>Ctrl+Shift+E</kbd> <span>Entrada</span>

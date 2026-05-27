@@ -40,7 +40,7 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
     // Helpers UI
     const categoryName = useMemo(() => {
         if (!data.categoryId) return 'General';
-        const cat = categories.find(c => c.id == data.categoryId);
+        const cat = categories.find(c => c.id === data.categoryId);
         return cat ? cat.name : 'Desconocida';
     }, [data.categoryId, categories]);
 

@@ -12,6 +12,7 @@ import {
     AlertCircle,
     Package
 } from 'lucide-react';
+import { getSafeCustomerDebt, formatCustomerDebt } from '../../utils/customerUtils';
 
 const CustomerCard = memo(({
     customer,
@@ -26,7 +27,7 @@ const CustomerCard = memo(({
     // 2. OBTENER LA CONFIGURACIÓN
     const { hasLayaway } = useFeatureConfig();
 
-    const parsedDebt = parseFloat(customer.debt) || 0;
+    const parsedDebt = getSafeCustomerDebt(customer.debt);
     const hasDebt = parsedDebt > 0;
 
     return (

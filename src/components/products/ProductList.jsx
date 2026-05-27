@@ -183,7 +183,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             // Alertas
             const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
             const isTracked = item.trackStock !== false && (
-                item.trackStock === true || item.batchManagement?.enabled === true
+              item.trackStock === true || item.batchManagement?.enabled === true
             );
 
             // Unidad de medida
@@ -252,7 +252,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                     )}
                     {isLowStock && isTracked && (
                       <div className="alert-banner alert-orange">
-                        ⚠️ Stock Bajo ({item.stock} {showMinMax ? `≤ ${item.minStock}` : ''})
+                        ⚠️ Stock Bajo ({item.stock} {showMinMax && item.minStock !== null && item.minStock !== undefined ? `≤ ${item.minStock}` : ''})
                       </div>
                     )}
                   </div>
@@ -307,7 +307,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                       {showMinMax && (
                         <div className="detail-item">
                           <span className="label">Mín/Máx:</span>
-                          <span className="value">{item.minStock} / {item.maxStock || '∞'}</span>
+                          <span className="value">{item.minStock ?? '--'} / {item.maxStock ?? '∞'}</span>
                         </div>
                       )}
                       {showBarcode && !showPharmacyDetails && (

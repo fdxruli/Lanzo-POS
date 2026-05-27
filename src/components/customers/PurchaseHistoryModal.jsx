@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { queryByIndex, STORES } from '../../services/database';
 import './PurchaseHistoryModal.css';
 import Logger from '../../services/Logger';
+import { getSafeCustomerDebt, formatCustomerDebt } from '../../utils/customerUtils';
 
 // Iconos simples (puedes reemplazarlos por lucide-react o fontawesome si usas)
 const ChevronIcon = ({ expanded }) => (
@@ -91,9 +92,9 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
             <span className="stat-label">Ticket Promedio</span>
             <span className="stat-value">${stats.averageTicket.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
           </div>
-          <div className={`stat-card ${customer.debt > 0 ? 'debt-warning' : 'debt-clean'}`}>
+          <div className={`stat-card ${getSafeCustomerDebt(customer.debt) > 0 ? 'debt-warning' : 'debt-clean'}`}>
             <span className="stat-label">Deuda Actual</span>
-            <span className="stat-value">${(customer.debt || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+            <span className="stat-value">${formatCustomerDebt(customer.debt)}</span>
           </div>
         </div>
 

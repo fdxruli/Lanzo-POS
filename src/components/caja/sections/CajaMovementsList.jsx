@@ -45,6 +45,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
 
     // Transformar para render
     return filtrados.map(mov => {
+      // CÓDIGO CORREGIDO
       const esEntrada = mov.tipo === 'entrada' || mov.tipo === 'ajuste_entrada';
       const esAjuste = mov.tipo === 'ajuste_entrada' || mov.tipo === 'ajuste_salida';
       const colorMov = esEntrada ? 'var(--success-color)' : 'var(--error-color)';

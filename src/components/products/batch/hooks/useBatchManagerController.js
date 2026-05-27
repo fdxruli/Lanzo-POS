@@ -86,6 +86,14 @@ export function useBatchManagerController({
   }, [selectedProduct, selectedProductId]);
 
   useEffect(() => {
+    if (resolvedSelectedProduct) {
+      setSearchTerm(resolvedSelectedProduct.name);
+    } else {
+      setSearchTerm('');
+    }
+  }, [resolvedSelectedProduct?.id, resolvedSelectedProduct?.name]);
+
+  useEffect(() => {
     let isActive = true;
 
     const fetchSearchResults = async () => {
