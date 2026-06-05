@@ -62,12 +62,18 @@ export function usePos() {
         checkHasOutOfStockProducts: () => {},
         fetchActiveTablesCount: tablesCount.fetchActiveTablesCount,
         features,
-        handleInitiateCheckout: checkout.handleInitiateCheckout
+        handleInitiateCheckout: checkout.handleInitiateCheckout,
+        cajaActual: pos.cajaActual,
+        asegurarCajaAbierta: pos.asegurarCajaAbierta
     });
 
     const layaway = useLayawayFlow({
         ...modals,
-        showToast: pos.showToast
+        showToast: pos.showToast,
+        order: pos.order,
+        customer: pos.customer,
+        total: pos.total,
+        clearOrder: pos.clearCurrentOrder
     });
 
     // â”€â”€ Interfaz unificada â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

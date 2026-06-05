@@ -1,6 +1,6 @@
 // src/hooks/useLayawayFlow.js
 import { useCallback } from 'react';
-import { useOrderStore } from '../../store/useOrderStore';
+
 import { useAppStore } from '../../store/useAppStore';
 import { layawayRepo } from '../../services/db';
 import Logger from '../../services/Logger';
@@ -22,18 +22,13 @@ import { showMessageModal } from '../../services/utils';
 export function useLayawayFlow({
     openModal,
     closeModal,
-    showToast
+    showToast,
+    order,
+    customer,
+    total,
+    clearOrder
 }) {
     const features = useAppStore((state) => state.features);
-
-    const {
-        order,
-        customer,
-        clearOrder,
-        getTotalPrice
-    } = useOrderStore.getState();
-
-    const total = getTotalPrice();
 
     // ── Iniciar apartado ───────────────────────────────────────────
     const handleInitiateLayaway = useCallback(() => {

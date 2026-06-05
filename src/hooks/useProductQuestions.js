@@ -249,15 +249,7 @@ export function useProductQuestions(activeRubroContext, initialData = {}) {
                     }
                 ]
             },
-            {
-                id: 'shelfLife',
-                question: '¿Cuántos días dura fresco aproximadamente?',
-                icon: '📅',
-                type: 'number',
-                unit: 'días',
-                placeholder: 'Ej: 7',
-                helpText: 'Para alertas de merma'
-            },
+
             {
                 id: 'isPerishable',
                 question: '¿Es producto perecedero?',
@@ -389,7 +381,6 @@ export function useProductQuestions(activeRubroContext, initialData = {}) {
                 
             case 'verduleria/fruteria':
                 config.saleType = answers.saleType || 'unit';
-                config.shelfLife = answers.shelfLife || '';
                 config.isPerishable = answers.isPerishable !== false;
                 break;
                 

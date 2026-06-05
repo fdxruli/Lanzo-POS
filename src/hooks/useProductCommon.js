@@ -3,7 +3,7 @@ import { compressImage, lookupBarcodeInAPI, showMessageModal } from '../services
 
 const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
 
-export function useProductCommon(initialData, onSave) {
+export function useProductCommon(initialData, config = {}) {
     // --- ESTADOS BÁSICOS ---
     const [name, setName] = useState(initialData?.name || '');
     const [barcode, setBarcode] = useState(initialData?.barcode || '');
@@ -12,6 +12,12 @@ export function useProductCommon(initialData, onSave) {
     const [imageData, setImageData] = useState(initialData?.image || null);
     const [categoryId, setCategoryId] = useState(initialData?.categoryId || '');
     const [storageLocation, setStorageLocation] = useState(initialData?.location || '');
+    
+    // --- CADUCIDAD ---
+    const [expirationMode, setExpirationMode] = useState(initialData?.expirationMode || config.defaultExpirationMode || 'NONE');
+    const [shelfLifeValue, setShelfLifeValue] = useState(initialData?.shelfLifeValue || '');
+    const [shelfLifeUnit, setShelfLifeUnit] = useState(initialData?.shelfLifeUnit || 'days');
+    const [pendingBatchPurge, setPendingBatchPurge] = useState(false);
     
     // --- PRECIOS Y COSTOS ---
     const [cost, setCost] = useState(initialData?.cost || '');
@@ -118,6 +124,9 @@ export function useProductCommon(initialData, onSave) {
         trackStock: doesTrackStock,
         price: parseFloat(price) || 0,
         cost: parseFloat(cost) || 0,
+        expirationMode,
+        shelfLifeValue: shelfLifeValue !== '' ? Number(shelfLifeValue) : null,
+        shelfLifeUnit
     });
 
     return {
@@ -129,6 +138,10 @@ export function useProductCommon(initialData, onSave) {
         imageData, setImageData,
         categoryId, setCategoryId,
         storageLocation, setStorageLocation,
+        expirationMode, setExpirationMode,
+        shelfLifeValue, setShelfLifeValue,
+        shelfLifeUnit, setShelfLifeUnit,
+        pendingBatchPurge, setPendingBatchPurge,
         cost, setCost,
         price, setPrice,
         margin, setMargin,

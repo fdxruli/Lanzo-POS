@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/useAppStore';
 import { useOrderStore } from '../../store/useOrderStore';
+import { useActiveOrders } from './useActiveOrders';
 import { useProductStore } from '../../store/useProductStore';
 import { useCaja } from '../useCaja';
 import { useInventoryMovement } from '../useInventoryMovement';
@@ -20,34 +21,24 @@ export function usePosPage() {
     const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
     const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
-    const { cajaActual, abrirCaja } = useCaja();
+    const { cajaActual, abrirCaja, asegurarCajaAbierta } = useCaja();
     const { scanProductFast } = useInventoryMovement();
 
     // Suscripción reactiva: la barra flotante móvil y el checkout leen `order` / totales desde aquí.
     // Antes se usaba solo getState() en render, sin suscripción, y el padre no se re-renderizaba al agregar ítems.
     const {
-        order,
-        customer,
-        activeOrderId,
-        tableData,
         clearOrder,
         clearSession,
         getTotalPrice,
         saveOrderAsOpen,
         loadOpenOrder
-    } = useOrderStore(
-        useShallow((state) => ({
-            order: state.order,
-            customer: state.customer,
-            activeOrderId: state.activeOrderId,
-            tableData: state.tableData,
-            clearOrder: state.clearOrder,
-            clearSession: state.clearSession,
-            getTotalPrice: state.getTotalPrice,
-            saveOrderAsOpen: state.saveOrderAsOpen,
-            loadOpenOrder: state.loadOpenOrder
-        }))
-    );
+    } = useOrderStore();
+
+    const activeOrderId = useActiveOrders((state) => state.currentOrderId);
+    const currentOrder = useActiveOrders((state) => state.currentOrder);
+    const order = currentOrder?.items || [];
+    const customer = currentOrder?.customer || null;
+    const tableData = currentOrder?.tableData || null;
 
     // ── Estado local ───────────────────────────────────────────────
     const [toastMsg, setToastMsg] = useState(null);
@@ -116,6 +107,7 @@ export function usePosPage() {
 
         // Actions
         abrirCaja,
+        asegurarCajaAbierta,
         saveOrderAsOpen,
         loadOpenOrder,
         clearSession,

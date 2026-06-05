@@ -294,10 +294,10 @@ export default function ProductsPage() {
                 const hasVariants = productData.quickVariants && productData.quickVariants.length > 0;
 
                 // Caso A: Producto Simple (Sin variantes, con stock inicial declarado)
-                // Solo creamos lote simple si NO es receta y NO tiene variantes
+                // Solo creamos lote simple si es NUEVO, NO es receta y NO tiene variantes
                 const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
 
-                if (!isRecipeProduct && !hasVariants && initialStock > 0) {
+                if (!isEditingExistingProduct && !isRecipeProduct && !hasVariants && initialStock > 0) {
                     const initialBatch = {
                         id: `batch-${productId}-initial`,
                         productId: productId,

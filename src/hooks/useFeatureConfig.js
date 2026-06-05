@@ -7,14 +7,14 @@ import { useAppStore } from '../store/useAppStore';
  */
 const RUBRO_FEATURES = {
   // --- GRUPOS NUEVOS ---
-  'food_service': ['recipes', 'modifiers', 'waste', 'kds', 'tables'], // Restaurante: No usa 'bulk' de venta directa usualmente
+  'food_service': ['recipes', 'modifiers', 'waste', 'kds', 'tables', 'expiry', 'lots'], // Restaurante: No usa 'bulk' de venta directa usualmente
   'apparel': ['variants', 'sku', 'suppliers', 'layaway'], // Ropa: JAMÁS es a granel
-  'hardware': ['lots', 'sku', 'suppliers', 'minmax', 'wholesale', 'bulk'], // Ferretería: Clavos/Cables sí pueden ser granel
+  'hardware': ['lots', 'sku', 'suppliers', 'minmax', 'wholesale', 'bulk', 'expiry'], // Ferretería: Clavos/Cables sí pueden ser granel
 
   // --- RUBROS ORIGINALES ---
-  'abarrotes': ['bulk', 'wholesale', 'suppliers', 'minmax', 'expiry'], // Abarrotes: Sí usa granel (jamón, frijol)
+  'abarrotes': ['bulk', 'wholesale', 'suppliers', 'minmax', 'expiry', 'lots'], // Abarrotes: Sí usa granel (jamón, frijol)
   'farmacia': ['lots', 'expiry', 'lab_fields', 'suppliers'], // Farmacia: REMOVIDO 'bulk'. Medicamentos son unitarios.
-  'verduleria/fruteria': ['bulk', 'expiry', 'waste', 'daily_pricing'], // Frutería: 100% Granel
+  'verduleria/fruteria': ['bulk', 'expiry', 'waste', 'daily_pricing', 'lots'], // Frutería: 100% Granel
   'otro': ['bulk', 'expiry', 'lots', 'suppliers']
 };
 

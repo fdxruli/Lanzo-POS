@@ -70,11 +70,8 @@ describe('useActiveOrders session recovery', () => {
     vi.clearAllMocks();
 
     useOrderStore.setState({
-      order: [],
       activeOrderId: null,
-      tableData: null,
-      _activeOrdersHook: null,
-      _isSyncing: false
+      tableData: null
     });
 
     useActiveOrders.setState({
@@ -141,26 +138,5 @@ describe('useActiveOrders session recovery', () => {
     expect(state.currentOrderId).toBe('sal-draft-local');
   });
 
-  it('syncs the active order into useOrderStore immediately when linking', () => {
-    useActiveOrders.setState({
-      activeOrders: new Map([
-        ['sal-draft-local', {
-          id: 'sal-draft-local',
-          items: [{ id: 'p2', quantity: 2, price: 18 }],
-          customer: null,
-          tableData: 'Barra',
-          createdAt: '2026-05-12T03:00:00.000Z',
-          total: 36
-        }]
-      ]),
-      currentOrderId: 'sal-draft-local'
-    });
 
-    useOrderStore.getState().linkWithActiveOrders(useActiveOrders);
-
-    const storeState = useOrderStore.getState();
-    expect(storeState.activeOrderId).toBe('sal-draft-local');
-    expect(storeState.tableData).toBe('Barra');
-    expect(storeState.order).toEqual([{ id: 'p2', quantity: 2, price: 18 }]);
-  });
 });

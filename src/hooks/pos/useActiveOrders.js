@@ -129,20 +129,6 @@ export const useActiveOrders = create(
         currentOrderId: orderId,
         isCurrentOrderLocked: Boolean(order.isLockedForCheckout)
       });
-
-
-
-      useOrderStore.setState({
-        order: order.items || [],
-        tableData: order.tableData || null,
-        activeOrderId: orderId,
-        _isSyncing: true // Previene que el subscriber devuelva un array vacío accidental por la condición de carrera
-      });
-
-      // Liberamos el flag inmediatamente después en el micro-task
-      setTimeout(() => {
-        useOrderStore.setState({ _isSyncing: false });
-      }, 0);
     },
 
     /**
@@ -171,7 +157,8 @@ export const useActiveOrders = create(
         });
 
         if (state.currentOrderId === orderId) {
-          useOrderStore.getState().clearSession();
+          // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
           if (nextOrders.size > 0) {
             get().switchOrder(Array.from(nextOrders.keys())[0]);
           } else {
@@ -179,7 +166,8 @@ export const useActiveOrders = create(
             get().createOrder();
           }
         } else if (useOrderStore.getState().activeOrderId === orderId) {
-          useOrderStore.getState().clearSession();
+          // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
         }
 
         return { success: true };
@@ -237,31 +225,53 @@ export const useActiveOrders = create(
       }
     },
 
-    /**
-     * Actualiza la orden activa con propiedades como customer
-     * @param {Object} updates - Propiedades a actualizar
-     */
     updateCurrentOrder: (updates) => {
-      const state = get();
-      if (!state.currentOrderId) return;
+      set((state) => {
+        if (!state.currentOrderId) return state;
 
-      const normalizedUpdates = updates.tableData !== undefined
-        ? { ...updates, tableData: normalizeTableData(updates.tableData) }
-        : updates;
+        const order = state.activeOrders.get(state.currentOrderId);
+        const resolvedUpdates = typeof updates === 'function' ? updates(order) : updates;
 
-      const order = state.activeOrders.get(state.currentOrderId);
-      const nextOrders = new Map(state.activeOrders);
+        const normalizedUpdates = resolvedUpdates.tableData !== undefined
+          ? { ...resolvedUpdates, tableData: normalizeTableData(resolvedUpdates.tableData) }
+          : resolvedUpdates;
 
-      nextOrders.set(state.currentOrderId, {
-        ...order,
-        ...normalizedUpdates
+        const nextOrders = new Map(state.activeOrders);
+        nextOrders.set(state.currentOrderId, {
+          ...order,
+          ...normalizedUpdates
+        });
+
+        return { activeOrders: nextOrders };
       });
+    },
 
-      set({ activeOrders: nextOrders });
+    /**
+     * Actualiza los items de la orden activa y recalcula el total
+     * @param {Array|Function} updater - Nueva lista de productos o función
+     */
+    updateCurrentOrderItems: (updater) => {
+      set((state) => {
+        if (!state.currentOrderId) return state;
 
-      if (updates.tableData !== undefined) {
-        useOrderStore.getState().setTableData(normalizedUpdates.tableData);
-      }
+        const order = state.activeOrders.get(state.currentOrderId);
+
+        if (order.isLockedForCheckout) {
+          console.warn('[useActiveOrders] Intento de mutación rechazado: Orden en proceso de pago.');
+          return state;
+        }
+
+        const newItems = typeof updater === 'function' ? updater(order.items) : updater;
+        const nextOrders = new Map(state.activeOrders);
+        
+        nextOrders.set(state.currentOrderId, {
+          ...order,
+          items: newItems,
+          total: calculateOrderTotalExact(newItems)
+        });
+
+        return { activeOrders: nextOrders };
+      });
     },
 
     /**
@@ -330,11 +340,13 @@ export const useActiveOrders = create(
           if (!enableMultipleOrders) {
             nextOrders.clear();
             set({ activeOrders: nextOrders, currentOrderId: null });
-            useOrderStore.getState().clearSession();
+            // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
             get().createOrder();
           } else {
             set({ activeOrders: nextOrders });
-            useOrderStore.getState().clearSession();
+            // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
             if (nextOrders.size > 0) {
               get().switchOrder(Array.from(nextOrders.keys())[0]);
             } else {
@@ -420,13 +432,15 @@ export const useActiveOrders = create(
           if (!enableMultipleOrders) {
             nextOrders.clear();
             set({ activeOrders: nextOrders, currentOrderId: null });
-            useOrderStore.getState().clearSession();
+            // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
             get().createOrder();
           } else {
             set({ activeOrders: nextOrders });
 
             if (state.currentOrderId === orderId) {
-              useOrderStore.getState().clearSession();
+              // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
               if (nextOrders.size > 0) {
                 get().switchOrder(Array.from(nextOrders.keys())[0]);
               } else {
@@ -434,7 +448,8 @@ export const useActiveOrders = create(
                 get().createOrder();
               }
             } else if (useOrderStore.getState().activeOrderId === orderId) {
-              useOrderStore.getState().clearSession();
+              // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
             }
           }
         } catch (uiErr) {
@@ -500,13 +515,15 @@ export const useActiveOrders = create(
         if (!enableMultipleOrders) {
           nextOrders.clear();
           set({ activeOrders: nextOrders, currentOrderId: null });
-          useOrderStore.getState().clearSession();
+          // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
           get().createOrder();
         } else {
           set({ activeOrders: nextOrders });
 
           if (state.currentOrderId === orderId) {
-            useOrderStore.getState().clearSession();
+            // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
             if (nextOrders.size > 0) {
               get().switchOrder(Array.from(nextOrders.keys())[0]);
             } else {
@@ -514,7 +531,8 @@ export const useActiveOrders = create(
               get().createOrder();
             }
           } else if (useOrderStore.getState().activeOrderId === orderId) {
-            useOrderStore.getState().clearSession();
+            // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
           }
         }
 
@@ -549,14 +567,16 @@ export const useActiveOrders = create(
         if (!enableMultipleOrders) {
           nextOrders.clear();
           set({ activeOrders: nextOrders, currentOrderId: null });
-          useOrderStore.getState().clearSession();
+          // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
           get().createOrder();
         } else {
           set({ activeOrders: nextOrders });
 
           // Si era la activa, cambiamos a otra
           if (state.currentOrderId === orderId) {
-            useOrderStore.getState().clearSession();
+            // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
             if (nextOrders.size > 0) {
               const firstAvailable = Array.from(nextOrders.keys())[0];
               get().switchOrder(firstAvailable);
@@ -656,13 +676,15 @@ export const useActiveOrders = create(
         if (!enableMultipleOrders) {
           nextOrders.clear();
           set({ activeOrders: nextOrders, currentOrderId: null });
-          useOrderStore.getState().clearSession();
+          // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
           get().createOrder();
         } else {
           set({ activeOrders: nextOrders });
 
           if (state.currentOrderId === orderId) {
-            useOrderStore.getState().clearSession();
+            // useOrderStore ya no tiene estado, por lo que no es necesario llamar clearSession()
+
             if (nextOrders.size > 0) {
               get().switchOrder(Array.from(nextOrders.keys())[0]);
             } else {
@@ -745,17 +767,17 @@ export const useActiveOrders = create(
             const draftItems = Array.isArray(draftOrder.items) ? draftOrder.items : [];
             const isEmptyDraft = draftItems.length === 0 && !draftOrder.tableData && !draftOrder.customer;
 
-            // 🔥 FIX: Si la orden es la activa y useOrderStore tiene los items (pero el tab no por fallo de guardado),
-            // NO la consideramos vacía y rescatamos los items.
-            const cartState = useOrderStore.getState();
-            const isActiveInCart = cartState.activeOrderId === orderId;
-            const cartHasItems = Array.isArray(cartState.order) && cartState.order.length > 0;
+            // 🔥 FIX: Si la orden es la activa y get() tiene los items (pero el tab no por fallo de guardado),
+            const cartState = get();
+            const isActiveInCart = cartState.currentOrderId === orderId;
+            const currentActiveItems = cartState.currentOrder?.items || [];
+            const cartHasItems = currentActiveItems.length > 0;
             const isActuallyEmpty = isEmptyDraft && !(isActiveInCart && cartHasItems);
 
-            // 🔥 IMPORTANT: NUNCA descartar órdenes del localStorage, incluso si parecen vacías
+            // 🔧 IMPORTANT: NUNCA descartar órdenes del localStorage, incluso si parecen vacías
             ordersMap.set(orderId, {
               ...draftOrder,
-              items: isActiveInCart && cartHasItems && draftItems.length === 0 ? cartState.order : draftItems,
+              items: isActiveInCart && cartHasItems && draftItems.length === 0 ? currentActiveItems : draftItems,
               tableData: normalizeTableData(draftOrder.tableData ?? null),
               isSaved: false,
               folio: draftOrder.folio ?? null
@@ -1018,5 +1040,30 @@ export const useActiveOrders = create(
   })
 );
 
-// La suscripción a cambios de useOrderStore ha sido movida
-// dentro de useOrderStore.linkWithActiveOrders para gestionar la bidireccionalidad centralmente.
+// --- SUSCRIPCIÓN GLOBAL (Flujo Unidireccional: SSOT -> View) ---
+useActiveOrders.subscribe((state, prevState) => {
+  const currentOrder = state.activeOrders.get(state.currentOrderId);
+  const prevOrder = prevState.activeOrders.get(state.currentOrderId);
+  
+  if (state.currentOrderId !== prevState.currentOrderId || currentOrder !== prevOrder) {
+    if (currentOrder) {
+      useOrderStore.setState({
+        order: currentOrder.items || [],
+        tableData: currentOrder.tableData || null,
+        activeOrderId: state.currentOrderId,
+        folio: currentOrder.folio || null,
+        isSavedOrder: Boolean(currentOrder.isSaved),
+        isCartLocked: Boolean(currentOrder.isLockedForCheckout)
+      });
+    } else {
+      useOrderStore.setState({
+        order: [],
+        tableData: null,
+        activeOrderId: null,
+        folio: null,
+        isSavedOrder: false,
+        isCartLocked: false
+      });
+    }
+  }
+});

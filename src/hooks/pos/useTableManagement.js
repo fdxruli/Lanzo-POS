@@ -35,26 +35,32 @@ export function useTableManagement({
     checkHasOutOfStockProducts,
     fetchActiveTablesCount,
     features,
-    handleInitiateCheckout
+    handleInitiateCheckout,
+    cajaActual,
+    asegurarCajaAbierta
 }) {
     const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
     const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
     const {
-        order,
-        activeOrderId,
-        clearSession,
         saveOrderAsOpen,
-        loadOpenOrder,
-        tableData
+        loadOpenOrder
     } = useOrderStore.getState();
+
+    const order = useActiveOrders((state) => state.currentOrder?.items) || [];
+    const activeOrderId = useActiveOrders((state) => state.currentOrderId);
+    
+    const clearSession = useCallback(() => {
+        useActiveOrders.getState().cancelCurrentOrder();
+    }, []);
 
     // ── Guardar orden abierta ──────────────────────────────────────
     const handleSaveAsOpen = useCallback(async () => {
         if (!features?.hasTables) return;
 
-        const currentTableData = useOrderStore.getState().tableData;
-        const isUpdating = Boolean(useOrderStore.getState().isSavedOrder);
+        const currentOrder = useActiveOrders.getState().currentOrder;
+        const currentTableData = currentOrder?.tableData;
+        const isUpdating = Boolean(currentOrder?.isSaved);
 
         if (!currentTableData || currentTableData.trim() === '') {
             const promptedName = window.prompt('Por favor, ingresa un identificador para la mesa (Ej: Mesa 2, Barra, Cliente):');
@@ -62,7 +68,7 @@ export function useTableManagement({
             if (!promptedName || promptedName.trim() === '') {
                 return;
             }
-            useOrderStore.setState({ tableData: promptedName.trim() });
+            useActiveOrders.getState().updateCurrentOrderData({ tableData: promptedName.trim() });
         }
 
         const result = await saveOrderAsOpen();
@@ -70,7 +76,7 @@ export function useTableManagement({
             // 🔧 FIX: Cambiar fulfillmentStatus a 'pending' para que NO se recargue como "en edición"
             // cuando se regrese del OrderPage al POS
             try {
-                const orderId = useOrderStore.getState().activeOrderId || result.id;
+                const orderId = useActiveOrders.getState().currentOrderId || result.id;
                 await db.table(STORES.SALES).update(orderId, {
                     fulfillmentStatus: 'pending',
                     updatedAt: new Date().toISOString()
@@ -82,7 +88,7 @@ export function useTableManagement({
 
             // Eliminar la orden de la sesión activa tras enviarla a la cocina (Mesas)
             try {
-                const currentId = useOrderStore.getState().activeOrderId || result.id;
+                const currentId = useActiveOrders.getState().currentOrderId || result.id;
                 // Si la función importada useActiveOrders está disponible
                 const { useActiveOrders } = await import('./useActiveOrders.js');
                 const state = useActiveOrders.getState();
@@ -128,7 +134,9 @@ export function useTableManagement({
             // ya hidratada desde la BD, garantizando consistencia entre ambos stores.
             try {
                 const activeOrdersState = useActiveOrders.getState();
-                const { order: loadedOrder, activeOrderId: loadedOrderId, tableData: loadedTableData } = useOrderStore.getState();
+                const loadedOrderId = useActiveOrders.getState().currentOrderId;
+                const loadedOrder = useActiveOrders.getState().currentOrder?.items || [];
+                const loadedTableData = useActiveOrders.getState().currentOrder?.tableData;
 
                 if (loadedOrderId && !activeOrdersState.activeOrders.has(loadedOrderId)) {
                     const nextOrders = new Map(activeOrdersState.activeOrders);
@@ -305,13 +313,27 @@ export function useTableManagement({
             return;
         }
 
-        const { cajaActual } = useOrderStore.getState();
-        if (
-            splitPayload?.tickets?.some((ticket) => ticket?.paymentData?.paymentMethod === 'efectivo') &&
-            (!cajaActual || cajaActual.estado !== 'abierta')
-        ) {
-            showMessageModal('Necesitas abrir caja para cobrar tickets en efectivo.', null, { type: 'warning' });
-            return;
+        const hasCashPayment = splitPayload?.tickets?.some(
+            (ticket) => ticket?.paymentData?.paymentMethod === 'efectivo'
+        );
+
+        if (hasCashPayment && (!cajaActual || cajaActual.estado !== 'abierta')) {
+            if (typeof asegurarCajaAbierta !== 'function') {
+                showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
+                return;
+            }
+
+            try {
+                await asegurarCajaAbierta();
+            } catch (error) {
+                Logger.error('No se pudo abrir caja para Split Bill:', error);
+                showMessageModal(
+                    error?.message || 'No se pudo abrir la caja automáticamente.',
+                    null,
+                    { type: 'error' }
+                );
+                return;
+            }
         }
 
         try {
@@ -358,7 +380,9 @@ export function useTableManagement({
         clearSession,
         closeModal,
         refreshData,
-        fetchActiveTablesCount
+        fetchActiveTablesCount,
+        cajaActual,
+        asegurarCajaAbierta
     ]);
 
     return {

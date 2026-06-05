@@ -57,8 +57,13 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
                 item.trackStock === true || item.batchManagement?.enabled === true
             );
 
-            // Determinar si el producto está agotado (solo aplica si gestiona stock)
-            const isOutOfStock = gestionaStock && getAvailableStock(item) <= 0;
+            // Determinar si es un producto compuesto (con receta)
+            const isRecipeBased = Array.isArray(item.recipe) && item.recipe.length > 0;
+
+            // Determinar si el producto está agotado. 
+            // Los productos con receta (preparados al momento) NO se consideran agotados
+            // por su stock directo, ya que dependen de los ingredientes.
+            const isOutOfStock = gestionaStock && !isRecipeBased && getAvailableStock(item) <= 0;
 
             // Lógica excluyente:
             // - Si outOfStockOnly=true: mostrar solo agotados

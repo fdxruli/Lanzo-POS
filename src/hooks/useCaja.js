@@ -403,15 +403,95 @@ export function useCaja() {
     }
   };
 
-  const cargarMovimientos = useCallback(async (cajaId) => {
+  const cargarMovimientos = useCallback(async (cajaActiva) => {
+    if (!cajaActiva) return;
     try {
       const db = await initDB();
-      const movimientos = await db.table(STORES.MOVIMIENTOS_CAJA)
+      const cajaId = cajaActiva.id;
+
+      // 1. Movimientos de caja normales
+      const movCaja = await db.table(STORES.MOVIMIENTOS_CAJA)
         .where('caja_id').equals(cajaId)
         .toArray();
-      setMovimientosCaja(movimientos || []);
+
+      // 2. Ventas y Abonos
+      const sales = await db.table(STORES.SALES)
+        .where('timestamp')
+        .between(cajaActiva.fecha_apertura, cajaActiva.fecha_cierre || new Date().toISOString(), true, true)
+        .toArray();
+      
+      const ventasNormalizadas = [];
+      for (const sale of sales) {
+        if (!isFinanciallyClosedSale(sale)) continue;
+
+        const method = sale.paymentMethod?.toLowerCase();
+        const isEfectivo = method === 'efectivo' || method === 'cash' || (!method && sale.paymentData?.amount > 0);
+        const isFiado = method === 'fiado';
+        const isTransfer = !isEfectivo && !isFiado;
+
+        if (isEfectivo) {
+          ventasNormalizadas.push({
+            id: sale.id || `venta-${sale.timestamp}`,
+            tipo: 'venta',
+            monto: String(sale.total || sale.paymentData?.amount || 0),
+            concepto: `Venta #${sale.folio || (sale.ticketNumber || sale.id).toString().substring(0, 6)}`,
+            fecha: sale.timestamp
+          });
+        } else if (isFiado && Number(sale.abono) > 0) {
+          ventasNormalizadas.push({
+            id: sale.id || `abono-${sale.timestamp}`,
+            tipo: 'abono',
+            monto: String(sale.abono),
+            concepto: `Abono Fiado #${sale.folio || (sale.ticketNumber || sale.id).toString().substring(0, 6)}`,
+            fecha: sale.timestamp
+          });
+        } else if (isTransfer) {
+          ventasNormalizadas.push({
+            id: sale.id || `venta-${sale.timestamp}`,
+            tipo: 'venta_tarjeta',
+            monto: String(sale.total || sale.paymentData?.amount || 0),
+            concepto: `Venta (${sale.paymentMethod || 'Otro'}) #${sale.folio || (sale.ticketNumber || sale.id).toString().substring(0, 6)}`,
+            fecha: sale.timestamp
+          });
+        }
+      }
+
+      // 3. Ventas eliminadas
+      const deletedSales = await db.table(STORES.DELETED_SALES)
+        .filter(s => s.deletedAt >= cajaActiva.fecha_apertura && (!cajaActiva.fecha_cierre || s.deletedAt <= cajaActiva.fecha_cierre))
+        .toArray();
+        
+      const ventasEliminadasNormalizadas = deletedSales.map(s => ({
+         id: `del-sale-${s.id}`,
+         tipo: 'venta_eliminada',
+         monto: String(s.total || s.paymentData?.amount || 0),
+         concepto: `Venta Eliminada #${s.folio || (s.ticketNumber || s.id).toString().substring(0, 6)}`,
+         fecha: s.deletedAt
+      }));
+
+      // 4. Waste / Merma / Productos eliminados
+      const wasteLogs = await db.table(STORES.WASTE)
+        .filter(w => w.timestamp >= cajaActiva.fecha_apertura && (!cajaActiva.fecha_cierre || w.timestamp <= cajaActiva.fecha_cierre))
+        .toArray();
+        
+      const wasteNormalizado = wasteLogs.map(w => ({
+         id: w.id,
+         tipo: 'merma',
+         monto: String(w.lossAmount || 0),
+         concepto: `Merma/Eliminado: ${w.productName} (${w.quantity}${w.unit})`,
+         fecha: w.timestamp
+      }));
+
+      const todosLosMovimientos = [
+        ...movCaja,
+        ...ventasNormalizadas,
+        ...ventasEliminadasNormalizadas,
+        ...wasteNormalizado
+      ].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
+      setMovimientosCaja(todosLosMovimientos);
     } catch (loadError) {
-      Logger.error('Error cargando movimientos', loadError);
+      Logger.error('Error cargando movimientos extendidos', loadError);
       setMovimientosCaja([]);
     }
   }, []);
@@ -444,7 +524,7 @@ export function useCaja() {
       setCajaActual(cajaActiva);
 
       await Promise.all([
-        cargarMovimientos(cajaActiva.id),
+        cargarMovimientos(cajaActiva),
         calcularTotalesSesion(cajaActiva.fecha_apertura).then(setTotalesTurno)
       ]);
 
@@ -478,7 +558,7 @@ export function useCaja() {
 
         if (freshCaja && freshCaja.updatedAt !== updatedAtConocido) {
           setCajaActual(freshCaja);
-          await cargarMovimientos(cajaIdActual);
+          await cargarMovimientos(freshCaja);
         }
       } catch (e) {
         Logger.error('[Caja] Error en refresh polling de caja', e);
@@ -496,6 +576,80 @@ export function useCaja() {
   const sincronizarEstadoCaja = useCallback(async () => {
     await cargarEstadoCaja();
   }, [cargarEstadoCaja]);
+
+  const aplicarCajaActiva = useCallback(async (cajaActiva) => {
+    if (!cajaActiva) return null;
+
+    setCajaActual(cajaActiva);
+
+    await Promise.all([
+      cargarMovimientos(cajaActiva),
+      calcularTotalesSesion(cajaActiva.fecha_apertura, true).then(setTotalesTurno)
+    ]);
+
+    return cajaActiva;
+  }, [calcularTotalesSesion, cargarMovimientos]);
+
+  const abrirCaja = useCallback(async (montoInicial = '0') => {
+    try {
+      const cajaAbierta = await obtenerCajaAbiertaMasReciente();
+      if (cajaAbierta) {
+        await aplicarCajaActiva(cajaAbierta);
+        return true;
+      }
+
+      const nuevaCaja = await autoAbrirCaja(montoInicial);
+      await aplicarCajaActiva(nuevaCaja);
+      setHistorialCajas((prev) => prev.filter((caja) => caja.id !== nuevaCaja.id));
+      return true;
+    } catch (openError) {
+      Logger.error('Error abriendo caja:', openError);
+      showMessageModal(openError.message || 'No se pudo abrir la caja.', null, { type: 'error' });
+      await sincronizarEstadoCaja();
+      return false;
+    }
+  }, [
+    aplicarCajaActiva,
+    autoAbrirCaja,
+    obtenerCajaAbiertaMasReciente,
+    sincronizarEstadoCaja
+  ]);
+
+  const asegurarCajaAbierta = useCallback(async () => {
+    try {
+      const cajaAbierta = await obtenerCajaAbiertaMasReciente();
+      if (cajaAbierta) {
+        return aplicarCajaActiva(cajaAbierta);
+      }
+
+      const response = await loadDataPaginated(STORES.CAJAS, {
+        limit: 20,
+        direction: 'prev',
+        timeIndex: 'fecha_apertura'
+      });
+      const ultimaCajaCerrada = (response?.data || []).find((caja) => caja.estado === 'cerrada');
+      const montoHeredado = ultimaCajaCerrada
+        ? (ultimaCajaCerrada.monto_fondo_siguiente_turno ?? ultimaCajaCerrada.monto_cierre ?? '0')
+        : '0';
+
+      const nuevaCaja = await autoAbrirCaja(montoHeredado);
+      await aplicarCajaActiva(nuevaCaja);
+      setHistorialCajas((prev) => [ultimaCajaCerrada, ...prev]
+        .filter(Boolean)
+        .filter((caja) => caja.id !== nuevaCaja.id));
+
+      return nuevaCaja;
+    } catch (ensureError) {
+      Logger.error('Error asegurando caja abierta:', ensureError);
+      await sincronizarEstadoCaja();
+      throw ensureError;
+    }
+  }, [
+    aplicarCajaActiva,
+    autoAbrirCaja,
+    obtenerCajaAbiertaMasReciente,
+    sincronizarEstadoCaja
+  ]);
 
   const calcularTotalTeorico = useCallback(async (forceRefresh = false) => {
     if (!cajaActual) return '0';
@@ -808,6 +962,8 @@ export function useCaja() {
     totalesTurno,
     // Acciones principales
     ajustarMontoInicial,
+    abrirCaja,
+    asegurarCajaAbierta,
     realizarAuditoriaYCerrar,
     registrarMovimiento,
     calcularTotalTeorico,
