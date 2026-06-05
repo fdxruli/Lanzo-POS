@@ -7,7 +7,10 @@ const state = vi.hoisted(() => {
     MENU: 'menu',
     TRANSACTION_LOG: 'transaction_log',
     CUSTOMERS: 'customers',
-    CUSTOMER_LEDGER: 'customer_ledger'
+    CUSTOMER_LEDGER: 'customer_ledger',
+    INVENTORY_EVENTS: 'inventory_events',
+    SEQUENCES: 'sequences',
+    COMPANY: 'company'
   };
 
   const maps = {
@@ -16,7 +19,10 @@ const state = vi.hoisted(() => {
     [STORES.MENU]: new Map(),
     [STORES.TRANSACTION_LOG]: new Map(),
     [STORES.CUSTOMERS]: new Map(),
-    [STORES.CUSTOMER_LEDGER]: new Map()
+    [STORES.CUSTOMER_LEDGER]: new Map(),
+    [STORES.INVENTORY_EVENTS]: new Map(),
+    [STORES.SEQUENCES]: new Map(),
+    [STORES.COMPANY]: new Map()
   };
 
   const reset = () => {
@@ -42,12 +48,39 @@ const state = vi.hoisted(() => {
         backingMap.set(record.id, structuredClone(record));
         return record.id;
       }),
+      bulkGet: vi.fn(async (ids) => ids.map((id) => backingMap.get(id) || null)),
+      bulkPut: vi.fn(async (records) => {
+        records.forEach((record) => {
+          backingMap.set(record.id, structuredClone(record));
+        });
+        return records.map((record) => record.id);
+      }),
+      bulkAdd: vi.fn(async (records) => {
+        records.forEach((record) => {
+          backingMap.set(record.id, structuredClone(record));
+        });
+        return records.map((record) => record.id);
+      }),
       update: vi.fn(async (id, changes) => {
         const current = backingMap.get(id) || { id };
         backingMap.set(id, { ...current, ...structuredClone(changes) });
         return 1;
       }),
+      toArray: vi.fn(async () => Array.from(backingMap.values())),
       where: vi.fn((field) => ({
+        anyOf: vi.fn((values) => ({
+          toArray: vi.fn(async () => Array.from(backingMap.values()).filter((record) =>
+            values.some((value) => {
+              if (Array.isArray(value)) {
+                return value.every((entry, index) => {
+                  const key = field.replace(/^\[|\]$/g, '').split('+')[index];
+                  return record?.[key] === entry;
+                });
+              }
+              return record?.[field] === value;
+            })
+          ))
+        })),
         equals: vi.fn((value) => ({
           toArray: vi.fn(async () => Array.from(backingMap.values()).filter((record) => record?.[field] === value))
         }))
@@ -66,6 +99,10 @@ const state = vi.hoisted(() => {
 vi.mock('../../db/dexie', () => ({
   db: state.db,
   STORES: state.STORES
+}));
+
+vi.mock('../../utils', () => ({
+  generateID: vi.fn((prefix = 'id') => `${prefix}-test-${Math.random().toString(36).slice(2, 8)}`)
 }));
 
 import { salesRepository } from '../../db/sales';
@@ -241,6 +278,83 @@ describe('salesRepository.executeSaleTransaction', () => {
 
     expect(state.maps[state.STORES.MENU].get('beer')).toMatchObject({
       stock: 6,
+      committedStock: 0
+    });
+  });
+
+  it('split bill soporta tres tickets hijos', async () => {
+    state.maps[state.STORES.SALES].set('sale-open-parent', {
+      id: 'sale-open-parent',
+      status: 'open',
+      orderType: 'table',
+      total: 30,
+      items: [
+        {
+          id: 'burger',
+          quantity: 3,
+          price: 10,
+          inventoryReservation: {
+            source: 'table',
+            committedQuantity: 3,
+            committedBatches: []
+          }
+        }
+      ],
+      updatedAt: '2026-03-19T18:00:00.000Z'
+    });
+
+    state.maps[state.STORES.MENU].set('burger', {
+      id: 'burger',
+      name: 'Hamburguesa',
+      trackStock: true,
+      stock: 10,
+      committedStock: 3
+    });
+
+    const buildChildSale = (id, label) => ({
+      id,
+      total: 10,
+      saldoPendiente: 0,
+      status: 'closed',
+      splitLabel: label,
+      splitParentId: 'sale-open-parent',
+      items: [
+        {
+          id: 'burger',
+          quantity: 1,
+          price: 10,
+          stockDeducted: 1,
+          batchesUsed: [],
+          inventoryReservation: {
+            source: 'table',
+            committedQuantity: 1,
+            committedBatches: []
+          }
+        }
+      ]
+    });
+
+    const result = await salesRepository.executeSplitOpenTableOrderTransaction({
+      parentOrderId: 'sale-open-parent',
+      parentExpectedVersion: '2026-03-19T18:00:00.000Z',
+      splitGroupId: 'spl-3',
+      childPayloads: [
+        { sale: buildChildSale('sale-child-1', 'T1'), deductions: [] },
+        { sale: buildChildSale('sale-child-2', 'T2'), deductions: [] },
+        { sale: buildChildSale('sale-child-3', 'T3'), deductions: [] }
+      ]
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.childSaleIds).toEqual(['sale-child-1', 'sale-child-2', 'sale-child-3']);
+    expect(state.maps[state.STORES.SALES].get('sale-open-parent')).toMatchObject({
+      status: 'cancelled',
+      cancelReason: 'split_settled',
+      splitGroupId: 'spl-3',
+      splitChildIds: ['sale-child-1', 'sale-child-2', 'sale-child-3']
+    });
+    expect(state.maps[state.STORES.MENU].get('burger')).toMatchObject({
+      stock: 7,
       committedStock: 0
     });
   });

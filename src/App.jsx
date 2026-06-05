@@ -22,6 +22,8 @@ import TermsAndConditionsModal from './components/common/TermsAndConditionsModal
 import { AlertTriangle, XCircle } from 'lucide-react';
 
 const MAX_RETRIES = 3;
+const GLOBAL_COOLDOWN_MS = 5000; // 5 segundos de cooldown global
+
 const lazyRetry = (importFn, componentName = 'Component') => {
   const componentKey = `lazy_retry_${componentName}`;
 
@@ -34,15 +36,23 @@ const lazyRetry = (importFn, componentName = 'Component') => {
       Logger.error(`Error cargando módulo ${componentName}:`, error);
 
       const currentRetries = parseInt(window.sessionStorage.getItem(componentKey) || '0', 10);
+      const lastReload = parseInt(window.sessionStorage.getItem('lazy_retry_last_time') || '0', 10);
+      const now = Date.now();
+      const inCooldown = (now - lastReload) < GLOBAL_COOLDOWN_MS;
 
-      if (currentRetries < MAX_RETRIES) {
+      if (!navigator.onLine) {
+        Logger.warn(`Sin conexión a internet. Omitiendo recarga automática para ${componentName}.`);
+      } else if (inCooldown) {
+        Logger.warn(`En cooldown global de recargas. Omitiendo recarga para ${componentName}.`);
+      } else if (currentRetries < MAX_RETRIES) {
         window.sessionStorage.setItem(componentKey, (currentRetries + 1).toString());
+        window.sessionStorage.setItem('lazy_retry_last_time', now.toString());
         Logger.warn(`Reintentando carga de ${componentName} (${currentRetries + 1}/${MAX_RETRIES})...`);
         window.location.reload();
         return new Promise(() => { });
       }
 
-      Logger.error(`Máximo de reintentos alcanzado para ${componentName}. Mostrando UI de error.`);
+      Logger.error(`Máximo de reintentos, sin conexión o en cooldown para ${componentName}. Mostrando UI de error.`);
       window.sessionStorage.removeItem(componentKey);
 
       return {
@@ -54,11 +64,17 @@ const lazyRetry = (importFn, componentName = 'Component') => {
             <AlertTriangle size={48} className="text-yellow-500 mb-4" />
             <h3>Error de carga del módulo</h3>
             <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
+              {!navigator.onLine 
+                ? "Parece que no tienes conexión a internet." 
+                : "Puede haber un problema con la caché o la conexión."}
+            </p>
             <button
               className="btn btn-primary"
               style={{ marginTop: '1rem' }}
               onClick={() => {
                 window.sessionStorage.removeItem(componentKey);
+                window.sessionStorage.removeItem('lazy_retry_last_time');
                 window.location.reload();
               }}
             >

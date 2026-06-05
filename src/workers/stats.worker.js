@@ -1,3 +1,4 @@
+import Dexie from 'dexie';
 import { DB_NAME } from '../config/dbConfig.js';
 import Logger from '../services/Logger.js';
 import { Money } from '../utils/moneyMath.js';
@@ -5,31 +6,19 @@ import { Money } from '../utils/moneyMath.js';
 const CHUNK_SIZE = 1000;
 let activeDB = null;
 
-// --- 1. GESTIÓN DE CONEXIÓN ROBUSTA (SINGLETON) ---
+// --- 1. GESTIÓN DE CONEXIÓN ROBUSTA CON DEXIE ---
 const getDB = async () => {
-  if (activeDB) return activeDB;
+  if (activeDB && activeDB.isOpen()) return activeDB;
 
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME);
-
-    request.onsuccess = (e) => {
-      activeDB = e.target.result;
-
-      activeDB.onversionchange = () => {
-        if (activeDB) {
-          activeDB.close();
-          activeDB = null;
-        }
-      };
-      resolve(activeDB);
-    };
-
-    request.onerror = (e) => reject(e.target.error);
-
-    request.onblocked = () => {
-      reject(new Error('DATABASE_BLOCKED_BY_OTHER_TAB'));
-    };
-  });
+  // Instanciamos Dexie sin definir la versión. 
+  // Esto hace que abra la BD dinámicamente y exponga todas las tablas existentes.
+  const db = new Dexie(DB_NAME);
+  
+  // Dexie maneja internamente de manera segura onversionchange y onblocked,
+  // evitando los deadlocks causados por conexiones crudas a IndexedDB.
+  await db.open();
+  activeDB = db;
+  return activeDB;
 };
 
 // --- 2. CÁLCULO OPTIMIZADO (CHUNKS + TIMEOUT) ---
@@ -40,26 +29,31 @@ const calculateInventoryValue = async () => {
   let inventoryValue = Money.init(0);
   let processedCount = 0;
 
-  return new Promise((resolve, reject) => {
-    if (!db.objectStoreNames.contains('product_batches')) {
-      return resolve({ inventoryValue: 0, totalProcessed: 0 });
-    }
+  // Verificamos si la tabla existe en el esquema dinámico
+  if (!db.tables.some(table => table.name === 'product_batches')) {
+    return { inventoryValue: Money.toNumber(inventoryValue), totalProcessed: 0 };
+  }
 
-    const tx = db.transaction(['product_batches'], 'readonly');
-    const store = tx.objectStore('product_batches');
-    const request = store.openCursor();
+  const table = db.table('product_batches');
+  const hasOptimizedIndex = table.schema.indexes.some(idx => idx.name === '[isActive+stock]');
 
-    const timeoutId = setTimeout(() => {
-      try { tx.abort(); } catch (e) { }
-      reject(new Error('CALCULATION_TIMEOUT'));
-    }, 30000);
+  let isTimedOut = false;
+  const timeoutId = setTimeout(() => { isTimedOut = true; }, 30000);
 
-    request.onsuccess = (event) => {
-      const cursor = event.target.result;
+  try {
+    // Usamos una transacción de solo lectura de Dexie, lo que sincroniza los 
+    // bloqueos correctamente con el hilo principal que también usa Dexie.
+    await db.transaction('r', table, async () => {
+      let collection;
+      if (hasOptimizedIndex) {
+        collection = table.where('[isActive+stock]').between([1, 0.000001], [1, Infinity], true, true);
+      } else {
+        collection = table.toCollection();
+      }
 
-      if (cursor) {
-        const batch = cursor.value;
-
+      // collection.until() permite abortar la iteración limpiamente si se agota el tiempo
+      await collection.until(() => isTimedOut).each((batch) => {
+        // La validación se mantiene por seguridad y para soportar el modo fallback
         if (batch.isActive && batch.stock > 0) {
           // Operaciones matemáticas puras sin tocar floats nativos
           const batchValue = Money.multiply(batch.cost, batch.stock);
@@ -78,23 +72,24 @@ const calculateInventoryValue = async () => {
             }
           });
         }
+      });
+    });
 
-        cursor.continue();
-      } else {
-        clearTimeout(timeoutId);
-        resolve({
-          // Retornar número primitivo seguro para la UI/hilo principal
-          inventoryValue: Money.toNumber(inventoryValue),
-          totalProcessed: processedCount
-        });
-      }
-    };
+    clearTimeout(timeoutId);
 
-    request.onerror = (e) => {
-      clearTimeout(timeoutId);
-      reject(e.target.error);
+    if (isTimedOut) {
+      throw new Error('CALCULATION_TIMEOUT');
+    }
+
+    return {
+      // Retornar número primitivo seguro para la UI/hilo principal
+      inventoryValue: Money.toNumber(inventoryValue),
+      totalProcessed: processedCount
     };
-  });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
 };
 
 // --- 3. MANEJO DE MENSAJES ---

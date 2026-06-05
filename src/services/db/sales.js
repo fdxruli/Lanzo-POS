@@ -499,8 +499,8 @@ export const salesRepository = {
                 throw new Error('SPLIT_ORDER_INVALID: parentOrderId es obligatorio.');
             }
 
-            if (!Array.isArray(childPayloads) || childPayloads.length !== 2) {
-                throw new Error('SPLIT_ORDER_INVALID: Se requieren exactamente dos tickets hijos.');
+            if (!Array.isArray(childPayloads) || childPayloads.length < 2) {
+                throw new Error('SPLIT_ORDER_INVALID: Se requieren al menos dos tickets hijos.');
             }
 
             const salesToEvaluate = childPayloads.map(p => p.sale);

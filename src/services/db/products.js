@@ -1,4 +1,5 @@
 import { db, STORES } from './dexie';
+import Dexie from 'dexie';
 import {
     handleDexieError,
     validateOrThrow,
@@ -683,20 +684,56 @@ export const productsRepository = {
         }
     },
 
-    /**
+        /**
      * Obtiene lotes que vencen antes de una fecha límite.
      * Usa rangos de índices de Dexie para máxima velocidad.
+     * 
+     * FASE 5: Eliminación de Memory Scans
+     * Usa índice [activeStockStatus+alertTargetDate] en lugar de toArray().filter()
      */
     async getExpiringBatches(limitDateIsoString) {
         try {
-            // Busca en índice expiryDate: desde el inicio (min) hasta limitDateIsoString
+            // Construir la query utilizando el índice compuesto optimizado O(1)
             return await db.table(STORES.PRODUCT_BATCHES)
-                .where('expiryDate').belowOrEqual(limitDateIsoString)
-                .filter(b => b.stock > 0 && b.isActive !== false)
+                .where('[activeStockStatus+alertTargetDate]')
+                .between([1, Dexie.minKey], [1, limitDateIsoString])
                 .toArray();
-
         } catch (error) {
             throw handleDexieError(error, 'Get Expiring Batches');
+        }
+    },
+
+    /**
+     * Obtiene productos activos con stock usando el índice optimizado.
+     * 
+     * FASE 5: Eliminación de Memory Scans
+     * Reemplaza: await db.products.toArray().filter(p => p.isActive && p.stock > 0)
+     */
+    async getActiveProductsWithStock() {
+        try {
+            return await db.table(STORES.MENU)
+                .where('activeStockStatus')
+                .equals(1)
+                .toArray();
+        } catch (error) {
+            throw handleDexieError(error, 'Get Active Products With Stock');
+        }
+    },
+
+    /**
+     * Obtiene productos por categoría con stock usando índice compuesto.
+     * 
+     * FASE 5: Eliminación de Memory Scans
+     * Usa índice [categoryId+activeStockStatus] en lugar de filtrar en memoria
+     */
+    async getProductsByCategoryWithStock(categoryId) {
+        try {
+            return await db.table(STORES.MENU)
+                .where('[categoryId+activeStockStatus]')
+                .equals([categoryId, 1])
+                .toArray();
+        } catch (error) {
+            throw handleDexieError(error, 'Get Products By Category With Stock');
         }
     },
 
@@ -753,6 +790,38 @@ export const productsRepository = {
             };
         } catch (error) {
             throw handleDexieError(error, 'Get Batches For Manager UI');
+        }
+    },
+
+    /**
+     * Purga las fechas de caducidad (y alertas asociadas) de todos los lotes de un producto.
+     * Usado cuando el usuario cambia el modo de caducidad a 'NONE'.
+     */
+    async purgeBatchExpirations(productId) {
+        try {
+            if (!productId) return { success: false, message: 'ID de producto requerido' };
+            
+            return await db.transaction('rw', db.table(STORES.PRODUCT_BATCHES), async () => {
+                const batches = await db.table(STORES.PRODUCT_BATCHES)
+                    .where('productId').equals(productId)
+                    .toArray();
+                    
+                let updatedCount = 0;
+                for (const batch of batches) {
+                    if (batch.expiryDate || batch.alertTargetDate) {
+                        delete batch.expiryDate;
+                        delete batch.alertTargetDate;
+                        delete batch.alertType;
+                        await db.table(STORES.PRODUCT_BATCHES).put(batch);
+                        updatedCount++;
+                    }
+                }
+                
+                Logger.info(`Purgadas fechas de caducidad de ${updatedCount} lotes para el producto ${productId}`);
+                return { success: true, updatedCount };
+            });
+        } catch (error) {
+            throw handleDexieError(error, 'Purge Batch Expirations');
         }
     },
 

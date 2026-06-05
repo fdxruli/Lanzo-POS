@@ -1,10 +1,15 @@
 /**
- * StorageManager - Gestor de Persistencia Estricta para PWA Offline-First
- * Implementa StorageManager API (navigator.storage) para garantizar que IndexedDB
- * no sea purgado por el SO o navegador cuando el dispositivo se queda sin espacio.
+ * StorageManager - Gestor de Persistencia para PWA Offline-First
+ * Implementa StorageManager API (navigator.storage) para intentar que IndexedDB
+ * no sea purgado por el SO.
  *
- * CRITICO: Sin persistencia explícita, todos los datos pueden perderse de forma
- * permanente e irreversible (no hay sincronización con la nube para inventario/ventas).
+ * CRÍTICO: La persistencia local NO es inmutable. Apple/Safari (iOS/iPadOS)
+ * no respeta estrictamente navigator.storage.persist() y purgará los datos
+ * si el dispositivo entra en estado crítico de almacenamiento, incluso en
+ * PWAs instaladas en la pantalla de inicio.
+ *
+ * SIEMPRE se requiere un mecanismo de respaldo o sincronización externa para
+ * garantizar la seguridad total de los datos.
  */
 
 import Logger from './Logger';
@@ -173,14 +178,14 @@ class StorageManagerService {
 
       if (persisted) {
         this.persistenceState = StorageState.GRANTED;
-        Logger.info('✅ PERSISTENCIA OTORGADA - Datos protegidos de purga del SO');
+        Logger.info('✅ PERSISTENCIA OTORGADA - (Nota: iOS/Safari aún puede purgar datos si el espacio es crítico)');
       } else {
         // El navegador mostró el prompt y el usuario rechazó,
         // o Safari sin instalación PWA (siempre retorna false)
         this.persistenceState = StorageState.DENIED;
         Logger.warn(
           '❌ PERSISTENCIA RECHAZADA\n' +
-          'Safari: instala la app en Home Screen para proteger datos\n' +
+          'Safari/iOS: La persistencia absoluta no está soportada. Mantén espacio libre en tu dispositivo.\n' +
           'Chrome/Firefox: verifica permisos del sitio'
         );
       }
@@ -281,7 +286,7 @@ class StorageManagerService {
     if (quota.isCritical) {
       return {
         allowed: false,
-        reason: `Almacenamiento CRITICO: ${Math.round(quota.usage / 1024 / 1024)}MB de ${Math.round(quota.quota / 1024 / 1024)}MB. Libera espacio o haz un respaldo.`,
+        reason: `Almacenamiento CRITICO: ${Math.round(quota.usage / 1024 / 1024)}MB de ${Math.round(quota.quota / 1024 / 1024)}MB. Libera espacio o haz un respaldo INMEDIATO. Riesgo alto de purga del SO.`,
         severity: 'critical',
       };
     }
@@ -305,16 +310,16 @@ class StorageManagerService {
 
     if (status === StorageState.DENIED) {
       messages.push('⚠️ MODO VOLÁTIL: Permiso de persistencia denegado');
-      messages.push('🔧 Solución: Instala la app en tu Home Screen como PWA');
+      messages.push('🔧 Solución: Verifica permisos. En iOS, asegúrate de mantener siempre espacio libre y haz respaldos.');
     } else if (status === StorageState.UNSUPPORTED) {
       messages.push('⚠️ MODO VOLÁTIL: Navegador no soporta persistencia');
-      messages.push('🔧 Solución: Usa Chrome, Edge o Firefox modernos');
+      messages.push('🔧 Solución: Usa un navegador moderno. En iOS mantén espacio libre en disco.');
     } else if (status === 'prompt') {
       messages.push('⏳ Solicitud de persistencia pendiente');
-      messages.push('🔧 Solución: Instala la app como PWA para garantizar persistencia');
+      messages.push('🔧 Solución: Otorga el permiso de almacenamiento. (Nota: en iOS haz respaldos periódicos).');
     } else if (status === StorageState.UNKNOWN) {
       messages.push('⚠️ Estado de persistencia desconocido');
-      messages.push('🔧 Solución: Recarga la app o instálala como PWA');
+      messages.push('🔧 Solución: Recarga la app y haz respaldos frecuentes.');
     }
 
     if (quota.isCritical) {
@@ -347,7 +352,7 @@ class StorageManagerService {
 
         // Fase 2: Solo solicitar si hay posibilidad real de obtenerlo.
         // NO intentar si ya fue denegado: el navegador recuerda el rechazo.
-        // En Safari iOS solo funciona si la app está instalada en Home Screen.
+        // Nota: En iOS, incluso con PWA, el SO puede purgar datos bajo presión de espacio.
         const shouldRequest = (
           this.persistenceState === 'prompt' ||
           this.persistenceState === StorageState.UNKNOWN
@@ -370,7 +375,7 @@ class StorageManagerService {
           details: conditions.recommendation,
         });
       } else {
-        Logger.info('✅ Almacenamiento protegido contra evicción del navegador');
+        Logger.info('✅ Almacenamiento con persistencia (Nota: iOS no garantiza inmutabilidad absoluta)');
       }
 
       return conditions;

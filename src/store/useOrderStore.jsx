@@ -1,13 +1,13 @@
 // src/store/useOrderStore.jsx
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import { calculateCompositePrice, validateWholesaleCondition } from '../services/pricingLogic';
 import { safeLocalStorageSet, showMessageModal, generateID } from '../services/utils';
 import { db, STORES } from '../services/db/dexie';
 import { getAvailableStock } from '../services/db/utils';
-import { commitStock, releaseCommittedStock } from '../services/sales/inventoryFlow';
+import { commitStock, releaseCommittedStock, getSortedBatchesForProduct } from '../services/sales/inventoryFlow';
 import { SALE_STATUS } from '../services/sales/financialStats';
 import { Money } from '../utils/moneyMath';
+import { useActiveOrders } from '../hooks/pos/useActiveOrders';
 
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
@@ -163,45 +163,33 @@ const CORRUPTED_PREFIX = 'lanzo-cart-storage-corrupted-';
 const MAX_BACKUPS = 3;
 
 /**
- * Aísla el estado corrupto en una nueva clave antes de purgarlo.
+ * Aísla el estado corrupto en la base de datos (IndexedDB) de forma asíncrona.
  * Mantiene un límite de respaldos usando una cola FIFO.
  */
-const backupCorruptedState = (rawData) => {
+const backupCorruptedState = async (rawData) => {
   try {
-    const backupKeys = [];
+    const backupsTable = db.table(STORES.CORRUPTED_STATES);
+    const count = await backupsTable.count();
 
-    // 1. Recolección segura: Extraer primero para evitar saltos de índice
-    // si mutamos el localStorage durante la iteración.
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith(CORRUPTED_PREFIX)) {
-        backupKeys.push(key);
-      }
+    // Limpieza circular: liberar espacio si hemos alcanzado o superado el límite
+    if (count >= MAX_BACKUPS) {
+      const excess = count - MAX_BACKUPS + 1;
+      const oldestBackups = await backupsTable.orderBy('timestamp').limit(excess).primaryKeys();
+      await backupsTable.bulkDelete(oldestBackups);
     }
 
-    // 2. Ordenamiento cronológico basado en el timestamp extraído
-    backupKeys.sort((a, b) => {
-      const timeA = parseInt(a.replace(CORRUPTED_PREFIX, '').split('-')[0], 10) || 0;
-      const timeB = parseInt(b.replace(CORRUPTED_PREFIX, '').split('-')[0], 10) || 0;
-      return timeA - timeB; // Ascendente (más viejos al principio)
+    // Guardado asíncrono en IndexedDB
+    const entropy = Math.random().toString(36).substring(2, 7);
+    const backupId = `${CORRUPTED_PREFIX}${Date.now()}-${entropy}`;
+
+    await backupsTable.put({
+      id: backupId,
+      timestamp: new Date().toISOString(),
+      rawData
     });
 
-    // 3. Limpieza circular: liberar espacio si hemos alcanzado el límite
-    while (backupKeys.length >= MAX_BACKUPS) {
-      const oldestKey = backupKeys.shift();
-      localStorage.removeItem(oldestKey);
-    }
-
-    // 4. Guardado con entropía para evitar colisiones
-    const entropy = Math.random().toString(36).substring(2, 7);
-    const newBackupKey = `${CORRUPTED_PREFIX}${Date.now()}-${entropy}`;
-
-    localStorage.setItem(newBackupKey, rawData);
-
   } catch (backupError) {
-    // Si la cuota está excedida (QuotaExceededError) o el storage está bloqueado,
-    // atrapamos el error silenciosamente para no interrumpir el flujo principal de purga.
-    console.error('Fallo al intentar respaldar el estado corrupto:', backupError);
+    console.error('Fallo al intentar respaldar el estado corrupto en IndexedDB:', backupError);
   }
 };
 
@@ -217,16 +205,37 @@ const safeStorage = {
     } catch (parseError) {
       console.error(`Estado corrupto detectado en ${name}, aislando datos antes de purgar...`);
 
-      // Ejecutar respaldo en un flujo independiente
+      // 1. Respaldo síncrono garantizado en LocalStorage para evitar pérdida por crash
+      let syncBackupId = null;
       if (rawItem) {
-        backupCorruptedState(rawItem);
+        const entropy = Math.random().toString(36).substring(2, 7);
+        syncBackupId = `${CORRUPTED_PREFIX}sync-${Date.now()}-${entropy}`;
+        try {
+          localStorage.setItem(syncBackupId, rawItem);
+        } catch (syncError) {
+          console.error('Fallo al intentar respaldo síncrono:', syncError);
+        }
       }
 
-      // La purga principal también requiere protección contra bloqueos del navegador
+      // 2. Purgar la clave principal de manera síncrona para que no siga fallando
       try {
         localStorage.removeItem(name);
       } catch (removeError) {
         console.error(`Fallo crítico al intentar purgar la clave principal ${name}:`, removeError);
+      }
+
+      // 3. Ejecutar respaldo asíncrono en IndexedDB como almacenamiento a largo plazo
+      if (rawItem) {
+        backupCorruptedState(rawItem).finally(() => {
+          // Limpiar el respaldo síncrono una vez que IndexedDB haya terminado
+          if (syncBackupId) {
+            try {
+              localStorage.removeItem(syncBackupId);
+            } catch (e) {
+              console.error('Fallo al limpiar el respaldo síncrono:', e);
+            }
+          }
+        });
       }
 
       return null;
@@ -246,201 +255,17 @@ const safeStorage = {
   },
 };
 
-export const useOrderStore = create(
-  persist(
-    (set, get) => ({
-      order: [],
-      activeOrderId: null,
-      tableData: null,
-      folio: null,
-      isSavedOrder: false,
-      _activeOrdersHook: null,
-      _isSyncing: false,
-      /**
-       * Flag de UI: true cuando la orden activa tiene isLockedForCheckout === true.
-       * Úsalo en la UI para deshabilitar botones de agregar/eliminar/limpiar
-       * mientras el pago está en curso.
-       */
-      isCartLocked: false,
-
-      get currentOrder() {
-        const hook = get()._activeOrdersHook;
-        if (hook) {
-          const active = hook.getState().currentOrder;
-          if (active) return active;
-        }
-        return {
-          id: get().activeOrderId,
-          items: get().order,
-          tableData: get().tableData,
-          total: typeof get().getTotalPrice === 'function' ? get().getTotalPrice() : calculateOrderTotalExact(get().order)
-        };
-      },
-
-      linkWithActiveOrders: (activeOrdersHook) => {
-        const state = get();
-        if (state._activeOrdersHook) return;
-
-        set({ _activeOrdersHook: activeOrdersHook });
-
-        const syncActiveOrderToStore = (activeState) => {
-          const currentOrder = activeState.activeOrders.get(activeState.currentOrderId);
-          set({ _isSyncing: true });
-
-          if (currentOrder) {
-            const currentStoreOrder = get().order || [];
-            const incomingItems = currentOrder.items || [];
-
-            // ── INMUNIZACIÓN: Orden bloqueada entrante ──────────────────────────
-            // Si la orden que llega del gestor ya está bloqueada para cobro
-            // (propagada desde otra tablet vía sync), aceptamos los datos
-            // PERO activamos el flag isCartLocked para que la UI deshabilite
-            // las acciones de edición localmente.
-            if (currentOrder.isLockedForCheckout === true) {
-              set({
-                order: incomingItems,
-                tableData: currentOrder.tableData || null,
-                activeOrderId: currentOrder.id,
-                folio: currentOrder.folio || null,
-                isSavedOrder: Boolean(currentOrder.isSaved),
-                isCartLocked: true,
-                _isSyncing: false,
-              });
-              return;
-            }
-
-            // Comportamiento normal: sincronizar lo de la pestaña al carrito
-            set({
-              order: incomingItems,
-              tableData: currentOrder.tableData || null,
-              activeOrderId: currentOrder.id,
-              folio: currentOrder.folio || null,
-              isSavedOrder: Boolean(currentOrder.isSaved),
-              isCartLocked: false,
-            });
-          } else if (activeState.currentOrderId === null) {
-            // 🔥 FIX: Prevención de pérdida catastrófica.
-            // Si activeOrders perdió el currentOrderId (ej. corrupción o vaciado),
-            // pero useOrderStore AÚN TIENE items, forzamos a recrear la pestaña.
-            const currentStoreOrder = get().order || [];
-            if (currentStoreOrder.length > 0) {
-              const newOrderId = get().activeOrderId || `sal_${Date.now()}`;
-              const nextOrders = new Map(activeState.activeOrders);
-              nextOrders.set(newOrderId, {
-                id: newOrderId,
-                items: currentStoreOrder,
-                customer: get().customer,
-                tableData: get().tableData,
-                folio: get().folio || null,
-                total: typeof get().getTotalPrice === 'function' ? get().getTotalPrice() : 0,
-                createdAt: new Date().toISOString(),
-                isSaved: false
-              });
-              activeOrdersHook.setState({
-                activeOrders: nextOrders,
-                currentOrderId: newOrderId
-              });
-              
-              set({ activeOrderId: newOrderId });
-            } else {
-              get().clearSession();
-            }
-          }
-
-          set({ _isSyncing: false });
-        };
-
-        syncActiveOrderToStore(activeOrdersHook.getState());
-
-        // 1. Sync from useActiveOrders to useOrderStore
-        activeOrdersHook.subscribe((activeState, prevActiveState) => {
-          if (get()._isSyncing) return;
-
-          if (activeState.currentOrderId !== prevActiveState.currentOrderId) {
-            syncActiveOrderToStore(activeState);
-            return;
-          }
-
-          // Sync lock state changes dynamically
-          if (activeState.currentOrderId) {
-            const currentOrder = activeState.activeOrders.get(activeState.currentOrderId);
-            const prevOrder = prevActiveState.activeOrders.get(activeState.currentOrderId);
-            
-            if (currentOrder && prevOrder && currentOrder.isLockedForCheckout !== prevOrder.isLockedForCheckout) {
-              set({ isCartLocked: Boolean(currentOrder.isLockedForCheckout) });
-            }
-          }
-        });
-
-        // 2. Sync from useOrderStore to useActiveOrders
-        useOrderStore.subscribe((storeState, prevStoreState) => {
-          if (get()._isSyncing) return;
-
-          if (storeState.order !== prevStoreState.order || storeState.tableData !== prevStoreState.tableData || storeState.isSavedOrder !== prevStoreState.isSavedOrder) {
-            const hookState = activeOrdersHook.getState();
-            const { currentOrderId, activeOrders } = hookState;
-
-            if (!currentOrderId) return;
-            
-            // Si el store principal acaba de ser limpiado o cambió de orden,
-            // no debemos sobreescribir la orden activa con datos vacíos o cruzados.
-            if (storeState.activeOrderId !== currentOrderId) return;
-
-            const currentOrder = activeOrders.get(currentOrderId);
-            if (!currentOrder) return;
-
-            // ── CORTACIRCUITOS: Bloqueo de escritura durante el cobro ──────────
-            // Si la orden activa ya fue marcada como `isLockedForCheckout`, cualquier
-            // cambio en el carrito (incluido el vaciado que dispara el bug de tickets
-            // en $0.00) es rechazado silenciosamente. El estado en BD permanece intacto.
-            if (currentOrder.isLockedForCheckout === true) {
-              console.warn(
-                '[useOrderStore → useActiveOrders] Intento de mutación rechazado: Orden en proceso de pago.',
-                { orderId: currentOrderId }
-              );
-              return;
-            }
-            // ─────────────────────────────────────────────────────────────────────
-
-            set({ _isSyncing: true });
-
-            const newTotal = typeof storeState.getTotalPrice === 'function'
-              ? storeState.getTotalPrice()
-              : calculateOrderTotalExact(storeState.order);
-
-            const nextOrders = new Map(activeOrders);
-            nextOrders.set(currentOrderId, {
-              ...currentOrder,
-              items: storeState.order,
-              tableData: storeState.tableData,
-              isSaved: storeState.isSavedOrder,
-              total: newTotal
-            });
-
-            activeOrdersHook.setState({ activeOrders: nextOrders });
-            set({ _isSyncing: false });
-          }
-        });
-      },
-
-
-      // --- [NUEVO] FUNCIÓN INTELIGENTE PARA ABARROTES ---
-      // Esta es la función que debe llamar tu UI (Scanner y Menú)
-      // ⚡ OPTIMIZACIÓN: Non-blocking - actualiza el carrito INMEDIATAMENTE, busca lotes en background
+export const useOrderStore = create((set, get) => {
+  return {
       addSmartItem: (product) => {
         const productToAdd = { ...product };
 
-        // 🔥 ACCIÓN INMEDIATA: Agregar producto al carrito sin esperar búsqueda de lotes
-        // Esto asegura que el usuario vea el feedback visual al instante en móviles
+        // ACCIÓN INMEDIATA
         get().addItem(productToAdd);
 
-        // 🔄 BÚSQUEDA DE LOTES EN BACKGROUND (non-blocking)
-        // Si el producto maneja lotes, buscamos el mejor en el background sin bloquear
+        // BÚSQUEDA DE LOTES EN BACKGROUND
         if (product.batchManagement?.enabled && !product.batchId) {
-          if (!product.id) {
-            console.error("Intento de agregar un producto con manejo de lotes sin ID válido:", product);
-            return; // O maneja el error visualmente para el usuario
-          }
+          if (!product.id) return;
 
           db.table(STORES.PRODUCT_BATCHES)
             .where('productId')
@@ -449,61 +274,51 @@ export const useOrderStore = create(
             .toArray()
             .then((sellableBatches) => {
               if (sellableBatches.length > 0) {
-                // Ordenar FIFO (el más viejo primero)
-                sellableBatches.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-                // --- MEJORA ESPECÍFICA VERDULERÍA: FILTRO DE "POLVO" ---
-                // Si es venta a granel (bulk), ignoramos lotes con stock absurdo (< 10 gramos)
-                // Esto evita que el sistema se aferre a un lote que ya no existe físicamente.
+                const sortedBatches = getSortedBatchesForProduct(sellableBatches, product);
                 let validBatch = null;
 
                 if (product.saleType === 'bulk') {
-                  // Buscamos el primer lote que tenga una cantidad "vendible" (ej. > 20 gramos)
-                  // OJO: Si es el ÚNICO lote que queda, lo usamos aunque sea poco.
-                  const UMBRAL_POLVO = 0.020; // 20 gramos
-
-                  validBatch = sellableBatches.find(b => getAvailableStock(b) > UMBRAL_POLVO);
-
-                  // Si todos son "polvo", usamos el último disponible o el que tenga más
-                  if (!validBatch) validBatch = sellableBatches[sellableBatches.length - 1];
+                  const UMBRAL_POLVO = 0.020;
+                  validBatch = sortedBatches.find(b => getAvailableStock(b) > UMBRAL_POLVO);
+                  if (!validBatch) validBatch = sortedBatches[sortedBatches.length - 1];
                 } else {
-                  // Para piezas (lechugas, sandías), stock > 0 es suficiente
-                  validBatch = sellableBatches[0];
+                  validBatch = sortedBatches[0];
                 }
 
                 if (validBatch) {
-                  // 🎯 Si encontramos un lote mejor, actualizamos el item en el carrito
-                  const state = get();
-                  const itemIndex = state.order.findIndex(
-                    item => item.id === product.id && !item.batchId
-                  );
+                  useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => {
+                    const order = prevOrder || [];
+                    const itemIndex = order.findIndex(
+                      item => item.id === product.id && !item.batchId
+                    );
 
-                  if (itemIndex >= 0) {
-                    const updatedOrder = [...state.order];
-                    updatedOrder[itemIndex] = {
-                      ...updatedOrder[itemIndex],
-                      batchId: validBatch.id,
-                      price: validBatch.price,
-                      cost: validBatch.cost,
-                      stock: getAvailableStock(validBatch),
-                      isVariant: true,
-                      skuDetected: validBatch.sku || product.sku
-                    };
-                    set({ order: updatedOrder });
-                  }
+                    if (itemIndex >= 0) {
+                      const updatedOrder = [...order];
+                      updatedOrder[itemIndex] = {
+                        ...updatedOrder[itemIndex],
+                        batchId: validBatch.id,
+                        price: validBatch.price,
+                        cost: validBatch.cost,
+                        stock: getAvailableStock(validBatch),
+                        isVariant: true,
+                        skuDetected: validBatch.sku || product.sku
+                      };
+                      return updatedOrder;
+                    }
+                    return order;
+                  });
                 }
               }
             })
             .catch((error) => {
               console.warn("⚠️ Fallo en asignación de lote (background):", error);
-              // El producto ya está en el carrito, así que continuamos sin error
             });
         }
       },
 
       addItem: (product) => {
-        set((state) => {
-          const { order } = state;
-
+        useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => {
+          const order = prevOrder || [];
           const existingItemIndex = order.findIndex((item) => {
             if (product.isVariant && product.batchId) {
               return item.batchId === product.batchId;
@@ -511,7 +326,6 @@ export const useOrderStore = create(
             return item.id === product.id;
           });
 
-          // Calculamos cantidad tentativa
           let quantityToCheck = 1;
           let existingItem = null;
 
@@ -520,58 +334,51 @@ export const useOrderStore = create(
             quantityToCheck = existingItem.quantity + 1;
           }
 
-          // 1. VALIDACIÓN
           const validation = validateWholesaleCondition(product, quantityToCheck);
 
           let initialPrice;
           let isPriceWarning = false;
           let shouldShowModal = false;
 
-          // Recuperamos decisiones previas (si el item ya existe)
           const forceWholesale = existingItem?.forceWholesale || false;
           const forceSafePrice = existingItem?.forceSafePrice || false;
 
-          // --- LÓGICA CON MEMORIA ---
           if (validation.status === 'conflict') {
             if (forceWholesale) {
-              // CASO 1: El usuario YA HABÍA ACEPTADO la pérdida anteriormente
               initialPrice = validation.tierPrice;
-              isPriceWarning = true; // Mantenemos la alerta visual
+              isPriceWarning = true;
             } else if (forceSafePrice) {
-              // CASO 2: El usuario YA HABÍA RECHAZADO (quería precio regular)
               initialPrice = validation.safePrice;
               isPriceWarning = true;
             } else {
-              // CASO 3: Primera vez que ocurre el conflicto -> PREGUNTAR
-              initialPrice = validation.safePrice; // Protegemos por defecto
+              initialPrice = validation.safePrice;
               isPriceWarning = true;
               shouldShowModal = true;
             }
           } else {
-            // No hay conflicto, calculamos normal
             initialPrice = calculateCompositePrice(product, quantityToCheck);
           }
 
-          // --- MODAL (Solo si shouldShowModal es true) ---
           if (shouldShowModal) {
             showMessageModal(
-              `El precio de mayoreo ($${validation.tierPrice}) es menor al costo ($${validation.cost}).\n\n¿Deseas autorizar esta venta bajo costo?`,
+              `El precio de mayoreo ($${validation.tierPrice}) es menor al costo ($${validation.cost}).
+
+¿Deseas autorizar esta venta bajo costo?`,
               () => {
-                // ACCIÓN "SÍ" (Autorizar)
-                set((innerState) => {
-                  const currentOrder = [...innerState.order];
+                useActiveOrders.getState().updateCurrentOrderItems((innerState) => {
+                  const currentOrder = [...(innerState || [])];
                   const idx = currentOrder.findIndex((item) =>
                     (product.isVariant && product.batchId) ? item.batchId === product.batchId : item.id === product.id
                   );
                   if (idx >= 0) {
                     currentOrder[idx] = {
                       ...currentOrder[idx],
-                      price: validation.tierPrice, // Aplicamos precio bajo
-                      forceWholesale: true,        // RECORDAR DECISIÓN [SÍ]
+                      price: validation.tierPrice,
+                      forceWholesale: true,
                       forceSafePrice: false
                     };
                   }
-                  return { order: currentOrder };
+                  return currentOrder;
                 });
               },
               {
@@ -579,24 +386,22 @@ export const useOrderStore = create(
                 type: 'warning',
                 confirmButtonText: 'Sí, Autorizar',
                 showCancel: false,
-                // Usamos el botón extra para el "No" explícito con memoria
                 extraButton: {
                   text: 'No, Precio Regular',
                   action: () => {
-                    // ACCIÓN "NO" (Mantener regular y no molestar)
-                    set((innerState) => {
-                      const currentOrder = [...innerState.order];
+                    useActiveOrders.getState().updateCurrentOrderItems((innerState) => {
+                      const currentOrder = [...(innerState || [])];
                       const idx = currentOrder.findIndex((item) =>
                         (product.isVariant && product.batchId) ? item.batchId === product.batchId : item.id === product.id
                       );
                       if (idx >= 0) {
                         currentOrder[idx] = {
                           ...currentOrder[idx],
-                          forceSafePrice: true, // RECORDAR DECISIÓN [NO]
+                          forceSafePrice: true,
                           forceWholesale: false
                         };
                       }
-                      return { order: currentOrder };
+                      return currentOrder;
                     });
                   }
                 }
@@ -604,13 +409,9 @@ export const useOrderStore = create(
             );
           }
 
-          // --- ACTUALIZACIÓN DEL CARRITO ---
           if (existingItemIndex >= 0) {
             const currentItem = order[existingItemIndex];
             const newQuantity = currentItem.quantity + 1;
-
-            // Si ya tomamos una decisión (Wholesale/Safe), initialPrice ya tiene el valor correcto.
-            // Si NO había conflicto, recalculamos el precio compuesto.
             let finalPrice = initialPrice;
 
             if (validation.status !== 'conflict') {
@@ -624,14 +425,11 @@ export const useOrderStore = create(
               price: finalPrice,
               exceedsStock: currentItem.trackStock && newQuantity > (currentItem.stock || 99999),
               priceWarning: isPriceWarning,
-              // Si NO hay conflicto, reseteamos las banderas (por si bajó la cantidad y volvió a subir)
               forceWholesale: validation.status === 'conflict' ? (currentItem.forceWholesale || false) : false,
               forceSafePrice: validation.status === 'conflict' ? (currentItem.forceSafePrice || false) : false,
             };
-            return { order: updatedOrder };
-
+            return updatedOrder;
           } else {
-            // Nuevo Item
             const newItem = {
               ...product,
               quantity: 1,
@@ -640,35 +438,24 @@ export const useOrderStore = create(
               stock: product.trackStock ? getAvailableStock(product) : product.stock,
               exceedsStock: product.trackStock && 1 > getAvailableStock(product),
               priceWarning: isPriceWarning,
-              // Inicializamos banderas en falso
               forceWholesale: false,
               forceSafePrice: false
             };
-            return { order: [...order, newItem] };
+            return [...order, newItem];
           }
         });
       },
 
-      /**
-       * Acción unificada para agregar productos escaneados al carrito.
-       * Usada tanto por el escáner de cámara como por el escáner físico.
-       * Garantiza inmutabilidad del estado.
-       *
-       * @param {Object} resolvedProduct - Producto resuelto por barcodeResolver
-       * @returns {Object} - { success: boolean, action: 'added' | 'incremented', item: Object }
-       */
       addScannedProduct: (resolvedProduct) => {
         if (!resolvedProduct || !resolvedProduct.id) {
           console.error('addScannedProduct: Producto inválido', resolvedProduct);
           return { success: false, action: null, item: null };
         }
 
-        const result = { success: false, action: null, item: null };
+        let result = { success: false, action: null, item: null };
 
-        set((state) => {
-          const { order } = state;
-
-          // Buscar índice existente (por batchId si es variante, por id si no)
+        useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => {
+          const order = prevOrder || [];
           const existingItemIndex = order.findIndex((item) => {
             if (resolvedProduct.isVariant && resolvedProduct.batchId) {
               return item.batchId === resolvedProduct.batchId;
@@ -677,28 +464,22 @@ export const useOrderStore = create(
           });
 
           if (existingItemIndex >= 0) {
-            // Producto existente: incrementar cantidad (solo si es venta unitaria)
             const existingItem = order[existingItemIndex];
 
             if (existingItem.saleType === 'unit') {
               const newQuantity = existingItem.quantity + 1;
-
-              // Clonar orden profundamente (inmutabilidad)
               const newOrder = [...order];
               newOrder[existingItemIndex] = {
                 ...existingItem,
                 quantity: newQuantity,
-                // Recalcular flags de stock
                 exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock || 99999)
               };
 
               result.success = true;
               result.action = 'incremented';
               result.item = newOrder[existingItemIndex];
-
-              return { order: newOrder };
+              return newOrder;
             } else {
-              // Producto a granel: agregar como nueva línea
               const newItem = {
                 ...resolvedProduct,
                 uniqueLineId: `${resolvedProduct.id}-${Date.now()}`,
@@ -709,11 +490,9 @@ export const useOrderStore = create(
               result.success = true;
               result.action = 'added';
               result.item = newItem;
-
-              return { order: [...order, newItem] };
+              return [...order, newItem];
             }
           } else {
-            // Nuevo producto: agregar al carrito
             const newItem = {
               ...resolvedProduct,
               quantity: 1,
@@ -723,8 +502,7 @@ export const useOrderStore = create(
             result.success = true;
             result.action = 'added';
             result.item = newItem;
-
-            return { order: [...order, newItem] };
+            return [...order, newItem];
           }
         });
 
@@ -733,26 +511,15 @@ export const useOrderStore = create(
 
       addMultipleScannedProducts: (itemsArray = []) => {
         if (!Array.isArray(itemsArray) || itemsArray.length === 0) {
-          return {
-            success: false,
-            addedCount: 0,
-            incrementedCount: 0,
-            failedCount: 0,
-            items: []
-          };
+          return { success: false, addedCount: 0, incrementedCount: 0, failedCount: 0, items: [] };
         }
 
-        let actionResult = {
-          success: false,
-          addedCount: 0,
-          incrementedCount: 0,
-          failedCount: 0,
-          items: []
-        };
+        let actionResult = { success: false, addedCount: 0, incrementedCount: 0, failedCount: 0, items: [] };
 
-        set((state) => {
+        useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => {
+          const order = prevOrder || [];
           const { nextOrder, touchedItems, addedCount, incrementedCount, failedCount } =
-            applyScannedProductsToOrder(state.order, itemsArray);
+            applyScannedProductsToOrder(order, itemsArray);
 
           actionResult = {
             success: addedCount > 0 || incrementedCount > 0,
@@ -763,18 +530,18 @@ export const useOrderStore = create(
           };
 
           if (!actionResult.success) {
-            return state;
+            return order;
           }
-
-          return { order: nextOrder };
+          return nextOrder;
         });
 
         return actionResult;
       },
 
       updateItemQuantity: (itemId, newQuantity) => {
-        set((state) => {
-          const updatedOrder = state.order.map((item) => {
+        useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => {
+          const order = prevOrder || [];
+          return order.map((item) => {
             if (item.id === itemId) {
               const safeQuantity = newQuantity === null ? 0 : newQuantity;
               const validation = validateWholesaleCondition(item, safeQuantity);
@@ -783,41 +550,31 @@ export const useOrderStore = create(
               let isPriceProtected = false;
               let shouldShowModal = false;
 
-              // --- LÓGICA CON MEMORIA (UPDATE) ---
               if (validation.status === 'conflict') {
                 isPriceProtected = true;
 
                 if (item.forceWholesale) {
-                  // Ya autorizado previamente -> Silencio
                   newPrice = validation.tierPrice;
                 } else if (item.forceSafePrice) {
-                  // Ya rechazado previamente -> Silencio
                   newPrice = validation.safePrice;
                 } else {
-                  // Conflicto nuevo -> Preguntar
-                  newPrice = validation.safePrice; // Precio seguro mientras decide
+                  newPrice = validation.safePrice;
                   shouldShowModal = true;
                 }
 
-                // Disparar modal solo si hay cantidad > 0 y no se ha decidido
                 if (safeQuantity > 0 && shouldShowModal) {
                   showMessageModal(
-                    `Al llevar ${safeQuantity} unidades, el precio baja a $${validation.tierPrice}, lo cual es menor al costo ($${validation.cost}).\n\n¿Autorizar precio bajo costo?`,
+                    `Al llevar ${safeQuantity} unidades, el precio baja a $${validation.tierPrice}, lo cual es menor al costo ($${validation.cost}).
+
+¿Autorizar precio bajo costo?`,
                     () => {
-                      // CALLBACK SI (Autorizar)
-                      set((innerState) => {
-                        const innerOrder = innerState.order.map(i => {
+                      useActiveOrders.getState().updateCurrentOrderItems((innerState) => {
+                        return (innerState || []).map(i => {
                           if (i.id === itemId) {
-                            return {
-                              ...i,
-                              price: validation.tierPrice,
-                              forceWholesale: true, // RECORDAR
-                              forceSafePrice: false
-                            };
+                            return { ...i, price: validation.tierPrice, forceWholesale: true, forceSafePrice: false };
                           }
                           return i;
                         });
-                        return { order: innerOrder };
                       });
                     },
                     {
@@ -828,19 +585,13 @@ export const useOrderStore = create(
                       extraButton: {
                         text: 'No, Precio Regular',
                         action: () => {
-                          // CALLBACK NO (Recordar negativa)
-                          set((innerState) => {
-                            const innerOrder = innerState.order.map(i => {
+                          useActiveOrders.getState().updateCurrentOrderItems((innerState) => {
+                            return (innerState || []).map(i => {
                               if (i.id === itemId) {
-                                return {
-                                  ...i,
-                                  forceSafePrice: true, // RECORDAR
-                                  forceWholesale: false
-                                };
+                                return { ...i, forceSafePrice: true, forceWholesale: false };
                               }
                               return i;
                             });
-                            return { order: innerOrder };
                           });
                         }
                       }
@@ -848,7 +599,6 @@ export const useOrderStore = create(
                   );
                 }
               } else {
-                // SIN CONFLICTO
                 newPrice = calculateCompositePrice(item, safeQuantity);
               }
 
@@ -858,157 +608,107 @@ export const useOrderStore = create(
                 price: newPrice,
                 exceedsStock: item.trackStock && safeQuantity > item.stock,
                 priceWarning: isPriceProtected,
-                // Reseteamos memoria si salimos de la zona de conflicto (ej. bajamos cantidad)
                 forceWholesale: validation.status === 'conflict' ? item.forceWholesale : false,
                 forceSafePrice: validation.status === 'conflict' ? item.forceSafePrice : false,
               };
             }
             return item;
           });
-          return { order: updatedOrder };
         });
       },
 
       removeItem: (itemId) => {
-        set((state) => ({
-          order: state.order.filter((item) => item.id !== itemId),
-        }));
+        useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => (prevOrder || []).filter((item) => item.id !== itemId));
       },
 
-      clearOrder: () => set({ order: [] }),
+      clearOrder: () => {
+        useActiveOrders.getState().updateCurrentOrderItems([]);
+      },
 
-      setOrder: (newOrder) => set({ order: newOrder }),
+      setOrder: (newOrder) => {
+        useActiveOrders.getState().updateCurrentOrderItems(newOrder);
+      },
 
-      setTableData: (tableData) => set({ tableData }),
+      setTableData: (tableData) => {
+        useActiveOrders.getState().updateCurrentOrder({ tableData });
+      },
 
-      clearSession: () => set({
-        order: [],
-        activeOrderId: null,
-        tableData: null,
-        folio: null,
-        isSavedOrder: false,
-      }),
+      clearSession: () => {
+        // La sesión (estado de la orden actual) ahora es administrada íntegramente por useActiveOrders.
+        // Las llamadas a clearSession desde el exterior ahora son redundantes y serán removidas gradualmente.
+      },
 
       loadOpenOrder: async (id) => {
-        if (!id) {
-          return { success: false, message: 'Se requiere el id de la orden.' };
-        }
-
-        try {
-          const sale = await db.table(STORES.SALES).get(id);
-
-          if (!sale) {
-            return { success: false, message: 'La orden no existe.' };
-          }
-
-          if (sale.status !== SALE_STATUS.OPEN) {
-            return { success: false, message: 'La orden no está abierta.' };
-          }
-
-          set({
-            order: Array.isArray(sale.items) ? sale.items : [],
-            activeOrderId: sale.id,
-            tableData: toSessionTableData(sale.tableData),
-            folio: sale.folio || null,
-            isSavedOrder: true,
-          });
-
-          return { success: true };
-        } catch (error) {
-          console.error('No se pudo cargar la orden abierta:', error);
-          return {
-            success: false,
-            message: error?.message || 'No se pudo cargar la orden abierta.'
-          };
-        }
+        // useActiveOrders.js se encarga de cargar las ordenes en loadOrdersFromDB
+        // Este método queda obsoleto
+        return { success: false, message: 'Delegado a useActiveOrders' };
       },
 
       saveOrderAsOpen: async () => {
-        const state = get();
-        const currentItems = getSellableItems(state.order);
+        const activeOrderId = useActiveOrders.getState().currentOrderId;
+        const currentOrder = useActiveOrders.getState().currentOrder;
+        const order = currentOrder?.items || [];
+        const tableData = currentOrder?.tableData || null;
+        const isSavedOrder = currentOrder?.isSaved || false;
+        const currentItems = getSellableItems(order);
 
         if (currentItems.length === 0) {
           return { success: false, message: 'El pedido está vacío.' };
         }
 
-        const salesTable = db.table(STORES.SALES);
         const nowIso = new Date().toISOString();
-        let existingSale = null;
-        let previousReservedItems = [];
-        let releasedPreviousReservation = false;
-        let committedCurrentItems = [];
 
         try {
-          if (state.isSavedOrder && state.activeOrderId) {
-            existingSale = await salesTable.get(state.activeOrderId);
+          const saleId = await db.transaction(
+            'rw',
+            [db.table(STORES.SALES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)],
+            async () => {
+              const salesTable = db.table(STORES.SALES);
+              let existingSale = null;
 
-            if (!existingSale) {
-              return { success: false, message: 'La orden activa ya no existe.' };
+              if (isSavedOrder && activeOrderId) {
+                existingSale = await salesTable.get(activeOrderId);
+                if (!existingSale) throw new Error('La orden activa ya no existe.');
+                if (existingSale.status !== SALE_STATUS.OPEN) throw new Error('La orden activa ya no está abierta.');
+
+                const previousReservedItems = getSellableItems(existingSale.items);
+                if (previousReservedItems.length > 0) {
+                  await releaseCommittedStock(previousReservedItems, { db, STORES });
+                }
+              }
+
+              const committedCurrentItems = await commitStock(currentItems, { db, STORES });
+
+              const currentSaleId = activeOrderId || generateID('sal');
+              const finalTableData = toSessionTableData(tableData ?? existingSale?.tableData ?? null);
+
+              const openSaleRecord = {
+                ...(existingSale || {}),
+                id: currentSaleId,
+                timestamp: existingSale?.timestamp || nowIso,
+                updatedAt: nowIso,
+                items: committedCurrentItems,
+                total: calculateOrderTotalExact(committedCurrentItems),
+                status: SALE_STATUS.OPEN,
+                orderType: TABLE_ORDER_TYPE,
+                fulfillmentStatus: existingSale?.fulfillmentStatus || OPEN_FULFILLMENT_STATUS,
+                tableData: finalTableData
+              };
+
+              await salesTable.put(openSaleRecord);
+              return currentSaleId;
             }
+          );
 
-            // 🔧 FIX: Permitir actualizar órdenes con status OPEN (en edición) o si ya fue enviada a cocina
-            if (existingSale.status !== SALE_STATUS.OPEN) {
-              return { success: false, message: 'La orden activa ya no está abierta.' };
-            }
-
-            previousReservedItems = getSellableItems(existingSale.items);
-            if (previousReservedItems.length > 0) {
-              await releaseCommittedStock(previousReservedItems, { db, STORES });
-              releasedPreviousReservation = true;
-            }
-          }
-
-          committedCurrentItems = await commitStock(currentItems, { db, STORES });
-
-          const saleId = state.activeOrderId || generateID('sal');
-          const tableData = toSessionTableData(state.tableData ?? existingSale?.tableData ?? null);
-
-          const openSaleRecord = {
-            ...(existingSale || {}),
-            id: saleId,
-            timestamp: existingSale?.timestamp || nowIso,
-            updatedAt: nowIso,
-            items: committedCurrentItems,
-            total: calculateOrderTotalExact(committedCurrentItems),
-            status: SALE_STATUS.OPEN,
-            orderType: TABLE_ORDER_TYPE,
-            // 🔧 FIX: Mantener fulfillmentStatus en 'open' mientras se edita en POS,
-            // pero se cambiará a 'pending' en handleSaveAsOpen cuando se envíe a cocina
-            fulfillmentStatus: existingSale?.fulfillmentStatus || OPEN_FULFILLMENT_STATUS,
-            tableData
-          };
-
-          await salesTable.put(openSaleRecord);
-          get().clearSession();
-
+          // Una vez guardado, useActiveOrders se encargará de pausar o cerrar.
           return { success: true, id: saleId };
         } catch (error) {
-          if (committedCurrentItems.length > 0) {
-            try {
-              await releaseCommittedStock(committedCurrentItems, { db, STORES });
-            } catch (releaseError) {
-              console.error('Rollback parcial: no se pudo liberar la nueva reserva.', releaseError);
-            }
-          }
-
-          if (releasedPreviousReservation && previousReservedItems.length > 0) {
-            try {
-              await commitStock(previousReservedItems, { db, STORES });
-            } catch (restoreError) {
-              console.error('Rollback parcial: no se pudo restaurar la reserva previa.', restoreError);
-            }
-          }
-
-          return {
-            success: false,
-            message: error?.message || 'No se pudo guardar la orden abierta.'
-          };
+          return { success: false, message: error?.message || 'No se pudo guardar la orden abierta.' };
         }
       },
 
       getTotalPrice: () => {
-        const { order } = get();
-
+        const order = useActiveOrders.getState().currentOrder?.items || [];
         const exactTotal = order.reduce((sum, item) => {
           if (item.quantity && item.quantity > 0) {
             const lineTotal = Money.multiply(item.price, item.quantity);
@@ -1016,108 +716,65 @@ export const useOrderStore = create(
           }
           return sum;
         }, Money.init(0));
-
-        // Delegamos la conversión y el redondeo estrictamente al wrapper
         return Money.toNumber(exactTotal);
       },
 
-      // --- RECOLECCIÓN DE BASURA Y RECONCILIACIÓN ---
       reconcileOrphanedOrders: async () => {
-        const state = get();
-        const currentActiveId = state.activeOrderId;
+        const currentActiveId = useActiveOrders.getState().currentOrderId;
         const now = new Date();
-        const LOCK_TTL_MINUTES = 15; // TTL configurable para órdenes atascadas en checkout
+        const LOCK_TTL_MINUTES = 15;
 
         try {
-          // 1. Obtener TODAS las órdenes con estado 'open' en Dexie
-          const openSales = await db.table(STORES.SALES)
-            .where('status')
-            .equals(SALE_STATUS.OPEN)
-            .toArray();
-
+          const openSales = await db.table(STORES.SALES).where('status').equals(SALE_STATUS.OPEN).toArray();
           if (openSales.length === 0) return { success: true, count: 0 };
 
-          // 1.5. Liberar órdenes atascadas en cobro (Garbage Collection de Bloqueos)
           let unlockedCount = 0;
           for (const sale of openSales) {
             if (sale.isLockedForCheckout && sale.lockedAt) {
               const lockedDate = new Date(sale.lockedAt);
               const minutesLocked = (now - lockedDate) / (1000 * 60);
 
-              // Tolerancia al margen de error por transacciones extremadamente lentas
               if (minutesLocked > LOCK_TTL_MINUTES) {
                 await db.table(STORES.SALES).update(sale.id, {
                   isLockedForCheckout: false,
                   lockedAt: null,
                   updatedAt: now.toISOString()
                 });
-                console.warn(`[Garbage Collector] Orden ${sale.id} liberada. Estuvo atascada en cobro por ${Math.round(minutesLocked)} minutos.`);
+                console.warn(`[Garbage Collector] Orden ${sale.id} liberada.`);
                 unlockedCount++;
-                
-                // Actualizamos localmente para no interferir con la lógica de orfandad real
                 sale.isLockedForCheckout = false;
               }
             }
           }
 
-          // 2. Filtrar para encontrar las huérfanas reales (abandono total)
-          // Condición: No es la orden activa actual Y tiene cierta antigüedad para evitar colisiones.
           const orphanedSales = openSales.filter((sale) => {
             if (sale.id === currentActiveId) return false;
-
-            // UMBRAL DE SEGURIDAD: Solo purgamos órdenes con más de 2 horas sin actividad.
-            // Esto evita destruir órdenes legítimas si la app se recarga muy rápido.
             const saleDate = new Date(sale.updatedAt || sale.timestamp);
             const hoursDiff = (now - saleDate) / (1000 * 60 * 60);
-
             return hoursDiff > 2;
           });
 
           if (orphanedSales.length === 0 && unlockedCount === 0) return { success: true, count: 0 };
 
           if (orphanedSales.length > 0) {
-            console.warn(`🧹 Encontradas ${orphanedSales.length} órdenes huérfanas. Reconciliando inventario...`);
-
-            // 3. Procesar y liberar stock
             for (const orphan of orphanedSales) {
-              const itemsToRelease = getSellableItems(orphan.items); // Asegúrate de que esta función esté al alcance
-
-              if (itemsToRelease.length > 0) {
-                await releaseCommittedStock(itemsToRelease, { db, STORES });
-              }
-
-              // 4. Neutralizar la orden (No borrarla, cambiar estado para auditoría)
               await db.table(STORES.SALES).update(orphan.id, {
-                status: 'cancelled', // Te recomiendo agregar SALE_STATUS.CANCELLED a tus constantes
-                notes: 'Sistema: Orden abandonada y stock liberado automáticamente.',
+                status: SALE_STATUS.REQUIRES_REVIEW,
+                notes: 'Sistema: Orden inactiva por más de 2 horas. Requiere revisión manual.',
                 updatedAt: now.toISOString()
               });
             }
           }
 
           return { success: true, count: orphanedSales.length, unlocked: unlockedCount };
-
         } catch (error) {
-          console.error('❌ Falla crítica en la reconciliación de inventario:', error);
+          console.error('❌ Falla crítica en la reconciliación:', error);
           return { success: false, message: error.message };
         }
       },
-    }),
-    {
-      name: 'lanzo-cart-storage',
-      storage: createJSONStorage(() => safeStorage),
-      partialize: (state) => ({
-        order: state.order,
-        activeOrderId: state.activeOrderId,
-        tableData: state.tableData,
-        folio: state.folio
-      }),
-    }
-  )
-);
+    };
+});
 
-// 🔒 SEGURIDAD: Solo exponer el store en desarrollo para debugging.
-// En producción, esto queda completamente oculto para evitar manipulación vía DevTools.
 if (typeof window !== 'undefined' && import.meta.env.DEV) {
   window.hackStore = useOrderStore;
 }

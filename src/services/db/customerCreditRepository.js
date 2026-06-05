@@ -115,9 +115,10 @@ export const customerCreditRepository = {
 
             // 6. Registrar el ingreso en la Caja usando el servicio centralizado.
             //    Usamos registrarMovimientoCajaEnTransaccion (variante inline) porque
-            //    ya estamos dentro de una transacción Dexie activa.
+            //    ya estamos dentro de una transacción Dexie activa, y le inyectamos 'tx'.
             if (cajaId) {
                 await registrarMovimientoCajaEnTransaccion(
+                    tx,
                     cajaId,
                     'entrada',
                     amountSafe,

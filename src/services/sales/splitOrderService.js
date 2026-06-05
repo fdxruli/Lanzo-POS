@@ -251,7 +251,8 @@ const buildChildItemsFromAllocation = ({ parentItems, allocationMap, ticketLabel
             const quantity = quantitiesPerTicket[idx];
             if (quantity > 0) {
                 const childItem = {
-                    ...structuredClone(item),
+                    ...item,
+                    selectedModifiers: Array.isArray(item.selectedModifiers) ? [...item.selectedModifiers] : [],
                     quantity,
                     inventoryReservation: splitReservations[idx]
                 };
@@ -301,7 +302,23 @@ const buildTicketAdjustments = ({ mode, parentTotalCents, baseCentsArray }) => {
     const totalBase = baseCentsArray.reduce((a, b) => a + b, 0);
     const remainder = parentTotalCents - totalBase;
 
-    return baseCentsArray.map((_, idx) => (idx === 0 ? remainder : 0));
+    // Distribute the remainder fairly across tickets that have items, or fallback to first
+    let remainingAdjustment = remainder;
+    const adjustments = baseCentsArray.map(() => 0);
+    
+    // We try to give 1 cent at a time to tickets until remainder is 0
+    let idx = 0;
+    while (remainingAdjustment !== 0 && idx < n * 10) { // arbitrary safe loop
+        const ticketIdx = idx % n;
+        if (baseCentsArray[ticketIdx] > 0 || totalBase === 0) {
+            const step = remainingAdjustment > 0 ? 1 : -1;
+            adjustments[ticketIdx] += step;
+            remainingAdjustment -= step;
+        }
+        idx++;
+    }
+
+    return adjustments;
 };
 
 const toMoneySafe = (value, fallback = '0') => {
@@ -316,8 +333,7 @@ const normalizeTicketPayment = async ({
     label,
     paymentData,
     ticketTotalCents,
-    loadData,
-    STORES,
+    customerMap,
     customerDebtAccumulator
 }) => {
     const paymentMethod = String(paymentData?.paymentMethod || '').trim().toLowerCase();
@@ -358,7 +374,7 @@ const normalizeTicketPayment = async ({
     }
 
     const saldoPendiente = Money.subtract(ticketTotal, rawPaid);
-    const customer = await loadData(STORES.CUSTOMERS, customerId);
+    const customer = customerMap.get(customerId);
     if (!customer) {
         throw new Error(`Cliente no encontrado para ticket ${label}.`);
     }
@@ -455,8 +471,7 @@ const buildChildSaleRecord = ({
     postEffectsCompleted: false,
     splitGroupId,
     splitParentId: parentSale.id,
-    splitLabel: label,
-    roundingAdjustment: centsToMoneyString(ticketAdjustmentCents)
+    splitLabel: label
 });
 
 export const splitOpenTableOrderCore = async ({
@@ -542,6 +557,21 @@ export const splitOpenTableOrderCore = async ({
         const splitGroupId = generateID('spl');
         const currentIsoTime = new Date().toISOString();
 
+        // Precargar todos los clientes que usarán método de pago 'fiado' en paralelo
+        const customerIdsToLoad = new Set();
+        ticketLabels.forEach((label) => {
+            const ticketDefinition = getTicketDefinitionByLabel(tickets, label);
+            const method = String(ticketDefinition?.paymentData?.paymentMethod || '').toLowerCase();
+            const cid = ticketDefinition?.paymentData?.customerId;
+            if (method === 'fiado' && cid) customerIdsToLoad.add(cid);
+        });
+
+        const customerMap = new Map();
+        if (customerIdsToLoad.size > 0) {
+            const loadedCustomers = await loadMultipleData(STORES.CUSTOMERS, Array.from(customerIdsToLoad));
+            loadedCustomers.filter(Boolean).forEach(c => customerMap.set(c.id, c));
+        }
+
         // Process each ticket dynamically
         for (let i = 0; i < ticketLabels.length; i++) {
             const label = ticketLabels[i];
@@ -555,12 +585,24 @@ export const splitOpenTableOrderCore = async ({
                 throw new Error(`El total del ticket ${label} no puede ser negativo.`);
             }
 
+            // <-- CORRECCIÓN: Absorber la diferencia de los centavos sobrantes en un ítem -->
+            if (ticketAdjustmentCents !== 0 && ticketItems.length > 0) {
+                // Buscamos el primer ítem para absorber la diferencia
+                const itemToAdjust = ticketItems[0];
+                const currentItemTotalCents = Money.toCents(Money.multiply(itemToAdjust.price, itemToAdjust.quantity));
+                const adjustedItemTotalCents = currentItemTotalCents + ticketAdjustmentCents;
+                
+                // Recalculamos el precio unitario virtual para que cuadre exactamente
+                const adjustedExactTotal = Money.toNumber(Money.fromCents(adjustedItemTotalCents));
+                itemToAdjust.exactTotal = adjustedExactTotal;
+                itemToAdjust.price = Money.toExactString(Money.divide(adjustedExactTotal, itemToAdjust.quantity));
+            }
+
             const normalizedPayment = await normalizeTicketPayment({
                 label,
                 paymentData: ticketDefinition?.paymentData || {},
                 ticketTotalCents,
-                loadData,
-                STORES,
+                customerMap,
                 customerDebtAccumulator
             });
 
@@ -625,23 +667,22 @@ export const splitOpenTableOrderCore = async ({
             };
         }
 
-        for (const child of childDefinitions) {
-            await runPostSaleEffects({
-                sale: child.sale,
-                processedItems: child.processedItems,
-                paymentData: child.paymentData,
-                total: child.sale.total,
-                companyName,
-                features,
-                loadData,
-                saveData: async () => true,
-                STORES,
-                useStatsStore,
-                roundCurrency,
-                sendReceiptWhatsApp,
-                Logger
-            });
-        }
+        // Ejecución en paralelo de los efectos post-venta
+        await Promise.all(childDefinitions.map(child => runPostSaleEffects({
+            sale: child.sale,
+            processedItems: child.processedItems,
+            paymentData: child.paymentData,
+            total: child.sale.total,
+            companyName,
+            features,
+            loadData,
+            saveData: async () => true,
+            STORES,
+            useStatsStore,
+            roundCurrency,
+            sendReceiptWhatsApp,
+            Logger
+        })));
 
         return {
             success: true,

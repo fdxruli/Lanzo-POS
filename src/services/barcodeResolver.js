@@ -4,9 +4,15 @@ import Logger from './Logger';
 
 const BULK_BATCH_THRESHOLD = 0.02;
 
-const safePrice = (value) => {
+const parseStrictPrice = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
   const parsed = parseFloat(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+  return parsed;
 };
 
 const isActiveProduct = (product) => product?.isActive !== false;
@@ -112,21 +118,34 @@ const buildResolvedProduct = ({
   skuDetected = null,
   variantName = null,
 }) => {
-  let finalPrice = safePrice(product.price);
-  let finalCost = safePrice(product.cost);
+  let finalPrice = parseStrictPrice(product.price);
+  if (finalPrice === null) {
+    throw new Error(`CRÍTICO: El producto "${product.name}" tiene un precio de venta inválido o corrupto. Venta bloqueada por seguridad.`);
+  }
+
+  let finalCost = parseStrictPrice(product.cost) || 0; // El costo sí puede omitirse o ser 0
+
   let displayName = product.name;
   let stock = getAvailableStock(product);
   let resolvedBatchId = batchId;
 
   if (isVariant && batch) {
     displayName = `${product.name} (${variantName || skuDetected || 'Variante'})`;
-    finalPrice = safePrice(batch.price) || finalPrice;
-    finalCost = safePrice(batch.cost) || finalCost;
+    const variantPrice = parseStrictPrice(batch.price);
+    finalPrice = variantPrice !== null ? variantPrice : finalPrice;
+    
+    const variantCost = parseStrictPrice(batch.cost);
+    finalCost = variantCost !== null ? variantCost : finalCost;
+
     stock = getAvailableStock(batch);
     resolvedBatchId = batch.id;
   } else if (product.batchManagement?.enabled && batch) {
-    finalPrice = safePrice(batch.price) || finalPrice;
-    finalCost = safePrice(batch.cost) || finalCost;
+    const batchPrice = parseStrictPrice(batch.price);
+    finalPrice = batchPrice !== null ? batchPrice : finalPrice;
+    
+    const batchCost = parseStrictPrice(batch.cost);
+    finalCost = batchCost !== null ? batchCost : finalCost;
+
     stock = getAvailableStock(batch);
     resolvedBatchId = batch.id;
   }

@@ -36,6 +36,10 @@ export const resolveWithCache = async (code, skipCache = false) => {
     if (cachedReference) {
       stats.hits += 1;
 
+      // Actualizar posición para LRU (Least Recently Used)
+      barcodeCache.delete(normalizedCode);
+      barcodeCache.set(normalizedCode, cachedReference);
+
       const liveProduct = await resolveBarcodeByStaticReference(cachedReference, code);
 
       if (liveProduct) {
@@ -56,7 +60,12 @@ export const resolveWithCache = async (code, skipCache = false) => {
     }
 
     if (!barcodeCache.has(normalizedCode) && barcodeCache.size >= MAX_CACHE_SIZE) {
-      barcodeCache.clear();
+      // Eliminar el 10% de los elementos más antiguos
+      const keysToDelete = Math.ceil(MAX_CACHE_SIZE * 0.1);
+      const iterator = barcodeCache.keys();
+      for (let i = 0; i < keysToDelete; i++) {
+        barcodeCache.delete(iterator.next().value);
+      }
     }
 
     barcodeCache.set(normalizedCode, toStaticReference(product));

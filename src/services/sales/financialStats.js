@@ -3,7 +3,8 @@ import { Money } from '../../utils/moneyMath';
 export const SALE_STATUS = Object.freeze({
   OPEN: 'open',
   CLOSED: 'closed',
-  CANCELLED: 'cancelled'
+  CANCELLED: 'cancelled',
+  REQUIRES_REVIEW: 'requires_review'
 });
 
 export const getLegacyFinancialSaleStatus = (sale) => (
@@ -55,7 +56,11 @@ export function buildDailyStatsFromSales(sales, productCostMap = new Map(), logg
       const qty = Money.init(item.quantity || 0);
       dayStat.itemsSold = Money.add(dayStat.itemsSold, qty);
 
-      const lineRevenue = Money.multiply(item.price || 0, qty);
+      // Usar exactTotal si existe para evitar pérdida de centavos por redondeos de mayoreo/fracciones
+      const lineRevenue = item.exactTotal !== undefined && item.exactTotal !== null
+        ? Money.init(item.exactTotal)
+        : Money.multiply(item.price || 0, qty);
+
       const realId = item.parentId || item.id;
       let rawCost = item.cost ?? productCostMap.get(realId);
 
@@ -64,8 +69,8 @@ export function buildDailyStatsFromSales(sales, productCostMap = new Map(), logg
         dayStat.hasMissingCosts = true;
       } else {
         dayStat.validRevenue = Money.add(dayStat.validRevenue, lineRevenue);
-        const unitProfit = Money.subtract(item.price || 0, rawCost);
-        const lineProfit = Money.multiply(unitProfit, qty);
+        const lineCost = Money.multiply(rawCost, qty);
+        const lineProfit = Money.subtract(lineRevenue, lineCost);
         dayStat.profit = Money.add(dayStat.profit, lineProfit);
       }
     });

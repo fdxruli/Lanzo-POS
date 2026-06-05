@@ -12,7 +12,7 @@ import { evaluator } from '../BackupRiskEvaluator';
 // ============================================================
 // EXPORTACIÓN DE CONSTANTES Y CLASES (Compatibilidad 100%)
 // ============================================================
-export { db, STORES, DB_ERROR_CODES, DatabaseError };
+export { db, STORES, DB_ERROR_CODES, DatabaseError, productsRepository };
 
 // ============================================================
 // FUNCIONES DE INICIALIZACIÓN

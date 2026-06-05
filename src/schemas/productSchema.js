@@ -65,8 +65,11 @@ export const productSchema = z.object({
   requiresPrescription: z.boolean().optional(),
   presentation: z.string().optional().nullable(),
 
-  // Caducidad
-  shelfLife: z.string().optional().nullable(),
+  // Caducidad — SSOT: La fecha real vive en batch.expiryDate
+  // Este flag solo indica el modo de expiración del producto.
+  expirationMode: z.enum(['STRICT', 'SHELF_LIFE', 'NONE']).default('NONE'),
+  shelfLifeValue: z.coerce.number().optional().nullable(),
+  shelfLifeUnit: z.string().optional().nullable(),
 
   // Fechas
   createdAt: z.string().optional(),

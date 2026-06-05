@@ -17,14 +17,19 @@ export const updateDailyStats = async (sale) => {
     let hasMissingCosts = false;
 
     sale.items.forEach(item => {
-        const itemRevenue = roundCurrency(item.price * item.quantity);
+        // Usar exactTotal si existe para evitar pérdida de centavos por redondeos de mayoreo/fracciones
+        const itemRevenue = item.exactTotal !== undefined && item.exactTotal !== null 
+            ? Number(item.exactTotal) 
+            : roundCurrency(item.price * item.quantity);
+            
         // Validar costo vacío o cero
         if (item.cost === null || item.cost === undefined || item.cost === '' || Number(item.cost) === 0) {
             hasMissingCosts = true;
         } else {
             validRevenue += itemRevenue;
-            const profitUnitario = roundCurrency(item.price - item.cost);
-            saleProfit += roundCurrency(profitUnitario * item.quantity);
+            const itemCost = roundCurrency(item.cost * item.quantity);
+            const profitUnitario = roundCurrency(itemRevenue - itemCost);
+            saleProfit += profitUnitario;
         }
     });
 

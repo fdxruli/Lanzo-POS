@@ -1,4 +1,5 @@
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/utils';
+import { calculateBatchDeductions, validateBatchAvailability } from '../inventoryStrategy';
 
 const TABLE_RESERVATION_SOURCE = 'table';
 
@@ -51,26 +52,30 @@ const getProductMap = async ({ itemsToProcess, allProducts = [], db, STORES }) =
     return productMap;
 };
 
-const getSortedBatchesForProduct = (batches = [], product) => {
-    const strategy = String(product?.batchManagement?.selectionStrategy || 'fifo').toLowerCase();
+export const getSortedBatchesForProduct = (batches = [], product) => {
+    const mode = product?.expirationMode || 'NONE';
+    const isFEFO = mode === 'STRICT' || mode === 'SHELF_LIFE';
 
-    return [...batches].sort((left, right) => {
-        if (strategy === 'fefo') {
-            const leftExpiry = parseDate(left?.expiryDate);
-            const rightExpiry = parseDate(right?.expiryDate);
+    // Shallow clone objects to prevent persisting private _expMs properties
+    const batchesCopy = batches.map(b => ({ ...b }));
 
-            if (leftExpiry && rightExpiry && leftExpiry.getTime() !== rightExpiry.getTime()) {
-                return leftExpiry.getTime() - rightExpiry.getTime();
+    return batchesCopy.sort((left, right) => {
+        if (isFEFO) {
+            const leftExpMs = left._expMs || (left._expMs = parseDate(left?.alertTargetDate || left?.expiryDate)?.getTime() || 0);
+            const rightExpMs = right._expMs || (right._expMs = parseDate(right?.alertTargetDate || right?.expiryDate)?.getTime() || 0);
+
+            if (leftExpMs && rightExpMs && leftExpMs !== rightExpMs) {
+                return leftExpMs - rightExpMs;
             }
 
-            if (leftExpiry || rightExpiry) {
-                return leftExpiry ? -1 : 1;
+            if (leftExpMs || rightExpMs) {
+                return leftExpMs ? -1 : 1;
             }
         }
 
-        const leftCreatedAt = parseDate(left?.createdAt)?.getTime() ?? 0;
-        const rightCreatedAt = parseDate(right?.createdAt)?.getTime() ?? 0;
-        return leftCreatedAt - rightCreatedAt;
+        const leftCrtMs = left._crtMs || (left._crtMs = parseDate(left?.createdAt)?.getTime() || 0);
+        const rightCrtMs = right._crtMs || (right._crtMs = parseDate(right?.createdAt)?.getTime() || 0);
+        return leftCrtMs - rightCrtMs;
     });
 };
 
@@ -422,6 +427,7 @@ export const commitStock = async (items, deps = {}) => {
     const productMap = await getProductMap({ itemsToProcess, allProducts, db, STORES });
     const batchesByProduct = new Map();
     const updatedProducts = new Map();
+    const updatedBatches = new Map();
     const batchManagedProductIds = new Set();
 
     return await db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
@@ -468,7 +474,7 @@ export const commitStock = async (items, deps = {}) => {
                         assertPositiveQuantity(commitQty, `Reserva sobre lote ${batch.id}.`);
 
                         batch.committedStock = normalizeStock(getCommittedStock(batch) + commitQty);
-                        await db.table(STORES.PRODUCT_BATCHES).put(batch);
+                        updatedBatches.set(batch.id, batch);
 
                         committedBatches.push({
                             batchId: batch.id,
@@ -509,7 +515,6 @@ export const commitStock = async (items, deps = {}) => {
 
                     updatedProducts.set(component.targetId, productState);
                     productMap.set(component.targetId, productState);
-                    await db.table(STORES.MENU).put(productState);
                 }
             }
 
@@ -520,9 +525,11 @@ export const commitStock = async (items, deps = {}) => {
         }
 
         if (updatedProducts.size > 0) {
-            for (const product of updatedProducts.values()) {
-                await db.table(STORES.MENU).put(product);
-            }
+            await db.table(STORES.MENU).bulkPut(Array.from(updatedProducts.values()));
+        }
+
+        if (updatedBatches.size > 0) {
+            await db.table(STORES.PRODUCT_BATCHES).bulkPut(Array.from(updatedBatches.values()));
         }
 
         if (batchManagedProductIds.size > 0) {
@@ -552,8 +559,23 @@ export const releaseCommittedStock = async (items, deps = {}) => {
     const batchesByProduct = new Map();
     const batchManagedProductIds = new Set();
     const updatedProducts = new Map();
+    const updatedBatches = new Map();
 
     await db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
+        // 1. Precargar todos los lotes necesarios en paralelo para evitar lecturas secuenciales N+1
+        const batchIdsToLoad = new Set();
+        for (const orderItem of itemsToProcess) {
+            if (!isTableReservation(orderItem)) continue;
+            const committedReservation = orderItem.inventoryReservation;
+            const committedBatches = Array.isArray(committedReservation?.committedBatches) ? committedReservation.committedBatches : [];
+            committedBatches.forEach(b => batchIdsToLoad.add(b.batchId));
+        }
+
+        const loadedBatches = batchIdsToLoad.size > 0 
+            ? await db.table(STORES.PRODUCT_BATCHES).bulkGet(Array.from(batchIdsToLoad)) 
+            : [];
+        const batchMap = new Map(loadedBatches.filter(Boolean).map(b => [b.id, b]));
+
         for (const orderItem of itemsToProcess) {
             if (!isTableReservation(orderItem)) continue;
 
@@ -567,7 +589,7 @@ export const releaseCommittedStock = async (items, deps = {}) => {
 
             if (committedBatches.length > 0) {
                 for (const batchUsage of committedBatches) {
-                    const batch = await db.table(STORES.PRODUCT_BATCHES).get(batchUsage.batchId);
+                    const batch = batchMap.get(batchUsage.batchId);
                     if (!batch) {
                         throw new Error(`CRITICAL_BATCH_NOT_FOUND: No existe el lote ${batchUsage.batchId}.`);
                     }
@@ -580,7 +602,7 @@ export const releaseCommittedStock = async (items, deps = {}) => {
                         console.warn(`[INVENTORY_SYNC_FIX]: El lote ${batch.id} intentó liberar ${quantityToRelease} pero solo tenía ${committedStock}. Se ajustó a 0.`);
                     }
                     batch.committedStock = normalizeStock(Math.max(0, committedStock - quantityToRelease));
-                    await db.table(STORES.PRODUCT_BATCHES).put(batch);
+                    updatedBatches.set(batch.id, batch);
 
                     batchManagedProductIds.add(batch.productId);
                 }
@@ -612,7 +634,15 @@ export const releaseCommittedStock = async (items, deps = {}) => {
 
             updatedProducts.set(currentProduct.id, currentProduct);
             productMap.set(currentProduct.id, currentProduct);
-            await db.table(STORES.MENU).put(currentProduct);
+        }
+
+        // 2. Ejecutar inserciones masivas en paralelo (bulkPut)
+        if (updatedProducts.size > 0) {
+            await db.table(STORES.MENU).bulkPut(Array.from(updatedProducts.values()));
+        }
+
+        if (updatedBatches.size > 0) {
+            await db.table(STORES.PRODUCT_BATCHES).bulkPut(Array.from(updatedBatches.values()));
         }
 
         if (batchManagedProductIds.size > 0) {

@@ -42,69 +42,6 @@ export const processSaleCore = async ({
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
-        // 🔥 CORRECCIÓN ESTRUCTURAL: SOBERANÍA DEL TOTAL
-        // 1. Recalcular la verdad absoluta desde los productos que se van a procesar
-        let totalNum;
-        try {
-            const totalRealNum = itemsToProcess.reduce((sum, item) => {
-                const price = Money.init(item.price || 0);
-                const qty = Money.init(item.quantity || 0);
-                const discount = Money.init(item.discount || 0); // Por si manejas descuentos por ítem
-
-                // Subtotal = (Precio * Cantidad) - Descuento
-                const subtotalItem = Money.sub(Money.mul(price, qty), discount);
-                return Money.add(sum, subtotalItem);
-            }, Money.init(0));
-
-            // 2. Auditar el parámetro enviado por el frontend
-            const totalFrontendNum = Money.init(total);
-
-            if (totalFrontendNum.lt(0) || totalRealNum.lt(0)) {
-                throw new Error('El total de la venta no puede ser negativo.');
-            }
-
-            // 3. Ecuación de discrepancia (Tolerancia máxima de $0.05 por posibles redondeos de JS)
-            const diferencia = Math.abs(Number(totalFrontendNum) - Number(totalRealNum));
-            if (diferencia > 0.05) {
-                Logger.warn('⚠️ Discrepancia financiera crítica detectada (Front vs Back):', {
-                    enviadoFront: Number(totalFrontendNum),
-                    calculadoBackend: Number(totalRealNum)
-                });
-                throw new Error(`Inconsistencia en el carrito: Los productos suman $${Number(totalRealNum).toFixed(2)}, pero la orden indica $${Number(totalFrontendNum).toFixed(2)}.`);
-            }
-
-            // 4. Imponer la verdad del backend: 
-            // Aunque el frontend mande un total, a partir de aquí el sistema usará el total matemático real.
-            totalNum = totalRealNum;
-
-        } catch (e) {
-            throw new Error(e.message || 'Error al auditar el total financiero de la venta.');
-        }
-
-        // NUEVO: Defensa estricta de variables financieras
-        let abonoSeguro, saldoSeguro;
-        try {
-            abonoSeguro = Money.init(paymentData.amountPaid || 0);
-            saldoSeguro = Money.init(paymentData.saldoPendiente || 0);
-
-            // CORRECCIÓN: El ingreso contable jamás puede superar al total del ticket.
-            // Si el cliente da $100 para pagar $75, el abono a la venta es exactamente $75.
-            if (abonoSeguro.gt(totalNum)) {
-                abonoSeguro = totalNum;
-            }
-
-            if (abonoSeguro.lt(0) || saldoSeguro.lt(0)) {
-                throw new Error('Los valores financieros no pueden ser negativos.');
-            }
-
-            // Ecuación de balance: Abono + Saldo DEBE ser igual al Total
-            if (!Money.add(abonoSeguro, saldoSeguro).eq(totalNum)) {
-                throw new Error('Inconsistencia financiera: El abono y el saldo no cuadran con el total.');
-            }
-        } catch (e) {
-            throw new Error(`Datos de pago corruptos: ${e.message}`);
-        }
-
         const productMap = new Map(allProducts.map(p => [p.id, p]));
 
         if (features.hasLabFields) {
@@ -147,6 +84,60 @@ export const processSaleCore = async ({
             calculatePricingDetails,
             Logger
         });
+
+        // 🔥 CORRECCIÓN ESTRUCTURAL: SOBERANÍA DEL TOTAL Y MAYOREO
+        // Recalcular la verdad absoluta usando los exactTotals inyectados por priceSecurity
+        let totalNum;
+        try {
+            const totalRealNum = itemsToProcess.reduce((sum, item) => {
+                if (item.exactTotal !== undefined) {
+                    return Money.add(sum, Money.init(item.exactTotal));
+                }
+                const price = Money.init(item.price || 0);
+                const qty = Money.init(item.quantity || 0);
+                return Money.add(sum, Money.mul(price, qty));
+            }, Money.init(0));
+
+            const totalFrontendNum = Money.init(total);
+
+            if (totalFrontendNum.lt(0) || totalRealNum.lt(0)) {
+                throw new Error('El total de la venta no puede ser negativo.');
+            }
+
+            // La discrepancia severa ya se validó en priceSecurity.js
+            // Imponemos la verdad absoluta del backend para la base de datos
+            totalNum = totalRealNum;
+
+        } catch (e) {
+            throw new Error(e.message || 'Error al auditar el total financiero de la venta.');
+        }
+
+        // Defensa estricta de variables financieras
+        let abonoSeguro, saldoSeguro;
+        try {
+            abonoSeguro = Money.init(paymentData.amountPaid || 0);
+            saldoSeguro = Money.init(paymentData.saldoPendiente || 0);
+
+            // CORRECCIÓN: El ingreso contable jamás puede superar al total del ticket.
+            if (abonoSeguro.gt(totalNum)) {
+                abonoSeguro = totalNum;
+            }
+
+            if (abonoSeguro.lt(0) || saldoSeguro.lt(0)) {
+                throw new Error('Los valores financieros no pueden ser negativos.');
+            }
+
+            // Ecuación de balance: Abono + Saldo DEBE ser igual al Total exacto
+            const balanceDiff = Math.abs(Number(Money.add(abonoSeguro, saldoSeguro)) - Number(totalNum));
+            if (balanceDiff > 0.05) {
+                throw new Error(`Inconsistencia financiera: El abono y el saldo no cuadran con el total exacto de los productos ($${Number(totalNum).toFixed(2)}).`);
+            }
+            // Forzamos el saldo para evitar discrepancias de fracciones de centavo
+            saldoSeguro = Money.sub(totalNum, abonoSeguro);
+            if (saldoSeguro.lt(0)) saldoSeguro = Money.init(0);
+        } catch (e) {
+            throw new Error(`Datos de pago corruptos: ${e.message}`);
+        }
 
         const batchesMap = await loadRelevantBatches({
             itemsToProcess,

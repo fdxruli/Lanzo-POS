@@ -96,7 +96,11 @@ const retryWithBackoff = async (operation, maxAttempts = CAJA_CONFIG.RETRY_ATTEM
  * @param {string} concepto - Concepto descriptivo (obligatorio)
  * @returns {Promise<{cajaActualizada: Object, movimiento: Object}>}
  */
-export async function registrarMovimientoCajaEnTransaccion(cajaId, tipo, monto, concepto) {
+export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, monto, concepto) {
+  if (!tx || typeof tx.table !== 'function') {
+    throw new Error('CRITICAL: Se requiere inyectar explícitamente el objeto de transacción (tx) para garantizar atomicidad.');
+  }
+
   // --- Validación de invariantes de datos ---
   if (!MOVIMIENTO_TIPOS_VALIDOS.includes(tipo)) {
     throw new Error(
@@ -115,7 +119,7 @@ export async function registrarMovimientoCajaEnTransaccion(cajaId, tipo, monto, 
   }
 
   // --- Lectura y validación de estado ---
-  const cajaDb = await db.table(STORES.CAJAS).get(cajaId);
+  const cajaDb = await tx.table(STORES.CAJAS).get(cajaId);
   if (!cajaDb) {
     throw new Error(`CRITICAL: La caja ${cajaId} no existe en la base de datos.`);
   }
@@ -135,7 +139,7 @@ export async function registrarMovimientoCajaEnTransaccion(cajaId, tipo, monto, 
   }
 
   cajaDb.updatedAt = new Date().toISOString();
-  await db.table(STORES.CAJAS).put(cajaDb);
+  await tx.table(STORES.CAJAS).put(cajaDb);
 
   const movimiento = {
     id: generateID('mov'),
@@ -145,7 +149,7 @@ export async function registrarMovimientoCajaEnTransaccion(cajaId, tipo, monto, 
     concepto: conceptoLimpio,
     fecha: new Date().toISOString()
   };
-  await db.table(STORES.MOVIMIENTOS_CAJA).put(movimiento);
+  await tx.table(STORES.MOVIMIENTOS_CAJA).put(movimiento);
 
   return { cajaActualizada: cajaDb, movimiento };
 }
@@ -168,8 +172,8 @@ export async function registrarMovimientoCaja(cajaId, tipo, monto, concepto) {
     return await db.transaction(
       'rw',
       [db.table(STORES.CAJAS), db.table(STORES.MOVIMIENTOS_CAJA)],
-      async () => {
-        return await registrarMovimientoCajaEnTransaccion(cajaId, tipo, monto, concepto);
+      async (tx) => {
+        return await registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, monto, concepto);
       }
     );
   }, CAJA_CONFIG.RETRY_ATTEMPTS, `registrarMovimiento ${tipo} $${Money.toNumber(Money.init(monto)).toFixed(2)}`);

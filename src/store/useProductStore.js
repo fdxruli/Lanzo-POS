@@ -84,47 +84,62 @@ function setupReactiveListeners(get) {
     // BURST_DEDUPE_MS (300ms) + mutex en invalidateAndReset().
     // ─────────────────────────────────────────────────────────────────
     const DEEP_SLEEP_THRESHOLD_MS = 60_000; // 60 segundos
+    const AWAY_THRESHOLD_MS = 30_000; // 30 segundos fuera de la app
+    let lastAwayAt = 0;
 
-    const handleWakeUp = (source) => {
+    const markAsAway = () => {
+        if (!lastAwayAt) {
+            lastAwayAt = Date.now();
+        }
+    };
+
+    const handleWakeUp = (source, force = false) => {
+        const timeAway = lastAwayAt ? Date.now() - lastAwayAt : 0;
+        lastAwayAt = 0; // Reset state
+
+        if (!force && timeAway > 0 && timeAway < AWAY_THRESHOLD_MS) {
+            Logger.debug(`[ProductStore] Wake-up ignorado (${source}) - Fuera solo ${timeAway}ms (Umbral: ${AWAY_THRESHOLD_MS}ms)`);
+            return;
+        }
+
         Logger.debug(`[ProductStore] Wake-up detectado desde: ${source}`);
         get().invalidateAndReset();
     };
 
     visibilityListener = () => {
-        if (document.visibilityState === 'visible') {
+        if (document.visibilityState === 'hidden') {
+            markAsAway();
+        } else if (document.visibilityState === 'visible') {
             handleWakeUp('visibilitychange');
         }
     };
 
-    // FIX 1: El listener de focus ahora solo dispara si el documento
-    // está realmente visible. Evita invalidaciones espurias por Alt-Tab
-    // rápidos o cambios de ventana donde visibilitychange ya actuó.
+    // Usar window.blur como respaldo para desktop (Alt+Tab sin tapar todo el navegador)
+    const blurListener = () => {
+        markAsAway();
+    };
+
+    // FIX 1: El listener de focus ahora comprueba el tiempo de inactividad
     focusListener = () => {
         if (document.visibilityState === 'visible') {
             handleWakeUp('focus');
         }
     };
 
-    // FIX 2: pageshow ahora cubre dos escenarios:
-    // - persisted === true  → restauración de bfcache (comportamiento original)
-    // - persisted === false → deep sleep prolongado en mobile. En Android/iOS,
-    //   cuando el SO mata el bfcache pero la pestaña sigue viva, pageshow se
-    //   dispara sin persisted=true. Invalidamos solo si ha pasado suficiente
-    //   tiempo (>60s) para distinguir de una navegación normal.
+    // FIX 2: pageshow cubre restauración y deep sleep
     pageshowListener = (event) => {
         if (event.persisted) {
-            handleWakeUp('pageshow(persisted)');
+            handleWakeUp('pageshow(persisted)', true); // bfcache siempre invalida para asegurar integridad
         } else {
-            // Deep sleep sin bfcache: solo invalidar si ha pasado tiempo
-            // suficiente para que los datos en memoria estén potencialmente stale.
             const elapsed = Date.now() - lastInvalidationTime;
             if (elapsed > DEEP_SLEEP_THRESHOLD_MS) {
-                handleWakeUp('pageshow(deep-sleep)');
+                handleWakeUp('pageshow(deep-sleep)', true);
             }
         }
     };
 
     document.addEventListener('visibilitychange', visibilityListener);
+    window.addEventListener('blur', blurListener);
     window.addEventListener('focus', focusListener);
     window.addEventListener('pageshow', pageshowListener);
 
@@ -144,6 +159,11 @@ function setupReactiveListeners(get) {
         if (focusListener) {
             window.removeEventListener('focus', focusListener);
             focusListener = null;
+        }
+        if (blurListener) {
+            window.removeEventListener('blur', blurListener);
+            // No reseteamos a null aquí porque no es una variable global exportada,
+            // pero es seguro simplemente quitar el listener local.
         }
         if (pageshowListener) {
             window.removeEventListener('pageshow', pageshowListener);

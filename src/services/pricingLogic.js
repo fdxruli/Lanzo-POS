@@ -6,17 +6,39 @@ const priceCache = new Map();
 
 // 1. NUEVA FUNCIÓN BASE: Devuelve la verdad contable exacta
 export const calculatePricingDetails = (product, quantity) => {
-  const batchesSignature = product.activeBatches?.length > 0
-    ? product.activeBatches.map(b => `${b.id}:${b.stock}:${b.price}`).join('|')
-    : 'no-batches';
+  let batchesSignature = 'no-batches';
+  if (product.activeBatches?.length > 0) {
+    batchesSignature = '';
+    // Concatenación rápida y eficiente para evitar crear arrays en memoria
+    for (let i = 0; i < product.activeBatches.length; i++) {
+      const b = product.activeBatches[i];
+      batchesSignature += b.id + b.stock + b.price;
+    }
+  }
 
-  const cacheKey = `details-${product.id}-${quantity}-${product.price}-${batchesSignature}`;
+  let wholesaleSig = 'no-ws';
+  if (product.wholesaleTiers?.length > 0) {
+    wholesaleSig = '';
+    for (let i = 0; i < product.wholesaleTiers.length; i++) {
+      const t = product.wholesaleTiers[i];
+      wholesaleSig += t.min + t.price;
+    }
+  }
 
-  if (priceCache.has(cacheKey)) return priceCache.get(cacheKey);
+  const cacheKey = `details-${product.id}-${quantity}-${product.price}-${batchesSignature}-${wholesaleSig}`;
+
+  if (priceCache.has(cacheKey)) {
+    // Implementación LRU: Si existe, moverlo al final
+    const val = priceCache.get(cacheKey);
+    priceCache.delete(cacheKey);
+    priceCache.set(cacheKey, val);
+    return val;
+  }
 
   const result = calculatePricingDetailsLogic(product, quantity);
 
   priceCache.set(cacheKey, result);
+  // Limpieza LRU
   if (priceCache.size > 200) {
     const firstKey = priceCache.keys().next().value;
     priceCache.delete(firstKey);
@@ -61,11 +83,15 @@ const calculatePricingDetailsLogic = (product, quantity) => {
   let totalPriceAccumulated = Money.init(0);
 
   const strategy = product.batchManagement?.selectionStrategy || 'fifo';
+  
+  // Ordenamiento diferido optimizado (solo en cache-miss y memoizando Date.getTime)
   const sortedBatches = [...product.activeBatches].sort((a, b) => {
     if (strategy === 'FeFo' && a.expiryDate && b.expiryDate) {
-      return new Date(a.expiryDate) - new Date(b.expiryDate);
+      return (a._expMs || (a._expMs = new Date(a.expiryDate).getTime())) - 
+             (b._expMs || (b._expMs = new Date(b.expiryDate).getTime()));
     }
-    return new Date(a.createdAt) - new Date(b.createdAt);
+    return (a._crtMs || (a._crtMs = new Date(a.createdAt).getTime())) - 
+           (b._crtMs || (b._crtMs = new Date(b.createdAt).getTime()));
   });
 
   for (const batch of sortedBatches) {

@@ -34,8 +34,8 @@ export const sortBatchesByStrategy = (batches = [], strategy = 'fifo') => {
 
   return [...batches].sort((a, b) => {
     if (isFefo) {
-      const aExpiry = parseDate(a?.expiryDate);
-      const bExpiry = parseDate(b?.expiryDate);
+      const aExpiry = parseDate(a?.alertTargetDate || a?.expiryDate);
+      const bExpiry = parseDate(b?.alertTargetDate || b?.expiryDate);
 
       // Ambos tienen fecha: comparar por caducidad
       if (aExpiry && bExpiry) {
@@ -110,7 +110,8 @@ export const scanProductFast = async (barcode) => {
 
     if (availableBatches.length === 0) return product;
 
-    const strategy = product?.batchManagement?.selectionStrategy || 'fifo';
+    const isFefo = product?.expirationMode === 'STRICT' || product?.expirationMode === 'SHELF_LIFE';
+    const strategy = isFefo ? 'fefo' : 'fifo';
     const [selectedBatch] = sortBatchesByStrategy(availableBatches, strategy);
 
     if (!selectedBatch) return product;

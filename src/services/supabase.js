@@ -53,7 +53,24 @@ function getFriendlyDeviceName(userAgent) {
     return `${browser} en ${os}`;
 }
 
-export async function getStableDeviceId() {
+let stableDeviceIdPromise = null;
+
+export function getStableDeviceId() {
+    if (!stableDeviceIdPromise) {
+        stableDeviceIdPromise = (async () => {
+            try {
+                return await _generateStableDeviceId();
+            } catch (error) {
+                // Si la generación falla críticamente, permitimos un reintento futuro
+                stableDeviceIdPromise = null;
+                throw error;
+            }
+        })();
+    }
+    return stableDeviceIdPromise;
+}
+
+async function _generateStableDeviceId() {
     const STORAGE_KEY = 'lanzo_device_id';
 
     // A. Intentar leer de LocalStorage (Memoria rápida)

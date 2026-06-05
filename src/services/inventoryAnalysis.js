@@ -111,15 +111,15 @@ export const buildExpiringProductsReport = ({
   now = new Date()
 } = {}) => {
   const today = startOfDay(now);
-  const thresholdDate = new Date(today);
-  thresholdDate.setDate(thresholdDate.getDate() + Number(daysThreshold || 0));
   const productsById = new Map((products || []).map((product) => [product.id, product]));
 
-  const batchAlerts = (riskBatches || [])
-    .filter((batch) => Boolean(batch?.expiryDate))
+  // SSOT: El barrido de caducidades opera EXCLUSIVAMENTE sobre la colección de batches.
+  // La propiedad product.shelfLife fue eliminada en la migración v15.
+  return (riskBatches || [])
+    .filter((batch) => Boolean(batch?.alertTargetDate || batch?.expiryDate))
     .map((batch) => {
       const product = productsById.get(batch.productId);
-      const expDate = new Date(batch.expiryDate);
+      const expDate = new Date(batch.alertTargetDate || batch.expiryDate);
       if (Number.isNaN(expDate.getTime())) return null;
 
       const daysRemaining = Math.ceil((expDate - today) / MS_PER_DAY);
@@ -135,6 +135,8 @@ export const buildExpiringProductsReport = ({
         stock: toSafeNumber(batch.stock),
         currentStock: toSafeNumber(batch.stock),
         expiryDate: batch.expiryDate,
+        alertTargetDate: batch.alertTargetDate || batch.expiryDate,
+        alertType: batch.alertType || 'CADUCIDAD_LEGAL',
         daysRemaining,
         daysLeft: daysRemaining,
         batchSku: batch.sku || 'Lote',
@@ -143,39 +145,7 @@ export const buildExpiringProductsReport = ({
         urgencyLevel: getUrgencyLevel(daysRemaining)
       };
     })
-    .filter(Boolean);
-
-  const productAlerts = (products || [])
-    .filter((product) => {
-      if (!product?.shelfLife || product?.isActive === false) return false;
-      if (product?.trackStock && toSafeNumber(product?.stock) <= 0) return false;
-
-      const expDate = new Date(product.shelfLife);
-      if (Number.isNaN(expDate.getTime())) return false;
-      return expDate <= thresholdDate;
-    })
-    .map((product) => {
-      const expDate = new Date(product.shelfLife);
-      const daysRemaining = Math.ceil((expDate - today) / MS_PER_DAY);
-
-      return {
-        id: product.id,
-        productId: product.id,
-        productName: product.name,
-        name: product.name,
-        stock: toSafeNumber(product.stock),
-        currentStock: toSafeNumber(product.stock),
-        expiryDate: product.shelfLife,
-        daysRemaining,
-        daysLeft: daysRemaining,
-        batchSku: 'General',
-        location: product.location || '',
-        type: 'Producto',
-        urgencyLevel: getUrgencyLevel(daysRemaining)
-      };
-    });
-
-  return [...batchAlerts, ...productAlerts]
+    .filter(Boolean)
     .sort((a, b) => a.daysRemaining - b.daysRemaining);
 };
 
