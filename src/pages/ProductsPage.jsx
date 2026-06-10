@@ -1,6 +1,6 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { saveDataSafe, deleteDataSafe, saveBatchAndSyncProductSafe, loadData, saveData, deleteData, saveBulk, queryByIndex, STORES, saveBatchAndSyncProduct, saveImageToDB, softDeleteWithCascadeSafe } from '../services/database';
+import { saveDataSafe, deleteDataSafe, saveBatchAndSyncProductSafe, loadData, saveData, deleteData, saveBulk, queryByIndex, STORES, saveBatchAndSyncProduct, saveImageToDB, softDeleteWithCascadeSafe, updateProductSafe } from '../services/database';
 import { showMessageModal, generateID, fileToBase64 } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
@@ -271,7 +271,7 @@ export default function ProductsPage() {
             if (isEditingExistingProduct) {
                 // Modo Edición
                 const updatedProduct = { ...editingProduct, ...baseProductData };
-                result = await saveDataSafe(STORES.MENU, updatedProduct);
+                result = await updateProductSafe(productId, updatedProduct);
             } else {
                 // Modo Creación (Nuevo)
                 const newProduct = {
@@ -280,7 +280,8 @@ export default function ProductsPage() {
                     isActive: true,
                     createdAt: new Date().toISOString(),
                 };
-                result = await saveDataSafe(STORES.MENU, newProduct);
+                const dbRes = await saveData(STORES.MENU, newProduct);
+                result = dbRes ? { success: true } : { success: false, error: new Error('Fallo al guardar') };
             }
 
             // --- 2. PROCESAMIENTO DE STOCK Y VARIANTES (Aquí está la magia) ---
@@ -433,8 +434,8 @@ export default function ProductsPage() {
                 updatedAt: new Date().toISOString()
             };
 
-            // GUARDADO SEGURO
-            const result = await saveDataSafe(STORES.MENU, updatedProduct);
+            // GUARDADO SEGURO CON LA NUEVA ARQUITECTURA
+            const result = await updateProductSafe(product.id, updatedProduct);
 
             if (result.success) {
                 await refreshData();
@@ -467,18 +468,8 @@ export default function ProductsPage() {
         <>
             <div className="products-header">
                 <div style={{ display: 'flex', gap: '10px', flexDirection: 'column', width: '100%' }}>
-                    {/* BOTÓN NUEVO PARA FRUTERÍA */}
-                    {features.hasDailyPricing && (
-                        <button
-                            className="btn btn-primary btn-action-header"
-                            style={{ backgroundColor: '#f97316' }}
-                            onClick={() => setShowDailyPrice(true)}
-                        >
-                            📝 Actualizar Precios del Día
-                        </button>
-                    )}
+                    {/* El botón de Frutería fue movido a ProductList */}
                 </div>
-
             </div >
 
             <div className="tabs-container" id="product-tabs" style={{ overflowX: 'auto' }}>
@@ -555,6 +546,7 @@ export default function ProductsPage() {
                         onDelete={handleDeleteProduct}
                         onToggleStatus={handleToggleStatus}
                         onManageBatches={handleManageBatches}
+                        onOpenDailyPrice={() => setShowDailyPrice(true)}
                     />
                 )
             }

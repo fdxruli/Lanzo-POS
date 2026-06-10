@@ -1,13 +1,14 @@
 // src/hooks/useTableManagement.js
 import { useCallback } from 'react';
-import { useOrderStore } from '../../store/useOrderStore';
 import { useAppStore } from '../../store/useAppStore';
 import { splitOpenTableOrder } from '../../services/salesService';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
-import { useActiveOrders } from './useActiveOrders';
+import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
+
+const EMPTY_ORDER = [];
 
 /**
  * Hook para manejar la gestión de mesas (tables) del POS.
@@ -32,7 +33,7 @@ export function useTableManagement({
     openModal,
     closeModal,
     refreshData,
-    checkHasOutOfStockProducts,
+    checkHasOutOfStockProducts: _checkHasOutOfStockProducts,
     fetchActiveTablesCount,
     features,
     handleInitiateCheckout,
@@ -42,12 +43,10 @@ export function useTableManagement({
     const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
     const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
-    const {
-        saveOrderAsOpen,
-        loadOpenOrder
-    } = useOrderStore.getState();
-
-    const order = useActiveOrders((state) => state.currentOrder?.items) || [];
+    const saveOrderAsOpen = useActiveOrders((state) => state.saveOrderAsOpen);
+    const loadOpenOrder = useActiveOrders((state) => state.loadOpenOrder);
+    const currentOrder = useActiveOrders(selectCurrentOrder);
+    const order = currentOrder?.items || EMPTY_ORDER;
     const activeOrderId = useActiveOrders((state) => state.currentOrderId);
     
     const clearSession = useCallback(() => {
@@ -58,7 +57,7 @@ export function useTableManagement({
     const handleSaveAsOpen = useCallback(async () => {
         if (!features?.hasTables) return;
 
-        const currentOrder = useActiveOrders.getState().currentOrder;
+        const currentOrder = selectCurrentOrder(useActiveOrders.getState());
         const currentTableData = currentOrder?.tableData;
         const isUpdating = Boolean(currentOrder?.isSaved);
 
@@ -68,7 +67,7 @@ export function useTableManagement({
             if (!promptedName || promptedName.trim() === '') {
                 return;
             }
-            useActiveOrders.getState().updateCurrentOrderData({ tableData: promptedName.trim() });
+            useActiveOrders.getState().updateCurrentOrder({ tableData: promptedName.trim() });
         }
 
         const result = await saveOrderAsOpen();
@@ -90,20 +89,9 @@ export function useTableManagement({
             try {
                 const currentId = useActiveOrders.getState().currentOrderId || result.id;
                 // Si la función importada useActiveOrders está disponible
-                const { useActiveOrders } = await import('./useActiveOrders.js');
-                const state = useActiveOrders.getState();
+                await useActiveOrders.getState().removeOrder(currentId);
                 
                 // Si hay más órdenes activas cambiamos a otra, si no cerramos
-                const nextOrders = new Map(state.activeOrders);
-                nextOrders.delete(currentId);
-                useActiveOrders.setState({ activeOrders: nextOrders });
-                
-                if (nextOrders.size > 0) {
-                    state.switchOrder(Array.from(nextOrders.keys())[0]);
-                } else {
-                    useActiveOrders.setState({ currentOrderId: null });
-                    state.createOrder();
-                }
             } catch (err) {
                 console.error("No se pudo cerrar la pestaña activa:", err);
             }
@@ -125,39 +113,6 @@ export function useTableManagement({
     const executeLoadOpenOrder = useCallback(async (orderId, silent = false) => {
         const result = await loadOpenOrder(orderId);
         if (result.success) {
-            // CORRECCIÓN: Registrar la orden en useActiveOrders.
-            // loadOpenOrder solo actualiza useOrderStore (order, activeOrderId, tableData).
-            // Si la orden no está en el map de useActiveOrders, lockOrderForCheckout
-            // la rechazará con "La orden no existe en sesión", bloqueando el checkout.
-            //
-            // Sincronizamos el estado del store con activeOrders usando la orden
-            // ya hidratada desde la BD, garantizando consistencia entre ambos stores.
-            try {
-                const activeOrdersState = useActiveOrders.getState();
-                const loadedOrderId = useActiveOrders.getState().currentOrderId;
-                const loadedOrder = useActiveOrders.getState().currentOrder?.items || [];
-                const loadedTableData = useActiveOrders.getState().currentOrder?.tableData;
-
-                if (loadedOrderId && !activeOrdersState.activeOrders.has(loadedOrderId)) {
-                    const nextOrders = new Map(activeOrdersState.activeOrders);
-                    nextOrders.set(loadedOrderId, {
-                        id: loadedOrderId,
-                        items: Array.isArray(loadedOrder) ? loadedOrder : [],
-                        tableData: loadedTableData || null,
-                        createdAt: new Date().toISOString(),
-                        total: 0,
-                        isSaved: true
-                    });
-                    useActiveOrders.setState({
-                        activeOrders: nextOrders,
-                        currentOrderId: loadedOrderId
-                    });
-                }
-            } catch (syncErr) {
-                console.error('[useTableManagement] Error sincronizando orden con activeOrders:', syncErr);
-                // No es fatal: el checkout puede continuar si la orden ya está en activeOrders
-            }
-
             if (!silent) {
                 closeModal('tables');
                 showMessageModal('Mesa cargada en el pedido actual.');

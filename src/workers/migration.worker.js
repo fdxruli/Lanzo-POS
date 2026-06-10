@@ -9,7 +9,7 @@
  * activeStockStatus en el background hasta finalizar.
  */
 
-/* eslint-disable no-restricted-globals */
+import { runChunkedMigration } from './migrationCore';
 
 // Estado del worker
 let isRunning = false;
@@ -29,13 +29,12 @@ const processBatch = async (db, storeName, offset, limit) => {
         const transaction = db.transaction([storeName], 'readwrite');
         const store = transaction.objectStore(storeName);
         
-        const recordsToUpdate = [];
         let processed = 0;
+        let scanned = 0;
         
         // Abrir cursor para iterar eficientemente
         const request = store.openCursor();
         let skipped = 0;
-        let targetOffset = offset;
         
         request.onsuccess = (event) => {
             const cursor = event.target.result;
@@ -43,31 +42,34 @@ const processBatch = async (db, storeName, offset, limit) => {
             if (!cursor) {
                 // Fin de la tabla
                 resolve({ 
-                    processed, 
+                    processed,
+                    scanned,
                     hasMore: false,
-                    nextOffset: offset + processed 
+                    nextOffset: offset + scanned
                 });
                 return;
             }
             
             // Saltar hasta el offset deseado
-            if (skipped < targetOffset) {
+            if (skipped < offset) {
                 skipped++;
                 cursor.continue();
                 return;
             }
             
             // Procesar hasta el límite
-            if (processed >= limit) {
+            if (scanned >= limit) {
                 resolve({ 
-                    processed, 
+                    processed,
+                    scanned,
                     hasMore: true,
-                    nextOffset: offset + processed 
+                    nextOffset: offset + scanned
                 });
                 return;
             }
             
             const record = cursor.value;
+            scanned++;
             
             // Verificar si ya tiene activeStockStatus
             if (record.activeStockStatus === undefined || record.activeStockStatus === null) {
@@ -136,35 +138,27 @@ const runMigration = async (config) => {
         for (const storeName of stores) {
             if (shouldStop) break;
             
-            let offset = 0;
-            let hasMore = true;
-            let storeProcessed = 0;
-            
             self.postMessage({
                 type: 'STORE_START',
                 store: storeName
             });
             
-            while (hasMore && !shouldStop) {
-                const batchResult = await processBatch(db, storeName, offset, batchSize);
-                
-                storeProcessed += batchResult.processed;
-                offset = batchResult.nextOffset;
-                hasMore = batchResult.hasMore;
-                
-                // Reportar progreso
-                self.postMessage({
-                    type: 'PROGRESS',
-                    store: storeName,
-                    processed: storeProcessed,
-                    currentBatch: batchResult.processed
-                });
-                
-                // Delay para no bloquear el hilo principal
-                if (hasMore && delayBetweenBatches > 0) {
-                    await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+            const migrationResult = await runChunkedMigration({
+                chunkSize: batchSize,
+                delayBetweenChunks: delayBetweenBatches,
+                shouldStop: () => shouldStop,
+                processChunk: (offset, limit) => processBatch(db, storeName, offset, limit),
+                onProgress: ({ processed, currentBatch }) => {
+                    self.postMessage({
+                        type: 'PROGRESS',
+                        store: storeName,
+                        processed,
+                        currentBatch
+                    });
                 }
-            }
+            });
+
+            const storeProcessed = migrationResult.processed;
             
             results.stores[storeName] = storeProcessed;
             results.totalProcessed += storeProcessed;

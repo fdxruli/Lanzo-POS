@@ -41,8 +41,8 @@ export function useProductWizard(productToEdit, activeRubroContext) {
     useEffect(() => {
         const numCost = parseFloat(cost);
         const numPrice = parseFloat(price);
-        if (!isNaN(numCost) && numCost > 0 && !isNaN(numPrice)) {
-            const newMargin = ((numPrice - numCost) / numCost) * 100;
+        if (!isNaN(numCost) && numCost >= 0 && !isNaN(numPrice) && numPrice > 0) {
+            const newMargin = ((numPrice - numCost) / numPrice) * 100;
             setMargin(newMargin.toFixed(1));
         } else {
             setMargin('');
@@ -110,8 +110,8 @@ export function useProductWizard(productToEdit, activeRubroContext) {
         setCost(val);
         const numCost = parseFloat(val);
         const numPrice = parseFloat(price);
-        if (!isNaN(numCost) && numCost > 0 && !isNaN(numPrice)) {
-            const newMargin = ((numPrice - numCost) / numCost) * 100;
+        if (!isNaN(numCost) && numCost >= 0 && !isNaN(numPrice) && numPrice > 0) {
+            const newMargin = ((numPrice - numCost) / numPrice) * 100;
             setMargin(newMargin.toFixed(1));
         } else {
             setMargin('');
@@ -122,8 +122,8 @@ export function useProductWizard(productToEdit, activeRubroContext) {
         setPrice(val);
         const numPrice = parseFloat(val);
         const numCost = parseFloat(cost);
-        if (!isNaN(numCost) && numCost > 0 && !isNaN(numPrice)) {
-            const newMargin = ((numPrice - numCost) / numCost) * 100;
+        if (!isNaN(numCost) && numCost >= 0 && !isNaN(numPrice) && numPrice > 0) {
+            const newMargin = ((numPrice - numCost) / numPrice) * 100;
             setMargin(newMargin.toFixed(1));
         }
     }, [cost]);
@@ -132,8 +132,9 @@ export function useProductWizard(productToEdit, activeRubroContext) {
         setMargin(val);
         const numMargin = parseFloat(val);
         const numCost = parseFloat(cost);
-        if (!isNaN(numMargin) && !isNaN(numCost) && numCost > 0) {
-            const newPrice = numCost * (1 + (numMargin / 100));
+        if (!isNaN(numMargin) && !isNaN(numCost) && numCost >= 0) {
+            const safeMargin = numMargin >= 100 ? 99.9 : numMargin;
+            const newPrice = numCost / (1 - (safeMargin / 100));
             setPrice(newPrice.toFixed(2));
         }
     }, [cost]);

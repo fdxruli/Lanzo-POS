@@ -1,378 +1,158 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import { useActiveOrders } from '../useActiveOrders';
-import { useOrderStore } from '../../../store/useOrderStore';
-import { db, STORES } from '../../../services/db/dexie';
-import { releaseCommittedStock } from '../../../services/sales/inventoryFlow';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mocks
-vi.mock('../../../store/useOrderStore', () => ({
-  useOrderStore: {
-    getState: vi.fn(),
-    setState: vi.fn(),
-    subscribe: vi.fn((callback) => {
-      global.mockStoreSubscribe = callback;
-    }),
-  }
+const dbState = vi.hoisted(() => ({
+  sales: new Map(),
+  batches: []
 }));
 
-const dbMocks = vi.hoisted(() => {
-  const salesMap = new Map();
-  const salesTable = {
-    get: vi.fn(async (id) => salesMap.get(id) ?? null),
-    put: vi.fn(async (record) => {
-      salesMap.set(record.id, structuredClone(record));
-      return record.id;
-    }),
-    update: vi.fn(async (id, changes) => {
-      const existing = salesMap.get(id);
-      if (!existing) return 0;
-      salesMap.set(id, { ...existing, ...structuredClone(changes) });
-      return 1;
-    })
-  };
+const localStorageMock = {
+  getItem: vi.fn(() => null),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  key: vi.fn(() => null),
+  get length() {
+    return 0;
+  }
+};
 
-  return {
-    salesMap,
-    salesTable,
-    db: {
-      table: vi.fn(() => salesTable)
-    },
-    STORES: { SALES: 'sales' }
-  };
-});
+vi.stubGlobal('window', { localStorage: localStorageMock });
+vi.stubGlobal('localStorage', localStorageMock);
+
+vi.mock('../../../services/utils', () => ({
+  generateID: vi.fn(() => 'sal-generated'),
+  safeLocalStorageSet: vi.fn(),
+  showMessageModal: vi.fn(),
+  roundCurrency: vi.fn((value) => Math.round(Number(value) * 100) / 100)
+}));
 
 vi.mock('../../../services/db/dexie', () => ({
-  db: dbMocks.db,
-  STORES: dbMocks.STORES
+  STORES: {
+    SALES: 'sales',
+    MENU: 'menu',
+    PRODUCT_BATCHES: 'product_batches'
+  },
+  db: {
+    table: vi.fn((storeName) => {
+      if (storeName === 'sales') {
+        return {
+          get: vi.fn(async (id) => dbState.sales.get(id) || null),
+          where: vi.fn(() => ({
+            equals: vi.fn(() => ({
+              toArray: vi.fn(async () => Array.from(dbState.sales.values()))
+            }))
+          }))
+        };
+      }
+
+      return {
+        where: vi.fn(() => ({
+          equals: vi.fn(() => ({
+            filter: vi.fn(() => ({
+              toArray: vi.fn(async () => dbState.batches)
+            }))
+          }))
+        }))
+      };
+    })
+  }
 }));
 
 vi.mock('../../../services/sales/inventoryFlow', () => ({
-  releaseCommittedStock: vi.fn(async () => ({ success: true }))
+  commitStock: vi.fn(async (items) => items),
+  releaseCommittedStock: vi.fn(async () => ({ success: true })),
+  getSortedBatchesForProduct: vi.fn((batches) => batches)
 }));
 
-let mockIdCounter = 1;
-vi.mock('../../../services/utils', () => ({
-  generateID: vi.fn(() => `sal-mock${mockIdCounter++}`)
-}));
+import { selectCurrentOrder, useActiveOrders } from '../useActiveOrders';
 
-vi.mock('../../../utils/moneyMath', () => ({
-  Money: {
-    multiply: vi.fn((price, qty) => price * qty),
-    add: vi.fn((a, b) => a + b),
-    init: vi.fn((val) => val),
-    toNumber: vi.fn((val) => val)
-  }
-}));
+const makeOrder = (id, items = []) => ({
+  id,
+  items,
+  customer: null,
+  tableData: null,
+  createdAt: '2026-06-09T00:00:00.000Z',
+  total: 0,
+  isSaved: false
+});
 
-describe('useActiveOrders', () => {
+describe('useActiveOrders unified store', () => {
   beforeEach(() => {
-    mockIdCounter = 1;
-    
-    // Reset Zustand store state between tests manually
+    dbState.sales.clear();
+    dbState.batches = [];
+    vi.clearAllMocks();
     useActiveOrders.setState({
       activeOrders: new Map(),
       currentOrderId: null,
-      isLoading: false
-    });
-    dbMocks.salesMap.clear();
-    
-    vi.clearAllMocks();
-    
-    useOrderStore.getState.mockReturnValue({
-      setOrder: vi.fn(),
-      setTableData: vi.fn(),
-      clearSession: vi.fn(),
-      saveOrderAsOpen: vi.fn().mockResolvedValue({ success: true, id: 'sal-mock1' }),
-      addSmartItem: vi.fn(),
-      removeItem: vi.fn()
+      isLoading: false,
+      isCurrentOrderLocked: false
     });
   });
 
-  it('1. createOrder: crea nueva orden y la activa', () => {
-    const { result } = renderHook(() => useActiveOrders());
-    
-    let id;
-    act(() => {
-      id = result.current.createOrder('cust-1', 'Mesa 1');
+  it('derives the current order after every state update', () => {
+    useActiveOrders.setState({
+      activeOrders: new Map([
+        ['one', makeOrder('one')],
+        ['two', makeOrder('two')]
+      ]),
+      currentOrderId: 'one'
     });
 
-    expect(id).toBe('sal-mock1');
-    expect(result.current.currentOrderId).toBe('sal-mock1');
-    expect(result.current.activeOrders.has('sal-mock1')).toBe(true);
-    const order = result.current.activeOrders.get('sal-mock1');
-    expect(order.tableData).toBe('Mesa 1');
-    expect(order.customer.id).toBe('cust-1');
+    expect(selectCurrentOrder(useActiveOrders.getState())?.id).toBe('one');
+
+    useActiveOrders.getState().switchOrder('two');
+
+    expect(selectCurrentOrder(useActiveOrders.getState())?.id).toBe('two');
+    expect(useActiveOrders.getState()).not.toHaveProperty('order');
+    expect(useActiveOrders.getState()).not.toHaveProperty('activeOrderId');
   });
 
-  it('2. switchOrder: cambia currentOrderId sin perder datos de otras órdenes', () => {
-    const { result } = renderHook(() => useActiveOrders());
-    
-    let id1;
-    act(() => { id1 = result.current.createOrder(); });
-    
-    // By-pass empty validation to create another
-    act(() => {
-      const order = result.current.activeOrders.get(id1);
-      order.items = [{ id: 'p1', quantity: 1, price: 10 }];
-      const map = new Map(result.current.activeOrders);
-      map.set(id1, order);
-      useActiveOrders.setState({ activeOrders: map });
+  it('applies the same cart rules to a non-current order', async () => {
+    useActiveOrders.setState({
+      activeOrders: new Map([
+        ['one', makeOrder('one')],
+        ['two', makeOrder('two')]
+      ]),
+      currentOrderId: 'one'
     });
 
-    let id2;
-    act(() => { id2 = result.current.createOrder(); });
+    const product = {
+      id: 'product-1',
+      name: 'Product',
+      price: 25,
+      saleType: 'unit',
+      trackStock: false
+    };
 
-    expect(result.current.currentOrderId).toBe(id2);
-    expect(result.current.activeOrders.size).toBe(2);
+    await useActiveOrders.getState().addItemToOrder('two', product);
+    await useActiveOrders.getState().addItemToOrder('two', product);
 
-    act(() => {
-      result.current.switchOrder(id1);
-    });
-
-    expect(result.current.currentOrderId).toBe(id1);
-    expect(result.current.activeOrders.size).toBe(2); // no data lost
+    const state = useActiveOrders.getState();
+    expect(state.currentOrderId).toBe('one');
+    expect(state.activeOrders.get('one')?.items).toEqual([]);
+    expect(state.activeOrders.get('two')?.items).toMatchObject([
+      { id: 'product-1', quantity: 2, price: 25 }
+    ]);
   });
 
-  it('3. addItemToOrder: agrega producto a orden específica', async () => {
-    const { result } = renderHook(() => useActiveOrders());
-    let id1;
-    act(() => { id1 = result.current.createOrder(); });
-
-    const mockStore = useOrderStore.getState();
-
-    await act(async () => {
-      await result.current.addItemToOrder(id1, { id: 'p1', price: 10 });
-    });
-
-    // Como id1 es la currentOrder, debe delegar a addSmartItem
-    expect(mockStore.addSmartItem).toHaveBeenCalledWith({ id: 'p1', price: 10 });
-  });
-
-  it('4. removeItemFromOrder: quita item correctamente', () => {
-    const { result } = renderHook(() => useActiveOrders());
-    let id1;
-    act(() => { id1 = result.current.createOrder(); });
-
-    const mockStore = useOrderStore.getState();
-
-    act(() => {
-      result.current.removeItemFromOrder(id1, 'p1');
-    });
-
-    expect(mockStore.removeItem).toHaveBeenCalledWith('p1');
-  });
-
-  it('5. pauseOrder: si está vacía se elimina silenciosamente, si tiene items se guarda a DB', async () => {
-    const { result } = renderHook(() => useActiveOrders());
-    let id1;
-    act(() => { id1 = result.current.createOrder(); });
-
-    // Si está vacía, se elimina silenciosamente en lugar de lanzar error
-    await act(async () => {
-      await result.current.pauseOrder(id1);
-    });
-    
-    // Debería haberse creado una nueva automáticamente porque era la última
-    expect(result.current.activeOrders.has(id1)).toBe(false);
-    expect(result.current.activeOrders.size).toBe(1);
-    
-    // Obtenemos el nuevo ID para continuar el test
-    id1 = result.current.currentOrderId;
-
-    // Agregamos item
-    act(() => {
-      const order = result.current.activeOrders.get(id1);
-      order.items = [{ id: 'p1', quantity: 1, price: 10 }];
-      const map = new Map(result.current.activeOrders);
-      map.set(id1, order);
-      useActiveOrders.setState({ activeOrders: map });
-    });
-
-    await act(async () => {
-      await result.current.pauseOrder(id1);
-    });
-
-    // Como era currentOrder, llama a saveOrderAsOpen de useOrderStore
-    const mockStore = useOrderStore.getState();
-    expect(mockStore.saveOrderAsOpen).toHaveBeenCalled();
-    expect(mockStore.clearSession).toHaveBeenCalled();
-
-    // Saca de activeOrders
-    expect(result.current.activeOrders.has(id1)).toBe(false);
-    // Limpia currentOrderId si no quedan otras (aunque useActiveOrders.createOrder autogenera una nueva si está vacía, 
-    // así que habrá una nueva en activeOrders y no será null)
-    expect(result.current.currentOrderId).not.toBe(id1);
-  });
-
-  it('6. closeOrder: similar a pauseOrder pero con status closed', async () => {
-    const { result } = renderHook(() => useActiveOrders());
-    let id1;
-    act(() => { id1 = result.current.createOrder(); });
-
-    act(() => {
-      const order = result.current.activeOrders.get(id1);
-      order.items = [{ id: 'p1', quantity: 1, price: 10 }];
-      const map = new Map(result.current.activeOrders);
-      map.set(id1, order);
-      useActiveOrders.setState({ activeOrders: map });
-    });
-
-    await act(async () => {
-      await result.current.closeOrder(id1, { cash: 100 });
-    });
-
-    expect(db.table(STORES.SALES).put).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: id1,
-        status: 'closed',
-        paymentData: { cash: 100 }
-      })
-    );
-
-    expect(result.current.activeOrders.has(id1)).toBe(false);
-  });
-
-  it('7. Sincronización: cambiar currentOrderId refleja cambio en derivado currentOrder', () => {
-    const { result } = renderHook(() => useActiveOrders());
-    let id1;
-    act(() => { id1 = result.current.createOrder(); });
-
-    expect(result.current.currentOrder.id).toBe(id1);
-
-    act(() => {
-      const order = result.current.activeOrders.get(id1);
-      order.items = [{ id: 'p1', quantity: 1, price: 10 }];
-      const map = new Map(result.current.activeOrders);
-      map.set(id1, order);
-      useActiveOrders.setState({ activeOrders: map });
-    });
-
-    let id2;
-    act(() => { id2 = result.current.createOrder(); });
-
-    expect(result.current.currentOrder.id).toBe(id2);
-  });
-
-  it('8. Límite de órdenes: no permitir más de 10 simultáneas', () => {
-    const { result } = renderHook(() => useActiveOrders());
-    
-    // create 10 orders
-    for (let i = 0; i < 10; i++) {
-      act(() => { 
-        const id = result.current.createOrder(); 
-        const order = result.current.activeOrders.get(id);
-        order.items = [{ id: `p${i}`, quantity: 1, price: 10 }]; // Bypass empty restriction
-        const map = new Map(result.current.activeOrders);
-        map.set(id, order);
-        useActiveOrders.setState({ activeOrders: map });
-      });
-    }
-
-    expect(result.current.activeOrders.size).toBe(10);
-    
-    let error;
-    try {
-      act(() => {
-        result.current.createOrder();
-      });
-    } catch (e) {
-      error = e;
-    }
-    expect(error.message).toMatch(/Límite máximo/);
-  });
-
-  it('9. Recuperación de errores: si pauseOrder falla en BD, state se revierte/mantiene', async () => {
-    const { result } = renderHook(() => useActiveOrders());
-    let id1;
-    act(() => { id1 = result.current.createOrder(); });
-
-    act(() => {
-      const order = result.current.activeOrders.get(id1);
-      order.items = [{ id: 'p1', quantity: 1, price: 10 }];
-      const map = new Map(result.current.activeOrders);
-      map.set(id1, order);
-      useActiveOrders.setState({ activeOrders: map });
-    });
-
-    const mockStore = useOrderStore.getState();
-    mockStore.saveOrderAsOpen.mockResolvedValueOnce({ success: false, message: 'DB failure' });
-
-    let error;
-    try {
-      await act(async () => {
-        await result.current.pauseOrder(id1);
-      });
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error.message).toBe('DB failure');
-    // State debe mantenerse inalterado tras el error
-    expect(result.current.activeOrders.has(id1)).toBe(true);
-  });
-
-  it('10. cancelOrder: cancela solo la orden indicada y no vuelve a cargar como abierta', async () => {
-    const { result } = renderHook(() => useActiveOrders());
-    let id1;
-    let id2;
-
-    act(() => { id1 = result.current.createOrder(); });
-    act(() => {
-      const order = result.current.activeOrders.get(id1);
-      order.items = [{ id: 'p1', quantity: 1, price: 10 }];
-      const map = new Map(result.current.activeOrders);
-      map.set(id1, order);
-      useActiveOrders.setState({ activeOrders: map });
-    });
-    act(() => { id2 = result.current.createOrder(); });
-
-    dbMocks.salesMap.set(id1, {
-      id: id1,
+  it('loads an open sale into the unified session', async () => {
+    dbState.sales.set('sale-open', {
+      id: 'sale-open',
       status: 'open',
-      items: [{ id: 'p1', quantity: 1, price: 10 }]
+      items: [{ id: 'product-1', quantity: 2, price: 10 }],
+      tableData: 'Mesa 3',
+      timestamp: '2026-06-09T01:00:00.000Z',
+      total: 20
     });
 
-    await act(async () => {
-      await result.current.cancelOrder(id1);
+    const result = await useActiveOrders.getState().loadOpenOrder('sale-open');
+    const state = useActiveOrders.getState();
+
+    expect(result).toEqual({ success: true });
+    expect(state.currentOrderId).toBe('sale-open');
+    expect(selectCurrentOrder(state)).toMatchObject({
+      id: 'sale-open',
+      tableData: 'Mesa 3',
+      isSaved: true
     });
-
-    expect(result.current.activeOrders.has(id1)).toBe(false);
-    expect(result.current.activeOrders.has(id2)).toBe(true);
-    expect(result.current.activeOrders.size).toBe(1);
-    expect(dbMocks.salesMap.get(id1).status).toBe('cancelled');
-    expect(releaseCommittedStock).toHaveBeenCalledWith(
-      [{ id: 'p1', quantity: 1, price: 10 }],
-      { db, STORES }
-    );
-  });
-
-  it('removeOrder limpia la orden vendida y crea una nueva si era la ultima', async () => {
-    const { result } = renderHook(() => useActiveOrders());
-    let soldOrderId;
-    act(() => { soldOrderId = result.current.createOrder(); });
-
-    act(() => {
-      const order = result.current.activeOrders.get(soldOrderId);
-      const map = new Map(result.current.activeOrders);
-      map.set(soldOrderId, {
-        ...order,
-        items: [{ id: 'p1', quantity: 1, price: 10 }],
-        isLockedForCheckout: true
-      });
-      useActiveOrders.setState({ activeOrders: map, isCurrentOrderLocked: true });
-    });
-
-    const mockStore = useOrderStore.getState();
-
-    await act(async () => {
-      await result.current.removeOrder(soldOrderId);
-    });
-
-    expect(result.current.activeOrders.has(soldOrderId)).toBe(false);
-    expect(result.current.activeOrders.size).toBe(1);
-    expect(result.current.currentOrderId).toBe('sal-mock2');
-    expect(result.current.isCurrentOrderLocked).toBe(false);
-    expect(mockStore.clearSession).toHaveBeenCalled();
   });
 });

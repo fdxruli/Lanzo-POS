@@ -92,8 +92,31 @@ export const useStatsStore = create((set, get) => ({
     try {
       const db = await initDB();
       const productCostMap = await buildProductCostMap(db, STORES);
-      await rebuildDailyStatsCacheFromSales(db, STORES, productCostMap, Logger);
-      await get().loadStats(false);
+      const dailyStats = await rebuildDailyStatsCacheFromSales(db, STORES, productCostMap, Logger);
+      let totalRevenue = Money.init(0);
+      let totalNetProfit = Money.init(0);
+      let totalItemsSold = Money.init(0);
+      let totalOrders = 0;
+      let hasMissingCosts = false;
+
+      dailyStats.forEach((day) => {
+        totalRevenue = Money.add(totalRevenue, day.revenue || 0);
+        totalNetProfit = Money.add(totalNetProfit, day.profit || 0);
+        totalItemsSold = Money.add(totalItemsSold, day.itemsSold || 0);
+        totalOrders += day.orders || 0;
+        hasMissingCosts = hasMissingCosts || Boolean(day.hasMissingCosts);
+      });
+
+      set((state) => ({
+        stats: {
+          ...state.stats,
+          totalRevenue: totalRevenue.round(2).toNumber(),
+          totalNetProfit: totalNetProfit.round(2).toNumber(),
+          totalOrders,
+          totalItemsSold: Number(totalItemsSold.round(3).toString()),
+          hasMissingCosts
+        }
+      }));
     } catch (error) {
       Logger.error('Error reconstruyendo metricas financieras:', error);
       throw error;

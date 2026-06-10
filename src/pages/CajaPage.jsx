@@ -153,18 +153,30 @@ export default function CajaPage() {
 
       // Escape: Cerrar modales
       if (e.key === 'Escape' && !isInput) {
-        editInitialModal.close();
-        cashEntryModal.close();
-        cashExitModal.close();
-        cashAdjustmentModal.close();
-        setIsAuditOpen(false);
+        if (
+          editInitialModal.isOpen ||
+          cashEntryModal.isOpen ||
+          cashExitModal.isOpen ||
+          cashAdjustmentModal.isOpen ||
+          isAuditOpen
+        ) {
+          return;
+        }
         setShowResumen(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isBackupLoading, sincronizarEstadoCaja, editInitialModal, cashEntryModal, cashExitModal, cashAdjustmentModal]);
+  }, [
+    isBackupLoading,
+    sincronizarEstadoCaja,
+    editInitialModal,
+    cashEntryModal,
+    cashExitModal,
+    cashAdjustmentModal,
+    isAuditOpen
+  ]);
 
   // ============================================================
   // AUTO-REFRESH PERIÓDICO
@@ -358,11 +370,9 @@ export default function CajaPage() {
   // ============================================================
   if (isLoading) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center' }}>
+      <div className="caja-loading" role="status" aria-live="polite">
         <div className="spinner-loader"></div>
-        <p style={{ marginTop: '10px', color: 'var(--text-light)' }}>
-          Sincronizando caja inteligente...
-        </p>
+        <p>Sincronizando caja inteligente...</p>
       </div>
     );
   }

@@ -37,7 +37,7 @@ export function useProductCommon(initialData, config = {}) {
     // Calcular margen inicial si es edición
     useEffect(() => {
         if (initialData?.cost > 0 && initialData?.price > 0) {
-            const initialMargin = ((initialData.price - initialData.cost) / initialData.cost) * 100;
+            const initialMargin = ((initialData.price - initialData.cost) / initialData.price) * 100;
             setMargin(initialMargin.toFixed(1));
         }
     }, [initialData]);
@@ -85,8 +85,8 @@ export function useProductCommon(initialData, config = {}) {
         setCost(val);
         const numCost = parseFloat(val);
         const numPrice = parseFloat(price);
-        if (!isNaN(numCost) && numCost > 0 && !isNaN(numPrice)) {
-            const newMargin = ((numPrice - numCost) / numCost) * 100;
+        if (!isNaN(numCost) && numCost >= 0 && !isNaN(numPrice) && numPrice > 0) {
+            const newMargin = ((numPrice - numCost) / numPrice) * 100;
             setMargin(newMargin.toFixed(1));
         } else {
             setMargin('');
@@ -97,8 +97,8 @@ export function useProductCommon(initialData, config = {}) {
         setPrice(val);
         const numPrice = parseFloat(val);
         const numCost = parseFloat(cost);
-        if (!isNaN(numCost) && numCost > 0 && !isNaN(numPrice)) {
-            const newMargin = ((numPrice - numCost) / numCost) * 100;
+        if (!isNaN(numCost) && numCost >= 0 && !isNaN(numPrice) && numPrice > 0) {
+            const newMargin = ((numPrice - numCost) / numPrice) * 100;
             setMargin(newMargin.toFixed(1));
         }
     };
@@ -107,27 +107,59 @@ export function useProductCommon(initialData, config = {}) {
         setMargin(val);
         const numMargin = parseFloat(val);
         const numCost = parseFloat(cost);
-        if (!isNaN(numMargin) && !isNaN(numCost) && numCost > 0) {
-            const newPrice = numCost * (1 + (numMargin / 100));
+        if (!isNaN(numMargin) && !isNaN(numCost) && numCost >= 0) {
+            const safeMargin = numMargin >= 100 ? 99.9 : numMargin;
+            const newPrice = numCost / (1 - (safeMargin / 100));
             setPrice(newPrice.toFixed(2));
         }
     };
 
-    // --- HELPER PARA OBTENER DATOS LIMPIOS ---
-    const getCommonData = () => ({
-        name: name.trim(),
-        barcode: barcode.trim(),
-        description: description.trim(),
-        categoryId,
-        image: imageData,
-        location: storageLocation.trim(),
-        trackStock: doesTrackStock,
-        price: parseFloat(price) || 0,
-        cost: parseFloat(cost) || 0,
-        expirationMode,
-        shelfLifeValue: shelfLifeValue !== '' ? Number(shelfLifeValue) : null,
-        shelfLifeUnit
-    });
+        // --- HELPER PARA OBTENER DATOS LIMPIOS ---
+    const getCommonData = () => {
+        const usesShelfLife = expirationMode === 'SHELF_LIFE';
+
+        return {
+            name: name.trim(),
+            barcode: barcode.trim(),
+            description: description.trim(),
+            categoryId,
+            image: imageData,
+            location: storageLocation.trim(),
+            trackStock: doesTrackStock,
+            price: parseFloat(price) || 0,
+            cost: parseFloat(cost) || 0,
+            expirationMode,
+            shelfLifeValue: usesShelfLife && shelfLifeValue !== '' ? Number(shelfLifeValue) : null,
+            shelfLifeUnit: usesShelfLife ? shelfLifeUnit : null
+        };
+    };
+
+    /**
+     * Genera payload para actualización atómica con intención.
+     * Usado para cambios de expirationMode que requieren purga de lotes.
+     * 
+     * @param {string} previousMode - Modo anterior ('STRICT', 'SHELF_LIFE', 'NONE')
+     * @param {string} newMode - Nuevo modo ('STRICT', 'SHELF_LIFE', 'NONE')
+     * @returns {Object|null} Payload con _intent o null si no aplica
+     */
+    const buildExpirationModePayload = (previousMode, newMode) => {
+        // Solo requiere purga si cambia de STRICT/SHELF_LIFE a NONE
+        if ((previousMode === 'STRICT' || previousMode === 'SHELF_LIFE') && newMode === 'NONE') {
+            return {
+                expirationMode: 'NONE',
+                shelfLifeValue: null,
+                shelfLifeUnit: null,
+                _intent: 'PURGE_BATCHES'
+            };
+        }
+        
+        // Cambio normal sin purga
+        return {
+            expirationMode: newMode,
+            shelfLifeValue: newMode === 'SHELF_LIFE' ? Number(shelfLifeValue) || null : null,
+            shelfLifeUnit: newMode === 'SHELF_LIFE' ? shelfLifeUnit : null
+        };
+    };
 
     return {
         // States
@@ -152,12 +184,13 @@ export function useProductCommon(initialData, config = {}) {
         isSaving, setIsSaving,
         showSpecificData, setShowSpecificData,
         
-        // Handlers
+                // Handlers
         handleImageChange,
         handleBarcodeLookup,
         handleCostChange,
         handlePriceChange,
         handleMarginChange,
-        getCommonData
+        getCommonData,
+        buildExpirationModePayload
     };
 }

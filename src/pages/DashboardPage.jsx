@@ -310,6 +310,7 @@ export default function DashboardPage() {
           hasMoreWaste={hasMoreWaste}
           currentWastePageIndex={currentWastePageIndex}
           isWasteLoading={isWasteLoading}
+          activeRubros={features.activeRubros}
         />
       )}
     </>

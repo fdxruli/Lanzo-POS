@@ -1,11 +1,13 @@
 // src/hooks/useCheckoutFlow.js
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { useOrderStore } from '../../store/useOrderStore';
-import { broadcastDBChange } from '../../store/useProductStore';
+import { broadcastDBChange, useProductStore } from '../../store/useProductStore';
+import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 import { processSale } from '../../services/salesService';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
+
+const EMPTY_ORDER = [];
 
 /**
  * Hook para manejar el flujo de checkout (pago) del POS.
@@ -32,9 +34,9 @@ export function useCheckoutFlow({
     closeModal,
     closeMobileCart,
     refreshData,
-    checkHasOutOfStockProducts,
+    checkHasOutOfStockProducts: _checkHasOutOfStockProducts,
     fetchActiveTablesCount,
-    setToastMsg
+    setToastMsg: _setToastMsg
 }) {
     const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
     const features = useAppStore((state) => state.features);
@@ -45,21 +47,18 @@ export function useCheckoutFlow({
         abrirCaja: state.abrirCaja
     }));
 
-    const {
-        order,
-        customer,
-        activeOrderId,
-        clearSession,
-        getTotalPrice,
-        tableData,
-        saveOrderAsOpen
-    } = useOrderStore.getState();
-
-    const total = getTotalPrice();
+    const currentOrder = useActiveOrders(selectCurrentOrder);
+    const order = currentOrder?.items || EMPTY_ORDER;
+    const activeOrderId = useActiveOrders((state) => state.currentOrderId);
+    const total = currentOrder?.total || 0;
 
     // Usamos ref para evitar condiciones de carrera en doble-click
     const isSaleInProgressRef = useRef(false);
-    const { setOrder: setOrderState } = useOrderStore.getState();
+    const clearSession = useCallback(() => {
+        if (activeOrderId) {
+            void useActiveOrders.getState().removeOrder(activeOrderId);
+        }
+    }, [activeOrderId]);
 
     // ── Flujo de pago ──────────────────────────────────────────────
     const handleInitiateCheckout = useCallback(() => {
@@ -124,7 +123,7 @@ export function useCheckoutFlow({
                 order,
                 paymentData,
                 total,
-                allProducts: useOrderStore.getState().menu || [],
+                allProducts: useProductStore.getState().menu || [],
                 features,
                 companyName,
                 tempPrescriptionData: null, // Se pasa desde el componente padre

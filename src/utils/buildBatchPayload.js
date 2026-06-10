@@ -137,6 +137,13 @@ export const buildBatchPayload = (input) => {
         throw new Error("VALIDATION_ERROR: productId es obligatorio");
     }
 
+    // FASE 4: Guardia defensiva - modo NONE nunca debe tener fechas residuales
+    if (payload.trackingMode === 'NONE') {
+        if (payload.expiryDate !== null || payload.alertTargetDate !== null) {
+            throw new Error('INVARIANT_VIOLATION: Modo NONE con fechas residuales detectado');
+        }
+    }
+
     return payload;
 };
 

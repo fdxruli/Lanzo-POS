@@ -55,11 +55,9 @@ vi.mock('../../../services/db/dexie', () => ({
 }));
 
 let useActiveOrders;
-let useOrderStore;
 
 beforeAll(async () => {
   ({ useActiveOrders } = await import('../useActiveOrders'));
-  ({ useOrderStore } = await import('../../../store/useOrderStore'));
 });
 
 describe('useActiveOrders session recovery', () => {
@@ -68,11 +66,6 @@ describe('useActiveOrders session recovery', () => {
     dbState.openSales = [];
     localStorageMock.clear();
     vi.clearAllMocks();
-
-    useOrderStore.setState({
-      activeOrderId: null,
-      tableData: null
-    });
 
     useActiveOrders.setState({
       activeOrders: new Map(),

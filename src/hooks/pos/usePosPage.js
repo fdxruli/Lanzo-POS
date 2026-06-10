@@ -1,9 +1,7 @@
 // src/hooks/usePosPage.js
 import { useState, useCallback, useEffect } from 'react';
-import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/useAppStore';
-import { useOrderStore } from '../../store/useOrderStore';
-import { useActiveOrders } from './useActiveOrders';
+import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 import { useProductStore } from '../../store/useProductStore';
 import { useCaja } from '../useCaja';
 import { useInventoryMovement } from '../useInventoryMovement';
@@ -26,16 +24,12 @@ export function usePosPage() {
 
     // Suscripción reactiva: la barra flotante móvil y el checkout leen `order` / totales desde aquí.
     // Antes se usaba solo getState() en render, sin suscripción, y el padre no se re-renderizaba al agregar ítems.
-    const {
-        clearOrder,
-        clearSession,
-        getTotalPrice,
-        saveOrderAsOpen,
-        loadOpenOrder
-    } = useOrderStore();
+    const clearOrder = useActiveOrders((state) => state.clearOrder);
+    const getTotalPrice = useActiveOrders((state) => state.getTotalPrice);
+    const saveOrderAsOpen = useActiveOrders((state) => state.saveOrderAsOpen);
 
     const activeOrderId = useActiveOrders((state) => state.currentOrderId);
-    const currentOrder = useActiveOrders((state) => state.currentOrder);
+    const currentOrder = useActiveOrders(selectCurrentOrder);
     const order = currentOrder?.items || [];
     const customer = currentOrder?.customer || null;
     const tableData = currentOrder?.tableData || null;
@@ -69,7 +63,7 @@ export function usePosPage() {
 
         if (product) {
             playBeep(1000, 'sine');
-            useOrderStore.getState().addSmartItem(product);
+            useActiveOrders.getState().addSmartItem(product);
 
             if (product.saleType === 'bulk') {
                 showMessageModal(
@@ -109,8 +103,6 @@ export function usePosPage() {
         abrirCaja,
         asegurarCajaAbierta,
         saveOrderAsOpen,
-        loadOpenOrder,
-        clearSession,
         clearCurrentOrder,
         processBarcode,
         showToast
