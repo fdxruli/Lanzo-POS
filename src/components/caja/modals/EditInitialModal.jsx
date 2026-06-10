@@ -1,81 +1,69 @@
-// src/components/caja/modals/EditInitialModal.jsx
 import { useState, useEffect, useRef } from 'react';
-import { X } from 'lucide-react';
+import { Landmark, Save, X } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 import { showMessageModal } from '../../../services/utils';
 import Logger from '../../../services/Logger';
+import { useConfirmDiscard } from '../../../hooks/useConfirmDiscard';
 
-/**
- * Modal para corregir el fondo inicial de la caja
- *
- * @param {Object} props
- * @param {boolean} props.show - Controla la visibilidad del modal
- * @param {Function} props.onClose - Callback al cerrar el modal
- * @param {Function} props.onSave - Callback al guardar el nuevo monto (recibe string)
- * @param {string|number} props.currentAmount - Monto actual del fondo inicial
- * @param {boolean} [props.isDisabled=false] - Deshabilita la interacción
- */
 const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = false }) => {
   const [amount, setAmount] = useState('');
-  const [focusedElement, setFocusedElement] = useState(null);
   const inputRef = useRef(null);
+  const modalRef = useRef(null);
+  const focusedElementRef = useRef(null);
+  const initialAmount = currentAmount !== undefined ? String(currentAmount) : '';
+  const requestClose = useConfirmDiscard({
+    hasChanges: String(amount) !== initialAmount,
+    onClose,
+    isDisabled
+  });
 
-  // Inicializar al abrir el modal
   useEffect(() => {
     if (show) {
-      setFocusedElement(document.activeElement);
+      focusedElementRef.current = document.activeElement;
       setAmount(currentAmount !== undefined ? currentAmount : '');
     }
-  }, [show]);
+  }, [show, currentAmount]);
 
-  // Soporte para tecla ESC y focus trap
   useEffect(() => {
     if (!show || isDisabled) return;
 
-    const handleEsc = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        requestClose();
+        return;
+      }
 
-    // Focus trap: mantener el foco dentro del modal
-    const handleTabKey = (e) => {
-      if (e.key !== 'Tab') return;
+      if (event.key !== 'Tab') return;
 
-      const focusableElements = document.querySelectorAll(
-        '.modal[style*="display: flex"] input, .modal[style*="display: flex"] button, .modal[style*="display: flex"] textarea, .modal[style*="display: flex"] select'
+      const focusableElements = modalRef.current?.querySelectorAll(
+        'input:not(:disabled), button:not(:disabled), textarea:not(:disabled), select:not(:disabled)'
       );
 
-      if (focusableElements.length === 0) return;
+      if (!focusableElements?.length) return;
 
       const firstElement = focusableElements[0];
       const lastElement = focusableElements[focusableElements.length - 1];
 
-      if (e.shiftKey && document.activeElement === firstElement) {
-        e.preventDefault();
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
         lastElement.focus();
-      } else if (!e.shiftKey && document.activeElement === lastElement) {
-        e.preventDefault();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
         firstElement.focus();
       }
     };
 
-    document.addEventListener('keydown', handleEsc);
-    document.addEventListener('keydown', handleTabKey);
-
-    // Enfocar el input automáticamente
+    document.addEventListener('keydown', handleKeyDown);
     inputRef.current?.focus();
 
     return () => {
-      document.removeEventListener('keydown', handleEsc);
-      document.removeEventListener('keydown', handleTabKey);
-      // Restaurar foco al elemento original
-      if (focusedElement && focusedElement.focus) {
-        focusedElement.focus();
-      }
+      document.removeEventListener('keydown', handleKeyDown);
+      focusedElementRef.current?.focus?.();
     };
-  }, [show, onClose, isDisabled, focusedElement]);
+  }, [show, requestClose, isDisabled]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = (event) => {
+    event.preventDefault();
     if (isDisabled) return;
 
     try {
@@ -96,49 +84,67 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
 
   return (
     <div
-      className="modal"
-      style={{ display: 'flex', zIndex: 1200 }}
+      ref={modalRef}
+      className="modal caja-modal caja-modal--fund"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title-fondo-inicial"
     >
-      <div className="modal-content" style={{ maxWidth: '400px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 className="modal-title" style={{ margin: 0 }} id="modal-title-fondo-inicial">Ajustar Fondo Inicial</h3>
+      <div className="modal-content caja-modal__content caja-modal__content--compact">
+        <header className="caja-modal__header">
+          <span className="caja-modal__header-icon" aria-hidden="true">
+            <Landmark size={22} />
+          </span>
+          <div className="caja-modal__heading">
+            <p>Configuración del turno</p>
+            <h2 id="modal-title-fondo-inicial">Ajustar fondo inicial</h2>
+          </div>
           <button
             type="button"
-            onClick={onClose}
+            className="caja-modal__close"
+            onClick={requestClose}
             disabled={isDisabled}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)' }}
             aria-label="Cerrar modal"
           >
-            <X size={20} />
+            <X size={20} aria-hidden="true" />
           </button>
+        </header>
+
+        <div className="caja-modal__body">
+          <p className="caja-modal__intro">
+            Corrige el fondo calculado si el efectivo físico disponible al iniciar el turno es diferente.
+          </p>
+
+          <form onSubmit={handleSubmit}>
+            <div className="caja-modal__field">
+              <label htmlFor="fondo-real-input">Fondo real</label>
+              <div className="caja-modal__money-input">
+                <span aria-hidden="true">$</span>
+                <input
+                  ref={inputRef}
+                  id="fondo-real-input"
+                  type="number"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  step="0.01"
+                  min="0"
+                  disabled={isDisabled}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <footer className="caja-modal__actions">
+              <button type="button" className="caja-modal__button caja-modal__button--secondary" onClick={requestClose} disabled={isDisabled}>
+                Cancelar
+              </button>
+              <button type="submit" className="caja-modal__button caja-modal__button--primary" disabled={isDisabled}>
+                <Save size={18} aria-hidden="true" />
+                Actualizar
+              </button>
+            </footer>
+          </form>
         </div>
-        <p style={{ marginBottom: '15px', color: 'var(--text-light)', fontSize: '0.9rem' }}>
-          El sistema calculó este fondo automáticamente del turno anterior.
-          Si el dinero físico real es diferente, corrígelo aquí.
-        </p>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">Fondo Real ($)</label>
-            <input
-              type="number"
-              className="form-input"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-              autoFocus
-              step="0.01"
-              min="0"
-              disabled={isDisabled}
-              placeholder="0.00"
-            />
-          </div>
-          <div style={{ display: 'flex', gap: '10px', marginTop: '15px', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
-            <button type="submit" className="btn btn-save" disabled={isDisabled}>Actualizar</button>
-          </div>
-        </form>
       </div>
     </div>
   );

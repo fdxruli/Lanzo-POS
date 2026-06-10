@@ -13,7 +13,7 @@ import './Layout.css';
 import Logger from '../../services/Logger';
 import { GLOBAL_ALERT } from '../../config/botContext';
 import { lazy, Suspense } from 'react';
-import { useOrderStore } from '../../store/useOrderStore';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 const AssistantBot = lazy(() => import('../common/AssistantBot'));
 
 function Layout() {
@@ -21,7 +21,7 @@ function Layout() {
   const loadProducts = useProductStore(state => state.loadInitialProducts);
   const loadSales = useSalesStore(state => state.loadRecentSales);
 
-  const reconcileOrphanedOrders = useOrderStore(state => state.reconcileOrphanedOrders);
+  const reconcileOrphanedOrders = useActiveOrders(state => state.reconcileOrphanedOrders);
 
   const licenseDetails = useAppStore(state => state.licenseDetails);
   const initializeApp = useAppStore(state => state.initializeApp);
@@ -30,6 +30,7 @@ function Layout() {
 
   const { pathname } = useLocation();
   const isPosPage = pathname === '/';
+  const isAboutPage = pathname === '/acerca-de';
 
   useEffect(() => {
     // Restablece el scroll del documento principal
@@ -65,7 +66,7 @@ function Layout() {
     };
 
     initializeData();
-  }, []);
+  }, [loadProducts, loadSales, loadStats, reconcileOrphanedOrders]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -112,7 +113,7 @@ function Layout() {
       <Navbar />
 
       <div className={`content-wrapper ${isPosPage ? 'content-wrapper--pos' : ''}`.trim()}>
-        <Ticker />
+        {!isAboutPage && <Ticker />}
         <div className={`page-container ${isPosPage ? 'page-container-pos' : ''}`}>
           <Outlet />
         </div>

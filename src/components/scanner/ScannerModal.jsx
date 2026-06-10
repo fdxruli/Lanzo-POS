@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useOrderStore } from '../../store/useOrderStore';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { resolveWithCache } from '../../services/barcodeCache';
 import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import Logger from '../../services/Logger';
@@ -66,7 +66,7 @@ const CloseIcon = () => (
  * Aísla las actualizaciones de feedback para evitar re-renders del modal completo
  */
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
-  const addMultipleScannedProducts = useOrderStore(
+  const addMultipleScannedProducts = useActiveOrders(
     (state) => state.addMultipleScannedProducts
   );
 

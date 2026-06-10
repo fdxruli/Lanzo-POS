@@ -1,4 +1,6 @@
 // src/components/caja/modals/index.js
+import './CajaModals.css';
+
 export { default as EditInitialModal } from './EditInitialModal.jsx';
 export { default as CashAdjustmentModal } from './CashAdjustmentModal.jsx';
 export { default as CashEntryModal } from './CashEntryModal.jsx';

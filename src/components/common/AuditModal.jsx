@@ -1,6 +1,7 @@
 // src/components/common/AuditModal.jsx
 import { useState, useEffect } from 'react';
 import { Money } from '../../utils/moneyMath';
+import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
 import '../customers/AbonoModal.css';
 
 // Configuración de validación
@@ -17,6 +18,14 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
   const [comentarios, setComentarios] = useState('');
   const [step, setStep] = useState(1);
   const [showWarning, setShowWarning] = useState(false);
+  const requestClose = useConfirmDiscard({
+    hasChanges:
+      montoFisicoTotal.length > 0 ||
+      montoFondoSiguienteTurno.length > 0 ||
+      comentarios.length > 0,
+    onClose,
+    isDisabled: isProcessing
+  });
 
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
@@ -31,6 +40,17 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
     }
   }, [show]); // Solo resetear el modal cuando la prop 'show' cambia
   /* eslint-enable react-hooks/exhaustive-deps */
+
+  useEffect(() => {
+    if (!show || isProcessing) return;
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') requestClose();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [show, isProcessing, requestClose]);
 
   const fisicoSafe = Money.init(montoFisicoTotal || 0);
   const fondoSiguienteTurnoSafe = Money.init(montoFondoSiguienteTurno || 0);
@@ -165,7 +185,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
             )}
 
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-              <button type="button" className="btn btn-cancel" onClick={onClose} disabled={isProcessing}>Cancelar</button>
+              <button type="button" className="btn btn-cancel" onClick={requestClose} disabled={isProcessing}>Cancelar</button>
               <button
                 type="button"
                 className="btn btn-save"

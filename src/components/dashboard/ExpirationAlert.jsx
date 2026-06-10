@@ -106,13 +106,18 @@ export default function ExpirationAlert() {
         <div className="expiration-cards-grid">
           {alerts.slice(0, 10).map((item) => {
             const isExpired = item.daysRemaining < 0;
-            const isUrgent = item.daysRemaining <= 7 && !isExpired;
+            const isLegal = item.alertType === 'CADUCIDAD_LEGAL';
+            const isMerma = item.alertType === 'REVISION_MERMA';
             const isBatch = item.type === 'Lote';
+
+            let cardClass = 'card-normal';
+            if (isLegal || isExpired) cardClass = 'card-expired';
+            else if (isMerma || item.daysRemaining <= 7) cardClass = 'card-urgent';
 
             return (
               <div
                 key={item.id}
-                className={`expiration-card ${isExpired ? 'card-expired' : (isUrgent ? 'card-urgent' : 'card-normal')}`}
+                className={`expiration-card ${cardClass}`}
               >
                 {/* Card Header */}
                 <div className="card-header">
@@ -128,14 +133,17 @@ export default function ExpirationAlert() {
                       )}
                     </div>
                   </div>
-                  <div className={`card-status ${isExpired ? 'status-danger' : (isUrgent ? 'status-warning' : 'status-info')}`}>
+                  <div className={`card-status ${isLegal || isExpired ? 'status-danger' : (isMerma ? 'status-warning' : 'status-info')}`}>
                     {isExpired ? (
                       <>
                         <AlertTriangle size={14} />
                         <span>Vencido</span>
                       </>
                     ) : (
-                      <span>{item.daysRemaining} días</span>
+                      <>
+                        {isLegal && <AlertTriangle size={14} />}
+                        <span>{isLegal ? 'Caduca en: ' : (isMerma ? 'Revisión: ' : '')}{item.daysRemaining} días</span>
+                      </>
                     )}
                   </div>
                 </div>

@@ -1,16 +1,12 @@
-import { Lock, TrendingUp, TrendingDown } from 'lucide-react';
-import './CajaActionsCard.css';
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Keyboard,
+  LockKeyhole,
+  Scale,
+  Wallet
+} from 'lucide-react';
 
-/**
- * Tarjeta de acciones de control de efectivo
- *
- * @param {Object} props
- * @param {boolean} props.isBackupLoading - Estado de carga del backup
- * @param {Function} props.onCorte - Callback al hacer corte de caja
- * @param {Function} props.onEntrada - Callback al registrar entrada
- * @param {Function} props.onSalida - Callback al registrar salida
- * @param {Function} props.onAjuste - Callback al registrar ajuste
- */
 const CajaActionsCard = ({
   isBackupLoading,
   onCorte,
@@ -19,68 +15,71 @@ const CajaActionsCard = ({
   onAjuste
 }) => {
   return (
-    <div className="caja-card actions-card">
-      <h3 className="actions-title">Control de Efectivo</h3>
+    <section className="caja-card actions-card" aria-labelledby="cash-actions-title">
+      <div className="actions-heading">
+        <span className="actions-heading-icon" aria-hidden="true">
+          <Wallet size={20} />
+        </span>
+        <div>
+          <p className="section-eyebrow">Operación del turno</p>
+          <h3 id="cash-actions-title" className="actions-title">Control de efectivo</h3>
+        </div>
+      </div>
+
       <div className="actions-grid">
-        {/* Botón Corte - destacado, ocupa todo el ancho */}
-        <button
-          className="btn btn-audit"
-          onClick={onCorte}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-        >
-          <Lock size={20} /> <span>Corte de Caja (Cerrar Turno)</span>
+        <button className="btn btn-audit" onClick={onCorte}>
+          <span className="action-button-icon" aria-hidden="true">
+            <LockKeyhole size={21} />
+          </span>
+          <span className="action-button-copy">
+            <strong>Corte de caja</strong>
+            <small>Auditar y cerrar turno</small>
+          </span>
         </button>
 
-        {/* Fila de Entrada y Salida - lado a lado */}
         <div className="actions-row">
           <button
             className="btn btn-entry"
             onClick={onEntrada}
-            style={{ gap: '6px' }}
             disabled={isBackupLoading}
           >
-            <TrendingUp size={18} /> <span>Entrada</span>
+            <ArrowDownToLine size={20} aria-hidden="true" />
+            <span>Entrada</span>
           </button>
           <button
             className="btn btn-exit"
             onClick={onSalida}
-            style={{ gap: '6px' }}
             disabled={isBackupLoading}
           >
-            <TrendingDown size={18} /> <span>Salida</span>
+            <ArrowUpFromLine size={20} aria-hidden="true" />
+            <span>Salida</span>
           </button>
         </div>
 
-        {/* Botón Ajuste - secundario */}
         <button
           className="btn btn-adjust"
           onClick={onAjuste}
           disabled={isBackupLoading}
-          title="Registrar ajuste auditable por diferencia fisica"
+          title="Registrar ajuste auditable por diferencia física"
         >
-          Ajuste de Caja
+          <Scale size={19} aria-hidden="true" />
+          <span>Ajuste de caja</span>
         </button>
       </div>
 
-      {/* Ayuda de Keyboard Shortcuts */}
       <div className="shortcuts-help">
-        <p>⌨️ Atajos de Teclado:</p>
+        <p>
+          <Keyboard size={15} aria-hidden="true" />
+          Atajos de teclado
+        </p>
         <div className="shortcuts-grid">
-          <span>
-            <kbd>Alt+R</kbd> <span>Refrescar</span>
-          </span>
-          <span>
-            <kbd>Ctrl+Shift+E</kbd> <span>Entrada</span>
-          </span>
-          <span>
-            <kbd>Ctrl+Shift+S</kbd> <span>Salida</span>
-          </span>
-          <span>
-            <kbd>ESC</kbd> <span>Cerrar modal</span>
-          </span>
+          <span><kbd>Alt+R</kbd><span>Refrescar</span></span>
+          <span><kbd>Ctrl+Shift+E</kbd><span>Entrada</span></span>
+          <span><kbd>Ctrl+Shift+S</kbd><span>Salida</span></span>
+          <span><kbd>ESC</kbd><span>Cerrar modal</span></span>
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 

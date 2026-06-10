@@ -1,32 +1,31 @@
-// src/components/caja/sections/CajaMovementsList.jsx
 import { useState, useMemo } from 'react';
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  CircleDollarSign,
+  ListFilter,
+  ReceiptText,
+  Search,
+  SlidersHorizontal,
+  WalletCards
+} from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 
-/**
- * Lista de movimientos del turno con filtros y búsqueda encapsulada
- *
- * @param {Object} props
- * @param {Array} props.movimientos - Array de movimientos de caja
- * @param {string} props.initialFilterType - Tipo de filtro inicial ('todos', 'entrada', 'salida', 'ajuste')
- */
 const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
-  // Estados locales de UI - NO contaminan el orquestador global
   const [filtroTipo, setFiltroTipo] = useState(initialFilterType);
   const [busqueda, setBusqueda] = useState('');
 
-  // Memoización de movimientos filtrados
   const movimientosRender = useMemo(() => {
     let filtrados = movimientos;
 
-    // Filtro por tipo
     if (filtroTipo !== 'todos') {
       if (filtroTipo === 'entrada') {
         filtrados = filtrados.filter(m =>
-          m.tipo === 'entrada' || m.tipo === 'ajuste_entrada'
+          ['entrada', 'ajuste_entrada', 'venta', 'abono', 'venta_tarjeta'].includes(m.tipo)
         );
       } else if (filtroTipo === 'salida') {
         filtrados = filtrados.filter(m =>
-          m.tipo === 'salida' || m.tipo === 'ajuste_salida'
+          ['salida', 'ajuste_salida', 'venta_eliminada', 'merma'].includes(m.tipo)
         );
       } else if (filtroTipo === 'ajuste') {
         filtrados = filtrados.filter(m =>
@@ -35,7 +34,6 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
       }
     }
 
-    // Búsqueda por concepto
     if (busqueda.trim()) {
       const busquedaLower = busqueda.toLowerCase().trim();
       filtrados = filtrados.filter(m =>
@@ -43,24 +41,35 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
       );
     }
 
-    // Transformar para render
     return filtrados.map(mov => {
-      // CÓDIGO CORREGIDO
-      const esEntrada = mov.tipo === 'entrada' || mov.tipo === 'ajuste_entrada';
-      const esAjuste = mov.tipo === 'ajuste_entrada' || mov.tipo === 'ajuste_salida';
-      const colorMov = esEntrada ? 'var(--success-color)' : 'var(--error-color)';
-      const montoFormatted = Money.toNumber(mov.monto).toFixed(2);
-      const horaFormatted = new Date(mov.fecha).toLocaleTimeString();
+      const esEntrada = ['entrada', 'ajuste_entrada', 'venta', 'abono'].includes(mov.tipo);
+      const esSalida = ['salida', 'ajuste_salida'].includes(mov.tipo);
+      const esAjuste = ['ajuste_entrada', 'ajuste_salida'].includes(mov.tipo);
+      const esVentaTarjeta = mov.tipo === 'venta_tarjeta';
+      const esEliminacion = ['venta_eliminada', 'merma'].includes(mov.tipo);
+
+      let prefijo = '';
+      let tone = 'neutral';
+      if (esEntrada) { tone = 'positive'; prefijo = '+'; }
+      else if (esSalida) { tone = 'negative'; prefijo = '-'; }
+      else if (esEliminacion) { tone = 'warning'; prefijo = '-'; }
+      else if (esVentaTarjeta) { tone = 'card'; prefijo = '+'; }
+
+      let badge = '';
+      if (esAjuste) badge = 'Ajuste';
+      else if (esVentaTarjeta) badge = 'Tarjeta/Transf.';
+      else if (mov.tipo === 'venta_eliminada') badge = 'Venta eliminada';
+      else if (mov.tipo === 'merma') badge = 'Merma';
+      else if (mov.tipo === 'venta') badge = 'Venta';
+      else if (mov.tipo === 'abono') badge = 'Abono';
 
       return {
         id: mov.id,
-        esEntrada,
-        esAjuste,
-        colorMov,
         concepto: esAjuste ? `[Ajuste] ${mov.concepto}` : mov.concepto,
-        monto: `${esEntrada ? '+' : '-'}$${montoFormatted}`,
-        hora: horaFormatted,
-        tipo: mov.tipo
+        monto: `${prefijo}$${Money.toNumber(mov.monto).toFixed(2)}`,
+        hora: new Date(mov.fecha).toLocaleTimeString(),
+        badge,
+        tone
       };
     });
   }, [movimientos, filtroTipo, busqueda]);
@@ -73,45 +82,53 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
   const hayFiltrosActivos = filtroTipo !== 'todos' || busqueda;
 
   return (
-    <div id="caja-movements-container" className="caja-card">
+    <section id="caja-movements-container" className="caja-card" aria-labelledby="movements-title">
       <div className="section-header">
-        <h3 className="section-title">Movimientos del Turno</h3>
+        <div className="section-heading">
+          <span className="section-heading-icon" aria-hidden="true">
+            <ReceiptText size={19} />
+          </span>
+          <div>
+            <p className="section-eyebrow">Actividad reciente</p>
+            <h3 id="movements-title" className="section-title">Movimientos del turno</h3>
+          </div>
+        </div>
         <span className="items-count">
           {movimientosRender.length} de {movimientos.length}
         </span>
       </div>
 
-      {/* Filtros y Búsqueda */}
       <div className="filters-bar">
-        {/* Filtro por tipo */}
-        <select
-          value={filtroTipo}
-          onChange={(e) => setFiltroTipo(e.target.value)}
-          className="filter-select"
-          aria-label="Filtrar por tipo de movimiento"
-        >
-          <option value="todos">Todos</option>
-          <option value="entrada">Entradas</option>
-          <option value="salida">Salidas</option>
-          <option value="ajuste">Ajustes</option>
-        </select>
-
-        {/* Búsqueda */}
-        <input
-          type="text"
-          placeholder="Buscar por concepto..."
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          className="search-input"
-          aria-label="Buscar movimientos por concepto"
-        />
-
-        {/* Botón limpiar filtros */}
-        {hayFiltrosActivos && (
-          <button
-            onClick={handleLimpiarFiltros}
-            className="btn-clear-filters"
+        <label className="filter-control">
+          <ListFilter size={17} aria-hidden="true" />
+          <select
+            value={filtroTipo}
+            onChange={(e) => setFiltroTipo(e.target.value)}
+            className="filter-select"
+            aria-label="Filtrar por tipo de movimiento"
           >
+            <option value="todos">Todos</option>
+            <option value="entrada">Entradas</option>
+            <option value="salida">Salidas</option>
+            <option value="ajuste">Ajustes</option>
+          </select>
+        </label>
+
+        <label className="search-control">
+          <Search size={17} aria-hidden="true" />
+          <input
+            type="text"
+            placeholder="Buscar por concepto..."
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            className="search-input"
+            aria-label="Buscar movimientos por concepto"
+          />
+        </label>
+
+        {hayFiltrosActivos && (
+          <button onClick={handleLimpiarFiltros} className="btn-clear-filters">
+            <SlidersHorizontal size={16} aria-hidden="true" />
             Limpiar
           </button>
         )}
@@ -120,7 +137,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
       <div id="caja-movements-list" className="movements-list">
         {movimientosRender.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">📋</div>
+            <ReceiptText className="empty-state-icon" size={30} aria-hidden="true" />
             <p>
               {movimientos.length === 0
                 ? 'No hay movimientos registrados.'
@@ -129,28 +146,31 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
           </div>
         ) : (
           movimientosRender.map(mov => (
-            <div
-              key={mov.id}
-              className="movement-item"
-              style={{ borderLeftColor: mov.colorMov }}
-            >
+            <div key={mov.id} className={`movement-item movement-${mov.tone}`}>
+              <span className="movement-icon" aria-hidden="true">
+                {mov.tone === 'negative' || mov.tone === 'warning' ? (
+                  <ArrowUpRight size={18} />
+                ) : mov.tone === 'card' ? (
+                  <WalletCards size={18} />
+                ) : mov.tone === 'positive' ? (
+                  <ArrowDownLeft size={18} />
+                ) : (
+                  <CircleDollarSign size={18} />
+                )}
+              </span>
               <div className="movement-header">
                 <span className="movement-title">{mov.concepto}</span>
-                <span className="movement-amount" style={{ color: mov.colorMov }}>
-                  {mov.monto}
-                </span>
-              </div>
-              <div className="movement-details">
-                <small>{mov.hora}</small>
-                {mov.esAjuste && (
-                  <span className="status-badge">Ajuste</span>
-                )}
+                <span className="movement-amount">{mov.monto}</span>
+                <div className="movement-details">
+                  <small>{mov.hora}</small>
+                  {mov.badge && <span className="movement-badge">{mov.badge}</span>}
+                </div>
               </div>
             </div>
           ))
         )}
       </div>
-    </div>
+    </section>
   );
 };
 

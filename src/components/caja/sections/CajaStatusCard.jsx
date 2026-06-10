@@ -1,26 +1,16 @@
-// src/components/caja/sections/CajaStatusCard.jsx
-import { Pencil, Save, Printer } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  Clock3,
+  FileDown,
+  Pencil,
+  Printer,
+  Save,
+  WalletCards
+} from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 
-/**
- * Tarjeta de estado de la caja - Muestra información del turno activo y controles principales
- *
- * @param {Object} props
- * @param {Object} props.cajaActual - Datos de la caja actual
- * @param {Object} props.totalesTurno - Totales acumulados del turno
- * @param {boolean} props.excesoLiquidez - Alerta de exceso de liquidez
- * @param {number} props.porcentajeLiquidez - Porcentaje del límite alcanzado
- * @param {Date|null} props.lastSyncTime - Última sincronización
- * @param {Date|null} props.lastActivity - Última actividad del usuario
- * @param {boolean} props.isActive - Si el usuario está activo ahora
- * @param {Object} props.CAJA_CONFIG - Configuración de caja (MAX_CASH_THRESHOLD)
- * @param {boolean} props.isBackupLoading - Estado de carga del backup
- * @param {Function} props.onEditarFondoInicial - Callback al editar fondo inicial
- * @param {Function} props.onBackup - Callback al hacer backup
- * @param {Function} props.onReporte - Callback al descargar reporte CSV
- * @param {Function} props.onResumen - Callback al ver resumen estadístico
- * @param {Function} props.onImprimir - Callback al imprimir
- */
 const CajaStatusCard = ({
   cajaActual,
   totalesTurno,
@@ -37,7 +27,6 @@ const CajaStatusCard = ({
   onResumen,
   onImprimir
 }) => {
-  // Cálculo del total actual en tiempo real ESTRICTO
   let totalEnCajaSafe = Money.init(0);
   let entradasTotalesSafe = Money.init(0);
 
@@ -46,217 +35,203 @@ const CajaStatusCard = ({
     const ventas = Money.init(totalesTurno.ventasContado || 0);
     const abonos = Money.init(totalesTurno.abonosFiado || 0);
     entradasTotalesSafe = Money.init(cajaActual.entradas_efectivo || 0);
-
     const salidas = Money.init(cajaActual.salidas_efectivo || 0);
 
     const subtotalIngresos = Money.add(inicial, ventas);
     const subtotalExtras = Money.add(abonos, entradasTotalesSafe);
     const ingresosTotales = Money.add(subtotalIngresos, subtotalExtras);
-
     totalEnCajaSafe = Money.subtract(ingresosTotales, salidas);
   }
 
+  const liquidityLevel = porcentajeLiquidez >= 100
+    ? 'danger'
+    : porcentajeLiquidez >= 70
+      ? 'warning'
+      : 'safe';
+  const maxCashThreshold = CAJA_CONFIG?.MAX_CASH_THRESHOLD || 0;
+
   return (
-    <div className="caja-card status-card">
-      <div className="status-header">
-        {/* Columna izquierda: Badges + Meta + Liquidez */}
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-          {/* Badges de estado */}
+    <section className="caja-card status-card" aria-labelledby="cash-total-title">
+      <div className="status-ribbon">
+        <div className="status-ribbon-main">
           <div className="status-badges">
-            <span className="status-badge open">Turno Activo</span>
+            <span className="status-badge open">
+              <span className="status-badge-dot" aria-hidden="true" />
+              Turno activo
+            </span>
             {excesoLiquidez && (
               <span
-                className="status-badge"
-                style={{ backgroundColor: '#FCA5A5', color: '#991B1B' }}
-                title={`Excede el límite sugerido de $${CAJA_CONFIG?.MAX_CASH_THRESHOLD.toLocaleString()}`}
+                className="status-badge danger"
+                title={`Excede el límite sugerido de $${maxCashThreshold.toLocaleString()}`}
               >
-                ⚠️ Exceso Liquidez
+                <AlertTriangle size={14} aria-hidden="true" />
+                Exceso de liquidez
               </span>
             )}
             {!excesoLiquidez && porcentajeLiquidez >= 70 && (
               <span
-                className="status-badge"
-                style={{ backgroundColor: '#FCD34D', color: '#92400E' }}
+                className="status-badge warning"
                 title={`Alcanzaste el ${porcentajeLiquidez.toFixed(0)}% del límite sugerido`}
               >
-                ⚠️ {porcentajeLiquidez.toFixed(0)}% del límite
+                <AlertTriangle size={14} aria-hidden="true" />
+                {porcentajeLiquidez.toFixed(0)}% del límite
               </span>
             )}
           </div>
 
-          {/* Metadata (fecha inicio, sync, actividad) */}
           <div className="status-meta">
-            <small>
+            <span>
+              <Clock3 size={14} aria-hidden="true" />
               Inicio: {cajaActual?.fecha_apertura ? new Date(cajaActual.fecha_apertura).toLocaleString() : '...'}
-            </small>
+            </span>
             {lastSyncTime && (
-              <small>
+              <span>
+                <Activity size={14} aria-hidden="true" />
                 Sync: {lastSyncTime.toLocaleTimeString()}
-              </small>
+              </span>
             )}
             {lastActivity && (
-              <div className="activity-indicator">
-                <div className={`activity-dot ${isActive ? 'active' : ''}`} />
-                <span>{isActive ? 'Activo ahora' : `Actividad: ${lastActivity.toLocaleTimeString()}`}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Barra de progreso de liquidez */}
-          <div className="liquidity-progress">
-            <div className="liquidity-header">
-              <span>Uso del límite</span>
-              <span style={{
-                color: porcentajeLiquidez >= 100 ? '#DC2626' : porcentajeLiquidez >= 70 ? '#F59E0B' : '#10B981'
-              }}>
-                {porcentajeLiquidez.toFixed(1)}% / ${CAJA_CONFIG?.MAX_CASH_THRESHOLD.toLocaleString()}
+              <span className="activity-indicator">
+                <span className={`activity-dot ${isActive ? 'active' : ''}`} aria-hidden="true" />
+                {isActive ? 'Activo ahora' : `Actividad: ${lastActivity.toLocaleTimeString()}`}
               </span>
-            </div>
-            <div className="liquidity-bar">
-              <div
-                className={`liquidity-fill ${porcentajeLiquidez >= 100 ? 'danger' : porcentajeLiquidez >= 70 ? 'warning' : ''}`}
-                style={{ width: `${Math.min(porcentajeLiquidez, 100)}%` }}
-              />
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Botones de acción - Grid 2x2 en móvil, 4 en línea en desktop */}
-        <div className="status-actions">
+        <div className="status-utilities" aria-label="Utilidades de caja">
           <button
-            className="btn"
+            className="utility-button utility-button-primary"
             onClick={onBackup}
             disabled={isBackupLoading}
             title="Guardar copia de seguridad ahora"
-            style={{
-              backgroundColor: 'var(--card-background-color)',
-              border: '1px solid var(--primary-color)',
-              color: 'var(--primary-color)'
-            }}
           >
             {isBackupLoading ? (
-              <><span className="spinner-small"></span> <span>Respaldo</span></>
+              <><span className="spinner-small" aria-hidden="true" /><span>Respaldo</span></>
             ) : (
-              <><Save size={18} /> <span>Respaldo</span></>
+              <><Save size={17} aria-hidden="true" /><span>Respaldo</span></>
             )}
           </button>
-
           <button
-            className="btn"
+            className="utility-button"
             onClick={onReporte}
             disabled={isBackupLoading || !onReporte}
             title="Descargar reporte del turno en CSV"
-            style={{
-              backgroundColor: 'var(--success-color)',
-              color: 'white',
-              border: 'none'
-            }}
           >
-            📊 Reporte
+            <FileDown size={17} aria-hidden="true" />
+            <span>Reporte</span>
           </button>
-
           <button
-            className="btn"
+            className="utility-button"
             onClick={onResumen}
             disabled={isBackupLoading || !onResumen}
             title="Ver resumen estadístico del turno"
-            style={{
-              backgroundColor: '#6366F1',
-              color: 'white',
-              border: 'none'
-            }}
           >
-            📈 Resumen
+            <BarChart3 size={17} aria-hidden="true" />
+            <span>Resumen</span>
           </button>
-
           <button
-            className="btn"
+            className="utility-button"
             onClick={onImprimir}
             disabled={isBackupLoading}
             title="Imprimir vista actual"
-            style={{
-              backgroundColor: '#64748B',
-              color: 'white',
-              border: 'none'
-            }}
           >
-            <Printer size={18} /> Imprimir
+            <Printer size={17} aria-hidden="true" />
+            <span>Imprimir</span>
           </button>
         </div>
       </div>
 
-      <div className="status-body">
-        <div className="info-row">
-          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            Fondo Inicial
+      <div className="cash-hero">
+        <div className="cash-hero-heading">
+          <span className="cash-hero-icon" aria-hidden="true">
+            <WalletCards size={22} />
+          </span>
+          <div>
+            <p className="cash-hero-eyebrow">Disponible en el turno</p>
+            <h2 id="cash-total-title">Total en Caja</h2>
+          </div>
+        </div>
+
+        <strong className="cash-hero-amount">
+          ${Money.toNumber(totalEnCajaSafe).toFixed(2)}
+        </strong>
+
+        <div className="liquidity-progress">
+          <div className="liquidity-header">
+            <span>Liquidez acumulada</span>
+            <strong className={`liquidity-value ${liquidityLevel}`}>
+              {porcentajeLiquidez.toFixed(1)}%
+            </strong>
+          </div>
+          <div
+            className="liquidity-bar"
+            role="progressbar"
+            aria-label="Porcentaje del límite de efectivo"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={Math.min(Math.round(porcentajeLiquidez), 100)}
+          >
+            <div
+              className={`liquidity-fill ${liquidityLevel}`}
+              style={{ '--liquidity-width': `${Math.min(porcentajeLiquidez, 100)}%` }}
+            />
+          </div>
+          <p className="liquidity-limit">
+            Límite sugerido: ${maxCashThreshold.toLocaleString()}
+          </p>
+        </div>
+      </div>
+
+      <div className="cash-breakdown" aria-label="Desglose del efectivo">
+        <div className="cash-metric">
+          <div className="cash-metric-label">
+            <span>Fondo inicial</span>
             <button
               className="btn-icon-small"
               onClick={onEditarFondoInicial}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--text-light)',
-                padding: '0',
-                display: 'flex',
-                alignItems: 'center'
-              }}
               title="Corregir fondo inicial calculado"
+              aria-label="Editar fondo inicial"
             >
-              <Pencil size={16} />
+              <Pencil size={15} aria-hidden="true" />
             </button>
-          </span>
-          <span className="amount neutral">
+          </div>
+          <strong className="amount neutral">
             ${Money.toNumber(cajaActual?.monto_inicial || 0).toFixed(2)}
-          </span>
+          </strong>
         </div>
 
-        <div className="info-row">
-          <span>Ventas (Efectivo)</span>
-          <span className="amount success">
+        <div className="cash-metric">
+          <span className="cash-metric-label">Ventas en efectivo</span>
+          <strong className="amount positive">
             + ${Money.toNumber(totalesTurno.ventasContado || 0).toFixed(2)}
-          </span>
+          </strong>
         </div>
 
         {Money.init(totalesTurno.abonosFiado || 0).gt(0) && (
-          <div className="info-row">
-            <span>Abonos (Créditos)</span>
-            <span className="amount warning">
+          <div className="cash-metric">
+            <span className="cash-metric-label">Abonos</span>
+            <strong className="amount warning">
               + ${Money.toNumber(totalesTurno.abonosFiado || 0).toFixed(2)}
-            </span>
+            </strong>
           </div>
         )}
 
-        <div className="info-row">
-          <span>Entradas Extras</span>
-          <span className="amount positive">
+        <div className="cash-metric">
+          <span className="cash-metric-label">Entradas</span>
+          <strong className="amount positive">
             + ${Money.toNumber(entradasTotalesSafe).toFixed(2)}
-          </span>
+          </strong>
         </div>
 
-        <div className="info-row">
-          <span>Salidas (Gastos)</span>
-          <span className="amount negative">
+        <div className="cash-metric">
+          <span className="cash-metric-label">Salidas</span>
+          <strong className="amount negative">
             - ${Money.toNumber(cajaActual?.salidas_efectivo || 0).toFixed(2)}
-          </span>
-        </div>
-
-        <div
-          className="info-row"
-          style={{
-            borderTop: '2px solid #eee',
-            marginTop: '10px',
-            paddingTop: '10px',
-            borderBottom: 'none'
-          }}
-        >
-          <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Total en Caja</span>
-          <span className="amount" style={{ fontSize: '1.4rem', color: 'var(--primary-color)' }}>
-            ${Money.toNumber(totalEnCajaSafe).toFixed(2)}
-          </span>
+          </strong>
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 

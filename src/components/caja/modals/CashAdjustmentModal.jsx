@@ -1,18 +1,15 @@
-// src/components/caja/modals/CashAdjustmentModal.jsx
 import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  CheckCircle2,
+  Info,
+  Scale,
+  X
+} from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import { useConfirmDiscard } from '../../../hooks/useConfirmDiscard';
 
-/**
- * Modal para registrar ajustes de caja por diferencias físicas
- *
- * @param {Object} props
- * @param {boolean} props.show - Controla la visibilidad del modal
- * @param {Function} props.onClose - Callback al cerrar el modal
- * @param {Function} props.onConfirm - Callback al confirmar (recibe montoFisicoReal, comentario)
- * @param {string|number} props.totalTeorico - Valor teórico actual de la caja (calculado por el padre)
- * @param {boolean} [props.isDisabled=false] - Deshabilita la interacción
- */
 const CashAdjustmentModal = ({
   show,
   onClose,
@@ -20,35 +17,31 @@ const CashAdjustmentModal = ({
   totalTeorico,
   isDisabled = false
 }) => {
-  // Usamos el estado 'show' como key para forzar el reseteo del estado interno
-  // Esto evita llamar setState dentro de useEffect
   const [montoFisicoReal, setMontoFisicoReal] = useState('');
   const [comentario, setComentario] = useState('');
   const [mostrarConfirmacionCero, setMostrarConfirmacionCero] = useState(false);
+  const requestClose = useConfirmDiscard({
+    hasChanges: montoFisicoReal.length > 0 || comentario.length > 0,
+    onClose,
+    isDisabled
+  });
 
-  // Soporte para tecla ESC
   useEffect(() => {
     if (!show || isDisabled) return;
 
-    const handleEsc = (e) => {
-      if (e.key === 'Escape') onClose();
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') requestClose();
     };
 
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
-  }, [show, onClose, isDisabled]);
+  }, [show, requestClose, isDisabled]);
 
-  // Handler para resetear el estado cuando se abre el modal
-  const handleOpen = () => {
-    setMontoFisicoReal('');
-    setComentario('');
-    setMostrarConfirmacionCero(false);
-  };
-
-  // Efecto para inicializar al abrir (patrón aceptado para modales)
   useEffect(() => {
     if (show) {
-      handleOpen();
+      setMontoFisicoReal('');
+      setComentario('');
+      setMostrarConfirmacionCero(false);
     }
   }, [show]);
 
@@ -62,12 +55,16 @@ const CashAdjustmentModal = ({
   const diferenciaEsNegativa = diferenciaSafe.lt(0);
   const noHayDiferencia = !diferenciaEsPositiva && !diferenciaEsNegativa;
   const puedeEnviar = montoFisicoReal && fisicoSafe.gte(0) && comentarioLimpio.length > 0;
+  const differenceTone = diferenciaEsPositiva
+    ? 'positive'
+    : diferenciaEsNegativa
+      ? 'negative'
+      : 'neutral';
 
   const handleSubmit = (event) => {
     event.preventDefault();
     if (isDisabled) return;
 
-    // Si no hay diferencia, mostrar confirmación antes de registrar
     if (noHayDiferencia && !mostrarConfirmacionCero) {
       setMostrarConfirmacionCero(true);
       return;
@@ -76,147 +73,150 @@ const CashAdjustmentModal = ({
     onConfirm(Money.toExactString(fisicoSafe), comentarioLimpio);
   };
 
-  const handleCancelarConfirmacionCero = () => {
-    setMostrarConfirmacionCero(false);
-  };
-
   return (
     <div
-      className="modal"
-      style={{ display: 'flex', zIndex: 1200 }}
+      className="modal caja-modal caja-modal--adjustment"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title-ajuste"
     >
-      <div className="modal-content" style={{ maxWidth: '500px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 className="modal-title" style={{ margin: 0 }} id="modal-title-ajuste">Ajuste de Caja</h3>
+      <div className="modal-content caja-modal__content caja-modal__content--medium">
+        <header className="caja-modal__header">
+          <span className="caja-modal__header-icon" aria-hidden="true">
+            <Scale size={22} />
+          </span>
+          <div className="caja-modal__heading">
+            <p>Conciliación auditable</p>
+            <h2 id="modal-title-ajuste">Ajuste de caja</h2>
+          </div>
           <button
             type="button"
-            onClick={onClose}
+            className="caja-modal__close"
+            onClick={requestClose}
             disabled={isDisabled}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)' }}
             aria-label="Cerrar modal"
           >
-            <X size={20} />
+            <X size={20} aria-hidden="true" />
           </button>
-        </div>
+        </header>
 
-        <p style={{ marginBottom: '12px', color: 'var(--text-light)', fontSize: '0.9rem' }}>
-          Ingresa el monto físico real para generar un ajuste auditable contra el total teórico.
-        </p>
+        <div className="caja-modal__body">
+          <p className="caja-modal__intro">
+            Compara el efectivo físico contra el total teórico y documenta cualquier diferencia.
+          </p>
 
-        <div style={{ marginBottom: '12px', padding: '10px', background: 'var(--light-background)', borderRadius: '8px' }}>
-          <strong>Total teórico actual:</strong> ${Money.toNumber(teoricoSafe).toFixed(2)}
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">Monto Físico Real ($)</label>
-            <input
-              type="number"
-              className="form-input"
-              value={montoFisicoReal}
-              onChange={(e) => {
-                setMontoFisicoReal(e.target.value);
-                setMostrarConfirmacionCero(false);
-              }}
-              step="0.01"
-              min="0"
-              required
-              autoFocus
-              disabled={isDisabled}
-              placeholder="0.00"
-            />
+          <div className="caja-modal__reference">
+            <span>Total teórico actual</span>
+            <strong>${Money.toNumber(teoricoSafe).toFixed(2)}</strong>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Comentario (obligatorio)</label>
-            <textarea
-              className="form-textarea"
-              value={comentario}
-              onChange={(e) => setComentario(e.target.value)}
-              placeholder="Ej: Corrección por cambio mal dado en venta #123"
-              required
-              disabled={isDisabled}
-              rows={3}
-            />
-          </div>
-
-          <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#f8fafc' }}>
-            <strong>Diferencia:</strong>{' '}
-            <span style={{
-              color: diferenciaEsPositiva ? 'var(--success-color)' : (diferenciaEsNegativa ? 'var(--error-color)' : 'var(--text-dark)'),
-              fontSize: '1.1rem',
-              fontWeight: 'bold'
-            }}>
-              {diferenciaEsPositiva ? '+' : ''}{diferenciaEsNegativa ? '-' : ''}${Money.toNumber(diferenciaSafe.abs()).toFixed(2)}
-            </span>
-            {diferenciaEsPositiva && (
-              <div style={{ color: 'var(--success-color)', marginTop: '4px', fontSize: '0.9rem' }}>
-                ↑ Se registrará como <strong>ajuste_entrada</strong>
-              </div>
-            )}
-            {diferenciaEsNegativa && (
-              <div style={{ color: 'var(--error-color)', marginTop: '4px', fontSize: '0.9rem' }}>
-                ↓ Se registrará como <strong>ajuste_salida</strong>
-              </div>
-            )}
-            {noHayDiferencia && (
-              <div style={{ color: 'var(--text-light)', marginTop: '4px', fontSize: '0.9rem' }}>
-                ✓ No hay diferencia; no se registrará movimiento adicional.
-              </div>
-            )}
-          </div>
-
-          {mostrarConfirmacionCero && (
-            <div style={{
-              padding: '12px',
-              backgroundColor: '#FEF3C7',
-              borderLeft: '4px solid #F59E0B',
-              borderRadius: '6px',
-              marginBottom: '12px'
-            }}>
-              <p style={{ color: '#92400E', margin: '0 0 10px 0', fontWeight: 'bold' }}>
-                ℹ️ ¿Confirmar sin registrar ajuste?
-              </p>
-              <p style={{ color: '#78350F', margin: '0 0 10px 0', fontSize: '0.9rem' }}>
-                El monto físico coincide exactamente con el teórico.
-                El comentario se guardará como nota pero no se generará ningún movimiento de ajuste.
-              </p>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  className="btn btn-cancel"
-                  onClick={handleCancelarConfirmacionCero}
+          <form onSubmit={handleSubmit}>
+            <div className="caja-modal__field">
+              <label htmlFor="monto-fisico-real-input">Monto físico real</label>
+              <div className="caja-modal__money-input">
+                <span aria-hidden="true">$</span>
+                <input
+                  id="monto-fisico-real-input"
+                  type="number"
+                  value={montoFisicoReal}
+                  onChange={(event) => {
+                    setMontoFisicoReal(event.target.value);
+                    setMostrarConfirmacionCero(false);
+                  }}
+                  step="0.01"
+                  min="0"
+                  required
+                  autoFocus
                   disabled={isDisabled}
-                  style={{ flex: 1 }}
-                >
-                  Volver
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-save"
-                  disabled={isDisabled}
-                  style={{ flex: 1 }}
-                >
-                  Confirmar
-                </button>
+                  placeholder="0.00"
+                />
               </div>
             </div>
-          )}
 
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '15px' }}>
-            <button type="button" className="btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
-            <button
-              type="submit"
-              className="btn btn-save"
-              disabled={isDisabled || !puedeEnviar}
-            >
-              {noHayDiferencia ? 'Solo Guardar Nota' : 'Registrar Ajuste'}
-            </button>
-          </div>
-        </form>
+            <div className="caja-modal__field">
+              <label htmlFor="ajuste-comentario-input">
+                Comentario
+                <span>Obligatorio</span>
+              </label>
+              <textarea
+                id="ajuste-comentario-input"
+                value={comentario}
+                onChange={(event) => setComentario(event.target.value)}
+                placeholder="Ej. Corrección por cambio mal dado en venta #123"
+                required
+                disabled={isDisabled}
+                rows={3}
+              />
+            </div>
+
+            <div className={`caja-modal__difference caja-modal__difference--${differenceTone}`}>
+              <div>
+                <span>Diferencia calculada</span>
+                <strong>
+                  {diferenciaEsPositiva ? '+' : diferenciaEsNegativa ? '-' : ''}
+                  ${Money.toNumber(diferenciaSafe.abs()).toFixed(2)}
+                </strong>
+              </div>
+              <p>
+                {diferenciaEsPositiva && (
+                  <><ArrowDownToLine size={17} aria-hidden="true" /> Se registrará como ajuste de entrada.</>
+                )}
+                {diferenciaEsNegativa && (
+                  <><ArrowUpFromLine size={17} aria-hidden="true" /> Se registrará como ajuste de salida.</>
+                )}
+                {noHayDiferencia && (
+                  <><CheckCircle2 size={17} aria-hidden="true" /> No se generará un movimiento adicional.</>
+                )}
+              </p>
+            </div>
+
+            {mostrarConfirmacionCero && (
+              <div className="caja-modal__confirmation">
+                <div className="caja-modal__notice caja-modal__notice--warning">
+                  <Info size={18} aria-hidden="true" />
+                  <div>
+                    <strong>Confirmar sin registrar ajuste</strong>
+                    <p>
+                      El monto físico coincide con el teórico. El comentario se guardará como nota,
+                      pero no se generará ningún movimiento.
+                    </p>
+                  </div>
+                </div>
+                <div className="caja-modal__confirmation-actions">
+                  <button
+                    type="button"
+                    className="caja-modal__button caja-modal__button--secondary"
+                    onClick={() => setMostrarConfirmacionCero(false)}
+                    disabled={isDisabled}
+                  >
+                    Volver
+                  </button>
+                  <button
+                    type="submit"
+                    className="caja-modal__button caja-modal__button--primary"
+                    disabled={isDisabled}
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <footer className="caja-modal__actions">
+              <button type="button" className="caja-modal__button caja-modal__button--secondary" onClick={requestClose} disabled={isDisabled}>
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="caja-modal__button caja-modal__button--primary"
+                disabled={isDisabled || !puedeEnviar}
+              >
+                <Scale size={18} aria-hidden="true" />
+                {noHayDiferencia ? 'Guardar nota' : 'Registrar ajuste'}
+              </button>
+            </footer>
+          </form>
+        </div>
       </div>
     </div>
   );

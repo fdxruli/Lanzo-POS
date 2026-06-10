@@ -1,5 +1,5 @@
 // src/components/common/MessageModal.jsx
-import React, { useState } from 'react'; // <--- Agregamos useState
+import { useState } from 'react';
 import { useMessageStore } from '../../store/useMessageStore';
 import './MessageModal.css';
 
@@ -84,7 +84,7 @@ export default function MessageModal() {
 
               {showCancel && (
                 <button className="btn btn-cancel" onClick={hide}>
-                  Cancelar
+                  {options.cancelButtonText || 'Cancelar'}
                 </button>
               )}
             </>

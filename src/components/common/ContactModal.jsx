@@ -1,202 +1,166 @@
-import React, { useState, useEffect } from 'react';
-import { Mail, Send } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Lightbulb, Mail, Send, X } from 'lucide-react';
+import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
 import './ContactModal.css';
 
-/**
- * Modal de contacto mejorado que genera correos electrónicos
- * @param {boolean} show - Controla la visibilidad del modal
- * @param {function} onClose - Callback al cerrar
- * @param {function} onSubmit - Callback con los datos del formulario
- * @param {string} title - Título del modal
- * @param {Array} fields - Campos del formulario
- * @param {string} submitLabel - Texto del botón de envío
- * @param {string} description - Descripción opcional bajo el título
- */
+const createInitialData = fields => fields.reduce((data, field) => {
+  data[field.id] = '';
+  return data;
+}, {});
+
 export default function ContactModal({
   show,
   onClose,
   onSubmit,
   title,
   fields,
-  submitLabel = "Generar Correo",
+  submitLabel = 'Generar correo',
   description
 }) {
-  const [formData, setFormData] = useState({});
-  const [isValid, setIsValid] = useState(false);
+  const titleId = useId();
+  const descriptionId = useId();
+  const firstFieldRef = useRef(null);
+  const [formData, setFormData] = useState(() => createInitialData(fields));
+
+  const isValid = fields.every(field => (
+    field.required === false || (formData[field.id] || '').trim().length > 0
+  ));
+  const hasChanges = Object.values(formData).some(value => value.trim().length > 0);
+
+  const requestClose = useConfirmDiscard({
+    hasChanges,
+    onClose,
+    message: 'Hay información capturada que todavía no se ha enviado. ¿Quieres cancelar la operación?'
+  });
 
   useEffect(() => {
-    if (show) {
-      const initialData = fields.reduce((acc, field) => {
-        acc[field.id] = '';
-        return acc;
-      }, {});
-      setFormData(initialData);
-      setIsValid(false);
-    }
-  }, [show, fields]);
+    if (!show) return undefined;
 
-  // Validación en tiempo real
-  useEffect(() => {
-    const allFieldsFilled = fields.every(field => {
-      const value = formData[field.id] || '';
-      return value.trim().length > 0;
-    });
-    setIsValid(allFieldsFilled);
-  }, [formData, fields]);
+    firstFieldRef.current?.focus();
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') requestClose();
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [requestClose, show]);
+
+  if (!show) return null;
+
+  const handleChange = ({ target: { name, value } }) => {
+    setFormData(current => ({ ...current, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = (event) => {
+    event.preventDefault();
     if (!isValid) return;
     onSubmit(formData);
     onClose();
   };
 
-  // Cerrar con ESC
-  useEffect(() => {
-    const handleEsc = (e) => {
-      if (e.key === 'Escape' && show) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [show, onClose]);
-
-  if (!show) {
-    return null;
-  }
-
   return (
     <div
-      className="modal"
-      style={{ display: 'flex', zIndex: 8000 }}
-      onClick={(e) => e.target.className === 'modal' && onClose()}
+      className="contact-modal-overlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) requestClose();
+      }}
     >
-      <div className="modal-content contact-modal">
-
-        {/* Icono de correo */}
-        <div style={{
-          textAlign: 'center',
-          marginBottom: '1rem',
-          marginTop: '-10px'
-        }}>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            margin: '0 auto',
-            background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 8px 16px rgba(59, 130, 246, 0.3)'
-          }}>
-            <Mail size={28} color="white" />
+      <dialog
+        open
+        className="contact-modal"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+      >
+        <header className="contact-modal__header">
+          <div className="contact-modal__header-icon" aria-hidden="true">
+            <Mail size={22} />
           </div>
-        </div>
-
-        <h2 className="modal-title">{title}</h2>
-
-        {description && (
-          <p style={{
-            textAlign: 'center',
-            color: 'var(--text-light)',
-            fontSize: '0.95rem',
-            marginBottom: '1.5rem',
-            lineHeight: '1.5'
-          }}>
-            {description}
-          </p>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          {fields.map((field, index) => (
-            <div className="form-group" key={field.id}>
-              <label className="form-label" htmlFor={field.id}>
-                {field.label}
-                {field.required !== false && <span style={{ color: 'var(--error-color)' }}> *</span>}
-              </label>
-
-              {field.type === 'textarea' ? (
-                <textarea
-                  className="form-textarea"
-                  id={field.id}
-                  name={field.id}
-                  value={formData[field.id] || ''}
-                  onChange={handleChange}
-                  required={field.required !== false}
-                  autoFocus={index === 0}
-                  placeholder={field.placeholder || ''}
-                  rows={field.rows || 4}
-                />
-              ) : (
-                <input
-                  className="form-input"
-                  type={field.type || 'text'}
-                  id={field.id}
-                  name={field.id}
-                  value={formData[field.id] || ''}
-                  onChange={handleChange}
-                  required={field.required !== false}
-                  autoFocus={index === 0}
-                  placeholder={field.placeholder || ''}
-                />
-              )}
-
-              {field.hint && (
-                <small style={{
-                  display: 'block',
-                  marginTop: '4px',
-                  color: 'var(--text-light)',
-                  fontSize: '0.85rem'
-                }}>
-                  {field.hint}
-                </small>
-              )}
-            </div>
-          ))}
-
-          <button
-            type="submit"
-            className="btn btn-save contact-submit-btn"
-            disabled={!isValid}
-            style={{
-              opacity: isValid ? 1 : 0.6,
-              cursor: isValid ? 'pointer' : 'not-allowed'
-            }}
-          >
-            <Send size={18} />
-            {submitLabel}
-          </button>
-
+          <div className="contact-modal__heading">
+            <p>Contacto con soporte</p>
+            <h2 id={titleId}>{title}</h2>
+          </div>
           <button
             type="button"
-            className="btn btn-cancel"
-            onClick={onClose}
+            className="contact-modal__close"
+            onClick={requestClose}
+            aria-label="Cerrar modal"
           >
-            Cancelar
+            <X size={20} aria-hidden="true" />
           </button>
-        </form>
+        </header>
 
-        {/* Info adicional */}
-        <div style={{
-          marginTop: '1rem',
-          padding: '12px',
-          background: 'var(--light-background)',
-          borderRadius: '8px',
-          fontSize: '0.85rem',
-          color: 'var(--text-light)',
-          textAlign: 'center',
-          lineHeight: '1.4'
-        }}>
-          <strong>💡 Tip:</strong> Se abrirá tu cliente de correo con el mensaje ya redactado. Solo revisa y envía.
+        <div className="contact-modal__body">
+          {description && (
+            <p id={descriptionId} className="contact-modal__intro">{description}</p>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            {fields.map((field, index) => {
+              const fieldId = `contact-${field.id}`;
+              const hintId = field.hint ? `${fieldId}-hint` : undefined;
+
+              return (
+                <div className="contact-modal__field" key={field.id}>
+                  <label htmlFor={fieldId}>
+                    <span>{field.label}</span>
+                    {field.required !== false && <strong>Requerido</strong>}
+                  </label>
+
+                  {field.type === 'textarea' ? (
+                    <textarea
+                      id={fieldId}
+                      name={field.id}
+                      value={formData[field.id] || ''}
+                      onChange={handleChange}
+                      required={field.required !== false}
+                      ref={index === 0 ? firstFieldRef : undefined}
+                      placeholder={field.placeholder || ''}
+                      rows={field.rows || 4}
+                      aria-describedby={hintId}
+                    />
+                  ) : (
+                    <input
+                      type={field.type || 'text'}
+                      id={fieldId}
+                      name={field.id}
+                      value={formData[field.id] || ''}
+                      onChange={handleChange}
+                      required={field.required !== false}
+                      ref={index === 0 ? firstFieldRef : undefined}
+                      placeholder={field.placeholder || ''}
+                      aria-describedby={hintId}
+                    />
+                  )}
+
+                  {field.hint && <small id={hintId}>{field.hint}</small>}
+                </div>
+              );
+            })}
+
+            <div className="contact-modal__tip">
+              <Lightbulb size={17} aria-hidden="true" />
+              <p>Se abrirá tu cliente de correo con el mensaje redactado para que puedas revisarlo y enviarlo.</p>
+            </div>
+
+            <div className="contact-modal__actions">
+              <button type="button" className="contact-modal__button contact-modal__button--secondary" onClick={requestClose}>
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="contact-modal__button contact-modal__button--primary"
+                disabled={!isValid}
+              >
+                <Send size={18} aria-hidden="true" />
+                {submitLabel}
+              </button>
+            </div>
+          </form>
         </div>
-      </div>
+      </dialog>
     </div>
   );
 }

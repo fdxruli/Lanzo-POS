@@ -1,6 +1,6 @@
 // src/components/common/AssistantBot.jsx (V5.0 - CON WEB WORKER)
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getSmartContext, getQuickActions, GLOBAL_ALERT, getCriticalAlert, initializeGlobalAlert } from '../../config/botContext';
 import {
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import './AssistantBot.css';
 
-import { useOrderStore } from '../../store/useOrderStore';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore';
 import { useStatsStore } from '../../store/useStatsStore';
@@ -19,8 +19,9 @@ import { useBotWorker } from '../../hooks/useBotWorker';
 // ─── SELECTORES ESTABLES (fuera del componente) ──────────────────────────────
 // Definirlos fuera evita que se recreen en cada render del componente
 
-const selectOrder = (state) => state.order;
-const selectMenu = (state) => state.menu;
+const selectOrder = (state) => (
+  state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.items : undefined
+);
 const selectStats = (state) => state.stats;
 const selectLicense = (state) => state.licenseDetails;
 const selectCompanyProfile = (state) => state.companyProfile;
@@ -28,7 +29,7 @@ const selectCompanyProfile = (state) => state.companyProfile;
 // Calcula el total directamente del estado en lugar de llamar a getTotalPrice
 // Esto evita suscribirse a una función inestable
 const selectCartTotal = (state) =>
-  state.order.reduce((sum, item) => {
+  (state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.items || [] : []).reduce((sum, item) => {
     if (item.quantity > 0) return sum + item.price * item.quantity;
     return sum;
   }, 0);
@@ -74,8 +75,8 @@ const AssistantBot = () => {
   useEffect(() => { showGlobalAlertRef.current = showGlobalAlert; }, [showGlobalAlert]);
 
   // ─── SUSCRIPCIONES A STORES (selectores granulares y estables) ─────────────
-  const cartOrder = useOrderStore(selectOrder);
-  const cartTotal = useOrderStore(selectCartTotal);
+  const cartOrder = useActiveOrders(selectOrder) || [];
+  const cartTotal = useActiveOrders(selectCartTotal);
   const lowStockCount = useProductStore(selectLowStockCount);
   const stats = useStatsStore(selectStats);
   const licenseDetails = useAppStore(selectLicense);

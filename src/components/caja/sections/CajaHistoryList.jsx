@@ -1,19 +1,17 @@
-// src/components/caja/sections/CajaHistoryList.jsx
 import { useState, useMemo } from 'react';
+import {
+  AlertCircle,
+  Archive,
+  CalendarClock,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 
-/**
- * Historial de cortes con paginación encapsulada
- *
- * @param {Object} props
- * @param {Array} props.historial - Array de historial de cajas
- * @param {number} props.itemsPerPage - Cantidad de items por página (default: 10)
- */
 const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
-  // Estado local de paginación - NO contamina el orquestador global
   const [paginaActual, setPaginaActual] = useState(1);
 
-  // Memoización del historial paginado
   const historialRender = useMemo(() => {
     const startIndex = (paginaActual - 1) * itemsPerPage;
     const historialPaginado = historial.slice(startIndex, startIndex + itemsPerPage);
@@ -21,22 +19,18 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
     return historialPaginado.map(c => {
       const diffSafe = Money.init(c.diferencia || 0);
       const isCuadrada = diffSafe.abs().lt(1);
-      const fechaFormatted = new Date(c.fecha_apertura).toLocaleDateString();
-      const cierreFormatted = c.monto_cierre ? `$${Money.toNumber(c.monto_cierre || 0).toFixed(2)}` : 'N/A';
-      const difFormatted = diffSafe.gt(0) ? '+' : '';
 
       return {
         id: c.id,
-        fecha: fechaFormatted,
+        fecha: new Date(c.fecha_apertura).toLocaleDateString(),
         isCuadrada,
-        cierre: cierreFormatted,
-        dif: `${difFormatted}$${Money.toNumber(diffSafe).toFixed(2)}`,
-        difColor: diffSafe.gt(0) ? 'var(--success-color)' : 'var(--error-color)'
+        cierre: c.monto_cierre ? `$${Money.toNumber(c.monto_cierre || 0).toFixed(2)}` : 'N/A',
+        dif: `${diffSafe.gt(0) ? '+' : ''}$${Money.toNumber(diffSafe).toFixed(2)}`,
+        difTone: diffSafe.gt(0) ? 'positive' : 'negative'
       };
     });
   }, [historial, paginaActual, itemsPerPage]);
 
-  // Calcular total de páginas
   const totalPaginas = Math.ceil(historial.length / itemsPerPage);
 
   const handlePaginaAnterior = () => {
@@ -47,42 +41,61 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
     setPaginaActual(p => Math.min(totalPaginas, p + 1));
   };
 
-  if (historial.length === 0) {
-    return (
-      <div id="caja-history-container" className="caja-card">
-        <h3 className="section-title">Historial de Cortes</h3>
-        <div className="empty-state">
-          <div className="empty-state-icon">📦</div>
-          <p>No hay historial de cortes registrados.</p>
+  const sectionHeading = (
+    <div className="section-header">
+      <div className="section-heading">
+        <span className="section-heading-icon" aria-hidden="true">
+          <CalendarClock size={19} />
+        </span>
+        <div>
+          <p className="section-eyebrow">Turnos anteriores</p>
+          <h3 id="history-title" className="section-title">Historial de cortes</h3>
         </div>
       </div>
+      {historial.length > 0 && <span className="items-count">{historial.length}</span>}
+    </div>
+  );
+
+  if (historial.length === 0) {
+    return (
+      <section id="caja-history-container" className="caja-card" aria-labelledby="history-title">
+        {sectionHeading}
+        <div className="empty-state">
+          <Archive className="empty-state-icon" size={30} aria-hidden="true" />
+          <p>No hay historial de cortes registrados.</p>
+        </div>
+      </section>
     );
   }
 
   return (
-    <div id="caja-history-container" className="caja-card">
-      <h3 className="section-title">Historial de Cortes</h3>
+    <section id="caja-history-container" className="caja-card" aria-labelledby="history-title">
+      {sectionHeading}
 
       <div className="history-list">
         {historialRender.map(c => (
           <div key={c.id} className="history-item">
-            <div className="movement-header">
-              <strong className="movement-title">{c.fecha}</strong>
-              <span className={`status-badge ${c.isCuadrada ? 'success' : 'error'}`}>
-                {c.isCuadrada ? 'Cuadrada' : 'Descuadre'}
-              </span>
-            </div>
-            <div className="movement-details">
-              <span>Cierre: {c.cierre}</span>
-              {!c.isCuadrada && (
-                <span style={{ color: c.difColor }}>Dif: {c.dif}</span>
-              )}
+            <span className={`history-status-icon ${c.isCuadrada ? 'success' : 'error'}`} aria-hidden="true">
+              {c.isCuadrada ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+            </span>
+            <div className="history-content">
+              <div className="movement-header">
+                <strong className="movement-title">{c.fecha}</strong>
+                <span className={`status-badge ${c.isCuadrada ? 'success' : 'error'}`}>
+                  {c.isCuadrada ? 'Cuadrada' : 'Descuadre'}
+                </span>
+              </div>
+              <div className="movement-details">
+                <span>Cierre: {c.cierre}</span>
+                {!c.isCuadrada && (
+                  <span className={`history-difference ${c.difTone}`}>Dif: {c.dif}</span>
+                )}
+              </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Paginación */}
       {totalPaginas > 1 && (
         <div className="pagination">
           <button
@@ -90,23 +103,21 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
             disabled={paginaActual === 1}
             aria-label="Página anterior"
           >
-            ← Anterior
+            <ChevronLeft size={16} aria-hidden="true" />
+            Anterior
           </button>
-
-          <span>
-            Página {paginaActual} de {totalPaginas}
-          </span>
-
+          <span>Página {paginaActual} de {totalPaginas}</span>
           <button
             onClick={handlePaginaSiguiente}
             disabled={paginaActual === totalPaginas}
             aria-label="Página siguiente"
           >
-            Siguiente →
+            Siguiente
+            <ChevronRight size={16} aria-hidden="true" />
           </button>
         </div>
       )}
-    </div>
+    </section>
   );
 };
 
