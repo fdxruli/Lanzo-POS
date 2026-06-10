@@ -1,0 +1,211 @@
+/* Mobile First Base Styles (Smartphones) */
+.waste-modal-overlay {
+  display: flex;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  align-items: center;
+  justify-content: center;
+  z-index: 2200;
+  backdrop-filter: blur(4px);
+  padding: 16px; /* Espaciado alrededor para móviles */
+  box-sizing: border-box;
+}
+
+.waste-modal-content {
+  background: var(--bg-color, #ffffff);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 100%; /* Toma el ancho completo permitido por el overlay */
+  max-height: 90vh; /* Previene que se salga de la pantalla */
+  overflow-y: auto;
+  padding: 20px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  animation: slideIn 0.3s ease;
+  color: var(--text-color, #333);
+}
+
+.waste-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color, #dee2e6);
+}
+
+.waste-modal-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--error-color, #e74c3c);
+}
+
+.waste-product-info {
+  background: var(--bg-color-alt, #f8f9fa);
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-color, #dee2e6);
+}
+
+.waste-product-info p {
+  margin: 4px 0;
+  font-size: 0.9rem;
+}
+
+.waste-reasons-grid {
+  display: grid;
+  grid-template-columns: 1fr; /* 1 columna en móviles */
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.waste-reason-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-color, #dee2e6);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--bg-color, #ffffff);
+  color: var(--text-color, #333);
+  font-size: 0.95rem;
+  font-weight: 500;
+  user-select: none;
+}
+
+.waste-reason-card:hover {
+  border-color: var(--error-color, #e74c3c);
+  background: rgba(231, 76, 60, 0.05);
+}
+
+.waste-reason-card.selected {
+  border-color: var(--error-color, #e74c3c);
+  background: var(--error-color, #e74c3c);
+  color: white;
+}
+
+.waste-reason-card.selected svg {
+  color: white;
+}
+
+.waste-actions {
+  display: flex;
+  flex-direction: column; /* Apilados en móvil */
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.waste-actions .btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 8px;
+  padding: 12px 20px;
+  font-weight: 600;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.waste-actions .btn-cancel {
+  background: transparent;
+  border: 1px solid var(--border-color, #dee2e6);
+  color: var(--text-color, #333);
+  order: 2; /* Secundario abajo */
+}
+
+.waste-actions .btn-cancel:hover {
+  background: var(--bg-color-alt, #f1f1f1);
+}
+
+.waste-actions .btn-delete {
+  background: var(--error-color, #e74c3c);
+  color: white;
+  border: none;
+  order: 1; /* Primario arriba */
+}
+
+.waste-actions .btn-delete:hover {
+  background: #c0392b;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Tablet & Small Desktop (min-width: 768px) */
+@media (min-width: 768px) {
+  .waste-modal-content {
+    max-width: 550px;
+    padding: 32px;
+  }
+
+  .waste-modal-header {
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+  }
+
+  .waste-modal-title {
+    font-size: 1.5rem;
+    gap: 12px;
+  }
+
+  .waste-product-info {
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+
+  .waste-product-info p {
+    font-size: 0.95rem;
+    margin: 6px 0;
+  }
+
+  .waste-reasons-grid {
+    grid-template-columns: repeat(2, 1fr); /* 2 columnas en pantallas medianas */
+    gap: 12px;
+  }
+
+  .waste-reason-card {
+    padding: 12px;
+    font-size: 0.9rem;
+  }
+
+  .waste-actions {
+    flex-direction: row; /* Horizontal en desktop */
+    justify-content: flex-end;
+  }
+
+  .waste-actions .btn {
+    width: auto;
+  }
+
+  .waste-actions .btn-cancel {
+    order: 1; /* Orden natural: Cancelar izquierda */
+  }
+
+  .waste-actions .btn-delete {
+    order: 2; /* Confirmar derecha */
+  }
+}
+
+/* Large Desktop (min-width: 1024px) */
+@media (min-width: 1024px) {
+  .waste-modal-content {
+    max-width: 700px; /* Modal más ancho para lucir elegante en escritorio */
+  }
+
+  .waste-reasons-grid {
+    grid-template-columns: repeat(3, 1fr); /* 3 columnas en pantallas grandes */
+  }
+}

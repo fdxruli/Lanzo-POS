@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState } from 'react';
 import {
   X,
   Save,
@@ -35,6 +35,8 @@ export default function BatchFormModal({
   menu,
   rubroGroup
 }) {
+  const [showManualExpiry, setShowManualExpiry] = useState(false);
+
   const {
     formValues,
     isEditing,
@@ -90,6 +92,7 @@ export default function BatchFormModal({
                   firstInputRef={firstInputRef}
                   tallaInputRef={tallaInputRef}
                   idPrefix={idPrefix}
+                  product={product}
                 />
               </div>
 
@@ -143,6 +146,112 @@ export default function BatchFormModal({
                   </div>
                 )}
               </div>
+
+              {/* CONTROL FÍSICO DE LOTES (STRICT / SHELF_LIFE) */}
+              {(product.expirationMode === 'STRICT' || product.expirationMode === 'SHELF_LIFE') && (
+                <div className="col-span-full price-cost-group" style={{ backgroundColor: '#fffbe6', borderColor: '#ffe58f' }}>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', color: '#ad6800', fontWeight: 'bold' }}>Control Físico y Caducidad</h4>
+                  
+                  {product.expirationMode === 'STRICT' && (
+                    <div className="form-group field-with-icon" style={{ marginBottom: '12px' }}>
+                      <label htmlFor={`${idPrefix}-manufacturerBatchId`}>
+                        <Package size={16} /> Lote Fabricante (Alfanumérico) *
+                      </label>
+                      <input
+                        id={`${idPrefix}-manufacturerBatchId`}
+                        type="text"
+                        value={formValues.manufacturerBatchId}
+                        onChange={(event) => setFieldValue('manufacturerBatchId', event.target.value)}
+                        className="form-input"
+                        placeholder="Ej: L-102938"
+                        required
+                        style={!formValues.manufacturerBatchId ? { borderColor: '#fca5a5', backgroundColor: '#fef2f2' } : {}}
+                      />
+                    </div>
+                  )}
+
+                  {product.expirationMode === 'STRICT' && (
+                    <div className="form-group field-with-icon" style={{ marginBottom: '12px' }}>
+                      <label htmlFor={`${idPrefix}-expiryDate`} style={{ color: '#b91c1c', fontWeight: 'bold' }}>
+                        <Package size={16} /> Fecha de Caducidad / Producción *
+                      </label>
+                      <input
+                        id={`${idPrefix}-expiryDate`}
+                        type="date"
+                        value={formValues.expiryDate}
+                        onChange={(event) => setFieldValue('expiryDate', event.target.value)}
+                        className="form-input"
+                        required
+                        style={!formValues.expiryDate ? { borderColor: '#fca5a5', backgroundColor: '#fef2f2' } : {}}
+                      />
+                      {!formValues.expiryDate && (
+                        <small style={{ color: '#dc2626', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
+                          ⚠️ Obligatorio en modo STRICT.
+                        </small>
+                      )}
+                    </div>
+                  )}
+
+                  {product.expirationMode === 'SHELF_LIFE' && (
+                    <div className="form-group field-with-icon" style={{ marginBottom: '12px' }}>
+                      {!showManualExpiry ? (
+                        <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px' }}>
+                          <div style={{ color: '#166534', fontSize: '0.9rem', fontWeight: '600' }}>
+                            ℹ️ Caducidad automática: +{product?.shelfLifeValue ?? '?'} {product?.shelfLifeUnit === 'months' ? 'meses' : 'días'} a partir de hoy.
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowManualExpiry(true)}
+                            style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.82rem', padding: '6px 0 0', textDecoration: 'underline' }}
+                          >
+                            Ajustar manualmente
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <label htmlFor={`${idPrefix}-expiryDate`} style={{ color: '#b91c1c', fontWeight: 'bold' }}>
+                            <Package size={16} /> Fecha de Caducidad / Producción (Opcional)
+                          </label>
+                          <input
+                            id={`${idPrefix}-expiryDate`}
+                            type="datetime-local"
+                            value={formValues.expiryDate}
+                            onChange={(event) => setFieldValue('expiryDate', event.target.value)}
+                            className="form-input"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowManualExpiry(false);
+                              setFieldValue('expiryDate', '');
+                            }}
+                            style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.82rem', padding: '6px 0 0', textDecoration: 'underline' }}
+                          >
+                            Cancelar ajuste manual
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {['pharmacy', 'retail'].includes(rubroGroup) && (
+                    <div className="form-group field-with-icon" style={{ marginBottom: 0 }}>
+                      <label htmlFor={`${idPrefix}-pao`}>
+                        <Package size={16} /> PAO (Period After Opening) - Meses
+                      </label>
+                      <input
+                        id={`${idPrefix}-pao`}
+                        type="number"
+                        min="1"
+                        value={formValues.pao}
+                        onChange={(event) => setFieldValue('pao', event.target.value)}
+                        className="form-input"
+                        placeholder="Ej: 12"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* CANTIDAD (Stock) */}
               <div className="form-group field-with-icon" style={{ marginBottom: 0 }}>

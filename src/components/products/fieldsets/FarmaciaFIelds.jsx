@@ -3,8 +3,7 @@ import React from 'react';
 export default function FarmaciaFields({
     prescriptionType, setPrescriptionType,
     activeSubstance, setActiveSubstance,
-    laboratory, setLaboratory,
-    shelfLife, setShelfLife
+    laboratory, setLaboratory
 }) {
 
     // Helper para UX visual del riesgo
@@ -78,19 +77,21 @@ export default function FarmaciaFields({
                 </div>
             </div>
 
-            <div className="form-group">
-                <label className="form-label">Caducidad / Vida Útil</label>
-                <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
-                    <input 
-                        type="date" 
-                        className="form-input" 
-                        value={shelfLife} 
-                        onChange={(e) => setShelfLife(e.target.value)}
-                    />
-                    <span style={{fontSize:'0.8rem', color:'#64748b'}}>
-                        (Opcional: Para alertas de caducidad)
-                    </span>
-                </div>
+            <div style={{
+                padding: '10px 12px',
+                backgroundColor: '#eff6ff',
+                borderRadius: '6px',
+                border: '1px solid #bfdbfe',
+                fontSize: '0.85rem',
+                color: '#1e40af',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+            }}>
+                <span style={{ fontSize: '1.1rem' }}>📋</span>
+                <span>
+                    La <strong>fecha de caducidad</strong> se registra individualmente al dar de alta cada <strong>Lote</strong> en la sección de Inventario.
+                </span>
             </div>
         </div>
     );

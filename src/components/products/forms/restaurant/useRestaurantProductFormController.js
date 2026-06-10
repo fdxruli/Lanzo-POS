@@ -7,6 +7,7 @@ import {
   findInvalidModifierGroup,
   hasEmptyModifierOption
 } from './restaurantFormUtils';
+import { updateProduct } from '../../../../services/db/productUpdates';
 
 export function useRestaurantProductFormController({
   productToEdit,
@@ -61,6 +62,16 @@ export function useRestaurantProductFormController({
       if (!confirmLoss) return;
     }
 
+    // Validacion de vida util (Modo Expiracion)
+    if (common.expirationMode === 'SHELF_LIFE' && (!common.shelfLifeValue || common.shelfLifeValue <= 0)) {
+      showMessageModal(
+        'Datos Incompletos',
+        'Debes especificar un valor válido para la Vida Útil.',
+        { type: 'error' }
+      );
+      return;
+    }
+
     const invalidModifier = findInvalidModifierGroup(modifiers);
     if (invalidModifier) {
       showMessageModal(
@@ -96,6 +107,37 @@ export function useRestaurantProductFormController({
         modifiers,
         productToEdit
       });
+
+      // FASE 3: Transición atómica de modo de caducidad con _intent
+      // Si hay purga pendiente, usar updateProduct atómico en lugar de purga diferida
+      if (common.pendingBatchPurge && productId && productToEdit) {
+        try {
+          const purgePayload = {
+            expirationMode: 'NONE',
+            shelfLifeValue: null,
+            shelfLifeUnit: null,
+            _intent: 'PURGE_BATCHES'
+          };
+          
+          // Actualización atómica: producto + lotes en una transacción
+          const result = await updateProduct(productId, purgePayload);
+          
+          if (!result.success) {
+            throw new Error('Falló la purga atómica de fechas de caducidad');
+          }
+          
+          Logger.info('[Restaurante] Purga atómica completada:', result.batchOperation);
+        } catch (purgeError) {
+          Logger.error('Error durante la purga atómica de caducidades (Restaurante):', purgeError);
+          showMessageModal(
+            'Error al cambiar modo de caducidad',
+            'No se pudieron purgar las fechas de los lotes. El producto no ha sido modificado.',
+            { type: 'error' }
+          );
+          common.setIsSaving(false);
+          return; // Abortar guardado completo
+        }
+      }
 
       await onSave(payload, productToEdit || { id: productId, isNew: true });
     } catch (error) {

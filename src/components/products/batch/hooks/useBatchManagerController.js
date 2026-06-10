@@ -267,8 +267,10 @@ export function useBatchManagerController({
       actionType = 'Corrección de Descuadre';
     }
 
-    const confirmArchive = window.confirm(confirmMessage);
-    if (!confirmArchive) return;
+    const userNote = window.prompt(confirmMessage + '\n\n(Opcional) Puedes escribir una nota o motivo para archivar este lote:');
+    if (userNote === null) return; // El usuario canceló
+
+    const finalNote = userNote.trim() ? ` - Nota del usuario: ${userNote.trim()}` : '';
 
     try {
       const archivedBatch = {
@@ -278,8 +280,8 @@ export function useBatchManagerController({
         isArchived: true,
         deletedAt: new Date().toISOString(),
         notes: (hasStock || hasNegativeStock)
-          ? `[${actionType.toUpperCase()} - ${new Date().toLocaleDateString()}] Stock original antes de archivar: ${stockNumber}. ${batch.notes || ''}`
-          : batch.notes
+          ? `[${actionType.toUpperCase()} - ${new Date().toLocaleDateString()}] Stock original antes de archivar: ${stockNumber}. ${batch.notes || ''}${finalNote}`
+          : `${batch.notes || ''}${finalNote}`
       };
 
       const archiveResult = await saveBatchAndSyncProductSafe(archivedBatch);

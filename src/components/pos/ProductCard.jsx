@@ -163,12 +163,16 @@ function resolveFooterState({ isOutOfStock, isNearingExpiry, isLowStock, isTrack
 
 const ProductCard = memo(function ProductCard({ product, features, onCardClick }) {
   // ── Lógica de negocio visual ──────────────────────────────────────────────
+  const isRecipeBased = Array.isArray(product?.recipe) && product.recipe.length > 0;
+
   const alerts = useMemo(() => getProductAlerts(product), [product]);
   const availableStock = useMemo(() => getAvailableStock(product), [product]);
 
-  const { isLowStock, isNearingExpiry, isOutOfStock } = alerts;
+  const isOutOfStock = isRecipeBased ? false : alerts.isOutOfStock;
+  const isLowStock = isRecipeBased ? false : alerts.isLowStock;
+  const isNearingExpiry = alerts.isNearingExpiry;
 
-  const isTracking = product?.trackStock !== false && (
+  const isTracking = !isRecipeBased && product?.trackStock !== false && (
     product?.trackStock === true || product?.batchManagement?.enabled === true
   );
 

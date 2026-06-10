@@ -1,10 +1,20 @@
 // src/components/pos/OrderSummary.jsx
-import { useOrderStore } from '../../store/useOrderStore';
-import { ChevronDown, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bookmark,
+  ChevronDown,
+  Columns2,
+  CreditCard,
+  Save,
+  ShieldAlert,
+  Table2,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { db, STORES } from '../../services/db/dexie';
-import { useState, useEffect } from 'react';
 import './OrderSummary.css';
 
 const generateStoreCode = (companyName) => {
@@ -13,10 +23,10 @@ const generateStoreCode = (companyName) => {
   if (nameParts.length === 0) return 'LZ';
   if (nameParts.length >= 2) {
     return nameParts[0][0] + nameParts[1][0];
-  } else {
-    const word = nameParts[0];
-    return word.length === 1 ? `${word}X` : word.substring(0, 2);
   }
+
+  const word = nameParts[0];
+  return word.length === 1 ? `${word}X` : word.substring(0, 2);
 };
 
 export default function OrderSummary({
@@ -32,10 +42,20 @@ export default function OrderSummary({
   activeTablesCount = 0,
   kitchenRejectedOpenCount = 0,
 }) {
-  const order = useOrderStore((state) => state.order);
-  const tableData = useOrderStore((state) => state.tableData);
-  const activeOrderId = useOrderStore((state) => state.activeOrderId);
-  const isEditMode = useOrderStore((state) => state.isSavedOrder);
+  const currentOrderItems = useActiveOrders((state) => (
+    state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.items : undefined
+  ));
+  const order = currentOrderItems || [];
+  const tableData = useActiveOrders((state) => (
+    state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.tableData || '' : ''
+  ));
+  const isEditMode = useActiveOrders((state) => (
+    state.currentOrderId ? Boolean(state.activeOrders.get(state.currentOrderId)?.isSaved) : false
+  ));
+  const updateItemQuantity = useActiveOrders((state) => state.updateItemQuantity);
+  const removeItem = useActiveOrders((state) => state.removeItem);
+  const getTotalPrice = useActiveOrders((state) => state.getTotalPrice);
+  const setTableData = useActiveOrders((state) => state.setTableData);
   const features = useFeatureConfig();
 
   const [estimatedFolio, setEstimatedFolio] = useState('');
@@ -49,7 +69,7 @@ export default function OrderSummary({
           nextSeq = seqRecord.value + 1;
         }
 
-        let storeCode = 'LZ'; // Por defecto sistema
+        let storeCode = 'LZ';
         let terminalId = '01';
 
         const companies = await db.table(STORES.COMPANY).toArray();
@@ -70,16 +90,13 @@ export default function OrderSummary({
     fetchEstimatedFolio();
   }, [order.length]);
 
-  // Nos aseguramos de tener 'removeItem' disponible
-  const { updateItemQuantity, removeItem, clearSession, getTotalPrice, setTableData } = useOrderStore.getState();
   const total = getTotalPrice();
-
   const tablesBadgeTotal = activeTablesCount + kitchenRejectedOpenCount;
 
   const handleQuantityChange = (id, change) => {
-    // ... (lógica existente para unitarios)
-    const item = order.find(i => i.id === id);
+    const item = order.find((orderItem) => orderItem.id === id);
     if (!item) return;
+
     if (item.saleType === 'unit' || !item.saleType) {
       const newQuantity = (item.quantity || 0) + change;
       if (newQuantity <= 0) removeItem(id);
@@ -88,89 +105,66 @@ export default function OrderSummary({
   };
 
   const handleBulkInputChange = (id, value) => {
-    // ... (lógica existente para granel)
     const newQuantity = parseFloat(value);
-    // Opcional: Si escriben 0, lo borramos también
     if (newQuantity === 0) {
       removeItem(id);
     } else {
-      updateItemQuantity(id, isNaN(newQuantity) || newQuantity < 0 ? null : newQuantity);
+      updateItemQuantity(id, Number.isNaN(newQuantity) || newQuantity < 0 ? null : newQuantity);
+    }
+  };
+
+  const handleOpenTables = () => {
+    if (isMobileModal) onClose?.();
+    onOpenTables?.();
+  };
+
+  const handleCancelOrder = () => {
+    const confirmMessage = (isEditMode && showRestaurantActions)
+      ? '¿Descartar los cambios no guardados y salir de la mesa?'
+      : '¿Vaciar carrito?';
+
+    if (window.confirm(confirmMessage)) {
+      useActiveOrders.getState().cancelCurrentOrder();
+      if (isMobileModal) onClose?.();
     }
   };
 
   return (
-    <div className="pos-order-container" style={isMobileModal ? { height: '100%', boxShadow: 'none', border: 'none' } : {}}>
-
-      {/* Encabezado Unificado (Escritorio y Móvil) */}
-      <div className="summary-header" style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '15px',
-        borderBottom: isMobileModal ? '1px solid var(--border-color)' : 'none',
-        paddingBottom: isMobileModal ? '10px' : '0',
-        // ESTILOS DINÁMICOS DE EDICIÓN
-        backgroundColor: (isEditMode && showRestaurantActions) ? '#fffbeb' : 'transparent',
-        border: (isEditMode && showRestaurantActions) ? '2px dashed #f59e0b' : 'none',
-        padding: (isEditMode && showRestaurantActions) ? '10px' : '0',
-        borderRadius: (isEditMode && showRestaurantActions) ? '8px' : '0'
-      }}>
-        <h2 style={{
-          margin: 0,
-          fontSize: isMobileModal ? '1.2rem' : '1.5rem',
-          color: (isEditMode && showRestaurantActions) ? '#b45309' : 'inherit',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px'
-        }}>
-          <span>
+    <div
+      className={`pos-order-container${isMobileModal ? ' pos-order-container--mobile' : ''}${isEditMode && showRestaurantActions ? ' pos-order-container--editing' : ''}`}
+    >
+      <header className="summary-header">
+        <div className="summary-header-copy">
+          <h2 className="summary-title">
             {showRestaurantActions
               ? (isEditMode ? `Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
-              : (tableData ? `Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
-            }
-          </span>
+              : (tableData ? `Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))}
+          </h2>
+
           {estimatedFolio && !isEditMode && (
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>
-              Folio Est.: {estimatedFolio}
-            </span>
-          )}
-        </h2>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {!isMobileModal && showRestaurantActions && (
-            <button
-              type="button"
-              onClick={onOpenTables}
-              className={`btn-mesas-header${kitchenRejectedOpenCount > 0 ? ' btn-mesas-header--kitchen-rejected' : ''}`}
-              title={
-                kitchenRejectedOpenCount > 0
-                  ? 'Hay comandas rechazadas en cocina. Abra mesas para anular venta o gestionar.'
-                  : undefined
-              }
-            >
-              Mesas
-              {tablesBadgeTotal > 0 && (
-                <span className="active-tables-count">
-                  {tablesBadgeTotal}
-                </span>
-              )}
-            </button>
+            <p className="summary-folio">
+              Folio estimado: <strong>{estimatedFolio}</strong>
+            </p>
           )}
 
-          {isMobileModal && showRestaurantActions && onOpenTables && (
+          {isEditMode && showRestaurantActions && (
+            <span className="summary-edit-badge">Pedido guardado</span>
+          )}
+        </div>
+
+        <div className="summary-header-actions">
+          {showRestaurantActions && onOpenTables && (
             <button
               type="button"
-              onClick={() => {
-                onClose?.();
-                onOpenTables();
-              }}
-              className={`btn-mesas-header btn-mesas-header--mobile${kitchenRejectedOpenCount > 0 ? ' btn-mesas-header--kitchen-rejected' : ''}`}
+              onClick={handleOpenTables}
+              className={`btn-mesas-header${isMobileModal ? ' btn-mesas-header--mobile' : ''}${kitchenRejectedOpenCount > 0 ? ' btn-mesas-header--kitchen-rejected' : ''}`}
               title={
                 kitchenRejectedOpenCount > 0
                   ? 'Hay comandas rechazadas en cocina'
                   : 'Ver mesas'
               }
             >
+              <Table2 size={18} aria-hidden="true" />
               Mesas
               {tablesBadgeTotal > 0 && (
                 <span className="active-tables-count">{tablesBadgeTotal}</span>
@@ -179,29 +173,37 @@ export default function OrderSummary({
           )}
 
           {isMobileModal && (
-            <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', padding: '5px', cursor: 'pointer' }}>
-              <ChevronDown size={24} />
+            <button
+              type="button"
+              onClick={onClose}
+              className="summary-close-btn"
+              aria-label="Cerrar carrito"
+            >
+              <ChevronDown size={26} aria-hidden="true" />
             </button>
           )}
         </div>
-      </div>
+      </header>
 
-      {/* Banner de advertencia si intenta cambiar el nombre mientras edita */}
       {isEditMode && showRestaurantActions && (
-        <div style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '8px 15px', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center', fontWeight: 'bold' }}>
-          Estás modificando un pedido ya guardado. No olvides Actualizar la Mesa.
+        <div className="order-edit-notice" role="status">
+          <AlertTriangle size={18} aria-hidden="true" />
+          <span>
+            Estás modificando un pedido guardado. Actualiza la mesa para conservar los cambios.
+          </span>
         </div>
       )}
 
-      {/* --- NUEVO: INPUT PARA IDENTIFICAR LA MESA --- */}
       {showRestaurantActions && (
-        <div style={{ padding: '0 15px 10px 15px', borderBottom: '1px solid var(--border-color)' }}>
+        <div className="table-identifier-field">
+          <label htmlFor="order-table-identifier">Mesa o identificador</label>
           <input
+            id="order-table-identifier"
             type="text"
-            className="table-identifier-input" /* <-- Usamos una clase nueva */
-            placeholder="Identificador (Ej. Mesa 4, Barra, Juan)"
+            className="table-identifier-input"
+            placeholder="Ej. Mesa 4, Barra o Juan"
             value={tableData || ''}
-            onChange={(e) => setTableData(e.target.value)}
+            onChange={(event) => setTableData(event.target.value)}
           />
         </div>
       )}
@@ -211,10 +213,12 @@ export default function OrderSummary({
       ) : (
         <>
           <div className="order-list">
-            {order.map(item => {
-              // ... (código de clases y modificadores igual) ...
-              const itemClasses = `order-item ${item.exceedsStock ? 'exceeds-stock' : ''}`;
+            {order.map((item) => {
+              const itemClasses = `order-item${item.exceedsStock ? ' exceeds-stock' : ''}`;
               const hasModifiers = item.selectedModifiers && item.selectedModifiers.length > 0;
+              const quantity = item.quantity || 1;
+              const lineTotal = item.price * quantity;
+              const isUnitSale = item.saleType === 'unit' || !item.saleType;
 
               return (
                 <div key={item.id} className={itemClasses}>
@@ -222,80 +226,100 @@ export default function OrderSummary({
                     <div className="order-item-header">
                       <span className="order-item-name">
                         {item.name}
-
-                        {/* Agregamos el icono AQUÍ, dentro de tu span original para que herede la alineación */}
                         {item.priceWarning && (
                           <span
-                            title="⚠️ Precio de Mayoreo bloqueado por Costo Alto"
-                            style={{
-                              marginLeft: '8px',
-                              cursor: 'help',
-                              fontSize: '0.9em' /* Un poco más chico que el texto para que se vea elegante */
-                            }}
+                            className="price-warning-icon"
+                            title="Precio de mayoreo bloqueado por costo alto"
                           >
-                            🛡️
+                            <ShieldAlert size={17} aria-hidden="true" />
                           </span>
                         )}
                       </span>
-                      {item.exceedsStock && (
-                        <div className="stock-error-container">
-                          <div className="stock-error-text">
-                            <strong>⚠️ Stock Insuficiente</strong>
-                            <span>Solo quedan <b>{item.stock}</b> disponibles.</span>
-                          </div>
-                          {/* Botón inteligente para ajustar automáticamente al máximo */}
-                          <button
-                            className="btn-fix-stock"
-                            onClick={() => updateItemQuantity(item.id, item.stock)}
-                            title="Ajustar cantidad al máximo disponible"
-                          >
-                            Ajustar a {item.stock}
-                          </button>
-                        </div>
-                      )}
+
+                      <strong className={`order-item-line-total${item.priceWarning ? ' order-item-line-total--warning' : ''}`}>
+                        ${lineTotal.toFixed(2)}
+                      </strong>
                     </div>
+
                     {hasModifiers && (
                       <div className="order-item-modifiers">
-                        {item.selectedModifiers.map((mod, idx) => (
-                          <span key={idx} className="modifier-tag">+ {mod.name}</span>
+                        {item.selectedModifiers.map((modifier) => (
+                          <span key={modifier.id || modifier.name} className="modifier-tag">
+                            + {modifier.name}
+                          </span>
                         ))}
                       </div>
                     )}
-                    {item.notes && <div className="order-item-notes">📝 {item.notes}</div>}
+
+                    {item.notes && (
+                      <div className="order-item-notes">Nota: {item.notes}</div>
+                    )}
+
                     <div className="order-item-price">
-                      <span style={{
-                        color: item.priceWarning ? '#d97706' : 'inherit',
-                        fontWeight: item.priceWarning ? 'bold' : 'inherit'
-                      }}>
-                        ${(item.price * (item.quantity || 1)).toFixed(2)}
-                      </span>
+                      ${item.price.toFixed(2)} {isUnitSale ? 'c/u' : 'por unidad'}
                     </div>
+
+                    {item.exceedsStock && (
+                      <div className="stock-error-container">
+                        <div className="stock-error-text">
+                          <strong>
+                            <AlertTriangle size={15} aria-hidden="true" />
+                            Stock insuficiente
+                          </strong>
+                          <span>Solo quedan <b>{item.stock}</b> disponibles.</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-fix-stock"
+                          onClick={() => updateItemQuantity(item.id, item.stock)}
+                          title="Ajustar cantidad al máximo disponible"
+                        >
+                          Ajustar a {item.stock}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  {(item.saleType === 'unit' || !item.saleType) ? (
-                    <div className="order-item-controls">
-                      <button className="quantity-btn" onClick={() => handleQuantityChange(item.id, -1)}>−</button>
+                  {isUnitSale ? (
+                    <div className="order-item-controls" aria-label={`Cantidad de ${item.name}`}>
+                      <button
+                        type="button"
+                        className="quantity-btn"
+                        onClick={() => handleQuantityChange(item.id, -1)}
+                        aria-label={`Quitar una unidad de ${item.name}`}
+                      >
+                        −
+                      </button>
                       <span className="quantity-display">{item.quantity}</span>
-                      <button className="quantity-btn" onClick={() => handleQuantityChange(item.id, 1)}>+</button>
+                      <button
+                        type="button"
+                        className="quantity-btn"
+                        onClick={() => handleQuantityChange(item.id, 1)}
+                        aria-label={`Agregar una unidad de ${item.name}`}
+                      >
+                        +
+                      </button>
                     </div>
                   ) : (
-                    <div className="order-item-controls">
-
-                      {/* --- NUEVO BOTÓN ELIMINAR PARA GRANEL --- */}
+                    <div className="order-item-controls order-item-controls--bulk">
                       <button
+                        type="button"
                         className="btn-remove-item"
                         onClick={() => removeItem(item.id)}
                         title="Eliminar del pedido"
+                        aria-label={`Eliminar ${item.name} del pedido`}
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={19} aria-hidden="true" />
                       </button>
-                      {/* -------------------------------------- */}
-
                       <input
-                        type="number" className="bulk-input"
+                        type="number"
+                        className="bulk-input"
                         value={item.quantity || ''}
-                        onChange={(e) => handleBulkInputChange(item.id, e.target.value)}
-                        placeholder="0.0" step="0.1" min="0"
+                        onChange={(event) => handleBulkInputChange(item.id, event.target.value)}
+                        placeholder="0.0"
+                        step="0.1"
+                        min="0"
+                        aria-label={`Cantidad de ${item.name}`}
                       />
                       <span className="unit-label">
                         {item.bulkData?.purchase?.unit?.toUpperCase() || 'KG'}
@@ -307,62 +331,69 @@ export default function OrderSummary({
             })}
           </div>
 
-          {/* ... (Totales y botones inferiores siguen igual) ... */}
-          <div className="order-total">
-            <span>Total:</span>
-            <span className="total-price">${total.toFixed(2)}</span>
-          </div>
+          <footer className="order-checkout">
+            <div className="order-total">
+              <span>Total</span>
+              <span className="total-price">${total.toFixed(2)}</span>
+            </div>
 
-          <div className="order-actions">
-            {showRestaurantActions && (
+            <div className={`order-actions${showRestaurantActions ? ' order-actions--restaurant' : ''}`}>
               <button
-                className="process-btn save-open-btn"
-                onClick={onSaveOpenOrder}
-                disabled={typeof onSaveOpenOrder !== 'function'}
-                style={{ backgroundColor: isEditMode ? '#f59e0b' : '' }} // Destacar el botón de actualizar
+                type="button"
+                className="order-action-btn order-action-btn--primary"
+                onClick={onOpenPayment}
               >
-                {isEditMode ? 'Actualizar Mesa' : 'Guardar/Enviar a Cocina'}
+                <CreditCard size={21} aria-hidden="true" />
+                <span>Cobrar</span>
+                <strong>${total.toFixed(2)}</strong>
               </button>
-            )}
 
-            {showRestaurantActions && canSplitOrder && isEditMode && (
+              {showRestaurantActions && (
+                <button
+                  type="button"
+                  className={`order-action-btn order-action-btn--save${isEditMode ? ' order-action-btn--update' : ''}`}
+                  onClick={onSaveOpenOrder}
+                  disabled={typeof onSaveOpenOrder !== 'function'}
+                >
+                  <Save size={19} aria-hidden="true" />
+                  {isEditMode ? 'Actualizar Mesa' : 'Guardar/Enviar a Cocina'}
+                </button>
+              )}
+
+              {showRestaurantActions && canSplitOrder && isEditMode && (
+                <button
+                  type="button"
+                  className="order-action-btn order-action-btn--split"
+                  onClick={onOpenSplit}
+                  disabled={typeof onOpenSplit !== 'function'}
+                >
+                  <Columns2 size={19} aria-hidden="true" />
+                  Dividir Cuenta
+                </button>
+              )}
+
+              {features.hasLayaway && (
+                <button
+                  type="button"
+                  className="order-action-btn order-action-btn--layaway"
+                  onClick={onOpenLayaway}
+                  title="Crear Apartado (Requiere Cliente)"
+                >
+                  <Bookmark size={19} aria-hidden="true" />
+                  Apartar
+                </button>
+              )}
+
               <button
-                className="process-btn split-btn"
-                onClick={onOpenSplit}
-                disabled={typeof onOpenSplit !== 'function'}
+                type="button"
+                className="order-action-btn order-action-btn--danger"
+                onClick={handleCancelOrder}
               >
-                Dividir Cuenta
+                <X size={19} aria-hidden="true" />
+                {(isEditMode && showRestaurantActions) ? 'Salir sin guardar' : 'Cancelar'}
               </button>
-            )}
-
-            <button
-              className={showRestaurantActions ? 'btn-secondary' : 'process-btn'}
-              onClick={onOpenPayment}
-            >
-              Cobrar
-            </button>
-            {features.hasLayaway && (
-              <button
-                className="btn-layaway"
-                onClick={onOpenLayaway}
-                title="Crear Apartado (Requiere Cliente)"
-              >
-                Apartar
-              </button>
-            )}
-            <button className="clear-btn" onClick={() => {
-              const confirmMessage = (isEditMode && showRestaurantActions)
-                ? '¿Descartar los cambios no guardados y salir de la mesa?'
-                : '¿Vaciar carrito?';
-
-              if (window.confirm(confirmMessage)) {
-                useActiveOrders.getState().cancelCurrentOrder();
-                if (isMobileModal) onClose();
-              }
-            }}>
-              {(isEditMode && showRestaurantActions) ? 'Salir sin guardar' : 'Cancelar'}
-            </button>
-          </div>
+            </div>
+          </footer>
         </>
       )}
     </div>

@@ -80,16 +80,20 @@ export default function BatchTable({
           <button
             type="button"
             className="btn-action edit"
-            title="Editar información"
+            title={batch.isArchived ? "No se puede editar un lote archivado" : "Editar información"}
             onClick={() => onEditBatch(batch)}
+            disabled={batch.isArchived}
+            style={{ opacity: batch.isArchived ? 0.4 : 1, cursor: batch.isArchived ? 'not-allowed' : 'pointer' }}
           >
             <Edit2 size={16} />
           </button>
           <button
             type="button"
             className="btn-action archive"
-            title="Archivar"
+            title={batch.isArchived ? "Este lote ya está archivado" : "Archivar"}
             onClick={() => onDeleteBatch(batch)}
+            disabled={batch.isArchived}
+            style={{ opacity: batch.isArchived ? 0.4 : 1, cursor: batch.isArchived ? 'not-allowed' : 'pointer' }}
           >
             <Archive size={16} />
           </button>

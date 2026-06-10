@@ -15,17 +15,6 @@ export default function FruteriaBatchFields({ formValues, setFieldValue, firstIn
           className="form-input"
         />
       </div>
-
-      <div className="form-group">
-        <label htmlFor={`${idPrefix}-expiryDate`}>Caducidad o fecha de merma esperada</label>
-        <input
-          id={`${idPrefix}-expiryDate`}
-          type="date"
-          value={formValues.expiryDate}
-          onChange={(event) => setFieldValue('expiryDate', event.target.value)}
-          className="form-input"
-        />
-      </div>
     </>
   );
 }

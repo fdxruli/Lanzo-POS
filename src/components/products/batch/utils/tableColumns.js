@@ -11,7 +11,7 @@ export function getBatchTableColumns(features = {}) {
     columns.push({ key: 'sku', label: 'SKU' });
   }
 
-  if (features.hasLots) {
+  if (features.hasLots || features.hasExpiry) {
     columns.push({ key: 'expiryDate', label: 'Caducidad' });
   }
 

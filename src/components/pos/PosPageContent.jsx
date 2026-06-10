@@ -9,9 +9,6 @@ import PosFloatingBar from './PosFloatingBar';
 import OrderTabs from './OrderTabs';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useState, useEffect } from 'react';
-import { db, STORES } from '../../services/db/dexie';
-import { SALE_STATUS } from '../../services/sales/financialStats';
-import { useOrderStore } from '../../store/useOrderStore';
 import { useAppStore } from '../../store/useAppStore';
 
 /**
@@ -32,10 +29,6 @@ const PosPageContent = ({ data, ui, actions, features }) => {
             try {
                 setIsInitializing(true);
 
-                // 1. Linkear stores PRIMERO para sincronización bidireccional
-                //    (esto es CRÍTICO: debe ocurrir antes de loadOrdersFromDB)
-                useOrderStore.getState().linkWithActiveOrders(useActiveOrders);
-
                 // 2. Cargar órdenes abiertas de BD y localStorage
                 await loadOrdersFromDB();
 
@@ -49,16 +42,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
         };
 
         initializeOrders();
-    }, []); // Solo al montar
-
-    // EFECTO 2: Mantener sincronización del carrito
-    useEffect(() => {
-        const unsubscribe = useActiveOrders.subscribe((state) => {
-            // Esto fuerza re-render cuando cambia activeOrders
-        });
-
-        return unsubscribe;
-    }, []);
+    }, [createOrder, loadOrdersFromDB]);
 
     const handleSwitchOrder = (id) => {
         switchOrder(id);
@@ -90,7 +74,6 @@ const PosPageContent = ({ data, ui, actions, features }) => {
     }
 
     const ordersCount = activeOrders.size;
-    const singleOrder = ordersCount === 1 ? Array.from(activeOrders.values())[0] : null;
     const openTablesShortcutTotal = data.activeTablesCount + data.kitchenRejectedOpenCount;
     const hasMobileFloatingBar = (features.hasTables && openTablesShortcutTotal > 0) || data.totalItemsCount > 0;
 

@@ -228,9 +228,11 @@ export default function SplitBillModal({
       const newPayments = {};
       ticketLabels.forEach((label, idx) => {
         const current = prev[label] || {};
+        const newTotal = formatMoneyFromCents(ticketMath.totalsCents[idx] || 0);
+        
         newPayments[label] = {
           ...current,
-          amountPaid: formatMoneyFromCents(ticketMath.totalsCents[idx] || 0)
+          amountPaid: current.paymentMethod === 'fiado' ? current.amountPaid : newTotal
         };
       });
       return newPayments;
@@ -277,16 +279,6 @@ export default function SplitBillModal({
     const totalChildren = ticketMath.totalsCents.reduce((a, b) => a + b, 0);
     if (totalChildren !== ticketMath.parentCents) {
       return 'Los totales de los tickets no cuadran con la orden padre.';
-    }
-
-    // Caja validation
-    if (!isCajaOpen) {
-      const hasCashPayment = ticketLabels.some(
-        (label) => payments[label]?.paymentMethod === 'efectivo'
-      );
-      if (hasCashPayment) {
-        return 'Necesitas una caja abierta para cobrar tickets en efectivo.';
-      }
     }
 
     // Payment validation with debt accumulator
@@ -343,7 +335,12 @@ export default function SplitBillModal({
     }
 
     return null;
-  }, [order, allocations, ticketLabels, ticketMath, payments, customers, isCajaOpen]);
+  }, [order, allocations, ticketLabels, ticketMath, payments, customers]);
+
+  const willAutoOpenCaja = useMemo(() => (
+    !isCajaOpen &&
+    ticketLabels.some((label) => payments[label]?.paymentMethod === 'efectivo')
+  ), [isCajaOpen, payments, ticketLabels]);
 
   /**
    * Move quantity from Pool to a specific ticket.
@@ -749,7 +746,15 @@ export default function SplitBillModal({
                         Método de pago
                         <select
                           value={payment.paymentMethod}
-                          onChange={(e) => updatePayment(label, 'paymentMethod', e.target.value)}
+                          onChange={(e) => {
+                            const newMethod = e.target.value;
+                            updatePayment(label, 'paymentMethod', newMethod);
+                            if (newMethod === 'fiado') {
+                              updatePayment(label, 'amountPaid', '0');
+                            } else {
+                              updatePayment(label, 'amountPaid', formatMoneyFromCents(ticketMath.totalsCents[tIdx] || 0));
+                            }
+                          }}
                           disabled={isSubmitting}
                         >
                           <option value="efectivo">Efectivo</option>
@@ -763,7 +768,7 @@ export default function SplitBillModal({
                           type="number"
                           min="0"
                           step="0.01"
-                          value={payment.amountPaid}
+                          value={payment.amountPaid || '0'}
                           onChange={(e) => updatePayment(label, 'amountPaid', e.target.value)}
                           disabled={isSubmitting}
                         />
@@ -773,7 +778,7 @@ export default function SplitBillModal({
                         <label>
                           Cliente
                           <select
-                            value={payment.customerId}
+                            value={payment.customerId || ''}
                             onChange={(e) => updatePayment(label, 'customerId', e.target.value)}
                             disabled={isSubmitting}
                           >
@@ -790,7 +795,7 @@ export default function SplitBillModal({
                       <label className="split-receipt-toggle">
                         <input
                           type="checkbox"
-                          checked={payment.sendReceipt}
+                          checked={payment.sendReceipt || false}
                           onChange={(e) => updatePayment(label, 'sendReceipt', e.target.checked)}
                           disabled={payment.paymentMethod === 'fiado' && !payment.customerId}
                         />
@@ -805,6 +810,12 @@ export default function SplitBillModal({
 
           {splitValidationError && (
             <p className="split-validation-error">{splitValidationError}</p>
+          )}
+
+          {!splitValidationError && willAutoOpenCaja && (
+            <p className="split-validation-warning">
+              La caja se abrirá automáticamente al confirmar el cobro en efectivo.
+            </p>
           )}
 
           <div className="split-actions">

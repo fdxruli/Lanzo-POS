@@ -221,16 +221,46 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                 </select>
             </div>
             {hasExpiry && (
-                <div className="form-group" style={{ marginTop: '10px' }}>
-                    <label>Caducidad (Opcional)</label>
-                    {/* CORRECCIÓN AQUÍ: Cambiar 'expiryDate' por 'shelfLife' en value y setField */}
-                    <input
-                        type="date"
-                        className="form-input"
-                        value={data.shelfLife || ''}
-                        onChange={e => setField('shelfLife', e.target.value)}
-                    />
-                    {isPharmacy && <small className="text-blue-500 mt-1 block text-xs">ℹ️ Para medicamentos controlados, recuerda registrar el Lote más adelante.</small>}
+                <div
+                    className={`perishable-toggle ${data.isPerishable ? 'active' : ''}`}
+                    onClick={() => setField('isPerishable', !data.isPerishable)}
+                    style={{
+                        marginTop: '10px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: `2px solid ${data.isPerishable ? '#f59e0b' : '#e2e8f0'}`,
+                        backgroundColor: data.isPerishable ? '#fffbeb' : '#f8fafc',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        transition: 'all 0.2s ease'
+                    }}
+                >
+                    <div
+                        style={{
+                            width: '42px', height: '24px', borderRadius: '12px',
+                            backgroundColor: data.isPerishable ? '#f59e0b' : '#cbd5e1',
+                            position: 'relative', transition: 'background 0.2s', flexShrink: 0
+                        }}
+                    >
+                        <div style={{
+                            width: '18px', height: '18px', borderRadius: '50%',
+                            backgroundColor: '#fff', position: 'absolute', top: '3px',
+                            left: data.isPerishable ? '21px' : '3px', transition: 'left 0.2s',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                        }} />
+                    </div>
+                    <div>
+                        <span style={{ fontWeight: '600', display: 'block', fontSize: '0.95rem', color: data.isPerishable ? '#92400e' : '#64748b' }}>
+                            {data.isPerishable ? '⏳ Este producto caduca' : '📦 Sin control de caducidad'}
+                        </span>
+                        <small style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+                            {data.isPerishable
+                                ? 'La fecha se registra al dar de alta cada Lote.'
+                                : 'Activa esto para productos perecederos.'}
+                        </small>
+                    </div>
                 </div>
             )}
         </div>

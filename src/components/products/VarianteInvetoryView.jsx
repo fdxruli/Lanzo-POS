@@ -1,5 +1,6 @@
 // src/components/products/VariantInventoryView.jsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { RefreshCw, Edit2 } from 'lucide-react';
 import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import Logger from '../../services/Logger';
@@ -80,9 +81,12 @@ export default function VariantInventoryView() {
 
   return (
     <div className="product-list-container" style={{ animation: 'fadeIn 0.3s' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: 20 }}>
         <h3 className="subtitle" style={{ margin: 0 }}>Inventario por Talla y Color</h3>
-        <button className="btn btn-secondary" onClick={loadInventory}>🔄 Actualizar</button>
+        
+        <button className="btn btn-secondary" onClick={loadInventory} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', width: 'max-content' }}>
+          <RefreshCw size={16} /> Actualizar
+        </button>
       </div>
 
       <div className="search-container">
@@ -133,10 +137,11 @@ export default function VariantInventoryView() {
                     style={{
                       background: '#eff6ff', border: '1px solid #bfdbfe',
                       color: '#2563eb', borderRadius: '6px',
-                      cursor: 'pointer', padding: '4px 8px', fontSize: '1.1rem'
+                      cursor: 'pointer', padding: '6px 10px', 
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
                     }}
                   >
-                    ✏️
+                    <Edit2 size={16} />
                   </button>
                 </td>
               </tr>
@@ -158,6 +163,7 @@ export default function VariantInventoryView() {
           batchData={editingItem}
           onClose={() => setEditingItem(null)}
           onSave={handleEditSuccess}
+          features={features}
         />
       )}
     </div>

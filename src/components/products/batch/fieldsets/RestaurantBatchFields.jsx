@@ -21,19 +21,6 @@ export default function RestaurantBatchFields({
           className="form-input"
         />
       </div>
-
-      {features.hasLots && (
-        <div className="form-group">
-          <label htmlFor={`${idPrefix}-expiryDate`}>Fecha caducidad (Opcional)</label>
-          <input
-            id={`${idPrefix}-expiryDate`}
-            type="date"
-            value={formValues.expiryDate}
-            onChange={(event) => setFieldValue('expiryDate', event.target.value)}
-            className="form-input"
-          />
-        </div>
-      )}
     </>
   );
 }

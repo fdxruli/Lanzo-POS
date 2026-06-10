@@ -2,8 +2,8 @@ import React from 'react';
 
 export default function FruteriaFields({
     saleType, setSaleType,
-    shelfLife, setShelfLife,
-    unit, setUnit
+    unit, setUnit,
+    common
 }) {
 
     // Helper para cambiar el modo y asignar una unidad por defecto lógica
@@ -20,9 +20,8 @@ export default function FruteriaFields({
                 Configuración de Venta
             </label>
 
-            {/* 1. TIPO DE VENTA (Botones Fijos - No cambian de lugar) */}
+            {/* 1. TIPO DE VENTA */}
             <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                {/* BOTÓN IZQUIERDO: Por Pieza / Manojo */}
                 <button
                     type="button"
                     className={`btn ${saleType === 'unit' ? 'btn-save' : 'btn-cancel'}`}
@@ -36,7 +35,6 @@ export default function FruteriaFields({
                     🍎 Por Pieza / Manojo
                 </button>
 
-                {/* BOTÓN DERECHO: Por Peso */}
                 <button
                     type="button"
                     className={`btn ${saleType === 'bulk' ? 'btn-save' : 'btn-cancel'}`}
@@ -64,7 +62,6 @@ export default function FruteriaFields({
                 </label>
 
                 {saleType === 'bulk' ? (
-                    // OPCIONES DE PESO
                     <div style={{ display: 'flex', gap: '10px' }}>
                         {['kg', 'gr', 'lb'].map(u => (
                             <button
@@ -84,7 +81,6 @@ export default function FruteriaFields({
                         ))}
                     </div>
                 ) : (
-                    // OPCIONES DE UNIDAD (Manojo, Pieza, Bolsa)
                     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                         {[
                             { id: 'pza', label: 'Pieza' },
@@ -113,35 +109,31 @@ export default function FruteriaFields({
             </div>
 
             {/* 3. GESTIÓN DE FRESCURA */}
-            <div className="form-group" style={{
-                backgroundColor: 'var(--light-background)', // Antes: #f0fdf4
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)', // Antes: #bbf7d0
-                marginTop: '15px'
-            }}>
-                <label className="form-label" style={{
-                    color: 'var(--primary-color)', // Antes: #15803d (Usamos el primario para resaltar)
-                    fontWeight: 'bold',
-                    display: 'block',
-                    marginBottom: '8px'
-                }}>
-                    ⏳ Vida Útil Promedio (Días)
-                </label>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <div className="form-group" style={{ backgroundColor: '#f0fdf4', padding: '10px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                <label className="form-label" style={{ color: '#15803d' }}>⏳ Vida Útil Promedio (Días)</label>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <input
-                        type="number"
-                        className="form-input"
+                        type="number" 
+                        className="form-input" 
                         placeholder="Ej: 7"
-                        value={shelfLife}
-                        onChange={(e) => setShelfLife(e.target.value)}
+                        value={common.shelfLifeValue || ''}
+                        onChange={(e) => {
+                            const value = Number(e.target.value);
+
+                            if (e.target.value !== '' && Number.isFinite(value) && value > 0) {
+                                common.setExpirationMode('SHELF_LIFE');
+                                common.setShelfLifeValue(value);
+                                common.setShelfLifeUnit('days');
+                                return;
+                            }
+
+                            common.setExpirationMode('NONE');
+                            common.setShelfLifeValue('');
+                            common.setShelfLifeUnit(null);
+                        }}
+                        min="0"
                     />
-                    <span style={{
-                        fontSize: '0.8rem',
-                        color: 'inherit',
-                        opacity: 0.7
-                    }}>
+                    <span style={{ fontSize: '0.8rem', color: '#15803d', lineHeight: '1.2' }}>
                         Días antes de marcar alerta de merma.
                     </span>
                 </div>

@@ -16,7 +16,7 @@ export default function RetailProductForm({
   activeRubroContext,
   features
 }) {
-  const common = useProductCommon(productToEdit);
+  const common = useProductCommon(productToEdit, { defaultExpirationMode: 'NONE' });
 
   const controller = useRetailProductFormController({
     productToEdit,
@@ -35,6 +35,7 @@ export default function RetailProductForm({
           common={common}
           categories={categories}
           onOpenCategoryManager={onOpenCategoryManager}
+          productId={productToEdit?.id}
         />
 
         <RetailModules
@@ -44,8 +45,8 @@ export default function RetailProductForm({
           setSaleType={controller.setSaleType}
           unit={controller.unit}
           setUnit={controller.setUnit}
-          shelfLife={controller.shelfLife}
-          setShelfLife={controller.setShelfLife}
+          isPerishable={controller.isPerishable}
+          setIsPerishable={controller.setIsPerishable}
           minStock={controller.minStock}
           setMinStock={controller.setMinStock}
           maxStock={controller.maxStock}

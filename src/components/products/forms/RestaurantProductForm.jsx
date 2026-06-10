@@ -14,7 +14,7 @@ export default function RestaurantProductForm({
   onOpenCategoryManager,
   activeRubroContext
 }) {
-  const common = useProductCommon(productToEdit);
+  const common = useProductCommon(productToEdit, { defaultExpirationMode: 'SHELF_LIFE' });
   const controller = useRestaurantProductFormController({
     productToEdit,
     activeRubroContext,
@@ -30,9 +30,11 @@ export default function RestaurantProductForm({
           categories={categories}
           onOpenCategoryManager={onOpenCategoryManager}
           readOnlyCost={controller.isCostReadOnly}
+          productId={productToEdit?.id}
         />
 
         <RestaurantConfigSection
+          common={common}
           productType={controller.productType}
           setProductType={controller.setProductType}
           onManageRecipe={() => controller.setIsRecipeModalOpen(true)}

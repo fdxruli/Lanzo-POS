@@ -24,7 +24,6 @@ export function useRetailProductFormController({
   const [minStock, setMinStock] = useState(productToEdit?.minStock || '');
   const [maxStock, setMaxStock] = useState(productToEdit?.maxStock || '');
   const [supplier, setSupplier] = useState(productToEdit?.supplier || '');
-  const [shelfLife, setShelfLife] = useState(productToEdit?.shelfLife || '');
   const [wholesaleTiers, setWholesaleTiers] = useState(productToEdit?.wholesaleTiers || []);
   const [isWholesaleModalOpen, setIsWholesaleModalOpen] = useState(false);
   const [conversionFactor, setConversionFactor] = useState(
@@ -203,6 +202,14 @@ export function useRetailProductFormController({
       const commonData = common.getCommonData();
       const productId = productToEdit?.id || generateID('prod');
       const totalVariantStock = isApparel ? getTotalVariantStock(quickVariants) : 0;
+      const originalProductData = Object.fromEntries(
+        Object.entries(productToEdit || {}).filter(([key]) => key !== 'shelfLife')
+      );
+      const shouldPurgeBatchExpirations = Boolean(
+        productToEdit
+        && (productToEdit.expirationMode === 'STRICT' || productToEdit.expirationMode === 'SHELF_LIFE')
+        && commonData.expirationMode === 'NONE'
+      );
 
       if (totalVariantStock > 0) {
         commonData.trackStock = true;
@@ -213,7 +220,7 @@ export function useRetailProductFormController({
         : (productToEdit ? (Number.parseFloat(productToEdit.stock) || 0) : 0);
 
       const payload = {
-        ...(productToEdit || {}), // PRESERVA LA DATA ORIGINAL: Evita que Dexie borre campos del CSV no manejados en el form
+        ...originalProductData, // PRESERVA LA DATA ORIGINAL: Evita que Dexie borre campos del CSV no manejados en el form
         id: productId,
         ...commonData,
         stock: initialDbStock, // RESPETA EL STOCK PREVIO: Impide que se reinicie a 0/undefined
@@ -225,7 +232,6 @@ export function useRetailProductFormController({
         supplier,
         wholesaleTiers: normalizeWholesaleTiers(wholesaleTiers),
         conversionFactor,
-        shelfLife,
         batchManagement: buildBatchManagementConfig({
           isApparel,
           hasActiveVariants,
@@ -233,6 +239,7 @@ export function useRetailProductFormController({
         }),
         bulkData: { purchase: { unit } },
         productType: 'sellable',
+        ...(shouldPurgeBatchExpirations ? { _intent: 'PURGE_BATCHES' } : {}),
         ...(productToEdit ? { updatedAt: new Date().toISOString() } : { createdAt: new Date().toISOString() })
       };
 
@@ -269,7 +276,6 @@ export function useRetailProductFormController({
     quickVariants,
     saleType,
     saveApparelVariants,
-    shelfLife,
     supplier,
     unit,
     validateRetailRules,
@@ -287,8 +293,6 @@ export function useRetailProductFormController({
     setMaxStock,
     supplier,
     setSupplier,
-    shelfLife,
-    setShelfLife,
     wholesaleTiers,
     setWholesaleTiers,
     isWholesaleModalOpen,
@@ -303,4 +307,3 @@ export function useRetailProductFormController({
     handleSubmit
   };
 }
-

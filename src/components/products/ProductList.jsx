@@ -27,10 +27,13 @@ const Icons = {
   ),
   Layers: () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+  ),
+  Price: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
   )
 };
 
-export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus, onManageBatches }) {
+export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice }) {
   const features = useFeatureConfig();
 
   // Acciones del Store (solo paginacion/cache)
@@ -165,6 +168,17 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             <option value="active">Solo Activos</option>
             <option value="inactive">Solo Inactivos</option>
           </select>
+
+          {features.hasDailyPricing && (
+            <button
+                className="btn-update-price"
+                onClick={onOpenDailyPrice}
+                title="Actualizar Precios del Día"
+            >
+                <Icons.Price />
+                Actualizar Precios
+            </button>
+          )}
         </div>
       </div>
 
@@ -229,14 +243,15 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                         className="btn-action btn-batches"
                         onClick={() => onManageBatches(item.id)}
                         title="Gestionar Lotes / Caducidades"
+                        disabled={!isActive}
                       >
                         <Icons.Layers /> <span>Lotes</span>
                       </button>
                     )}
-                    <button className="btn-action btn-edit" onClick={() => onEdit(item)} title="Editar">
+                    <button className="btn-action btn-edit" onClick={() => onEdit(item)} title="Editar" disabled={!isActive}>
                       <Icons.Edit /> <span>Editar</span>
                     </button>
-                    <button className="btn-action btn-delete" onClick={() => onDelete(item)} title="Eliminar">
+                    <button className="btn-action btn-delete" onClick={() => onDelete(item)} title="Eliminar" disabled={!isActive}>
                       <Icons.Delete /> <span>Eliminar</span>
                     </button>
                   </div>

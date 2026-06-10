@@ -404,7 +404,7 @@ function FarmaciaHelp({ answers }) {
  * Ayuda para Frutería
  */
 function FruteriaHelp({ answers }) {
-    const { saleType, shelfLife, isPerishable } = answers;
+    const { saleType, isPerishable } = answers;
 
     if (saleType === undefined) return null;
 
@@ -434,14 +434,9 @@ function FruteriaHelp({ answers }) {
                         <strong>⚖️ Por Peso (kg)</strong>
                     </p>
                 )}
-                {shelfLife && (
-                    <p style={{ margin: '0 0 6px 0', color: '#166534', fontSize: '0.85rem' }}>
-                        📅 Vida útil: <strong>{shelfLife} días</strong>
-                    </p>
-                )}
                 {isPerishable !== false && (
                     <p style={{ margin: 0, color: '#dc2626', fontSize: '0.85rem' }}>
-                        ⚠️ Producto perecedero → Se marcará para alertas de merma
+                        ⚠️ Producto perecedero → La caducidad se registra por Lote
                     </p>
                 )}
             </div>

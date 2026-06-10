@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { saveBatchAndSyncProductSafe } from '../../../services/db';
 import Logger from '../../../services/Logger';
 
-export default function BatchEditModal({ batchData, onClose, onSave }) {
+export default function BatchEditModal({ batchData, onClose, onSave, features }) {
     // Inicializamos el estado
     const [formData, setFormData] = useState({
         stock: '',
@@ -216,16 +216,18 @@ export default function BatchEditModal({ batchData, onClose, onSave }) {
                                 style={{ fontWeight: 'bold', fontSize: '1.1em' }}
                             />
                         </div>
-                        <div>
-                            <label className="form-label" style={{display:'block', marginBottom:'5px', fontWeight:600}}>Caducidad</label>
-                            <input 
-                                type="date"
-                                name="expiryDate"
-                                value={formData.expiryDate} 
-                                onChange={handleChange}
-                                className="form-input"
-                            />
-                        </div>
+                        {features?.hasExpiry && (
+                            <div>
+                                <label className="form-label" style={{display:'block', marginBottom:'5px', fontWeight:600}}>Caducidad</label>
+                                <input 
+                                    type="date"
+                                    name="expiryDate"
+                                    value={formData.expiryDate} 
+                                    onChange={handleChange}
+                                    className="form-input"
+                                />
+                            </div>
+                        )}
                     </div>
 
                     {/* Fila 4: Notas (Ancho completo) */}

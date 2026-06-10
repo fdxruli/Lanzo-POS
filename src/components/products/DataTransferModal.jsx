@@ -1,7 +1,8 @@
 // src/components/products/DataTransferModal.jsx
 import React, { useState } from 'react';
 import { useProductStore } from '../../store/useProductStore';
-import { downloadInventorySmart, processImport, downloadFile, generatePharmacyReport } from '../../services/dataTransfer';
+import { useAppStore } from '../../store/useAppStore';
+import { downloadInventorySmart, processImport, downloadFile, generatePharmacyReport, downloadTemplate } from '../../services/dataTransfer';
 import { showMessageModal } from '../../services/utils';
 import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -15,13 +16,21 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
   // Hook de configuración para saber si mostrar opciones de Farmacia
   const features = useFeatureConfig();
 
+  // Leer el rubro real del perfil de empresa
+  const businessType = useAppStore(state => state.companyProfile?.business_type);
+  const rubro = (() => {
+    if (Array.isArray(businessType) && businessType.length > 0) return businessType[0];
+    if (typeof businessType === 'string' && businessType.trim()) return businessType.split(',')[0].trim();
+    return null;
+  })();
+
   const categories = useProductStore(state => state.categories);
 
   const handleExport = async () => {
     setIsLoading(true);
     try {
       // Ya no cargamos datos aquí, la función 'smart' se encarga internamente
-      await downloadInventorySmart();
+      await downloadInventorySmart(rubro);
 
       showMessageModal('✅ Archivo de inventario generado correctamente.');
     } catch (error) {
@@ -31,6 +40,20 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
       setIsLoading(false);
     }
   };
+
+  const handleDownloadTemplate = () => {
+    if (!rubro) {
+      showMessageModal('⚠️ No se pudo determinar tu tipo de negocio. Ve a Configuración y selecciona tu rubro antes de descargar la plantilla.');
+      return;
+    }
+    try {
+      downloadTemplate(rubro);
+      showMessageModal('Plantilla descargada. Úsala para rellenar tus productos.');
+    } catch (error) {
+      Logger.error('Error descargando plantilla:', error);
+      showMessageModal(`⚠️ ${error.message}`);
+    }
+  }
 
   // Manejador del reporte de Farmacia (Libro de Control)
   const handleExportPharmacy = async () => {
@@ -143,6 +166,18 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
           ) : (
             <div>
               <p>Sube un archivo CSV para agregar o actualizar productos masivamente.</p>
+
+              <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
+                <button className="btn btn-secondary" onClick={handleDownloadTemplate} disabled={!rubro}>
+                  📄 Descargar Plantilla Vacía para Importar
+                </button>
+                <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem' }}>
+                  {rubro
+                    ? <>Plantilla para: <strong>{rubro}</strong>. Incluye solo las columnas relevantes para tu tipo de negocio.</>
+                    : <span style={{ color: '#b91c1c' }}>⚠️ No se detectó un rubro configurado. Ve a Configuración para seleccionar tu tipo de negocio.</span>
+                  }
+                </p>
+              </div>
 
               <div style={{
                 border: '2px dashed #ccc', padding: '2rem',

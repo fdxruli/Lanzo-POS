@@ -385,6 +385,12 @@
   font-weight: 600;
 }
 
+.split-validation-warning {
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--warning-color, #b26a00);
+  font-weight: 600;
+}
+
 .split-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -400,4 +406,3 @@
     grid-template-columns: 1fr;
   }
 }
-

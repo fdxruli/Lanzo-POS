@@ -2,6 +2,7 @@ import React from 'react';
 import ScannerModal from '../../scanner/ScannerModal';
 import CategorySelect from './CategorySelect';
 
+
 const getMarginColor = (marginVal) => {
     const m = parseFloat(marginVal) || 0;
     if (m < 15) return '#ef4444'; // Rojo (Peligro, margen bajo)
@@ -12,7 +13,9 @@ const getMarginColor = (marginVal) => {
 export default function CommonProductFields({
     common, // Objeto que retorna useProductCommon
     categories,
-    onOpenCategoryManager
+    onOpenCategoryManager,
+    productId,
+    readOnlyCost
 }) {
     const {
         name, setName,
@@ -106,7 +109,7 @@ export default function CommonProductFields({
 
                     {/* ... (input de margen igual) ... */}
                     <div className="form-group" style={{ width: '80px', marginBottom: 0, position: 'relative' }}>
-                        <label className="form-label" style={{ fontSize: '0.85rem', color: 'var(--primary-color)' }}>Ganancia %</label>
+                        <label className="form-label" style={{ fontSize: '0.85rem', color: 'var(--primary-color)' }}>Margen %</label>
                         <input
                             type="number"
                             className="form-input"
@@ -155,6 +158,7 @@ export default function CommonProductFields({
                     </span>
                 </div>
             </div>
+
 
             <button type="button" className="btn-toggle-specific" onClick={() => setShowSpecificData(!showSpecificData)} style={{ marginTop: '15px' }}>
                 {showSpecificData ? 'Ocultar detalles (Foto, Cat, Desc)' : 'Agregar Foto, Categoría o Descripción'}

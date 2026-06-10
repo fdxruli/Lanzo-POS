@@ -15,17 +15,6 @@ export default function PharmacyBatchFields({ formValues, setFieldValue, firstIn
           className="form-input"
         />
       </div>
-
-      <div className="form-group">
-        <label htmlFor={`${idPrefix}-expiryDate`}>Fecha caducidad (Opcional)</label>
-        <input
-          id={`${idPrefix}-expiryDate`}
-          type="date"
-          value={formValues.expiryDate}
-          onChange={(event) => setFieldValue('expiryDate', event.target.value)}
-          className="form-input"
-        />
-      </div>
     </>
   );
 }

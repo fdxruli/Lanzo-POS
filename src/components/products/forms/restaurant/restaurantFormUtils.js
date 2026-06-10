@@ -24,14 +24,18 @@ export function buildRestaurantPayload({
   productToEdit
 }) {
   const finalRecipe = productType === 'ingredient' ? [] : recipe;
+  const hasRecipe = finalRecipe.length > 0; // Agregamos esta validación
+
   const finalStock = productType === 'ingredient'
     ? commonData.stock
-    : (recipe.length > 0 ? 0 : commonData.stock);
+    : (hasRecipe ? 0 : commonData.stock);
 
   const payload = {
     id: productId,
     ...commonData,
     stock: finalStock,
+    // CORRECCIÓN: Si el producto tiene receta, su stock directo NO debe gestionarse.
+    trackStock: hasRecipe ? false : commonData.trackStock,
     rubroContext: activeRubroContext,
     productType,
     recipe: finalRecipe,
@@ -49,4 +53,3 @@ export function buildRestaurantPayload({
 
   return payload;
 }
-

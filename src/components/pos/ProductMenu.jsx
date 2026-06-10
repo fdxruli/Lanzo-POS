@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useOrderStore } from '../../store/useOrderStore';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { showMessageModal } from '../../services/utils';
 import ProductCard from './ProductCard';
 import ProductModifiersModal from './ProductModifiersModal';
@@ -54,7 +54,7 @@ export default function ProductMenu({
   onOpenScanner,
   showOutofStockCategory
 }) {
-  const addSmartItem = useOrderStore((state) => state.addSmartItem);
+  const addSmartItem = useActiveOrders((state) => state.addSmartItem);
   const features = useFeatureConfig();
 
   // --- ESTADOS PARA MODIFICADORES (Restaurantes) ---

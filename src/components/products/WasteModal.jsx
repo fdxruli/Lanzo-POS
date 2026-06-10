@@ -1,13 +1,38 @@
 // src/components/products/WasteModal.jsx
 import React, { useState } from 'react';
-import { saveDataSafe, STORES } from '../../services/database';
+import { saveDataSafe, STORES, updateProductSafe } from '../../services/database';
 import { generateID, showMessageModal, roundCurrency } from '../../services/utils';
 // --- CAMBIO: Usamos el store correcto (Estadísticas) ---
 import { useStatsStore } from '../../store/useStatsStore';
 import { useProductStore } from '../../store/useProductStore';
 import { useSalesStore } from '../../store/useSalesStore';
+import { useAppStore } from '../../store/useAppStore';
+import { Trash2, AlertCircle, PackageX, ShieldAlert, Gift, Flame, XCircle, AlertTriangle, X, CheckCircle, Leaf, Droplet } from 'lucide-react';
+import './WasteModal.css';
+
+const VERDULERIA_REASONS = [
+    { id: 'caducado', label: 'Se pudrió / Caducó', icon: AlertCircle },
+    { id: 'dañado', label: 'Se aplastó / Dañado', icon: PackageX },
+    { id: 'deshidratacion', label: 'Merma natural / Deshidratación', icon: Leaf },
+    { id: 'robo', label: 'Robo / Faltante', icon: ShieldAlert },
+    { id: 'degustacion', label: 'Degustación / Regalo', icon: Gift },
+];
+
+const RESTAURANTE_REASONS = [
+    { id: 'caducado', label: 'Se pudrió / Caducó', icon: AlertCircle },
+    { id: 'quemado', label: 'Se quemó en cocina', icon: Flame },
+    { id: 'error_pedido', label: 'Error / Rechazo de cliente', icon: XCircle },
+    { id: 'contaminacion', label: 'Contaminación cruzada', icon: AlertTriangle },
+    { id: 'dañado', label: 'Se derramó / Accidente', icon: Droplet },
+    { id: 'robo', label: 'Robo / Faltante', icon: ShieldAlert },
+    { id: 'degustacion', label: 'Degustación / Regalo', icon: Gift },
+];
 
 export default function WasteModal({ show, onClose, product, onConfirm }) {
+    const companyProfile = useAppStore(state => state.companyProfile);
+    const rubro = companyProfile?.business_type || 'verduleria';
+    const activeReasons = rubro === 'restaurante' ? RESTAURANTE_REASONS : VERDULERIA_REASONS;
+
     const [quantity, setQuantity] = useState('');
     const [reason, setReason] = useState('caducado'); // caducado, dañado, etc.
     const [notes, setNotes] = useState('');
@@ -15,7 +40,6 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
     // --- CAMBIO: Usamos el hook del store de estadísticas ---
     const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
     const registerWasteRecord = useSalesStore(state => state.registerWasteRecord);
-
     if (!show || !product) return null;
 
     const handleSave = async (e) => {
@@ -39,7 +63,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
                 return;
             }
 
-            const ingredientsToUpdate = [];
+            const ingredientUpdates = [];
 
             // 1. Calcular descuentos necesarios
             for (const item of product.recipe) {
@@ -48,16 +72,13 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
                 if (ingredient) {
                     const amountNeeded = item.quantity * qty;
 
-                    // Validación de Stock del Ingrediente (Opcional: permitir negativo si ya se tiró)
-                    // Aquí decidimos permitir que se vaya a negativo para reflejar la realidad: la comida se tiró.
-
+                    // Permitir negativo para reflejar la realidad: la comida se tiró.
                     const newStock = (ingredient.stock || 0) - amountNeeded;
                     const itemCost = (ingredient.cost || 0) * amountNeeded;
 
-                    ingredientsToUpdate.push({
-                        ...ingredient,
-                        stock: newStock,
-                        updatedAt: new Date().toISOString()
+                    ingredientUpdates.push({
+                        id: ingredient.id,
+                        stock: newStock
                     });
 
                     totalCostLoss += itemCost;
@@ -65,10 +86,11 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
                 }
             }
 
-            // 2. Aplicar descuentos en Base de Datos
-            // (Lo hacemos secuencial para asegurar integridad)
+            // 2. Aplicar descuentos usando updateProductSafe (respeta hooks de Dexie)
             try {
-                await Promise.all(ingredientsToUpdate.map(ing => saveDataSafe(STORES.MENU, ing)));
+                await Promise.all(ingredientUpdates.map(ing =>
+                    updateProductSafe(ing.id, { stock: ing.stock })
+                ));
             } catch (error) {
                 alert("Error al descontar ingredientes: " + error.message);
                 return;
@@ -82,13 +104,9 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
                 return;
             }
 
-            const updatedProduct = {
-                ...product,
-                stock: product.stock - qty,
-                updatedAt: new Date().toISOString()
-            };
+            const newStock = product.stock - qty;
 
-            const prodResult = await saveDataSafe(STORES.MENU, updatedProduct);
+            const prodResult = await updateProductSafe(product.id, { stock: newStock });
             if (!prodResult.success) {
                 alert(`Error al actualizar stock: ${prodResult.error?.message}`);
                 return;
@@ -131,11 +149,21 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
     };
 
     return (
-        <div className="modal" style={{ display: 'flex', zIndex: 2200 }}>
-            <div className="modal-content" style={{ maxWidth: '400px' }}>
-                <h2 className="modal-title" style={{ color: 'var(--error-color)' }}>🗑️ Registrar Merma</h2>
-                <p>Producto: <strong>{product.name}</strong></p>
-                <p style={{ fontSize: '0.9rem' }}>Stock actual: {product.stock}</p>
+        <div className="waste-modal-overlay">
+            <div className="waste-modal-content">
+                <div className="waste-modal-header">
+                    <h2 className="waste-modal-title">
+                        <Trash2 size={24} /> Registrar Merma
+                    </h2>
+                    <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-color, #333)' }}>
+                        <X size={24} />
+                    </button>
+                </div>
+                
+                <div className="waste-product-info">
+                    <p>Producto: <strong>{product.name}</strong></p>
+                    <p>Stock actual: <strong>{product.stock}</strong></p>
+                </div>
 
                 <form onSubmit={handleSave}>
                     <div className="form-group">
@@ -148,25 +176,33 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
 
                     <div className="form-group">
                         <label className="form-label">Motivo</label>
-                        <select className="form-input" value={reason} onChange={e => setReason(e.target.value)}>
-                            <option value="caducado">🤢 Se pudrió / Caducó</option>
-                            <option value="dañado">🤕 Se aplastó / Dañado</option>
-                            <option value="robo">🕵️ Robo / Faltante</option>
-                            <option value="degustacion">😋 Degustación / Regalo</option>
-                            <option value="quemado">🔥 Se quemó en cocina</option>
-                            <option value="error_pedido">❌ Error en pedido / Cliente lo rechazó</option>
-                            <option value="contaminacion">⚠️ Contaminación cruzada</option>
-                        </select>
+                        <div className="waste-reasons-grid">
+                            {activeReasons.map(r => {
+                                const Icon = r.icon;
+                                return (
+                                    <div 
+                                        key={r.id} 
+                                        className={`waste-reason-card ${reason === r.id ? 'selected' : ''}`}
+                                        onClick={() => setReason(r.id)}
+                                    >
+                                        <Icon size={18} />
+                                        <span>{r.label}</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
                     </div>
 
-                    <div className="form-group">
-                        <label className="form-label">Notas</label>
-                        <textarea className="form-textarea" value={notes} onChange={e => setNotes(e.target.value)} rows="2"></textarea>
+                    <div className="form-group" style={{ marginTop: '15px' }}>
+                        <label className="form-label">Notas (Opcional)</label>
+                        <textarea className="form-textarea" value={notes} onChange={e => setNotes(e.target.value)} rows="2" placeholder="Agrega detalles si es necesario..."></textarea>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                    <div className="waste-actions">
                         <button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button>
-                        <button type="submit" className="btn btn-delete">Confirmar Pérdida</button>
+                        <button type="submit" className="btn btn-delete">
+                            <CheckCircle size={18} /> Confirmar Pérdida
+                        </button>
                     </div>
                 </form>
             </div>

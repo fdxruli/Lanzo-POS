@@ -18,7 +18,9 @@ const DEFAULT_FORM_VALUES = {
   location: '',
   pagadoDeCaja: false,
   supplier: '',
-  updateGlobalPrice: false
+  updateGlobalPrice: false,
+  manufacturerBatchId: '',
+  pao: ''
 };
 
 /**
@@ -69,7 +71,7 @@ export function useBatchFormController({
       }
     }
 
-    const showExpiry = rubroGroup === 'pharmacy' || rubroGroup === 'fruteria' || features?.hasLots;
+    const showExpiry = features?.hasExpiry || features?.hasLots;
 
     return {
       ...DEFAULT_FORM_VALUES,
@@ -91,13 +93,19 @@ export function useBatchFormController({
         price: batchToEdit?.price ?? '',
         stock: batchToEdit?.stock ?? '',
         notes: batchToEdit?.notes || '',
-        expiryDate: batchToEdit?.expiryDate ? batchToEdit.expiryDate.split('T')[0] : '',
+        expiryDate: batchToEdit?.expiryDate 
+          ? (product?.expirationMode === 'SHELF_LIFE' 
+              ? batchToEdit.expiryDate.substring(0, 16) 
+              : batchToEdit.expiryDate.split('T')[0]) 
+          : '',
         sku: batchToEdit?.sku || '',
         attribute1: attrs.talla || attrs.modelo || '',
         attribute2: attrs.color || attrs.marca || '',
         location: batchToEdit?.location || '',
         pagadoDeCaja: false,
-        supplier: batchToEdit?.supplier || ''
+        supplier: batchToEdit?.supplier || '',
+        manufacturerBatchId: batchToEdit?.manufacturerBatchId || '',
+        pao: attrs.pao || ''
       });
       return;
     }
@@ -127,7 +135,7 @@ export function useBatchFormController({
   }, [formValues.attribute1, formValues.attribute2, formValues.sku, product?.name]);
 
   const handleProcessSave = useCallback(async (shouldClose) => {
-    const validation = validateBatchInput(formValues);
+    const validation = validateBatchInput(formValues, product);
     if (!validation.valid) {
       showMessageModal(validation.message);
       return false;

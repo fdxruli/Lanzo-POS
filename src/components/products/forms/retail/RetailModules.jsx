@@ -10,8 +10,6 @@ export default function RetailModules({
   setSaleType,
   unit,
   setUnit,
-  shelfLife,
-  setShelfLife,
   minStock,
   setMinStock,
   maxStock,
@@ -35,10 +33,9 @@ export default function RetailModules({
           <FruteriaFields
             saleType={saleType}
             setSaleType={setSaleType}
-            shelfLife={shelfLife}
-            setShelfLife={setShelfLife}
             unit={unit}
             setUnit={setUnit}
+            common={common}
           />
         </div>
       )}
@@ -74,8 +71,7 @@ export default function RetailModules({
             showBulk={features.hasBulk}
             showWholesale={features.hasWholesale}
             showStockAlerts={features.hasMinMax}
-            shelfLife={shelfLife}
-            setShelfLife={setShelfLife}
+
           />
         </div>
       )}
@@ -93,4 +89,3 @@ export default function RetailModules({
     </>
   );
 }
-
