@@ -153,7 +153,10 @@ export const cancelSale = async ({
     );
 
     if (result.success) {
-        try {
+      try {
+            if (result.restoreStock && result.restoredInventoryValue > 0) {
+                await useStatsStore.getState().adjustInventoryValue(result.restoredInventoryValue);
+            }
             await useStatsStore.getState().rebuildFinancialStats();
         } catch (error) {
             Logger.warn('La venta se cancelo, pero no se pudieron reconstruir las metricas financieras.', error);

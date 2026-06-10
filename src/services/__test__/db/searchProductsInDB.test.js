@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { db } from '../../db/dexie';
-import { searchProductsInDB } from '../../db/products';
+import { searchProductsInTable } from '../../db/productSearch';
 
 const createMockCollection = (rows) => {
   let currentRows = [...rows];
@@ -45,12 +44,9 @@ describe('searchProductsInDB', () => {
   });
 
   it('retorna [] cuando el termino esta vacio', async () => {
-    const tableSpy = vi.spyOn(db, 'table').mockImplementation(() => createMockTable([]));
-
-    const result = await searchProductsInDB('   ');
+    const result = await searchProductsInTable(createMockTable([]), '   ');
 
     expect(result).toEqual([]);
-    expect(tableSpy).not.toHaveBeenCalled();
   });
 
   it('usa indices y deduplica resultados repetidos por id', async () => {
@@ -61,9 +57,7 @@ describe('searchProductsInDB', () => {
       { id: 'p4', name_lower: 'alitas ocultas', barcode: 'ali-999', sku: 'x', isActive: false }
     ];
 
-    vi.spyOn(db, 'table').mockImplementation(() => createMockTable(rows));
-
-    const result = await searchProductsInDB('ali');
+    const result = await searchProductsInTable(createMockTable(rows), 'ali');
     const ids = result.map((item) => item.id);
 
     expect(ids).toContain('p1');
@@ -78,9 +72,7 @@ describe('searchProductsInDB', () => {
       { id: 'p2', name_lower: 'pan integral', barcode: '3322', sku: 'pan-01', isActive: true }
     ];
 
-    vi.spyOn(db, 'table').mockImplementation(() => createMockTable(rows));
-
-    const result = await searchProductsInDB('maiz');
+    const result = await searchProductsInTable(createMockTable(rows), 'maiz');
 
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('p1');

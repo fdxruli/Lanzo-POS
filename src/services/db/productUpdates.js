@@ -8,7 +8,7 @@
  */
 
 import { db, STORES } from './dexie';
-import { buildBatchPayload } from '../../utils/buildBatchPayload';
+import { DatabaseError, DB_ERROR_CODES } from './utils';
 import Logger from '../Logger';
 
 /**
@@ -44,8 +44,22 @@ export const updateProduct = async (id, data) => {
 
     const { _intent = 'MAINTAIN', ...productData } = data;
 
+    // FASE 4: Generar timestamp unificado para toda la operación
+    const unifiedTimestamp = new Date().toISOString();
+
+    // Guardia: Verificar que la BD esté abierta
+    if (!db.isOpen()) {
+        throw new DatabaseError(
+            DB_ERROR_CODES.CONNECTION_CLOSED, 
+            'Base de datos cerrada al iniciar transacción de actualización'
+        );
+    }
+
     return await db.transaction('rw', 
-        [db.products, db.product_batches], 
+        [
+            db.table(STORES.MENU),
+            db.table(STORES.PRODUCT_BATCHES)
+        ], 
         async () => {
             // 1. Obtener producto actual para comparaciones
             const currentProduct = await db.table(STORES.MENU).get(id);
@@ -55,25 +69,56 @@ export const updateProduct = async (id, data) => {
 
             let batchOperationResult = null;
 
-            // 2. Ejecutar intención antes de actualizar el producto
+            // 2. Ejecutar intención PRIMERO (si falla, producto NO se actualiza)
             if (_intent === 'PURGE_BATCHES') {
-                // Modificación en masa atómica. Si esto falla, el producto NO se actualiza.
-                batchOperationResult = await executePurgeBatchExpirations(id);
+                // Validación de seguridad: Solo permitir si realmente cambia a NONE
+                const targetMode = productData.expirationMode;
+                const currentMode = currentProduct.expirationMode;
+                
+                if (targetMode !== 'NONE' && currentMode !== 'NONE') {
+                    throw new Error(
+                        'Intent PURGE_BATCHES requiere expirationMode: NONE '
+                        + `(recibido: ${targetMode}, actual: ${currentMode})`
+                    );
+                }
+                
+                // Ejecutar purga atómica con timestamp unificado
+                batchOperationResult = await executePurgeBatchExpirations(
+                    id, 
+                    unifiedTimestamp
+                );
+                
+                // Verificación: Si no se purgó nada pero había lotes con fechas, es warning
+                if (batchOperationResult.updatedCount === 0) {
+                    const batchesWithDates = await db.table(STORES.PRODUCT_BATCHES)
+                        .where('productId').equals(id)
+                        .filter(b => b.expiryDate !== null && b.expiryDate !== undefined)
+                        .count();
+                    
+                    if (batchesWithDates > 0) {
+                        console.warn(
+                            `[PURGE] No se purgaron lotes pero existen ${batchesWithDates} con fechas`
+                        );
+                    }
+                }
             } else if (_intent === 'ARCHIVE_BATCHES') {
-                batchOperationResult = await executeArchiveExpiredBatches(id);
+                batchOperationResult = await executeArchiveExpiredBatches(id, unifiedTimestamp);
             }
 
-            // 3. Actualizar el producto
+            // 3. ACTUALIZAR PRODUCTO PADRE (solo si llegamos aquí = lotes OK)
             const updatedProduct = {
                 ...currentProduct,
                 ...productData,
-                updatedAt: new Date().toISOString()
+                updatedAt: unifiedTimestamp // ← Timestamp unificado
             };
 
             await db.table(STORES.MENU).put(updatedProduct);
 
-            Logger.info(`[updateProduct] Producto ${id} actualizado. Intent: ${_intent}`, {
-                batchOperation: batchOperationResult
+            // 4. LOG DE AUDITORÍA (dentro de la misma transacción)
+            Logger.info(`[ATOMIC UPDATE] Producto ${id}`, {
+                intent: _intent,
+                batchOperation: batchOperationResult,
+                timestamp: unifiedTimestamp
             });
 
             return {
@@ -91,11 +136,14 @@ export const updateProduct = async (id, data) => {
  * Ejecuta la purga de fechas de caducidad de todos los lotes de un producto.
  * Usado cuando el usuario cambia el modo de caducidad a 'NONE'.
  * 
+ * FASE 4: Ahora acepta timestamp unificado directo para consistencia en transacciones.
+ * 
  * @private
  * @param {string} productId - ID del producto
+ * @param {string} unifiedTimestamp - Timestamp unificado para toda la operación
  * @returns {Promise<Object>} Resultado de la operación
  */
-const executePurgeBatchExpirations = async (productId) => {
+const executePurgeBatchExpirations = async (productId, unifiedTimestamp) => {
     const batches = await db.table(STORES.PRODUCT_BATCHES)
         .where('productId')
         .equals(productId)
@@ -105,17 +153,18 @@ const executePurgeBatchExpirations = async (productId) => {
     const updatedBatchIds = [];
 
     for (const batch of batches) {
-        // Solo actualizar si tiene fechas que purgar
+        // FASE 4: Solo actualizar si tiene fechas que purgar
+        // Usar null explícito (no undefined) para preservar índices compuestos
         if (batch.expiryDate || batch.alertTargetDate || batch.shelfLifeValue) {
             const updatedBatch = {
                 ...batch,
-                expiryDate: null,
+                expiryDate: null,           // ← null explícito para índices
                 alertTargetDate: null,
                 alertType: null,
                 shelfLifeValue: null,
                 shelfLifeUnit: null,
                 trackingMode: 'NONE',
-                updatedAt: new Date().toISOString()
+                updatedAt: unifiedTimestamp // ← Timestamp unificado
             };
 
             await db.table(STORES.PRODUCT_BATCHES).put(updatedBatch);
@@ -124,12 +173,16 @@ const executePurgeBatchExpirations = async (productId) => {
         }
     }
 
-    Logger.info(`[PURGE_BATCHES] Purgadas fechas de ${updatedCount} lotes para producto ${productId}`);
+    Logger.info(
+        `[PURGE_BATCHES] Purgadas fechas de ${updatedCount} lotes para producto ${productId}`
+    );
 
     return {
         operation: 'PURGE_BATCHES',
         updatedCount,
-        updatedBatchIds
+        updatedBatchIds,
+        productId,
+        timestamp: unifiedTimestamp
     };
 };
 
@@ -138,10 +191,11 @@ const executePurgeBatchExpirations = async (productId) => {
  * 
  * @private
  * @param {string} productId - ID del producto
+ * @param {string} unifiedTimestamp - Timestamp unificado para operación
  * @returns {Promise<Object>} Resultado de la operación
  */
-const executeArchiveExpiredBatches = async (productId) => {
-    const now = new Date().toISOString();
+const executeArchiveExpiredBatches = async (productId, unifiedTimestamp) => {
+    const now = unifiedTimestamp || new Date().toISOString();
     
     const batches = await db.table(STORES.PRODUCT_BATCHES)
         .where('productId')
@@ -171,12 +225,16 @@ const executeArchiveExpiredBatches = async (productId) => {
         }
     }
 
-    Logger.info(`[ARCHIVE_BATCHES] Archivados ${archivedCount} lotes vencidos para producto ${productId}`);
+    Logger.info(
+        `[ARCHIVE_BATCHES] Archivados ${archivedCount} lotes vencidos para producto ${productId}`
+    );
 
     return {
         operation: 'ARCHIVE_BATCHES',
         archivedCount,
-        archivedBatchIds
+        archivedBatchIds,
+        productId,
+        timestamp: now
     };
 };
 
@@ -239,7 +297,9 @@ export const bulkUpdateProducts = async (productIds, changes, options = {}) => {
         }
     }
 
-    Logger.info(`[bulkUpdateProducts] Completado: ${results.success.length}/${results.total} éxitos`);
+    Logger.info(
+        `[bulkUpdateProducts] Completado: ${results.success.length}/${results.total} éxitos`
+    );
 
     return results;
 };

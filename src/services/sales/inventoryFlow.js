@@ -1,13 +1,11 @@
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/utils';
 import { calculateBatchDeductions, validateBatchAvailability } from '../inventoryStrategy';
+import { withUnifiedTimestamp, parseDateStrict } from '../../utils/dateUtils';
 
 const TABLE_RESERVATION_SOURCE = 'table';
 
-const parseDate = (value) => {
-    if (!value) return null;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
+// FASE 4: Usar parseDateStrict de dateUtils.js para validación estricta de fechas FEFO
+// El parseo permisivo anterior permitía fechas inválidas que rompían el ordenamiento FEFO
 
 const getRealProductId = (item) => item?.parentId || item?.id;
 const hasRecipe = (product) => Array.isArray(product?.recipe) && product.recipe.length > 0;
@@ -61,8 +59,10 @@ export const getSortedBatchesForProduct = (batches = [], product) => {
 
     return batchesCopy.sort((left, right) => {
         if (isFEFO) {
-            const leftExpMs = left._expMs || (left._expMs = parseDate(left?.alertTargetDate || left?.expiryDate)?.getTime() || 0);
-            const rightExpMs = right._expMs || (right._expMs = parseDate(right?.alertTargetDate || right?.expiryDate)?.getTime() || 0);
+            // FASE 4: Usar parseDateStrict para validación estricta de fechas FEFO
+            // Las fechas inválidas se convierten en null (0 en timestamp), y van al final
+            const leftExpMs = left._expMs || (left._expMs = parseDateStrict(left?.alertTargetDate || left?.expiryDate)?.getTime() || 0);
+            const rightExpMs = right._expMs || (right._expMs = parseDateStrict(right?.alertTargetDate || right?.expiryDate)?.getTime() || 0);
 
             if (leftExpMs && rightExpMs && leftExpMs !== rightExpMs) {
                 return leftExpMs - rightExpMs;
@@ -73,8 +73,9 @@ export const getSortedBatchesForProduct = (batches = [], product) => {
             }
         }
 
-        const leftCrtMs = left._crtMs || (left._crtMs = parseDate(left?.createdAt)?.getTime() || 0);
-        const rightCrtMs = right._crtMs || (right._crtMs = parseDate(right?.createdAt)?.getTime() || 0);
+        // Fallback: ordenar por fecha de creación (FIFO)
+        const leftCrtMs = left._crtMs || (left._crtMs = parseDateStrict(left?.createdAt)?.getTime() || 0);
+        const rightCrtMs = right._crtMs || (right._crtMs = parseDateStrict(right?.createdAt)?.getTime() || 0);
         return leftCrtMs - rightCrtMs;
     });
 };
@@ -148,7 +149,8 @@ const assertPositiveQuantity = (quantity, contextMessage) => {
     }
 };
 
-const createInventoryReservation = (orderItem, quantityToDeduct, committedBatches) => ({
+// FASE 4: createInventoryReservation ahora acepta timestamp unificado externo
+const createInventoryReservation = (orderItem, quantityToDeduct, committedBatches, unifiedTimestamp) => ({
     source: TABLE_RESERVATION_SOURCE,
     committedQuantity: normalizeStock(quantityToDeduct),
     committedBatches: committedBatches.map((batch) => ({
@@ -157,19 +159,21 @@ const createInventoryReservation = (orderItem, quantityToDeduct, committedBatche
         quantity: normalizeStock(batch.quantity),
         cost: Number(batch.cost) || 0
     })),
-    committedAt: new Date().toISOString(),
+    committedAt: unifiedTimestamp, // ← Usar timestamp unificado
     // Conservamos metadata útil si la venta abierta ya trae un identificador externo.
     ...(orderItem?.inventoryReservation?.reservationId
         ? { reservationId: orderItem.inventoryReservation.reservationId }
         : {})
 });
 
+// FASE 4: syncParentCommittedStockFromBatches ahora acepta timestamp unificado
 const syncParentCommittedStockFromBatches = async ({
     productIds,
     db,
     STORES,
     productMap,
-    batchesByProduct
+    batchesByProduct,
+    unifiedTimestamp
 }) => {
     for (const productId of productIds) {
         const product = productMap.get(productId) || await db.table(STORES.MENU).get(productId);
@@ -187,7 +191,7 @@ const syncParentCommittedStockFromBatches = async ({
         const updatedProduct = {
             ...product,
             committedStock,
-            updatedAt: new Date().toISOString()
+            updatedAt: unifiedTimestamp || new Date().toISOString() // ← Usar timestamp unificado si existe
         };
 
         productMap.set(productId, updatedProduct);
@@ -415,6 +419,7 @@ export const buildProcessedItemsAndDeductions = ({
     return { processedItems, batchesToDeduct };
 };
 
+// FASE 4: commitStock ahora usa withUnifiedTimestamp para determinismo temporal
 export const commitStock = async (items, deps = {}) => {
     const itemsToProcess = Array.isArray(items) ? items : [];
     if (itemsToProcess.length === 0) return [];
@@ -430,122 +435,129 @@ export const commitStock = async (items, deps = {}) => {
     const updatedBatches = new Map();
     const batchManagedProductIds = new Set();
 
-    return await db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
-        const reservedItems = [];
+    // FASE 4: Usar timestamp unificado para toda la operación
+    return await withUnifiedTimestamp(async (unifiedTimestamp) => {
+        return await db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
+            const reservedItems = [];
 
-        for (const orderItem of itemsToProcess) {
-            const product = productMap.get(getRealProductId(orderItem));
-            assertProductExists(product, orderItem);
+            for (const orderItem of itemsToProcess) {
+                const product = productMap.get(getRealProductId(orderItem));
+                assertProductExists(product, orderItem);
 
-            if (!shouldTrackInventory(product)) {
-                reservedItems.push(orderItem);
-                continue;
-            }
-
-            const { quantityToDeduct, requirements } = buildIngredientRequirements(orderItem, product);
-            const committedBatches = [];
-
-            for (const component of requirements) {
-                const componentProduct = productMap.get(component.targetId)
-                    || await db.table(STORES.MENU).get(component.targetId);
-
-                if (!componentProduct) {
-                    throw new Error(`CRITICAL_PRODUCT_NOT_FOUND: No existe el producto ${component.targetId}.`);
+                if (!shouldTrackInventory(product)) {
+                    reservedItems.push(orderItem);
+                    continue;
                 }
 
-                if (componentProduct.batchManagement?.enabled) {
-                    const productBatches = await getOrLoadProductBatches({
-                        productId: component.targetId,
-                        db,
-                        STORES,
-                        batchesByProduct,
-                        productMap
-                    });
+                const { quantityToDeduct, requirements } = buildIngredientRequirements(orderItem, product);
+                const committedBatches = [];
 
-                    let pendingQty = normalizeStock(component.neededQty);
-
-                    for (const batch of productBatches) {
-                        if (pendingQty <= 0) break;
-
-                        const availableStock = getAvailableStock(batch);
-                        if (availableStock <= 0 || batch?.isActive === false) continue;
-
-                        const commitQty = normalizeStock(Math.min(pendingQty, availableStock));
-                        assertPositiveQuantity(commitQty, `Reserva sobre lote ${batch.id}.`);
-
-                        batch.committedStock = normalizeStock(getCommittedStock(batch) + commitQty);
-                        updatedBatches.set(batch.id, batch);
-
-                        committedBatches.push({
-                            batchId: batch.id,
-                            ingredientId: component.targetId,
-                            quantity: commitQty,
-                            cost: Number(batch.cost) || 0
-                        });
-
-                        batchManagedProductIds.add(component.targetId);
-                        pendingQty = normalizeStock(pendingQty - commitQty);
-                    }
-
-                    if (pendingQty > 0) {
-                        throw new Error(
-                            `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${componentProduct.name}. ` +
-                            `Disponible ${productBatches.reduce((sum, batch) => sum + getAvailableStock(batch), 0)}, requerido ${component.neededQty}.`
-                        );
-                    }
-                } else if (componentProduct.trackStock !== false) {
-                    const productState = updatedProducts.get(component.targetId)
-                        || productMap.get(component.targetId)
+                for (const component of requirements) {
+                    const componentProduct = productMap.get(component.targetId)
                         || await db.table(STORES.MENU).get(component.targetId);
 
-                    if (!productState) {
+                    if (!componentProduct) {
                         throw new Error(`CRITICAL_PRODUCT_NOT_FOUND: No existe el producto ${component.targetId}.`);
                     }
 
-                    const availableStock = getAvailableStock(productState);
-                    if (availableStock < component.neededQty) {
-                        throw new Error(
-                            `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${productState.name}. ` +
-                            `Disponible ${availableStock}, requerido ${component.neededQty}.`
-                        );
+                    if (componentProduct.batchManagement?.enabled) {
+                        const productBatches = await getOrLoadProductBatches({
+                            productId: component.targetId,
+                            db,
+                            STORES,
+                            batchesByProduct,
+                            productMap
+                        });
+
+                    let pendingQty = normalizeStock(component.neededQty);
+
+                        for (const batch of productBatches) {
+                            if (pendingQty <= 0) break;
+
+                            const availableStock = getAvailableStock(batch);
+                            if (availableStock <= 0 || batch?.isActive === false) continue;
+
+                            const commitQty = normalizeStock(Math.min(pendingQty, availableStock));
+                            assertPositiveQuantity(commitQty, `Reserva sobre lote ${batch.id}.`);
+
+                            batch.committedStock = normalizeStock(getCommittedStock(batch) + commitQty);
+                            batch.updatedAt = unifiedTimestamp; // ← Timestamp unificado
+                            updatedBatches.set(batch.id, batch);
+
+                            committedBatches.push({
+                                batchId: batch.id,
+                                ingredientId: component.targetId,
+                                quantity: commitQty,
+                                cost: Number(batch.cost) || 0
+                            });
+
+                            batchManagedProductIds.add(component.targetId);
+                            pendingQty = normalizeStock(pendingQty - commitQty);
+                        }
+
+                        if (pendingQty > 0) {
+                            throw new Error(
+                                `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${componentProduct.name}. ` +
+                                `Disponible ${productBatches.reduce((sum, batch) => sum + getAvailableStock(batch), 0)}, requerido ${component.neededQty}.`
+                            );
+                        }
+                    } else if (componentProduct.trackStock !== false) {
+                        const productState = updatedProducts.get(component.targetId)
+                            || productMap.get(component.targetId)
+                            || await db.table(STORES.MENU).get(component.targetId);
+
+                        if (!productState) {
+                            throw new Error(`CRITICAL_PRODUCT_NOT_FOUND: No existe el producto ${component.targetId}.`);
+                        }
+
+                        const availableStock = getAvailableStock(productState);
+                        if (availableStock < component.neededQty) {
+                            throw new Error(
+                                `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${productState.name}. ` +
+                                `Disponible ${availableStock}, requerido ${component.neededQty}.`
+                            );
+                        }
+
+                        productState.committedStock = normalizeStock(getCommittedStock(productState) + component.neededQty);
+                        productState.updatedAt = unifiedTimestamp; // ← Timestamp unificado
+
+                        updatedProducts.set(component.targetId, productState);
+                        productMap.set(component.targetId, productState);
                     }
-
-                    productState.committedStock = normalizeStock(getCommittedStock(productState) + component.neededQty);
-                    productState.updatedAt = new Date().toISOString();
-
-                    updatedProducts.set(component.targetId, productState);
-                    productMap.set(component.targetId, productState);
                 }
+
+                // ← Usar timestamp unificado en la reserva
+                reservedItems.push({
+                    ...orderItem,
+                    inventoryReservation: createInventoryReservation(orderItem, quantityToDeduct, committedBatches, unifiedTimestamp)
+                });
             }
 
-            reservedItems.push({
-                ...orderItem,
-                inventoryReservation: createInventoryReservation(orderItem, quantityToDeduct, committedBatches)
-            });
-        }
+            if (updatedProducts.size > 0) {
+                await db.table(STORES.MENU).bulkPut(Array.from(updatedProducts.values()));
+            }
 
-        if (updatedProducts.size > 0) {
-            await db.table(STORES.MENU).bulkPut(Array.from(updatedProducts.values()));
-        }
+            if (updatedBatches.size > 0) {
+                await db.table(STORES.PRODUCT_BATCHES).bulkPut(Array.from(updatedBatches.values()));
+            }
 
-        if (updatedBatches.size > 0) {
-            await db.table(STORES.PRODUCT_BATCHES).bulkPut(Array.from(updatedBatches.values()));
-        }
-
-        if (batchManagedProductIds.size > 0) {
-            await syncParentCommittedStockFromBatches({
-                productIds: batchManagedProductIds,
-                db,
-                STORES,
-                productMap,
-                batchesByProduct
-            });
-        }
+            if (batchManagedProductIds.size > 0) {
+                await syncParentCommittedStockFromBatches({
+                    productIds: batchManagedProductIds,
+                    db,
+                    STORES,
+                    productMap,
+                    batchesByProduct,
+                    unifiedTimestamp // ← Pasar timestamp unificado
+                });
+            }
 
         return reservedItems;
+        });
     });
 };
 
+// FASE 4: releaseCommittedStock ahora usa withUnifiedTimestamp para determinismo temporal
 export const releaseCommittedStock = async (items, deps = {}) => {
     const itemsToProcess = Array.isArray(items) ? items : [];
     if (itemsToProcess.length === 0) return { success: true };
@@ -561,100 +573,105 @@ export const releaseCommittedStock = async (items, deps = {}) => {
     const updatedProducts = new Map();
     const updatedBatches = new Map();
 
-    await db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
-        // 1. Precargar todos los lotes necesarios en paralelo para evitar lecturas secuenciales N+1
-        const batchIdsToLoad = new Set();
-        for (const orderItem of itemsToProcess) {
-            if (!isTableReservation(orderItem)) continue;
-            const committedReservation = orderItem.inventoryReservation;
-            const committedBatches = Array.isArray(committedReservation?.committedBatches) ? committedReservation.committedBatches : [];
-            committedBatches.forEach(b => batchIdsToLoad.add(b.batchId));
-        }
+    // FASE 4: Usar timestamp unificado para toda la operación
+    return await withUnifiedTimestamp(async (unifiedTimestamp) => {
+        await db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
+            // 1. Precargar todos los lotes necesarios en paralelo para evitar lecturas secuenciales N+1
+            const batchIdsToLoad = new Set();
+            for (const orderItem of itemsToProcess) {
+                if (!isTableReservation(orderItem)) continue;
+                const committedReservation = orderItem.inventoryReservation;
+                const committedBatches = Array.isArray(committedReservation?.committedBatches) ? committedReservation.committedBatches : [];
+                committedBatches.forEach(b => batchIdsToLoad.add(b.batchId));
+            }
 
-        const loadedBatches = batchIdsToLoad.size > 0 
-            ? await db.table(STORES.PRODUCT_BATCHES).bulkGet(Array.from(batchIdsToLoad)) 
-            : [];
-        const batchMap = new Map(loadedBatches.filter(Boolean).map(b => [b.id, b]));
-
-        for (const orderItem of itemsToProcess) {
-            if (!isTableReservation(orderItem)) continue;
-
-            const product = productMap.get(getRealProductId(orderItem));
-            assertProductExists(product, orderItem);
-
-            const committedReservation = orderItem.inventoryReservation;
-            const committedBatches = Array.isArray(committedReservation?.committedBatches)
-                ? committedReservation.committedBatches
+            const loadedBatches = batchIdsToLoad.size > 0 
+                ? await db.table(STORES.PRODUCT_BATCHES).bulkGet(Array.from(batchIdsToLoad)) 
                 : [];
+            const batchMap = new Map(loadedBatches.filter(Boolean).map(b => [b.id, b]));
 
-            if (committedBatches.length > 0) {
-                for (const batchUsage of committedBatches) {
-                    const batch = batchMap.get(batchUsage.batchId);
-                    if (!batch) {
-                        throw new Error(`CRITICAL_BATCH_NOT_FOUND: No existe el lote ${batchUsage.batchId}.`);
+            for (const orderItem of itemsToProcess) {
+                if (!isTableReservation(orderItem)) continue;
+
+                const product = productMap.get(getRealProductId(orderItem));
+                assertProductExists(product, orderItem);
+
+                const committedReservation = orderItem.inventoryReservation;
+                const committedBatches = Array.isArray(committedReservation?.committedBatches)
+                    ? committedReservation.committedBatches
+                    : [];
+
+                if (committedBatches.length > 0) {
+                    for (const batchUsage of committedBatches) {
+                        const batch = batchMap.get(batchUsage.batchId);
+                        if (!batch) {
+                            throw new Error(`CRITICAL_BATCH_NOT_FOUND: No existe el lote ${batchUsage.batchId}.`);
+                        }
+
+                        const committedStock = getCommittedStock(batch);
+                        const quantityToRelease = normalizeStock(batchUsage.quantity);
+
+                        if (committedStock < quantityToRelease) {
+                            // Registra la anomalía de forma silenciosa para auditoría, pero no bloquees la venta.
+                            console.warn(`[INVENTORY_SYNC_FIX]: El lote ${batch.id} intentó liberar ${quantityToRelease} pero solo tenía ${committedStock}. Se ajustó a 0.`);
+                        }
+                        batch.committedStock = normalizeStock(Math.max(0, committedStock - quantityToRelease));
+                        batch.updatedAt = unifiedTimestamp; // ← Timestamp unificado
+                        updatedBatches.set(batch.id, batch);
+
+                        batchManagedProductIds.add(batch.productId);
                     }
 
-                    const committedStock = getCommittedStock(batch);
-                    const quantityToRelease = normalizeStock(batchUsage.quantity);
-
-                    if (committedStock < quantityToRelease) {
-                        // Registra la anomalía de forma silenciosa para auditoría, pero no bloquees la venta.
-                        console.warn(`[INVENTORY_SYNC_FIX]: El lote ${batch.id} intentó liberar ${quantityToRelease} pero solo tenía ${committedStock}. Se ajustó a 0.`);
-                    }
-                    batch.committedStock = normalizeStock(Math.max(0, committedStock - quantityToRelease));
-                    updatedBatches.set(batch.id, batch);
-
-                    batchManagedProductIds.add(batch.productId);
+                    continue;
                 }
 
-                continue;
+                const committedQuantity = normalizeStock(committedReservation?.committedQuantity || 0);
+                if (committedQuantity <= 0 || product.trackStock === false) continue;
+
+                const currentProduct = updatedProducts.get(product.id)
+                    || productMap.get(product.id)
+                    || await db.table(STORES.MENU).get(product.id);
+
+                if (!currentProduct) {
+                    throw new Error(`CRITICAL_PRODUCT_NOT_FOUND: No existe el producto ${product.id}.`);
+                }
+
+                const currentCommitted = getCommittedStock(currentProduct);
+                if (currentCommitted < committedQuantity) {
+                    throw new Error(
+                        `CRITICAL_COMMITTED_UNDERFLOW: El producto ${currentProduct.name} intenta liberar ${committedQuantity}, ` +
+                        `pero solo tiene ${currentCommitted} comprometido.`
+                    );
+                }
+
+                currentProduct.committedStock = normalizeStock(currentCommitted - committedQuantity);
+                currentProduct.updatedAt = unifiedTimestamp; // ← Timestamp unificado
+
+                updatedProducts.set(currentProduct.id, currentProduct);
+                productMap.set(currentProduct.id, currentProduct);
             }
 
-            const committedQuantity = normalizeStock(committedReservation?.committedQuantity || 0);
-            if (committedQuantity <= 0 || product.trackStock === false) continue;
-
-            const currentProduct = updatedProducts.get(product.id)
-                || productMap.get(product.id)
-                || await db.table(STORES.MENU).get(product.id);
-
-            if (!currentProduct) {
-                throw new Error(`CRITICAL_PRODUCT_NOT_FOUND: No existe el producto ${product.id}.`);
+            // 2. Ejecutar inserciones masivas en paralelo (bulkPut)
+            if (updatedProducts.size > 0) {
+                await db.table(STORES.MENU).bulkPut(Array.from(updatedProducts.values()));
             }
 
-            const currentCommitted = getCommittedStock(currentProduct);
-            if (currentCommitted < committedQuantity) {
-                throw new Error(
-                    `CRITICAL_COMMITTED_UNDERFLOW: El producto ${currentProduct.name} intenta liberar ${committedQuantity}, ` +
-                    `pero solo tiene ${currentCommitted} comprometido.`
-                );
+            if (updatedBatches.size > 0) {
+                await db.table(STORES.PRODUCT_BATCHES).bulkPut(Array.from(updatedBatches.values()));
             }
 
-            currentProduct.committedStock = normalizeStock(currentCommitted - committedQuantity);
-            currentProduct.updatedAt = new Date().toISOString();
+            if (batchManagedProductIds.size > 0) {
+                await syncParentCommittedStockFromBatches({
+                    productIds: batchManagedProductIds,
+                    db,
+                    STORES,
+                    productMap,
+                    batchesByProduct,
+                    unifiedTimestamp // ← Pasar timestamp unificado
+                });
+            }
+        });
 
-            updatedProducts.set(currentProduct.id, currentProduct);
-            productMap.set(currentProduct.id, currentProduct);
-        }
-
-        // 2. Ejecutar inserciones masivas en paralelo (bulkPut)
-        if (updatedProducts.size > 0) {
-            await db.table(STORES.MENU).bulkPut(Array.from(updatedProducts.values()));
-        }
-
-        if (updatedBatches.size > 0) {
-            await db.table(STORES.PRODUCT_BATCHES).bulkPut(Array.from(updatedBatches.values()));
-        }
-
-        if (batchManagedProductIds.size > 0) {
-            await syncParentCommittedStockFromBatches({
-                productIds: batchManagedProductIds,
-                db,
-                STORES,
-                productMap,
-                batchesByProduct
-            });
-        }
+        return { success: true };
     });
-
-    return { success: true };
 };

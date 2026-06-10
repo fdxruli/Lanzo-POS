@@ -9,22 +9,62 @@ import {
 import { generateID } from './utils';
 import Logger from './Logger';
 
-// Encabezados para el CSV de Inventario
-const CSV_HEADERS = [
+
+const BASE_HEADERS = [
   'id', 'name', 'barcode', 'description', 'price', 'cost', 'stock',
-  'category', 'saleType', 'productType',
-  'minStock', 'maxStock',
-  'sustancia', 'laboratorio', 'requiresPrescription', 'presentation'
+  'category', 'saleType', 'productType', 'minStock', 'maxStock'
 ];
+
+// Define los campos exactos que necesitas por cada rubro.
+// ⚠️ Las claves DEBEN coincidir con los valores de RUBRO_FEATURES en useFeatureConfig.js
+const RUBRO_HEADERS = {
+  farmacia: ['sustancia', 'laboratorio', 'requiresPrescription', 'presentation'],
+  apparel: ['marca', 'talla', 'color', 'genero', 'modelo'],
+  food_service: ['preparacion_minutos', 'alergenos'],
+  hardware: ['unidad_medida', 'fecha_caducidad'],
+  abarrotes: ['unidad_medida', 'fecha_caducidad'],
+  'verduleria/fruteria': ['unidad_medida', 'fecha_caducidad'],
+  otro: []
+};
+
+// Lista de rubros válidos para validación
+const VALID_RUBROS = Object.keys(RUBRO_HEADERS);
+
+export const getHeadersForRubro = (rubro) => {
+  const specificHeaders = RUBRO_HEADERS[rubro] || [];
+  return [...BASE_HEADERS, ...specificHeaders];
+};
+
+export const downloadTemplate = (rubro) => {
+  // Validar que el rubro sea reconocido — nunca generar plantilla genérica
+  if (!rubro || !VALID_RUBROS.includes(rubro)) {
+    throw new Error(`Rubro no reconocido: "${rubro || '(vacío)'}".
+ Rubros válidos: ${VALID_RUBROS.join(', ')}`);
+  }
+
+  const headers = getHeadersForRubro(rubro);
+  // Agregamos una fila de ejemplo para guiar al usuario
+  const exampleRow = headers.map(h => {
+    if (h === 'name') return '"Ejemplo Producto"';
+    if (h === 'price' || h === 'cost') return '150.00';
+    if (h === 'stock') return '10';
+    return '""';
+  });
+
+  const content = headers.join(',') + '\n' + exampleRow.join(',');
+  const date = new Date().toISOString().split('T')[0];
+  downloadFile(content, `plantilla_importacion_${rubro}_${date}.csv`);
+};
 
 /**
  * 🚀 EXPORTACIÓN INTELIGENTE DE INVENTARIO (Streaming)
  */
-export const downloadInventorySmart = async () => {
+export const downloadInventorySmart = async (rubro) => {
   const categories = await loadData(STORES.CATEGORIES);
   const catMap = new Map(categories.map(c => [c.id, c.name]));
 
-  const headerRow = CSV_HEADERS.join(',') + '\n';
+  const headers = getHeadersForRubro(rubro);
+  const headerRow = headers.join(',') + '\n';
   const fileParts = [headerRow];
 
   const clean = (txt) => `"${(txt || '').replace(/"/g, '""')}"`;
@@ -34,24 +74,18 @@ export const downloadInventorySmart = async () => {
       STORES.MENU,
       (product) => {
         const catName = catMap.get(product.categoryId) || '';
-        return [
-          product.id,
-          clean(product.name),
-          product.barcode || '',
-          clean(product.description),
-          product.price || 0,
-          product.cost || 0,
-          product.stock || 0,
-          clean(catName),
-          product.saleType || 'unit',
-          product.productType || 'sellable',
-          product.minStock || '',
-          product.maxStock || '',
-          product.sustancia || '',
-          product.laboratorio || '',
-          product.requiresPrescription ? 'SI' : 'NO',
-          product.presentation || ''
-        ].join(',');
+        
+        // Mapeo dinámico: Recorremos los headers correspondientes a este rubro
+        const rowData = headers.map(header => {
+           if (header === 'category') return clean(catName);
+           if (header === 'requiresPrescription') return product.requiresPrescription ? 'SI' : 'NO';
+           // Si el valor no existe en el producto, devolvemos vacío
+           return product[header] !== undefined && product[header] !== null 
+                  ? clean(String(product[header])) 
+                  : '';
+        });
+
+        return rowData.join(',');
       },
       (chunkString) => {
         fileParts.push(chunkString);
@@ -337,6 +371,17 @@ export const processImport = async (csvContent) => {
         batchManagement: { enabled: true, selectionStrategy: 'fifo' },
         image: null
       };
+
+      headers.forEach(header => {
+           if (!BASE_HEADERS.includes(header) && row[header] !== undefined && row[header] !== '') {
+               // Manejo especial para booleanos si es necesario
+               if (header === 'requiresprescription' || header === 'receta') {
+                   product.requiresPrescription = normalizeBoolean(row[header]);
+               } else {
+                   product[header] = row[header];
+               }
+           }
+        });
 
       productsToSave.push(product);
 

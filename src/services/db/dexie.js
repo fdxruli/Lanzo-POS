@@ -503,15 +503,27 @@ db.table(STORES.MENU).hook('creating', function (primKey, obj, transaction) {
 /**
  * Hook 'updating' para productos: Mantiene activeStockStatus sincronizado
  * Se ejecuta automáticamente en cada update, asegurando consistencia
+ *
+ * MOTOR INVARIANTE V4.1: Guardias de seguridad activas
+ * - Sobrescribe CUALQUIER intento de mutar activeStockStatus manualmente
+ * - Calcula siempre el valor derivado de isActive + stock
  */
 db.table(STORES.MENU).hook('updating', function (modifications, primKey, obj, transaction) {
-  // Fusiona el objeto actual con las modificaciones para evaluar el estado final
+  // Fusiona el objeto actual con las modificaciones pendientes para evaluar estado final
   const nextState = { ...obj, ...modifications };
   const isActive = nextState.isActive !== false;
   const hasStock = Number(nextState.stock) > 0;
   const nextStatus = (isActive && hasStock) ? 1 : 0;
 
-  // Si el estado derivado cambia, inyéctalo en las modificaciones de esta transacción
+  // GUARDIA DE SEGURIDAD: Si alguien intenta mutar activeStockStatus manualmente desde fuera,
+  // sobrescribirlo con el valor calculado (prevenir inconsistencias)
+  if (Object.prototype.hasOwnProperty.call(modifications, 'activeStockStatus') && modifications.activeStockStatus !== nextStatus) {
+    console.warn(`[HOOK GUARD MENU] Intento de setear activeStockStatus=${modifications.activeStockStatus} ignorado para ${primKey}. Calculado=${nextStatus}`);
+    modifications.activeStockStatus = nextStatus;
+    return; // Ya inyectamos el valor correcto, no necesitamos hacer más
+  }
+
+  // Si el estado derivado cambia o no está presente, inyéctalo en las modificaciones
   if (nextState.activeStockStatus !== nextStatus) {
     modifications.activeStockStatus = nextStatus;
   }
@@ -533,6 +545,10 @@ db.table(STORES.PRODUCT_BATCHES).hook('creating', function (primKey, obj, transa
 
 /**
  * Hook 'updating' para lotes: Mantiene activeStockStatus sincronizado
+ *
+ * MOTOR INVARIANTE V4.1: Guardias de seguridad activas
+ * - Sobrescribe CUALQUIER intento de mutar activeStockStatus manualmente
+ * - Calcula siempre el valor derivado de isActive + stock
  */
 db.table(STORES.PRODUCT_BATCHES).hook('updating', function (modifications, primKey, obj, transaction) {
   const nextState = { ...obj, ...modifications };
@@ -540,11 +556,16 @@ db.table(STORES.PRODUCT_BATCHES).hook('updating', function (modifications, primK
   const hasStock = Number(nextState.stock) > 0;
   const nextStatus = (isActive && hasStock) ? 1 : 0;
 
-  // Actualizar activeStockStatus si cambió
-  if (nextState.activeStockStatus !== nextStatus) {
+  // GUARDIA DE SEGURIDAD: Si alguien intenta mutar activeStockStatus manualmente desde fuera
+  if (Object.prototype.hasOwnProperty.call(modifications, 'activeStockStatus') && modifications.activeStockStatus !== nextStatus) {
+    console.warn(`[HOOK GUARD BATCH] Intento de setear activeStockStatus=${modifications.activeStockStatus} ignorado para ${primKey}. Calculado=${nextStatus}`);
     modifications.activeStockStatus = nextStatus;
   }
-  
+  // Actualizar activeStockStatus si cambió (solo si no fue interceptado por la guardia)
+  else if (nextState.activeStockStatus !== nextStatus) {
+    modifications.activeStockStatus = nextStatus;
+  }
+
   // Sincronizar status string si cambia isActive
   if (modifications.isActive !== undefined && modifications.status === undefined) {
     modifications.status = modifications.isActive ? 'active' : 'inactive';

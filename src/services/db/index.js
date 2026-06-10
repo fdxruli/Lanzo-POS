@@ -8,6 +8,7 @@ import { layawayRepository } from './layaways';
 import { handleDexieError } from './utils';
 import { CUSTOMER_DEBT_SORT_INDEX, matchesCustomerSnapshot } from './customerDebtIndex';
 import { evaluator } from '../BackupRiskEvaluator';
+import { updateProduct, updateProductSafe, bulkUpdateProducts } from './productUpdates';
 
 // ============================================================
 // EXPORTACIÓN DE CONSTANTES Y CLASES (Compatibilidad 100%)
@@ -57,8 +58,27 @@ async function safeExecute(operation) {
     }
 }
 
-export const saveDataSafe = (storeName, data) =>
-    safeExecute(() => generalRepository.save(storeName, data));
+/**
+ * MOTOR INVARIANTE V4.1: saveDataSafe con guardias de seguridad
+ *
+ * GUARDIA Pilar 1: Evitar uso accidental en tablas con hooks obligatorios.
+ * Para MENU y PRODUCT_BATCHES, usar obligatoriamente productsRepository
+ * para garantizar que los hooks de activeStockStatus se disparen.
+ */
+export const saveDataSafe = (storeName, data) => {
+    // GUARDIA Pilar 1: Evitar uso accidental en tablas con hooks obligatorios
+    if (storeName === STORES.MENU || storeName === STORES.PRODUCT_BATCHES) {
+        const error = new Error(
+            `saveDataSafe prohibido para ${storeName}. ` +
+            `Use productsRepository para mantener invariantes de stock. ` +
+            `Ejemplo: productsRepository.restoreStockFromCancellation() para cancelaciones.`
+        );
+        console.error(`[ARQUITECTURA] ${error.message} Stack:`, new Error().stack);
+        return Promise.reject(error);
+    }
+
+    return safeExecute(() => generalRepository.save(storeName, data));
+};
 
 export const saveBulkSafe = (storeName, dataArray) =>
     safeExecute(() => generalRepository.saveBulk(storeName, dataArray));
@@ -748,3 +768,22 @@ export const maintenanceTools = {
     fixStock: fixStockInconsistencies,
     rebuildStats: rebuildDailyStats
 };
+
+// ============================================================
+// EXPORTACIONES FASE 3: ACTUALIZACIONES ATÓMICAS CON INTENCIÓN
+// ============================================================
+
+/**
+ * Actualiza un producto con transaccionalidad atómica.
+ * 
+ * FASE 3: El payload puede incluir `_intent` para operaciones especiales:
+ * - 'MAINTAIN': Actualización normal del producto (default)
+ * - 'PURGE_BATCHES': Cambió de STRICT a NONE, purgar fechas de lotes
+ * 
+ * @example
+ * await updateProduct(productId, {
+ *   expirationMode: 'NONE',
+ *   _intent: 'PURGE_BATCHES'
+ * });
+ */
+export { updateProduct, updateProductSafe, bulkUpdateProducts };

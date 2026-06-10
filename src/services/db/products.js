@@ -10,43 +10,20 @@ import {
 import { generateID } from '../utils';
 import { productSchema } from '../../schemas/productSchema';
 import Logger from '../Logger';
+import { collectBatchRestorations, restoreBatchStock } from '../sales/batchRestoration';
 
 const DEFAULT_SEARCH_LIMIT = 50;
-const INDEX_SEARCH_FIELDS = ['name_lower', 'barcode', 'sku'];
 
 const normalizeSearchValue = (value) =>
     value === null || value === undefined ? '' : String(value).toLowerCase();
 
 const isActiveProduct = (product) => product?.isActive !== false;
 
-const matchesSearchTerm = (product, normalizedTerm) => {
-    const searchName = normalizeSearchValue(product?.name_lower || product?.name);
-    if (searchName.includes(normalizedTerm)) return true;
-
-    const barcode = normalizeSearchValue(product?.barcode);
-    if (barcode.includes(normalizedTerm)) return true;
-
-    const sku = normalizeSearchValue(product?.sku);
-    return sku.includes(normalizedTerm);
-};
-
-const dedupeProducts = (groups, limit = DEFAULT_SEARCH_LIMIT) => {
-    const deduped = [];
-    const seen = new Set();
-
-    for (const group of groups) {
-        for (const product of group) {
-            if (!product?.id || seen.has(product.id)) continue;
-            seen.add(product.id);
-            deduped.push(product);
-
-            if (deduped.length >= limit) {
-                return deduped;
-            }
-        }
-    }
-
-    return deduped;
+const matchesStatus = (product, status) => {
+    const isActive = isActiveProduct(product);
+    if (status === 'active') return isActive;
+    if (status === 'inactive') return !isActive;
+    return true;
 };
 
 export const searchProductsInDB = async (searchTerm, status = 'active') => {
@@ -54,20 +31,33 @@ export const searchProductsInDB = async (searchTerm, status = 'active') => {
         const normalizedTerm = normalizeSearchValue(searchTerm).trim();
         if (!normalizedTerm) return [];
 
-        const filterByStatus = (product) => {
-            const isActive = product?.isActive !== false;
-            if (status === 'active') return isActive;
-            if (status === 'inactive') return !isActive;
-            return true;
-        };
-
         const productTable = db.table(STORES.MENU);
+
+        if (/^\d+$/.test(normalizedTerm)) {
+            const exactBarcode = await productTable
+                .where('barcode')
+                .equals(normalizedTerm)
+                .first();
+
+            if (exactBarcode && matchesStatus(exactBarcode, status)) {
+                return [exactBarcode];
+            }
+
+            const exactSku = await productTable
+                .where('sku')
+                .equals(normalizedTerm)
+                .first();
+
+            if (exactSku && matchesStatus(exactSku, status)) {
+                return [exactSku];
+            }
+        }
 
         // BÚSQUEDA POR NOMBRE (usa startsWith - eficiente)
         const nameResults = await productTable
             .where('name_lower')
             .startsWith(normalizedTerm)
-            .filter((product) => filterByStatus(product))
+            .filter((product) => matchesStatus(product, status))
             .limit(DEFAULT_SEARCH_LIMIT)
             .toArray();
 
@@ -76,7 +66,7 @@ export const searchProductsInDB = async (searchTerm, status = 'active') => {
         // BÚSQUEDA POR CÓDIGO/SKU (búsqueda global - siempre se ejecuta)
         const codeResults = await productTable
             .filter((product) => {
-                if (!filterByStatus(product)) return false;
+                if (!matchesStatus(product, status)) return false;
                 if (takenIds.has(product.id)) return false;
 
                 // Busca por código, SKU o nombre con contains (no solo startsWith)
@@ -102,6 +92,199 @@ export const searchProductsInDB = async (searchTerm, status = 'active') => {
  * Maneja lógica compleja de lotes, variantes y sincronización de precios.
  */
 export const productsRepository = {
+
+  /**
+   * MOTOR INVARIANTE V4.1: Método atómico para restauración de stock en cancelaciones
+   *
+   * Restaura stock de lotes y productos padre durante una cancelación.
+   * USO OBLIGATORIO: Todas las cancelaciones deben usar esta función.
+   *
+   * Este método garantiza que:
+   * 1. Los hooks de Dexie se disparen correctamente (usa db.table().put(), NO saveDataSafe)
+   * 2. El índice activeStockStatus se mantenga sincronizado automáticamente
+   * 3. La operación sea atómica (transacción completa o nada)
+   *
+   * @param {Array} items - Items de la venta cancelada (con batchesUsed o stockDeducted)
+   * @returns {Promise<{restored: Array, warnings: Array, restoredInventoryValue: number}>}
+   */
+  async restoreStockFromCancellation(items) {
+    const { normalizeStock } = await import('./utils.js');
+    const warnings = [];
+    const restored = [];
+    let restoredInventoryValue = 0;
+
+    return await db.transaction('rw',
+      [db.table(STORES.PRODUCT_BATCHES), db.table(STORES.MENU)],
+      async () => {
+        // 1. Recopilar todos los IDs necesarios
+        const batchIds = new Set();
+        const productIds = new Set();
+        const batchDeductions = collectBatchRestorations(items);
+        const productDeductions = new Map(); // productId -> cantidad total a restaurar
+
+        for (const item of items || []) {
+          const hasBatches = Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0;
+
+          if (hasBatches) {
+            for (const batchUsage of item.batchesUsed) {
+              if (!batchUsage?.batchId) continue;
+              batchIds.add(batchUsage.batchId);
+            }
+          } else {
+            const productId = item?.parentId || item?.id;
+            if (!productId) {
+              warnings.push({
+                code: 'INVALID_ITEM',
+                message: 'Item sin productId ni parentId',
+                item
+              });
+              continue;
+            }
+            productIds.add(productId);
+            const quantityToRestore = Number(item?.stockDeducted ?? item?.quantity ?? 0);
+            const current = productDeductions.get(productId) || 0;
+            productDeductions.set(productId, current + quantityToRestore);
+          }
+        }
+
+        // 2. bulkGet para cargar estado actual de lotes
+        const batchesArray = batchIds.size > 0
+          ? await db.table(STORES.PRODUCT_BATCHES).bulkGet([...batchIds])
+          : [];
+        const batchesMap = new Map(batchesArray.filter(Boolean).map(b => [b.id, b]));
+
+        // 3. Calcular nuevos stocks y aplicar actualizaciones a lotes (con put para disparar hooks)
+        const affectedParentIds = new Set();
+
+        for (const [batchId, deduction] of batchDeductions) {
+          const batch = batchesMap.get(batchId);
+
+          if (!batch) {
+            warnings.push({
+              code: 'BATCH_NOT_FOUND',
+              message: `Lote ${batchId} no encontrado para restauración`,
+              batchId
+            });
+            continue;
+          }
+
+          const quantityToRestore = deduction.quantity;
+          const { updatedBatch, restorationValue, newStock } = restoreBatchStock({
+            batch,
+            restoration: deduction,
+            normalizeStock,
+            updatedAt: new Date().toISOString()
+          });
+
+          // El objeto parte del lote actual: solo cambia stock/estado, nunca su costo.
+          await db.table(STORES.PRODUCT_BATCHES).put(updatedBatch);
+          restoredInventoryValue += restorationValue;
+
+          restored.push({
+            type: 'batch',
+            id: batchId,
+            previousStock: batch.stock,
+            newStock,
+            restoredQuantity: quantityToRestore,
+            restorationValue
+          });
+
+          // Trackear producto padre para sincronización
+          const parentId = batch.productId;
+          if (parentId) {
+            affectedParentIds.add(parentId);
+            productIds.add(parentId);
+          }
+        }
+
+        // 4. Restaurar stock de productos simples (sin lotes)
+        const productsArray = productIds.size > 0
+          ? await db.table(STORES.MENU).bulkGet([...productIds])
+          : [];
+        const productsMap = new Map(productsArray.filter(Boolean).map(p => [p.id, p]));
+
+        for (const [productId, quantityToRestore] of productDeductions) {
+          const product = productsMap.get(productId);
+
+          if (!product) {
+            warnings.push({
+              code: 'PRODUCT_NOT_FOUND',
+              message: `Producto ${productId} no encontrado para restauración`,
+              productId
+            });
+            continue;
+          }
+
+          // Saltar productos que no trackean stock
+          if (product.trackStock === false) {
+            continue;
+          }
+
+          const newStock = normalizeStock(Number(product.stock || 0) + quantityToRestore);
+
+          // CRÍTICO: Usar .put() para disparar el hook 'updating'
+          const updatedProduct = {
+            ...product,
+            stock: newStock,
+            updatedAt: new Date().toISOString()
+            // NOTA: activeStockStatus NO se calcula aquí - lo calcula el hook de Dexie
+          };
+
+          await db.table(STORES.MENU).put(updatedProduct);
+
+          restored.push({
+            type: 'product',
+            id: productId,
+            previousStock: product.stock,
+            newStock,
+            restoredQuantity: quantityToRestore
+          });
+        }
+
+        // 5. Sincronizar productos padre afectados por lotes
+        // Recalcular stock total de todos los lotes activos para cada padre
+        for (const parentId of affectedParentIds) {
+          const parentProduct = productsMap.get(parentId);
+          if (!parentProduct) continue;
+
+          // Obtener TODOS los lotes del producto (incluyendo los recién actualizados)
+          const allBatches = await db.table(STORES.PRODUCT_BATCHES)
+            .where('productId')
+            .equals(parentId)
+            .toArray();
+
+          const totalStock = allBatches
+            .filter(b => b?.isActive && Number(b?.stock) > 0)
+            .reduce((sum, b) => sum + Number(b?.stock || 0), 0);
+
+          // Solo actualizar si el stock calculado difiere del actual
+          if (Math.abs((parentProduct.stock || 0) - totalStock) > 0.0001) {
+            const updatedParent = {
+              ...parentProduct,
+              stock: normalizeStock(totalStock),
+              updatedAt: new Date().toISOString()
+            };
+
+            await db.table(STORES.MENU).put(updatedParent);
+
+            restored.push({
+              type: 'parent_sync',
+              id: parentId,
+              previousStock: parentProduct.stock,
+              newStock: totalStock,
+              source: 'batch_aggregation'
+            });
+          }
+        }
+
+        return {
+          restored,
+          warnings,
+          restoredInventoryValue: Number(restoredInventoryValue.toFixed(2))
+        };
+      }
+    );
+  },
     /**
      * Guarda un lote (Batch), valida sus datos y sincroniza automáticamente
      * el stock y costos del producto padre (FIFO).
@@ -793,39 +976,7 @@ export const productsRepository = {
         }
     },
 
-    /**
-     * Purga las fechas de caducidad (y alertas asociadas) de todos los lotes de un producto.
-     * Usado cuando el usuario cambia el modo de caducidad a 'NONE'.
-     */
-    async purgeBatchExpirations(productId) {
-        try {
-            if (!productId) return { success: false, message: 'ID de producto requerido' };
-            
-            return await db.transaction('rw', db.table(STORES.PRODUCT_BATCHES), async () => {
-                const batches = await db.table(STORES.PRODUCT_BATCHES)
-                    .where('productId').equals(productId)
-                    .toArray();
-                    
-                let updatedCount = 0;
-                for (const batch of batches) {
-                    if (batch.expiryDate || batch.alertTargetDate) {
-                        delete batch.expiryDate;
-                        delete batch.alertTargetDate;
-                        delete batch.alertType;
-                        await db.table(STORES.PRODUCT_BATCHES).put(batch);
-                        updatedCount++;
-                    }
-                }
-                
-                Logger.info(`Purgadas fechas de caducidad de ${updatedCount} lotes para el producto ${productId}`);
-                return { success: true, updatedCount };
-            });
-        } catch (error) {
-            throw handleDexieError(error, 'Purge Batch Expirations');
-        }
-    },
-
-    /**
+        /**
      * Guarda un lote de producción y descuenta atómicamente la materia prima (Ingredientes).
      */
     async saveProductionBatchAndSync(batchData, recipe) {
