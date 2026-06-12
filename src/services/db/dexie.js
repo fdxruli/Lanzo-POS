@@ -5,6 +5,7 @@ import { CUSTOMER_DEBT_SORT_INDEX, normalizeCustomerDebtCents } from './customer
 import { getLegacyFinancialSaleStatus } from '../sales/financialStats';
 import Logger from '../Logger';
 import { showMessage } from '../../store/useMessageStore';
+import { getLowStockAlertStatus } from './utils';
 // Nota: Dexie maneja el versionado de forma interna y más limpia, 
 // pero importamos DB_NAME para mantener consistencia.
 
@@ -464,6 +465,21 @@ class LanzoDatabase extends Dexie {
         record.activeStockStatus = (isActive && hasStock) ? 1 : 0;
       });
       });
+
+      this.version(20).stores({
+        [STORES.MENU]: 'id, createdAt, barcode, name_lower, categoryId, sku, expirationMode, shelfLifeValue, shelfLifeUnit, activeStockStatus, lowStockAlertStatus, [categoryId+activeStockStatus], [id+activeStockStatus]',
+        [STORES.PRODUCT_BATCHES]: 'id, productId, sku, expiryDate, alertTargetDate, status, activeStockStatus, [productId+status], [productId+activeStockStatus], [activeStockStatus+alertTargetDate]'
+      }).upgrade(async tx => {
+        await tx.table(STORES.MENU).toCollection().modify(record => {
+          record.lowStockAlertStatus = getLowStockAlertStatus(record);
+        });
+
+        await tx.table(STORES.PRODUCT_BATCHES).toCollection().modify(record => {
+          if (record.expiryDate && !record.alertTargetDate) {
+            record.alertTargetDate = record.expiryDate;
+          }
+        });
+      });
     }
   }
 
@@ -498,6 +514,7 @@ db.table(STORES.MENU).hook('creating', function (primKey, obj, transaction) {
   const isActive = obj.isActive !== false;
   const hasStock = Number(obj.stock) > 0;
   obj.activeStockStatus = (isActive && hasStock) ? 1 : 0;
+  obj.lowStockAlertStatus = getLowStockAlertStatus(obj);
 });
 
 /**
@@ -520,13 +537,14 @@ db.table(STORES.MENU).hook('updating', function (modifications, primKey, obj, tr
   if (Object.prototype.hasOwnProperty.call(modifications, 'activeStockStatus') && modifications.activeStockStatus !== nextStatus) {
     console.warn(`[HOOK GUARD MENU] Intento de setear activeStockStatus=${modifications.activeStockStatus} ignorado para ${primKey}. Calculado=${nextStatus}`);
     modifications.activeStockStatus = nextStatus;
-    return; // Ya inyectamos el valor correcto, no necesitamos hacer más
   }
 
   // Si el estado derivado cambia o no está presente, inyéctalo en las modificaciones
   if (nextState.activeStockStatus !== nextStatus) {
     modifications.activeStockStatus = nextStatus;
   }
+
+  modifications.lowStockAlertStatus = getLowStockAlertStatus(nextState);
 });
 
 /**
@@ -540,6 +558,10 @@ db.table(STORES.PRODUCT_BATCHES).hook('creating', function (primKey, obj, transa
   // Normalizar campo status para índices (evita booleanos en índices compuestos)
   if (obj.status === undefined || obj.status === null) {
     obj.status = isActive ? 'active' : 'inactive';
+  }
+
+  if (obj.expiryDate && !obj.alertTargetDate) {
+    obj.alertTargetDate = obj.expiryDate;
   }
 });
 
@@ -569,6 +591,10 @@ db.table(STORES.PRODUCT_BATCHES).hook('updating', function (modifications, primK
   // Sincronizar status string si cambia isActive
   if (modifications.isActive !== undefined && modifications.status === undefined) {
     modifications.status = modifications.isActive ? 'active' : 'inactive';
+  }
+
+  if (modifications.expiryDate !== undefined && modifications.alertTargetDate === undefined) {
+    modifications.alertTargetDate = modifications.expiryDate;
   }
 });
 

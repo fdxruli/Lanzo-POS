@@ -25,6 +25,8 @@ export const DB_ERROR_CODES = {
 };
 
 export const STOCK_DECIMALS = 4;
+export const LOW_STOCK_THRESHOLD = 5;
+export const EXPIRY_DAYS_THRESHOLD = 7;
 
 export const normalizeStock = (value) => {
   const num = Number(value);
@@ -38,6 +40,17 @@ export const getAvailableStock = (record) => {
   const physicalStock = normalizeStock(record?.stock || 0);
   const committedStock = getCommittedStock(record);
   return normalizeStock(Math.max(0, physicalStock - committedStock));
+};
+
+export const getLowStockAlertStatus = (record) => {
+  const availableStock = getAvailableStock(record);
+
+  return Boolean(record?.trackStock)
+    && record?.isActive !== false
+    && availableStock > 0
+    && availableStock < LOW_STOCK_THRESHOLD
+    ? 1
+    : 0;
 };
 
 export function handleDexieError(error, context = '') {

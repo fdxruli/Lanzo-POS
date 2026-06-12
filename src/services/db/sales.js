@@ -5,7 +5,8 @@ import {
     DB_ERROR_CODES,
     normalizeStock,
     getAvailableStock,
-    getCommittedStock
+    getCommittedStock,
+    getLowStockAlertStatus
 } from './utils';
 import { generateID } from '../utils';
 import { normalizeCustomerDebtCents } from './customerDebtIndex';
@@ -161,6 +162,7 @@ const recordInventoryDeltas = async ({
 
     const productsToUpdate = [];      // Proyecciones (para UI offline)
     const deltaEvents = [];            // Deltas inmutables (source of truth)
+    const criticalStockProductIds = [];
 
     for (let i = 0; i < products.length; i++) {
         const product = products[i];
@@ -169,6 +171,7 @@ const recordInventoryDeltas = async ({
         const productId = productIdsArray[i];
         const previousStock = normalizeStock(product.stock || 0);
         let newStock = previousStock;
+        let newCommittedStock = getCommittedStock(product);
         let delta = 0;
 
         // ─ Cálculo de stock final (igual que antes)
@@ -178,6 +181,9 @@ const recordInventoryDeltas = async ({
                 productBatches
                     .filter((batch) => batch?.isActive && normalizeStock(batch.stock) > 0)
                     .reduce((sum, batch) => sum + normalizeStock(batch.stock), 0)
+            );
+            newCommittedStock = normalizeStock(
+                productBatches.reduce((sum, batch) => sum + getCommittedStock(batch), 0)
             );
         } else {
             const nonBatchSale = nonBatchSalesMap.get(productId);
@@ -209,16 +215,27 @@ const recordInventoryDeltas = async ({
 
         // ─ 1. ACTUALIZAR PROYECCIÓN LOCAL (para UI offline)
         // Documentar claramente que esto es una proyección, no source of truth
-        productsToUpdate.push({
+        const updatedProduct = {
             ...product,
             stock: newStock,
-            committedStock: !product.batchManagement?.enabled && nonBatchSalesMap.has(productId)
-                ? normalizeStock(getCommittedStock(product) - (nonBatchSalesMap.get(productId)?.committedSold || 0))
-                : getCommittedStock(product),
+            committedStock: product.batchManagement?.enabled
+                ? newCommittedStock
+                : normalizeStock(
+                    getCommittedStock(product)
+                    - (nonBatchSalesMap.get(productId)?.committedSold || 0)
+                ),
             updatedAt: timestamp,
             // META: Documentar que esto es una proyección recalculada desde inventory_events
             _projectsFrom: 'inventory_events'
-        });
+        };
+
+        productsToUpdate.push(updatedProduct);
+        if (
+            getLowStockAlertStatus(product) !== 1
+            && getLowStockAlertStatus(updatedProduct) === 1
+        ) {
+            criticalStockProductIds.push(productId);
+        }
 
         // ─ 2. REGISTRAR DELTA INMUTABLE (si hay cambio)
         if (delta !== 0) {
@@ -251,11 +268,13 @@ const recordInventoryDeltas = async ({
         if (existingEventsByProductIdForSale.length > 0) {
             // Retomar después de reconexión: eventos ya registrados, skip
             Logger.warn(`⚠️ Eventos de inventario ya registrados para venta ${saleId}, skipping`);
-            return;
+            return criticalStockProductIds;
         }
 
         await tableInventoryEvents.bulkAdd(deltaEvents);
     }
+
+    return criticalStockProductIds;
 };
 
 const applyCustomerCreditCharge = async ({ sale, tables }) => {
@@ -365,7 +384,7 @@ const processSaleWithinTransaction = async ({
     });
 
     // ─ NUEVA LÓGICA: Registrar deltas en lugar de solo actualizar stock
-    await recordInventoryDeltas({
+    const criticalStockProductIds = await recordInventoryDeltas({
         affectedProductIds,
         batchesCacheMap,
         saleItems: sale?.items || [],
@@ -416,7 +435,7 @@ const processSaleWithinTransaction = async ({
         extraLogFields
     });
 
-    return { success: true, transactionId };
+    return { success: true, transactionId, criticalStockProductIds };
 };
 
 // Pre-flight check dinámico. Evalúa el array de ventas y extrae las dependencias de tablas requeridas.

@@ -11,6 +11,7 @@ import { SALE_STATUS } from './financialStats';
 import { syncMiddleware } from '../sync/syncMiddleware';
 import { conflictResolver } from '../sync/conflictResolver';
 import { evaluator } from '../BackupRiskEvaluator';
+import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
 
 export const processSaleCore = async ({
     order,
@@ -188,6 +189,8 @@ export const processSaleCore = async ({
 
             return { success: false, message: errorMessage };
         }
+
+        dispatchTickerInventoryAlert(transactionResult.criticalStockProductIds || []);
 
         // ✅ SOBERANÍA LOCAL ESTABLECIDA
         // La venta está segura en IndexedDB. De aquí en adelante, el éxito es inconmutable.

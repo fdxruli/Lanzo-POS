@@ -23,6 +23,10 @@ const createFakeDb = ({ products = [], batches = [] } = {}) => {
         backingMap.set(record.id, structuredClone(record));
         return record.id;
       },
+      bulkPut: async (records) => {
+        records.forEach((record) => backingMap.set(record.id, structuredClone(record)));
+        return records.map((record) => record.id);
+      },
       bulkGet: async (ids) => ids.map((id) => backingMap.get(id) || null),
       where: (field) => ({
         equals: (value) => ({

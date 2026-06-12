@@ -4,7 +4,11 @@
 import { showMessage } from '../store/useMessageStore';
 import toast from 'react-hot-toast';
 import Logger from './Logger';
-import { getAvailableStock } from './db/utils';
+import {
+  EXPIRY_DAYS_THRESHOLD,
+  getAvailableStock,
+  LOW_STOCK_THRESHOLD
+} from './db/utils';
 
 /**
  * Muestra un mensaje al usuario.
@@ -193,8 +197,7 @@ export const normalizeDate = (dateString) => {
   return new Date(date.getTime() + date.getTimezoneOffset() * 60000);
 };
 
-export const LOW_STOCK_THRESHOLD = 5;
-export const EXPIRY_DAYS_THRESHOLD = 7;
+export { LOW_STOCK_THRESHOLD, EXPIRY_DAYS_THRESHOLD };
 
 /**
  * Calcula el estado de alerta de un producto (stock y caducidad).

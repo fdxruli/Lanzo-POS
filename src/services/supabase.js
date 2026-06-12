@@ -295,7 +295,15 @@ export const activateLicense = async function (licenseKey) {
     }
 };
 
+let currentRevalidationPromise = null;
+
 export const revalidateLicense = async function (licenseKeyProp) {
+    if (currentRevalidationPromise) {
+        Logger.log('⏳ [Security] Revalidación en curso. Uniéndose a la petición existente para evitar colisiones.');
+        return currentRevalidationPromise;
+    }
+
+    currentRevalidationPromise = (async () => {
     const timeoutMs = 8000;
     let timeoutId;
 
@@ -471,6 +479,13 @@ export const revalidateLicense = async function (licenseKeyProp) {
             reason: 'server_rejected',
             details: error?.message || String(error) || 'Error desconocido del servidor'
         };
+    }
+    })();
+
+    try {
+        return await currentRevalidationPromise;
+    } finally {
+        currentRevalidationPromise = null;
     }
 };
 
