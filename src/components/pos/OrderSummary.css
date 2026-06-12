@@ -1,8 +1,8 @@
 /* Mobile-first order summary. Desktop refinements start at 1024px. */
 .pos-order-container {
-  --order-green: var(--success-color, #00c48c);
-  --order-green-strong: #087a55;
-  --order-blue: #2563eb;
+  --order-primary: var(--primary-color, #3b82f6);
+  --order-primary-hover: var(--primary-hover, #4f46e5);
+  --order-accent: var(--secondary-color, #06b6d4);
   --order-amber: #d97706;
   --order-danger: var(--error-color, #ff3b5c);
   box-sizing: border-box;
@@ -62,7 +62,7 @@
 }
 
 .summary-folio strong {
-  color: var(--order-green-strong);
+  color: var(--order-primary-hover);
   font-weight: 750;
 }
 
@@ -108,9 +108,9 @@
   justify-content: center;
   gap: 7px;
   padding: 0 12px;
-  color: var(--order-green-strong);
+  color: var(--order-primary-hover);
   background: transparent;
-  border: 1px solid color-mix(in srgb, var(--order-green) 55%, var(--border-color));
+  border: 1px solid color-mix(in srgb, var(--order-primary) 55%, var(--border-color));
   font-size: 0.85rem;
   font-weight: 750;
 }
@@ -131,7 +131,7 @@
   padding: 0 6px;
   place-items: center;
   color: #fff;
-  background: var(--order-green-strong);
+  background: var(--order-primary);
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 800;
@@ -185,8 +185,8 @@
 }
 
 .table-identifier-input:focus {
-  border-color: var(--order-green);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--order-green) 18%, transparent);
+  border-color: var(--order-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--order-accent) 18%, transparent);
 }
 
 .table-identifier-input::placeholder {
@@ -276,7 +276,7 @@
 
 .order-item-notes {
   margin-top: 6px;
-  color: var(--order-green-strong);
+  color: var(--order-primary-hover);
   font-size: 0.8rem;
   font-weight: 600;
   line-height: 1.4;
@@ -309,7 +309,7 @@
   height: 44px;
   padding: 0;
   place-items: center;
-  color: var(--order-green-strong);
+  color: var(--order-primary-hover);
   background: var(--card-background-color);
   border: 0;
   cursor: pointer;
@@ -436,7 +436,7 @@
 }
 
 .total-price {
-  color: var(--order-green-strong);
+  color: var(--order-primary-hover);
   font-size: 1.55rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
@@ -457,9 +457,9 @@
   justify-content: center;
   gap: 8px;
   padding: 10px 12px;
-  color: var(--order-green-strong);
+  color: var(--order-primary-hover);
   background: transparent;
-  border: 1px solid color-mix(in srgb, var(--order-green) 62%, var(--border-color));
+  border: 1px solid color-mix(in srgb, var(--order-primary) 62%, var(--border-color));
   border-radius: 9px;
   cursor: pointer;
   font: inherit;
@@ -472,9 +472,9 @@
 .order-action-btn--primary {
   min-height: 56px;
   color: #fff;
-  background: var(--order-green-strong);
-  border-color: var(--order-green-strong);
-  box-shadow: 0 6px 14px rgba(8, 122, 85, 0.22);
+  background: var(--order-primary);
+  border-color: var(--order-primary);
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--order-primary) 28%, transparent);
   font-size: 1rem;
 }
 
@@ -485,8 +485,8 @@
 }
 
 .order-action-btn--split {
-  color: var(--order-blue);
-  border-color: color-mix(in srgb, var(--order-blue) 58%, var(--border-color));
+  color: var(--order-accent);
+  border-color: color-mix(in srgb, var(--order-accent) 58%, var(--border-color));
 }
 
 .order-action-btn--update {
@@ -709,13 +709,13 @@
 @media (hover: hover) {
   .btn-mesas-header:hover,
   .order-action-btn:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--order-green) 8%, transparent);
+    background: color-mix(in srgb, var(--order-primary) 8%, transparent);
   }
 
   .order-action-btn--primary:hover:not(:disabled) {
     color: #fff;
-    background: #066b4a;
-    box-shadow: 0 8px 18px rgba(8, 122, 85, 0.28);
+    background: var(--order-primary-hover);
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--order-primary) 34%, transparent);
   }
 
   .order-action-btn--update:hover:not(:disabled) {
@@ -728,7 +728,7 @@
 
   .quantity-btn:hover,
   .btn-remove-item:hover {
-    background: color-mix(in srgb, var(--order-green) 8%, var(--card-background-color));
+    background: color-mix(in srgb, var(--order-primary) 8%, var(--card-background-color));
   }
 }
 

@@ -27,10 +27,15 @@ function Layout() {
   const initializeApp = useAppStore(state => state.initializeApp);
 
   const showAssistantBot = useAppStore(state => state.showAssistantBot);
+  const showTicker = useAppStore(state => state.showTicker);
+  const licenseStatus = useAppStore(state => state.licenseStatus);
 
   const { pathname } = useLocation();
   const isPosPage = pathname === '/';
   const isAboutPage = pathname === '/acerca-de';
+
+  const isLicenseCritical = licenseStatus === 'grace_period' || licenseStatus === 'expired' || licenseStatus === 'locked_renewal';
+  const shouldShowTicker = !isAboutPage && (showTicker || isLicenseCritical);
 
   useEffect(() => {
     // Restablece el scroll del documento principal
@@ -53,7 +58,13 @@ function Layout() {
       try {
         const result = await reconcileOrphanedOrders();
         if (result?.count > 0) {
-          Logger.log(`🧹 Se liberó el inventario de ${result.count} órdenes abandonadas.`);
+          Logger.warn(`${result.count} órdenes inactivas requieren revisión manual.`);
+        }
+        if (result?.recovered > 0) {
+          Logger.warn(`${result.recovered} órdenes ocultas se restauraron al listado de mesas.`);
+        }
+        if (result?.repairedBatchParents > 0) {
+          Logger.warn(`${result.repairedBatchParents} productos se resincronizaron desde sus lotes.`);
         }
       } catch (error) {
         Logger.error("Fallo durante la reconciliación de órdenes:", error);
@@ -113,8 +124,8 @@ function Layout() {
       <Navbar />
 
       <div className={`content-wrapper ${isPosPage ? 'content-wrapper--pos' : ''}`.trim()}>
-        {!isAboutPage && <Ticker />}
-        <div className={`page-container ${isPosPage ? 'page-container-pos' : ''}`}>
+        {shouldShowTicker && <Ticker />}
+        <div className={`page-container ${isPosPage ? 'page-container-pos' : ''} ${location.pathname.startsWith('/clientes') ? 'page-container-customers' : ''}`.trim()}>
           <Outlet />
         </div>
       </div>

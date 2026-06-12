@@ -247,6 +247,49 @@
   display: none;
 }
 
+.setup-backup-notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  margin-bottom: 16px;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+}
+
+.setup-backup-notice p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.setup-directory-button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 14px;
+}
+
+.setup-backup-compatibility {
+  padding: 12px;
+  margin-top: 14px;
+  color: #1e40af;
+  font-size: 0.9rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+}
+
+@media (max-width: 560px) {
+  .setup-pin-row {
+    flex-direction: column;
+  }
+}
+
 /* Grid de Rubros */
 .rubro-intro {
   margin-bottom: 15px;

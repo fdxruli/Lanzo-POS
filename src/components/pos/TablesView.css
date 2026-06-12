@@ -738,3 +738,11 @@
     grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
   }
 }
+.table-card-review-banner {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.78rem;
+  font-weight: 600;
+}

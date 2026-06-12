@@ -4,7 +4,7 @@ import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { compressImage } from '../../services/utils';
 import Logger from '../../services/Logger';
 // Se importaron nuevos iconos de lucide-react (Store, Phone, MapPin, Image, Sun, Moon, Monitor)
-import { Lock, Info, FileText, Bot, Store, Phone, MapPin, Image as ImageIcon, Sun, Moon, Monitor } from 'lucide-react';
+import { Lock, Info, FileText, Bot, Bell, Store, Phone, MapPin, Image as ImageIcon, Sun, Moon, Monitor } from 'lucide-react';
 import TermsAndConditionsModal from '../common/TermsAndConditionsModal';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
@@ -26,6 +26,9 @@ export default function GeneralSettings() {
 
   const showAssistantBot = useAppStore((state) => state.showAssistantBot);
   const setShowAssistantBot = useAppStore((state) => state.setShowAssistantBot);
+
+  const showTicker = useAppStore((state) => state.showTicker);
+  const setShowTicker = useAppStore((state) => state.setShowTicker);
 
   const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
   const setEnableMultipleOrders = useAppStore((state) => state.setEnableMultipleOrders);
@@ -316,6 +319,83 @@ export default function GeneralSettings() {
               </span>
             </label>
           ))}
+        </div>
+      </div>
+
+      {/* SECCIÓN BARRA DE ANUNCIOS (TICKER) */}
+      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+        <h3 className="subtitle">Barra de Anuncios (Ticker)</h3>
+
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '12px',
+          backgroundColor: 'var(--bg-light)',
+          borderRadius: '8px',
+          border: '1px solid var(--border-color)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              backgroundColor: showTicker ? '#EBF8FF' : '#EDF2F7',
+              padding: '8px',
+              borderRadius: '50%',
+              color: showTicker ? '#3182CE' : '#A0AEC0',
+              transition: 'all 0.3s ease'
+            }}>
+              <Bell size={24} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Cinta de Notificaciones Superior</span>
+              <p>Muestra alertas dinámicas en la parte superior de la pantalla.</p>
+              <span style={{ fontSize: '0.85rem', color: '#E53E3E', fontWeight: 500 }}>
+                ⚠️ Al desactivar esta barra dejarás de ver notificaciones críticas de stock bajo y caducidad.
+              </span>
+              <span style={{ fontSize: '0.85rem', color: '#E53E3E', fontWeight: 500 }}>
+                Nota: Activar y desactivar este control reiniciará la animación de los mensajes en cola.
+              </span>
+              <br />
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                {showTicker ? 'La barra de anuncios está activa.' : 'La barra de anuncios está oculta.'}
+              </span>
+            </div>
+          </div>
+
+          {/* Toggle Switch Personalizado */}
+          <label style={{
+            position: 'relative',
+            display: 'inline-block',
+            width: '50px',
+            height: '26px',
+            cursor: 'pointer',
+            flexShrink: 0,
+            userSelect: 'none'
+          }}>
+            <input
+              type="checkbox"
+              checked={!!showTicker}
+              onChange={(e) => setShowTicker(e.target.checked)}
+              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+            />
+
+            <span style={{
+              position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: showTicker ? 'var(--primary-color)' : '#CBD5E0',
+              transition: 'background-color .4s',
+              borderRadius: '34px'
+            }}></span>
+
+            <span style={{
+              position: 'absolute', content: '""', height: '20px', width: '20px',
+              left: '3px',
+              bottom: '3px',
+              backgroundColor: 'white',
+              transition: 'transform .4s',
+              borderRadius: '50%',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              transform: showTicker ? 'translateX(24px)' : 'translateX(0)'
+            }}></span>
+          </label>
         </div>
       </div>
 

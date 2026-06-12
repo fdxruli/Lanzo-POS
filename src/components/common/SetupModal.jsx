@@ -1,5 +1,5 @@
 // src/components/common/SetupModal.jsx
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
 import LazyImage from './LazyImage';
@@ -17,11 +17,13 @@ import {
   Pill,
   Apple,
   Shirt,
-  Hammer
+  Hammer,
+  FolderKey
 } from 'lucide-react';
 import './SetupModal.css';
 import Logger from '../../services/Logger';
 import { fetchLegalTerms, acceptLegalTerms } from '../../services/supabase';
+import { backupManager } from '../../services/backup/backupManager';
 
 const logoPlaceholder = 'https://placehold.co/150x150/FFFFFF/4A5568?text=L'; // Aumenté un poco la resolución del placeholder
 
@@ -39,8 +41,6 @@ export default function SetupModal() {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [setupError, setSetupError] = useState('');
-
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -50,11 +50,18 @@ export default function SetupModal() {
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState('info');
   const [showTerms, setShowTerms] = useState(false);
+  const [backupPin, setBackupPin] = useState('');
+  const [backupPinConfirm, setBackupPinConfirm] = useState('');
+  const [backupDirectory, setBackupDirectory] = useState(null);
   const nameInputRef = useRef(null);
+  const supportsDirectoryPicker = typeof window.showDirectoryPicker === 'function';
 
   const licenseFeatures = licenseDetails?.features || {};
   const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
-  const allowedRubrosList = licenseFeatures.allowed_rubros || ['*'];
+  const allowedRubrosList = useMemo(
+    () => licenseFeatures.allowed_rubros || ['*'],
+    [licenseFeatures.allowed_rubros]
+  );
   const isAllAllowed = allowedRubrosList.includes('*');
 
   useEffect(() => {
@@ -65,9 +72,13 @@ export default function SetupModal() {
   }, [licenseDetails, isAllAllowed, allowedRubrosList]);
 
   const isStep1Complete = useMemo(() => name.trim().length > 0, [name]);
+  const isStep2Complete = selectedTypes.length > 0;
+  const isPinValid = /^\d{8,}$/.test(backupPin) && backupPin === backupPinConfirm;
+  const isBackupStepComplete = isPinValid && (!supportsDirectoryPicker || Boolean(backupDirectory));
 
   const handleSectionToggle = (section) => {
     if (section === 'type' && !isStep1Complete) return;
+    if (section === 'backup' && !isStep2Complete) return;
     setActiveSection(activeSection === section ? '' : section);
   };
 
@@ -115,6 +126,11 @@ export default function SetupModal() {
       if (activeSection !== 'type') setActiveSection('type');
       return;
     }
+    if (!isBackupStepComplete) {
+      setError('Configura un PIN válido y selecciona la carpeta de respaldo.');
+      setActiveSection('backup');
+      return;
+    }
 
     setIsSubmitting(true);
     setError('');
@@ -135,6 +151,7 @@ export default function SetupModal() {
         }
       }
 
+      await backupManager.configure(backupPin, backupDirectory);
       await handleSetup({
         name,
         phone,
@@ -157,6 +174,23 @@ export default function SetupModal() {
       setActiveSection('type');
     } else {
       nameInputRef.current?.focus();
+    }
+  };
+
+  const handleContinueToBackup = () => {
+    if (isStep2Complete) setActiveSection('backup');
+  };
+
+  const handleChooseBackupDirectory = async () => {
+    setError('');
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      setBackupDirectory(handle);
+    } catch (directoryError) {
+      if (directoryError.name !== 'AbortError') {
+        Logger.error('Error seleccionando carpeta de respaldo:', directoryError);
+        setError('No se pudo abrir la carpeta seleccionada.');
+      }
     }
   };
 
@@ -289,13 +323,14 @@ export default function SetupModal() {
               </div>
 
               {/* --- ACORDEÓN 2: RUBROS --- */}
-              <div className={`accordion-item ${activeSection === 'type' ? 'open' : ''} ${!isStep1Complete ? 'locked' : ''}`}>
+              <div className={`accordion-item ${activeSection === 'type' ? 'open' : ''} ${!isStep1Complete ? 'locked' : ''} ${isStep2Complete ? 'completed' : ''}`}>
                 <div className="accordion-header" onClick={() => !isSubmitting && handleSectionToggle('type')}>
                   <div className="header-title">
                     <span className="step-number">2</span>
                     <span>Giro del Negocio</span>
                   </div>
                   <div className="header-status">
+                    {isStep2Complete && <CheckCircle size={20} className="icon-success" />}
                     {!isStep1Complete ? <Lock size={18} className="icon-locked" /> : <ChevronDown size={20} className="icon-chevron" />}
                   </div>
                 </div>
@@ -348,9 +383,97 @@ export default function SetupModal() {
 
                     <div className="step-actions end">
                       <button
+                        type="button"
+                        className="btn btn-primary btn-next"
+                        disabled={isSubmitting || !isStep2Complete}
+                        onClick={handleContinueToBackup}
+                      >
+                        Continuar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className={`accordion-item ${activeSection === 'backup' ? 'open' : ''} ${!isStep2Complete ? 'locked' : ''} ${isBackupStepComplete ? 'completed' : ''}`}>
+                <div className="accordion-header" onClick={() => !isSubmitting && handleSectionToggle('backup')}>
+                  <div className="header-title">
+                    <span className="step-number">3</span>
+                    <span>Respaldo Cifrado</span>
+                  </div>
+                  <div className="header-status">
+                    {isBackupStepComplete && <CheckCircle size={20} className="icon-success" />}
+                    {!isStep2Complete ? <Lock size={18} className="icon-locked" /> : <ChevronDown size={20} className="icon-chevron" />}
+                  </div>
+                </div>
+
+                {activeSection === 'backup' && (
+                  <div className="accordion-body">
+                    <div className="setup-backup-notice">
+                      <FolderKey size={22} />
+                      <p>Usa un PIN de al menos 8 dígitos. Si lo pierdes, no será posible recuperar tus respaldos.</p>
+                    </div>
+
+                    <div className="form-row-split setup-pin-row">
+                      <div className="form-group flex-grow">
+                        <label className="form-label" htmlFor="setup-backup-pin">PIN de respaldo *</label>
+                        <input
+                          id="setup-backup-pin"
+                          className="form-input"
+                          type="password"
+                          inputMode="numeric"
+                          minLength="8"
+                          required
+                          value={backupPin}
+                          onChange={(event) => setBackupPin(event.target.value.replace(/\D/g, ''))}
+                          placeholder="Mínimo 8 dígitos"
+                          disabled={isSubmitting}
+                        />
+                      </div>
+                      <div className="form-group flex-grow">
+                        <label className="form-label" htmlFor="setup-backup-pin-confirm">Confirmar PIN *</label>
+                        <input
+                          id="setup-backup-pin-confirm"
+                          className="form-input"
+                          type="password"
+                          inputMode="numeric"
+                          minLength="8"
+                          required
+                          value={backupPinConfirm}
+                          onChange={(event) => setBackupPinConfirm(event.target.value.replace(/\D/g, ''))}
+                          placeholder="Repite el PIN"
+                          disabled={isSubmitting}
+                        />
+                      </div>
+                    </div>
+
+                    {backupPinConfirm && backupPin !== backupPinConfirm && (
+                      <div className="error-message">Los PIN no coinciden.</div>
+                    )}
+
+                    {supportsDirectoryPicker ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary setup-directory-button"
+                        onClick={handleChooseBackupDirectory}
+                        disabled={isSubmitting}
+                      >
+                        <FolderKey size={18} />
+                        {backupDirectory ? `Carpeta: ${backupDirectory.name}` : 'Seleccionar carpeta de respaldo *'}
+                      </button>
+                    ) : (
+                      <div className="setup-backup-compatibility">
+                        Tu navegador no permite respaldos invisibles. Los archivos cifrados se descargarán manualmente.
+                      </div>
+                    )}
+
+                    {error && <div className="error-message">{error}</div>}
+
+                    <div className="step-actions end">
+                      <button
                         type="submit"
                         className="btn btn-save btn-finish"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || !isBackupStepComplete}
                       >
                         {isSubmitting ? (
                           <>
@@ -358,7 +481,7 @@ export default function SetupModal() {
                             Configurando...
                           </>
                         ) : (
-                          <>¡Finalizar y Empezar!</>
+                          <>Finalizar y Empezar</>
                         )}
                       </button>
                     </div>

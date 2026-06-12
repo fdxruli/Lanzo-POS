@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useStatsStore } from '../../store/useStatsStore';
 import { archiveOldData } from '../../services/database';
 import Logger from '../../services/Logger';
@@ -56,7 +56,7 @@ export default function MaintenanceSettings() {
       if (result.success) {
         alert(result.message);
         if (result.details.length > 0) {
-          console.log('Detalles de correccion:', result.details);
+          Logger.info('Detalles de correccion:', result.details);
         }
         await loadInitialProducts();
       }

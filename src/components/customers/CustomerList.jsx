@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Users, Settings, AlertTriangle } from 'lucide-react';
+import { Users, Settings } from 'lucide-react';
 import CustomerCard from './CustomerCard';
 import { useAppStore } from '../../store/useAppStore'; // Para guardar la config global
 import { customerCreditRepository } from '../../services/db/customerCreditRepository';
@@ -105,18 +105,6 @@ export default function CustomerList({
         Array.isArray(customers) ? customers : []
     ), [customers]);
 
-    const stats = useMemo(() => {
-        const totalDebt = safeCustomers.reduce((acc, c) => acc + (parseFloat(c.debt) || 0), 0);
-
-        const overLimitCount = safeCustomers.filter(c => {
-            const debtVal = parseFloat(c.debt) || 0;
-            const limitVal = parseFloat(c.creditLimit) || 0;
-            return debtVal > limitVal && limitVal > 0;
-        }).length;
-
-        return { totalDebt, overLimitCount };
-    }, [safeCustomers]);
-
     // --- INFINITE SCROLL ---
     useEffect(() => {
         if (isLoadingMore || !hasMore || typeof onLoadMore !== 'function') return;
@@ -167,9 +155,9 @@ export default function CustomerList({
 
     if (isLoading) {
         return (
-            <div style={{ padding: '40px', textAlign: 'center' }}>
+            <div className="customer-loading-state" role="status">
                 <div className="spinner-loader"></div>
-                <p style={{ marginTop: '10px', color: 'var(--text-light)' }}>Cargando clientes...</p>
+                <p>Cargando clientes...</p>
             </div>
         );
     }
@@ -177,16 +165,17 @@ export default function CustomerList({
     if (safeCustomers.length === 0) {
         return (
             <div className="customer-empty-message">
-                <Users size={48} style={{ opacity: 0.3 }} />
+                <span className="customer-empty-icon">
+                    <Users size={30} aria-hidden="true" />
+                </span>
                 <p>No hay clientes registrados.</p>
-                <span style={{ fontSize: '0.85rem', opacity: 0.8 }}>
+                <span className="customer-empty-copy">
                     Haz clic en Añadir Cliente para comenzar.
                 </span>
                 {/* Botón de config inicial */}
                 <button
-                    className="btn-text"
+                    className="customer-config-button"
                     onClick={() => setShowConfigModal(true)}
-                    style={{ marginTop: '20px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '5px' }}
                 >
                     <Settings size={14} /> Configurar Límite de Crédito
                 </button>
@@ -204,43 +193,26 @@ export default function CustomerList({
     return (
         <div className="customer-list-container">
             {/* Cabecera de Resumen de Crédito */}
-            <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '15px',
-                padding: '10px 15px',
-                backgroundColor: 'var(--bg-light)',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                flexWrap: 'wrap',
-                gap: '10px'
-            }}>
-                <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                    <div title="Deuda total en la calle">
-                        <span style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase' }}>Fiado Total</span>
-                        <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--primary-color)' }}>
-                            ${stats.totalDebt.toFixed(2)}
-                        </div>
-                    </div>
-                    {stats.overLimitCount > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#e53e3e' }}>
-                            <AlertTriangle size={16} />
-                            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                                {stats.overLimitCount} clientes excedidos
-                            </span>
-                        </div>
-                    )}
+            <div className="customer-directory-toolbar">
+                <div className="customer-directory-heading">
+                    <p>Directorio activo</p>
+                    <h2>Registros de clientes</h2>
                 </div>
-
                 <button
-                    className="btn btn-secondary small"
+                    className="customer-config-button"
                     onClick={() => setShowConfigModal(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}
                 >
-                    <Settings size={14} />
+                    <Settings size={18} aria-hidden="true" />
                     Configurar Límites
                 </button>
+            </div>
+
+            <div className="customer-list-columns" aria-hidden="true">
+                <span>Cliente</span>
+                <span>Contacto y direccion</span>
+                <span>Estado</span>
+                <span>Deuda actual</span>
+                <span>Acciones</span>
             </div>
 
             <div id="customer-list" className="customer-list" aria-label="Lista de clientes">
@@ -266,16 +238,13 @@ export default function CustomerList({
                 <div
                     ref={sentinelRef}
                     className="sentinel-loader"
-                    style={{
-                        height: '60px', display: 'flex', justifyContent: 'center',
-                        alignItems: 'center', marginTop: '20px'
-                    }}
+                    role="status"
                 >
                     {isLoadingMore && <div className="spinner-loader small"></div>}
                 </div>
             )}
 
-            <div style={{ textAlign: 'center', color: '#999', fontSize: '0.8rem', marginTop: '10px', paddingBottom: '20px' }}>
+            <div className="customer-list-footer">
                 Mostrando {safeCustomers.length} cliente{safeCustomers.length === 1 ? '' : 's'}{hasMore ? '...' : ''}
             </div>
 

@@ -1,52 +1,149 @@
-/* src/components/customers/CustomerForm.css */
-
 .customer-form-container {
-  background-color: var(--card-background-color);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-xl);
-  /* Más espacio interno */
-  box-shadow: var(--box-shadow);
-  max-width: 600px;
-  margin: 0 auto;
-  border: 1px solid var(--border-color);
-  /* Borde sutil */
-  animation: fadeIn 0.3s ease-out;
-}
-
-/* Título del formulario */
-.customer-form-container .subtitle {
-  font-size: 1.25rem;
-  color: var(--primary-color);
-  /* Título en color primario */
-  margin-bottom: var(--spacing-lg);
-  border-bottom: 1px dashed var(--border-color);
-  padding-bottom: var(--spacing-sm);
-  text-align: center;
-}
-
-/* Botones del formulario */
-.customer-form-container .btn-save {
   width: 100%;
-  padding: 14px;
-  /* Botón más alto */
-  font-size: 1rem;
-  margin-top: var(--spacing-md);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1rem;
+  background: var(--card-background-color);
+}
+
+.customer-form-container .subtitle {
+  margin: 0 0 1rem;
+  padding-bottom: 0.75rem;
+  color: var(--text-dark);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 1.05rem;
+  text-align: left;
+}
+
+.customer-form-container form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.customer-form-container .form-group {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.customer-form-container .form-label {
+  color: var(--text-dark);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.customer-form-container .form-input,
+.customer-form-container .form-textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.75rem 0.85rem;
+  color: var(--text-dark);
+  background: var(--light-background);
+  border: 1px solid transparent;
+  border-radius: 11px;
+}
+
+.customer-form-container .form-textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.customer-form-container .form-input:focus,
+.customer-form-container .form-textarea:focus {
+  background: var(--card-background-color);
+  border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 13%, transparent);
+  outline: 0;
+}
+
+.customer-form-container .form-input.invalid {
+  border-color: var(--error-color);
+}
+
+.customer-form-row {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.customer-credit-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.customer-credit-help,
+.customer-form-container .form-help-text {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 0.7rem;
+}
+
+.customer-form-container .validation-message.error {
+  color: var(--error-color);
+}
+
+.customer-form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
+}
+
+.customer-form-container .btn-save,
+.customer-form-container .btn-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border-radius: 11px;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.customer-form-container .btn-save {
+  flex: 1;
+  color: #fff;
+  background: var(--primary-color);
+  border: 1px solid var(--primary-color);
+}
+
+.customer-form-container .btn-save:hover:not(:disabled) {
+  background: var(--primary-hover);
 }
 
 .customer-form-container .btn-cancel {
-  margin-top: var(--spacing-sm);
-  width: 100%;
-  justify-content: center;
+  color: var(--text-color);
+  background: transparent;
+  border: 1px solid var(--border-color);
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
+.customer-form-container button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (min-width: 640px) {
+  .customer-form-container {
+    padding: 1.5rem;
   }
 
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  .customer-form-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .customer-form-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .customer-form-container .btn-cancel {
+    min-width: 130px;
+  }
+}
+
+@media print {
+  .customer-form-container {
+    display: none;
   }
 }

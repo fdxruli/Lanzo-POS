@@ -89,7 +89,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
           />
         </div>
 
-        <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+        <div className="form-row customer-form-row">
           <div className="form-group">
             <label className="form-label" htmlFor="customer-phone">Telefono</label>
             <input
@@ -105,7 +105,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
 
           {/* --- NUEVO CAMPO: Limite de Credito --- */}
           <div className="form-group">
-            <label className="form-label" htmlFor="credit-limit" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <label className="form-label customer-credit-label" htmlFor="credit-limit">
               Limite de Credito ($)
               <span title="Monto maximo que se le puede fiar a este cliente. Ponga 0 para desactivar fiado.">
                 <Info size={14} color="#718096" />
@@ -120,7 +120,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
               value={creditLimit}
               onChange={(e) => setCreditLimit(e.target.value)}
             />
-            <p className="form-help-text" style={{ fontSize: '0.75rem', marginTop: '4px', color: '#718096' }}>
+            <p className="form-help-text customer-credit-help">
               {customerToEdit ? `Deuda actual: $${customerToEdit.debt || 0}` : `Global sugerido: $${globalCreditLimit}`}
             </p>
           </div>
@@ -138,15 +138,13 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
           ></textarea>
         </div>
 
-        <div className="form-actions" style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-          <button type="submit" className="btn btn-save" style={{ flex: 1 }} disabled={isSaving}>
+        <div className="form-actions customer-form-actions">
+          <button type="submit" className="btn btn-save" disabled={isSaving}>
             {isSaving ? 'Guardando...' : 'Guardar Cliente'}
           </button>
-          {customerToEdit && (
-            <button type="button" className="btn btn-cancel" onClick={onCancel} disabled={isSaving}>
-              Cancelar
-            </button>
-          )}
+          <button type="button" className="btn btn-cancel" onClick={onCancel} disabled={isSaving}>
+            Cancelar
+          </button>
         </div>
       </form>
     </div>

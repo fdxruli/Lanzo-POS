@@ -63,6 +63,11 @@
   animation-play-state: paused;
 }
 
+.notification-ticker-container.ticker-animation-paused .ticker-move,
+.notification-ticker-container.ticker-animation-paused .ticker-item svg {
+  animation-play-state: paused;
+}
+
 /* === ÍTEM INDIVIDUAL === */
 .ticker-item {
   display: inline-flex;

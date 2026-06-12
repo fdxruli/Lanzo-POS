@@ -45,6 +45,11 @@
     overflow-x: hidden;
 }
 
+.page-container-customers {
+    padding: 0;
+    padding-bottom: 88px;
+}
+
 @media (max-width: 1023px) {
     .content-wrapper--pos .notification-ticker-container {
         margin-bottom: 8px;
@@ -104,6 +109,13 @@
         padding: 30px;
         padding-bottom: 60px;
         overflow-x: visible;
+    }
+
+    .page-container-customers {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+        padding-bottom: 0;
     }
 
     /* --- Scrollbar Personalizado (Estético para Desktop) --- */

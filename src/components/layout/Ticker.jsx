@@ -1,295 +1,247 @@
-// src/components/layout/Ticker.jsx
-import React, { useMemo, useEffect, useCallback } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useProductStore } from '../../store/useProductStore';
+import {
+  AlertTriangle,
+  Clock,
+  Package,
+  Rocket,
+  Shield,
+  Sparkles
+} from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
-import { getProductAlerts } from '../../services/utils';
-import './Ticker.css';
+import { useTickerAlerts } from '../../hooks/useTickerAlerts';
 import Logger from '../../services/Logger';
-import { Rocket, Package, Sparkles, AlertTriangle, Clock, Shield } from 'lucide-react';
+import './Ticker.css';
 
-// ============================================================
-//  CONSTANTES
-// ============================================================
-
-/** Máximo de alertas de inventario que se muestran en el ticker */
 const MAX_INVENTORY_ALERTS = 8;
-
-/** Umbral mínimo de productos para mostrar alerta de backup */
 const BACKUP_ALERT_THRESHOLD = 5;
-
-/** Segundos base de animación por cada mensaje */
 const SECONDS_PER_MESSAGE = 10;
-
-/** Duración mínima de la animación en segundos */
 const MIN_ANIMATION_DURATION = 15;
 
-// Niveles de urgencia (menor número = mayor urgencia)
 const URGENCY = {
-  CRITICAL: 0,   // Caduca hoy / stock agotado
-  WARNING: 1,    // Caduca pronto / stock bajo
-  INFO: 2,       // Backup, promocionales
+  CRITICAL: 0,
+  WARNING: 1,
+  INFO: 2
 };
 
 const promotionalMessages = [
-  { icon: Rocket, text: "¡Potencia tu negocio con Lanzo POS!", urgency: URGENCY.INFO },
-  { icon: Package, text: "Gestiona tu inventario de forma fácil y rápida.", urgency: URGENCY.INFO },
-  { icon: Sparkles, text: "¡Sigue creciendo tu negocio con nosotros!", urgency: URGENCY.INFO }
+  { id: 'promo-growth', icon: Rocket, text: '¡Potencia tu negocio con Lanzo POS!', urgency: URGENCY.INFO },
+  { id: 'promo-inventory', icon: Package, text: 'Gestiona tu inventario de forma fácil y rápida.', urgency: URGENCY.INFO },
+  { id: 'promo-progress', icon: Sparkles, text: '¡Sigue creciendo tu negocio con nosotros!', urgency: URGENCY.INFO }
 ];
 
-// ============================================================
-//  FUNCIONES AUXILIARES (puras, sin side-effects)
-// ============================================================
-
-/**
- * Calcula los días calendario restantes hasta una fecha.
- * No muta los objetos Date originales.
- */
 function getDaysRemaining(endDate) {
   if (!endDate) return 0;
 
   const now = new Date();
   const end = new Date(endDate);
-
-  // Normalizar a medianoche para comparar DÍAS calendario
-  // Usamos nuevos objetos para no mutar los originales
-  const nowNormalized = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endNormalized = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-
-  const diffTime = endNormalized.getTime() - nowNormalized.getTime();
-
-  // Si la fecha ya pasó
-  if (diffTime < 0) return 0;
-
-  // Convertir milisegundos a días
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.max(0, Math.ceil((target.getTime() - today.getTime()) / 86400000));
 }
 
-/**
- * Genera el texto descriptivo de los días restantes.
- */
 function getDayText(days) {
   if (days <= 0) return 'hoy';
   if (days === 1) return 'mañana';
   return `en ${days} días`;
 }
 
-/**
- * Verifica si se debe mostrar una alerta de backup basándose en localStorage.
- * Retorna un objeto de alerta o null.
- */
-function getBackupAlertMessage() {
+function readBackupAlert() {
   const postponedUntil = localStorage.getItem('backup_postponed_until');
-  if (postponedUntil && new Date() < new Date(postponedUntil)) {
+  if (postponedUntil && Date.now() < new Date(postponedUntil).getTime()) {
     return null;
   }
 
   const lastBackup = localStorage.getItem('last_backup_date');
   if (!lastBackup) {
     return {
+      id: 'backup-missing',
       icon: Shield,
-      text: "No has realizado ninguna copia de seguridad. Ve a Configuración > Exportar.",
+      text: 'No has realizado ninguna copia de seguridad. Ve a Configuración > Exportar.',
       urgency: URGENCY.WARNING,
       route: '/configuracion'
     };
   }
 
-  const diffTime = Math.abs(Date.now() - new Date(lastBackup).getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const lastBackupTime = new Date(lastBackup).getTime();
+  if (!Number.isFinite(lastBackupTime)) return null;
 
-  if (diffDays > 7) {
-    return {
-      icon: Shield,
-      text: `Hace ${diffDays} días que no respaldas tus datos. ¡Haz una copia hoy!`,
-      urgency: URGENCY.WARNING,
-      route: '/configuracion'
-    };
-  }
-  return null;
-}
-
-/**
- * Genera alertas de inventario a partir del menú de productos.
- * Ordena por urgencia y limita la cantidad de resultados.
- */
-function generateAlertMessages(menu) {
-  const alerts = [];
-
-  // Alerta de backup (solo si el usuario tiene datos significativos)
-  if (menu.length > BACKUP_ALERT_THRESHOLD) {
-    const backupMsg = getBackupAlertMessage();
-    if (backupMsg) alerts.push(backupMsg);
-  }
-
-  menu.forEach(product => {
-    if (product.isActive === false) return;
-    const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(product);
-
-    if (isLowStock) {
-      alerts.push({
-        icon: Package,
-        text: `¡Stock bajo! Quedan ${product.stock} unidades de ${product.name}.`,
+  const diffDays = Math.ceil(Math.abs(Date.now() - lastBackupTime) / 86400000);
+  return diffDays > 7
+    ? {
+        id: 'backup-stale',
+        icon: Shield,
+        text: `Hace ${diffDays} días que no respaldas tus datos. ¡Haz una copia hoy!`,
         urgency: URGENCY.WARNING,
-        route: '/productos'
-      });
-    }
-
-    if (isNearingExpiry) {
-      const isCritical = expiryDays === 0;
-      const message = isCritical
-        ? `¡Atención! ${product.name} caduca hoy.`
-        : `¡Atención! ${product.name} caduca en ${expiryDays} días.`;
-
-      alerts.push({
-        icon: Clock,
-        text: message,
-        urgency: isCritical ? URGENCY.CRITICAL : URGENCY.WARNING,
-        route: '/productos'
-      });
-    }
-  });
-
-  // Ordenar por urgencia (crítico primero) y limitar
-  alerts.sort((a, b) => a.urgency - b.urgency);
-  return alerts.slice(0, MAX_INVENTORY_ALERTS);
+        route: '/configuracion'
+      }
+    : null;
 }
 
-// ============================================================
-//  COMPONENTE PRINCIPAL
-// ============================================================
+function useBackupAlert(enabled) {
+  const [backupAlert, setBackupAlert] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer;
+
+    const refresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (cancelled) return;
+
+        try {
+          setBackupAlert(enabled ? readBackupAlert() : null);
+        } catch (error) {
+          Logger.warn('No se pudo leer el estado de respaldo del ticker:', error);
+          setBackupAlert(null);
+        }
+      }, 0);
+    };
+
+    refresh();
+    window.addEventListener('backup_status_changed', refresh);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener('backup_status_changed', refresh);
+    };
+  }, [enabled]);
+
+  return backupAlert;
+}
+
+function useTickerVisibility() {
+  const containerRef = useRef(null);
+  const [isPageVisible, setIsPageVisible] = useState(
+    () => document.visibilityState === 'visible'
+  );
+  const [isIntersecting, setIsIntersecting] = useState(true);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      setIsPageVisible(document.visibilityState === 'visible');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return undefined;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsIntersecting(entry.isIntersecting),
+      { threshold: 0.01 }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return {
+    containerRef,
+    shouldPauseAnimation: !isPageVisible || !isIntersecting
+  };
+}
+
+function toTickerMessage(alert) {
+  if (alert.type === 'low-stock') {
+    return {
+      ...alert,
+      icon: Package,
+      text: `¡Stock bajo! Quedan ${alert.availableStock} unidades disponibles de ${alert.productName}.`
+    };
+  }
+
+  return {
+    ...alert,
+    icon: Clock,
+    text: alert.expiryDays === 0
+      ? `¡Atención! ${alert.productName} caduca hoy.`
+      : `¡Atención! ${alert.productName} caduca en ${alert.expiryDays} días.`
+  };
+}
 
 export default function Ticker() {
   const navigate = useNavigate();
-
-  // --- Estado de Licencia ---
-  const licenseStatus = useAppStore((state) => state.licenseStatus);
-  const gracePeriodEnds = useAppStore((state) => state.gracePeriodEnds);
-  const licenseDetails = useAppStore((state) => state.licenseDetails);
-
-  // --- Estado de Productos ---
-  const menu = useProductStore((state) => state.menu);
-  const isLoading = useProductStore((state) => state.isLoading);
-
-  // --- Tick para re-evaluar backup ---
-  const [backupUpdateTick, setBackupUpdateTick] = React.useState(0);
-  useEffect(() => {
-    const handleBackupUpdate = () => setBackupUpdateTick(prev => prev + 1);
-    window.addEventListener('backup_status_changed', handleBackupUpdate);
-    return () => window.removeEventListener('backup_status_changed', handleBackupUpdate);
-  }, []);
-
-  // Log para debug (solo en desarrollo)
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      Logger.log('[Ticker Debug]', {
-        licenseStatus,
-        gracePeriodEnds,
-        isGracePeriod: licenseStatus === 'grace_period',
-        daysRemaining: gracePeriodEnds ? getDaysRemaining(gracePeriodEnds) : null
-      });
-    }
-  }, [licenseStatus, gracePeriodEnds]);
-
-  // ============================================================
-  //  CÁLCULO DE MENSAJES (Memoizado)
-  // ============================================================
+  const licenseStatus = useAppStore(state => state.licenseStatus);
+  const gracePeriodEnds = useAppStore(state => state.gracePeriodEnds);
+  const licenseDetails = useAppStore(state => state.licenseDetails);
+  const { catalogSize, alerts } = useTickerAlerts();
+  const backupAlert = useBackupAlert(catalogSize > BACKUP_ALERT_THRESHOLD);
+  const { containerRef, shouldPauseAnimation } = useTickerVisibility();
 
   const { messages, isPriority } = useMemo(() => {
+    const now = new Date();
+    const graceDate = gracePeriodEnds ? new Date(gracePeriodEnds) : null;
+    const expiryDate = licenseDetails?.expires_at
+      ? new Date(licenseDetails.expires_at)
+      : null;
+    const isGracePeriod = licenseStatus === 'grace_period'
+      || (expiryDate && graceDate && expiryDate < now && graceDate > now);
 
-    // --- VALIDACIÓN 1: Período de Gracia por Status ---
-    if (licenseStatus === 'grace_period' && gracePeriodEnds) {
-      const days = getDaysRemaining(gracePeriodEnds);
-      const dayText = getDayText(days);
-
-      const copy = {
+    if (isGracePeriod && gracePeriodEnds) {
+      const warning = {
+        id: 'license-grace',
         icon: AlertTriangle,
-        text: `Tu licencia ha caducado. El sistema se bloqueará ${dayText}. Renueva tu plan para evitar interrupciones.`,
+        text: `Tu licencia ha caducado. El sistema se bloqueará ${getDayText(getDaysRemaining(gracePeriodEnds))}. Renueva tu plan para evitar interrupciones.`,
         urgency: URGENCY.CRITICAL,
         route: '/configuracion'
       };
 
       return {
-        messages: [copy, copy, copy],
+        messages: [
+          warning,
+          { ...warning, id: 'license-grace-2' },
+          { ...warning, id: 'license-grace-3' }
+        ],
         isPriority: true
       };
     }
 
-    // --- VALIDACIÓN 2: Período de Gracia por Fechas (Fallback) ---
-    if (licenseDetails && gracePeriodEnds) {
-      const now = new Date();
-      const graceDate = new Date(gracePeriodEnds);
-      const expiryDate = licenseDetails.expires_at ? new Date(licenseDetails.expires_at) : null;
+    const inventoryMessages = alerts
+      .map(toTickerMessage)
+      .concat(backupAlert ? [backupAlert] : [])
+      .sort((left, right) => left.urgency - right.urgency)
+      .slice(0, MAX_INVENTORY_ALERTS);
 
-      // Si ya expiró pero aún estamos en gracia
-      if (expiryDate && expiryDate < now && graceDate > now) {
-        const days = getDaysRemaining(gracePeriodEnds);
-        const dayText = getDayText(days);
-
-        const copy = {
-          icon: AlertTriangle,
-          text: `Tu licencia ha caducado. El sistema se bloqueará ${dayText}. Renueva tu plan para evitar interrupciones.`,
-          urgency: URGENCY.CRITICAL,
-          route: '/configuracion'
-        };
-
-        return {
-          messages: [copy, copy, copy],
-          isPriority: true
-        };
-      }
-    }
-
-    // --- VALIDACIÓN 3: Alertas de Inventario ---
-    if (isLoading || !menu || menu.length === 0) {
-      return { messages: promotionalMessages, isPriority: false };
-    }
-
-    try {
-      const alerts = generateAlertMessages(menu);
-
-      if (alerts.length === 0) {
-        return { messages: promotionalMessages, isPriority: false };
-      }
-
-      return { messages: alerts, isPriority: false };
-    } catch (error) {
-      Logger.error('Error generando alertas:', error);
-      return { messages: promotionalMessages, isPriority: false };
-    }
-  }, [licenseStatus, gracePeriodEnds, licenseDetails, menu, isLoading, backupUpdateTick]);
-
-  // ============================================================
-  //  VELOCIDAD DINÁMICA DE ANIMACIÓN
-  // ============================================================
+    return {
+      messages: inventoryMessages.length > 0
+        ? inventoryMessages
+        : promotionalMessages,
+      isPriority: false
+    };
+  }, [alerts, backupAlert, gracePeriodEnds, licenseDetails, licenseStatus]);
 
   const animationDuration = useMemo(() => {
-    const count = messages.length;
-    // Prioridad: la animación va más rápido para urgencia
-    if (isPriority) return Math.max(MIN_ANIMATION_DURATION, count * 8);
-    return Math.max(MIN_ANIMATION_DURATION, count * SECONDS_PER_MESSAGE);
-  }, [messages.length, isPriority]);
+    const secondsPerMessage = isPriority ? 8 : SECONDS_PER_MESSAGE;
+    return Math.max(
+      MIN_ANIMATION_DURATION,
+      messages.length * secondsPerMessage
+    );
+  }, [isPriority, messages.length]);
 
-  // ============================================================
-  //  HANDLER DE CLICK EN ALERTAS
-  // ============================================================
-
-  const handleAlertClick = useCallback((msg) => {
-    if (msg.route) {
-      navigate(msg.route);
-    }
+  const handleAlertClick = useCallback((message) => {
+    if (message.route) navigate(message.route);
   }, [navigate]);
-
-  // ============================================================
-  //  RENDER
-  // ============================================================
 
   const containerClasses = [
     'notification-ticker-container',
-    isPriority ? 'priority-warning' : ''
+    isPriority ? 'priority-warning' : '',
+    shouldPauseAnimation ? 'ticker-animation-paused' : ''
   ].filter(Boolean).join(' ');
 
   return (
     <div
+      ref={containerRef}
       id="notification-ticker-container"
       className={containerClasses}
       role="marquee"
@@ -301,31 +253,31 @@ export default function Ticker() {
           className="ticker-move"
           style={{ animationDuration: `${animationDuration}s` }}
         >
-          {messages.map((msg, index) => {
-            const Icon = msg.icon;
-            const isClickable = !!msg.route;
-
-            // Clase CSS de urgencia
-            let urgencyClass = 'urgency-info';
-            if (msg.urgency === URGENCY.CRITICAL) urgencyClass = 'urgency-critical';
-            else if (msg.urgency === URGENCY.WARNING) urgencyClass = 'urgency-warning';
+          {messages.map(message => {
+            const Icon = message.icon;
+            const isClickable = Boolean(message.route);
+            const urgencyClass = message.urgency === URGENCY.CRITICAL
+              ? 'urgency-critical'
+              : message.urgency === URGENCY.WARNING
+                ? 'urgency-warning'
+                : 'urgency-info';
 
             return (
               <div
-                key={`${msg.text}-${index}`}
+                key={message.id}
                 className={`ticker-item ${urgencyClass} ${isClickable ? 'ticker-item-clickable' : ''}`}
-                onClick={isClickable ? () => handleAlertClick(msg) : undefined}
+                onClick={isClickable ? () => handleAlertClick(message) : undefined}
                 role={isClickable ? 'link' : undefined}
                 tabIndex={isClickable ? 0 : undefined}
-                onKeyDown={isClickable ? (e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleAlertClick(msg);
+                onKeyDown={isClickable ? event => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    handleAlertClick(message);
                   }
                 } : undefined}
               >
                 {Icon && <Icon size={18} aria-hidden="true" />}
-                <span>{msg.text}</span>
+                <span>{message.text}</span>
               </div>
             );
           })}

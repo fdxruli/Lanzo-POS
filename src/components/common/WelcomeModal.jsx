@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import {
   Mail,
@@ -13,8 +13,6 @@ import {
 import './WelcomeModal.css';
 import Logger from '../../services/Logger';
 import { getStableDeviceId } from '../../services/supabase';
-
-const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL;
 
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');
@@ -155,19 +153,30 @@ DESCRIBE TU PROBLEMA:
   };
 
   return (
-    <div className="modal welcome-modal-overlay">
+    <div
+      className="modal welcome-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="welcome-title"
+      aria-describedby="welcome-description"
+    >
       <div className="welcome-modal-content">
 
         {/* SECCIÓN HERO */}
         <div className="welcome-hero-section">
           <div className="hero-brand">
-            <img src="/logIcon.svg" alt="Lanzo Logo" className="brand-icon" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
-            <span style={{ fontSize: '2.5rem', fontWeight: '800', letterSpacing: '-0.5px', lineHeight: '1' }}>Lanzo POS</span>
+            <span className="brand-icon-shell">
+              <img src="/logIcon.svg" alt="" className="brand-icon" />
+            </span>
+            <div className="brand-copy">
+              <span className="brand-name">Lanzo POS</span>
+              <span className="brand-tagline">Tu negocio, bajo control</span>
+            </div>
           </div>
 
           <div className="hero-text-content">
-            <h1>Impulsa tu negocio hoy</h1>
-            <p className="hero-subtitle">
+            <h1 id="welcome-title">Impulsa tu negocio hoy</h1>
+            <p className="hero-subtitle" id="welcome-description">
               Gestiona ventas, inventario y clientes desde un solo lugar.
             </p>
           </div>
@@ -176,7 +185,7 @@ DESCRIBE TU PROBLEMA:
           <div className="hero-features-grid">
             <div className="feature-card">
               <div className="feature-icon-wrapper">
-                <Zap size={20} />
+                <Zap size={20} aria-hidden="true" />
               </div>
               <div className="feature-card-text">
                 <h3>Punto de Venta Ágil</h3>
@@ -186,7 +195,7 @@ DESCRIBE TU PROBLEMA:
 
             <div className="feature-card">
               <div className="feature-icon-wrapper">
-                <Rocket size={20} />
+                <Rocket size={20} aria-hidden="true" />
               </div>
               <div className="feature-card-text">
                 <h3>Ideal para Emprender</h3>
@@ -196,7 +205,7 @@ DESCRIBE TU PROBLEMA:
 
             <div className="feature-card">
               <div className="feature-icon-wrapper">
-                <WifiOff size={20} />
+                <WifiOff size={20} aria-hidden="true" />
               </div>
               <div className="feature-card-text">
                 <h3>Siempre Disponible</h3>
@@ -206,7 +215,7 @@ DESCRIBE TU PROBLEMA:
 
             <div className="feature-card">
               <div className="feature-icon-wrapper">
-                <Package size={20} />
+                <Package size={20} aria-hidden="true" />
               </div>
               <div className="feature-card-text">
                 <h3>Control Total</h3>
@@ -225,8 +234,8 @@ DESCRIBE TU PROBLEMA:
           </div>
 
           {!isOnline && (
-            <div className="connection-alert offline">
-              <WifiOff size={18} />
+            <div className="connection-alert offline" role="status">
+              <WifiOff size={18} aria-hidden="true" />
               <div className="alert-text">
                 <strong>Sin conexión a internet</strong>
                 <span>Requerida para iniciar sesión o activar prueba</span>
@@ -235,13 +244,13 @@ DESCRIBE TU PROBLEMA:
           )}
 
           {isOnline && isLoading && (
-            <div className="connection-alert loading">
-              <Wifi size={18} className="pulse-anim" />
+            <div className="connection-alert loading" role="status">
+              <Wifi size={18} className="pulse-anim" aria-hidden="true" />
               <span>Conectando de forma segura...</span>
             </div>
           )}
 
-          <form id="welcome-form" onSubmit={handleSubmit}>
+          <form id="welcome-form" onSubmit={handleSubmit} aria-busy={isLoading}>
             <div className="input-group">
               <label htmlFor="license-key">Clave de Licencia</label>
               <div className="input-wrapper">
@@ -265,7 +274,7 @@ DESCRIBE TU PROBLEMA:
               disabled={isLoading || !isOnline || !licenseKey.trim()}
             >
               <span>{isLoading ? 'Verificando...' : 'Acceder con Licencia'}</span>
-              {!isLoading && <ChevronRight size={18} />}
+              {!isLoading && <ChevronRight size={18} aria-hidden="true" />}
             </button>
 
             <div className="divider">
@@ -274,9 +283,9 @@ DESCRIBE TU PROBLEMA:
 
             <div className="trial-zone">
               <ul className="trial-benefits">
-                <li><CheckCircle2 size={16} /> Sin tarjeta de crédito</li>
-                <li><CheckCircle2 size={16} /> Acceso total a funciones</li>
-                <li><CheckCircle2 size={16} /> Renovable gratis</li>
+                <li><CheckCircle2 size={16} aria-hidden="true" /> Sin tarjeta de crédito</li>
+                <li><CheckCircle2 size={16} aria-hidden="true" /> Acceso total a funciones</li>
+                <li><CheckCircle2 size={16} aria-hidden="true" /> Renovable gratis</li>
               </ul>
 
               <button
@@ -291,8 +300,8 @@ DESCRIBE TU PROBLEMA:
           </form>
 
           {errorMessage && (
-            <div className="error-toast">
-              <span className="error-icon">!</span>
+            <div className="error-toast" role="alert">
+              <span className="error-icon" aria-hidden="true">!</span>
               <p>{errorMessage}</p>
             </div>
           )}
@@ -303,7 +312,7 @@ DESCRIBE TU PROBLEMA:
               className="btn-support"
               onClick={handleSupportClick}
             >
-              <Mail size={16} />
+              <Mail size={16} aria-hidden="true" />
               ¿Necesitas ayuda? Contáctanos
             </button>
           </div>

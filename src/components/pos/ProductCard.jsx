@@ -1,12 +1,14 @@
-import React, { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import {
   Pill,
   SlidersHorizontal,
   Layers,
   Ban,
-  Clock,
+  CalendarDays,
   AlertTriangle,
-  Package,
+  Circle,
+  Infinity as InfinityIcon,
+  Scale,
 } from 'lucide-react';
 import LazyImage from '../common/LazyImage';
 import { getProductAlerts } from '../../services/utils';
@@ -45,6 +47,7 @@ const BADGE_DEFINITIONS = [
     key: 'rx',
     Icon: Pill,
     className: 'product-badge product-badge--rx',
+    label: 'Receta',
     title: 'Requiere Receta Médica',
     ariaLabel: 'Este producto requiere receta médica',
     /**
@@ -60,6 +63,7 @@ const BADGE_DEFINITIONS = [
     key: 'mod',
     Icon: SlidersHorizontal,
     className: 'product-badge product-badge--modifier',
+    label: 'Extras',
     title: 'Tiene Extras / Modificadores',
     ariaLabel: 'Este producto tiene opciones de personalización',
     /**
@@ -76,6 +80,7 @@ const BADGE_DEFINITIONS = [
     key: 'var',
     Icon: Layers,
     className: 'product-badge product-badge--variant',
+    label: 'Variantes',
     title: 'Tiene Variantes / Lotes',
     ariaLabel: 'Este producto se vende en variantes o lotes',
     /**
@@ -88,6 +93,27 @@ const BADGE_DEFINITIONS = [
       product?.batchManagement?.enabled === true,
   },
 ];
+
+const STOCK_FORMATTER = new Intl.NumberFormat('es-MX', {
+  maximumFractionDigits: 2,
+});
+const EXPIRY_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+});
+
+const formatStock = (value) => STOCK_FORMATTER.format(Number(value) || 0);
+
+const formatExpiryDate = (value) => {
+  if (!value) return null;
+  const [year, month, day] = String(value).slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return null;
+
+  return EXPIRY_DATE_FORMATTER
+    .format(new Date(Date.UTC(year, month - 1, day)))
+    .replace('.', '');
+};
 
 /**
  * buildBadgeDescriptors — ejecuta la fábrica y devuelve solo los badges
@@ -117,7 +143,15 @@ function buildBadgeDescriptors(features, product, suppress) {
  * @param {object} params
  * @returns {{ type: string, Icon: Component, label: string, iconAriaLabel: string }}
  */
-function resolveFooterState({ isOutOfStock, isNearingExpiry, isLowStock, isTracking, availableStock, unit }) {
+function resolveFooterState({
+  isOutOfStock,
+  isNearingExpiry,
+  isLowStock,
+  isTracking,
+  availableStock,
+  unit,
+  expiryDate,
+}) {
   // 1. AGOTADO — mata cualquier otra evaluación
   if (isOutOfStock) {
     return {
@@ -132,8 +166,8 @@ function resolveFooterState({ isOutOfStock, isNearingExpiry, isLowStock, isTrack
   if (isNearingExpiry) {
     return {
       type: 'nearing-expiry',
-      Icon: Clock,
-      label: `Vence pronto · ${availableStock}${unit}`,
+      Icon: CalendarDays,
+      label: expiryDate ? `Caduca ${expiryDate}` : 'Caduca pronto',
       iconAriaLabel: 'Caducidad próxima',
     };
   }
@@ -143,16 +177,24 @@ function resolveFooterState({ isOutOfStock, isNearingExpiry, isLowStock, isTrack
     return {
       type: 'low-stock',
       Icon: AlertTriangle,
-      label: `Stock bajo · ${availableStock}${unit}`,
+      label: `Stock bajo · ${formatStock(availableStock)}${unit}`,
       iconAriaLabel: 'Stock bajo',
     };
   }
 
-  // 4. STOCK NORMAL (o sin rastreo)
+  if (!isTracking) {
+    return {
+      type: 'unlimited',
+      Icon: InfinityIcon,
+      label: 'Inventario ilimitado',
+      iconAriaLabel: 'Producto sin control de inventario',
+    };
+  }
+
   return {
     type: 'neutral',
-    Icon: Package,
-    label: isTracking ? `Stock: ${availableStock}${unit}` : '---',
+    Icon: Circle,
+    label: `${formatStock(availableStock)}${unit} disponibles`,
     iconAriaLabel: 'Stock disponible',
   };
 }
@@ -177,19 +219,42 @@ const ProductCard = memo(function ProductCard({ product, features, onCardClick }
   );
 
   const unit = product?.saleType === 'bulk'
-    ? ` ${product?.bulkData?.purchase?.unit || 'Granel'}`
-    : ' U';
+    ? ` ${product?.bulkData?.purchase?.unit || 'kg'}`
+    : '';
+  const expiryDate = useMemo(() => formatExpiryDate(product?.expiryDate), [product?.expiryDate]);
 
   // ── Fábrica de badges (Zona 2) ────────────────────────────────────────────
   const badgeDescriptors = useMemo(
     () => buildBadgeDescriptors(features, product, isOutOfStock),
     [features, product, isOutOfStock]
   );
+  const productLabels = useMemo(() => {
+    const labels = [...badgeDescriptors];
+    if (product?.saleType === 'bulk') {
+      labels.push({
+        key: 'bulk',
+        Icon: Scale,
+        className: 'product-badge product-badge--bulk',
+        label: 'Granel',
+        title: 'Producto vendido a granel',
+        ariaLabel: 'Producto vendido a granel',
+      });
+    }
+    return labels.slice(0, 2);
+  }, [badgeDescriptors, product?.saleType]);
 
   // ── Descriptor del footer (Zona 4) ────────────────────────────────────────
   const footerState = useMemo(
-    () => resolveFooterState({ isOutOfStock, isNearingExpiry, isLowStock, isTracking, availableStock, unit }),
-    [isOutOfStock, isNearingExpiry, isLowStock, isTracking, availableStock, unit]
+    () => resolveFooterState({
+      isOutOfStock,
+      isNearingExpiry,
+      isLowStock,
+      isTracking,
+      availableStock,
+      unit,
+      expiryDate,
+    }),
+    [isOutOfStock, isNearingExpiry, isLowStock, isTracking, availableStock, unit, expiryDate]
   );
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -228,31 +293,11 @@ const ProductCard = memo(function ProductCard({ product, features, onCardClick }
     >
       {/* ── ZONA 1: IMAGEN + OVERLAY DE DEGRADADO ── */}
       <div className="product-card__image-zone">
-        {/* Overlay de degradado para legibilidad de badges */}
-        <div className="product-card__image-overlay" aria-hidden="true" />
-
         <LazyImage
           className="product-card__image"
           src={product?.image}
           alt={product?.name || ''}
         />
-
-        {/* ── ZONA 2: BADGES SVG (posición absoluta sobre imagen) ── */}
-        {badgeDescriptors.length > 0 && (
-          <div className="product-card__badges-container" aria-label="Características del producto">
-            {badgeDescriptors.map(({ key, Icon, className, title, ariaLabel }) => (
-              <span
-                key={key}
-                className={className}
-                title={title}
-                aria-label={ariaLabel}
-                role="img"
-              >
-                <Icon size={11} aria-hidden="true" strokeWidth={2.5} />
-              </span>
-            ))}
-          </div>
-        )}
 
         {/* Overlay de agotado */}
         {isOutOfStock && (
@@ -264,6 +309,22 @@ const ProductCard = memo(function ProductCard({ product, features, onCardClick }
 
       {/* ── ZONA 3: CONTENIDO (título + precio) ── */}
       <div className="product-card__content-zone">
+        {productLabels.length > 0 && (
+          <div className="product-card__badges-container" aria-label="Características del producto">
+            {productLabels.map(({ key, Icon, className, label, title, ariaLabel }) => (
+              <span
+                key={key}
+                className={className}
+                title={title}
+                aria-label={ariaLabel}
+              >
+                <Icon size={11} aria-hidden="true" strokeWidth={2.4} />
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
+
         <h3 className="product-card__title">
           {product?.name || ''}
         </h3>
@@ -295,16 +356,9 @@ const ProductCard = memo(function ProductCard({ product, features, onCardClick }
 });
 
 export default memo(ProductCard, (prevProps, nextProps) => {
-  // 1. Si es el mismo producto (ID) y el stock no ha cambiado, no renderices.
-  // Evalúa el stock disponible para que se actualice si se vende uno.
-  if (prevProps.product?.id !== nextProps.product?.id) return false;
-  if (prevProps.product?.stock !== nextProps.product?.stock) return false;
-
-  // 2. Si la función manejadora cambió (no debería por tu useCallback, pero es seguridad)
-  if (prevProps.onCardClick !== nextProps.onCardClick) return false;
-
-  // 3. Comparación estricta por valor de las features que impactan la UI de ESTA tarjeta.
   return (
+    prevProps.product === nextProps.product &&
+    prevProps.onCardClick === nextProps.onCardClick &&
     prevProps.features?.hasLabFields === nextProps.features?.hasLabFields &&
     prevProps.features?.hasModifiers === nextProps.features?.hasModifiers &&
     prevProps.features?.hasVariants === nextProps.features?.hasVariants &&

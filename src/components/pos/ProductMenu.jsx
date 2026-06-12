@@ -6,7 +6,7 @@ import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import VariantSelectorModal from './VariantSelectorModal';
 import './ProductMenu.css';
-import { ScanLine } from 'lucide-react';
+import { PackageSearch, ScanLine, Search } from 'lucide-react';
 
 let globalAudioCtx = null;
 
@@ -192,76 +192,92 @@ export default function ProductMenu({
 
   return (
     <div className="pos-menu-container">
-      <h3 className="subtitle">Menú de Productos</h3>
+      <div className="pos-menu-utility">
+        <div className="pos-menu-heading">
+          <div>
+            <h2>Productos</h2>
+            <p>Selecciona un producto para agregarlo al pedido</p>
+          </div>
+          <span className="pos-results-count" aria-live="polite">
+            <span aria-hidden="true" />
+            {products.length} {products.length === 1 ? 'resultado' : 'resultados'}
+          </span>
+        </div>
 
-      <div id="category-filters" className="category-filters">
-        <button
-          className={`category-filter-btn ${selectedCategoryId === null ? 'active' : ''}`}
-          onClick={() => handleCategoryClick(null)}
-        >
-          Todos
-        </button>
-        {categories.map(cat => (
+        <div className="pos-controls">
+          <label className="pos-search-field" htmlFor="pos-product-search">
+            <Search size={20} aria-hidden="true" />
+            <input
+              type="search"
+              id="pos-product-search"
+              placeholder="Buscar por nombre, código o SKU"
+              value={searchTerm}
+              onChange={handleSearchChange}
+              autoComplete="off"
+              aria-label="Buscar productos por nombre, código o SKU"
+            />
+            <span className="pos-search-shortcut" aria-hidden="true">/ Buscar</span>
+          </label>
           <button
-            key={cat.id}
-            className={`category-filter-btn ${selectedCategoryId === cat.id ? 'active' : ''}`}
-            onClick={() => handleCategoryClick(cat.id)}
+            type="button"
+            id="scan-barcode-btn"
+            className="btn-scan"
+            title="Abrir lector de código de barras"
+            aria-label="Abrir lector de código de barras"
+            onClick={handleScannerClick}
           >
-            {cat.name}
+            <ScanLine size={21} aria-hidden="true" />
+            <span>Código de barras</span>
           </button>
-        ))}
-        {showOutofStockCategory && (
-          <button
-            className={`category-filter-btn ${selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'active' : ''}`}
-            onClick={() => handleCategoryClick('CAT_DYNAMIC_AGOTADOS')}
-            style={{
-              border: '1px solid var(--error-color, #ff4444)',
-              color: selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'white' : 'var(--error-color, #ff4444)',
-              background: selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'var(--error-color, #ff4444)' : 'transparent'
-            }}
-          >
-            Agotados
-          </button>
-        )}
-      </div>
+        </div>
 
-      <div className="pos-controls">
-        <input
-          type="text"
-          id="pos-product-search"
-          className="form-input"
-          placeholder="Buscar por Nombre, Código o SKU"
-          value={searchTerm}
-          onChange={handleSearchChange}
-        />
-        <button 
-          id="scan-barcode-btn" 
-          className="btn btn-scan" 
-          title="Escanear" 
-          onClick={handleScannerClick}
-        >
-          <ScanLine size={20} />
-        </button>
+        <div id="category-filters" className="category-filters" aria-label="Categorías de productos">
+          <button
+            type="button"
+            className={`category-filter-btn ${selectedCategoryId === null ? 'active' : ''}`}
+            onClick={() => handleCategoryClick(null)}
+          >
+            Todos
+          </button>
+          {categories.map(cat => (
+            <button
+              type="button"
+              key={cat.id}
+              className={`category-filter-btn ${selectedCategoryId === cat.id ? 'active' : ''}`}
+              onClick={() => handleCategoryClick(cat.id)}
+            >
+              {cat.name}
+            </button>
+          ))}
+          {showOutofStockCategory && (
+            <button
+              type="button"
+              className={`category-filter-btn category-filter-btn--danger ${selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'active' : ''}`}
+              onClick={() => handleCategoryClick('CAT_DYNAMIC_AGOTADOS')}
+            >
+              Agotados
+            </button>
+          )}
+        </div>
       </div>
 
       <div
         className="pos-menu-scroll"
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        style={{ height: '100%', flex: 1, minHeight: 0, overflowY: 'auto', boxSizing: 'border-box' }}
       >
-        <div id="menu-items" className="menu-items-grid" aria-label="Elementos del menú">
+        <div id="menu-items" className="menu-items-grid" aria-label="Productos disponibles">
 
           {visibleProducts.length === 0 ? (
             (products.length === 0 && !searchTerm && !selectedCategoryId) ? (
               <div className="menu-empty-state">
-                <div className="empty-icon"></div>
+                <PackageSearch size={38} aria-hidden="true" />
                 <p>No hay productos registrados.</p>
                 <small>Ve a la sección <strong>Productos</strong> para crear tu inventario.</small>
               </div>
             ) : (
               <div className="menu-empty-state">
-                <div className="empty-icon"></div>
+                <PackageSearch size={38} aria-hidden="true" />
                 <p>No hay coincidencias.</p>
                 <small>Intenta con otro nombre o escanea el código.</small>
               </div>
@@ -278,7 +294,7 @@ export default function ProductMenu({
           )}
 
           {visibleProducts.length < products.length && visibleProducts.length > 0 && (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '20px', color: '#999' }}>
+            <div className="pos-products-loading" role="status">
               Cargando más productos...
             </div>
           )}

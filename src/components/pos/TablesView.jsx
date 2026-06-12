@@ -59,12 +59,21 @@ const TableCard = ({
 
   return (
     <div
-      className={`table-card${cancelledFromKitchen ? ' table-card--kitchen-cancelled' : ''}`}
+      className={[
+        'table-card',
+        cancelledFromKitchen ? 'table-card--kitchen-cancelled' : '',
+        order.requiresReview ? 'table-card--requires-review' : ''
+      ].filter(Boolean).join(' ')}
     >
       {cancelledFromKitchen && (
         <div className="table-card-kitchen-banner" role="status">
           Cancelada desde cocina: esta comanda ya no se prepara. Use &quot;Anular venta&quot; para
           cerrarla en sistema o abra en POS si debe ajustar cobro.
+        </div>
+      )}
+      {order.requiresReview && !cancelledFromKitchen && (
+        <div className="table-card-review-banner" role="status">
+          {order.reviewReason || 'Orden inactiva. Revise si debe cobrarse o anularse.'}
         </div>
       )}
       {/* ERROR CORREGIDO: Se eliminó el onClick del body para evitar toques accidentales al hacer scroll en móvil */}
