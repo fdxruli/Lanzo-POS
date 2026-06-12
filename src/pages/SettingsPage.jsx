@@ -3,6 +3,7 @@ import './SettingsPage.css';
 import GeneralSettings from '../components/settings/GeneralSettings';
 import LicenseSettings from '../components/settings/LicenseSettings';
 import MaintenanceSettings from '../components/settings/MaintenanceSettings';
+import BackupSettings from '../components/settings/BackupSettings';
 import DbMigrationTester from '../components/debug/DbMigrationTester';
 import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
@@ -17,6 +18,7 @@ export default function SettingsPage() {
       'general': 'general',
       'license': 'license',
       'maintenance': 'maintenance',
+      'backup': 'backup',
       'debug': 'debug',
       'test-ventas': 'test-ventas'
     };
@@ -57,6 +59,12 @@ export default function SettingsPage() {
         >
           Datos y Mantenimiento
         </button>
+        <button
+          className={`tab-btn ${activeTab === 'backup' ? 'active' : ''}`}
+          onClick={() => handleTabChange('backup')}
+        >
+          Respaldos
+        </button>
         {import.meta.env.DEV && (
           <button
             className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`} // Ajusta 'tab-btn' a tu clase CSS real
@@ -80,6 +88,7 @@ export default function SettingsPage() {
         {activeTab === 'general' && <GeneralSettings />}
         {activeTab === 'license' && <LicenseSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}
+        {activeTab === 'backup' && <BackupSettings />}
         {activeTab === 'debug' && (
           <div className="debug-section">
             <h3>Zona de Peligro & Pruebas</h3>

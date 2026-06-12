@@ -13,6 +13,14 @@ export const createUISlice = (set, get) => ({
       return true;
     }
   })(),
+  showTicker: (() => {
+    try {
+      const saved = localStorage.getItem('lanzo_show_ticker');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch (e) {
+      return true;
+    }
+  })(),
 
   dismissServerAlert: () => {
     Logger.log('User dismissed server alert');
@@ -36,6 +44,15 @@ export const createUISlice = (set, get) => ({
       Logger.error('Error al guardar la preferencia del asistente:');
     }
     set({ showAssistantBot: value });
+  },
+
+  setShowTicker: (value) => {
+    try {
+      localStorage.setItem('lanzo_show_ticker', JSON.stringify(value));
+    } catch (e) {
+      Logger.error('Error al guardar la preferencia del ticker:');
+    }
+    set({ showTicker: value });
   },
 
   enableMultipleOrders: (() => {

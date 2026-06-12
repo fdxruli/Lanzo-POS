@@ -17,6 +17,7 @@ import UpdatePrompt from './components/common/UpdatePrompt';
 import InstallPrompt from './components/common/InstallPrompt';
 import PersistenceWarningBanner from './components/common/PersistenceWarningBanner';
 import BackupReminder from './components/common/BackupReminder';
+import BackupRuntime from './components/common/BackupRuntime';
 import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 import { AlertTriangle, XCircle } from 'lucide-react';
@@ -206,6 +207,7 @@ function App() {
       return (
         <>
           <PersistenceWarningBanner />
+          <BackupRuntime />
           <BackupReminder />
           <ReconnectionBanner />
           <ServerStatusBanner />

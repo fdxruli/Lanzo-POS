@@ -1,7 +1,7 @@
 import { calculateCompositePrice, validateWholesaleCondition } from '../services/pricingLogic';
 import { showMessageModal, generateID } from '../services/utils';
 import { db, STORES } from '../services/db/dexie';
-import { getAvailableStock } from '../services/db/utils';
+import { getAvailableStock, getCommittedStock, normalizeStock } from '../services/db/utils';
 import { commitStock, releaseCommittedStock, getSortedBatchesForProduct } from '../services/sales/inventoryFlow';
 import { SALE_STATUS } from '../services/sales/financialStats';
 import { Money } from '../utils/moneyMath';
@@ -26,6 +26,45 @@ const calculateOrderTotalExact = (order = []) => {
   }, Money.init(0));
 
   return Money.toExactString(exactTotal);
+};
+
+const reconcileBatchParentCommittedStock = async () => {
+  const menuTable = db.table(STORES.MENU);
+  const batchesTable = db.table(STORES.PRODUCT_BATCHES);
+  const products = await menuTable.toArray();
+  const batchManagedProducts = products.filter((product) => product.batchManagement?.enabled);
+
+  if (batchManagedProducts.length === 0) return 0;
+
+  const managedIds = new Set(batchManagedProducts.map((product) => product.id));
+  const batches = await batchesTable.toArray();
+  const committedByProduct = new Map();
+
+  batches.forEach((batch) => {
+    if (!managedIds.has(batch.productId)) return;
+    committedByProduct.set(
+      batch.productId,
+      normalizeStock(
+        (committedByProduct.get(batch.productId) || 0) + getCommittedStock(batch)
+      )
+    );
+  });
+
+  const productsToRepair = batchManagedProducts
+    .filter((product) => (
+      getCommittedStock(product) !== (committedByProduct.get(product.id) || 0)
+    ))
+    .map((product) => ({
+      ...product,
+      committedStock: committedByProduct.get(product.id) || 0,
+      updatedAt: new Date().toISOString()
+    }));
+
+  if (productsToRepair.length > 0) {
+    await menuTable.bulkPut(productsToRepair);
+  }
+
+  return productsToRepair.length;
 };
 
 const shouldAggregateScannedProduct = (product) =>
@@ -619,17 +658,46 @@ export const createOrderActions = (set, get) => ({
         const LOCK_TTL_MINUTES = 15;
 
         try {
-          const openSales = await db.table(STORES.SALES).where('status').equals(SALE_STATUS.OPEN).toArray();
-          if (openSales.length === 0) return { success: true, count: 0 };
+          const repairedBatchParents = await reconcileBatchParentCommittedStock();
+          const salesTable = db.table(STORES.SALES);
+          const [openSales, legacyReviewSales] = await Promise.all([
+            salesTable.where('status').equals(SALE_STATUS.OPEN).toArray(),
+            salesTable.where('status').equals(SALE_STATUS.REQUIRES_REVIEW).toArray()
+          ]);
+
+          // `requires_review` no es un estado financiero terminal. Versiones anteriores
+          // ocultaban estas órdenes de Mesas sin liberar su inventario comprometido.
+          for (const sale of legacyReviewSales) {
+            await salesTable.update(sale.id, {
+              status: SALE_STATUS.OPEN,
+              requiresReview: true,
+              reviewReason: sale.reviewReason || 'Orden inactiva. Requiere revisión manual.',
+              updatedAt: now.toISOString()
+            });
+          }
+
+          const recoverableOpenSales = [
+            ...openSales,
+            ...legacyReviewSales.map((sale) => ({
+              ...sale,
+              status: SALE_STATUS.OPEN,
+              requiresReview: true,
+              updatedAt: now.toISOString()
+            }))
+          ];
+
+          if (recoverableOpenSales.length === 0) {
+            return { success: true, count: 0, recovered: 0, repairedBatchParents };
+          }
 
           let unlockedCount = 0;
-          for (const sale of openSales) {
+          for (const sale of recoverableOpenSales) {
             if (sale.isLockedForCheckout && sale.lockedAt) {
               const lockedDate = new Date(sale.lockedAt);
               const minutesLocked = (now - lockedDate) / (1000 * 60);
 
               if (minutesLocked > LOCK_TTL_MINUTES) {
-                await db.table(STORES.SALES).update(sale.id, {
+                await salesTable.update(sale.id, {
                   isLockedForCheckout: false,
                   lockedAt: null,
                   updatedAt: now.toISOString()
@@ -641,26 +709,35 @@ export const createOrderActions = (set, get) => ({
             }
           }
 
-          const orphanedSales = openSales.filter((sale) => {
+          const orphanedSales = recoverableOpenSales.filter((sale) => {
             if (sale.id === currentActiveId) return false;
             const saleDate = new Date(sale.updatedAt || sale.timestamp);
             const hoursDiff = (now - saleDate) / (1000 * 60 * 60);
             return hoursDiff > 2;
           });
 
-          if (orphanedSales.length === 0 && unlockedCount === 0) return { success: true, count: 0 };
+          if (orphanedSales.length === 0 && unlockedCount === 0 && legacyReviewSales.length === 0) {
+            return { success: true, count: 0, recovered: 0, repairedBatchParents };
+          }
 
           if (orphanedSales.length > 0) {
             for (const orphan of orphanedSales) {
-              await db.table(STORES.SALES).update(orphan.id, {
-                status: SALE_STATUS.REQUIRES_REVIEW,
-                notes: 'Sistema: Orden inactiva por más de 2 horas. Requiere revisión manual.',
+              await salesTable.update(orphan.id, {
+                status: SALE_STATUS.OPEN,
+                requiresReview: true,
+                reviewReason: 'Orden inactiva por más de 2 horas. Requiere revisión manual.',
                 updatedAt: now.toISOString()
               });
             }
           }
 
-          return { success: true, count: orphanedSales.length, unlocked: unlockedCount };
+          return {
+            success: true,
+            count: orphanedSales.length,
+            recovered: legacyReviewSales.length,
+            repairedBatchParents,
+            unlocked: unlockedCount
+          };
         } catch (error) {
           console.error('❌ Falla crítica en la reconciliación:', error);
           return { success: false, message: error.message };

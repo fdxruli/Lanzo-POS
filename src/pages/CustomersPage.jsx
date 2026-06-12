@@ -1,5 +1,6 @@
 // src/pages/CustomersPage.jsx
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { AlertTriangle, UserPlus } from 'lucide-react';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
@@ -23,6 +24,7 @@ import {
   DB_ERROR_CODES
 } from '../services/database';
 import { getSafeCustomerDebt, formatCustomerDebt } from '../utils/customerUtils';
+import './CustomersPage.css';
 
 const PAGE_SIZE = 50;
 
@@ -58,7 +60,27 @@ export default function CustomersPage() {
   const requestInFlightRef = useRef(false);
 
   const { cajaActual, sincronizarEstadoCaja } = useCaja();
-  const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
+  const companyProfile = useAppStore((state) => state.companyProfile);
+  const companyName = companyProfile?.name || 'Tu Negocio';
+  const globalCreditLimit = Number(companyProfile?.settings_default_credit_limit) || 0;
+
+  const customerPortfolio = useMemo(() => {
+    return customers.reduce((summary, customer) => {
+      const debt = getSafeCustomerDebt(customer.debt);
+      const hasCustomerLimit = customer.creditLimit !== undefined && customer.creditLimit !== null;
+      const creditLimit = hasCustomerLimit
+        ? Number(customer.creditLimit) || 0
+        : globalCreditLimit;
+
+      summary.totalDebt += debt;
+
+      if (creditLimit > 0 && debt > creditLimit) {
+        summary.overLimitCount += 1;
+      }
+
+      return summary;
+    }, { totalDebt: 0, overLimitCount: 0 });
+  }, [customers, globalCreditLimit]);
 
   const resolveOpenCaja = useCallback(async () => {
     if (cajaActual?.estado === 'abierta') {
@@ -508,29 +530,49 @@ ${itemsString}
   // RENDER (Sin cambios, solo pasamos los props)
   return (
     <>
-      <div className="tabs-container" id="customers-tabs">
-        <button
-          className={`tab-btn ${activeTab === 'add-customer' ? 'active' : ''}`}
-          onClick={() => handleTabChange('add-customer')}
-        >
-          {editingCustomer ? 'Editar Cliente' : 'Añadir Cliente'}
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'view-customers' ? 'active' : ''}`}
-          onClick={() => {
-            handleTabChange('view-customers');
-            handleCancelEdit();
-          }}
-        >
-          Ver Clientes
-        </button>
-      </div>
+      <main className="customers-page">
+      <section className="customers-hero" aria-labelledby="customers-page-title">
+        <div className="customers-hero__identity">
+          <p className="customers-eyebrow">Directorio y credito</p>
+          <h1 id="customers-page-title">Clientes</h1>
+        </div>
 
+        <div className="customers-hero__metric">
+          <span>Fiado total</span>
+          <strong>${customerPortfolio.totalDebt.toFixed(2)}</strong>
+        </div>
+
+        <div className="customers-hero__metric customers-hero__metric--alert">
+          <span>Clientes excedidos</span>
+          <div>
+            <strong>{customerPortfolio.overLimitCount}</strong>
+            {customerPortfolio.overLimitCount > 0 && (
+              <span className="customers-alert-badge">
+                <AlertTriangle size={16} aria-hidden="true" />
+                Limite excedido
+              </span>
+            )}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className={`customers-add-button ${activeTab === 'add-customer' ? 'is-active' : ''}`}
+          onClick={() => handleTabChange('add-customer')}
+          aria-pressed={activeTab === 'add-customer'}
+        >
+          <UserPlus size={20} aria-hidden="true" />
+          {editingCustomer ? 'Editar cliente' : 'Anadir cliente'}
+        </button>
+      </section>
+
+      <div className="customers-page__content">
       {activeTab === 'add-customer' ? (
-        <CustomerForm
-          onSave={handleSaveCustomer}
-          onCancel={handleCancelEdit}
-          customerToEdit={editingCustomer}
+          <CustomerForm
+            onSave={handleSaveCustomer}
+            onCancel={() => handleTabChange('view-customers')}
+            customerToEdit={editingCustomer}
+            globalCreditLimit={globalCreditLimit}
         />
       ) : (
         <CustomerList
@@ -549,6 +591,8 @@ ${itemsString}
           onWhatsAppLoading={whatsAppLoading}
         />
       )}
+      </div>
+      </main>
 
       <PurchaseHistoryModal
         show={isHistoryModalOpen}

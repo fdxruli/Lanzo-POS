@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const dbState = vi.hoisted(() => ({
   sales: new Map(),
+  products: new Map(),
   batches: []
 }));
 
@@ -36,15 +37,33 @@ vi.mock('../../../services/db/dexie', () => ({
       if (storeName === 'sales') {
         return {
           get: vi.fn(async (id) => dbState.sales.get(id) || null),
-          where: vi.fn(() => ({
-            equals: vi.fn(() => ({
-              toArray: vi.fn(async () => Array.from(dbState.sales.values()))
+          update: vi.fn(async (id, changes) => {
+            const current = dbState.sales.get(id);
+            if (!current) return 0;
+            dbState.sales.set(id, { ...current, ...changes });
+            return 1;
+          }),
+          where: vi.fn((field) => ({
+            equals: vi.fn((value) => ({
+              toArray: vi.fn(async () => Array.from(dbState.sales.values())
+                .filter((sale) => sale?.[field] === value))
             }))
           }))
         };
       }
 
+      if (storeName === 'menu') {
+        return {
+          toArray: vi.fn(async () => Array.from(dbState.products.values())),
+          bulkPut: vi.fn(async (products) => {
+            products.forEach((product) => dbState.products.set(product.id, product));
+            return products.map((product) => product.id);
+          })
+        };
+      }
+
       return {
+        toArray: vi.fn(async () => dbState.batches),
         where: vi.fn(() => ({
           equals: vi.fn(() => ({
             filter: vi.fn(() => ({
@@ -78,6 +97,7 @@ const makeOrder = (id, items = []) => ({
 describe('useActiveOrders unified store', () => {
   beforeEach(() => {
     dbState.sales.clear();
+    dbState.products.clear();
     dbState.batches = [];
     vi.clearAllMocks();
     useActiveOrders.setState({
@@ -153,6 +173,73 @@ describe('useActiveOrders unified store', () => {
       id: 'sale-open',
       tableData: 'Mesa 3',
       isSaved: true
+    });
+  });
+
+  it('restores legacy review orders as visible open orders without releasing reservations', async () => {
+    dbState.sales.set('sale-review', {
+      id: 'sale-review',
+      status: 'requires_review',
+      fulfillmentStatus: 'completed',
+      timestamp: '2026-06-01T01:00:00.000Z',
+      items: [{
+        id: 'product-1',
+        quantity: 1,
+        inventoryReservation: {
+          source: 'table',
+          committedQuantity: 1,
+          committedBatches: []
+        }
+      }]
+    });
+
+    const result = await useActiveOrders.getState().reconcileOrphanedOrders();
+
+    expect(result).toMatchObject({ success: true, recovered: 1 });
+    expect(dbState.sales.get('sale-review')).toMatchObject({
+      status: 'open',
+      requiresReview: true
+    });
+  });
+
+  it('keeps stale orders financially open while flagging them for review', async () => {
+    dbState.sales.set('sale-stale', {
+      id: 'sale-stale',
+      status: 'open',
+      fulfillmentStatus: 'completed',
+      timestamp: '2020-01-01T00:00:00.000Z',
+      items: []
+    });
+
+    const result = await useActiveOrders.getState().reconcileOrphanedOrders();
+
+    expect(result).toMatchObject({ success: true, count: 1 });
+    expect(dbState.sales.get('sale-stale')).toMatchObject({
+      status: 'open',
+      requiresReview: true
+    });
+  });
+
+  it('repairs committed stock on batch-managed parent products', async () => {
+    dbState.products.set('avocado', {
+      id: 'avocado',
+      stock: 2.5,
+      committedStock: 1,
+      batchManagement: { enabled: true }
+    });
+    dbState.batches = [{
+      id: 'batch-avocado',
+      productId: 'avocado',
+      stock: 2.5,
+      committedStock: 0
+    }];
+
+    const result = await useActiveOrders.getState().reconcileOrphanedOrders();
+
+    expect(result).toMatchObject({ success: true, repairedBatchParents: 1 });
+    expect(dbState.products.get('avocado')).toMatchObject({
+      stock: 2.5,
+      committedStock: 0
     });
   });
 });
