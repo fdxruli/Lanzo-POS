@@ -304,10 +304,12 @@ function LocalBackupSettings() {
           onClick={manualBackup}
           disabled={status.busy || !status.unlocked || ['encrypting', 'uploading'].includes(manualBackupPhase)}
         >
-          {['encrypting', 'uploading'].includes(manualBackupPhase)
-            ? <Loader2 size={17} className="animate-spin" />
-            : <RefreshCw size={17} />}
-          {MANUAL_BACKUP_LABELS[manualBackupPhase] || 'Respaldar ahora'}
+          <span aria-hidden="true">
+            {['encrypting', 'uploading'].includes(manualBackupPhase)
+              ? <Loader2 size={17} className="animate-spin" />
+              : <RefreshCw size={17} />}
+          </span>
+          <span>{MANUAL_BACKUP_LABELS[manualBackupPhase] || 'Respaldar ahora'}</span>
         </button>
       </div>
 

@@ -122,9 +122,18 @@ function GoogleDriveOAuthControls() {
             onClick={handleConnect}
             disabled={isConnecting}
           >
-            {isConnecting
-              ? <><Loader2 size={17} className="animate-spin" /> Conectando...</>
-              : <><Link2 size={17} /> {(isDriveConnected || needsDriveReauth) ? 'Reconectar Google Drive' : 'Conectar Google Drive'}</>}
+            <span aria-hidden="true">
+              {isConnecting
+                ? <Loader2 size={17} className="animate-spin" />
+                : <Link2 size={17} />}
+            </span>
+            <span>
+              {isConnecting
+                ? 'Conectando...'
+                : (isDriveConnected || needsDriveReauth)
+                  ? 'Reconectar Google Drive'
+                  : 'Conectar Google Drive'}
+            </span>
           </button>
         )}
 
@@ -135,7 +144,8 @@ function GoogleDriveOAuthControls() {
             onClick={handleDisconnect}
             disabled={isConnecting}
           >
-            <Unplug size={17} /> Desconectar
+            <span aria-hidden="true"><Unplug size={17} /></span>
+            <span>Desconectar</span>
           </button>
         )}
       </div>
