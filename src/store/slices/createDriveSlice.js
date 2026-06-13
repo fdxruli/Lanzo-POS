@@ -25,6 +25,7 @@ export const createDriveSlice = (set) => ({
   driveAccessToken: null,
   driveTokenExpiresAt: null,
   isDriveConnected: readDriveConnectionFlag(),
+  needsDriveReauth: false,
 
   connectDrive: ({ accessToken, expiresIn }) => {
     const expiresInSeconds = Number(expiresIn);
@@ -34,7 +35,8 @@ export const createDriveSlice = (set) => ({
     set({
       driveAccessToken: accessToken,
       driveTokenExpiresAt: Date.now() + tokenLifetime * 1000,
-      isDriveConnected: true
+      isDriveConnected: true,
+      needsDriveReauth: false
     });
   },
 
@@ -45,12 +47,23 @@ export const createDriveSlice = (set) => ({
     });
   },
 
+  markDriveNeedsReauth: () => {
+    persistDriveConnectionFlag(false);
+    set({
+      driveAccessToken: null,
+      driveTokenExpiresAt: null,
+      isDriveConnected: false,
+      needsDriveReauth: true
+    });
+  },
+
   disconnectDrive: () => {
     persistDriveConnectionFlag(false);
     set({
       driveAccessToken: null,
       driveTokenExpiresAt: null,
-      isDriveConnected: false
+      isDriveConnected: false,
+      needsDriveReauth: false
     });
   }
 });

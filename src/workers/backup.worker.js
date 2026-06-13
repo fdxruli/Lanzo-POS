@@ -73,7 +73,12 @@ async function rotateBackups(directoryHandle, keep = 7) {
   await Promise.all(files.slice(keep).map((name) => directoryHandle.removeEntry(name)));
 }
 
-async function writeEncryptedExport({ directoryHandle = null, fileName, reason = 'manual' }) {
+async function writeEncryptedExport({
+  directoryHandle = null,
+  fileName,
+  reason = 'manual',
+  includeBlob = false
+}) {
   if (!sessionKey) throw new Error('BACKUP_SESSION_LOCKED');
 
   const database = await openSourceDb();
@@ -102,7 +107,7 @@ async function writeEncryptedExport({ directoryHandle = null, fileName, reason =
   });
 
   const totalChunks = Math.max(1, Math.ceil(exportedBlob.size / BACKUP_CHUNK_SIZE));
-  const parts = directoryHandle ? null : [prefix];
+  const parts = includeBlob || !directoryHandle ? [prefix] : null;
   const tempName = `${actualFileName}.tmp`;
   let writable = null;
 
@@ -118,7 +123,7 @@ async function writeEncryptedExport({ directoryHandle = null, fileName, reason =
       const plainBytes = new Uint8Array(await exportedBlob.slice(start, start + BACKUP_CHUNK_SIZE).arrayBuffer());
       const encryptedRecord = await encryptChunk(sessionKey, headerBytes, index, plainBytes);
       if (writable) await writable.write(encryptedRecord);
-      else parts.push(encryptedRecord);
+      if (parts) parts.push(encryptedRecord);
       postProgress('backup', index + 1, totalChunks, 'encrypting');
     }
 
@@ -127,7 +132,14 @@ async function writeEncryptedExport({ directoryHandle = null, fileName, reason =
       writable = null;
       await copyFileToFinal(directoryHandle, tempName, actualFileName);
       await rotateBackups(directoryHandle);
-      return { mode: 'DIRECTORY', fileName: actualFileName, header };
+      return {
+        mode: 'DIRECTORY',
+        fileName: actualFileName,
+        header,
+        ...(includeBlob && {
+          blob: new Blob(parts, { type: 'application/octet-stream' })
+        })
+      };
     }
 
     return {

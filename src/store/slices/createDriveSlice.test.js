@@ -18,6 +18,7 @@ describe('createDriveSlice', () => {
     });
 
     expect(store.getState().driveAccessToken).toBe('temporary-token');
+    expect(store.getState().needsDriveReauth).toBe(false);
     expect(localStorage.getItem(DRIVE_CONNECTED_KEY)).toBe('true');
     expect(JSON.stringify(localStorage)).not.toContain('temporary-token');
   });
@@ -34,6 +35,23 @@ describe('createDriveSlice', () => {
     expect(store.getState().driveAccessToken).toBeNull();
     expect(store.getState().driveTokenExpiresAt).toBeNull();
     expect(store.getState().isDriveConnected).toBe(false);
+    expect(store.getState().needsDriveReauth).toBe(false);
+    expect(localStorage.getItem(DRIVE_CONNECTED_KEY)).toBeNull();
+  });
+
+  it('marca la sesion para reautorizacion al expirar', () => {
+    const store = create(createDriveSlice);
+    store.getState().connectDrive({
+      accessToken: 'temporary-token',
+      expiresIn: 3600
+    });
+
+    store.getState().markDriveNeedsReauth();
+
+    expect(store.getState().driveAccessToken).toBeNull();
+    expect(store.getState().driveTokenExpiresAt).toBeNull();
+    expect(store.getState().isDriveConnected).toBe(false);
+    expect(store.getState().needsDriveReauth).toBe(true);
     expect(localStorage.getItem(DRIVE_CONNECTED_KEY)).toBeNull();
   });
 });
