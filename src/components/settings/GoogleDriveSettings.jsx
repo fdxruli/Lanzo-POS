@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Cloud, Link2, Loader2, ShieldCheck, Unplug } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import toast from 'react-hot-toast';
@@ -21,26 +21,13 @@ function GoogleDriveOAuthControls() {
   const driveAccessToken = useAppStore((state) => state.driveAccessToken);
   const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
   const isDriveConnected = useAppStore((state) => state.isDriveConnected);
+  const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
   const connectDrive = useAppStore((state) => state.connectDrive);
-  const clearDriveSession = useAppStore((state) => state.clearDriveSession);
   const disconnectDrive = useAppStore((state) => state.disconnectDrive);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState('');
 
   const hasActiveSession = Boolean(driveAccessToken && driveTokenExpiresAt);
-
-  useEffect(() => {
-    if (!driveTokenExpiresAt) return undefined;
-
-    const remainingTime = driveTokenExpiresAt - Date.now();
-    if (remainingTime <= 0) {
-      clearDriveSession();
-      return undefined;
-    }
-
-    const timeoutId = window.setTimeout(clearDriveSession, remainingTime);
-    return () => window.clearTimeout(timeoutId);
-  }, [clearDriveSession, driveTokenExpiresAt]);
 
   const login = useGoogleLogin({
     flow: 'implicit',
@@ -109,14 +96,18 @@ function GoogleDriveOAuthControls() {
           <strong>
             {hasActiveSession
               ? 'Conexión activa'
-              : isDriveConnected
+              : needsDriveReauth
+                ? 'Sesión expirada'
+                : isDriveConnected
                 ? 'Autorizado previamente'
                 : 'Google Drive no conectado'}
           </strong>
           <p>
             {hasActiveSession
               ? 'El token temporal está disponible solo durante esta sesión.'
-              : isDriveConnected
+              : needsDriveReauth
+                ? 'Reconecta Google Drive para reactivar los respaldos en la nube.'
+                : isDriveConnected
                 ? 'Vuelve a conectar para obtener un token temporal nuevo.'
                 : 'Los respaldos solo podrán administrar archivos creados por Lanzo.'}
           </p>
@@ -133,11 +124,11 @@ function GoogleDriveOAuthControls() {
           >
             {isConnecting
               ? <><Loader2 size={17} className="animate-spin" /> Conectando...</>
-              : <><Link2 size={17} /> {isDriveConnected ? 'Reconectar Google Drive' : 'Conectar Google Drive'}</>}
+              : <><Link2 size={17} /> {(isDriveConnected || needsDriveReauth) ? 'Reconectar Google Drive' : 'Conectar Google Drive'}</>}
           </button>
         )}
 
-        {(isDriveConnected || hasActiveSession) && (
+        {(isDriveConnected || hasActiveSession || needsDriveReauth) && (
           <button
             type="button"
             className="btn btn-secondary"

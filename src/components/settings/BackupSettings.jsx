@@ -9,8 +9,16 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useBackupManager } from '../../hooks/useBackupManager';
+import * as googleDriveService from '../../services/googleDriveService';
+import { useAppStore } from '../../store/useAppStore';
 import GoogleDriveSettings from './GoogleDriveSettings';
 import './BackupSettings.css';
+
+const MANUAL_BACKUP_LABELS = {
+  encrypting: 'Cifrando...',
+  uploading: 'Subiendo a la nube...',
+  completed: 'Completado'
+};
 
 function formatDate(value) {
   if (!value) return 'Nunca';
@@ -20,6 +28,10 @@ function formatDate(value) {
 
 function LocalBackupSettings() {
   const { status, backupManager } = useBackupManager();
+  const driveAccessToken = useAppStore((state) => state.driveAccessToken);
+  const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
+  const isDriveConnected = useAppStore((state) => state.isDriveConnected);
+  const markDriveNeedsReauth = useAppStore((state) => state.markDriveNeedsReauth);
   const restoreInputRef = useRef(null);
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
@@ -30,6 +42,7 @@ function LocalBackupSettings() {
   const [restorePin, setRestorePin] = useState('');
   const [restoreFile, setRestoreFile] = useState(null);
   const [error, setError] = useState('');
+  const [manualBackupPhase, setManualBackupPhase] = useState('idle');
 
   const run = async (action, successMessage) => {
     setError('');
@@ -76,10 +89,58 @@ function LocalBackupSettings() {
     if (result) setPin('');
   };
 
-  const manualBackup = () => run(
-    () => backupManager.backup({ reason: 'manual_settings', manual: true }),
-    'Respaldo completado.'
-  );
+  const manualBackup = async () => {
+    setManualBackupPhase('idle');
+    const shouldUploadToDrive = isDriveConnected;
+    const hasValidAccessToken = Boolean(
+      driveAccessToken
+      && driveTokenExpiresAt
+      && driveTokenExpiresAt > Date.now()
+    );
+
+    if (shouldUploadToDrive && !hasValidAccessToken) {
+      markDriveNeedsReauth();
+      const message = 'La sesión de Google Drive expiró. Reconecta tu cuenta antes de respaldar.';
+      setError(message);
+      toast.error(message);
+      return;
+    }
+
+    setManualBackupPhase('encrypting');
+    const result = await run(async () => {
+      const backupResult = await backupManager.backup({
+        reason: 'manual_settings',
+        manual: true,
+        includeBlob: shouldUploadToDrive
+      });
+
+      if (shouldUploadToDrive) {
+        if (!(backupResult.blob instanceof Blob)) {
+          throw new Error('El worker no devolvió el respaldo cifrado para Google Drive.');
+        }
+        setManualBackupPhase('uploading');
+        await googleDriveService.uploadBackup(
+          driveAccessToken,
+          backupResult.blob,
+          backupResult.fileName
+        );
+      }
+
+      return backupResult;
+    });
+
+    if (!result) {
+      setManualBackupPhase('idle');
+      return;
+    }
+
+    setManualBackupPhase('completed');
+    toast.success(
+      shouldUploadToDrive
+        ? 'Respaldo cifrado subido a Google Drive.'
+        : 'Respaldo completado.'
+    );
+  };
 
   const handleFileSelect = (event) => {
     const file = event.target.files?.[0];
@@ -188,12 +249,28 @@ function LocalBackupSettings() {
         <div><dt>Cron</dt><dd>{status.settings.cronBlocked ? 'Detenido por error' : 'Activo'}</dd></div>
       </dl>
 
-      {status.busy && (
+      {status.busy && !['encrypting', 'uploading'].includes(manualBackupPhase) && (
         <div className="backup-settings-progress">
           <span>{status.phase || 'Procesando'}: {status.progress}%</span>
           <progress max="100" value={status.progress} />
         </div>
       )}
+
+      {manualBackupPhase !== 'idle'
+        && !(manualBackupPhase === 'completed' && status.busy)
+        && (
+        <div className="backup-settings-progress" role="status" aria-live="polite">
+          <span>{MANUAL_BACKUP_LABELS[manualBackupPhase]}</span>
+          {manualBackupPhase === 'uploading'
+            ? <progress max="100" />
+            : (
+              <progress
+                max="100"
+                value={manualBackupPhase === 'completed' ? 100 : status.progress}
+              />
+            )}
+        </div>
+        )}
 
       {!status.unlocked && (
         <div className="backup-settings-inline">
@@ -221,8 +298,16 @@ function LocalBackupSettings() {
             Autorizar carpeta
           </button>
         )}
-        <button type="button" className="btn btn-primary" onClick={manualBackup} disabled={status.busy || !status.unlocked}>
-          <RefreshCw size={17} /> Respaldar ahora
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={manualBackup}
+          disabled={status.busy || !status.unlocked || ['encrypting', 'uploading'].includes(manualBackupPhase)}
+        >
+          {['encrypting', 'uploading'].includes(manualBackupPhase)
+            ? <Loader2 size={17} className="animate-spin" />
+            : <RefreshCw size={17} />}
+          {MANUAL_BACKUP_LABELS[manualBackupPhase] || 'Respaldar ahora'}
         </button>
       </div>
 

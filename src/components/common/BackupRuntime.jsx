@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, FolderKey, LockKeyhole } from 'lucide-react';
+import { AlertTriangle, CloudOff, FolderKey, LockKeyhole } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useBackupManager } from '../../hooks/useBackupManager';
+import { useAppStore } from '../../store/useAppStore';
 import './BackupRuntime.css';
 
 const IDLE_BACKUP_MS = 4 * 60 * 60 * 1000;
@@ -10,10 +11,26 @@ const IDLE_BACKUP_MS = 4 * 60 * 60 * 1000;
 export default function BackupRuntime() {
   const { status, backupManager } = useBackupManager();
   const navigate = useNavigate();
+  const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
+  const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
+  const markDriveNeedsReauth = useAppStore((state) => state.markDriveNeedsReauth);
   const [pin, setPin] = useState('');
   const [actionError, setActionError] = useState('');
   const idleTimerRef = useRef(null);
   const lastActivityRef = useRef(null);
+
+  useEffect(() => {
+    if (!driveTokenExpiresAt) return undefined;
+
+    const remainingTime = driveTokenExpiresAt - Date.now();
+    if (remainingTime <= 0) {
+      markDriveNeedsReauth();
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(markDriveNeedsReauth, remainingTime);
+    return () => window.clearTimeout(timeoutId);
+  }, [driveTokenExpiresAt, markDriveNeedsReauth]);
 
   useEffect(() => {
     if (lastActivityRef.current === null) lastActivityRef.current = Date.now();
@@ -83,6 +100,20 @@ export default function BackupRuntime() {
       if (error.name !== 'AbortError') setActionError(error.message);
     }
   };
+
+  if (needsDriveReauth) {
+    return (
+      <div className="backup-runtime-banner backup-runtime-banner--error" role="alert">
+        <CloudOff size={20} />
+        <div className="backup-runtime-banner__content">
+          <strong>Sesión de Google expirada. Haz clic aquí para reactivar los respaldos en la nube.</strong>
+        </div>
+        <button type="button" onClick={() => navigate('/configuracion?tab=backup')}>
+          Reactivar
+        </button>
+      </div>
+    );
+  }
 
   if (!status.initialized || status.busy) return null;
 
