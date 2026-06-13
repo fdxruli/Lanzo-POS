@@ -10,6 +10,8 @@ import {
   BACKUP_ABORT_REASON,
   BACKUP_WARNING_BLOB_PERF
 } from '../services/dataTransfer';
+import { backupManager } from '../services/backup/backupManager';
+import * as googleDriveService from '../services/googleDriveService';
 import { Money } from '../utils/moneyMath';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
@@ -73,6 +75,11 @@ export default function CajaPage() {
   // ============================================================
   const isBackupLoading = useAppStore((state) => state.isBackupLoading);
   const setBackupLoading = useAppStore((state) => state.setBackupLoading);
+  const driveAccessToken = useAppStore((state) => state.driveAccessToken);
+  const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
+  const isDriveConnected = useAppStore((state) => state.isDriveConnected);
+  const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
+  const markDriveNeedsReauth = useAppStore((state) => state.markDriveNeedsReauth);
 
   // ============================================================
   // HOOKS PERSONALIZADOS
@@ -317,19 +324,55 @@ export default function CajaPage() {
       }
 
       try {
-        const backupResult = await downloadBackupSmart();
+        const hasValidDriveSession = Boolean(
+          isDriveConnected
+          && driveAccessToken
+          && driveTokenExpiresAt
+          && driveTokenExpiresAt > Date.now()
+        );
+
+        if (isDriveConnected && !hasValidDriveSession) {
+          markDriveNeedsReauth();
+        }
+
+        const backupResult = await backupManager.backup({
+          reason: 'cash_close',
+          manual: true,
+          includeBlob: hasValidDriveSession
+        });
 
         if (backupResult.success === true) {
           showBackupPerformanceWarning(backupResult);
-          showMessageModal('Corte realizado y respaldo descargado.');
-        } else if (backupResult.reason === BACKUP_ABORT_REASON) {
-          showMessageModal('Corte realizado con exito.');
-        } else {
-          throw new Error('Resultado de respaldo no reconocido.');
+
+          if (hasValidDriveSession) {
+            try {
+              await googleDriveService.uploadBackup(
+                driveAccessToken,
+                backupResult.blob,
+                backupResult.fileName
+              );
+              showMessageModal('Corte realizado y respaldo guardado localmente y en Google Drive.');
+            } catch (driveError) {
+              Logger.error('Fallo respaldo automatico en Google Drive', driveError);
+              const driveMessage = driveError.status === 401
+                ? 'Corte realizado y respaldo local guardado. La sesión de Google expiró.'
+                : 'Corte realizado y respaldo local guardado, pero falló la subida a Google Drive.';
+              showMessageModal(driveMessage);
+            }
+          } else {
+            const reauthMessage = needsDriveReauth || isDriveConnected
+              ? ' La sesión de Google requiere reconexión.'
+              : '';
+            showMessageModal(`Corte realizado y respaldo local completado.${reauthMessage}`);
+          }
         }
       } catch (backupError) {
-        Logger.error('Fallo respaldo automatico', backupError);
-        showMessageModal('Corte realizado con exito (pero fallo la descarga del respaldo).');
+        if (backupError.name === 'AbortError') {
+          showMessageModal('Corte realizado con éxito.');
+        } else {
+          Logger.error('Fallo respaldo automatico', backupError);
+          showMessageModal('Corte realizado con exito (pero fallo la descarga del respaldo).');
+        }
       }
 
       await sincronizarEstadoCaja();

@@ -269,7 +269,7 @@ class BackupManager {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  async backup({ reason = 'manual', manual = true } = {}) {
+  async backup({ reason = 'manual', manual = true, includeBlob = false } = {}) {
     await this.initialize();
     if (this.state.busy) throw new Error('BACKUP_OPERATION_IN_PROGRESS');
     if (!this.state.unlocked) throw new Error('BACKUP_SESSION_LOCKED');
@@ -302,7 +302,11 @@ class BackupManager {
     this.state.phase = 'starting';
     this.emit();
     try {
-      const result = await this.callWorker('backup', { directoryHandle, reason });
+      const result = await this.callWorker('backup', {
+        directoryHandle,
+        reason,
+        includeBlob
+      });
       if (result.mode === 'DOWNLOAD') this.triggerDownload(result.blob, result.fileName);
       const completedAt = new Date().toISOString();
       this.settings = await saveBackupSettings({
@@ -322,6 +326,7 @@ class BackupManager {
         success: true,
         mode: result.mode === 'DOWNLOAD' ? 'BLOB_FALLBACK' : 'FS_API',
         fileName: result.fileName,
+        ...(includeBlob && { blob: result.blob }),
         warnings: result.mode === 'DOWNLOAD' ? [BACKUP_WARNING_BLOB_PERF] : []
       };
     } catch (error) {
