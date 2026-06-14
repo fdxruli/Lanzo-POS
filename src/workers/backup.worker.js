@@ -1,5 +1,4 @@
 import Dexie from 'dexie';
-import { exportDB, importInto, peakImportFile } from 'dexie-export-import';
 import { DB_NAME } from '../config/dbConfig.js';
 import {
   BACKUP_CHUNK_SIZE,
@@ -14,6 +13,8 @@ import {
   parseHeader,
   readEncryptedChunks
 } from '../services/backup/backupFormat.js';
+import { exportWhitelistedDatabase } from '../services/backup/backupExport.js';
+import { restoreWhitelistedDatabase } from '../services/backup/backupRestore.js';
 
 let sessionKey = null;
 let sessionVerifier = '';
@@ -84,7 +85,7 @@ async function writeEncryptedExport({
   const database = await openSourceDb();
   let exportedBlob;
   try {
-    exportedBlob = await exportDB(database, {
+    exportedBlob = await exportWhitelistedDatabase(database, {
       prettyJson: false,
       numRowsPerChunk: 500,
       progressCallback: ({ completedRows, totalRows }) => {
@@ -190,17 +191,11 @@ async function decryptBackupBlob(blob, pin = null) {
 
 async function restoreBackup(file, pin) {
   const decrypted = await decryptBackupBlob(file, pin);
-  const metadata = await peakImportFile(decrypted.blob);
-  if (metadata?.data?.databaseName && metadata.data.databaseName !== DB_NAME) {
-    throw new Error('BACKUP_DATABASE_MISMATCH');
-  }
 
   const database = await openSourceDb();
   try {
-    await importInto(database, decrypted.blob, {
-      clearTablesBeforeImport: true,
-      overwriteValues: true,
-      acceptNameDiff: false,
+    await restoreWhitelistedDatabase(database, decrypted.blob, {
+      expectedDatabaseName: DB_NAME,
       progressCallback: ({ completedRows, totalRows }) => {
         postProgress('restore', completedRows, totalRows, 'importing');
         return true;

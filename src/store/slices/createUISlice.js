@@ -1,5 +1,24 @@
 import Logger from '../../services/Logger';
 
+const BACKUP_NOTICE_DISMISSED_KEY = 'lanzo_backup_notice_dismissed';
+
+function readDismissedBackupNotice() {
+  try {
+    return sessionStorage.getItem(BACKUP_NOTICE_DISMISSED_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistDismissedBackupNotice(noticeKey) {
+  try {
+    if (noticeKey) sessionStorage.setItem(BACKUP_NOTICE_DISMISSED_KEY, noticeKey);
+    else sessionStorage.removeItem(BACKUP_NOTICE_DISMISSED_KEY);
+  } catch {
+    // El estado en memoria sigue funcionando cuando sessionStorage no esta disponible.
+  }
+}
+
 export const createUISlice = (set, get) => ({
   appStatus: 'loading',
   serverHealth: 'ok',
@@ -84,8 +103,17 @@ export const createUISlice = (set, get) => ({
   isStorageCritical: false,
   isTransactionInProgress: false,
   isVolatileDismissed: false,
+  dismissedBackupNotice: readDismissedBackupNotice(),
 
   setStorageCritical: (value) => set({ isStorageCritical: Boolean(value) }),
   setTransactionInProgress: (value) => set({ isTransactionInProgress: Boolean(value) }),
-  setVolatileDismissed: (value) => set({ isVolatileDismissed: Boolean(value) })
+  setVolatileDismissed: (value) => set({ isVolatileDismissed: Boolean(value) }),
+  dismissBackupNotice: (noticeKey) => {
+    persistDismissedBackupNotice(noticeKey);
+    set({ dismissedBackupNotice: noticeKey });
+  },
+  showBackupNotice: () => {
+    persistDismissedBackupNotice(null);
+    set({ dismissedBackupNotice: null });
+  }
 });

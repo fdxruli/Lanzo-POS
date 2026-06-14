@@ -1,71 +1,110 @@
-const DRIVE_CONNECTED_KEY = 'lanzo_drive_connected:v1';
+const DRIVE_SESSION_KEY = 'lanzo_drive_session:v1';
 
-function readDriveConnectionFlag() {
+function clearPersistedDriveSession() {
   try {
-    return localStorage.getItem(DRIVE_CONNECTED_KEY) === 'true';
+    sessionStorage.removeItem(DRIVE_SESSION_KEY);
   } catch {
-    return false;
+    // El estado en memoria sigue funcionando cuando sessionStorage no esta disponible.
   }
 }
 
-function persistDriveConnectionFlag(isConnected) {
+function readPersistedDriveSession() {
   try {
-    if (isConnected) {
-      localStorage.setItem(DRIVE_CONNECTED_KEY, 'true');
-      return;
+    const serializedSession = sessionStorage.getItem(DRIVE_SESSION_KEY);
+    if (!serializedSession) return { session: null, expired: false };
+
+    const { accessToken, expiresAt } = JSON.parse(serializedSession);
+    const normalizedExpiresAt = Number(expiresAt);
+    if (
+      typeof accessToken !== 'string'
+      || !accessToken
+      || !Number.isFinite(normalizedExpiresAt)
+    ) {
+      clearPersistedDriveSession();
+      return { session: null, expired: false };
     }
 
-    localStorage.removeItem(DRIVE_CONNECTED_KEY);
+    if (normalizedExpiresAt <= Date.now()) {
+      clearPersistedDriveSession();
+      return { session: null, expired: true };
+    }
+
+    return {
+      session: {
+        accessToken,
+        expiresAt: normalizedExpiresAt
+      },
+      expired: false
+    };
   } catch {
-    // El estado en memoria sigue funcionando cuando localStorage no esta disponible.
+    clearPersistedDriveSession();
+    return { session: null, expired: false };
   }
 }
 
-export const createDriveSlice = (set) => ({
-  driveAccessToken: null,
-  driveTokenExpiresAt: null,
-  isDriveConnected: readDriveConnectionFlag(),
-  needsDriveReauth: false,
-
-  connectDrive: ({ accessToken, expiresIn }) => {
-    const expiresInSeconds = Number(expiresIn);
-    const tokenLifetime = Number.isFinite(expiresInSeconds) ? expiresInSeconds : 3600;
-
-    persistDriveConnectionFlag(true);
-    set({
-      driveAccessToken: accessToken,
-      driveTokenExpiresAt: Date.now() + tokenLifetime * 1000,
-      isDriveConnected: true,
-      needsDriveReauth: false
-    });
-  },
-
-  clearDriveSession: () => {
-    set({
-      driveAccessToken: null,
-      driveTokenExpiresAt: null
-    });
-  },
-
-  markDriveNeedsReauth: () => {
-    persistDriveConnectionFlag(false);
-    set({
-      driveAccessToken: null,
-      driveTokenExpiresAt: null,
-      isDriveConnected: false,
-      needsDriveReauth: true
-    });
-  },
-
-  disconnectDrive: () => {
-    persistDriveConnectionFlag(false);
-    set({
-      driveAccessToken: null,
-      driveTokenExpiresAt: null,
-      isDriveConnected: false,
-      needsDriveReauth: false
-    });
+function persistDriveSession(accessToken, expiresAt) {
+  try {
+    sessionStorage.setItem(DRIVE_SESSION_KEY, JSON.stringify({
+      accessToken,
+      expiresAt
+    }));
+  } catch {
+    // El estado en memoria sigue funcionando cuando sessionStorage no esta disponible.
   }
-});
+}
 
-export { DRIVE_CONNECTED_KEY };
+export const createDriveSlice = (set) => {
+  const { session, expired } = readPersistedDriveSession();
+
+  return {
+    driveAccessToken: session?.accessToken || null,
+    driveTokenExpiresAt: session?.expiresAt || null,
+    isDriveConnected: Boolean(session),
+    needsDriveReauth: expired,
+
+    connectDrive: ({ accessToken, expiresIn }) => {
+      const expiresInSeconds = Number(expiresIn);
+      const tokenLifetime = Number.isFinite(expiresInSeconds) ? expiresInSeconds : 3600;
+      const expiresAt = Date.now() + tokenLifetime * 1000;
+
+      persistDriveSession(accessToken, expiresAt);
+      set({
+        driveAccessToken: accessToken,
+        driveTokenExpiresAt: expiresAt,
+        isDriveConnected: true,
+        needsDriveReauth: false
+      });
+    },
+
+    clearDriveSession: () => {
+      clearPersistedDriveSession();
+      set({
+        driveAccessToken: null,
+        driveTokenExpiresAt: null,
+        isDriveConnected: false
+      });
+    },
+
+    markDriveNeedsReauth: () => {
+      clearPersistedDriveSession();
+      set({
+        driveAccessToken: null,
+        driveTokenExpiresAt: null,
+        isDriveConnected: false,
+        needsDriveReauth: true
+      });
+    },
+
+    disconnectDrive: () => {
+      clearPersistedDriveSession();
+      set({
+        driveAccessToken: null,
+        driveTokenExpiresAt: null,
+        isDriveConnected: false,
+        needsDriveReauth: false
+      });
+    }
+  };
+};
+
+export { DRIVE_SESSION_KEY };
