@@ -5,11 +5,23 @@ const DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files?uploa
 const BACKUP_APP_PROPERTY = 'lanzo_pos_backup';
 const MAX_DRIVE_BACKUPS = 14;
 
+const DRIVE_ERROR_MESSAGES = {
+  NETWORK: 'No se pudo conectar con Google Drive. Revisa tu conexión a internet e inténtalo de nuevo.',
+  AUTH: 'La sesión de Google Drive expiró. Reconecta tu cuenta e inténtalo de nuevo.',
+  RATE_LIMIT: 'Google Drive alcanzó temporalmente el límite de solicitudes. Espera unos minutos e inténtalo de nuevo. Si el problema continúa, contacta a soporte.',
+  FORBIDDEN: 'Google Drive rechazó la operación. Revisa los permisos de la cuenta y, si el problema continúa, contacta a soporte.',
+  TEMPORARY: 'Google Drive no está disponible temporalmente. Inténtalo de nuevo en unos minutos.',
+  UNKNOWN: 'No fue posible completar la operación en Google Drive. Inténtalo de nuevo y, si el problema continúa, contacta a soporte.'
+};
+
 export class GoogleDriveError extends Error {
-  constructor(message, status) {
+  constructor(message, { status = null, code = 'UNKNOWN', technicalMessage = '', cause } = {}) {
     super(message);
     this.name = 'GoogleDriveError';
     this.status = status;
+    this.code = code;
+    this.technicalMessage = technicalMessage;
+    this.cause = cause;
   }
 }
 
@@ -23,24 +35,76 @@ function createBoundary() {
 async function parseErrorResponse(response) {
   try {
     const data = await response.json();
-    return data?.error?.message || data?.message || response.statusText;
+    return {
+      message: data?.error?.message || data?.message || response.statusText,
+      reasons: (data?.error?.errors || [])
+        .flatMap((error) => error?.reason ? [error.reason] : [])
+    };
   } catch {
-    return response.statusText;
+    return {
+      message: response.statusText,
+      reasons: []
+    };
   }
 }
 
 async function assertSuccessfulResponse(response) {
   if (response.ok) return;
 
-  const message = await parseErrorResponse(response);
+  const { message: technicalMessage, reasons } = await parseErrorResponse(response);
   if (response.status === 401) {
     useAppStore.getState().markDriveNeedsReauth();
+    throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.AUTH, {
+      status: response.status,
+      code: 'AUTH_REQUIRED',
+      technicalMessage
+    });
   }
 
-  throw new GoogleDriveError(
-    `Google Drive API error (${response.status}): ${message || 'Unknown error'}`,
-    response.status
-  );
+  const isRateLimitError = response.status === 429 || reasons.some((reason) => (
+    /rateLimitExceeded|dailyLimitExceeded|quotaExceeded/i.test(reason)
+  ));
+
+  if (isRateLimitError) {
+    throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.RATE_LIMIT, {
+      status: response.status,
+      code: 'RATE_LIMIT',
+      technicalMessage
+    });
+  }
+
+  if (response.status === 403) {
+    throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.FORBIDDEN, {
+      status: response.status,
+      code: 'FORBIDDEN',
+      technicalMessage
+    });
+  }
+
+  if (response.status === 408 || response.status >= 500) {
+    throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.TEMPORARY, {
+      status: response.status,
+      code: 'SERVICE_UNAVAILABLE',
+      technicalMessage
+    });
+  }
+
+  throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.UNKNOWN, {
+    status: response.status,
+    technicalMessage
+  });
+}
+
+async function driveFetch(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (cause) {
+    throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.NETWORK, {
+      code: 'NETWORK_ERROR',
+      technicalMessage: cause?.message || String(cause),
+      cause
+    });
+  }
 }
 
 /**
@@ -67,7 +131,7 @@ export async function uploadBackup(token, fileBlob, fileName) {
     type: `multipart/related; boundary=${boundary}`
   });
 
-  const response = await fetch(DRIVE_UPLOAD_URL, {
+  const response = await driveFetch(DRIVE_UPLOAD_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -104,7 +168,7 @@ export async function listBackups(token) {
     url.searchParams.set('fields', 'nextPageToken,files(id,name,createdTime)');
     if (pageToken) url.searchParams.set('pageToken', pageToken);
 
-    const response = await fetch(url.toString(), {
+    const response = await driveFetch(url.toString(), {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`
@@ -124,7 +188,7 @@ export async function listBackups(token) {
  * Deletes a backup by its Google Drive file ID.
  */
 export async function deleteBackup(token, fileId) {
-  const response = await fetch(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}`, {
+  const response = await driveFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${token}`

@@ -10,10 +10,36 @@ import {
   getBackupSettings,
   saveBackupSettings
 } from './backupConfigDb';
+import { getBackupTableScope } from './backupScope';
 
 export const BACKUP_STATUS_EVENT = 'lanzo_backup_manager_status';
 export const BACKUP_ABORT_REASON = 'ABORTED';
 export const BACKUP_WARNING_BLOB_PERF = 'BLOB_PERF_DEGRADED';
+export const BACKUP_PIN_SESSION_KEY = 'lanzo_backup_pin_session';
+
+function readSessionPin() {
+  try {
+    return sessionStorage.getItem(BACKUP_PIN_SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistSessionPin(pin) {
+  try {
+    sessionStorage.setItem(BACKUP_PIN_SESSION_KEY, pin);
+  } catch {
+    // El desbloqueo en memoria sigue funcionando cuando sessionStorage no esta disponible.
+  }
+}
+
+function clearSessionPin() {
+  try {
+    sessionStorage.removeItem(BACKUP_PIN_SESSION_KEY);
+  } catch {
+    // El bloqueo en memoria sigue funcionando cuando sessionStorage no esta disponible.
+  }
+}
 
 const WRITE_FAILURE_NAMES = new Set([
   'QuotaExceededError',
@@ -47,6 +73,14 @@ class BackupManager {
     this.state.configured = this.settings.configured;
     this.state.initialized = true;
     await this.refreshPermission();
+    const sessionPin = this.state.configured ? readSessionPin() : null;
+    if (sessionPin) {
+      try {
+        await this.unlock(sessionPin);
+      } catch {
+        clearSessionPin();
+      }
+    }
     this.emit();
     return this.getStatus();
   }
@@ -217,6 +251,7 @@ class BackupManager {
       });
       this.state.configured = true;
       this.state.unlocked = true;
+      persistSessionPin(pin);
       await this.refreshPermission();
       this.emit();
       return this.getStatus();
@@ -242,19 +277,27 @@ class BackupManager {
     });
     this.state.unlocked = true;
     this.state.lastError = '';
+    persistSessionPin(pin);
     this.emit();
     return true;
   }
 
   async lock() {
-    if (this.worker) await this.callWorker('lock');
-    this.state.unlocked = false;
-    this.emit();
+    clearSessionPin();
+    try {
+      if (this.worker) await this.callWorker('lock');
+    } finally {
+      this.state.unlocked = false;
+      this.emit();
+    }
   }
 
   async getMutationCount() {
     await db.open();
-    const counts = await Promise.all(db.tables.map((table) => table.count()));
+    const { includedTables } = getBackupTableScope(db);
+    const counts = await db.transaction('r', includedTables, () => (
+      Promise.all(includedTables.map((table) => table.count()))
+    ));
     return counts.reduce((total, count) => total + count, 0);
   }
 
@@ -374,6 +417,7 @@ class BackupManager {
   async changePin(currentPin, newPin) {
     this.validatePin(newPin);
     await this.unlock(currentPin);
+    clearSessionPin();
     if (!this.state.supported || !this.settings.directoryHandle) {
       throw new Error('El recifrado requiere una carpeta compatible configurada.');
     }
@@ -399,6 +443,7 @@ class BackupManager {
         lastError: ''
       });
       this.state.unlocked = true;
+      persistSessionPin(newPin);
       return result;
     } catch (error) {
       await this.recordFailure(error, true);

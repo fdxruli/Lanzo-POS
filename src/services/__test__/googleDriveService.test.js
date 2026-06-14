@@ -163,7 +163,7 @@ describe('googleDriveService', () => {
     );
   });
 
-  it('surfaces Google Drive API errors', async () => {
+  it('requests reauthentication without exposing the raw Google error', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 401,
@@ -184,13 +184,80 @@ describe('googleDriveService', () => {
     const error = await listBackups('expired-token').catch((caughtError) => caughtError);
 
     expect(error).toBeInstanceOf(GoogleDriveError);
-    expect(error.message).toBe('Google Drive API error (401): Invalid Credentials');
+    expect(error.message).toBe(
+      'La sesión de Google Drive expiró. Reconecta tu cuenta e inténtalo de nuevo.'
+    );
     expect(error.status).toBe(401);
+    expect(error.code).toBe('AUTH_REQUIRED');
+    expect(error.technicalMessage).toBe('Invalid Credentials');
     expect(useAppStore.getState()).toMatchObject({
       driveAccessToken: null,
       driveTokenExpiresAt: null,
       isDriveConnected: false,
       needsDriveReauth: true
     });
+  });
+
+  it('converts fetch connectivity failures into a clear user message', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+      new TypeError('Failed to fetch')
+    );
+
+    const error = await uploadBackup(
+      'access-token',
+      new Blob(['backup-content']),
+      'backup.lzbk'
+    ).catch((caughtError) => caughtError);
+
+    expect(error).toBeInstanceOf(GoogleDriveError);
+    expect(error.message).toBe(
+      'No se pudo conectar con Google Drive. Revisa tu conexión a internet e inténtalo de nuevo.'
+    );
+    expect(error.code).toBe('NETWORK_ERROR');
+    expect(error.status).toBeNull();
+    expect(error.technicalMessage).toBe('Failed to fetch');
+  });
+
+  it('shows support guidance when Google Drive returns HTTP 429', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 429,
+      statusText: 'Too Many Requests',
+      json: vi.fn().mockResolvedValue({
+        error: {
+          message: 'Rate Limit Exceeded'
+        }
+      })
+    });
+
+    const error = await listBackups('access-token').catch((caughtError) => caughtError);
+
+    expect(error).toBeInstanceOf(GoogleDriveError);
+    expect(error.message).toContain('límite de solicitudes');
+    expect(error.message).toContain('contacta a soporte');
+    expect(error.message).not.toContain('Rate Limit Exceeded');
+    expect(error.code).toBe('RATE_LIMIT');
+    expect(error.status).toBe(429);
+    expect(error.technicalMessage).toBe('Rate Limit Exceeded');
+  });
+
+  it('recognizes quota errors returned by Google as HTTP 403', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      json: vi.fn().mockResolvedValue({
+        error: {
+          message: 'User Rate Limit Exceeded',
+          errors: [{ reason: 'userRateLimitExceeded' }]
+        }
+      })
+    });
+
+    const error = await listBackups('access-token').catch((caughtError) => caughtError);
+
+    expect(error.code).toBe('RATE_LIMIT');
+    expect(error.message).toContain('contacta a soporte');
+    expect(error.technicalMessage).toBe('User Rate Limit Exceeded');
   });
 });
