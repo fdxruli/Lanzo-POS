@@ -1,0 +1,466 @@
+.error-boundary {
+  --incident-bg: #111318;
+  --incident-surface: #1a1e25;
+  --incident-surface-raised: #20252d;
+  --incident-line: #343b46;
+  --incident-text: #f7f7f5;
+  --incident-muted: #aab2bf;
+  --incident-danger: #ff4d5f;
+  position: fixed !important;
+  inset: 0;
+  z-index: 10000;
+  box-sizing: border-box;
+  width: 100% !important;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0 !important;
+  display: block !important;
+  padding: 0 !important;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--incident-bg) !important;
+  color: var(--incident-text);
+  font-family: Inter, "Segoe UI", system-ui, sans-serif !important;
+  text-align: left;
+  -webkit-overflow-scrolling: touch;
+}
+
+.error-boundary *,
+.error-boundary *::before,
+.error-boundary *::after {
+  box-sizing: border-box;
+}
+
+.error-boundary__console {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100% !important;
+  min-height: 100%;
+  max-width: none !important;
+  padding: 96px 18px 28px !important;
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: var(--incident-bg) !important;
+  box-shadow: none !important;
+  color: var(--incident-text);
+  text-align: left !important;
+}
+
+.error-boundary__console::before {
+  content: "INCIDENTE CRITICO";
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  padding: max(18px, env(safe-area-inset-top)) 18px 18px 82px;
+  background: var(--incident-danger);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.16em;
+}
+
+.error-boundary__alert-icon {
+  position: absolute;
+  z-index: 1;
+  top: max(13px, env(safe-area-inset-top));
+  left: 18px;
+  width: 48px !important;
+  height: 48px !important;
+  margin: 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 12px !important;
+  background: rgba(17, 19, 24, 0.14) !important;
+  color: #fff !important;
+}
+
+.error-boundary__alert-icon svg {
+  width: 25px;
+  height: 25px;
+}
+
+.error-boundary__title {
+  margin: 0 0 10px !important;
+  color: var(--incident-text) !important;
+  font-size: clamp(1.7rem, 8vw, 2.4rem) !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.045em;
+}
+
+.error-boundary__incident-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 18px !important;
+  color: var(--incident-muted);
+  font-size: 0.78rem;
+}
+
+.error-boundary__incident-meta > span {
+  margin: 0 !important;
+  border-color: #6b3440 !important;
+  background: #28171b !important;
+  color: #ff9ca7 !important;
+}
+
+.error-boundary__incident-meta p {
+  color: var(--incident-muted) !important;
+}
+
+.error-boundary__summary {
+  max-width: 62ch;
+  margin: 0 0 18px !important;
+  color: var(--incident-muted) !important;
+  font-size: 0.96rem !important;
+  line-height: 1.55 !important;
+}
+
+.error-boundary__network {
+  align-self: flex-start;
+  margin: 0 0 20px !important;
+  border-color: currentColor !important;
+  background: transparent !important;
+  font-weight: 750;
+}
+
+.error-boundary__network.is-online {
+  color: #63e6be !important;
+}
+
+.error-boundary__network.is-offline {
+  color: #ffd166 !important;
+}
+
+.error-boundary__continuity {
+  order: 2;
+  margin: 0 0 18px !important;
+  padding: 18px !important;
+  border: 0 !important;
+  border-left: 3px solid var(--incident-danger) !important;
+  border-radius: 0 !important;
+  background: var(--incident-surface) !important;
+  color: var(--incident-text);
+}
+
+.error-boundary__continuity > div {
+  margin-bottom: 14px !important;
+}
+
+.error-boundary__continuity svg {
+  color: var(--incident-danger) !important;
+}
+
+.error-boundary__continuity h4 {
+  color: var(--incident-text) !important;
+}
+
+.error-boundary__continuity p {
+  color: var(--incident-muted) !important;
+}
+
+.error-boundary__continuity p strong {
+  color: #ffb3bb;
+}
+
+.error-boundary__safe-data {
+  order: 1;
+  justify-content: flex-start !important;
+  margin: 0 0 20px !important;
+  padding: 15px 0 !important;
+  border: 0 !important;
+  border-block: 1px solid var(--incident-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #77e8c6 !important;
+  text-align: left;
+}
+
+.error-boundary__diagnostics {
+  order: 4;
+  margin: 18px 0 0 !important;
+  padding: 20px 0 0;
+  border-top: 1px solid var(--incident-line);
+}
+
+.error-boundary__diagnostics > div:first-child label {
+  color: var(--incident-muted) !important;
+}
+
+.error-boundary__diagnostics > div:first-child span {
+  max-width: 42%;
+  overflow: hidden;
+  color: #778190 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.error-boundary__error-message {
+  padding: 14px !important;
+  border: 0 !important;
+  border-left: 3px solid var(--incident-danger) !important;
+  border-radius: 0 !important;
+  background: #28171b !important;
+  color: #ffd1d6 !important;
+  overflow-wrap: anywhere;
+}
+
+.error-boundary__error-message span {
+  color: #ff9ca7;
+}
+
+.error-boundary__stack {
+  max-width: 100%;
+  max-height: 260px !important;
+  padding: 16px !important;
+  border-color: var(--incident-line) !important;
+  background: #07090c !important;
+  color: #d8dee8 !important;
+  user-select: text;
+}
+
+.error-boundary__stack span:first-child {
+  color: #d8dee8 !important;
+}
+
+.error-boundary__actions {
+  order: 3;
+  display: grid !important;
+  gap: 10px !important;
+}
+
+.error-boundary__button {
+  min-height: 48px;
+  border-radius: 9px !important;
+  font-size: 0.9rem !important;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease !important;
+}
+
+.error-boundary__button:active {
+  transform: translateY(1px);
+}
+
+.error-boundary__button:focus-visible,
+.error-boundary__stack:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
+.error-boundary__button--pos {
+  background: var(--incident-danger) !important;
+  color: #fff !important;
+}
+
+.error-boundary__button--whatsapp {
+  background: #25d366 !important;
+  color: #082d16 !important;
+  box-shadow: none !important;
+}
+
+.error-boundary__button--copy,
+.error-boundary__button--reload,
+.error-boundary__button--recover {
+  border-color: var(--incident-line) !important;
+  background: var(--incident-surface-raised) !important;
+  color: var(--incident-text) !important;
+}
+
+.error-boundary__button--copy.is-copied {
+  border-color: #00c48c !important;
+  color: #77e8c6 !important;
+}
+
+.error-boundary__button--reload {
+  border-color: var(--incident-danger) !important;
+  color: #ff9ca7 !important;
+}
+
+.error-boundary__secondary-actions {
+  display: grid !important;
+  grid-template-columns: 1fr;
+  gap: 10px !important;
+}
+
+.error-boundary__footer {
+  margin: 0 !important;
+  padding: 20px 18px max(20px, env(safe-area-inset-bottom));
+  background: #0c0e12;
+  color: #697382 !important;
+  font-size: 0.75rem !important;
+  text-align: left;
+}
+
+@media (hover: hover) {
+  .error-boundary__button--pos:hover {
+    background: #d93649 !important;
+  }
+
+  .error-boundary__button--whatsapp:hover {
+    background: #20bd5a !important;
+  }
+
+  .error-boundary__button--copy:hover,
+  .error-boundary__button--reload:hover,
+  .error-boundary__button--recover:hover {
+    background: #292f39 !important;
+  }
+}
+
+@media (min-width: 600px) {
+  .error-boundary__console {
+    padding-inline: 32px !important;
+  }
+
+  .error-boundary__console::before {
+    padding-left: 96px;
+  }
+
+  .error-boundary__alert-icon {
+    left: 32px;
+  }
+
+  .error-boundary__secondary-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .error-boundary__footer {
+    padding-inline: 32px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .error-boundary {
+    display: grid !important;
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+
+  .error-boundary__console {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
+    grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
+    column-gap: 48px;
+    row-gap: 0;
+    align-content: start;
+    min-height: 0;
+    padding: 132px 48px 34px !important;
+  }
+
+  .error-boundary__console::before {
+    min-height: 98px;
+    padding: 28px 48px 28px 126px;
+    font-size: 0.78rem;
+  }
+
+  .error-boundary__alert-icon {
+    top: 19px;
+    left: 48px;
+    width: 60px !important;
+    height: 60px !important;
+  }
+
+  .error-boundary__title,
+  .error-boundary__incident-meta,
+  .error-boundary__summary,
+  .error-boundary__network,
+  .error-boundary__safe-data,
+  .error-boundary__continuity,
+  .error-boundary__actions {
+    grid-column: 1;
+  }
+
+  .error-boundary__title {
+    font-size: clamp(2rem, 3vw, 3.15rem) !important;
+  }
+
+  .error-boundary__incident-meta {
+    grid-row: 2;
+  }
+
+  .error-boundary__summary {
+    grid-row: 3;
+  }
+
+  .error-boundary__network {
+    position: absolute;
+    top: 31px;
+    right: 48px;
+    z-index: 2;
+    color: #fff !important;
+  }
+
+  .error-boundary__safe-data {
+    grid-row: 4;
+    align-self: start;
+    margin-top: 0 !important;
+  }
+
+  .error-boundary__continuity {
+    grid-row: 5;
+    align-self: start;
+    margin-top: 18px !important;
+  }
+
+  .error-boundary__actions {
+    grid-row: 6;
+    align-self: start;
+    grid-template-columns: 1fr 1fr;
+    margin-top: 18px;
+  }
+
+  .error-boundary__secondary-actions {
+    grid-column: 1 / -1;
+  }
+
+  .error-boundary__diagnostics {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    min-height: 0;
+    margin: -34px -48px -34px 0 !important;
+    padding: 34px 40px;
+    overflow-y: auto;
+    border-top: 0;
+    border-left: 1px solid var(--incident-line);
+    background: #0c0e12;
+  }
+
+  .error-boundary__footer {
+    padding: 12px 48px;
+    border-top: 1px solid #242a33;
+  }
+}
+
+@media (min-width: 1400px) {
+  .error-boundary__console {
+    grid-template-columns: minmax(0, 1.2fr) minmax(520px, 0.8fr);
+    column-gap: 64px;
+  }
+}
+
+@media (max-width: 380px) {
+  .error-boundary__console {
+    padding-inline: 14px !important;
+  }
+
+  .error-boundary__console::before {
+    padding-left: 72px;
+  }
+
+  .error-boundary__alert-icon {
+    left: 14px;
+  }
+
+  .error-boundary__button {
+    font-size: 0.82rem !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .error-boundary__button {
+    transition: none !important;
+  }
+}

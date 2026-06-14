@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CloudOff, FolderKey, LockKeyhole } from 'lucide-react';
+import { AlertTriangle, CloudOff, FolderKey, LockKeyhole, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useBackupManager } from '../../hooks/useBackupManager';
 import { useAppStore } from '../../store/useAppStore';
+import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
 import './BackupRuntime.css';
 
 const IDLE_BACKUP_MS = 4 * 60 * 60 * 1000;
@@ -14,6 +15,9 @@ export default function BackupRuntime() {
   const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
   const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
   const markDriveNeedsReauth = useAppStore((state) => state.markDriveNeedsReauth);
+  const dismissedBackupNotice = useAppStore((state) => state.dismissedBackupNotice);
+  const dismissBackupNotice = useAppStore((state) => state.dismissBackupNotice);
+  const showBackupNotice = useAppStore((state) => state.showBackupNotice);
   const [pin, setPin] = useState('');
   const [actionError, setActionError] = useState('');
   const idleTimerRef = useRef(null);
@@ -101,6 +105,26 @@ export default function BackupRuntime() {
     }
   };
 
+  const notice = getBackupRuntimeNotice(status, needsDriveReauth);
+
+  useEffect(() => {
+    if (!notice && dismissedBackupNotice) showBackupNotice();
+  }, [dismissedBackupNotice, notice, showBackupNotice]);
+
+  if (!notice || dismissedBackupNotice === notice.key) return null;
+
+  const dismissButton = (
+    <button
+      type="button"
+      className="backup-runtime-banner__dismiss"
+      onClick={() => dismissBackupNotice(notice.key)}
+      title="Cerrar"
+      aria-label="Cerrar aviso de respaldos"
+    >
+      <X size={18} />
+    </button>
+  );
+
   if (needsDriveReauth) {
     return (
       <div className="backup-runtime-banner backup-runtime-banner--error" role="alert">
@@ -111,11 +135,10 @@ export default function BackupRuntime() {
         <button type="button" onClick={() => navigate('/configuracion?tab=backup')}>
           Reactivar
         </button>
+        {dismissButton}
       </div>
     );
   }
-
-  if (!status.initialized || status.busy) return null;
 
   if (!status.configured) {
     return (
@@ -123,14 +146,12 @@ export default function BackupRuntime() {
         <AlertTriangle size={20} />
         <span>Configura los respaldos cifrados para proteger los datos locales.</span>
         <button type="button" onClick={() => navigate('/configuracion?tab=maintenance')}>Configurar</button>
+        {dismissButton}
       </div>
     );
   }
 
-  const needsPermission = status.supported && status.permission !== 'granted';
-  const needsUnlock = !status.unlocked;
-  const needsAttention = needsPermission || needsUnlock || status.settings.cronPending || status.settings.cronBlocked;
-  if (!needsAttention) return null;
+  const { needsPermission, needsUnlock } = notice;
 
   return (
     <div className={`backup-runtime-banner ${status.settings.cronBlocked ? 'backup-runtime-banner--error' : ''}`} role="status">
@@ -170,6 +191,7 @@ export default function BackupRuntime() {
       ) : (
         <button type="button" onClick={() => navigate('/configuracion?tab=maintenance')}>Revisar</button>
       )}
+      {dismissButton}
     </div>
   );
 }

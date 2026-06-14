@@ -96,6 +96,25 @@
   opacity: 0.55;
 }
 
+.backup-runtime-banner button.backup-runtime-banner__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--backup-banner-text);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--backup-banner-accent) 35%, transparent);
+  box-shadow: none;
+}
+
+.backup-runtime-banner button.backup-runtime-banner__dismiss:hover {
+  color: white;
+  background: var(--backup-banner-button-hover);
+  box-shadow: none;
+}
+
 [data-theme="dark"] .backup-runtime-banner {
   --backup-banner-accent: #fbbf24;
   --backup-banner-background: #29200f;
