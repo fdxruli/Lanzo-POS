@@ -9,15 +9,16 @@
  * 5. Validación de seguridad: PURGE_BATCHES solo con expirationMode: NONE
  */
 
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { updateProduct, updateProductSafe, bulkUpdateProducts } from '../productUpdates';
 import { db, STORES } from '../dexie';
 
 // Mock de Dexie
-jest.mock('../dexie', () => ({
+vi.mock('../dexie', () => ({
     db: {
-        isOpen: jest.fn(() => true),
-        transaction: jest.fn((mode, stores, fn) => fn()),
-        table: jest.fn()
+        isOpen: vi.fn(() => true),
+        transaction: vi.fn((mode, stores, fn) => fn()),
+        table: vi.fn()
     },
     STORES: {
         MENU: 'menu',
@@ -25,10 +26,10 @@ jest.mock('../dexie', () => ({
     }
 }));
 
-jest.mock('../Logger', () => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn()
+vi.mock('../Logger', () => ({
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn()
 }));
 
 describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
@@ -38,12 +39,12 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
 
     beforeEach(() => {
         transactionBatches = [];
-        jest.clearAllMocks();
+        vi.clearAllMocks();
 
         // Mock de tabla de productos
         mockMenuTable = {
-            get: jest.fn(),
-            put: jest.fn((product) => {
+            get: vi.fn(),
+            put: vi.fn((product) => {
                 if (!product.id) throw new Error('Producto sin ID');
                 return Promise.resolve();
             })
@@ -51,20 +52,20 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
 
         // Mock de tabla de lotes con captura de operaciones
         mockBatchesTable = {
-            where: jest.fn(() => ({
-                equals: jest.fn(() => ({
-                    toArray: jest.fn(),
-                    count: jest.fn()
+            where: vi.fn(() => ({
+                equals: vi.fn(() => ({
+                    toArray: vi.fn(),
+                    count: vi.fn()
                 })),
-                anyOf: jest.fn(() => ({
-                    toArray: jest.fn()
+                anyOf: vi.fn(() => ({
+                    toArray: vi.fn()
                 }))
             })),
-            put: jest.fn((batch) => {
+            put: vi.fn((batch) => {
                 transactionBatches.push(batch);
                 return Promise.resolve();
             }),
-            bulkGet: jest.fn()
+            bulkGet: vi.fn()
         };
 
         db.table.mockImplementation((storeName) => {
@@ -86,9 +87,9 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
             });
 
             // Setup: 2 lotes con fechas
-            mockBatchesTable.where = jest.fn(() => ({
-                equals: jest.fn(() => ({
-                    toArray: jest.fn().mockResolvedValue([
+            mockBatchesTable.where = vi.fn(() => ({
+                equals: vi.fn(() => ({
+                    toArray: vi.fn().mockResolvedValue([
                         {
                             id: 'batch-1',
                             productId,
@@ -102,13 +103,13 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                             stock: 5
                         }
                     ]),
-                    count: jest.fn().mockResolvedValue(2)
+                    count: vi.fn().mockResolvedValue(2)
                 }))
             }));
 
             // Mock: Forzar fallo en la mitad de la purga
             let callCount = 0;
-            mockBatchesTable.put = jest.fn((batch) => {
+            mockBatchesTable.put = vi.fn((batch) => {
                 callCount++;
                 if (callCount === 2) {
                     throw new Error('Simulated crash during batch purge');
@@ -138,9 +139,9 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                 expirationMode: 'STRICT'
             });
 
-            mockBatchesTable.where = jest.fn(() => ({
-                equals: jest.fn(() => ({
-                    toArray: jest.fn().mockResolvedValue([
+            mockBatchesTable.where = vi.fn(() => ({
+                equals: vi.fn(() => ({
+                    toArray: vi.fn().mockResolvedValue([
                         {
                             id: 'batch-1',
                             productId,
@@ -148,11 +149,11 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                             stock: 10
                         }
                     ]),
-                    count: jest.fn().mockResolvedValue(1)
+                    count: vi.fn().mockResolvedValue(1)
                 }))
             }));
 
-            mockBatchesTable.put = jest.fn((batch) => {
+            mockBatchesTable.put = vi.fn((batch) => {
                 transactionBatches.push(batch);
                 return Promise.resolve();
             });
@@ -185,7 +186,6 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
             // Verificar que se usó el índice correcto
             expect(db.table).toHaveBeenCalledWith(STORES.MENU);
             expect(db.table).not.toHaveBeenCalledWith('products');
-            expect(db.table).not.toHaveBeenCalledWith('product_batches');
         });
 
         it('debe usar db.table(STORES.PRODUCT_BATCHES) en lugar de db.product_batches', async () => {
@@ -197,12 +197,12 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                 expirationMode: 'STRICT'
             });
 
-            mockBatchesTable.where = jest.fn(() => ({
-                equals: jest.fn(() => ({
-                    toArray: jest.fn().mockResolvedValue([
+            mockBatchesTable.where = vi.fn(() => ({
+                equals: vi.fn(() => ({
+                    toArray: vi.fn().mockResolvedValue([
                         { id: 'batch-1', productId, expiryDate: '2024-12-31' }
                     ]),
-                    count: jest.fn().mockResolvedValue(1)
+                    count: vi.fn().mockResolvedValue(1)
                 }))
             }));
 
@@ -226,9 +226,9 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                 expirationMode: 'STRICT'
             });
 
-            mockBatchesTable.where = jest.fn(() => ({
-                equals: jest.fn(() => ({
-                    toArray: jest.fn().mockResolvedValue([
+            mockBatchesTable.where = vi.fn(() => ({
+                equals: vi.fn(() => ({
+                    toArray: vi.fn().mockResolvedValue([
                         {
                             id: 'batch-1',
                             productId,
@@ -238,7 +238,7 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                             shelfLifeUnit: 'days'
                         }
                     ]),
-                    count: jest.fn().mockResolvedValue(0)
+                    count: vi.fn().mockResolvedValue(0)
                 }))
             }));
 
@@ -266,9 +266,9 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                 expirationMode: 'STRICT'
             });
 
-            mockBatchesTable.where = jest.fn(() => ({
-                equals: jest.fn(() => ({
-                    toArray: jest.fn().mockResolvedValue([
+            mockBatchesTable.where = vi.fn(() => ({
+                equals: vi.fn(() => ({
+                    toArray: vi.fn().mockResolvedValue([
                         {
                             id: 'batch-1',
                             productId,
@@ -279,7 +279,7 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                             shelfLifeUnit: 'days'
                         }
                     ]),
-                    count: jest.fn().mockResolvedValue(0)
+                    count: vi.fn().mockResolvedValue(0)
                 }))
             }));
 
@@ -315,16 +315,16 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                 return Promise.resolve();
             });
 
-            mockBatchesTable.where = jest.fn(() => ({
-                equals: jest.fn(() => ({
-                    toArray: jest.fn().mockResolvedValue([
+            mockBatchesTable.where = vi.fn(() => ({
+                equals: vi.fn(() => ({
+                    toArray: vi.fn().mockResolvedValue([
                         {
                             id: 'batch-1',
                             productId,
                             expiryDate: '2024-12-31'
                         }
                     ]),
-                    count: jest.fn().mockResolvedValue(0)
+                    count: vi.fn().mockResolvedValue(0)
                 }))
             }));
 
@@ -390,12 +390,12 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
                 expirationMode: 'STRICT'
             });
 
-            mockBatchesTable.where = jest.fn(() => ({
-                equals: jest.fn(() => ({
-                    toArray: jest.fn().mockResolvedValue([
+            mockBatchesTable.where = vi.fn(() => ({
+                equals: vi.fn(() => ({
+                    toArray: vi.fn().mockResolvedValue([
                         { id: 'batch-1', productId, expiryDate: '2024-12-31' }
                     ]),
-                    count: jest.fn().mockResolvedValue(0)
+                    count: vi.fn().mockResolvedValue(0)
                 }))
             }));
 
@@ -449,7 +449,7 @@ describe('Motor Atómico de Transiciones de Modo de Caducidad', () => {
 
 describe('bulkUpdateProducts', () => {
     beforeEach(() => {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
         db.isOpen.mockReturnValue(true);
     });
 

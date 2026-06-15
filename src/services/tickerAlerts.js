@@ -3,6 +3,7 @@ import {
   EXPIRY_DAYS_THRESHOLD,
   getAvailableStock
 } from './db/utils';
+import { daysBetween } from '../utils/dateUtils';
 
 export const TICKER_ALERT_POLL_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -20,13 +21,13 @@ const toLocalDateKey = (date) => {
 };
 
 const getExpiryDays = (targetDate, now) => {
-  const parsedTarget = new Date(targetDate);
-  if (Number.isNaN(parsedTarget.getTime())) return null;
-
-  return Math.round(
-    (startOfLocalDay(parsedTarget).getTime() - startOfLocalDay(now).getTime())
-      / MS_PER_DAY
-  );
+  if (!targetDate) return null;
+  try {
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+    return daysBetween(todayUTC, targetDate);
+  } catch (err) {
+    return null;
+  }
 };
 
 export async function queryTickerInventoryAlerts({

@@ -48,6 +48,7 @@ describe('financialStats', () => {
         id: '2026-03-12',
         date: '2026-03-12',
         revenue: 20,
+        validRevenue: 20,
         profit: 12,
         orders: 1,
         itemsSold: 2,

@@ -5,83 +5,22 @@ import {
     validateOrThrow,
     DatabaseError,
     DB_ERROR_CODES,
-    getCommittedStock
+    getCommittedStock,
+    normalizeStock
 } from './utils';
 import { generateID } from '../utils';
 import { productSchema } from '../../schemas/productSchema';
 import Logger from '../Logger';
 import { collectBatchRestorations, restoreBatchStock } from '../sales/batchRestoration';
-
-const DEFAULT_SEARCH_LIMIT = 50;
-
-const normalizeSearchValue = (value) =>
-    value === null || value === undefined ? '' : String(value).toLowerCase();
-
-const isActiveProduct = (product) => product?.isActive !== false;
-
-const matchesStatus = (product, status) => {
-    const isActive = isActiveProduct(product);
-    if (status === 'active') return isActive;
-    if (status === 'inactive') return !isActive;
-    return true;
-};
+import { searchProductsInTable } from './productSearch';
 
 export const searchProductsInDB = async (searchTerm, status = 'active') => {
     try {
-        const normalizedTerm = normalizeSearchValue(searchTerm).trim();
-        if (!normalizedTerm) return [];
-
-        const productTable = db.table(STORES.MENU);
-
-        if (/^\d+$/.test(normalizedTerm)) {
-            const exactBarcode = await productTable
-                .where('barcode')
-                .equals(normalizedTerm)
-                .first();
-
-            if (exactBarcode && matchesStatus(exactBarcode, status)) {
-                return [exactBarcode];
-            }
-
-            const exactSku = await productTable
-                .where('sku')
-                .equals(normalizedTerm)
-                .first();
-
-            if (exactSku && matchesStatus(exactSku, status)) {
-                return [exactSku];
-            }
-        }
-
-        // BÚSQUEDA POR NOMBRE (usa startsWith - eficiente)
-        const nameResults = await productTable
-            .where('name_lower')
-            .startsWith(normalizedTerm)
-            .filter((product) => matchesStatus(product, status))
-            .limit(DEFAULT_SEARCH_LIMIT)
-            .toArray();
-
-        const takenIds = new Set(nameResults.map((p) => p.id));
-
-        // BÚSQUEDA POR CÓDIGO/SKU (búsqueda global - siempre se ejecuta)
-        const codeResults = await productTable
-            .filter((product) => {
-                if (!matchesStatus(product, status)) return false;
-                if (takenIds.has(product.id)) return false;
-
-                // Busca por código, SKU o nombre con contains (no solo startsWith)
-                const barcode = normalizeSearchValue(product?.barcode);
-                const sku = normalizeSearchValue(product?.sku);
-                const name = normalizeSearchValue(product?.name_lower || product?.name);
-                
-                return barcode.includes(normalizedTerm) || 
-                       sku.includes(normalizedTerm) || 
-                       name.includes(normalizedTerm);
-            })
-            .limit(DEFAULT_SEARCH_LIMIT - nameResults.length)
-            .toArray();
-
-        return [...nameResults, ...codeResults];
+        return await searchProductsInTable(
+            db.table(STORES.MENU),
+            searchTerm,
+            status
+        );
     } catch (error) {
         throw handleDexieError(error, 'searchProductsInDB');
     }
@@ -108,7 +47,6 @@ export const productsRepository = {
    * @returns {Promise<{restored: Array, warnings: Array, restoredInventoryValue: number}>}
    */
   async restoreStockFromCancellation(items) {
-    const { normalizeStock } = await import('./utils.js');
     const warnings = [];
     const restored = [];
     let restoredInventoryValue = 0;
@@ -183,6 +121,7 @@ export const productsRepository = {
           restored.push({
             type: 'batch',
             id: batchId,
+            productId: batch.productId || deduction.productId || null,
             previousStock: batch.stock,
             newStock,
             restoredQuantity: quantityToRestore,
@@ -235,6 +174,7 @@ export const productsRepository = {
           restored.push({
             type: 'product',
             id: productId,
+            productId,
             previousStock: product.stock,
             newStock,
             restoredQuantity: quantityToRestore
@@ -285,6 +225,122 @@ export const productsRepository = {
       }
     );
   },
+
+  /**
+   * Reaplica la salida de inventario cuando una venta cancelada vuelve a ser
+   * una venta vigente. Usa los lotes historicos registrados en la venta.
+   */
+  async reapplyStockFromCancellation(items) {
+    const deducted = [];
+
+    return await db.transaction(
+      'rw',
+      [db.table(STORES.PRODUCT_BATCHES), db.table(STORES.MENU)],
+      async () => {
+        const batchDeductions = collectBatchRestorations(items);
+        const batchIds = Array.from(batchDeductions.keys());
+        const batches = batchIds.length > 0
+          ? await db.table(STORES.PRODUCT_BATCHES).bulkGet(batchIds)
+          : [];
+        const batchesMap = new Map(batches.filter(Boolean).map((batch) => [batch.id, batch]));
+        const affectedParentIds = new Set();
+
+        for (const [batchId, deduction] of batchDeductions) {
+          const batch = batchesMap.get(batchId);
+          if (!batch) throw new Error(`RESTORE_SALE_FAILED: Lote ${batchId} no encontrado.`);
+
+          const quantity = normalizeStock(deduction.quantity);
+          const currentStock = normalizeStock(batch.stock);
+          if (currentStock < quantity) {
+            throw new Error(`RESTORE_SALE_FAILED: Stock insuficiente en lote ${batchId}.`);
+          }
+
+          const newStock = normalizeStock(currentStock - quantity);
+          await db.table(STORES.PRODUCT_BATCHES).put({
+            ...batch,
+            stock: newStock,
+            isActive: newStock > 0,
+            updatedAt: new Date().toISOString()
+          });
+          deducted.push({
+            type: 'batch',
+            id: batchId,
+            productId: batch.productId,
+            deductedQuantity: quantity
+          });
+          if (batch.productId) affectedParentIds.add(batch.productId);
+        }
+
+        const simpleDeductions = new Map();
+        for (const item of items || []) {
+          if (Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0) continue;
+          const productId = item?.parentId || item?.id;
+          if (!productId) continue;
+          const quantity = normalizeStock(item?.stockDeducted ?? item?.quantity ?? 0);
+          simpleDeductions.set(
+            productId,
+            normalizeStock((simpleDeductions.get(productId) || 0) + quantity)
+          );
+        }
+
+        const productIds = Array.from(new Set([
+          ...simpleDeductions.keys(),
+          ...affectedParentIds
+        ]));
+        const products = productIds.length > 0
+          ? await db.table(STORES.MENU).bulkGet(productIds)
+          : [];
+        const productsMap = new Map(products.filter(Boolean).map((product) => [product.id, product]));
+
+        for (const [productId, quantity] of simpleDeductions) {
+          const product = productsMap.get(productId);
+          if (!product) throw new Error(`RESTORE_SALE_FAILED: Producto ${productId} no encontrado.`);
+          if (product.trackStock === false) continue;
+
+          const currentStock = normalizeStock(product.stock);
+          if (currentStock < quantity) {
+            throw new Error(`RESTORE_SALE_FAILED: Stock insuficiente para ${product.name || productId}.`);
+          }
+
+          await db.table(STORES.MENU).put({
+            ...product,
+            stock: normalizeStock(currentStock - quantity),
+            updatedAt: new Date().toISOString()
+          });
+          deducted.push({
+            type: 'product',
+            id: productId,
+            productId,
+            deductedQuantity: quantity
+          });
+        }
+
+        for (const productId of affectedParentIds) {
+          const product = productsMap.get(productId);
+          if (!product) throw new Error(`RESTORE_SALE_FAILED: Producto padre ${productId} no encontrado.`);
+
+          const allBatches = await db.table(STORES.PRODUCT_BATCHES)
+            .where('productId')
+            .equals(productId)
+            .toArray();
+          const totalStock = normalizeStock(
+            allBatches
+              .filter((batch) => batch?.isActive && Number(batch.stock) > 0)
+              .reduce((sum, batch) => sum + Number(batch.stock || 0), 0)
+          );
+
+          await db.table(STORES.MENU).put({
+            ...product,
+            stock: totalStock,
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        return { deducted };
+      }
+    );
+  },
+
     /**
      * Guarda un lote (Batch), valida sus datos y sincroniza automáticamente
      * el stock y costos del producto padre (FIFO).

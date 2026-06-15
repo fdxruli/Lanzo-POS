@@ -2,10 +2,15 @@ import Dexie from 'dexie';
 
 const CONFIG_DB_NAME = 'LanzoBackupConfig';
 const SETTINGS_KEY = 'primary';
+const SESSION_KEY = 'backup-session-key';
 
 const configDb = new Dexie(CONFIG_DB_NAME);
 configDb.version(1).stores({
   settings: 'id'
+});
+configDb.version(2).stores({
+  settings: 'id',
+  secrets: 'id'
 });
 
 export const DEFAULT_BACKUP_SETTINGS = Object.freeze({
@@ -45,6 +50,26 @@ export async function saveBackupSettings(patch) {
 
 export async function clearBackupSettings() {
   await configDb.settings.delete(SETTINGS_KEY);
+}
+
+export async function getPersistedBackupKey() {
+  return configDb.secrets.get(SESSION_KEY);
+}
+
+export async function savePersistedBackupKey({ key, verifier, salt, iterations, sessionId }) {
+  await configDb.secrets.put({
+    id: SESSION_KEY,
+    key,
+    verifier,
+    salt,
+    iterations,
+    sessionId,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+export async function clearPersistedBackupKey() {
+  await configDb.secrets.delete(SESSION_KEY);
 }
 
 export { CONFIG_DB_NAME };

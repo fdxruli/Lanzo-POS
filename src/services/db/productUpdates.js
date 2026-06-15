@@ -75,7 +75,7 @@ export const updateProduct = async (id, data) => {
                 const targetMode = productData.expirationMode;
                 const currentMode = currentProduct.expirationMode;
                 
-                if (targetMode !== 'NONE' && currentMode !== 'NONE') {
+                if (targetMode !== 'NONE') {
                     throw new Error(
                         'Intent PURGE_BATCHES requiere expirationMode: NONE '
                         + `(recibido: ${targetMode}, actual: ${currentMode})`

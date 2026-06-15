@@ -374,6 +374,16 @@ const processSaleWithinTransaction = async ({
         }
     }
 
+    if (tables.cajas) {
+        const openCashSessions = await tables.cajas.where('estado').equals('abierta').toArray();
+        if (openCashSessions.length > 0) {
+            const activeCashSession = openCashSessions.sort(
+                (a, b) => Date.parse(b.fecha_apertura || 0) - Date.parse(a.fecha_apertura || 0)
+            )[0];
+            sale.cash_session_id = activeCashSession.id;
+        }
+    }
+
     const affectedProductIds = collectAffectedProductIds(sale, deductions);
     const batchesCacheMap = await loadBatchesCacheByProduct(affectedProductIds, tables.batches);
 
@@ -450,6 +460,10 @@ const resolveRequiredStoreNames = (salesPayloads = []) => {
         STORES.COMPANY
     ]);
 
+    if (STORES.CAJAS) {
+        stores.add(STORES.CAJAS);
+    }
+
     const sales = Array.isArray(salesPayloads) ? salesPayloads : [salesPayloads];
 
     for (const sale of sales) {
@@ -474,6 +488,9 @@ const buildTransactionTables = (lockedStores = []) => {
     if (lockedStores.includes(STORES.INVENTORY_EVENTS)) tables.inventoryEvents = db.table(STORES.INVENTORY_EVENTS);
     if (lockedStores.includes(STORES.SEQUENCES)) tables.sequences = db.table(STORES.SEQUENCES);
     if (lockedStores.includes(STORES.COMPANY)) tables.company = db.table(STORES.COMPANY);
+    if (STORES.CAJAS && lockedStores.includes(STORES.CAJAS)) {
+        tables.cajas = db.table(STORES.CAJAS);
+    }
     return tables;
 };
 

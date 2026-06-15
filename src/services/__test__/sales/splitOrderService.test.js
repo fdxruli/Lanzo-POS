@@ -295,6 +295,7 @@ describe('splitOpenTableOrderCore', () => {
     it('correctly splits inventory reservations for N tickets', async () => {
       const parentSale = {
         ...buildParentSale(),
+        total: '600',
         items: [
           {
             id: 'prod-1',

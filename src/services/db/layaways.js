@@ -125,7 +125,9 @@ export const layawayRepository = {
 
                 const layaway = await db.table(STORES.LAYAWAYS).get(layawayId);
                 if (!layaway) throw new Error("Apartado no encontrado");
-                if (layaway.status !== 'active') throw new Error("Solo se pueden cancelar apartados activos");
+                if (layaway.status !== 'active' && layaway.status !== 'ready') {
+                    throw new Error("Solo se pueden cancelar apartados activos o listos para entrega");
+                }
 
                 const productsToSync = new Set();
 
@@ -212,6 +214,9 @@ export const layawayRepository = {
             if (!layaway) throw new Error("Apartado no encontrado");
 
             // Validaciones de negocio
+            if (layaway.status !== 'active' && layaway.status !== 'ready') {
+                throw new Error("Solo se puede entregar un apartado activo o listo.");
+            }
             const pending = layaway.totalAmount - (layaway.paidAmount || 0);
             if (pending > 0.05) throw new Error("El apartado debe estar liquidado para entregar.");
 
@@ -297,7 +302,9 @@ export const layawayRepository = {
             const updates = {
                 paidAmount: newPaidAmount,
                 updatedAt: new Date().toISOString(),
-                status: layaway.status
+                // ✅ FIX: actualizar status a 'ready' cuando queda liquidado,
+                // en lugar de mantener siempre el status anterior.
+                status: isFullyPaid ? 'ready' : layaway.status
             };
 
             const newPayments = [...(layaway.payments || []), {

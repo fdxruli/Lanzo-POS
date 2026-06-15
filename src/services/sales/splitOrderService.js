@@ -471,7 +471,8 @@ const buildChildSaleRecord = ({
     postEffectsCompleted: false,
     splitGroupId,
     splitParentId: parentSale.id,
-    splitLabel: label
+    splitLabel: label,
+    roundingAdjustment: centsToMoneyString(ticketAdjustmentCents)
 });
 
 export const splitOpenTableOrderCore = async ({

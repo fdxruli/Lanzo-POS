@@ -110,8 +110,10 @@ export const scanProductFast = async (barcode) => {
 
     if (availableBatches.length === 0) return product;
 
-    const isFefo = product?.expirationMode === 'STRICT' || product?.expirationMode === 'SHELF_LIFE';
-    const strategy = isFefo ? 'fefo' : 'fifo';
+    const expirationRequiresFefo =
+      product?.expirationMode === 'STRICT' || product?.expirationMode === 'SHELF_LIFE';
+    const configuredStrategy = product?.batchManagement?.selectionStrategy;
+    const strategy = expirationRequiresFefo ? 'fefo' : (configuredStrategy || 'fifo');
     const [selectedBatch] = sortBatchesByStrategy(availableBatches, strategy);
 
     if (!selectedBatch) return product;

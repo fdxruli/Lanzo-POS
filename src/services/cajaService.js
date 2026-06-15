@@ -144,6 +144,7 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
   const movimiento = {
     id: generateID('mov'),
     caja_id: cajaId,
+    cash_session_id: cajaId,
     tipo,
     monto: Money.toExactString(montoSafe),
     concepto: conceptoLimpio,

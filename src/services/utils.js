@@ -459,4 +459,7 @@ export const checkInternetConnection = async () => {
 // 🔒 SEGURIDAD: Re-exportamos la versión robusta de getStableDeviceId desde supabase.js
 // que usa FingerprintJS + reconciliación localStorage/IndexedDB.
 // La versión anterior usaba Math.random() sin respaldo, causando posible desincronización de identidad.
-export { getStableDeviceId } from './supabase';
+export const getStableDeviceId = async (...args) => {
+  const supabaseModule = await import('./supabase');
+  return supabaseModule.getStableDeviceId(...args);
+};

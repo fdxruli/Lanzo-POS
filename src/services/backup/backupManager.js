@@ -6,8 +6,11 @@ import {
   bytesToBase64
 } from './backupFormat';
 import {
+  clearPersistedBackupKey,
   DEFAULT_BACKUP_SETTINGS,
   getBackupSettings,
+  getPersistedBackupKey,
+  savePersistedBackupKey,
   saveBackupSettings
 } from './backupConfigDb';
 import { getBackupTableScope } from './backupScope';
@@ -16,28 +19,71 @@ export const BACKUP_STATUS_EVENT = 'lanzo_backup_manager_status';
 export const BACKUP_ABORT_REASON = 'ABORTED';
 export const BACKUP_WARNING_BLOB_PERF = 'BLOB_PERF_DEGRADED';
 export const BACKUP_PIN_SESSION_KEY = 'lanzo_backup_pin_session';
+export const BACKUP_KEY_SESSION_MARKER = 'lanzo_backup_key_session:v1';
 
-function readSessionPin() {
+function clearLegacySessionPin() {
   try {
-    return sessionStorage.getItem(BACKUP_PIN_SESSION_KEY);
+    sessionStorage.removeItem(BACKUP_PIN_SESSION_KEY);
+  } catch {
+    // La limpieza de la version anterior no debe bloquear la inicializacion.
+  }
+}
+
+function readKeySessionId() {
+  try {
+    return sessionStorage.getItem(BACKUP_KEY_SESSION_MARKER);
   } catch {
     return null;
   }
 }
 
-function persistSessionPin(pin) {
+function createKeySessionId() {
+  return crypto.randomUUID?.()
+    || bytesToBase64(crypto.getRandomValues(new Uint8Array(24)));
+}
+
+function persistKeySessionId(sessionId) {
   try {
-    sessionStorage.setItem(BACKUP_PIN_SESSION_KEY, pin);
+    sessionStorage.setItem(BACKUP_KEY_SESSION_MARKER, sessionId);
+    return true;
   } catch {
-    // El desbloqueo en memoria sigue funcionando cuando sessionStorage no esta disponible.
+    return false;
   }
 }
 
-function clearSessionPin() {
+function clearKeySessionId() {
   try {
-    sessionStorage.removeItem(BACKUP_PIN_SESSION_KEY);
+    sessionStorage.removeItem(BACKUP_KEY_SESSION_MARKER);
   } catch {
-    // El bloqueo en memoria sigue funcionando cuando sessionStorage no esta disponible.
+    // El bloqueo del worker no depende de sessionStorage.
+  }
+}
+
+async function readPersistedKey() {
+  try {
+    return await getPersistedBackupKey();
+  } catch {
+    return null;
+  }
+}
+
+async function persistDerivedKey(keyData) {
+  const sessionId = readKeySessionId() || createKeySessionId();
+  if (!persistKeySessionId(sessionId)) return;
+  try {
+    await savePersistedBackupKey({ ...keyData, sessionId });
+  } catch {
+    clearKeySessionId();
+    // El desbloqueo actual sigue en memoria si el navegador no puede clonar CryptoKey.
+  }
+}
+
+async function clearPersistedKey() {
+  clearKeySessionId();
+  try {
+    await clearPersistedBackupKey();
+  } catch {
+    // El worker se bloquea aunque IndexedDB no este disponible.
   }
 }
 
@@ -73,13 +119,30 @@ class BackupManager {
     this.state.configured = this.settings.configured;
     this.state.initialized = true;
     await this.refreshPermission();
-    const sessionPin = this.state.configured ? readSessionPin() : null;
-    if (sessionPin) {
+    clearLegacySessionPin();
+    const keySessionId = readKeySessionId();
+    const persistedKey = await readPersistedKey();
+    const canResume = this.state.configured
+      && persistedKey
+      && keySessionId
+      && persistedKey.sessionId === keySessionId
+      && persistedKey.verifier === this.settings.verifier
+      && persistedKey.salt === this.settings.salt
+      && persistedKey.iterations === this.settings.iterations;
+    if (canResume) {
       try {
-        await this.unlock(sessionPin);
+        await this.callWorker('resume', {
+          key: persistedKey.key,
+          verifier: persistedKey.verifier,
+          salt: persistedKey.salt,
+          iterations: persistedKey.iterations
+        });
+        this.state.unlocked = true;
       } catch {
-        clearSessionPin();
+        await clearPersistedKey();
       }
+    } else if (persistedKey) {
+      await clearPersistedKey();
     }
     this.emit();
     return this.getStatus();
@@ -251,7 +314,12 @@ class BackupManager {
       });
       this.state.configured = true;
       this.state.unlocked = true;
-      persistSessionPin(pin);
+      await persistDerivedKey({
+        key: result.key,
+        verifier: result.verifier,
+        salt: saltBase64,
+        iterations: BACKUP_ITERATIONS
+      });
       await this.refreshPermission();
       this.emit();
       return this.getStatus();
@@ -269,7 +337,7 @@ class BackupManager {
     await this.initialize();
     if (!this.settings.configured) throw new Error('BACKUP_NOT_CONFIGURED');
     this.validatePin(pin);
-    await this.callWorker('unlock', {
+    const result = await this.callWorker('unlock', {
       pin,
       salt: this.settings.salt,
       iterations: this.settings.iterations,
@@ -277,13 +345,19 @@ class BackupManager {
     });
     this.state.unlocked = true;
     this.state.lastError = '';
-    persistSessionPin(pin);
+    await persistDerivedKey({
+      key: result.key,
+      verifier: result.verifier,
+      salt: this.settings.salt,
+      iterations: this.settings.iterations
+    });
     this.emit();
     return true;
   }
 
   async lock() {
-    clearSessionPin();
+    clearLegacySessionPin();
+    await clearPersistedKey();
     try {
       if (this.worker) await this.callWorker('lock');
     } finally {
@@ -417,7 +491,7 @@ class BackupManager {
   async changePin(currentPin, newPin) {
     this.validatePin(newPin);
     await this.unlock(currentPin);
-    clearSessionPin();
+    await clearPersistedKey();
     if (!this.state.supported || !this.settings.directoryHandle) {
       throw new Error('El recifrado requiere una carpeta compatible configurada.');
     }
@@ -443,8 +517,17 @@ class BackupManager {
         lastError: ''
       });
       this.state.unlocked = true;
-      persistSessionPin(newPin);
-      return result;
+      await persistDerivedKey({
+        key: result.key,
+        verifier: result.verifier,
+        salt: newSalt,
+        iterations: BACKUP_ITERATIONS
+      });
+      return {
+        verifier: result.verifier,
+        files: result.files,
+        lastFileName: result.lastFileName
+      };
     } catch (error) {
       await this.recordFailure(error, true);
       throw error;

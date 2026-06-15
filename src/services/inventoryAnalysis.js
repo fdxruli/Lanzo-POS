@@ -3,6 +3,7 @@ import {
   loadData,
   STORES
 } from './database';
+import { daysBetween } from '../utils/dateUtils';
 import Logger from './Logger';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -26,6 +27,11 @@ const getUrgencyLevel = (daysRemaining) => {
 
 // Actualiza la firma para recibir el nuevo parámetro 'batches'
 export const buildLowStockProductsReport = (products = [], batches = [], options = {}) => {
+  if (!Array.isArray(batches)) {
+    options = batches || {};
+    batches = [];
+  }
+
   const { limit } = options;
 
   // Indexar lotes por ID de producto
@@ -119,10 +125,11 @@ export const buildExpiringProductsReport = ({
     .filter((batch) => Boolean(batch?.alertTargetDate || batch?.expiryDate))
     .map((batch) => {
       const product = productsById.get(batch.productId);
-      const expDate = new Date(batch.alertTargetDate || batch.expiryDate);
-      if (Number.isNaN(expDate.getTime())) return null;
+      const alertIso = batch.alertTargetDate || batch.expiryDate;
+      if (!alertIso) return null;
 
-      const daysRemaining = Math.ceil((expDate - today) / MS_PER_DAY);
+      const todayIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+      const daysRemaining = daysBetween(todayIso, alertIso);
       const productName = product
         ? product.name
         : `Producto Eliminado (${batch.sku || '?'})`;
@@ -187,4 +194,3 @@ export const getExpiringProductsReport = async ({ daysThreshold = 30 } = {}) => 
     return [];
   }
 };
-

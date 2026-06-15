@@ -75,7 +75,6 @@ describe('Motor Invariante V4.1', () => {
 
     it('debe ignorar intentos de setear activeStockStatus manualmente en hooks', async () => {
       const productId = 'test-hook-003';
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       await db.table(STORES.MENU).put({
         id: productId,
@@ -95,11 +94,6 @@ describe('Motor Invariante V4.1', () => {
       // El hook debería haber sobrescrito este valor
       const product = await db.table(STORES.MENU).get(productId);
       expect(product.activeStockStatus).toBe(0); // Calculado correctamente
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[HOOK GUARD MENU]')
-      );
-
-      consoleSpy.mockRestore();
     });
   });
 

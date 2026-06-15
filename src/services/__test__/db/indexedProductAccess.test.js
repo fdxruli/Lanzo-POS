@@ -2,6 +2,7 @@ import Dexie from 'dexie';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { searchProductsInTable } from '../../db/productSearch';
+import { buildProductSearchFields } from '../../db/productSearchIndex';
 
 describe('acceso indexado de productos', () => {
   let testDb;
@@ -12,7 +13,7 @@ describe('acceso indexado de productos', () => {
       IDBKeyRange
     });
     testDb.version(1).stores({
-      menu: 'id, barcode, sku, name_lower, activeStockStatus'
+      menu: 'id, barcode, sku, name_lower, barcode_normalized, sku_normalized, *search_tokens, *search_ngrams, activeStockStatus'
     });
     await testDb.open();
   });
@@ -47,28 +48,45 @@ describe('acceso indexado de productos', () => {
 
   it('encuentra un barcode numerico exacto mediante su indice', async () => {
     await testDb.table('menu').bulkAdd(
-      Array.from({ length: 1000 }, (_, index) => ({
-        id: `p-${index}`,
-        barcode: `750123456${index.toString().padStart(3, '0')}`,
-        sku: `sku-${index}`,
-        name_lower: `product ${index}`,
-        isActive: true
-      }))
+      Array.from({ length: 1000 }, (_, index) => {
+        const product = {
+          id: `p-${index}`,
+          barcode: `750123456${index.toString().padStart(3, '0')}`,
+          sku: `sku-${index}`,
+          name: `product ${index}`,
+          isActive: true
+        };
+        return { ...product, ...buildProductSearchFields(product) };
+      })
     );
 
-    const whereSpy = vi.spyOn(testDb.table('menu'), 'where');
-    const start = performance.now();
-
+    const table = testDb.table('menu');
+    const whereSpy = vi.spyOn(table, 'where');
+    const filterSpy = vi.spyOn(table, 'filter');
     const result = await searchProductsInTable(
-      testDb.table('menu'),
+      table,
       '750123456500',
       'active'
     );
-    const duration = performance.now() - start;
 
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('p-500');
-    expect(whereSpy).toHaveBeenCalledWith('barcode');
-    expect(duration).toBeLessThan(50);
+    expect(whereSpy).toHaveBeenCalledWith('barcode_normalized');
+    expect(filterSpy).not.toHaveBeenCalled();
+  });
+
+  it('resuelve substring con el indice invertido sin recorrer la tabla', async () => {
+    const products = [
+      { id: 'p1', name: 'Tortilla de maiz', barcode: '7788', sku: 'TOR-01', isActive: true },
+      { id: 'p2', name: 'Pan integral', barcode: '3322', sku: 'PAN-01', isActive: true }
+    ].map((product) => ({ ...product, ...buildProductSearchFields(product) }));
+    await testDb.table('menu').bulkAdd(products);
+
+    const table = testDb.table('menu');
+    const filterSpy = vi.spyOn(table, 'filter');
+    const result = await searchProductsInTable(table, 'aiz');
+
+    expect(result.map((product) => product.id)).toEqual(['p1']);
+    expect(filterSpy).not.toHaveBeenCalled();
   });
 });

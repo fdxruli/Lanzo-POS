@@ -6,6 +6,10 @@ const priceCache = new Map();
 
 // 1. NUEVA FUNCIÓN BASE: Devuelve la verdad contable exacta
 export const calculatePricingDetails = (product, quantity) => {
+  if (!product) {
+    return { unitPrice: 0, exactTotal: 0 };
+  }
+
   let batchesSignature = 'no-batches';
   if (product.activeBatches?.length > 0) {
     batchesSignature = '';
@@ -82,11 +86,11 @@ const calculatePricingDetailsLogic = (product, quantity) => {
   let remainingQty = Money.init(quantity);
   let totalPriceAccumulated = Money.init(0);
 
-  const strategy = product.batchManagement?.selectionStrategy || 'fifo';
+  const strategy = String(product.batchManagement?.selectionStrategy || 'fifo').toLowerCase();
   
   // Ordenamiento diferido optimizado (solo en cache-miss y memoizando Date.getTime)
   const sortedBatches = [...product.activeBatches].sort((a, b) => {
-    if (strategy === 'FeFo' && a.expiryDate && b.expiryDate) {
+    if (strategy === 'fefo' && a.expiryDate && b.expiryDate) {
       return (a._expMs || (a._expMs = new Date(a.expiryDate).getTime())) - 
              (b._expMs || (b._expMs = new Date(b.expiryDate).getTime()));
     }
@@ -115,8 +119,7 @@ const calculatePricingDetailsLogic = (product, quantity) => {
   }
 
   // CORRECCIÓN: El redondeo absoluto se hace al final
-  const exactTotal = roundCurrency(totalPriceAccumulated);
-  const finalUnitPrice = roundCurrency(totalPriceAccumulated / quantity);
+  const exactTotal = Money.toNumber(totalPriceAccumulated);
 
   // Verificación de Mayoreo sobre Lotes
   if (product.wholesaleTiers?.length > 0) {

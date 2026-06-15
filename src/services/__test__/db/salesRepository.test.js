@@ -10,7 +10,8 @@ const state = vi.hoisted(() => {
     CUSTOMER_LEDGER: 'customer_ledger',
     INVENTORY_EVENTS: 'inventory_events',
     SEQUENCES: 'sequences',
-    COMPANY: 'company'
+    COMPANY: 'company',
+    CAJAS: 'cajas'
   };
 
   const maps = {
@@ -22,7 +23,8 @@ const state = vi.hoisted(() => {
     [STORES.CUSTOMER_LEDGER]: new Map(),
     [STORES.INVENTORY_EVENTS]: new Map(),
     [STORES.SEQUENCES]: new Map(),
-    [STORES.COMPANY]: new Map()
+    [STORES.COMPANY]: new Map(),
+    [STORES.CAJAS]: new Map()
   };
 
   const reset = () => {
@@ -111,6 +113,11 @@ describe('salesRepository.executeSaleTransaction', () => {
   beforeEach(() => {
     state.reset();
     vi.clearAllMocks();
+    state.maps[state.STORES.CAJAS].set('cash-session-open', {
+      id: 'cash-session-open',
+      estado: 'abierta',
+      fecha_apertura: '2026-06-14T08:00:00.000Z'
+    });
   });
 
   it('mantiene committedStock intacto en retail directo', async () => {
@@ -138,6 +145,9 @@ describe('salesRepository.executeSaleTransaction', () => {
     expect(state.maps[state.STORES.MENU].get('beer')).toMatchObject({
       stock: 7,
       committedStock: 4
+    });
+    expect(state.maps[state.STORES.SALES].get('sale-retail')).toMatchObject({
+      cash_session_id: 'cash-session-open'
     });
   });
 

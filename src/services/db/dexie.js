@@ -4,8 +4,8 @@ import { buildPhoneBuckets, toIndexedPhoneKey } from './customerPhoneUtils';
 import { CUSTOMER_DEBT_SORT_INDEX, normalizeCustomerDebtCents } from './customerDebtIndex';
 import { getLegacyFinancialSaleStatus } from '../sales/financialStats';
 import Logger from '../Logger';
-import { showMessage } from '../../store/useMessageStore';
 import { getLowStockAlertStatus } from './utils';
+import { buildProductSearchFields } from './productSearchIndex';
 // Nota: Dexie maneja el versionado de forma interna y más limpia, 
 // pero importamos DB_NAME para mantener consistencia.
 
@@ -480,6 +480,64 @@ class LanzoDatabase extends Dexie {
           }
         });
       });
+
+      this.version(21).stores({
+        [STORES.MENU]: 'id, createdAt, barcode, name_lower, barcode_normalized, sku_normalized, *search_tokens, *search_ngrams, categoryId, sku, expirationMode, shelfLifeValue, shelfLifeUnit, activeStockStatus, lowStockAlertStatus, [categoryId+activeStockStatus], [id+activeStockStatus]'
+      }).upgrade(async tx => {
+        await tx.table(STORES.MENU).toCollection().modify(record => {
+          Object.assign(record, buildProductSearchFields(record));
+        });
+      });
+
+      this.version(22).stores({
+        [STORES.SALES]: 'id, timestamp, cash_session_id, customerId, fulfillmentStatus, status, orderType, [customerId+timestamp], [cash_session_id+timestamp]',
+        [STORES.MOVIMIENTOS_CAJA]: 'id, caja_id, cash_session_id, fecha, [cash_session_id+fecha]',
+        [STORES.DELETED_SALES]: 'id, deletedAt, cash_session_id, [cash_session_id+deletedAt]'
+      }).upgrade(async tx => {
+        const cajas = await tx.table(STORES.CAJAS).orderBy('fecha_apertura').toArray();
+
+        const findCashSessionId = (timestamp) => {
+          const target = Date.parse(timestamp);
+          if (!Number.isFinite(target)) return null;
+
+          let low = 0;
+          let high = cajas.length - 1;
+          let candidate = null;
+
+          while (low <= high) {
+            const mid = Math.floor((low + high) / 2);
+            const openedAt = Date.parse(cajas[mid]?.fecha_apertura);
+
+            if (!Number.isFinite(openedAt) || openedAt > target) {
+              high = mid - 1;
+            } else {
+              candidate = cajas[mid];
+              low = mid + 1;
+            }
+          }
+
+          if (!candidate) return null;
+          const closedAt = candidate.fecha_cierre ? Date.parse(candidate.fecha_cierre) : Infinity;
+          return target <= closedAt ? candidate.id : null;
+        };
+
+        await tx.table(STORES.SALES).toCollection().modify(record => {
+          if (!record.cash_session_id) {
+            record.cash_session_id = findCashSessionId(record.timestamp);
+          }
+        });
+
+        await tx.table(STORES.MOVIMIENTOS_CAJA).toCollection().modify(record => {
+          record.cash_session_id = record.cash_session_id || record.caja_id || findCashSessionId(record.fecha);
+        });
+
+        await tx.table(STORES.DELETED_SALES).toCollection().modify(record => {
+          record.deletedAt = record.deletedAt || record.deletedTimestamp;
+          if (!record.cash_session_id) {
+            record.cash_session_id = findCashSessionId(record.timestamp || record.deletedAt);
+          }
+        });
+      });
     }
   }
 
@@ -500,6 +558,19 @@ db.table(STORES.CUSTOMERS).hook('updating', (mods, _primaryKey, customer) => {
   };
 });
 
+db.table(STORES.MOVIMIENTOS_CAJA).hook('creating', (_primaryKey, movement) => {
+  movement.cash_session_id = movement.cash_session_id || movement.caja_id;
+});
+
+db.table(STORES.MOVIMIENTOS_CAJA).hook('updating', (mods, _primaryKey, movement) => {
+  if (Object.prototype.hasOwnProperty.call(mods, 'cash_session_id')) {
+    return undefined;
+  }
+
+  const cashSessionId = mods.caja_id || movement?.cash_session_id || movement?.caja_id;
+  return cashSessionId ? { cash_session_id: cashSessionId } : undefined;
+});
+
 // ============================================================
 // HOOKS DE MOTOR INVARIANTE - FASE 1
 // Garantizan coherencia estructural en el motor de base de datos
@@ -515,6 +586,7 @@ db.table(STORES.MENU).hook('creating', function (primKey, obj, transaction) {
   const hasStock = Number(obj.stock) > 0;
   obj.activeStockStatus = (isActive && hasStock) ? 1 : 0;
   obj.lowStockAlertStatus = getLowStockAlertStatus(obj);
+  Object.assign(obj, buildProductSearchFields(obj));
 });
 
 /**
@@ -545,6 +617,8 @@ db.table(STORES.MENU).hook('updating', function (modifications, primKey, obj, tr
   }
 
   modifications.lowStockAlertStatus = getLowStockAlertStatus(nextState);
+  Object.assign(modifications, buildProductSearchFields(nextState));
+  return modifications;
 });
 
 /**
@@ -596,6 +670,8 @@ db.table(STORES.PRODUCT_BATCHES).hook('updating', function (modifications, primK
   if (modifications.expiryDate !== undefined && modifications.alertTargetDate === undefined) {
     modifications.alertTargetDate = modifications.expiryDate;
   }
+
+  return modifications;
 });
 
 // Variable de control para evitar múltiples invocaciones si Dexie emite el evento en ráfaga
@@ -615,9 +691,9 @@ db.on('blocked', () => {
     window.location.reload();
   };
 
-  const dispatchUIModal = () => {
+  const dispatchUIModal = async () => {
     try {
-      // Reemplaza showMessageModal por showMessage
+      const { showMessage } = await import('../../store/useMessageStore');
       showMessage(msg, onConfirmAction, { type: 'error' });
     } catch (error) {
       Logger.error('Fallo en la invocación del store Zustand/UI:', error);

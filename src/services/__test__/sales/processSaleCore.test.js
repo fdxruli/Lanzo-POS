@@ -52,7 +52,10 @@ const makeDeps = (overrides = {}) => {
         useStatsStore: { getState: () => ({ updateStatsForNewSale }) },
         roundCurrency: (value) => Math.round(value * 100) / 100,
         sendReceiptWhatsApp: vi.fn(async () => true),
-        calculatePricingDetails: vi.fn(() => 10),
+        calculatePricingDetails: vi.fn((_product, quantity) => ({
+            unitPrice: 10,
+            exactTotal: 10 * quantity
+        })),
         Logger: {
             time: vi.fn(),
             timeEnd: vi.fn(),

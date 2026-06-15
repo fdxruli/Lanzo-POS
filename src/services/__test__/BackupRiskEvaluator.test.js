@@ -1,18 +1,19 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useBackupRiskStore, evaluator, LEVEL_1_THRESHOLD, LEVEL_2_THRESHOLD, LEVEL_3_THRESHOLD } from '../BackupRiskEvaluator';
 import { db, STORES } from '../db/dexie';
 
 // Mock de dexie y localStorage
-jest.mock('../db/dexie', () => ({
+vi.mock('../db/dexie', () => ({
   STORES: { SALES: 'sales', MENU: 'menu', CUSTOMERS: 'customers' },
   db: {
-    table: jest.fn()
+    table: vi.fn()
   }
 }));
 
 describe('BackupRiskEvaluator', () => {
   beforeEach(() => {
     localStorage.clear();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     useBackupRiskStore.setState({ isCalculating: false, riskLevel: 0, totalMutations: 0, lastBackupCount: 0 });
   });
 

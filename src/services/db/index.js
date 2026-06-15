@@ -116,9 +116,9 @@ export const executeSplitOpenTableOrderTransactionSafe = (payload) =>
     safeExecute(() => salesRepository.executeSplitOpenTableOrderTransaction(payload));
 
 export const layawayRepo = {
-    create: (data, initial) => safeExecute(() => layawayRepository.create(data, initial)),
+    create: (data, initial, cajaId) => safeExecute(() => layawayRepository.create(data, initial, cajaId)),
     getByCustomer: (custId, active) => safeExecute(() => layawayRepository.getByCustomer(custId, active)),
-    addPayment: (id, amount) => safeExecute(() => layawayRepository.addPayment(id, amount)),
+    addPayment: (id, amount, cajaId) => safeExecute(() => layawayRepository.addPayment(id, amount, cajaId)),
     getById: (id) => safeExecute(() => layawayRepository.getById(id))
 };
 

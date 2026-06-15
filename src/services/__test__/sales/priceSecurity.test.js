@@ -13,7 +13,10 @@ describe('normalizeAndValidatePricing', () => {
         }));
 
         const queryBatchesByProductIdAndActive = vi.fn(async () => []);
-        const calculateCompositePrice = vi.fn(() => 10);
+        const calculatePricingDetails = vi.fn((_product, quantity) => ({
+            unitPrice: 10,
+            exactTotal: 10 * quantity
+        }));
         const Logger = { warn: vi.fn() };
 
         await normalizeAndValidatePricing({
@@ -22,7 +25,7 @@ describe('normalizeAndValidatePricing', () => {
             loadData,
             queryBatchesByProductIdAndActive,
             STORES: { MENU: 'menu' },
-            calculateCompositePrice,
+            calculatePricingDetails,
             Logger
         });
 
@@ -42,7 +45,10 @@ describe('normalizeAndValidatePricing', () => {
         }));
 
         const queryBatchesByProductIdAndActive = vi.fn(async () => []);
-        const calculateCompositePrice = vi.fn(() => 10);
+        const calculatePricingDetails = vi.fn((_product, quantity) => ({
+            unitPrice: 10,
+            exactTotal: 10 * quantity
+        }));
         const Logger = { warn: vi.fn() };
 
         await expect(normalizeAndValidatePricing({
@@ -51,7 +57,7 @@ describe('normalizeAndValidatePricing', () => {
             loadData,
             queryBatchesByProductIdAndActive,
             STORES: { MENU: 'menu' },
-            calculateCompositePrice,
+            calculatePricingDetails,
             Logger
         })).rejects.toThrow('ALERTA DE SEGURIDAD CRÍTICA');
 

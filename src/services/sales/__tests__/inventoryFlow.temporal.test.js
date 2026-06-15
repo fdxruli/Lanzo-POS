@@ -7,6 +7,8 @@
  * 3. getSortedBatchesForProduct maneja fechas inválidas gracefulmente
  */
 
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { withUnifiedTimestamp } from '../../../utils/dateUtils';
 import { 
     commitStock, 
     releaseCommittedStock, 
@@ -14,11 +16,11 @@ import {
 } from '../inventoryFlow';
 
 // Mock de dateUtils para controlar timestamps
-jest.mock('../../utils/dateUtils', () => ({
-    ...jest.requireActual('../../utils/dateUtils'),
-    getOperationTimestamp: jest.fn(),
-    withUnifiedTimestamp: jest.fn((fn) => fn('2024-01-15T10:30:00.000Z')),
-    parseDateStrict: jest.fn((value) => {
+vi.mock('../../../utils/dateUtils', async (importOriginal) => ({
+    ...(await importOriginal()),
+    getOperationTimestamp: vi.fn(),
+    withUnifiedTimestamp: vi.fn((fn) => fn('2024-01-15T10:30:00.000Z')),
+    parseDateStrict: vi.fn((value) => {
         if (!value) return null;
         if (value === 'fecha-invalida') return null;
         const date = new Date(value);
@@ -28,21 +30,21 @@ jest.mock('../../utils/dateUtils', () => ({
 
 describe('inventoryFlow - Sistema Temporal Determinista', () => {
     const mockDb = {
-        table: jest.fn(() => ({
-            bulkGet: jest.fn(),
-            get: jest.fn(),
-            put: jest.fn(),
-            bulkPut: jest.fn(),
-            where: jest.fn(() => ({
-                equals: jest.fn(() => ({
-                    toArray: jest.fn()
+        table: vi.fn(() => ({
+            bulkGet: vi.fn(),
+            get: vi.fn(),
+            put: vi.fn(),
+            bulkPut: vi.fn(),
+            where: vi.fn(() => ({
+                equals: vi.fn(() => ({
+                    toArray: vi.fn()
                 })),
-                anyOf: jest.fn(() => ({
-                    toArray: jest.fn()
+                anyOf: vi.fn(() => ({
+                    toArray: vi.fn()
                 }))
             }))
         })),
-        transaction: jest.fn((mode, stores, fn) => fn())
+        transaction: vi.fn((mode, stores, fn) => fn())
     };
 
     const STORES = {
@@ -51,7 +53,7 @@ describe('inventoryFlow - Sistema Temporal Determinista', () => {
     };
 
     beforeEach(() => {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     describe('getSortedBatchesForProduct - Parseo Estricto FEFO', () => {
@@ -138,19 +140,19 @@ describe('inventoryFlow - Sistema Temporal Determinista', () => {
             mockDb.table.mockImplementation((storeName) => {
                 if (storeName === STORES.MENU) {
                     return {
-                        bulkGet: jest.fn().mockResolvedValue([mockProduct]),
-                        get: jest.fn().mockResolvedValue(mockProduct),
-                        put: jest.fn().mockResolvedValue(undefined)
+                        bulkGet: vi.fn().mockResolvedValue([mockProduct]),
+                        get: vi.fn().mockResolvedValue(mockProduct),
+                        put: vi.fn().mockResolvedValue(undefined)
                     };
                 }
                 if (storeName === STORES.PRODUCT_BATCHES) {
                     return {
-                        where: jest.fn(() => ({
-                            equals: jest.fn(() => ({
-                                toArray: jest.fn().mockResolvedValue([mockBatch])
+                        where: vi.fn(() => ({
+                            equals: vi.fn(() => ({
+                                toArray: vi.fn().mockResolvedValue([mockBatch])
                             }))
                         })),
-                        bulkPut: jest.fn().mockResolvedValue(undefined)
+                        bulkPut: vi.fn().mockResolvedValue(undefined)
                     };
                 }
                 return {};
@@ -164,13 +166,13 @@ describe('inventoryFlow - Sistema Temporal Determinista', () => {
 
             // Mock para capturar los timestamps usados
             const capturedTimestamps = [];
-            const originalBulkPut = jest.fn();
+            const originalBulkPut = vi.fn();
             
-            mockDb.table = jest.fn((storeName) => {
+            mockDb.table = vi.fn((storeName) => {
                 const table = {
-                    bulkGet: jest.fn().mockResolvedValue([mockProduct]),
-                    get: jest.fn().mockResolvedValue(mockProduct),
-                    bulkPut: jest.fn((items) => {
+                    bulkGet: vi.fn().mockResolvedValue([mockProduct]),
+                    get: vi.fn().mockResolvedValue(mockProduct),
+                    bulkPut: vi.fn((items) => {
                         items.forEach(item => {
                             if (item.updatedAt) capturedTimestamps.push(item.updatedAt);
                         });
@@ -187,15 +189,12 @@ describe('inventoryFlow - Sistema Temporal Determinista', () => {
             }
 
             // Verificar que withUnifiedTimestamp fue llamado
-            const { withUnifiedTimestamp } = require('../../utils/dateUtils');
             expect(withUnifiedTimestamp).toHaveBeenCalled();
         });
     });
 
     describe('releaseCommittedStock - Timestamp Unificado', () => {
         it('debe usar timestamp unificado al liberar stock comprometido', async () => {
-            const { withUnifiedTimestamp } = require('../../utils/dateUtils');
-            
             const items = [{
                 id: 'item-1',
                 parentId: 'prod-1',

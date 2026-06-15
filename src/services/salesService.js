@@ -1,24 +1,24 @@
 import {
     db,
     loadData,
-    recycleData,
     saveData,
-    saveDataSafe,
     STORES,
     queryBatchesByProductIdAndActive,
     queryByIndex,
     executeSaleTransactionSafe,
     executeSplitOpenTableOrderTransactionSafe,
-    loadMultipleData
+    loadMultipleData,
+    productsRepository
 } from './database';
 import { useStatsStore } from '../store/useStatsStore';
-import { roundCurrency, sendWhatsAppMessage } from './utils';
+import { generateID, roundCurrency, sendWhatsAppMessage } from './utils';
 import { calculatePricingDetails } from './pricingLogic';
 import Logger from './Logger';
 import { processSaleCore } from './sales/processSaleCore';
 import { splitOpenTableOrderCore } from './sales/splitOrderService';
 import { sendReceiptWhatsApp as sendReceiptWhatsAppBase } from './sales/receiptWhatsApp';
 import { cancelSaleCore } from './sales/cancelSaleCore';
+import { restoreDeletedSaleCore } from './sales/restoreDeletedSaleCore';
 
 export { updateDailyStats, getFastDashboardStats } from './sales/statsService';
 
@@ -134,21 +134,29 @@ export const splitOpenTableOrder = async (params, maxRetries = 3) => {
 export const cancelSale = async ({
     timestamp,
     restoreStock = false,
-    currentSales = []
+    currentSales = [],
+    dispositionPlan = null,
+    reason = '',
+    cancelledBy = 'local-user',
+    allowWaste = false
 }) => {
     const result = await cancelSaleCore(
         {
             saleTimestamp: timestamp,
             restoreStock,
-            currentSales
+            currentSales,
+            dispositionPlan,
+            reason,
+            cancelledBy,
+            allowWaste
         },
         {
-            loadData,
-            saveDataSafe,
-            recycleData,
             STORES,
             db,
-            Logger
+            Logger,
+            generateId: generateID,
+            restoreStockFromCancellation: (items) =>
+                productsRepository.restoreStockFromCancellation(items)
         }
     );
 
@@ -164,4 +172,68 @@ export const cancelSale = async ({
     }
 
     return result;
+};
+
+export const restoreDeletedSale = async (saleId) => {
+    const result = await restoreDeletedSaleCore(
+        { saleId },
+        {
+            db,
+            STORES,
+            Logger,
+            generateId: generateID,
+            reapplyStockFromCancellation: (items) =>
+                productsRepository.reapplyStockFromCancellation(items)
+        }
+    );
+
+    if (result.success) {
+        try {
+            await useStatsStore.getState().rebuildFinancialStats();
+        } catch (error) {
+            Logger.warn('La venta se restauro, pero no se pudieron reconstruir las metricas.', error);
+        }
+    }
+
+    return result;
+};
+
+export const moveCancelledSaleToTrash = async (saleId) => {
+    try {
+        await db.transaction(
+            'rw',
+            [STORES.SALES, STORES.DELETED_SALES],
+            async () => {
+                const sale = await db.table(STORES.SALES).get(saleId);
+                if (!sale) {
+                    const error = new Error('La venta ya no existe en el historial.');
+                    error.code = 'NOT_FOUND';
+                    throw error;
+                }
+                if (sale.status !== 'cancelled') {
+                    const error = new Error('Solo las ventas canceladas pueden moverse a papelera.');
+                    error.code = 'NOT_CANCELLED';
+                    throw error;
+                }
+
+                const deletedAt = new Date().toISOString();
+                await db.table(STORES.DELETED_SALES).put({
+                    ...sale,
+                    deletedAt,
+                    deletedTimestamp: deletedAt,
+                    deletedReason: 'Venta cancelada archivada',
+                    originalStore: STORES.SALES
+                });
+                await db.table(STORES.SALES).delete(sale.id);
+            }
+        );
+        return { success: true, code: 'MOVED_TO_TRASH', saleId };
+    } catch (error) {
+        Logger.error('Error moviendo venta cancelada a papelera:', error);
+        return {
+            success: false,
+            code: error?.code || 'TRASH_FAILED',
+            message: error?.message || 'No se pudo mover la venta a papelera.'
+        };
+    }
 };
