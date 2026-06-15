@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { compressImage } from '../../services/utils';
 import Logger from '../../services/Logger';
 // Se importaron nuevos iconos de lucide-react (Store, Phone, MapPin, Image, Sun, Moon, Monitor)
-import { Lock, Info, FileText, Bot, Bell, Store, Phone, MapPin, Image as ImageIcon, Sun, Moon, Monitor } from 'lucide-react';
+import { Lock, Info, FileText, Bot, Bell, Store, Phone, MapPin, Image as ImageIcon, Sun, Moon, Monitor, ShieldCheck } from 'lucide-react';
 import TermsAndConditionsModal from '../common/TermsAndConditionsModal';
+import { CASH_OPENING_POLICY } from '../../services/cashOpeningPolicyService.js';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -32,6 +33,8 @@ export default function GeneralSettings() {
 
   const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
   const setEnableMultipleOrders = useAppStore((state) => state.setEnableMultipleOrders);
+  const cashOpeningPolicy = useAppStore((state) => state.cashOpeningPolicy);
+  const setCashOpeningPolicy = useAppStore((state) => state.setCashOpeningPolicy);
   
   const activeOrdersCount = useActiveOrders((state) => state.activeOrders.size);
 
@@ -584,6 +587,91 @@ export default function GeneralSettings() {
             <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Términos y Condiciones de Uso</span>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Consulta nuestras políticas de manejo de datos y privacidad.</span>
           </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+        <h3 className="subtitle">Política de Caja</h3>
+
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '16px',
+          padding: '12px',
+          backgroundColor: 'var(--bg-light)',
+          borderRadius: '8px',
+          border: '1px solid var(--border-color)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <div style={{
+              backgroundColor: cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? '#FFF5D6' : '#E6FFFA',
+              padding: '8px',
+              borderRadius: '50%',
+              color: cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? '#A36A00' : '#087F61'
+            }}>
+              <ShieldCheck size={24} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
+                Autoapertura de caja
+              </span>
+              <p>
+                Desactivada, exige fondo confirmado, conteo físico y empleado responsable en cada turno.
+              </p>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                {cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC
+                  ? 'Activa: el sistema heredará el fondo y registrará al sistema como responsable.'
+                  : 'Recomendada: ninguna caja se abre sin confirmación del operador.'}
+              </span>
+            </div>
+          </div>
+
+          <label style={{
+            position: 'relative',
+            display: 'inline-block',
+            width: '50px',
+            height: '26px',
+            cursor: 'pointer',
+            flexShrink: 0,
+            userSelect: 'none'
+          }}>
+            <input
+              type="checkbox"
+              checked={cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC}
+              onChange={(event) => setCashOpeningPolicy(
+                event.target.checked
+                  ? CASH_OPENING_POLICY.AUTOMATIC
+                  : CASH_OPENING_POLICY.MANUAL
+              )}
+              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+              aria-label="Permitir autoapertura de caja"
+            />
+            <span style={{
+              position: 'absolute',
+              cursor: 'pointer',
+              inset: 0,
+              backgroundColor: cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC
+                ? 'var(--warning-color)'
+                : '#CBD5E0',
+              transition: 'background-color .4s',
+              borderRadius: '34px'
+            }} />
+            <span style={{
+              position: 'absolute',
+              height: '20px',
+              width: '20px',
+              left: '3px',
+              bottom: '3px',
+              backgroundColor: 'white',
+              transition: 'transform .4s',
+              borderRadius: '50%',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              transform: cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC
+                ? 'translateX(24px)'
+                : 'translateX(0)'
+            }} />
+          </label>
         </div>
       </div>
 
