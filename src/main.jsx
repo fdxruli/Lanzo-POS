@@ -6,6 +6,7 @@ import App from './App.jsx';
 import './index.css';
 import { storageManager } from './services/storageManager';
 import Logger from './services/Logger';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 const router = createBrowserRouter([
   {
@@ -52,7 +53,9 @@ const router = createBrowserRouter([
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
-        <RouterProvider router={router} />
+        <ErrorBoundary>
+          <RouterProvider router={router} />
+        </ErrorBoundary>
       </GoogleOAuthProvider>
     </React.StrictMode>
   );

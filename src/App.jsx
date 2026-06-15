@@ -105,6 +105,10 @@ const PageLoader = () => (
 );
 
 function App() {
+  if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) {
+    throw new Error("Faltan las variables de entorno de Supabase (VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY). Revisa la configuración de Vercel.");
+  }
+
   const isDuplicate = useSingleInstance();
   const appStatus = useAppStore((state) => state.appStatus);
   const initializeApp = useAppStore((state) => state.initializeApp);
