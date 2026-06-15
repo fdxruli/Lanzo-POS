@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint src/**/*.{js,jsx}",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "test:ci": "vitest run --maxWorkers=4"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.0.1",
