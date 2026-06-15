@@ -1,17 +1,31 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, useRouteError } from 'react-router-dom';
 import App from './App.jsx';
 import './index.css';
 import { storageManager } from './services/storageManager';
 import Logger from './services/Logger';
 import ErrorBoundary from './components/common/ErrorBoundary';
 
+function Thrower({ error }) {
+  throw error;
+}
+
+function RouteErrorFallback() {
+  const error = useRouteError();
+  return (
+    <ErrorBoundary>
+      <Thrower error={error} />
+    </ErrorBoundary>
+  );
+}
+
 const router = createBrowserRouter([
   {
     path: '*',
-    element: <App />
+    element: <App />,
+    errorElement: <RouteErrorFallback />
   }
 ]);
 
