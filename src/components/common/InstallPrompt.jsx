@@ -108,14 +108,6 @@ const InstallPrompt = () => {
     };
   }, [markInstalled, setDeferredPrompt, setInstallContext]);
 
-  // 🔧 NUEVA FUNCIONALIDAD: Resetear "dismissado" cuando vuelve a ser instalable
-  useEffect(() => {
-    // Si cambió de NO instalable a instalable, limpiar el flag de dismissado
-    if (isInstallable && !prevIsInstallableRef.current) {
-      localStorage.removeItem('lanzo_install_dismissed');
-    }
-    prevIsInstallableRef.current = isInstallable;
-  }, [isInstallable]);
 
   // Verificamos si el usuario ya decidió ocultar el banner en este dispositivo
   const isDismissed = localStorage.getItem('lanzo_install_dismissed') === 'true';

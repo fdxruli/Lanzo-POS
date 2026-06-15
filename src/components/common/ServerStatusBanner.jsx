@@ -3,7 +3,9 @@ import { useAppStore } from '../../store/useAppStore';
 import './ServerStatusBanner.css';
 
 const ServerStatusBanner = () => {
-  const { serverHealth, serverMessage, dismissServerAlert } = useAppStore();
+  const serverHealth = useAppStore((state) => state.serverHealth);
+  const serverMessage = useAppStore((state) => state.serverMessage);
+  const dismissServerAlert = useAppStore((state) => state.dismissServerAlert);
   const autoCloseRef = useRef(null);
 
   useEffect(() => {

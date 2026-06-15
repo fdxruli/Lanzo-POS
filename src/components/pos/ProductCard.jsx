@@ -81,16 +81,17 @@ const BADGE_DEFINITIONS = [
     Icon: Layers,
     className: 'product-badge product-badge--variant',
     label: 'Variantes',
-    title: 'Tiene Variantes / Lotes',
-    ariaLabel: 'Este producto se vende en variantes o lotes',
+    title: 'Tiene Variantes',
+    ariaLabel: 'Este producto se vende en variantes',
     /**
      * Solo se evalúa si hasVariants está activo.
      * Si el rubro no maneja caducidad (hasExpiry falso) se ignoran
      * esos campos aunque batchManagement los tenga.
      */
-    condition: (features, product) =>
+    condition: (features, product, context) =>
       features?.hasVariants === true &&
-      product?.batchManagement?.enabled === true,
+      product?.batchManagement?.enabled === true &&
+      context?.hasAvailableVariants === true,
   },
 ];
 
@@ -125,9 +126,9 @@ const formatExpiryDate = (value) => {
  * @param {boolean} suppress - Si true (producto agotado), no muestra ningún badge
  * @returns {Array<{key, Icon, className, title, ariaLabel}>}
  */
-function buildBadgeDescriptors(features, product, suppress) {
+function buildBadgeDescriptors(features, product, suppress, context = {}) {
   if (suppress) return [];
-  return BADGE_DEFINITIONS.filter(({ condition }) => condition(features, product));
+  return BADGE_DEFINITIONS.filter(({ condition }) => condition(features, product, context));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,7 +204,13 @@ function resolveFooterState({
 // COMPONENTE
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ProductCard = memo(function ProductCard({ product, features, onCardClick }) {
+const ProductCard = memo(function ProductCard({
+  product,
+  features,
+  onCardClick,
+  isLoadingVariant,
+  hasAvailableVariants
+}) {
   // ── Lógica de negocio visual ──────────────────────────────────────────────
   const isRecipeBased = Array.isArray(product?.recipe) && product.recipe.length > 0;
 
@@ -225,8 +232,8 @@ const ProductCard = memo(function ProductCard({ product, features, onCardClick }
 
   // ── Fábrica de badges (Zona 2) ────────────────────────────────────────────
   const badgeDescriptors = useMemo(
-    () => buildBadgeDescriptors(features, product, isOutOfStock),
-    [features, product, isOutOfStock]
+    () => buildBadgeDescriptors(features, product, isOutOfStock, { hasAvailableVariants }),
+    [features, product, isOutOfStock, hasAvailableVariants]
   );
   const productLabels = useMemo(() => {
     const labels = [...badgeDescriptors];
@@ -269,11 +276,12 @@ const ProductCard = memo(function ProductCard({ product, features, onCardClick }
     }
   }, [isOutOfStock, onCardClick, product]);
 
-  // ── Clases dinámicas ─────────────────────────────────────────────────────
+  // ── Clases dinámicas ───────────────────────────────────────────────────────────────────
   const cardClasses = useMemo(() => [
     'product-card',
     isOutOfStock ? 'product-card--out-of-stock' : '',
-  ].filter(Boolean).join(' '), [isOutOfStock]);
+    isLoadingVariant ? 'product-card--loading-variant' : '',
+  ].filter(Boolean).join(' '), [isOutOfStock, isLoadingVariant]);
 
   const footerClasses = useMemo(() => [
     'product-card__footer',
@@ -303,6 +311,13 @@ const ProductCard = memo(function ProductCard({ product, features, onCardClick }
         {isOutOfStock && (
           <div className="product-card__out-of-stock-overlay">
             <span>Agotado</span>
+          </div>
+        )}
+
+        {/* Overlay de carga de variantes */}
+        {isLoadingVariant && (
+          <div className="product-card__loading-overlay" aria-label="Cargando variantes...">
+            <div className="product-card__loading-spinner" />
           </div>
         )}
       </div>
@@ -359,6 +374,8 @@ export default memo(ProductCard, (prevProps, nextProps) => {
   return (
     prevProps.product === nextProps.product &&
     prevProps.onCardClick === nextProps.onCardClick &&
+    prevProps.isLoadingVariant === nextProps.isLoadingVariant &&
+    prevProps.hasAvailableVariants === nextProps.hasAvailableVariants &&
     prevProps.features?.hasLabFields === nextProps.features?.hasLabFields &&
     prevProps.features?.hasModifiers === nextProps.features?.hasModifiers &&
     prevProps.features?.hasVariants === nextProps.features?.hasVariants &&

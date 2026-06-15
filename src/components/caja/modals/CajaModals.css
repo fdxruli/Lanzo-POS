@@ -417,6 +417,126 @@
   transform: none;
 }
 
+/* Cash opening form shared by Caja and POS checkout */
+.cash-opening-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.cash-opening-reference {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem;
+  color: var(--text-light);
+  background: var(--caja-modal-blue-soft, rgba(59, 130, 246, 0.1));
+  border: 1px solid color-mix(in srgb, var(--primary-color) 18%, transparent);
+  border-radius: 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.cash-opening-reference strong {
+  color: var(--primary-color);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-opening-fields {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.cash-opening-fields > label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--text-dark);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.cash-opening-input {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 48px;
+  padding: 0 0.85rem;
+  color: var(--text-light);
+  background: var(--light-background);
+  border: 1px solid transparent;
+  border-radius: 11px;
+}
+
+.cash-opening-input:focus-within {
+  background: var(--card-background-color);
+  border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 13%, transparent);
+}
+
+.cash-opening-input input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0.7rem 0;
+  color: var(--text-dark);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  outline: 0;
+}
+
+.cash-opening-input--money > span,
+.cash-opening-input--money input {
+  font-size: 1.05rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-opening-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.8rem;
+  color: #087f61;
+  background: var(--caja-modal-success-soft, rgba(0, 196, 140, 0.11));
+  border: 1px solid rgba(0, 196, 140, 0.2);
+  border-radius: 11px;
+}
+
+.cash-opening-notice svg {
+  flex: 0 0 auto;
+  margin-top: 0.05rem;
+}
+
+.cash-opening-notice p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.cash-opening-notice--warning {
+  color: #8a5a00;
+  background: var(--caja-modal-warning-soft, rgba(255, 184, 0, 0.13));
+  border-color: rgba(255, 184, 0, 0.22);
+}
+
+.cash-opening-error {
+  margin: 0;
+  padding: 0.75rem;
+  color: #b51f3d;
+  background: var(--caja-modal-error-soft, rgba(255, 59, 92, 0.11));
+  border-radius: 10px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.cash-opening-actions {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.55rem;
+}
+
 /* Statistical summary */
 .caja-summary {
   display: grid;
@@ -605,6 +725,23 @@
 
   .caja-modal__actions .caja-modal__button {
     min-width: 130px;
+  }
+
+  .cash-opening-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cash-opening-fields > label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .cash-opening-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .cash-opening-actions .caja-modal__button {
+    min-width: 150px;
   }
 }
 

@@ -11,16 +11,69 @@ import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 
+const ActiveOrderControls = () => {
+    const activeOrders = useActiveOrders((state) => state.activeOrders);
+    const currentOrderId = useActiveOrders((state) => state.currentOrderId);
+    const createOrder = useActiveOrders((state) => state.createOrder);
+    const switchOrder = useActiveOrders((state) => state.switchOrder);
+    const cancelOrder = useActiveOrders((state) => state.cancelOrder);
+    const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
+    const [isPausing, setIsPausing] = useState(false);
+
+    const handleCreateOrder = (name) => {
+        createOrder(null, name || null);
+    };
+
+    const handleDeleteOrder = async (id) => {
+        try {
+            setIsPausing(true);
+            await cancelOrder(id);
+        } catch (error) {
+            console.error('Error eliminando orden:', error);
+            alert(error.message || 'Error al eliminar la orden');
+        } finally {
+            setIsPausing(false);
+        }
+    };
+
+    const ordersCount = activeOrders.size;
+
+    return (
+        <>
+            {ordersCount === 0 && (
+                <div style={{ padding: '12px', background: '#fff3cd', color: '#856404', textAlign: 'center' }}>
+                    <span>No hay órdenes activas.</span>
+                    <button
+                        onClick={() => handleCreateOrder()}
+                        style={{ marginLeft: '12px', padding: '4px 12px', background: 'var(--primary-color, #2e7d32)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                        + Crear Orden
+                    </button>
+                </div>
+            )}
+
+            {ordersCount >= 1 && enableMultipleOrders && (
+                <OrderTabs
+                    activeOrders={activeOrders}
+                    currentOrderId={currentOrderId}
+                    isPausing={isPausing}
+                    onSwitchOrder={switchOrder}
+                    onCreateOrder={handleCreateOrder}
+                    onDeleteOrder={handleDeleteOrder}
+                />
+            )}
+        </>
+    );
+};
+
 /**
  * Contenido principal de la página POS.
  * Componente "tonto" que recibe todas las props y renderiza.
  * Separamos esto del wrapper para facilitar testing y memoización.
  */
 const PosPageContent = ({ data, ui, actions, features }) => {
-    const activeOrdersState = useActiveOrders();
-    const { activeOrders, currentOrderId, createOrder, switchOrder, cancelOrder, loadOrdersFromDB } = activeOrdersState;
-    const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
-    const [isPausing, setIsPausing] = useState(false);
+    const createOrder = useActiveOrders((state) => state.createOrder);
+    const loadOrdersFromDB = useActiveOrders((state) => state.loadOrdersFromDB);
     const [isInitializing, setIsInitializing] = useState(true);
 
     // EFECTO 1: Inicializar órdenes desde BD al montar
@@ -44,26 +97,6 @@ const PosPageContent = ({ data, ui, actions, features }) => {
         initializeOrders();
     }, [createOrder, loadOrdersFromDB]);
 
-    const handleSwitchOrder = (id) => {
-        switchOrder(id);
-    };
-
-    const handleCreateOrder = (name) => {
-        createOrder(null, name || null);
-    };
-
-    const handleDeleteOrder = async (id) => {
-        try {
-            setIsPausing(true);
-            await cancelOrder(id);
-        } catch (error) {
-            console.error('Error eliminando orden:', error);
-            alert(error.message || 'Error al eliminar la orden');
-        } finally {
-            setIsPausing(false);
-        }
-    };
-
     // Mostrar cargando mientras se inicializa
     if (isInitializing) {
         return (
@@ -73,34 +106,12 @@ const PosPageContent = ({ data, ui, actions, features }) => {
         );
     }
 
-    const ordersCount = activeOrders.size;
     const openTablesShortcutTotal = data.activeTablesCount + data.kitchenRejectedOpenCount;
     const hasMobileFloatingBar = (features.hasTables && openTablesShortcutTotal > 0) || data.totalItemsCount > 0;
 
     return (
         <>
-            {!features.hasTables && ordersCount === 0 && (
-                <div style={{ padding: '12px', background: '#fff3cd', color: '#856404', textAlign: 'center' }}>
-                    <span>No hay órdenes activas.</span>
-                    <button
-                        onClick={() => handleCreateOrder()}
-                        style={{ marginLeft: '12px', padding: '4px 12px', background: 'var(--primary-color, #2e7d32)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                    >
-                        + Crear Orden
-                    </button>
-                </div>
-            )}
-
-            {!features.hasTables && ordersCount >= 1 && enableMultipleOrders && (
-                <OrderTabs
-                    activeOrders={activeOrders}
-                    currentOrderId={currentOrderId}
-                    isPausing={isPausing}
-                    onSwitchOrder={handleSwitchOrder}
-                    onCreateOrder={handleCreateOrder}
-                    onDeleteOrder={handleDeleteOrder}
-                />
-            )}
+            {!features.hasTables && <ActiveOrderControls />}
 
             {/* Layout principal */}
             <div className={`pos-page-layout${hasMobileFloatingBar ? ' pos-page-layout--with-floating-bar' : ''}`}>
@@ -180,6 +191,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                     customer: data.customer,
                     prescriptionItems: data.prescriptionItems,
                     cajaActual: data.cajaActual,
+                    aperturaPendiente: data.aperturaPendiente,
                     activeOrderId: data.activeOrderId,
                     features
                 }}
@@ -206,6 +218,9 @@ PosPageContent.propTypes = {
         customer: PropTypes.object,
         prescriptionItems: PropTypes.array.isRequired,
         cajaActual: PropTypes.object,
+        aperturaPendiente: PropTypes.shape({
+            montoSugerido: PropTypes.string
+        }),
         activeOrderId: PropTypes.string
     }).isRequired,
     ui: PropTypes.shape({

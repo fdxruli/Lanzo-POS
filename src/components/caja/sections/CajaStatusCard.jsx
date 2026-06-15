@@ -84,6 +84,11 @@ const CajaStatusCard = ({
               <Clock3 size={14} aria-hidden="true" />
               Inicio: {cajaActual?.fecha_apertura ? new Date(cajaActual.fecha_apertura).toLocaleString() : '...'}
             </span>
+            {cajaActual?.responsable_apertura && (
+              <span>
+                Responsable: {cajaActual.responsable_apertura}
+              </span>
+            )}
             {lastSyncTime && (
               <span>
                 <Activity size={14} aria-hidden="true" />

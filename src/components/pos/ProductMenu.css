@@ -696,3 +696,33 @@
     transition: none;
   }
 }
+
+/* ── Loading overlay para pre-carga de variantes ── */
+.product-card--loading-variant {
+  pointer-events: none;
+}
+
+.product-card__loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(2px);
+  border-radius: inherit;
+  z-index: 5;
+}
+
+.product-card__loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(59, 130, 246, 0.25);
+  border-top-color: var(--catalog-primary, #3b82f6);
+  border-radius: 50%;
+  animation: card-spin 0.6s linear infinite;
+}
+
+@keyframes card-spin {
+  to { transform: rotate(360deg); }
+}

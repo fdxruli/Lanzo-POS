@@ -42,7 +42,7 @@ export default function PosModals({
         customer,
         prescriptionItems,
         cajaActual,
-        activeOrderId,
+        aperturaPendiente,
         features
     } = data;
 
@@ -90,6 +90,7 @@ export default function PosModals({
                 show={activeModal === 'quickCaja'}
                 onClose={() => onClose('quickCaja')}
                 onConfirm={handleQuickCajaSubmit}
+                suggestedAmount={aperturaPendiente?.montoSugerido || '0'}
             />
 
             {/* Modal de Prescripción */}
@@ -133,6 +134,9 @@ PosModals.propTypes = {
         customer: PropTypes.object,
         prescriptionItems: PropTypes.array.isRequired,
         cajaActual: PropTypes.object,
+        aperturaPendiente: PropTypes.shape({
+            montoSugerido: PropTypes.string
+        }),
         activeOrderId: PropTypes.string,
         features: PropTypes.object.isRequired
     }).isRequired

@@ -34,6 +34,11 @@ export default function MessageModal() {
     hide();
   };
 
+  const handleCancel = () => {
+    hide();
+    if (options.onCancel) options.onCancel();
+  };
+
   const handleExtraAction = () => {
     hide();
     if (options.extraButton?.action) options.extraButton.action();
@@ -42,7 +47,7 @@ export default function MessageModal() {
   // --- MANEJO DEL CLIC AFUERA (CON EFECTOS) ---
   const handleBackdropClick = () => {
     if (isDismissible) {
-      hide();
+      handleCancel();
     } else {
       // 1. EFECTO VISUAL: Shake animation via React state + CSS
       setShowShake(true);
@@ -83,7 +88,7 @@ export default function MessageModal() {
               </button>
 
               {showCancel && (
-                <button className="btn btn-cancel" onClick={hide}>
+                <button className="btn btn-cancel" onClick={handleCancel}>
                   {options.cancelButtonText || 'Cancelar'}
                 </button>
               )}

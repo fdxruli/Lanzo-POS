@@ -5,6 +5,8 @@ import ProductCard from './ProductCard';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import VariantSelectorModal from './VariantSelectorModal';
+import { useInventoryMovement } from '../../hooks/useInventoryMovement';
+import { getAvailableVariantBatches } from './variantUtils';
 import './ProductMenu.css';
 import { PackageSearch, ScanLine, Search } from 'lucide-react';
 
@@ -64,6 +66,13 @@ export default function ProductMenu({
   // --- ESTADOS PARA VARIANTES (Ropa/Zapatos) ---
   const [variantModalOpen, setVariantModalOpen] = useState(false);
   const [selectedProductForVariant, setSelectedProductForVariant] = useState(null);
+  // Lotes pre-cargados: se pasan al modal para evitar su spinner interno
+  const [preloadedBatches, setPreloadedBatches] = useState(null);
+  // ID del producto cuya carga está en curso (para feedback visual en la card)
+  const [loadingVariantId, setLoadingVariantId] = useState(null);
+  const [variantStatusByProductId, setVariantStatusByProductId] = useState({});
+
+  const { loadBatchesForProduct } = useInventoryMovement();
 
   // --- INFINITE SCROLL ---
   const [displayLimit, setDisplayLimit] = useState(50);
@@ -98,18 +107,91 @@ export default function ProductMenu({
     return products.slice(0, displayLimit);
   }, [products, displayLimit]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!features.hasVariants) {
+      setVariantStatusByProductId({});
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const productsWithBatchManagement = visibleProducts.filter(
+      (product) => product?.id && product?.batchManagement?.enabled === true
+    );
+
+    const resolveVariantStatuses = async () => {
+      const entries = await Promise.all(
+        productsWithBatchManagement.map(async (product) => {
+          try {
+            const batches = await loadBatchesForProduct(product.id);
+            return [product.id, getAvailableVariantBatches(batches).length > 0];
+          } catch (error) {
+            console.error('[ProductMenu] Error resolviendo variantes:', error);
+            return [product.id, false];
+          }
+        })
+      );
+
+      if (!cancelled) {
+        setVariantStatusByProductId(Object.fromEntries(entries));
+      }
+    };
+
+    resolveVariantStatuses();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [features.hasVariants, loadBatchesForProduct, visibleProducts]);
+
   // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (ADAPTABLE POR RUBRO) ---
   // MEMOIZADO: Evita re-renders de ProductCard cuando se escribe en el buscador
-  const handleCardClick = useCallback((product) => {
+  const handleCardClick = useCallback(async (product) => {
     // ---------------------------------------------------------
     // CASO 1: BOUTIQUE / ROPA / ZAPATERÍA
-    // Si el negocio maneja variantes (features.hasVariants es true) 
+    // Si el negocio maneja variantes (features.hasVariants es true)
     // Y el producto tiene gestión de lotes/tallas activada.
     // ---------------------------------------------------------
     if (features.hasVariants && product.batchManagement?.enabled) {
-      setSelectedProductForVariant(product);
-      setVariantModalOpen(true);
-      return; // Detenemos aquí, el usuario debe elegir la talla en el modal
+      // Pre-cargar lotes ANTES de abrir el modal.
+      // - Si el producto no tiene lotes reales (batchManagement habilitado pero sin
+      //   lotes creados), se agrega directamente sin abrir el modal innecesariamente.
+      // - Si tiene lotes reales, se pasan pre-cargados al modal eliminando su spinner.
+      setLoadingVariantId(product.id);
+      try {
+        const allBatches = await loadBatchesForProduct(product.id);
+        const activeBatches = getAvailableVariantBatches(allBatches);
+        setVariantStatusByProductId((current) => ({
+          ...current,
+          [product.id]: activeBatches.length > 0
+        }));
+
+        if (activeBatches.length === 0) {
+          // Sin variantes reales → agregar el producto base directamente
+          const cleanProduct = {
+            ...product,
+            wholesaleTiers: features.hasWholesale ? product.wholesaleTiers : []
+          };
+          addSmartItem(cleanProduct);
+          playBeep(1000, 'sine');
+        } else {
+          // Con variantes reales → abrir modal con lotes ya cargados (sin spinner)
+          setSelectedProductForVariant(product);
+          setPreloadedBatches(activeBatches);
+          setVariantModalOpen(true);
+        }
+      } catch (err) {
+        console.error('[ProductMenu] Error pre-cargando variantes:', err);
+        // En caso de error de BD, abrir el modal y dejar que él haga su propia carga
+        setSelectedProductForVariant(product);
+        setPreloadedBatches(null);
+        setVariantModalOpen(true);
+      } finally {
+        setLoadingVariantId(null);
+      }
+      return;
     }
 
     // ---------------------------------------------------------
@@ -150,14 +232,15 @@ export default function ProductMenu({
         { type: 'warning', duration: 3000 }
       );
     }
-  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem]);
+  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem, loadBatchesForProduct]);
 
   const handleConfirmVariants = useCallback((variantItem) => {
-    // Como ya viene el lote seleccionado del modal, addSmartItem 
+    // Como ya viene el lote seleccionado del modal, addSmartItem
     // detectará que ya trae batchId y lo pasará directo. Es seguro.
     addSmartItem(variantItem);
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
+    setPreloadedBatches(null);
   }, [addSmartItem]);
 
   const handleConfirmModifiers = useCallback((customizedProduct) => {
@@ -170,6 +253,7 @@ export default function ProductMenu({
   const handleCloseVariantModal = useCallback(() => {
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
+    setPreloadedBatches(null);
   }, []);
 
   const handleCloseModModal = useCallback(() => {
@@ -289,6 +373,8 @@ export default function ProductMenu({
                 product={item}
                 features={features}
                 onCardClick={handleCardClick}
+                isLoadingVariant={loadingVariantId === item.id}
+                hasAvailableVariants={variantStatusByProductId[item.id] === true}
               />
             ))
           )}
@@ -313,6 +399,7 @@ export default function ProductMenu({
         onClose={handleCloseVariantModal}
         product={selectedProductForVariant}
         onConfirm={handleConfirmVariants}
+        preloadedBatches={preloadedBatches}
       />
     </div>
   );

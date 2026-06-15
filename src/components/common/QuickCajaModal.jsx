@@ -1,54 +1,44 @@
-// src/components/common/QuickCajaModal.jsx
-import React, { useState } from 'react';
+import { WalletCards, X } from 'lucide-react';
+import CashOpeningForm from '../caja/CashOpeningForm';
+import '../caja/modals/CajaModals.css';
 
-export default function QuickCajaModal({ show, onClose, onConfirm }) {
-  const [monto, setMonto] = useState('');
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const montoInicial = parseFloat(monto);
-    if (!isNaN(montoInicial) && montoInicial >= 0) {
-      onConfirm(montoInicial);
-      setMonto(''); // Limpiar al confirmar
-    } else {
-      alert('Por favor, ingresa un monto válido.');
-    }
-  };
-
-  const handleClose = () => {
-    setMonto(''); // Limpiar al cerrar
-    onClose();
-  };
-
-  if (!show) {
-    return null;
-  }
+export default function QuickCajaModal({
+  show,
+  onClose,
+  onConfirm,
+  suggestedAmount = '0'
+}) {
+  if (!show) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }}>
-      <div className="modal-content">
-        <h2 className="modal-title">Abrir Caja Rápido</h2>
-        <p>No hay una caja abierta. Ingresa el monto inicial para comenzar.</p>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="quick-caja-monto" className="form-label">Monto Inicial ($):</label>
-            <input
-              id="quick-caja-monto"
-              className="form-input"
-              type="number"
-              step="0.01"
-              min="0"
-              value={monto}
-              onChange={(e) => setMonto(e.target.value)}
-              required
-              autoFocus // Enfocar este input automáticamente
-            />
+    <div className="modal caja-modal" role="dialog" aria-modal="true" aria-labelledby="quick-caja-title">
+      <div className="modal-content caja-modal__content caja-modal__content--medium">
+        <header className="caja-modal__header">
+          <span className="caja-modal__header-icon" aria-hidden="true">
+            <WalletCards size={22} />
+          </span>
+          <div className="caja-modal__heading">
+            <p>Apertura requerida</p>
+            <h2 id="quick-caja-title">Abrir caja antes de cobrar</h2>
           </div>
-          <button type="submit" className="btn btn-save">Abrir Caja y Continuar</button>
-          <button type="button" className="btn btn-cancel" onClick={handleClose}>
-            Cancelar Venta
+          <button type="button" className="caja-modal__close" onClick={onClose} aria-label="Cancelar apertura">
+            <X size={20} aria-hidden="true" />
           </button>
-        </form>
+        </header>
+
+        <div className="caja-modal__body">
+          <p className="caja-modal__intro">
+            Confirma quién recibe el turno y que el efectivo físico coincide con el fondo inicial.
+          </p>
+          <CashOpeningForm
+            suggestedAmount={suggestedAmount}
+            onConfirm={onConfirm}
+            onCancel={onClose}
+            submitLabel="Abrir caja y continuar"
+            cancelLabel="Cancelar venta"
+            origin="pos_checkout"
+          />
+        </div>
       </div>
     </div>
   );

@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
+import { useBackupManager } from '../../hooks/useBackupManager';
 import usePersistentStorage from '../../hooks/usePersistentStorage';
 import { useBackupRiskStore } from '../../services/BackupRiskEvaluator';
+import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
 import Logo from '../common/Logo';
 import {
   Store,
@@ -19,13 +21,18 @@ import {
   Download,
   RefreshCw,
   ShieldAlert,
-  AlertCircle
+  AlertCircle,
+  FolderKey
 } from 'lucide-react';
 import './Navbar.css';
 
 function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const menuButtonRef = useRef(null);
+  const drawerRef = useRef(null);
+  const closeButtonRef = useRef(null);
   const features = useFeatureConfig();
+  const { status: backupStatus } = useBackupManager();
 
   const { isVolatile } = usePersistentStorage();
   const isVolatileDismissed = useAppStore(state => state.isVolatileDismissed);
@@ -40,12 +47,66 @@ function Navbar() {
   const isBackupLoading = useAppStore((state) => state.isBackupLoading);
   const runUpdate = useAppStore((state) => state.runUpdate);
   const requestInstall = useAppStore((state) => state.requestInstall);
+  const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
+  const dismissedBackupNotice = useAppStore((state) => state.dismissedBackupNotice);
+  const showBackupNotice = useAppStore((state) => state.showBackupNotice);
 
   const location = useLocation();
   const isAboutPage = location.pathname === '/acerca-de';
 
   const toggleMenu = () => setIsMobileMenuOpen((prev) => !prev);
   const closeMenu = () => setIsMobileMenuOpen(false);
+
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return undefined;
+
+    const menuButton = menuButtonRef.current;
+    const drawer = drawerRef.current;
+    const focusableSelector = [
+      'a[href]',
+      'button:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])'
+    ].join(',');
+
+    document.body.classList.add('mobile-menu-open');
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMenu();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !drawer) return;
+
+      const focusableElements = [...drawer.querySelectorAll(focusableSelector)];
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements.at(-1);
+
+      if (!firstElement || !lastElement) return;
+
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.classList.remove('mobile-menu-open');
+      document.removeEventListener('keydown', handleKeyDown);
+      menuButton?.focus();
+    };
+  }, [isMobileMenuOpen]);
 
   const preventNavigationWhileBackup = (e) => {
     if (!isBackupLoading) return false;
@@ -65,14 +126,26 @@ function Navbar() {
   };
 
   const drawerLinks = [
-    { to: '/clientes', label: 'Clientes', icon: <Users size={20} /> },
-    ...(features.hasKDS ? [{ to: '/pedidos', label: 'Monitor Cocina', icon: <ChefHat size={20} /> }] : []),
-    { to: '/configuracion', label: 'Configuracion', icon: <Settings size={20} /> },
-    { to: '/acerca-de', label: 'Acerca de', icon: <Info size={20} /> }
+    { to: '/clientes', label: 'Clientes', description: 'Directorio, crédito y apartados', icon: <Users size={21} /> },
+    ...(features.hasKDS ? [{
+      to: '/pedidos',
+      label: 'Monitor Cocina',
+      description: 'Seguimiento de pedidos activos',
+      icon: <ChefHat size={21} />
+    }] : []),
+    {
+      to: '/configuracion',
+      label: 'Configuración',
+      description: 'Preferencias, respaldos y negocio',
+      icon: <Settings size={21} />
+    },
+    { to: '/acerca-de', label: 'Acerca de', description: 'Información y versión de Lanzo', icon: <Info size={21} /> }
   ];
 
   const isSectionFromMenu = drawerLinks.some((link) => location.pathname.startsWith(link.to));
-  const hasPwaAction = updateAvailable || isInstallable;
+  const backupNotice = getBackupRuntimeNotice(backupStatus, needsDriveReauth);
+  const hasDismissedBackupNotice = backupNotice?.key === dismissedBackupNotice;
+  const hasMenuAction = updateAvailable || isInstallable || hasDismissedBackupNotice;
   const installButtonLabel = isIOS ? 'Instalar App (iOS)' : 'Instalar App';
 
   const getDesktopClass = ({ isActive }) => `nav-link ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`;
@@ -99,6 +172,11 @@ function Navbar() {
     backgroundColor: 'var(--secondary-color)'
   };
 
+  const backupButtonStyle = {
+    ...pwaActionBaseStyle,
+    backgroundColor: '#b45309'
+  };
+
   const menuBadgeStyle = {
     position: 'absolute',
     top: '8px',
@@ -117,6 +195,11 @@ function Navbar() {
 
   const handleInstallClick = async () => {
     await requestInstall();
+    closeMenu();
+  };
+
+  const handleBackupNoticeClick = () => {
+    showBackupNotice();
     closeMenu();
   };
 
@@ -177,84 +260,143 @@ function Navbar() {
         </NavLink>
 
         <button
+          ref={menuButtonRef}
+          type="button"
           className={`bottom-nav-item ${isMobileMenuOpen || isSectionFromMenu ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`}
           onClick={handleProtectedMenuToggle}
           disabled={isBackupLoading}
+          aria-expanded={isMobileMenuOpen}
+          aria-controls="mobile-main-menu"
+          aria-label={isMobileMenuOpen ? 'Cerrar menú principal' : 'Abrir menú principal'}
         >
-          <Menu size={22} />
-          <span>Menu</span>
-          {hasPwaAction && <span style={menuBadgeStyle} aria-hidden="true" />}
+          {isMobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+          <span>Menú</span>
+          {hasMenuAction && <span style={menuBadgeStyle} aria-hidden="true" />}
+          {hasMenuAction && <span className="sr-only">Hay acciones pendientes en el menú</span>}
         </button>
       </nav>
 
-      <div className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}>
+      <button
+        type="button"
+        className={`mobile-drawer-overlay ${isMobileMenuOpen ? 'open' : ''}`}
+        onClick={closeMenu}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+
+      <div
+        id="mobile-main-menu"
+        ref={drawerRef}
+        className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-menu-title"
+        aria-hidden={!isMobileMenuOpen}
+        inert={!isMobileMenuOpen}
+      >
+        <div className="drawer-handle" aria-hidden="true" />
         <div className="drawer-header">
-          <h3>Menu principal</h3>
-          <button onClick={closeMenu} className="btn-close-drawer" aria-label="Cerrar menu">
+          <div>
+            <p className="drawer-eyebrow">Navegación</p>
+            <h2 id="mobile-menu-title">Menú principal</h2>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            onClick={closeMenu}
+            className="btn-close-drawer"
+            aria-label="Cerrar menú"
+          >
             <X size={20} strokeWidth={2.5} />
           </button>
         </div>
 
         <div className="drawer-links">
           {drawerLinks.map((link) => (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              className={getDrawerClass}
-              onClick={handleProtectedNavClick}
-              aria-disabled={isBackupLoading}
-              tabIndex={isBackupLoading ? -1 : 0}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                {link.icon}
-                {link.label}
-              </div>
-              {link.to === '/configuracion' && (
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  {backupRiskLevel === 1 && <span title="Respaldo recomendado" style={{ display: 'flex', alignItems: 'center' }}><AlertCircle size={18} color="#ff4444" /></span>}
-                  {isVolatile && isVolatileDismissed && (
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation(); // ¡Crítico!
-                        setVolatileDismissed(false);
-                        if (closeMenu) closeMenu();
-                      }}
-                      title="Riesgo de pérdida de datos"
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
-                    ><ShieldAlert size={18} color="#d97706" /></button>
-                  )}
-                </div>
+            <div className="drawer-link-row" key={link.to}>
+              <NavLink
+                to={link.to}
+                className={getDrawerClass}
+                onClick={handleProtectedNavClick}
+                aria-disabled={isBackupLoading}
+                tabIndex={isBackupLoading ? -1 : 0}
+              >
+                <span className="drawer-link-icon">{link.icon}</span>
+                <span className="drawer-link-copy">
+                  <span className="drawer-link-label">{link.label}</span>
+                  <span className="drawer-link-description">{link.description}</span>
+                </span>
+                {link.to === '/configuracion' && backupRiskLevel === 1 && (
+                  <span className="drawer-link-alert" title="Respaldo recomendado">
+                    <AlertCircle size={19} />
+                    <span className="sr-only">Respaldo recomendado</span>
+                  </span>
+                )}
+              </NavLink>
+
+              {link.to === '/configuracion' && isVolatile && isVolatileDismissed && (
+                <button
+                  type="button"
+                  className="drawer-warning-action"
+                  onClick={() => {
+                    setVolatileDismissed(false);
+                    closeMenu();
+                  }}
+                  aria-label="Mostrar aviso de riesgo de pérdida de datos"
+                  title="Riesgo de pérdida de datos"
+                >
+                  <ShieldAlert size={20} />
+                </button>
               )}
-            </NavLink>
+            </div>
           ))}
 
-          {hasPwaAction && (
-            <div style={{ gridColumn: '1 / -1', display: 'grid', gap: '10px', marginTop: '4px' }}>
+          {hasMenuAction && (
+            <section className="drawer-system-actions" aria-labelledby="drawer-system-title">
+              <div className="drawer-section-heading">
+                <span id="drawer-system-title">Acciones del sistema</span>
+                <span>Pendientes</span>
+              </div>
+
+              {hasDismissedBackupNotice && (
+                <button
+                  type="button"
+                  onClick={handleBackupNoticeClick}
+                  disabled={isBackupLoading}
+                  className="drawer-system-action drawer-system-action--backup"
+                  aria-label={backupNotice.navbarLabel}
+                >
+                  <span className="drawer-system-action-icon"><FolderKey size={18} /></span>
+                  {backupNotice.navbarLabel}
+                </button>
+              )}
+
               {updateAvailable && (
                 <button
+                  type="button"
                   onClick={handleUpdateClick}
                   disabled={isUpdating || isBackupLoading}
-                  style={updateButtonStyle}
+                  className="drawer-system-action drawer-system-action--update"
                   aria-label="Actualizar sistema"
                 >
-                  <RefreshCw size={16} />
+                  <span className="drawer-system-action-icon"><RefreshCw size={18} /></span>
                   {isUpdating ? 'Actualizando...' : 'Actualizar Sistema'}
                 </button>
               )}
 
               {isInstallable && (
                 <button
+                  type="button"
                   onClick={handleInstallClick}
                   disabled={isInstalling || isBackupLoading}
-                  style={installButtonStyle}
+                  className="drawer-system-action drawer-system-action--install"
                   aria-label="Instalar app"
                 >
-                  <Download size={16} />
+                  <span className="drawer-system-action-icon"><Download size={18} /></span>
                   {isInstalling ? 'Instalando...' : installButtonLabel}
                 </button>
               )}
-            </div>
+            </section>
           )}
         </div>
       </div>
@@ -363,8 +505,20 @@ function Navbar() {
             <Info size={20} /> Acerca de
           </NavLink>
 
-          {hasPwaAction && (
+          {hasMenuAction && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
+              {hasDismissedBackupNotice && (
+                <button
+                  onClick={showBackupNotice}
+                  disabled={isBackupLoading}
+                  style={backupButtonStyle}
+                  aria-label={backupNotice.navbarLabel}
+                >
+                  <FolderKey size={16} />
+                  {backupNotice.navbarLabel}
+                </button>
+              )}
+
               {updateAvailable && (
                 <button onClick={runUpdate} disabled={isUpdating || isBackupLoading} style={updateButtonStyle} aria-label="Actualizar sistema">
                   <RefreshCw size={16} />
