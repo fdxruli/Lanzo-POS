@@ -3,7 +3,7 @@ import {
   CASH_OPENING_POLICY,
   getCashOpeningPolicy,
   setCashOpeningPolicy
-} from '../../services/cashOpeningPolicy';
+} from '../../services/cashOpeningPolicyService.js';
 
 const BACKUP_NOTICE_DISMISSED_KEY = 'lanzo_backup_notice_dismissed';
 

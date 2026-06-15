@@ -12,7 +12,7 @@ import {
   buildAutomaticOpeningData,
   buildManualOpeningData,
   getCashOpeningPolicy
-} from '../services/cashOpeningPolicy';
+} from '../services/cashOpeningPolicyService.js';
 import {
   loadCashSessionProjection,
   loadCashSessionTotals
