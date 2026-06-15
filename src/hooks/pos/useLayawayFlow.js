@@ -2,6 +2,7 @@
 import { useCallback } from 'react';
 
 import { useAppStore } from '../../store/useAppStore';
+import { useFeatureConfig } from '../useFeatureConfig';
 import { layawayRepo } from '../../services/db';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
@@ -28,7 +29,8 @@ export function useLayawayFlow({
     total,
     clearOrder
 }) {
-    const features = useAppStore((state) => state.features);
+    // Obtener flags de features derivados del rubro/empresa
+    const features = useFeatureConfig();
 
     // ── Iniciar apartado ───────────────────────────────────────────
     const handleInitiateLayaway = useCallback(() => {
@@ -41,7 +43,7 @@ export function useLayawayFlow({
     }, [order.length, features?.hasLayaway, openModal, showToast]);
 
     // ── Confirmar apartado ─────────────────────────────────────────
-    const handleConfirmLayaway = useCallback(async ({ initialPayment, deadline, customer: customerFromModal }) => {
+    const handleConfirmLayaway = useCallback(async ({ initialPayment, deadline, customer: customerFromModal, cajaId }) => {
         try {
             const targetCustomer = customerFromModal || customer;
             if (!targetCustomer) {
@@ -57,7 +59,7 @@ export function useLayawayFlow({
                 deadline: deadline,
             };
 
-            const result = await layawayRepo.create(layawayData, initialPayment);
+            const result = await layawayRepo.create(layawayData, initialPayment, cajaId || null);
 
             if (result.success) {
                 clearOrder();

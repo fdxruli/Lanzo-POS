@@ -260,7 +260,12 @@ async function reencryptDirectory(directoryHandle, newPin, newSaltBytes, iterati
     } catch {
       // Rekeyed files are already verified; cleanup can be retried later.
     }
-    return { verifier: next.verifier, files: created.length, lastFileName: created.at(-1) || '' };
+    return {
+      key: next.key,
+      verifier: next.verifier,
+      files: created.length,
+      lastFileName: created.at(-1) || ''
+    };
   } catch (error) {
     await Promise.all(created.map(async (name) => {
       try {
@@ -285,7 +290,24 @@ async function handleMessage(message) {
       sessionVerifier = result.verifier;
       sessionSalt = message.payload.salt;
       sessionIterations = message.payload.iterations;
-      return { verifier: result.verifier };
+      return { key: result.key, verifier: result.verifier };
+    }
+    case 'resume': {
+      const { key, verifier, salt, iterations } = message.payload;
+      if (
+        key?.type !== 'secret'
+        || key.extractable
+        || key.algorithm?.name !== 'AES-GCM'
+        || !key.usages?.includes('encrypt')
+        || !key.usages?.includes('decrypt')
+      ) {
+        throw new Error('BACKUP_PERSISTED_KEY_INVALID');
+      }
+      sessionKey = key;
+      sessionVerifier = verifier;
+      sessionSalt = salt;
+      sessionIterations = iterations;
+      return { resumed: true };
     }
     case 'lock':
       sessionKey = null;

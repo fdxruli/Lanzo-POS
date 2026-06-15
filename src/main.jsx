@@ -1,11 +1,18 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { BrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import App from './App.jsx';
 import './index.css';
 import { storageManager } from './services/storageManager';
 import Logger from './services/Logger';
+
+const router = createBrowserRouter([
+  {
+    path: '*',
+    element: <App />
+  }
+]);
 
 /**
  * INICIALIZACIÓN CRÍTICA: StorageManager debe ejecutarse ANTES de que
@@ -45,9 +52,7 @@ import Logger from './services/Logger';
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <RouterProvider router={router} />
       </GoogleOAuthProvider>
     </React.StrictMode>
   );

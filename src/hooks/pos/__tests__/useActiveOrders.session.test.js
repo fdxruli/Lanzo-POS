@@ -131,5 +131,87 @@ describe('useActiveOrders session recovery', () => {
     expect(state.currentOrderId).toBe('sal-draft-local');
   });
 
+  it('keeps the newer DB version even when the stale local draft has more items', async () => {
+    dbState.openSales = [{
+      id: 'sal-shared',
+      items: [{ id: 'db-product', quantity: 1, price: 50 }],
+      tableData: 'Mesa DB',
+      timestamp: '2026-05-12T01:00:00.000Z',
+      updatedAt: '2026-05-12T03:00:00.000Z',
+      revision: 7,
+      deviceId: 'device-b',
+      total: 50,
+      status: 'open'
+    }];
+
+    useActiveOrders.setState({
+      activeOrders: new Map([
+        ['sal-shared', {
+          id: 'sal-shared',
+          items: [
+            { id: 'old-1', quantity: 1, price: 10 },
+            { id: 'old-2', quantity: 1, price: 20 }
+          ],
+          tableData: 'Mesa local vieja',
+          createdAt: '2026-05-12T01:00:00.000Z',
+          updatedAt: '2026-05-12T02:00:00.000Z',
+          revision: 6,
+          deviceId: 'device-a',
+          total: 30
+        }]
+      ]),
+      currentOrderId: 'sal-shared'
+    });
+
+    await useActiveOrders.getState().loadOrdersFromDB();
+
+    expect(useActiveOrders.getState().activeOrders.get('sal-shared')).toMatchObject({
+      items: [{ id: 'db-product', quantity: 1, price: 50 }],
+      tableData: 'Mesa DB',
+      revision: 7,
+      deviceId: 'device-b',
+      isSaved: true
+    });
+  });
+
+  it('keeps the local draft when its revision is newer than DB', async () => {
+    dbState.openSales = [{
+      id: 'sal-shared',
+      items: [{ id: 'db-product', quantity: 1, price: 50 }],
+      tableData: 'Mesa DB',
+      timestamp: '2026-05-12T01:00:00.000Z',
+      updatedAt: '2026-05-12T03:00:00.000Z',
+      revision: 4,
+      deviceId: 'device-b',
+      total: 50,
+      status: 'open'
+    }];
+
+    useActiveOrders.setState({
+      activeOrders: new Map([
+        ['sal-shared', {
+          id: 'sal-shared',
+          items: [{ id: 'local-product', quantity: 2, price: 25 }],
+          tableData: 'Mesa local nueva',
+          createdAt: '2026-05-12T01:00:00.000Z',
+          updatedAt: '2026-05-12T02:00:00.000Z',
+          revision: 5,
+          deviceId: 'device-a',
+          total: 50
+        }]
+      ]),
+      currentOrderId: 'sal-shared'
+    });
+
+    await useActiveOrders.getState().loadOrdersFromDB();
+
+    expect(useActiveOrders.getState().activeOrders.get('sal-shared')).toMatchObject({
+      items: [{ id: 'local-product', quantity: 2, price: 25 }],
+      tableData: 'Mesa local nueva',
+      revision: 5,
+      deviceId: 'device-a',
+      isSaved: true
+    });
+  });
 
 });

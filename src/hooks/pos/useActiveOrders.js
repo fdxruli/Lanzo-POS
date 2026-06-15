@@ -7,6 +7,13 @@ import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
 import { releaseCommittedStock } from '../../services/sales/inventoryFlow';
+import {
+  getOrderDeviceId,
+  getNextPersistedOrderVersion,
+  normalizeOrderRevision,
+  selectNewestOrder,
+  touchOrderVersion
+} from '../../services/orders/orderVersioning';
 
 const normalizeTableData = (value) => {
   if (typeof value !== 'string') return null;
@@ -28,11 +35,23 @@ const calculateOrderTotalExact = (order = []) => {
   return Money.toNumber(exactTotal);
 };
 
+const EMPTY_ORDER_ITEMS = Object.freeze([]);
+
 export const selectCurrentOrder = (state) => (
   state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null
 );
 
-export const selectCurrentOrderItems = (state) => selectCurrentOrder(state)?.items || [];
+export const selectCurrentOrderItems = (state) => (
+  selectCurrentOrder(state)?.items || EMPTY_ORDER_ITEMS
+);
+
+export const selectCurrentOrderCustomer = (state) => (
+  selectCurrentOrder(state)?.customer || null
+);
+
+export const selectCurrentOrderTableData = (state) => (
+  selectCurrentOrder(state)?.tableData || null
+);
 
 /**
  * Hook para gestionar múltiples órdenes simultáneas en el POS.
@@ -42,6 +61,7 @@ export const useActiveOrders = create(
     activeOrders: new Map(),
     currentOrderId: null,
     isLoading: false,
+    pendingInventoryResolutions: new Map(),
     ...createOrderActions(set, get),
     /** Flag local: true mientras la orden activa está en proceso de cobro */
     isCurrentOrderLocked: false,
@@ -70,6 +90,7 @@ export const useActiveOrders = create(
      */
     createOrder: (customerId = null, tableData = null) => {
       const state = get();
+      const now = new Date().toISOString();
 
       // Ya no se bloquea la creación de nuevas órdenes vacías
       // para permitir abrir pestañas a clientes que se atrasan.
@@ -89,7 +110,10 @@ export const useActiveOrders = create(
         items: [],
         customer: customerId ? { id: customerId } : null,
         tableData: normalizeTableData(tableData),
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
+        revision: 0,
+        deviceId: getOrderDeviceId(),
         total: 0,
         folio: null
       };
@@ -134,7 +158,10 @@ export const useActiveOrders = create(
           total: sale.total || calculateOrderTotalExact(sale.items),
           isSaved: true,
           folio: sale.folio || null,
-          fulfillmentStatus: sale.fulfillmentStatus || 'open'
+          fulfillmentStatus: sale.fulfillmentStatus || 'open',
+          revision: normalizeOrderRevision(sale.revision),
+          updatedAt: sale.updatedAt || sale.timestamp || new Date().toISOString(),
+          deviceId: sale.deviceId || null
         };
 
         const nextOrders = new Map(get().activeOrders);
@@ -199,7 +226,7 @@ export const useActiveOrders = create(
     addItemToOrder: async (orderId, product) => {
       const state = get();
       if (!state.activeOrders.has(orderId)) return;
-      get().addSmartItem(product, orderId);
+      await get().addSmartItem(product, orderId);
     },
 
     /**
@@ -229,7 +256,8 @@ export const useActiveOrders = create(
         const nextOrders = new Map(state.activeOrders);
         nextOrders.set(orderId, {
           ...order,
-          ...normalizedUpdates
+          ...normalizedUpdates,
+          ...touchOrderVersion(order)
         });
 
         return { activeOrders: nextOrders };
@@ -259,7 +287,8 @@ export const useActiveOrders = create(
         nextOrders.set(orderId, {
           ...order,
           items: newItems,
-          total: calculateOrderTotalExact(newItems)
+          total: calculateOrderTotalExact(newItems),
+          ...touchOrderVersion(order)
         });
 
         return { activeOrders: nextOrders };
@@ -600,10 +629,19 @@ export const useActiveOrders = create(
             const result = await get().saveOrderAsOpen(orderId, order);
             if (!result.success) console.error("Error en saveOrderAsOpen:", result.message);
           } else {
+            const existingSale = await db.table(STORES.SALES).get(order.id);
+            if (existingSale && selectNewestOrder(order, existingSale).source === 'db') {
+              console.warn(
+                `[pauseOrder] Se preservó la versión más reciente de DB para ${order.id}.`
+              );
+              return;
+            }
+            const persistedVersion = getNextPersistedOrderVersion(order, existingSale);
             const openSaleRecord = {
+              ...(existingSale || {}),
               id: order.id,
               timestamp: order.createdAt || new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
+              ...persistedVersion,
               items: order.items,
               total: order.total,
               status: SALE_STATUS.OPEN || 'open',
@@ -639,7 +677,7 @@ export const useActiveOrders = create(
         const closedRecord = {
           id: order.id,
           timestamp: order.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          ...getNextPersistedOrderVersion(order),
           items: order.items,
           total: order.total,
           status: SALE_STATUS.CLOSED || 'closed',
@@ -719,7 +757,11 @@ export const useActiveOrders = create(
             createdAt: sale.timestamp || new Date().toISOString(),
             total: sale.total || 0,
             isSaved: true,
-            folio: sale.folio || null
+            folio: sale.folio || null,
+            fulfillmentStatus: sale.fulfillmentStatus || 'open',
+            revision: normalizeOrderRevision(sale.revision),
+            updatedAt: sale.updatedAt || sale.timestamp || null,
+            deviceId: sale.deviceId || null
           });
         });
 
@@ -728,17 +770,19 @@ export const useActiveOrders = create(
           const existing = ordersMap.get(orderId);
 
           if (existing) {
-            // Orden existe en BD: fusionar datos, pero priorizar items del localStorage si son más recientes
-            const draftItems = Array.isArray(draftOrder.items) ? draftOrder.items : [];
-            const dbItems = Array.isArray(existing.items) ? existing.items : [];
-
-            // Si localStorage tiene items y BD no (o tiene menos), usar localStorage
+            const newest = selectNewestOrder(draftOrder, existing);
+            const selectedOrder = newest.order || existing;
             ordersMap.set(orderId, {
-              ...existing,
-              items: draftItems.length > 0 ? draftItems : dbItems,
-              tableData: normalizeTableData(draftOrder.tableData ?? existing.tableData ?? null),
-              isSaved: existing.isSaved,
-              folio: draftOrder.folio ?? existing.folio ?? null
+              ...selectedOrder,
+              items: Array.isArray(selectedOrder.items) ? selectedOrder.items : [],
+              tableData: normalizeTableData(selectedOrder.tableData ?? null),
+              total: selectedOrder.total ?? calculateOrderTotalExact(selectedOrder.items),
+              isSaved: true,
+              folio: selectedOrder.folio ?? existing.folio ?? null,
+              fulfillmentStatus: existing.fulfillmentStatus || 'open',
+              revision: normalizeOrderRevision(selectedOrder.revision),
+              updatedAt: selectedOrder.updatedAt || existing.updatedAt || existing.createdAt,
+              deviceId: selectedOrder.deviceId || existing.deviceId || null
             });
           } else {
             // Orden está en localStorage pero NO en BD: preservarla como borrador
@@ -754,7 +798,10 @@ export const useActiveOrders = create(
               items: isActiveInCart && cartHasItems && draftItems.length === 0 ? currentActiveItems : draftItems,
               tableData: normalizeTableData(draftOrder.tableData ?? null),
               isSaved: false,
-              folio: draftOrder.folio ?? null
+              folio: draftOrder.folio ?? null,
+              revision: normalizeOrderRevision(draftOrder.revision),
+              updatedAt: draftOrder.updatedAt || draftOrder.createdAt || new Date().toISOString(),
+              deviceId: draftOrder.deviceId || getOrderDeviceId()
             });
           }
         });
@@ -762,12 +809,16 @@ export const useActiveOrders = create(
         // 4️⃣ Si no hay órdenes en total, crear una nueva vacía
         if (ordersMap.size === 0) {
           const newOrderId = generateID('sal');
+          const now = new Date().toISOString();
           ordersMap.set(newOrderId, {
             id: newOrderId,
             items: [],
             customer: null,
             tableData: null,
-            createdAt: new Date().toISOString(),
+            createdAt: now,
+            updatedAt: now,
+            revision: 0,
+            deviceId: getOrderDeviceId(),
             total: 0,
             isSaved: false,
             folio: null
@@ -852,6 +903,10 @@ export const useActiveOrders = create(
               total: order.total || 0,
               tableData: order.tableData || null,
               status: 'open',
+              timestamp: order.createdAt || lockedAt,
+              updatedAt: order.updatedAt || lockedAt,
+              revision: normalizeOrderRevision(order.revision),
+              deviceId: order.deviceId || getOrderDeviceId(),
               isLockedForCheckout: true,
               lockedAt
             });

@@ -99,6 +99,20 @@ export function usePosCheckout({
             return;
         }
 
+        const activeOrdersState = useActiveOrders.getState();
+        const pendingInventoryCount = (
+            activeOrdersState.pendingInventoryResolutions?.get(pos.activeOrderId) || 0
+        );
+
+        if (pendingInventoryCount > 0) {
+            showMessageModal(
+                'Espera a que termine la asignación de inventario antes de cobrar.',
+                null,
+                { type: 'warning' }
+            );
+            return;
+        }
+
         const itemsToProcess = pos.order.filter(item => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) {
             showMessageModal('El pedido está vacío.');
@@ -107,24 +121,11 @@ export function usePosCheckout({
 
         mobileCart.closeCart();
 
-        // ── FASE 2: Construcción del Snapshot ──────────────────────
-        //
-        // structuredClone rompe completamente la referencia de memoria de los
-        // arrays de Zustand, garantizando que el motor de pagos trabaje sobre
-        // datos congelados en el tiempo y no sobre proxies reactivos.
-        // Fallback a JSON.parse/JSON.stringify para compatibilidad con Jest/browsers antiguos.
         const deepClone = (value) => {
             if (typeof structuredClone === 'function') {
                 return structuredClone(value);
             }
             return JSON.parse(JSON.stringify(value));
-        };
-
-        const checkoutSnapshot = {
-            orderId: pos.activeOrderId,
-            order: deepClone(pos.order),
-            total: pos.total,
-            tableData: deepClone(pos.tableData ?? null),
         };
 
         // ── FASE 2: Adquirir Lock atómico antes de abrir el modal ──
@@ -139,6 +140,42 @@ export function usePosCheckout({
             return;
         }
 
+        const lockedState = useActiveOrders.getState();
+        const lockedOrder = lockedState.activeOrders.get(pos.activeOrderId);
+        const pendingAfterLock = (
+            lockedState.pendingInventoryResolutions?.get(pos.activeOrderId) || 0
+        );
+
+        if (pendingAfterLock > 0 || !lockedOrder) {
+            await lockedState.unlockOrder(pos.activeOrderId);
+            showMessageModal(
+                pendingAfterLock > 0
+                    ? 'Espera a que termine la asignación de inventario antes de cobrar.'
+                    : 'No se encontró la orden activa para iniciar el cobro.',
+                null,
+                { type: 'warning' }
+            );
+            return;
+        }
+
+        const lockedItemsToProcess = lockedOrder.items.filter(
+            item => item.quantity && item.quantity > 0
+        );
+
+        if (lockedItemsToProcess.length === 0) {
+            await lockedState.unlockOrder(pos.activeOrderId);
+            showMessageModal('El pedido está vacío.');
+            return;
+        }
+
+        // Construir el snapshot después del lock evita capturar una orden obsoleta.
+        const checkoutSnapshot = {
+            orderId: pos.activeOrderId,
+            order: deepClone(lockedOrder.items),
+            total: Number(lockedOrder.total),
+            tableData: deepClone(lockedOrder.tableData ?? null),
+        };
+
         // Persistir snapshot en ref (sin re-render)
         checkoutSnapshotRef.current = checkoutSnapshot;
 
@@ -147,7 +184,7 @@ export function usePosCheckout({
         // No hay useEffect observando activeModal, así que openModal('prescription')
         // NO destruye el snapshot.
         const itemsRequiring = features?.hasLabFields
-            ? itemsToProcess.filter(item =>
+            ? lockedItemsToProcess.filter(item =>
                 item.requiresPrescription ||
                 (item.prescriptionType && item.prescriptionType !== 'otc')
             )
@@ -163,9 +200,7 @@ export function usePosCheckout({
         }
     }, [
         pos.order,
-        pos.total,
         pos.activeOrderId,
-        pos.tableData,
         features?.hasLabFields,
         mobileCart,
         modal,
@@ -349,14 +384,13 @@ export function usePosCheckout({
     // Cuando la caja se abre exitosamente, reabrimos el modal de pagos.
     // El checkoutSnapshotRef sigue vivo desde handleInitiateCheckout
     // porque el flujo efectivo/caja NO lo destruye.
-    const handleQuickCajaSubmit = useCallback(async (monto) => {
-        const success = await abrirCaja(monto);
+    const handleQuickCajaSubmit = useCallback(async (openingData) => {
+        const success = await abrirCaja(openingData);
         if (success) {
             modal.closeModal('quickCaja');
             modal.openModal('payment'); // ← snapshot aún válido en checkoutSnapshotRef ✓
-        } else {
-            modal.closeModal('quickCaja');
         }
+        return success;
     }, [abrirCaja, modal]);
 
     return {

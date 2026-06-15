@@ -91,6 +91,7 @@ export function usePos() {
             customer: pos.customer,
             activeOrderId: pos.activeOrderId,
             cajaActual: pos.cajaActual,
+            aperturaPendiente: pos.aperturaPendiente,
             total: pos.total,
             totalItemsCount: pos.totalItemsCount,
             menuVisual: search.menuVisual,

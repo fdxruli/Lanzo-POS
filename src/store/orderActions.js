@@ -5,6 +5,10 @@ import { getAvailableStock, getCommittedStock, normalizeStock } from '../service
 import { commitStock, releaseCommittedStock, getSortedBatchesForProduct } from '../services/sales/inventoryFlow';
 import { SALE_STATUS } from '../services/sales/financialStats';
 import { Money } from '../utils/moneyMath';
+import {
+  compareOrderVersions,
+  getNextPersistedOrderVersion
+} from '../services/orders/orderVersioning';
 
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
@@ -200,62 +204,75 @@ const getCurrentOrder = (state) => (
 );
 
 export const createOrderActions = (set, get) => ({
-      addSmartItem: (product, orderId = get().currentOrderId) => {
-        const productToAdd = { ...product };
+      addSmartItem: async (product, orderId = get().currentOrderId) => {
+        const requiresBatchResolution = (
+          product?.batchManagement?.enabled &&
+          !product.batchId &&
+          Boolean(product.id)
+        );
 
-        // ACCIÓN INMEDIATA
-        get().addItem(productToAdd, orderId);
+        if (!requiresBatchResolution) {
+          get().addItem({ ...product }, orderId);
+          return;
+        }
 
-        // BÚSQUEDA DE LOTES EN BACKGROUND
-        if (product.batchManagement?.enabled && !product.batchId) {
-          if (!product.id) return;
+        set((state) => {
+          const pendingInventoryResolutions = new Map(state.pendingInventoryResolutions || []);
+          const pendingCount = pendingInventoryResolutions.get(orderId) || 0;
+          pendingInventoryResolutions.set(orderId, pendingCount + 1);
+          return { pendingInventoryResolutions };
+        });
 
-          db.table(STORES.PRODUCT_BATCHES)
+        try {
+          const sellableBatches = await db.table(STORES.PRODUCT_BATCHES)
             .where('productId')
             .equals(product.id)
-            .filter(b => b.isActive === true && b.stock > 0)
-            .toArray()
-            .then((sellableBatches) => {
-              if (sellableBatches.length > 0) {
-                const sortedBatches = getSortedBatchesForProduct(sellableBatches, product);
-                let validBatch = null;
+            .filter(batch => batch.isActive === true && batch.stock > 0)
+            .toArray();
 
-                if (product.saleType === 'bulk') {
-                  const UMBRAL_POLVO = 0.020;
-                  validBatch = sortedBatches.find(b => getAvailableStock(b) > UMBRAL_POLVO);
-                  if (!validBatch) validBatch = sortedBatches[sortedBatches.length - 1];
-                } else {
-                  validBatch = sortedBatches[0];
-                }
+          const sortedBatches = getSortedBatchesForProduct(sellableBatches, product);
+          let validBatch = null;
 
-                if (validBatch) {
-                  get().updateOrderItems(orderId, (prevOrder) => {
-                    const order = prevOrder || [];
-                    const itemIndex = order.findIndex(
-                      item => item.id === product.id && !item.batchId
-                    );
+          if (product.saleType === 'bulk') {
+            const minimumBulkBatchStock = 0.020;
+            validBatch = sortedBatches.find(
+              batch => getAvailableStock(batch) > minimumBulkBatchStock
+            );
+            if (!validBatch) validBatch = sortedBatches[sortedBatches.length - 1];
+          } else {
+            validBatch = sortedBatches[0];
+          }
 
-                    if (itemIndex >= 0) {
-                      const updatedOrder = [...order];
-                      updatedOrder[itemIndex] = {
-                        ...updatedOrder[itemIndex],
-                        batchId: validBatch.id,
-                        price: validBatch.price,
-                        cost: validBatch.cost,
-                        stock: getAvailableStock(validBatch),
-                        isVariant: true,
-                        skuDetected: validBatch.sku || product.sku
-                      };
-                      return updatedOrder;
-                    }
-                    return order;
-                  });
-                }
+          const productToAdd = validBatch
+            ? {
+                ...product,
+                batchId: validBatch.id,
+                price: validBatch.price,
+                cost: validBatch.cost,
+                stock: getAvailableStock(validBatch),
+                isVariant: true,
+                skuDetected: validBatch.sku || product.sku,
+                originalPrice: validBatch.price
               }
-            })
-            .catch((error) => {
-              console.warn("⚠️ Fallo en asignación de lote (background):", error);
-            });
+            : { ...product };
+
+          get().addItem(productToAdd, orderId);
+        } catch (error) {
+          console.warn("Fallo al resolver el lote antes de agregar el producto:", error);
+          get().addItem({ ...product }, orderId);
+        } finally {
+          set((state) => {
+            const pendingInventoryResolutions = new Map(state.pendingInventoryResolutions || []);
+            const pendingCount = pendingInventoryResolutions.get(orderId) || 0;
+
+            if (pendingCount <= 1) {
+              pendingInventoryResolutions.delete(orderId);
+            } else {
+              pendingInventoryResolutions.set(orderId, pendingCount - 1);
+            }
+
+            return { pendingInventoryResolutions };
+          });
         }
       },
 
@@ -377,7 +394,7 @@ export const createOrderActions = (set, get) => ({
               ...product,
               quantity: 1,
               price: initialPrice,
-              originalPrice: product.price,
+              originalPrice: product.originalPrice ?? product.price,
               stock: product.trackStock ? getAvailableStock(product) : product.stock,
               exceedsStock: product.trackStock && 1 > getAvailableStock(product),
               priceWarning: isPriceWarning,
@@ -603,6 +620,9 @@ export const createOrderActions = (set, get) => ({
                 existingSale = await salesTable.get(activeOrderId);
                 if (!existingSale) throw new Error('La orden activa ya no existe.');
                 if (existingSale.status !== SALE_STATUS.OPEN) throw new Error('La orden activa ya no está abierta.');
+                if (compareOrderVersions(existingSale, currentOrder) > 0) {
+                  throw new Error('La orden fue actualizada en otro dispositivo. Recarga antes de guardar.');
+                }
 
                 const previousReservedItems = getSellableItems(existingSale.items);
                 if (previousReservedItems.length > 0) {
@@ -614,12 +634,17 @@ export const createOrderActions = (set, get) => ({
 
               const currentSaleId = activeOrderId || generateID('sal');
               const finalTableData = toSessionTableData(tableData ?? existingSale?.tableData ?? null);
+              const persistedVersion = getNextPersistedOrderVersion(
+                currentOrder,
+                existingSale,
+                nowIso
+              );
 
               const openSaleRecord = {
                 ...(existingSale || {}),
                 id: currentSaleId,
                 timestamp: existingSale?.timestamp || nowIso,
-                updatedAt: nowIso,
+                ...persistedVersion,
                 items: committedCurrentItems,
                 total: calculateOrderTotalExact(committedCurrentItems),
                 status: SALE_STATUS.OPEN,

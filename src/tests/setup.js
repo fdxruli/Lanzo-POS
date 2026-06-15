@@ -10,7 +10,16 @@
 //   - Para reload/replace: probar efectos secundarios, no la llamada directa
 //   - Solo mockeamos window.open y navigator.clipboard (sí son redefinibles)
 
+import 'fake-indexeddb/auto';
+
+import { webcrypto } from 'node:crypto';
 import { vi, beforeAll, afterAll, beforeEach } from 'vitest';
+
+// jsdom expone crypto, pero no necesariamente la API Web Crypto completa.
+Object.defineProperty(globalThis, 'crypto', {
+  configurable: true,
+  value: webcrypto,
+});
 
 // ── Mock: window.open ─────────────────────────────────────────────────────────
 Object.defineProperty(window, 'open', {
@@ -28,10 +37,10 @@ Object.assign(navigator, {
 
 // ── Reset entre tests ─────────────────────────────────────────────────────────
 beforeEach(() => {
-  window.open.mockClear?.();
-  navigator.clipboard.writeText.mockClear?.();
+  window.open?.mockClear?.();
+  navigator.clipboard?.writeText?.mockClear?.();
   // Resetear URL al root
-  window.history.pushState({}, '', '/');
+  window.history?.pushState?.({}, '', '/');
   // Resetear navigator.onLine a true para evitar contaminación entre tests
   Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
 });

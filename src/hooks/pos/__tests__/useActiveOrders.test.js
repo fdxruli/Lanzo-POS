@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const dbState = vi.hoisted(() => ({
   sales: new Map(),
   products: new Map(),
-  batches: []
+  batches: [],
+  batchLoadPromise: null
 }));
 
 const localStorageMock = {
@@ -67,7 +68,11 @@ vi.mock('../../../services/db/dexie', () => ({
         where: vi.fn(() => ({
           equals: vi.fn(() => ({
             filter: vi.fn(() => ({
-              toArray: vi.fn(async () => dbState.batches)
+              toArray: vi.fn(async () => (
+                dbState.batchLoadPromise
+                  ? await dbState.batchLoadPromise
+                  : dbState.batches
+              ))
             }))
           }))
         }))
@@ -82,7 +87,13 @@ vi.mock('../../../services/sales/inventoryFlow', () => ({
   getSortedBatchesForProduct: vi.fn((batches) => batches)
 }));
 
-import { selectCurrentOrder, useActiveOrders } from '../useActiveOrders';
+import {
+  selectCurrentOrder,
+  selectCurrentOrderCustomer,
+  selectCurrentOrderItems,
+  selectCurrentOrderTableData,
+  useActiveOrders
+} from '../useActiveOrders';
 
 const makeOrder = (id, items = []) => ({
   id,
@@ -99,12 +110,14 @@ describe('useActiveOrders unified store', () => {
     dbState.sales.clear();
     dbState.products.clear();
     dbState.batches = [];
+    dbState.batchLoadPromise = null;
     vi.clearAllMocks();
     useActiveOrders.setState({
       activeOrders: new Map(),
       currentOrderId: null,
       isLoading: false,
-      isCurrentOrderLocked: false
+      isCurrentOrderLocked: false,
+      pendingInventoryResolutions: new Map()
     });
   });
 
@@ -124,6 +137,38 @@ describe('useActiveOrders unified store', () => {
     expect(selectCurrentOrder(useActiveOrders.getState())?.id).toBe('two');
     expect(useActiveOrders.getState()).not.toHaveProperty('order');
     expect(useActiveOrders.getState()).not.toHaveProperty('activeOrderId');
+  });
+
+  it('keeps focused selector references stable when only checkout lock metadata changes', () => {
+    const items = [{ id: 'product-1', quantity: 1, price: 25 }];
+    const customer = { id: 'customer-1' };
+    const order = {
+      ...makeOrder('one', items),
+      customer,
+      tableData: 'Mesa 1'
+    };
+
+    useActiveOrders.setState({
+      activeOrders: new Map([['one', order]]),
+      currentOrderId: 'one'
+    });
+
+    const before = useActiveOrders.getState();
+    const selectedItems = selectCurrentOrderItems(before);
+    const selectedCustomer = selectCurrentOrderCustomer(before);
+    const selectedTableData = selectCurrentOrderTableData(before);
+
+    useActiveOrders.setState({
+      activeOrders: new Map([[
+        'one',
+        { ...order, isLockedForCheckout: true, lockedAt: '2026-06-14T12:00:00.000Z' }
+      ]])
+    });
+
+    const after = useActiveOrders.getState();
+    expect(selectCurrentOrderItems(after)).toBe(selectedItems);
+    expect(selectCurrentOrderCustomer(after)).toBe(selectedCustomer);
+    expect(selectCurrentOrderTableData(after)).toBe(selectedTableData);
   });
 
   it('applies the same cart rules to a non-current order', async () => {
@@ -152,6 +197,58 @@ describe('useActiveOrders unified store', () => {
     expect(state.activeOrders.get('two')?.items).toMatchObject([
       { id: 'product-1', quantity: 2, price: 25 }
     ]);
+    expect(state.activeOrders.get('two')?.revision).toBe(2);
+    expect(state.activeOrders.get('two')?.updatedAt).toEqual(expect.any(String));
+    expect(state.activeOrders.get('two')?.deviceId).toEqual(expect.any(String));
+  });
+
+  it('resolves batch data before mutating the order', async () => {
+    let resolveBatches;
+    dbState.batchLoadPromise = new Promise((resolve) => {
+      resolveBatches = resolve;
+    });
+
+    useActiveOrders.setState({
+      activeOrders: new Map([['one', makeOrder('one')]]),
+      currentOrderId: 'one'
+    });
+
+    const addPromise = useActiveOrders.getState().addSmartItem({
+      id: 'product-batch',
+      name: 'Batch product',
+      price: 20,
+      cost: 8,
+      saleType: 'unit',
+      trackStock: true,
+      batchManagement: { enabled: true }
+    });
+
+    expect(useActiveOrders.getState().activeOrders.get('one')?.items).toEqual([]);
+    expect(useActiveOrders.getState().pendingInventoryResolutions.get('one')).toBe(1);
+
+    resolveBatches([{
+      id: 'batch-1',
+      productId: 'product-batch',
+      price: 25,
+      cost: 10,
+      stock: 4,
+      committedStock: 1,
+      isActive: true,
+      sku: 'BATCH-1'
+    }]);
+    await addPromise;
+
+    expect(useActiveOrders.getState().activeOrders.get('one')?.items).toMatchObject([{
+      id: 'product-batch',
+      batchId: 'batch-1',
+      price: 25,
+      cost: 10,
+      stock: 3,
+      quantity: 1,
+      isVariant: true,
+      skuDetected: 'BATCH-1'
+    }]);
+    expect(useActiveOrders.getState().pendingInventoryResolutions.has('one')).toBe(false);
   });
 
   it('loads an open sale into the unified session', async () => {

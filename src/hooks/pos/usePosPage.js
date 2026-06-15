@@ -1,7 +1,12 @@
 // src/hooks/usePosPage.js
 import { useState, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
+import {
+    selectCurrentOrderCustomer,
+    selectCurrentOrderItems,
+    selectCurrentOrderTableData,
+    useActiveOrders
+} from './useActiveOrders';
 import { useProductStore } from '../../store/useProductStore';
 import { useCaja } from '../useCaja';
 import { useInventoryMovement } from '../useInventoryMovement';
@@ -19,7 +24,12 @@ export function usePosPage() {
     const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
     const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
 
-    const { cajaActual, abrirCaja, asegurarCajaAbierta } = useCaja();
+    const {
+        cajaActual,
+        aperturaPendiente,
+        abrirCaja,
+        asegurarCajaAbierta
+    } = useCaja();
     const { scanProductFast } = useInventoryMovement();
 
     // Suscripción reactiva: la barra flotante móvil y el checkout leen `order` / totales desde aquí.
@@ -29,10 +39,9 @@ export function usePosPage() {
     const saveOrderAsOpen = useActiveOrders((state) => state.saveOrderAsOpen);
 
     const activeOrderId = useActiveOrders((state) => state.currentOrderId);
-    const currentOrder = useActiveOrders(selectCurrentOrder);
-    const order = currentOrder?.items || [];
-    const customer = currentOrder?.customer || null;
-    const tableData = currentOrder?.tableData || null;
+    const order = useActiveOrders(selectCurrentOrderItems);
+    const customer = useActiveOrders(selectCurrentOrderCustomer);
+    const tableData = useActiveOrders(selectCurrentOrderTableData);
 
     // ── Estado local ───────────────────────────────────────────────
     const [toastMsg, setToastMsg] = useState(null);
@@ -93,6 +102,7 @@ export function usePosPage() {
         activeOrderId,
         tableData,
         cajaActual,
+        aperturaPendiente,
         companyName,
         total,
         totalItemsCount,

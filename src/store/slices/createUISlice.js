@@ -1,4 +1,9 @@
 import Logger from '../../services/Logger';
+import {
+  CASH_OPENING_POLICY,
+  getCashOpeningPolicy,
+  setCashOpeningPolicy
+} from '../../services/cashOpeningPolicy';
 
 const BACKUP_NOTICE_DISMISSED_KEY = 'lanzo_backup_notice_dismissed';
 
@@ -28,7 +33,7 @@ export const createUISlice = (set, get) => ({
     try {
       const saved = localStorage.getItem('lanzo_show_bot');
       return saved !== null ? JSON.parse(saved) : true;
-    } catch (e) {
+    } catch {
       return true;
     }
   })(),
@@ -36,7 +41,7 @@ export const createUISlice = (set, get) => ({
     try {
       const saved = localStorage.getItem('lanzo_show_ticker');
       return saved !== null ? JSON.parse(saved) : true;
-    } catch (e) {
+    } catch {
       return true;
     }
   })(),
@@ -59,7 +64,7 @@ export const createUISlice = (set, get) => ({
   setShowAssistantBot: (value) => {
     try {
       localStorage.setItem('lanzo_show_bot', JSON.stringify(value));
-    } catch (e) {
+    } catch {
       Logger.error('Error al guardar la preferencia del asistente:');
     }
     set({ showAssistantBot: value });
@@ -68,7 +73,7 @@ export const createUISlice = (set, get) => ({
   setShowTicker: (value) => {
     try {
       localStorage.setItem('lanzo_show_ticker', JSON.stringify(value));
-    } catch (e) {
+    } catch {
       Logger.error('Error al guardar la preferencia del ticker:');
     }
     set({ showTicker: value });
@@ -78,7 +83,7 @@ export const createUISlice = (set, get) => ({
     try {
       const saved = localStorage.getItem('lanzo_enable_multiple_orders');
       return saved !== null ? JSON.parse(saved) : false;
-    } catch (e) {
+    } catch {
       return false;
     }
   })(),
@@ -86,11 +91,22 @@ export const createUISlice = (set, get) => ({
   setEnableMultipleOrders: (value) => {
     try {
       localStorage.setItem('lanzo_enable_multiple_orders', JSON.stringify(value));
-    } catch (e) {
+    } catch {
       Logger.error('Error al guardar la preferencia de multiples ordenes:');
     }
     set({ enableMultipleOrders: value });
   },
+
+  cashOpeningPolicy: getCashOpeningPolicy(),
+
+  setCashOpeningPolicy: (policy) => {
+    const normalized = setCashOpeningPolicy(policy);
+    set({ cashOpeningPolicy: normalized });
+  },
+
+  isAutomaticCashOpeningEnabled: () => (
+    get().cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC
+  ),
 
   setBackupLoading: (value) => {
     set({ isBackupLoading: Boolean(value) });

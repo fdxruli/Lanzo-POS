@@ -5,7 +5,7 @@ import {
   STORES
 } from '../services/database';
 import Logger from '../services/Logger';
-import { cancelSale } from '../services/salesService';
+import { cancelSale, moveCancelledSaleToTrash } from '../services/salesService';
 
 export const useSalesStore = create((set, get) => ({
   sales: [],
@@ -120,7 +120,16 @@ export const useSalesStore = create((set, get) => ({
     await get().fetchWastePage('current');
   },
 
-  deleteSale: async (timestamp, { restoreStock = false } = {}) => {
+  deleteSale: async (
+    timestamp,
+    {
+      restoreStock = false,
+      dispositionPlan = null,
+      reason = '',
+      cancelledBy = 'local-user',
+      allowWaste = false
+    } = {}
+  ) => {
     const normalizedRestoreStock = Boolean(restoreStock);
     set({ isLoading: true });
 
@@ -132,13 +141,18 @@ export const useSalesStore = create((set, get) => ({
       const result = await cancelSale({
         timestamp,
         restoreStock: normalizedRestoreStock,
-        currentSales
+        currentSales,
+        dispositionPlan,
+        reason,
+        cancelledBy,
+        allowWaste
       });
 
       if (result.success) {
-        // 3. Actualizar estado local filtrando la venta eliminada (sin I/O adicional)
         set(state => ({
-          sales: state.sales.filter(sale => sale.timestamp !== timestamp)
+          sales: state.sales.map(sale =>
+            sale.timestamp === timestamp ? (result.sale || sale) : sale
+          )
         }));
       }
 
@@ -151,6 +165,28 @@ export const useSalesStore = create((set, get) => ({
         restoreStock: normalizedRestoreStock,
         warnings: [],
         message: error?.message || 'Error inesperado al cancelar la venta.'
+      };
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  archiveCancelledSale: async (saleId) => {
+    set({ isLoading: true });
+    try {
+      const result = await moveCancelledSaleToTrash(saleId);
+      if (result.success) {
+        set(state => ({
+          sales: state.sales.filter((sale) => sale.id !== saleId)
+        }));
+      }
+      return result;
+    } catch (error) {
+      Logger.error('Error inesperado moviendo venta a papelera:', error);
+      return {
+        success: false,
+        code: 'ERROR',
+        message: error?.message || 'No se pudo mover la venta a papelera.'
       };
     } finally {
       set({ isLoading: false });

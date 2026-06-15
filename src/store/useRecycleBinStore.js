@@ -7,6 +7,7 @@ import {
   STORES
 } from '../services/database';
 import Logger from '../services/Logger';
+import { restoreDeletedSale } from '../services/salesService';
 
 const RECYCLE_BIN_LIMIT = 50;
 
@@ -48,6 +49,20 @@ export const useRecycleBinStore = create((set, get) => ({
   restoreItem: async (item) => {
     set({ isLoading: true });
     try {
+      if (item.type === 'Pedido') {
+        const result = await restoreDeletedSale(item.id || item.timestamp);
+        if (!result.success) {
+          throw new Error(result.message || 'No se pudo restaurar la venta.');
+        }
+
+        set(state => ({
+          deletedItems: state.deletedItems.filter(i =>
+            (i.uniqueId !== item.uniqueId) && (i.timestamp !== item.timestamp)
+          )
+        }));
+        return result;
+      }
+
       // Copia profunda y limpieza de metadatos de borrado
       const itemToRestore = structuredClone(item);
       delete itemToRestore.deletedTimestamp;
@@ -59,7 +74,7 @@ export const useRecycleBinStore = create((set, get) => ({
 
       let targetStore = '';
       let trashStore = '';
-      let key = item.id;
+      const key = item.id;
 
       switch (item.type) {
         case 'Producto':
@@ -75,13 +90,6 @@ export const useRecycleBinStore = create((set, get) => ({
           targetStore = STORES.CATEGORIES;
           trashStore = STORES.DELETED_CATEGORIES;
           itemToRestore.isActive = true;
-          break;
-        case 'Pedido':
-          targetStore = STORES.SALES;
-          trashStore = STORES.DELETED_SALES;
-          key = item.id || item.timestamp;
-          itemToRestore.restoredFromTrash = true;
-          itemToRestore.restoredDate = new Date().toISOString();
           break;
         default:
             throw new Error("Tipo desconocido para restaurar");
@@ -100,17 +108,14 @@ export const useRecycleBinStore = create((set, get) => ({
             (i.uniqueId !== item.uniqueId) && (i.timestamp !== item.timestamp)
           )
         }));
-
-        if(item.type === 'Pedido') {
-            alert("✅ Pedido devuelto al historial.");
-        }
+        return { success: true };
       } else {
-        alert(`Error al restaurar: ${saveResult.error?.message}`);
+        throw new Error(saveResult.error?.message || 'No se pudo restaurar el elemento.');
       }
 
     } catch (error) {
       Logger.error("Error restaurando:", error);
-      alert("Error inesperado al restaurar.");
+      return { success: false, message: error.message || 'Error inesperado al restaurar.' };
     } finally {
         set({ isLoading: false });
     }

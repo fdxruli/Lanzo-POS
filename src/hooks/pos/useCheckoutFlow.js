@@ -182,14 +182,13 @@ export function useCheckoutFlow({
         fetchActiveTablesCount
     ]);
 
-    const handleQuickCajaSubmit = useCallback(async (monto) => {
-        const success = await abrirCaja(monto);
+    const handleQuickCajaSubmit = useCallback(async (openingData) => {
+        const success = await abrirCaja(openingData);
         if (success) {
             closeModal('quickCaja');
             openModal('payment');
-        } else {
-            closeModal('quickCaja');
         }
+        return success;
     }, [abrirCaja, closeModal, openModal]);
 
     return {
