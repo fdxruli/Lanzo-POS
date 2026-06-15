@@ -8,7 +8,11 @@ import Logger from "./Logger";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-export const supabaseClient = createClient(supabaseUrl, supabaseKey);
+// Creamos el cliente solo si las variables existen. Si no, exportamos null y dejamos 
+// que App.jsx lance el error para que sea capturado por el ErrorBoundary visual.
+export const supabaseClient = (supabaseUrl && supabaseKey) 
+    ? createClient(supabaseUrl, supabaseKey) 
+    : null;
 
 async function getSecureCredentials() {
     try {
