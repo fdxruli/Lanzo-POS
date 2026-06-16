@@ -5,7 +5,7 @@ import {
   activateLicense,
   revalidateLicense,
   createFreeTrial,
-  deactivateCurrentDevice
+  getStableDeviceId
 } from '../../services/supabase';
 import { startLicenseListener, stopLicenseListener } from '../../services/licenseRealtime';
 import {
@@ -25,11 +25,47 @@ const FATAL_REASONS = [
 ];
 
 const RENEWAL_REASONS = ['expired_subscription', 'LICENSE_EXPIRED', 'license_expired'];
+const GRACE_PERIOD_DAYS = 7;
+const LICENSE_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+const ENABLE_LICENSE_REALTIME = import.meta.env.VITE_ENABLE_LICENSE_REALTIME === 'true';
+
+let licenseSyncTimer = null;
+let licenseSyncOnlineListener = null;
+let isLicenseSyncCheckRunning = false;
+
+const isRealtimeEnabledForLicense = (licenseDetails) => (
+  ENABLE_LICENSE_REALTIME &&
+  licenseDetails?.features?.realtime_license_sync === true &&
+  Boolean(licenseDetails?.realtime_topic)
+);
+
+const getLicenseSyncMode = (licenseDetails) => (
+  isRealtimeEnabledForLicense(licenseDetails) ? 'hybrid_realtime' : 'hybrid_polling'
+);
+
+const deriveGracePeriodEnd = (validationData = {}, fallbackLicense = {}) => {
+  if (validationData.grace_period_ends) return validationData.grace_period_ends;
+  if (validationData.status !== 'grace_period') return null;
+
+  const expiryValue = validationData.expires_at || fallbackLicense.expires_at;
+  if (!expiryValue) return null;
+
+  const expiryDate = new Date(expiryValue);
+  if (Number.isNaN(expiryDate.getTime())) return null;
+
+  return new Date(
+    expiryDate.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+};
 
 export const createLicenseSlice = (set, get) => ({
   realtimeSubscription: null,
   _isInitializingSecurity: false,
   _securityCleanupScheduled: false,
+  licenseSyncActive: false,
+  licenseSyncMode: 'idle',
+  licenseSyncLicenseKey: null,
+  _isLicenseSyncChecking: false,
 
   licenseStatus: 'active',
   gracePeriodEnds: null,
@@ -75,7 +111,7 @@ export const createLicenseSlice = (set, get) => ({
     }
 
     // Reutilizar la lógica que ya maneja periodos de gracia, expiración y actualizaciones de términos
-    await state.verifySessionIntegrity();
+    await state.runLicenseSyncCheck('wake');
   },
 
   initializeApp: async () => {
@@ -145,6 +181,17 @@ export const createLicenseSlice = (set, get) => ({
       const criticalChanges = {
         validityChanged: serverValidation.valid !== localLicense.valid,
         statusChanged: serverValidation.status !== localLicense.status,
+        expiryChanged:
+          Boolean(serverValidation.expires_at) &&
+          serverValidation.expires_at !== localLicense.expires_at,
+        graceChanged:
+          Boolean(serverValidation.grace_period_ends) &&
+          serverValidation.grace_period_ends !== localLicense.grace_period_ends,
+        featuresChanged:
+          JSON.stringify(serverValidation.features || {}) !==
+          JSON.stringify(localLicense.features || {}),
+        realtimeTopicChanged:
+          serverValidation.realtime_topic !== localLicense.realtime_topic,
         wasRevoked:
           !serverValidation.valid &&
           ['banned', 'deleted', 'revoked'].includes(serverValidation.reason),
@@ -199,7 +246,14 @@ export const createLicenseSlice = (set, get) => ({
         return;
       }
 
-      if (criticalChanges.validityChanged || criticalChanges.statusChanged) {
+      if (
+        criticalChanges.validityChanged ||
+        criticalChanges.statusChanged ||
+        criticalChanges.expiryChanged ||
+        criticalChanges.graceChanged ||
+        criticalChanges.featuresChanged ||
+        criticalChanges.realtimeTopicChanged
+      ) {
         Logger.log('[Background] Cambios detectados en licencia, actualizando...');
         await get()._processServerValidation(serverValidation, localLicense);
       } else {
@@ -287,9 +341,8 @@ export const createLicenseSlice = (set, get) => ({
 
   _processServerValidation: async (serverValidation, localLicense) => {
     const now = new Date();
-    const graceEnd = serverValidation.grace_period_ends
-      ? new Date(serverValidation.grace_period_ends)
-      : null;
+    const derivedGracePeriodEnd = deriveGracePeriodEnd(serverValidation, localLicense);
+    const graceEnd = derivedGracePeriodEnd ? new Date(derivedGracePeriodEnd) : null;
 
     const isWithinGracePeriod = graceEnd && graceEnd > now;
 
@@ -327,9 +380,9 @@ export const createLicenseSlice = (set, get) => ({
       return;
     }
 
-    let finalStatus = serverValidation.reason || 'active';
+    let finalStatus = serverValidation.status || serverValidation.reason || 'active';
 
-    if (!serverValidation.valid && isWithinGracePeriod) {
+    if (serverValidation.status === 'grace_period' || isWithinGracePeriod) {
       finalStatus = 'grace_period';
       Logger.log('[AppStore] Licencia en PERÍODO DE GRACIA');
     }
@@ -350,6 +403,7 @@ export const createLicenseSlice = (set, get) => ({
       ...serverValidation,
       valid: true,
       status: finalStatus,
+      grace_period_ends: derivedGracePeriodEnd,
       localExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     };
 
@@ -358,17 +412,18 @@ export const createLicenseSlice = (set, get) => ({
     set({
       licenseDetails: finalLicenseData,
       licenseStatus: finalStatus,
-      gracePeriodEnds: finalLicenseData.grace_period_ends || null
+      gracePeriodEnds: derivedGracePeriodEnd
     });
 
     await get()._loadProfile(finalLicenseData.license_key);
+    await get().refreshLicenseSyncMode('server_validation');
   },
 
   _processOfflineMode: async (localLicense) => {
     const now = new Date();
 
     if (!localLicense.localExpiry) {
-      console.log('[AppStore] localExpiry faltante, generando basado en activación...');
+      Logger.log('[AppStore] localExpiry faltante, generando basado en activación...');
 
       const baseDate = localLicense.activated_at ? new Date(localLicense.activated_at) : now;
 
@@ -391,19 +446,24 @@ export const createLicenseSlice = (set, get) => ({
     }
 
     const daysRemaining = Math.floor((localExpiryTime - nowTime) / (1000 * 60 * 60 * 24));
-    console.log(`[AppStore] Modo offline válido. Días restantes: ${daysRemaining}`);
+    Logger.log(`[AppStore] Modo offline válido. Días restantes: ${daysRemaining}`);
 
     let localStatus = localLicense.status || 'active';
 
     const expiryDate = localLicense.expires_at ? new Date(localLicense.expires_at).getTime() : null;
-    const graceDate = localLicense.grace_period_ends
-      ? new Date(localLicense.grace_period_ends).getTime()
-      : null;
+    const derivedGracePeriodEnd =
+      localLicense.grace_period_ends ||
+      (expiryDate
+        ? new Date(
+          expiryDate + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+        ).toISOString()
+        : null);
+    const graceDate = derivedGracePeriodEnd ? new Date(derivedGracePeriodEnd).getTime() : null;
 
     if (expiryDate && expiryDate < nowTime) {
       if (graceDate && graceDate > nowTime) {
         localStatus = 'grace_period';
-        console.log('[AppStore] Licencia en PERÍODO DE GRACIA (offline)');
+        Logger.log('[AppStore] Licencia en PERÍODO DE GRACIA (offline)');
       } else {
         console.warn('[AppStore] Licencia expirada localmente');
         clearLicenseFromStorage();
@@ -412,15 +472,160 @@ export const createLicenseSlice = (set, get) => ({
       }
     }
 
-    const updatedLocalLicense = { ...localLicense, status: localStatus };
+    const updatedLocalLicense = {
+      ...localLicense,
+      status: localStatus,
+      grace_period_ends: derivedGracePeriodEnd || localLicense.grace_period_ends || null
+    };
 
     set({
       licenseDetails: updatedLocalLicense,
       licenseStatus: localStatus,
-      gracePeriodEnds: localLicense.grace_period_ends || null
+      gracePeriodEnds: updatedLocalLicense.grace_period_ends || null
     });
 
-    await get()._loadProfile(null);
+    await get()._loadProfile(updatedLocalLicense.license_key);
+  },
+
+  runLicenseSyncCheck: async (reason = 'manual') => {
+    const state = get();
+
+    if (
+      state.appStatus === 'loading' ||
+      state.appStatus === 'unauthenticated' ||
+      state._isInitializing ||
+      !state.licenseDetails?.license_key
+    ) {
+      return false;
+    }
+
+    if (!navigator.onLine) {
+      Logger.warn(`[LicenseSync] Omitiendo revalidación (${reason}): sin conexión.`);
+      return false;
+    }
+
+    if (isLicenseSyncCheckRunning) {
+      Logger.log(`[LicenseSync] Revalidación ya en curso; se omite ${reason}.`);
+      return false;
+    }
+
+    isLicenseSyncCheckRunning = true;
+    set({ _isLicenseSyncChecking: true });
+
+    try {
+      Logger.log(`[LicenseSync] Revalidando licencia (${reason}).`);
+      const isValid = await state.verifySessionIntegrity();
+      sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
+      await get().refreshLicenseSyncMode(reason);
+
+      if (isValid) {
+        set({ serverHealth: 'ok', serverMessage: null });
+      }
+
+      return isValid;
+    } catch (error) {
+      Logger.warn('[LicenseSync] Falló la revalidación híbrida:', error);
+      return false;
+    } finally {
+      isLicenseSyncCheckRunning = false;
+      set({ _isLicenseSyncChecking: false });
+    }
+  },
+
+  startLicenseSync: async () => {
+    const state = get();
+    const licenseKey = state.licenseDetails?.license_key;
+    const nextMode = getLicenseSyncMode(state.licenseDetails);
+
+    if (!licenseKey) {
+      Logger.warn('[LicenseSync] No hay licencia para sincronizar.');
+      return;
+    }
+
+    if (state.licenseSyncActive && state.licenseSyncLicenseKey === licenseKey) {
+      await get().refreshLicenseSyncMode('start_existing');
+      return;
+    }
+
+    if (state.licenseSyncActive) {
+      await get().stopLicenseSync();
+    }
+
+    set({
+      licenseSyncActive: true,
+      licenseSyncMode: nextMode,
+      licenseSyncLicenseKey: licenseKey
+    });
+
+    licenseSyncTimer = setInterval(() => {
+      get().runLicenseSyncCheck('interval');
+    }, LICENSE_SYNC_INTERVAL_MS);
+
+    licenseSyncOnlineListener = () => {
+      Logger.log('[LicenseSync] Red recuperada. Revalidando sesión.');
+      get().runLicenseSyncCheck('online');
+    };
+    window.addEventListener('online', licenseSyncOnlineListener);
+
+    if (nextMode === 'hybrid_realtime') {
+      const channel = await get().startRealtimeSecurity();
+      if (!channel) {
+        set({ licenseSyncMode: 'hybrid_polling' });
+      }
+    } else {
+      await get().stopRealtimeSecurity();
+      Logger.log('[LicenseSync] Modo híbrido activo sin Realtime.');
+    }
+
+    get().runLicenseSyncCheck('start');
+  },
+
+  refreshLicenseSyncMode: async (reason = 'manual') => {
+    const state = get();
+
+    if (!state.licenseSyncActive || !state.licenseDetails?.license_key) {
+      return;
+    }
+
+    const nextMode = getLicenseSyncMode(state.licenseDetails);
+
+    if (state.licenseSyncMode === nextMode) {
+      return;
+    }
+
+    set({ licenseSyncMode: nextMode });
+    Logger.log(`[LicenseSync] Modo actualizado a ${nextMode} (${reason}).`);
+
+    if (nextMode === 'hybrid_realtime') {
+      const channel = await get().startRealtimeSecurity();
+      if (!channel) {
+        set({ licenseSyncMode: 'hybrid_polling' });
+      }
+    } else {
+      await get().stopRealtimeSecurity();
+    }
+  },
+
+  stopLicenseSync: async () => {
+    if (licenseSyncTimer) {
+      clearInterval(licenseSyncTimer);
+      licenseSyncTimer = null;
+    }
+
+    if (licenseSyncOnlineListener) {
+      window.removeEventListener('online', licenseSyncOnlineListener);
+      licenseSyncOnlineListener = null;
+    }
+
+    await get().stopRealtimeSecurity();
+
+    isLicenseSyncCheckRunning = false;
+    set({
+      licenseSyncActive: false,
+      licenseSyncMode: 'idle',
+      licenseSyncLicenseKey: null,
+      _isLicenseSyncChecking: false
+    });
   },
 
   startRealtimeSecurity: async () => {
@@ -428,18 +633,30 @@ export const createLicenseSlice = (set, get) => ({
 
     if (state._isInitializingSecurity) {
       Logger.log('[Realtime] Ya hay inicialización en progreso');
-      return;
+      return state.realtimeSubscription;
     }
 
     if (!state.licenseDetails?.license_key) {
       Logger.warn('[Realtime] No hay licencia para monitorear');
-      return;
+      return null;
     }
 
-    const deviceFingerprint = localStorage.getItem('lanzo_device_id');
+    if (!isRealtimeEnabledForLicense(state.licenseDetails)) {
+      Logger.log('[Realtime] Desactivado por configuración o plan. Usando modo híbrido.');
+      await get().stopRealtimeSecurity();
+      return null;
+    }
+
+    const realtimeTopic = state.licenseDetails.realtime_topic;
+    if (!realtimeTopic) {
+      Logger.warn('[Realtime] No hay topico privado para monitorear');
+      return null;
+    }
+
+    const deviceFingerprint = await getStableDeviceId();
     if (!deviceFingerprint) {
       Logger.warn('[Realtime] No hay fingerprint del dispositivo');
-      return;
+      return null;
     }
 
     set({ _isInitializingSecurity: true });
@@ -450,10 +667,10 @@ export const createLicenseSlice = (set, get) => ({
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
 
-      const channel = startLicenseListener(state.licenseDetails.license_key, deviceFingerprint, {
+      const channel = startLicenseListener(state.licenseDetails.license_key, deviceFingerprint, realtimeTopic, {
         onLicenseChanged: async (_newLicenseData) => {
           Logger.log('[Realtime] Cambio en licencia detectado');
-          await get().verifySessionIntegrity();
+          await get().runLicenseSyncCheck('realtime_event');
         },
 
         onDeviceChanged: (event) => {
@@ -486,14 +703,26 @@ export const createLicenseSlice = (set, get) => ({
         // Ahora el servicio notifica hacia arriba a través de este callback, sin conocer el store.
         onPermanentFailure: (message) => {
           get().reportServerFailure(message);
+        },
+
+        onConnectionRestored: () => {
+          get().runLicenseSyncCheck('realtime_reconnected');
         }
       });
 
+      if (!channel) {
+        Logger.warn('[Realtime] No se pudo crear canal. Se mantiene sincronización híbrida.');
+        set({ realtimeSubscription: null });
+        return null;
+      }
+
       set({ realtimeSubscription: channel });
       Logger.log('[Realtime] Seguridad iniciada');
+      return channel;
     } catch (error) {
       Logger.error('[Realtime] Error inicializando seguridad:', error);
       set({ realtimeSubscription: null });
+      return null;
     } finally {
       set({ _isInitializingSecurity: false });
     }
@@ -585,17 +814,7 @@ export const createLicenseSlice = (set, get) => ({
   },
 
   logout: async () => {
-    const { licenseDetails } = get();
-
-    await get().stopRealtimeSecurity();
-
-    try {
-      if (licenseDetails?.license_key) {
-        await deactivateCurrentDevice(licenseDetails.license_key);
-      }
-    } catch (error) {
-      Logger.warn('Error desactivando dispositivo:', error);
-    }
+    await get().stopLicenseSync();
 
     clearLicenseFromStorage();
 
@@ -606,11 +825,16 @@ export const createLicenseSlice = (set, get) => ({
       appStatus: 'unauthenticated',
       licenseDetails: null,
       companyProfile: null,
+      profileImportCandidate: null,
       licenseStatus: 'active',
       gracePeriodEnds: null,
       realtimeSubscription: null,
       _isInitializingSecurity: false,
       _securityCleanupScheduled: false,
+      licenseSyncActive: false,
+      licenseSyncMode: 'idle',
+      licenseSyncLicenseKey: null,
+      _isLicenseSyncChecking: false,
       serverHealth: 'ok',
       serverMessage: null
     });
@@ -628,9 +852,8 @@ export const createLicenseSlice = (set, get) => ({
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
 
         const now = new Date();
-        const graceEnd = serverCheck.grace_period_ends
-          ? new Date(serverCheck.grace_period_ends)
-          : null;
+        const derivedGracePeriodEnd = deriveGracePeriodEnd(serverCheck, licenseDetails);
+        const graceEnd = derivedGracePeriodEnd ? new Date(derivedGracePeriodEnd) : null;
 
         const isWithinGracePeriod = graceEnd && graceEnd > now;
         const isTechnicallyValid = serverCheck.valid || isWithinGracePeriod;
@@ -672,26 +895,32 @@ export const createLicenseSlice = (set, get) => ({
 
         let newStatus = serverCheck.status || serverCheck.reason || 'active';
 
-        if (isWithinGracePeriod && !serverCheck.valid) {
+        if (serverCheck.status === 'grace_period' || isWithinGracePeriod) {
           newStatus = 'grace_period';
         }
 
         const updatedDetails = {
           ...licenseDetails,
           ...serverCheck,
+          grace_period_ends: derivedGracePeriodEnd,
           status: newStatus,
           valid: isTechnicallyValid
         };
 
         const hasChanges =
           JSON.stringify(licenseDetails.valid) !== JSON.stringify(updatedDetails.valid) ||
-          licenseDetails.status !== updatedDetails.status;
+          licenseDetails.status !== updatedDetails.status ||
+          licenseDetails.expires_at !== updatedDetails.expires_at ||
+          licenseDetails.grace_period_ends !== updatedDetails.grace_period_ends ||
+          licenseDetails.realtime_topic !== updatedDetails.realtime_topic ||
+          JSON.stringify(licenseDetails.features || {}) !==
+            JSON.stringify(updatedDetails.features || {});
 
         if (hasChanges) {
           Logger.log(`[Integrity] Sesión actualizada. Estado: ${newStatus}`);
           set({
             licenseStatus: newStatus,
-            gracePeriodEnds: serverCheck.grace_period_ends,
+            gracePeriodEnds: derivedGracePeriodEnd,
             licenseDetails: updatedDetails
           });
           await saveLicenseToStorage(updatedDetails);
@@ -699,6 +928,7 @@ export const createLicenseSlice = (set, get) => ({
 
         if (updatedDetails.valid) {
           await get()._loadProfile(licenseDetails.license_key);
+          await get().refreshLicenseSyncMode('integrity');
         }
       } catch (error) {
         Logger.warn(

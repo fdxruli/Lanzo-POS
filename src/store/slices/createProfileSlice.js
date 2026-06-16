@@ -6,73 +6,137 @@ import {
   uploadFile
 } from '../../services/supabase';
 
-// Variable de módulo para controlar race conditions en carga de perfil.
-// Si se disparan dos _loadProfile simultáneos, solo el más reciente escribe al store.
 let _profileLoadGeneration = 0;
+
+const LEGACY_COMPANY_KEY = 'company';
+
+const getProfileCacheKey = (licenseKey) => `company:${licenseKey}`;
+
+const normalizeBusinessTypes = (businessType) => {
+  if (Array.isArray(businessType)) return businessType.filter(Boolean);
+
+  if (typeof businessType === 'string') {
+    return businessType
+      .replace(/[{}"]/g, '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
+const hasUsableProfile = (profile) => {
+  const name = profile?.name || profile?.business_name || '';
+  return name.trim().length > 0 && normalizeBusinessTypes(profile?.business_type).length > 0;
+};
+
+const buildCompanyData = (rawProfile, licenseKey, id = getProfileCacheKey(licenseKey)) => ({
+  id,
+  profile_id: rawProfile?.profile_id || rawProfile?.id || null,
+  license_key: rawProfile?.license_key || licenseKey,
+  name: rawProfile?.business_name || rawProfile?.name || '',
+  phone: rawProfile?.phone_number || rawProfile?.phone || '',
+  address: rawProfile?.address || '',
+  logo: rawProfile?.logo_url || rawProfile?.logo || '',
+  business_type: normalizeBusinessTypes(rawProfile?.business_type)
+});
+
+const saveProfileCache = async (licenseKey, companyData) => {
+  const scopedProfile = {
+    ...companyData,
+    id: getProfileCacheKey(licenseKey),
+    license_key: licenseKey
+  };
+
+  await saveData(STORES.COMPANY, scopedProfile);
+  await saveData(STORES.COMPANY, {
+    ...scopedProfile,
+    id: LEGACY_COMPANY_KEY
+  });
+
+  return scopedProfile;
+};
 
 export const createProfileSlice = (set, get) => ({
   companyProfile: null,
+  profileImportCandidate: null,
 
   _loadProfile: async (licenseKey) => {
-    // 1. Tomamos el número de esta generación antes de cualquier await
     const generation = ++_profileLoadGeneration;
-
     let companyData = null;
+    let profileMissingRemotely = false;
+    let profileImportCandidate = null;
 
     if (licenseKey && navigator.onLine) {
       try {
         const profileResult = await getBusinessProfile(licenseKey);
 
-        // 2. Después de cada await, verificamos si seguimos siendo la llamada más reciente
         if (generation !== _profileLoadGeneration) {
-          Logger.log(`[Profile] Carga #${generation} descartada (superada por #${_profileLoadGeneration})`);
+          Logger.log(`[Profile] Carga #${generation} descartada`);
           return;
         }
 
-        if (profileResult.success && profileResult.data) {
-          companyData = {
-            id: 'company',
-            name: profileResult.data.business_name || profileResult.data.name,
-            phone: profileResult.data.phone_number || profileResult.data.phone,
-            address: profileResult.data.address,
-            logo: profileResult.data.logo_url || profileResult.data.logo,
-            business_type: profileResult.data.business_type
-          };
-          await saveData(STORES.COMPANY, companyData);
+        if (profileResult?.success && profileResult.data) {
+          companyData = buildCompanyData(profileResult.data, licenseKey);
+          companyData = await saveProfileCache(licenseKey, companyData);
 
-          // 3. Verificamos de nuevo tras el segundo await
           if (generation !== _profileLoadGeneration) {
             Logger.log(`[Profile] Carga #${generation} descartada tras guardar local`);
             return;
           }
+        } else if (
+          profileResult?.code === 'PROFILE_NOT_FOUND' ||
+          profileResult?.reason === 'PROFILE_NOT_FOUND'
+        ) {
+          profileMissingRemotely = true;
         }
-      } catch (e) {
-        Logger.warn('[AppStore] Fallo carga perfil online:', e);
+      } catch (error) {
+        Logger.warn('[AppStore] Fallo carga perfil online:', error);
+      }
+    }
+
+    if (!companyData && licenseKey && !profileMissingRemotely) {
+      try {
+        const cachedProfile = await loadData(STORES.COMPANY, getProfileCacheKey(licenseKey));
+
+        if (generation !== _profileLoadGeneration) {
+          Logger.log(`[Profile] Carga #${generation} descartada tras leer IndexedDB`);
+          return;
+        }
+
+        if (cachedProfile?.license_key === licenseKey) {
+          companyData = buildCompanyData(cachedProfile, licenseKey);
+        }
+      } catch (error) {
+        Logger.warn('[AppStore] Fallo carga perfil local:', error);
       }
     }
 
     if (!companyData) {
       try {
-        companyData = await loadData(STORES.COMPANY, 'company');
+        const legacyProfile = await loadData(STORES.COMPANY, LEGACY_COMPANY_KEY);
+        const belongsToCurrentLicense = legacyProfile?.license_key === licenseKey;
 
-        // 4. Verificamos tras cargar de IndexedDB también
-        if (generation !== _profileLoadGeneration) {
-          Logger.log(`[Profile] Carga #${generation} descartada tras leer IndexedDB`);
-          return;
+        if (!belongsToCurrentLicense && hasUsableProfile(legacyProfile)) {
+          profileImportCandidate = buildCompanyData(
+            legacyProfile,
+            legacyProfile.license_key || 'legacy',
+            'profile-import-candidate'
+          );
         }
-      } catch (e) {
-        Logger.warn('[AppStore] Fallo carga perfil local:', e);
+      } catch (error) {
+        Logger.warn('[AppStore] Fallo leyendo perfil legado:', error);
       }
     }
 
-    // 5. Solo llegamos aquí si somos la llamada más reciente — escribimos al store
-    set({ companyProfile: companyData });
+    set({ companyProfile: companyData, profileImportCandidate });
 
-    if (companyData && (companyData.name || companyData.business_name)) {
-      Logger.log('[AppStore] Aplicación lista (ready)');
+    if (hasUsableProfile(companyData)) {
+      Logger.log('[AppStore] Aplicacion lista (ready)');
       set({ appStatus: 'ready' });
     } else {
-      Logger.log('[AppStore] Requiere configuración inicial');
+      Logger.log('[AppStore] Requiere configuracion inicial');
       set({ appStatus: 'setup_required' });
     }
   },
@@ -82,20 +146,40 @@ export const createProfileSlice = (set, get) => ({
     if (!licenseKey) return;
 
     try {
-      let logoUrl = null;
+      let logoUrl = setupData.logo_url || setupData.logo || null;
+
       if (setupData.logo instanceof File) {
         logoUrl = await uploadFile(setupData.logo, 'logo');
       }
 
-      const profileData = { ...setupData, logo: logoUrl };
-      await saveBusinessProfile(licenseKey, profileData);
+      const profileData = {
+        ...setupData,
+        logo: logoUrl,
+        business_type: normalizeBusinessTypes(setupData.business_type)
+      };
 
-      const companyData = { id: 'company', ...profileData };
-      await saveData(STORES.COMPANY, companyData);
+      const saveResult = await saveBusinessProfile(licenseKey, profileData);
+      if (!saveResult?.success) {
+        throw new Error(
+          saveResult?.message ||
+          saveResult?.error ||
+          'No se pudo guardar el perfil del negocio.'
+        );
+      }
 
-      set({ companyProfile: companyData, appStatus: 'ready' });
+      const companyData = await saveProfileCache(
+        licenseKey,
+        buildCompanyData(profileData, licenseKey)
+      );
+
+      set({
+        companyProfile: companyData,
+        profileImportCandidate: null,
+        appStatus: 'ready'
+      });
     } catch (error) {
       Logger.error('Error en setup:', error);
+      throw error;
     }
   },
 
@@ -104,16 +188,37 @@ export const createProfileSlice = (set, get) => ({
     if (!licenseKey) return;
 
     try {
-      if (companyData.logo instanceof File) {
-        const logoUrl = await uploadFile(companyData.logo, 'logo');
-        companyData.logo = logoUrl;
+      const nextCompanyData = { ...companyData };
+
+      if (nextCompanyData.logo instanceof File) {
+        const logoUrl = await uploadFile(nextCompanyData.logo, 'logo');
+        nextCompanyData.logo = logoUrl;
       }
 
-      await saveBusinessProfile(licenseKey, companyData);
-      await saveData(STORES.COMPANY, companyData);
-      set({ companyProfile: companyData });
+      nextCompanyData.business_type = normalizeBusinessTypes(nextCompanyData.business_type);
+
+      const saveResult = await saveBusinessProfile(licenseKey, nextCompanyData);
+      if (!saveResult?.success) {
+        throw new Error(
+          saveResult?.message ||
+          saveResult?.error ||
+          'No se pudo guardar el perfil del negocio.'
+        );
+      }
+
+      const scopedCompanyData = await saveProfileCache(
+        licenseKey,
+        buildCompanyData(nextCompanyData, licenseKey)
+      );
+
+      set({ companyProfile: scopedCompanyData });
     } catch (error) {
       Logger.error('Error actualizando perfil:', error);
+      throw error;
     }
+  },
+
+  dismissProfileImportCandidate: () => {
+    set({ profileImportCandidate: null });
   }
 });
