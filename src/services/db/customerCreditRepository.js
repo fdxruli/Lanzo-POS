@@ -25,7 +25,7 @@ export const customerCreditRepository = {
             db.table(STORES.CAJAS),
             db.table(STORES.MOVIMIENTOS_CAJA),
             db.table(STORES.SALES)
-        ], async () => {
+        ], async (tx) => {
             const customer = await db.table(STORES.CUSTOMERS).get(customerId);
             if (!customer) {
                 throw new DatabaseError(DB_ERROR_CODES.NOT_FOUND, `Cliente ${customerId} no existe.`);

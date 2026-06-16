@@ -41,9 +41,15 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
   }
 
   // 2. Detección de ERROR (Rojo)
+  const normalizedMessage = message.toLowerCase();
   const isError = options.type === 'error' ||
-    message.toLowerCase().includes('error') ||
-    message.toLowerCase().includes('falló') ||
+    normalizedMessage.includes('error') ||
+    normalizedMessage.includes('falló') ||
+    normalizedMessage.includes('fallo') ||
+    normalizedMessage.includes('abortada') ||
+    normalizedMessage.includes('abortado') ||
+    normalizedMessage.includes('denegada') ||
+    normalizedMessage.includes('no se pudo') ||
     message.startsWith('⚠️');
 
   if (isError) {

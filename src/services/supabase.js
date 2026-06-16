@@ -10,15 +10,15 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // Creamos el cliente solo si las variables existen. Si no, exportamos null y dejamos 
 // que App.jsx lance el error para que sea capturado por el ErrorBoundary visual.
-export const supabaseClient = (supabaseUrl && supabaseKey) 
-    ? createClient(supabaseUrl, supabaseKey) 
+export const supabaseClient = (supabaseUrl && supabaseKey)
+    ? createClient(supabaseUrl, supabaseKey)
     : null;
 
 async function getSecureCredentials() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, 'device_security_token');
         return record ? record.value : null;
-    } catch (e) {
+    } catch {
         return null;
     }
 }
@@ -152,7 +152,7 @@ async function getUntamperedTime() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, 'security_monotonic_clock');
         if (record && record.value) lastSeen = record.value;
-    } catch (e) {
+    } catch {
         Logger.warn("No se pudo leer el reloj de seguridad.");
     }
 
@@ -173,7 +173,9 @@ async function getUntamperedTime() {
     // Actualizamos el reloj al tiempo más reciente
     try {
         await saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: now });
-    } catch (e) { }
+    } catch {
+        // Best effort: the online validation result remains authoritative.
+    }
 
     return now;
 }
@@ -188,7 +190,9 @@ async function checkRateLimit() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, RATE_LIMIT_KEY);
         if (record && record.value) storedData = record.value;
-    } catch (e) { }
+    } catch {
+        // Best effort: missing rate-limit cache should not block validation.
+    }
 
     if (!storedData) return { attempts: 0, lockedUntil: null };
 
@@ -225,7 +229,9 @@ async function resetRateLimit() {
     try {
         // En lugar de removeItem, sobreescribimos con nulo o borramos si tienes deleteData
         await saveData(STORES.SYNC_CACHE, { key: RATE_LIMIT_KEY, value: null });
-    } catch (e) { }
+    } catch {
+        // Best effort: reset failures should not block the user flow.
+    }
 }
 
 // --- Funciones Principales ---
@@ -308,182 +314,186 @@ export const revalidateLicense = async function (licenseKeyProp) {
     }
 
     currentRevalidationPromise = (async () => {
-    const timeoutMs = 8000;
-    let timeoutId;
+        const timeoutMs = 8000;
+        let timeoutId;
 
-    const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('VALIDATION_TIMEOUT')), timeoutMs);
-    });
-
-    try {
-        let storedLicense = null;
-        try {
-            const ls = localStorage.getItem('lanzo_license');
-            if (ls) storedLicense = JSON.parse(ls)?.data;
-        } catch (e) { }
-
-        const licenseKey = licenseKeyProp || storedLicense?.license_key;
-        if (!licenseKey) {
-            clearTimeout(timeoutId);
-            return { valid: false, reason: 'no_license_key' };
-        }
-
-        const isOnline = await checkInternetConnection();
-        if (!isOnline) {
-            throw new Error("OFFLINE_PRECHECK");
-        }
-
-        const deviceFingerprint = await getStableDeviceId();
-
-        // 🟢 NUEVO 1: Recuperamos el token secreto de IndexedDB antes de llamar al servidor
-        const securityToken = await getSecureCredentials();
-
-        // 🟢 NUEVO 2: Cambiamos el nombre de la función y los parámetros
-        // Nota: Los parámetros ahora deben coincidir con tu SQL (p_license_key, etc.)
-        const validationPromise = supabaseClient.rpc('verify_device_license_unified', {
-            p_license_key: licenseKey,           // Antes: license_key_param
-            p_device_fingerprint: deviceFingerprint, // Antes: device_fingerprint_param
-            p_security_token: securityToken || null  // ¡El nuevo ingrediente secreto!
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('VALIDATION_TIMEOUT')), timeoutMs);
         });
 
-        const { data, error } = await Promise.race([validationPromise, timeoutPromise]);
-        clearTimeout(timeoutId);
-
-        if (error) {
-            const isTechnicalError =
-                error.code === 'PGRST301' ||
-                error.message?.includes('fetch') ||
-                error.message?.includes('network');
-
-            if (isTechnicalError) {
-                throw new Error('NETWORK_ERROR');
-            }
-            throw error;
-        }
-
-        // 🟢 NUEVO 3: Si el servidor nos da un nuevo token, lo guardamos inmediatamente (Rotación)
-        if (data && data.valid) {
-            // Rotación del token
-            if (data.new_security_token) {
-                await setSecureCredentials(data.new_security_token);
-            }
-
-            const currentRealTime = Date.now();
-
-            // Guardar el estado validado en IndexedDB de forma exclusiva
-            await saveData(STORES.SYNC_CACHE, {
-                key: 'last_valid_license_state',
-                value: {
-                    payload: data,
-                    timestamp: currentRealTime
-                }
-            });
-
-            // CORRECCIÓN CRÍTICA: "Sanar" el reloj monotónico.
-            // Si validamos online con éxito, asumimos que el reloj actual es la nueva verdad.
-            // Esto rescata al dispositivo de la trampa del "salto al futuro".
+        try {
+            let storedLicense = null;
             try {
-                await saveData(STORES.SYNC_CACHE, {
-                    key: 'security_monotonic_clock',
-                    value: currentRealTime
-                });
-            } catch (e) {
-                Logger.warn("Fallo al sanar el reloj monotónico", e);
+                const ls = localStorage.getItem('lanzo_license');
+                if (ls) storedLicense = JSON.parse(ls)?.data;
+            } catch {
+                // Ignore malformed local license cache and continue with server validation.
             }
-        }
 
-        if (!data.valid && data.reason !== 'offline_grace') {
-            Logger.warn("⛔ Servidor confirmó: Licencia inválida:", data.reason);
-            // Si el servidor invalida, destruimos el caché offline local
-            await loadData(STORES.SYNC_CACHE, 'last_valid_license_state').then(async (record) => {
-                if (record) {
-                    // Implementa un borrado si tienes la función deleteData, 
-                    // o sobrescribe con un objeto inválido
-                    await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
-                }
-            });
-        }
+            const licenseKey = licenseKeyProp || storedLicense?.license_key;
+            if (!licenseKey) {
+                clearTimeout(timeoutId);
+                return { valid: false, reason: 'no_license_key' };
+            }
 
-        return data;
+            const isOnline = await checkInternetConnection();
+            if (!isOnline) {
+                throw new Error("OFFLINE_PRECHECK");
+            }
 
-    } catch (error) {
-        // ... (Todo el bloque catch se queda IGUAL para mantener el modo offline) ...
-        clearTimeout(timeoutId);
-        Logger.warn('⚠️ Error validando licencia:', error.message);
+            const deviceFingerprint = await getStableDeviceId();
 
-        const isNetworkError =
-            error.message === 'VALIDATION_TIMEOUT' ||
-            error.message === 'OFFLINE_PRECHECK' ||
-            error.message === 'NETWORK_ERROR' ||
-            error.message?.includes('fetch');
-
-        if (isNetworkError) {
-            Logger.log('☁️ Modo offline activado por problema de conexión');
-
-            // 1. Verificar que existe el token de seguridad del dispositivo
+            // 🟢 NUEVO 1: Recuperamos el token secreto de IndexedDB antes de llamar al servidor
             const securityToken = await getSecureCredentials();
 
-            // 2. Recuperar el último estado validado
-            let storedState = null;
-            try {
-                const record = await loadData(STORES.SYNC_CACHE, 'last_valid_license_state');
-                if (record && record.value) storedState = record.value;
-            } catch (e) { }
+            // 🟢 NUEVO 2: Cambiamos el nombre de la función y los parámetros
+            // Nota: Los parámetros ahora deben coincidir con tu SQL (p_license_key, etc.)
+            const validationPromise = supabaseClient.rpc('verify_device_license_unified', {
+                p_license_key: licenseKey,           // Antes: license_key_param
+                p_device_fingerprint: deviceFingerprint, // Antes: device_fingerprint_param
+                p_security_token: securityToken || null  // ¡El nuevo ingrediente secreto!
+            });
 
-            if (!securityToken || !storedState || !storedState.payload) {
-                return {
-                    valid: false,
-                    reason: 'no_secure_context',
-                    details: 'Requiere conexión a internet para validación inicial.'
-                };
+            const { data, error } = await Promise.race([validationPromise, timeoutPromise]);
+            clearTimeout(timeoutId);
+
+            if (error) {
+                const isTechnicalError =
+                    error.code === 'PGRST301' ||
+                    error.message?.includes('fetch') ||
+                    error.message?.includes('network');
+
+                if (isTechnicalError) {
+                    throw new Error('NETWORK_ERROR');
+                }
+                throw error;
             }
 
-            // 3. Evaluar el tiempo transcurrido con el reloj antimanipulación
-            let now;
-            try {
-                now = await getUntamperedTime();
-            } catch (error) {
-                if (error.message === "TIME_TAMPERING_DETECTED") {
-                    // Bloqueo fulminante: Si detectamos trampa, destruimos la sesión offline
-                    //await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+            // 🟢 NUEVO 3: Si el servidor nos da un nuevo token, lo guardamos inmediatamente (Rotación)
+            if (data && data.valid) {
+                // Rotación del token
+                if (data.new_security_token) {
+                    await setSecureCredentials(data.new_security_token);
+                }
+
+                const currentRealTime = Date.now();
+
+                // Guardar el estado validado en IndexedDB de forma exclusiva
+                await saveData(STORES.SYNC_CACHE, {
+                    key: 'last_valid_license_state',
+                    value: {
+                        payload: data,
+                        timestamp: currentRealTime
+                    }
+                });
+
+                // CORRECCIÓN CRÍTICA: "Sanar" el reloj monotónico.
+                // Si validamos online con éxito, asumimos que el reloj actual es la nueva verdad.
+                // Esto rescata al dispositivo de la trampa del "salto al futuro".
+                try {
+                    await saveData(STORES.SYNC_CACHE, {
+                        key: 'security_monotonic_clock',
+                        value: currentRealTime
+                    });
+                } catch (e) {
+                    Logger.warn("Fallo al sanar el reloj monotónico", e);
+                }
+            }
+
+            if (!data.valid && data.reason !== 'offline_grace') {
+                Logger.warn("⛔ Servidor confirmó: Licencia inválida:", data.reason);
+                // Si el servidor invalida, destruimos el caché offline local
+                await loadData(STORES.SYNC_CACHE, 'last_valid_license_state').then(async (record) => {
+                    if (record) {
+                        // Implementa un borrado si tienes la función deleteData, 
+                        // o sobrescribe con un objeto inválido
+                        await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+                    }
+                });
+            }
+
+            return data;
+
+        } catch (error) {
+            // ... (Todo el bloque catch se queda IGUAL para mantener el modo offline) ...
+            clearTimeout(timeoutId);
+            Logger.warn('⚠️ Error validando licencia:', error.message);
+
+            const isNetworkError =
+                error.message === 'VALIDATION_TIMEOUT' ||
+                error.message === 'OFFLINE_PRECHECK' ||
+                error.message === 'NETWORK_ERROR' ||
+                error.message?.includes('fetch');
+
+            if (isNetworkError) {
+                Logger.log('☁️ Modo offline activado por problema de conexión');
+
+                // 1. Verificar que existe el token de seguridad del dispositivo
+                const securityToken = await getSecureCredentials();
+
+                // 2. Recuperar el último estado validado
+                let storedState = null;
+                try {
+                    const record = await loadData(STORES.SYNC_CACHE, 'last_valid_license_state');
+                    if (record && record.value) storedState = record.value;
+                } catch {
+                    // Offline fallback can proceed without cached state.
+                }
+
+                if (!securityToken || !storedState || !storedState.payload) {
                     return {
                         valid: false,
-                        reason: 'time_tampering_detected',
-                        details: 'Inconsistencia severa de reloj detectada. Ajusta tu dispositivo a la fecha y hora correctas, y conéctate a internet para restaurar el sistema.'
+                        reason: 'no_secure_context',
+                        details: 'Requiere conexión a internet para validación inicial.'
                     };
                 }
-                now = Date.now(); // Fallback si falla IndexedDB
-            }
 
-            const MAX_OFFLINE_MS = 72 * 60 * 60 * 1000;
-            const timeOffline = now - storedState.timestamp;
+                // 3. Evaluar el tiempo transcurrido con el reloj antimanipulación
+                let now;
+                try {
+                    now = await getUntamperedTime();
+                } catch (error) {
+                    if (error.message === "TIME_TAMPERING_DETECTED") {
+                        // Bloqueo fulminante: Si detectamos trampa, destruimos la sesión offline
+                        //await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+                        return {
+                            valid: false,
+                            reason: 'time_tampering_detected',
+                            details: 'Inconsistencia severa de reloj detectada. Ajusta tu dispositivo a la fecha y hora correctas, y conéctate a internet para restaurar el sistema.'
+                        };
+                    }
+                    now = Date.now(); // Fallback si falla IndexedDB
+                }
 
-            // También validamos si de alguna forma storedState.timestamp está en el futuro (otra trampa)
-            if (!storedState.timestamp || isNaN(timeOffline) || timeOffline < 0 || timeOffline > MAX_OFFLINE_MS) {
+                const MAX_OFFLINE_MS = 72 * 60 * 60 * 1000;
+                const timeOffline = now - storedState.timestamp;
+
+                // También validamos si de alguna forma storedState.timestamp está en el futuro (otra trampa)
+                if (!storedState.timestamp || isNaN(timeOffline) || timeOffline < 0 || timeOffline > MAX_OFFLINE_MS) {
+                    return {
+                        valid: false,
+                        reason: 'offline_grace_expired',
+                        details: 'El periodo de gracia offline es inválido o ha expirado. Conéctate a internet.'
+                    };
+                }
+
+                // Conceder acceso offline temporal
                 return {
-                    valid: false,
-                    reason: 'offline_grace_expired',
-                    details: 'El periodo de gracia offline es inválido o ha expirado. Conéctate a internet.'
+                    ...storedState.payload,
+                    valid: true,
+                    reason: 'offline_grace',
+                    is_fallback: true,
+                    last_check_failed: new Date().toISOString(),
+                    hours_remaining: Math.floor((MAX_OFFLINE_MS - timeOffline) / (1000 * 60 * 60))
                 };
             }
 
-            // Conceder acceso offline temporal
             return {
-                ...storedState.payload,
-                valid: true,
-                reason: 'offline_grace',
-                is_fallback: true,
-                last_check_failed: new Date().toISOString(),
-                hours_remaining: Math.floor((MAX_OFFLINE_MS - timeOffline) / (1000 * 60 * 60))
+                valid: false,
+                reason: 'server_rejected',
+                details: error?.message || String(error) || 'Error desconocido del servidor'
             };
         }
-
-        return {
-            valid: false,
-            reason: 'server_rejected',
-            details: error?.message || String(error) || 'Error desconocido del servidor'
-        };
-    }
     })();
 
     try {
@@ -495,23 +505,97 @@ export const revalidateLicense = async function (licenseKeyProp) {
 
 export const saveBusinessProfile = async function (licenseKey, profileData) {
     try {
-        const { data, error } = await supabaseClient.rpc(
-            'save_business_profile_anon', {
-            license_key_param: licenseKey,
-            profile_data: {
-                name: profileData.name,
-                phone: profileData.phone,
-                address: profileData.address,
-                logo_url: profileData.logo,
-                business_type: profileData.business_type
+        if (!licenseKey) {
+            return {
+                success: false,
+                message: 'No hay licencia activa para guardar el perfil.'
+            };
+        }
+
+        if (!supabaseClient) {
+            return {
+                success: false,
+                message: 'Supabase no está configurado.'
+            };
+        }
+
+        const deviceFingerprint = await getStableDeviceId();
+        let securityToken = await getSecureCredentials();
+
+        // Si el token no existe localmente, intentamos revalidar para recuperarlo/rotarlo.
+        // Esto ayuda en dispositivos existentes que activaron antes del cambio de seguridad.
+        if (!securityToken) {
+            Logger.warn('[BusinessProfile] No hay token local. Intentando revalidar licencia antes de guardar perfil.');
+
+            const validation = await revalidateLicense(licenseKey);
+
+            if (validation?.valid) {
+                securityToken = await getSecureCredentials();
             }
-        });
+        }
+
+        if (!deviceFingerprint || !securityToken) {
+            return {
+                success: false,
+                message:
+                    'No se pudo confirmar la identidad segura del dispositivo. ' +
+                    'Conéctate a internet, vuelve a iniciar sesión o reactiva la licencia.'
+            };
+        }
+
+        const businessType = Array.isArray(profileData.business_type)
+            ? profileData.business_type.filter(Boolean)
+            : profileData.business_type
+                ? [profileData.business_type].filter(Boolean)
+                : [];
+
+        if (!profileData.name?.trim() || businessType.length === 0) {
+            return {
+                success: false,
+                message: 'Completa el nombre del negocio y selecciona al menos un rubro.'
+            };
+        }
+
+        const securePayload = {
+            name: profileData.name || '',
+            phone: profileData.phone || '',
+            address: profileData.address || '',
+            logo_url: profileData.logo || profileData.logo_url || '',
+            business_type: businessType
+        };
+
+        const { data, error } = await supabaseClient.rpc(
+            'save_business_profile_secure',
+            {
+                license_key_param: licenseKey,
+                device_fingerprint_param: deviceFingerprint,
+                security_token_param: securityToken,
+                profile_data: securePayload
+            }
+        );
 
         if (error) throw error;
+
+        if (!data?.success) {
+            Logger.warn('[BusinessProfile] Guardado seguro rechazado:', data);
+
+            return {
+                success: false,
+                message:
+                    data?.error === 'DEVICE_TOKEN_INVALID'
+                        ? 'El token de seguridad del dispositivo no es válido. Vuelve a iniciar sesión.'
+                        : data?.error || 'No se pudo guardar el perfil del negocio.'
+            };
+        }
+
         return data;
     } catch (error) {
-        Logger.error('Error guardando perfil:', error);
-        return { success: false, message: error.message };
+        Logger.error('Error guardando perfil seguro:', error);
+
+        return {
+            success: false,
+            message: error.message || 'No se pudo guardar el perfil del negocio.'
+        };
     }
 };
 
@@ -585,7 +669,7 @@ export const deactivateCurrentDevice = async (licenseKey) => {
             Logger.log(`🔒 Cerrando sesión en servidor para dispositivo: ${myDevice.device_name}`);
 
             // C. Llamamos a la RPC de desactivación
-            const { error: deactivateError } = await supabaseClient.rpc('deactivate_device_anon', {
+            const { error: deactivateError } = await supabaseClient.rpc('release_device_anon', {
                 device_id_param: myDevice.device_id,
                 license_key_param: licenseKey,
                 requester_fingerprint_param: fingerprint
@@ -629,7 +713,22 @@ export const createFreeTrial = async function () {
 
         if (data && data.success) {
             safeLocalStorageSet('fp', deviceFingerprint);
+
             const licenseData = data.details || data;
+            const securityToken =
+                data.device_security_token ||
+                data.security_token ||
+                licenseData.security_token ||
+                licenseData.token ||
+                null;
+
+            if (securityToken) {
+                await setSecureCredentials(securityToken);
+                Logger.log('🔐 Token inicial de trial guardado correctamente.');
+            } else {
+                Logger.warn('⚠️ Trial creado, pero el servidor no devolvió token de seguridad.');
+            }
+
             return { success: true, details: licenseData };
         } else {
             await registerFailedAttempt();
@@ -656,7 +755,7 @@ export const deactivateDeviceById = async function (deviceId) {
             return { success: false, message: "No hay sesión activa para realizar esta acción." };
         }
 
-        const { data, error } = await supabaseClient.rpc('deactivate_device_anon', {
+        const { data, error } = await supabaseClient.rpc('release_device_anon', {
             device_id_param: deviceId,
             license_key_param: licenseKey,
             requester_fingerprint_param: deviceFingerprint

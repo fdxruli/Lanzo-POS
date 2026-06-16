@@ -727,7 +727,7 @@ function injectRawDOMFallback(message) {
 
   const overlay = document.createElement('div');
   overlay.id = 'lanzo-db-block-fallback';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.95);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:2147483647;font-family:sans-serif;padding:2rem;text-align:center;';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.95);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:var(--z-critical-blocker);font-family:sans-serif;padding:2rem;text-align:center;';
 
   overlay.innerHTML = `
     <h1 style="color:#ff4444;margin-bottom:1rem;">Mantenimiento Requerido</h1>
