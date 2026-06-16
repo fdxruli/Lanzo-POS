@@ -97,7 +97,7 @@ export function useTableManagement({
             }
 
             // Cerrar modal móvil si está abierto
-            const modalState = document.querySelector('.modal[style*="z-index: 10005"]');
+            const modalState = document.querySelector('.mobile-pos-cart-modal');
             if (modalState) {
                 // El padre se encarga de cerrar el modal móvil
             }

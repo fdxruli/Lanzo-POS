@@ -437,9 +437,11 @@ export function useCaja() {
     }
   }, []);
 
-  const cargarEstadoCaja = useCallback(async () => {
-    setIsLoading(true);
-    setEstadoCaja('loading');
+  const cargarEstadoCaja = useCallback(async ({ showLoading = true } = {}) => {
+    if (showLoading) {
+      setIsLoading(true);
+      setEstadoCaja('loading');
+    }
     setError(null);
     try {
       let cajaActiva = await obtenerCajaAbiertaMasReciente();
@@ -547,7 +549,7 @@ export function useCaja() {
   }, [cajaActualEstado, cajaActualId]);
 
   const sincronizarEstadoCaja = useCallback(async () => {
-    await cargarEstadoCaja();
+    await cargarEstadoCaja({ showLoading: false });
   }, [cargarEstadoCaja]);
 
   const aplicarCajaActiva = useCallback(async (cajaActiva) => {

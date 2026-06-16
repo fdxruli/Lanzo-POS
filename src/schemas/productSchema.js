@@ -5,6 +5,7 @@ export const productSchema = z.object({
   id: z.string().min(1, "El ID es obligatorio"),
   name: z.string().min(1, "El nombre no puede estar vacío").trim(),
   barcode: z.string().trim().optional().or(z.literal('')),
+  sku: z.string().trim().optional().or(z.literal('')),
   description: z.string().optional().or(z.literal('')),
   rubroContext: z.string().optional(),
 

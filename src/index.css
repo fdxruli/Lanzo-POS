@@ -50,7 +50,9 @@
   /* Barra de navegación */
   --z-sticky: 200;
   /* Elementos pegajosos (headers de tablas) */
-  --z-drawer: 300;
+  --z-floating-ui: 500;
+  --z-drawer-backdrop: 700;
+  --z-drawer: 710;
   /* Menú lateral móvil */
   --z-backdrop: 900;
   /* Fondo oscuro de modales */
@@ -70,7 +72,8 @@
   /* Para QuickAddCustomer, Recetas, Mermas, Importar */
 
   /* CAPA DE NOTIFICACIONES (Siempre encima de todo) */
-  --z-toast: 9999;
+  --z-toast: 30000;
+  --z-critical-blocker: 2147483647;
 
   /* Transición suave para evitar dolor de ojos */
   --transition: all 0.2s ease-in-out;
@@ -347,17 +350,18 @@ svg path {
 /* ===== MODALES ===== */
 .modal {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
-  height: 100%;
+  height: 100vh;
+  height: 100dvh;
   background-color: rgba(15, 23, 42, 0.6);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: var(--z-modal-base);
-  padding: var(--spacing-md);
+  padding: max(var(--spacing-md), env(safe-area-inset-top, 0px)) max(var(--spacing-md), env(safe-area-inset-right, 0px)) max(var(--spacing-md), env(safe-area-inset-bottom, 0px)) max(var(--spacing-md), env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
 }
 
 .modal-content {
@@ -369,9 +373,11 @@ svg path {
   width: 100%;
   max-width: 500px;
   max-height: 90vh;
+  max-height: calc(100dvh - max(var(--spacing-md), env(safe-area-inset-top, 0px)) - max(var(--spacing-md), env(safe-area-inset-bottom, 0px)));
   overflow-y: auto;
   position: relative;
   animation: modalFadeIn 0.3s ease-out;
+  box-sizing: border-box;
 }
 
 @keyframes modalFadeIn {

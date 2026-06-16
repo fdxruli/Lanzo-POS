@@ -27,6 +27,43 @@
   text-align: center;
 }
 
+.caja-grid--opening {
+  grid-template-columns: minmax(0, 760px);
+  justify-content: center;
+}
+
+.caja-grid .caja-opening-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.caja-grid .caja-opening-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.caja-grid .caja-opening-heading h2 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 1.15rem;
+}
+
+.caja-grid .caja-opening-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--primary-color);
+  background: var(--caja-blue-soft);
+  border-radius: 13px;
+}
+
+.caja-grid .cash-opening-form {
+  padding-top: 0.25rem;
+}
+
 .caja-grid .caja-card {
   min-width: 0;
   padding: 1rem;

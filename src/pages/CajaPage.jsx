@@ -21,7 +21,8 @@ import {
   CajaStatusCard,
   CajaActionsCard,
   CajaMovementsList,
-  CajaHistoryList
+  CajaHistoryList,
+  CajaOpeningPanel
 } from '../components/caja/sections';
 
 // Componentes de modales
@@ -57,7 +58,11 @@ export default function CajaPage() {
     historialCajas,
     movimientosCaja,
     isLoading,
+    estadoCaja,
+    aperturaPendiente,
+    error,
     totalesTurno,
+    abrirCaja,
     ajustarMontoInicial,
     realizarAuditoriaYCerrar,
     registrarMovimiento,
@@ -416,6 +421,29 @@ export default function CajaPage() {
       <div className="caja-loading" role="status" aria-live="polite">
         <div className="spinner-loader"></div>
         <p>Sincronizando caja inteligente...</p>
+      </div>
+    );
+  }
+
+  if (estadoCaja === 'error') {
+    return (
+      <div className="caja-loading" role="alert">
+        <p>{error || 'No se pudo cargar el estado de caja.'}</p>
+        <button type="button" className="btn btn-primary" onClick={sincronizarEstadoCaja}>
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  if (estadoCaja === 'needs_opening') {
+    return (
+      <div className="caja-grid caja-grid--opening" role="main" aria-label="Apertura de Caja">
+        <CajaOpeningPanel
+          aperturaPendiente={aperturaPendiente}
+          onOpen={abrirCaja}
+        />
+        <CajaHistoryList historial={historialCajas} />
       </div>
     );
   }

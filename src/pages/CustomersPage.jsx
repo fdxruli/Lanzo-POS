@@ -1,6 +1,6 @@
 // src/pages/CustomersPage.jsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { AlertTriangle, UserPlus } from 'lucide-react';
+import { AlertTriangle, UserPlus, Users } from 'lucide-react';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
@@ -330,7 +330,7 @@ export default function CustomersPage() {
     const cajaVigente = await resolveOpenCaja();
 
     if (!cajaVigente) {
-      showMessageModal('Debes tener una caja abierta para registrar un abono.');
+      showMessageModal('Debes tener una caja abierta para registrar un abono.', null, { type: 'error' });
       return;
     }
 
@@ -360,7 +360,7 @@ export default function CustomersPage() {
       const cajaVigente = await resolveOpenCaja();
 
       if (!cajaVigente) {
-        showMessageModal('Debes tener una caja abierta para registrar un abono.');
+        showMessageModal('Debes tener una caja abierta para registrar un abono.', null, { type: 'error' });
         handleCloseModals();
         return;
       }
@@ -412,7 +412,7 @@ export default function CustomersPage() {
 
       // Mostrar el error exacto que arrojó el motor transaccional (ej. Abono excede deuda)
       const errorMsg = error.message || 'Error desconocido al procesar la transacción.';
-      showMessageModal(`Transacción abortada: ${errorMsg}`);
+      showMessageModal(`Transacción abortada: ${errorMsg}`, null, { type: 'error' });
 
       handleCloseModals();
     }
@@ -558,11 +558,26 @@ ${itemsString}
         <button
           type="button"
           className={`customers-add-button ${activeTab === 'add-customer' ? 'is-active' : ''}`}
-          onClick={() => handleTabChange('add-customer')}
+          onClick={() => {
+            if (activeTab === 'add-customer') {
+              handleTabChange('view-customers');
+            } else {
+              handleTabChange('add-customer');
+            }
+          }}
           aria-pressed={activeTab === 'add-customer'}
         >
-          <UserPlus size={20} aria-hidden="true" />
-          {editingCustomer ? 'Editar cliente' : 'Anadir cliente'}
+          {activeTab === 'add-customer' ? (
+            <>
+              <Users size={20} aria-hidden="true" />
+              Ver lista
+            </>
+          ) : (
+            <>
+              <UserPlus size={20} aria-hidden="true" />
+              {editingCustomer ? 'Editar cliente' : 'Añadir cliente'}
+            </>
+          )}
         </button>
       </section>
 

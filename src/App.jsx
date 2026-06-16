@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useEffect, lazy, Suspense, useRef } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
@@ -117,9 +117,8 @@ function App() {
     useAppStore.setState({ pendingTermsUpdate: null });
   };
 
-  // Traemos ambas acciones: Iniciar y Detener
-  const startRealtimeSecurity = useAppStore((state) => state.startRealtimeSecurity);
-  const stopRealtimeSecurity = useAppStore((state) => state.stopRealtimeSecurity);
+  const startLicenseSync = useAppStore((state) => state.startLicenseSync);
+  const stopLicenseSync = useAppStore((state) => state.stopLicenseSync);
 
   useEffect(() => {
     initializeApp();
@@ -127,12 +126,14 @@ function App() {
 
   useEffect(() => {
     if (appStatus === 'ready') {
-      startRealtimeSecurity();
+      startLicenseSync();
+      return () => {
+        stopLicenseSync();
+      };
+    } else {
+      stopLicenseSync();
     }
-  }, [appStatus]);
-
-  // Candado persistente fuera del ciclo de dependencias del useEffect
-  const isReconnectingRef = useRef(false);
+  }, [appStatus, startLicenseSync, stopLicenseSync]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {

@@ -1,5 +1,5 @@
 // src/pages/DashboardPage.jsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Logger from '../services/Logger';
 
@@ -17,16 +17,19 @@ import BusinessTips from '../components/dashboard/BusinessTips';
 import WasteHistory from '../components/dashboard/WasteHistory';
 import RestockSuggestions from '../components/dashboard/RestockSuggestion';
 import ExpirationAlert from '../components/dashboard/ExpirationAlert';
+import SaleCancellationModal from '../components/dashboard/SaleCancellationModal';
 
 import { loadData, STORES } from '../services/database';
 import { showMessageModal } from '../services/utils';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
 import { Save, BarChart3, Trash2, ArrowRight } from 'lucide-react';
+import { CANCELLATION_ACTIONS } from '../services/sales/cancelSaleCore';
 
 export default function DashboardPage() {
   const [customers, setCustomers] = useState([]);
   const [activeTab, setActiveTab] = useState('stats');
+  const [saleToCancel, setSaleToCancel] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const features = useFeatureConfig();
@@ -40,6 +43,8 @@ export default function DashboardPage() {
   const sales = useSalesStore((state) => state.sales);
   const loadRecentSales = useSalesStore((state) => state.loadRecentSales);
   const deleteSale = useSalesStore((state) => state.deleteSale);
+  const archiveCancelledSale = useSalesStore((state) => state.archiveCancelledSale);
+  const isSaleLoading = useSalesStore((state) => state.isLoading);
   const wasteLogs = useSalesStore((state) => state.wasteLogs);
   const fetchWastePage = useSalesStore((state) => state.fetchWastePage);
   const hasMoreWaste = useSalesStore((state) => state.hasMoreWaste);
@@ -69,7 +74,7 @@ export default function DashboardPage() {
     loadStats();
     loadRecentSales();
     loadCustomers();
-  }, []);
+  }, [loadRecentSales, loadStats]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -116,50 +121,67 @@ export default function DashboardPage() {
     return `\n\nAdvertencias:\n${preview}${tail}`;
   };
 
-  const handleDeleteSale = async (timestamp) => {
-    const confirmDelete = window.confirm('¿Mover esta venta a la Papelera?');
-    if (!confirmDelete) return;
+  const handleDeleteSale = (sale) => {
+    setSaleToCancel(sale);
+  };
 
-    const restoreStock = window.confirm(
-      '¿Deseas DEVOLVER los productos de esta venta al inventario fisico?\n\n' +
-      '• [Aceptar]: Si, hubo un error de cobro y el producto sigue en mostrador.\n' +
-      '• [Cancelar]: No, el producto es merma/perdida (no regresara al stock).'
+  const handleArchiveCancelledSale = async (sale) => {
+    if (!window.confirm('¿Mover esta venta cancelada a la papelera?')) return;
+    const result = await archiveCancelledSale(sale.id);
+    if (!result.success) {
+      showMessageModal(result.message || 'No se pudo mover la venta a papelera.', null, { type: 'error' });
+      return;
+    }
+    await loadRecycleBin();
+    showMessageModal('Venta cancelada movida a la papelera.');
+  };
+
+  const handleConfirmCancellation = async ({ dispositionPlan, reason }) => {
+    if (!saleToCancel) return;
+
+    const restoreStock = dispositionPlan.some(
+      (entry) => entry.action === CANCELLATION_ACTIONS.RESTOCK
     );
-
-    const result = await deleteSale(timestamp, { restoreStock });
+    const result = await deleteSale(saleToCancel.timestamp, {
+      restoreStock,
+      dispositionPlan,
+      reason,
+      allowWaste: features.hasWaste
+    });
 
     if (result.success) {
-      if (result.warnings.length > 0) {
-        const baseMessage = restoreStock
-          ? 'Venta cancelada con restauracion parcial de inventario.'
-          : 'Venta cancelada y movida a la papelera.';
+      setSaleToCancel(null);
+      const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+      if (warnings.length > 0) {
         showMessageModal(
-          `${baseMessage}${buildWarningsMessage(result.warnings)}`,
+          `Venta cancelada con advertencias.${buildWarningsMessage(warnings)}`,
           null,
           { type: 'warning' }
         );
         return;
       }
 
-      showMessageModal(
-        restoreStock
-          ? '✅ Venta cancelada y productos devueltos al stock.'
-          : '✅ Venta cancelada. Los productos se registraron como salida definitiva.'
-      );
+      if (result.wasteRecordIds?.length > 0) await loadRecentSales();
+      showMessageModal('Venta cancelada y registrada en el historial.');
       return;
     }
 
     if (result.code === 'NOT_FOUND') {
-      showMessageModal('⚠️ No se encontro la venta. Intenta recargar la pagina.', null, { type: 'warning' });
+      showMessageModal('No se encontro la venta. Intenta recargar la pagina.', null, { type: 'warning' });
       return;
     }
 
-    if (result.code === 'RECYCLE_FAILED') {
-      showMessageModal(`Error al mover a la papelera: ${result.message || 'fallo desconocido'}`, null, { type: 'error' });
+    if (result.code === 'ALREADY_CANCELLED') {
+      setSaleToCancel(null);
+      showMessageModal('La venta ya estaba cancelada.', null, { type: 'warning' });
       return;
     }
 
-    showMessageModal(`Error al procesar la cancelacion: ${result.message || 'error inesperado'}`, null, { type: 'error' });
+    showMessageModal(
+      `Error al procesar la cancelacion: ${result.message || 'error inesperado'}`,
+      null,
+      { type: 'error' }
+    );
   };
 
   useEffect(() => {
@@ -272,7 +294,11 @@ export default function DashboardPage() {
                 <span className="panel-subtitle">Registro de ventas recientes</span>
               </div>
               <div className="panel-body">
-                <SalesHistory sales={sales} onDeleteSale={deleteSale} />
+                <SalesHistory
+                  sales={sales}
+                  onDeleteSale={handleDeleteSale}
+                  onArchiveSale={handleArchiveCancelledSale}
+                />
               </div>
             </section>
 
@@ -313,6 +339,15 @@ export default function DashboardPage() {
           activeRubros={features.activeRubros}
         />
       )}
+
+      <SaleCancellationModal
+        show={Boolean(saleToCancel)}
+        sale={saleToCancel}
+        allowWaste={features.hasWaste}
+        isSubmitting={isSaleLoading}
+        onClose={() => !isSaleLoading && setSaleToCancel(null)}
+        onConfirm={handleConfirmCancellation}
+      />
     </>
   );
 }

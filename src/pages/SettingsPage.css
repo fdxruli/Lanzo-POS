@@ -209,6 +209,60 @@
   font-weight: bold;
 }
 
+.license-renewal-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: #fffbeb;
+}
+
+.license-renewal-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #92400e;
+}
+
+.license-renewal-copy span {
+  font-size: 0.9rem;
+  color: #78350f;
+}
+
+.license-renewal-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
+  min-width: 170px;
+  white-space: nowrap;
+}
+
+.license-renewal-error {
+  margin: var(--spacing-sm) 0 var(--spacing-md);
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .license-renewal-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .license-renewal-button {
+    width: 100%;
+  }
+}
+
 .device-manager-tittle{
   font-size: 1rem;
   font-weight: 600;

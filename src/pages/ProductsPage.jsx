@@ -20,6 +20,9 @@ import ProductWizard from '../components/products/ProductWizard';
 import './ProductsPage.css';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom'
+import { useNavigationGuard } from '../hooks/useNavigationGuard';
+
+const PRODUCT_FORM_EXIT_MESSAGE = 'Estás editando o creando un producto. Si sales ahora, los datos no guardados se perderán. ¿Seguro que quieres salir?';
 
 const normalizeInventoryForSave = (productData, existingProduct = null) => {
     const tracksInventory = productData.trackStock !== false;
@@ -75,6 +78,15 @@ export default function ProductsPage() {
     const setFilters = useProductStore((state) => state.setFilters);
     const refreshData = useProductStore((state) => state.loadInitialProducts);
     const refreshCategories = useProductStore((state) => state.refreshCategories);
+    const isProductFormActive = activeTab === 'add-product';
+    const { runWithoutBlocking } = useNavigationGuard({
+        enabled: isProductFormActive,
+        title: '¿Salir del formulario?',
+        message: PRODUCT_FORM_EXIT_MESSAGE,
+        confirmButtonText: 'Sí, salir',
+        cancelButtonText: 'Continuar editando',
+        onDiscard: () => setEditingProduct(null)
+    });
 
     useEffect(() => {
         setFilters({ categoryId: null, outOfStockOnly: false })
@@ -102,6 +114,8 @@ export default function ProductsPage() {
     }, [searchParams]);
 
     const handleTabChange = (tabKey) => {
+        if (tabKey === activeTab) return;
+
         const urlMap = {
             'add-product': 'add',
             'view-products': 'list',
@@ -118,8 +132,6 @@ export default function ProductsPage() {
         } else {
             setSearchParams({ tab: paramValue });
         }
-
-        setActiveTab(tabKey);
     };
 
     // --- FILTROS PARA PESTAÑAS ---
@@ -368,8 +380,10 @@ export default function ProductsPage() {
                 });
 
                 // Volvemos a la vista principal
-                if (productData.productType === 'ingredient') setActiveTab('ingredients');
-                else setActiveTab('view-products');
+                runWithoutBlocking(() => {
+                    if (productData.productType === 'ingredient') handleTabChange('ingredients');
+                    else handleTabChange('view-products');
+                });
 
                 return true;
             } else {
@@ -388,7 +402,7 @@ export default function ProductsPage() {
 
     const handleEditProduct = (product) => {
         setEditingProduct(product);
-        setActiveTab('add-product');
+        handleTabChange('add-product');
     };
 
     const handleCreateIngredient = () => {
@@ -396,7 +410,7 @@ export default function ProductsPage() {
             name: '',
             productType: 'ingredient',
         });
-        setActiveTab('add-product');
+        handleTabChange('add-product');
     };
 
     const handleDeleteProduct = async (product) => {
@@ -475,7 +489,11 @@ export default function ProductsPage() {
             <div className="tabs-container" id="product-tabs" style={{ overflowX: 'auto' }}>
                 <button
                     className={`tab-btn ${activeTab === 'add-product' ? 'active' : ''}`}
-                    onClick={() => { setEditingProduct(null); handleTabChange('add-product'); }}
+                    onClick={() => {
+                        if (activeTab === 'add-product') return;
+                        setEditingProduct(null);
+                        handleTabChange('add-product');
+                    }}
                 >
                     {editingProduct && !editingProduct.id ? 'Nuevo Insumo' : (editingProduct ? 'Editar Item' : 'Añadir Producto')}
                 </button>
@@ -527,7 +545,7 @@ export default function ProductsPage() {
                     <>
                             <ProductForm
                                 onSave={handleSaveProduct}
-                                onCancel={() => setActiveTab('view-products')}
+                                onCancel={() => handleTabChange('view-products')}
                                 productToEdit={editingProduct}
                                 categories={categories}
                                 onOpenCategoryManager={() => setShowCategoryModal(true)}
