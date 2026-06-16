@@ -152,7 +152,7 @@ export default function Step1Basicos({
             <div style={{
                 marginTop: '24px',
                 padding: '12px 16px',
-                backgroundColor: name && categoryId ? '#f0fdf4' : '#fffbeb',
+                backgroundColor: name && categoryId ? 'rgba(0, 196, 140, 0.1)' : 'rgba(255, 184, 0, 0.1)',
                 border: `1px solid ${name && categoryId ? '#bbf7d0' : '#fde68a'}`,
                 borderRadius: '8px',
                 display: 'flex',
@@ -167,7 +167,7 @@ export default function Step1Basicos({
                         margin: 0, 
                         fontSize: '0.9rem', 
                         fontWeight: '600',
-                        color: name && categoryId ? '#166534' : '#92400e'
+                        color: name && categoryId ? 'var(--success-color)' : '#92400e'
                     }}>
                         {name && categoryId 
                             ? '¡Datos básicos completos!' 

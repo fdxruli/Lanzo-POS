@@ -43,13 +43,13 @@ function AbarrotesHelp({ answers }) {
         <div style={{
             marginTop: '15px',
             padding: '15px',
-            backgroundColor: '#f0fdf4',
+            backgroundColor: 'rgba(0, 196, 140, 0.1)',
             borderRadius: '10px',
             border: '1px solid #bbf7d0'
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
                 <span style={{ fontSize: '1.3rem' }}>📦</span>
-                <strong style={{ color: '#166534', fontSize: '0.95rem' }}>
+                <strong style={{ color: 'var(--success-color)', fontSize: '0.95rem' }}>
                     Ejemplo en tiempo real
                 </strong>
             </div>
@@ -60,7 +60,7 @@ function AbarrotesHelp({ answers }) {
                         <strong>Configuración:</strong> Venta por pieza/unidad
                     </p>
                     <div style={{ 
-                        backgroundColor: 'white', 
+                        backgroundColor: 'var(--card-background-color)', 
                         padding: '10px', 
                         borderRadius: '6px',
                         border: '1px solid #86efac'
@@ -82,7 +82,7 @@ function AbarrotesHelp({ answers }) {
                         <strong>Configuración:</strong> Venta por {getUnitLabel(bulkUnit)}
                     </p>
                     <div style={{ 
-                        backgroundColor: 'white', 
+                        backgroundColor: 'var(--card-background-color)', 
                         padding: '10px', 
                         borderRadius: '6px',
                         border: '1px solid #86efac'
@@ -101,20 +101,20 @@ function AbarrotesHelp({ answers }) {
             {hasConversion === true && bulkUnit && (
                 <div style={{ 
                     marginTop: '12px',
-                    backgroundColor: '#eff6ff',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     padding: '12px',
                     borderRadius: '8px',
-                    border: '1px solid #bfdbfe'
+                    border: '1px solid var(--primary-color)'
                 }}>
-                    <p style={{ margin: '0 0 8px 0', color: '#0c4a6e', fontSize: '0.9rem' }}>
+                    <p style={{ margin: '0 0 8px 0', color: 'var(--text-color)', fontSize: '0.9rem' }}>
                         <strong>🔄 Con conversión de compra:</strong>
                     </p>
-                    <div style={{ color: '#0c4a6e', fontSize: '0.85rem' }}>
+                    <div style={{ color: 'var(--text-color)', fontSize: '0.85rem' }}>
                         <p style={{ margin: '0 0 6px 0' }}>
                             Si configuras que compras una <strong>caja de 25kg</strong>:
                         </p>
                         <div style={{ 
-                            backgroundColor: 'white', 
+                            backgroundColor: 'var(--card-background-color)', 
                             padding: '8px', 
                             borderRadius: '6px',
                             fontFamily: 'monospace',
@@ -194,7 +194,7 @@ function HardwareHelp({ answers }) {
             </div>
 
             <div style={{ 
-                backgroundColor: 'white', 
+                backgroundColor: 'var(--card-background-color)', 
                 padding: '12px', 
                 borderRadius: '8px',
                 border: '1px solid #fde68a'
@@ -227,21 +227,21 @@ function FoodServiceHelp({ answers }) {
         <div style={{
             marginTop: '15px',
             padding: '15px',
-            backgroundColor: '#fef2f2',
+            backgroundColor: 'rgba(255, 59, 92, 0.1)',
             borderRadius: '10px',
             border: '1px solid #fecaca'
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
                 <span style={{ fontSize: '1.3rem' }}>🍽️</span>
-                <strong style={{ color: '#991b1b', fontSize: '0.95rem' }}>
+                <strong style={{ color: 'var(--error-color)', fontSize: '0.95rem' }}>
                     Ejemplo de configuración
                 </strong>
             </div>
 
             {productNature === 'dish' && (
-                <div style={{ color: '#991b1b', fontSize: '0.9rem' }}>
+                <div style={{ color: 'var(--error-color)', fontSize: '0.9rem' }}>
                     <div style={{ 
-                        backgroundColor: 'white', 
+                        backgroundColor: 'var(--card-background-color)', 
                         padding: '12px', 
                         borderRadius: '8px',
                         border: '1px solid #fca5a5',
@@ -271,12 +271,12 @@ function FoodServiceHelp({ answers }) {
 
             {productNature === 'ingredient' && (
                 <div style={{ 
-                    backgroundColor: 'white', 
+                    backgroundColor: 'var(--card-background-color)', 
                     padding: '12px', 
                     borderRadius: '8px',
                     border: '1px solid #fca5a5'
                 }}>
-                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.9rem' }}>
+                    <p style={{ margin: 0, color: 'var(--error-color)', fontSize: '0.9rem' }}>
                         <strong>🥬 Ingrediente</strong>
                     </p>
                     <p style={{ margin: '8px 0 0 0', fontSize: '0.85rem', color: '#b91c1c' }}>
@@ -287,12 +287,12 @@ function FoodServiceHelp({ answers }) {
 
             {productNature === 'beverage' && (
                 <div style={{ 
-                    backgroundColor: 'white', 
+                    backgroundColor: 'var(--card-background-color)', 
                     padding: '12px', 
                     borderRadius: '8px',
                     border: '1px solid #fca5a5'
                 }}>
-                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.9rem' }}>
+                    <p style={{ margin: 0, color: 'var(--error-color)', fontSize: '0.9rem' }}>
                         <strong>🥤 Bebida</strong>
                     </p>
                     <p style={{ margin: '8px 0 0 0', fontSize: '0.85rem', color: '#b91c1c' }}>
@@ -303,12 +303,12 @@ function FoodServiceHelp({ answers }) {
 
             {productNature === 'ready' && (
                 <div style={{ 
-                    backgroundColor: 'white', 
+                    backgroundColor: 'var(--card-background-color)', 
                     padding: '12px', 
                     borderRadius: '8px',
                     border: '1px solid #fca5a5'
                 }}>
-                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.9rem' }}>
+                    <p style={{ margin: 0, color: 'var(--error-color)', fontSize: '0.9rem' }}>
                         <strong>🍱 Producto Listo</strong>
                     </p>
                     <p style={{ margin: '8px 0 0 0', fontSize: '0.85rem', color: '#b91c1c' }}>
@@ -329,9 +329,9 @@ function FarmaciaHelp({ answers }) {
     if (!medicationType) return null;
 
     const typeInfo = {
-        otc: { icon: '🟢', label: 'Venta Libre', color: '#166534', bg: '#f0fdf4', border: '#86efac' },
+        otc: { icon: '🟢', label: 'Venta Libre', color: 'var(--success-color)', bg: 'rgba(0, 196, 140, 0.1)', border: '#86efac' },
         antibiotic: { icon: '🟠', label: 'Antibiótico', color: '#92400e', bg: '#fff7ed', border: '#fdba74' },
-        controlled: { icon: '🔴', label: 'Controlado', color: '#991b1b', bg: '#fef2f2', border: '#fca5a5' }
+        controlled: { icon: '🔴', label: 'Controlado', color: 'var(--error-color)', bg: 'rgba(255, 59, 92, 0.1)', border: '#fca5a5' }
     };
 
     const info = typeInfo[medicationType] || typeInfo.otc;
@@ -351,7 +351,7 @@ function FarmaciaHelp({ answers }) {
                 </strong>
             </div>
 
-            <div style={{ backgroundColor: 'white', padding: '12px', borderRadius: '8px' }}>
+            <div style={{ backgroundColor: 'var(--card-background-color)', padding: '12px', borderRadius: '8px' }}>
                 {medicationType === 'otc' && (
                     <p style={{ margin: 0, color: '#15803d', fontSize: '0.85rem' }}>
                         ✅ Se puede vender sin restricciones. No requiere receta.
@@ -371,7 +371,7 @@ function FarmaciaHelp({ answers }) {
                 )}
                 {medicationType === 'controlled' && (
                     <>
-                        <p style={{ margin: '0 0 8px 0', color: '#991b1b', fontSize: '0.85rem' }}>
+                        <p style={{ margin: '0 0 8px 0', color: 'var(--error-color)', fontSize: '0.85rem' }}>
                             🔒 Requiere receta retenida
                         </p>
                         <p style={{ margin: '0 0 6px 0', color: '#7f1d1d', fontSize: '0.8rem' }}>
@@ -387,7 +387,7 @@ function FarmaciaHelp({ answers }) {
                 {hasBatchTracking && (
                     <p style={{ 
                         marginTop: '10px', 
-                        color: '#0369a1', 
+                        color: 'var(--text-dark)', 
                         fontSize: '0.8rem',
                         borderTop: '1px solid #e0f2fe',
                         paddingTop: '8px'
@@ -412,18 +412,18 @@ function FruteriaHelp({ answers }) {
         <div style={{
             marginTop: '15px',
             padding: '15px',
-            backgroundColor: '#f0fdf4',
+            backgroundColor: 'rgba(0, 196, 140, 0.1)',
             borderRadius: '10px',
             border: '1px solid #86efac'
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
                 <span style={{ fontSize: '1.3rem' }}>🥬</span>
-                <strong style={{ color: '#166534', fontSize: '0.95rem' }}>
+                <strong style={{ color: 'var(--success-color)', fontSize: '0.95rem' }}>
                     Ejemplo de producto fresco
                 </strong>
             </div>
 
-            <div style={{ backgroundColor: 'white', padding: '12px', borderRadius: '8px' }}>
+            <div style={{ backgroundColor: 'var(--card-background-color)', padding: '12px', borderRadius: '8px' }}>
                 {saleType === 'unit' && (
                     <p style={{ margin: '0 0 8px 0', color: '#15803d', fontSize: '0.9rem' }}>
                         <strong>🍎 Por Pieza/Manojo</strong>

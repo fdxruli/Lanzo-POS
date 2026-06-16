@@ -9,6 +9,7 @@ describe('getBatchTableColumns', () => {
       'sku',
       'expiryDate',
       'price',
+      'supplier',
       'location',
       'stock',
       'actions'
@@ -21,6 +22,7 @@ describe('getBatchTableColumns', () => {
       'primary',
       'expiryDate',
       'price',
+      'supplier',
       'location',
       'stock',
       'actions'
@@ -32,10 +34,10 @@ describe('getBatchTableColumns', () => {
     expect(keys).toEqual([
       'primary',
       'price',
+      'supplier',
       'location',
       'stock',
       'actions'
     ]);
   });
 });
-

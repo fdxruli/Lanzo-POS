@@ -118,7 +118,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 2500 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
       <div className="modal-content" style={{ maxWidth: '600px' }}>
         <h2 className="modal-title">Gestión Masiva de Datos</h2>
 

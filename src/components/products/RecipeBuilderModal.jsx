@@ -113,7 +113,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 2200 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
       <div className="modal-content recipe-modal">
         <h2 className="modal-title">Construir Receta</h2>
         <p className="modal-subtitle">Producto: <strong>{productName || 'Nuevo Producto'}</strong></p>

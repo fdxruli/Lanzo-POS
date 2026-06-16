@@ -2,9 +2,9 @@ import { useRef } from 'react';
 
 const getMarginColor = (marginVal) => {
     const m = parseFloat(marginVal) || 0;
-    if (m < 15) return '#ef4444';
+    if (m < 15) return 'var(--error-color)';
     if (m < 30) return '#eab308';
-    return '#22c55e';
+    return 'var(--success-color)';
 };
 
 const getMarginLabel = (marginVal) => {
@@ -80,16 +80,16 @@ export default function Step3PrecioDetalles({
 
             {/* Sección de Precios - CRÍTICA */}
             <div style={{
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--light-background)',
                 padding: '20px',
                 borderRadius: '12px',
-                border: '2px solid #e2e8f0',
+                border: '2px solid var(--border-color)',
                 marginBottom: '20px'
             }}>
                 <h4 style={{ 
                     margin: '0 0 15px 0', 
                     fontSize: '1rem', 
-                    color: '#1e293b',
+                    color: 'var(--text-dark)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px'
@@ -109,7 +109,7 @@ export default function Step3PrecioDetalles({
                                 left: '12px',
                                 top: '50%',
                                 transform: 'translateY(-50%)',
-                                color: '#64748b',
+                                color: 'var(--text-light)',
                                 fontWeight: '600'
                             }}>$</span>
                             <input
@@ -127,7 +127,7 @@ export default function Step3PrecioDetalles({
                                 }}
                             />
                         </div>
-                        <span style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: '4px', display: 'block' }}>
                             ¿Cuánto pagaste por él?
                         </span>
                     </div>
@@ -143,7 +143,7 @@ export default function Step3PrecioDetalles({
                                 left: '12px',
                                 top: '50%',
                                 transform: 'translateY(-50%)',
-                                color: '#64748b',
+                                color: 'var(--text-light)',
                                 fontWeight: '600'
                             }}>$</span>
                             <input
@@ -159,7 +159,7 @@ export default function Step3PrecioDetalles({
                                     fontSize: '1.1rem',
                                     fontWeight: '700',
                                     borderColor: step3Errors?.price ? 'var(--error-color)' : 'var(--border-color)',
-                                    color: '#1e293b'
+                                    color: 'var(--text-dark)'
                                 }}
                                 autoFocus
                             />
@@ -177,13 +177,13 @@ export default function Step3PrecioDetalles({
                     <div style={{
                         marginTop: '20px',
                         padding: '15px',
-                        backgroundColor: 'white',
+                        backgroundColor: 'var(--card-background-color)',
                         borderRadius: '10px',
                         border: `2px solid ${marginColor}`,
                         boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#64748b' }}>
+                            <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-light)' }}>
                                 Margen de Ganancia
                             </span>
                             <span style={{
@@ -198,7 +198,7 @@ export default function Step3PrecioDetalles({
                         {/* Barra de progreso del margen */}
                         <div style={{
                             height: '10px',
-                            backgroundColor: '#f1f5f9',
+                            backgroundColor: 'var(--light-background)',
                             borderRadius: '5px',
                             overflow: 'hidden',
                             position: 'relative'
@@ -217,7 +217,7 @@ export default function Step3PrecioDetalles({
                             justifyContent: 'space-between',
                             fontSize: '0.85rem'
                         }}>
-                            <span style={{ color: '#64748b' }}>
+                            <span style={{ color: 'var(--text-light)' }}>
                                 Ganancia por unidad: <strong style={{ color: marginColor }}>${(parseFloat(price || 0) - parseFloat(cost || 0)).toFixed(2)}</strong>
                             </span>
                             <span style={{ color: marginColor, fontWeight: '600' }}>
@@ -227,7 +227,7 @@ export default function Step3PrecioDetalles({
 
                         {/* Input de margen para ajuste rápido */}
                         <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <label style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                            <label style={{ fontSize: '0.85rem', color: 'var(--text-light)' }}>
                                 Ajustar margen:
                             </label>
                             <input
@@ -246,7 +246,7 @@ export default function Step3PrecioDetalles({
                                     fontSize: '0.95rem'
                                 }}
                             />
-                            <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-light)' }}>
                                 El precio se ajustará automáticamente
                             </span>
                         </div>
@@ -256,7 +256,7 @@ export default function Step3PrecioDetalles({
 
             {/* Detalles Opcionales */}
             <div style={{
-                backgroundColor: '#f0fdf4',
+                backgroundColor: 'rgba(0, 196, 140, 0.1)',
                 padding: '15px',
                 borderRadius: '12px',
                 border: '1px solid #bbf7d0',
@@ -265,7 +265,7 @@ export default function Step3PrecioDetalles({
                 <h4 style={{ 
                     margin: '0 0 15px 0', 
                     fontSize: '0.95rem', 
-                    color: '#166534',
+                    color: 'var(--success-color)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px'
@@ -302,7 +302,7 @@ export default function Step3PrecioDetalles({
                                 justifyContent: 'center',
                                 cursor: 'pointer',
                                 overflow: 'hidden',
-                                backgroundColor: 'white',
+                                backgroundColor: 'var(--card-background-color)',
                                 transition: 'border-color 0.2s'
                             }}
                             onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-color)'}
@@ -315,7 +315,7 @@ export default function Step3PrecioDetalles({
                                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                 />
                             ) : (
-                                <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+                                <div style={{ textAlign: 'center', color: 'var(--text-light)' }}>
                                     <span style={{ fontSize: '1.5rem' }}>📷</span>
                                     <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>Agregar</div>
                                 </div>
@@ -354,7 +354,7 @@ export default function Step3PrecioDetalles({
                                     Quitar
                                 </button>
                             )}
-                            <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '8px' }}>
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: '8px' }}>
                                 💡 Una imagen ayuda a identificar el producto más rápido en el punto de venta
                             </p>
                         </div>
@@ -366,7 +366,7 @@ export default function Step3PrecioDetalles({
             <div style={{
                 marginTop: '24px',
                 padding: '12px 16px',
-                backgroundColor: price && parseFloat(price) > 0 ? '#f0fdf4' : '#fffbeb',
+                backgroundColor: price && parseFloat(price) > 0 ? 'rgba(0, 196, 140, 0.1)' : 'rgba(255, 184, 0, 0.1)',
                 border: `1px solid ${price && parseFloat(price) > 0 ? '#bbf7d0' : '#fde68a'}`,
                 borderRadius: '8px',
                 display: 'flex',
@@ -381,7 +381,7 @@ export default function Step3PrecioDetalles({
                         margin: 0, 
                         fontSize: '0.9rem', 
                         fontWeight: '600',
-                        color: price && parseFloat(price) > 0 ? '#166534' : '#92400e'
+                        color: price && parseFloat(price) > 0 ? 'var(--success-color)' : '#92400e'
                     }}>
                         {price && parseFloat(price) > 0 
                             ? margin && parseFloat(margin) > 0

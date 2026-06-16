@@ -87,13 +87,10 @@ export default function CustomerList({
     onWhatsAppLoading
 }) {
     // --- ESTADOS Y STORES ---
-    const { companyProfile, updateCompanyProfile } = useAppStore();
-
-    // Obtenemos el límite global del perfil de la empresa (o 0 si no existe)
-    // Usamos un campo personalizado en el perfil llamado 'settings_default_credit_limit'
-    const globalCreditLimit = useMemo(() => {
-        return companyProfile?.settings_default_credit_limit || 0;
-    }, [companyProfile]);
+    const globalCreditLimit = useAppStore(
+        (state) => state.companyProfile?.settings_default_credit_limit || 0
+    );
+    const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
 
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [isSavingConfig, setIsSavingConfig] = useState(false);
@@ -124,6 +121,7 @@ export default function CustomerList({
     const handleSaveGlobalLimit = async (newLimit, applyToAll) => {
         setIsSavingConfig(true);
         try {
+            const companyProfile = useAppStore.getState().companyProfile;
             await updateCompanyProfile({
                 ...companyProfile,
                 settings_default_credit_limit: newLimit

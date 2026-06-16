@@ -228,8 +228,8 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                         marginTop: '10px',
                         padding: '12px',
                         borderRadius: '8px',
-                        border: `2px solid ${data.isPerishable ? '#f59e0b' : '#e2e8f0'}`,
-                        backgroundColor: data.isPerishable ? '#fffbeb' : '#f8fafc',
+                        border: `2px solid ${data.isPerishable ? '#f59e0b' : 'var(--border-color)'}`,
+                        backgroundColor: data.isPerishable ? 'rgba(255, 184, 0, 0.1)' : 'var(--light-background)',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
@@ -252,10 +252,10 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                         }} />
                     </div>
                     <div>
-                        <span style={{ fontWeight: '600', display: 'block', fontSize: '0.95rem', color: data.isPerishable ? '#92400e' : '#64748b' }}>
+                        <span style={{ fontWeight: '600', display: 'block', fontSize: '0.95rem', color: data.isPerishable ? '#92400e' : 'var(--text-light)' }}>
                             {data.isPerishable ? '⏳ Este producto caduca' : '📦 Sin control de caducidad'}
                         </span>
-                        <small style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+                        <small style={{ color: 'var(--text-light)', fontSize: '0.8rem' }}>
                             {data.isPerishable
                                 ? 'La fecha se registra al dar de alta cada Lote.'
                                 : 'Activa esto para productos perecederos.'}

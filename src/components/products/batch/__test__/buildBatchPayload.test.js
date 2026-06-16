@@ -31,7 +31,9 @@ describe('buildBatchPayload', () => {
       notes: 'nota',
       trackStock: true,
       isActive: true,
-      expiryDate: '2026-03-15',
+      expiryDate: '2026-03-15T00:00:00.000Z',
+      alertTargetDate: '2026-03-15T00:00:00.000Z',
+      alertType: 'CADUCIDAD_LEGAL',
       sku: 'SKU-TEST-1',
       attributes: {
         talla: 'M',
@@ -74,4 +76,3 @@ describe('buildBatchPayload', () => {
     });
   });
 });
-

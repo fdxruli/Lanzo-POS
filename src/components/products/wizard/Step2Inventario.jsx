@@ -128,8 +128,8 @@ export default function Step2Inventario({
                     alignItems: 'center',
                     gap: '15px',
                     padding: '15px',
-                    backgroundColor: doesTrackStock ? '#f0fdf4' : '#f8fafc',
-                    border: `2px solid ${doesTrackStock ? '#22c55e' : '#cbd5e1'}`,
+                    backgroundColor: doesTrackStock ? 'rgba(0, 196, 140, 0.1)' : 'var(--light-background)',
+                    border: `2px solid ${doesTrackStock ? 'var(--success-color)' : '#cbd5e1'}`,
                     borderRadius: '12px',
                     cursor: 'pointer',
                     marginBottom: '20px',
@@ -153,7 +153,7 @@ export default function Step2Inventario({
                             position: 'absolute',
                             width: '24px', 
                             height: '24px', 
-                            backgroundColor: 'white',
+                            backgroundColor: 'var(--card-background-color)',
                             borderRadius: '50%',
                             left: doesTrackStock ? '22px' : '2px',
                             top: '2px',
@@ -166,14 +166,14 @@ export default function Step2Inventario({
                     <span style={{ 
                         fontWeight: 'bold', 
                         display: 'block', 
-                        color: doesTrackStock ? '#166534' : '#64748b',
+                        color: doesTrackStock ? 'var(--success-color)' : 'var(--text-light)',
                         fontSize: '1rem'
                     }}>
                         {doesTrackStock ? '✓ Controlar Inventario' : '○ Venta Libre (Sin Stock)'}
                     </span>
                     <span style={{ 
                         fontSize: '0.8rem', 
-                        color: doesTrackStock ? '#15803d' : '#94a3b8'
+                        color: doesTrackStock ? '#15803d' : 'var(--text-light)'
                     }}>
                         {doesTrackStock 
                             ? 'El sistema descontará automáticamente al vender' 
@@ -213,12 +213,12 @@ export default function Step2Inventario({
                         <div style={{ 
                             marginTop: '20px', 
                             padding: '15px', 
-                            backgroundColor: '#eff6ff', 
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)', 
                             borderRadius: '12px',
-                            border: '1px solid #bfdbfe'
+                            border: '1px solid var(--primary-color)'
                         }}>
                             <label className="form-label" style={{ 
-                                color: '#0369a1', 
+                                color: 'var(--text-dark)', 
                                 fontWeight: 'bold', 
                                 marginBottom: '12px', 
                                 display: 'block' 
@@ -253,7 +253,7 @@ export default function Step2Inventario({
 
                             {/* Unidad de Medida */}
                             <div style={{ 
-                                backgroundColor: 'white',
+                                backgroundColor: 'var(--card-background-color)',
                                 padding: '12px', 
                                 borderRadius: '8px',
                                 border: '1px solid #dbeafe'
@@ -273,9 +273,9 @@ export default function Step2Inventario({
                                             style={{
                                                 padding: '8px 16px',
                                                 borderRadius: '8px',
-                                                border: `2px solid ${unit === u.val ? 'var(--primary-color)' : '#e2e8f0'}`,
-                                                backgroundColor: unit === u.val ? '#eff6ff' : 'white',
-                                                color: unit === u.val ? 'var(--primary-color)' : '#64748b',
+                                                border: `2px solid ${unit === u.val ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                                                backgroundColor: unit === u.val ? 'rgba(59, 130, 246, 0.1)' : 'var(--card-background-color)',
+                                                color: unit === u.val ? 'var(--primary-color)' : 'var(--text-light)',
                                                 fontWeight: unit === u.val ? 'bold' : 'normal',
                                                 cursor: 'pointer',
                                                 transition: 'all 0.2s',
@@ -322,7 +322,7 @@ export default function Step2Inventario({
                     <div style={{
                         marginTop: '20px',
                         padding: '15px',
-                        backgroundColor: '#fffbeb',
+                        backgroundColor: 'rgba(255, 184, 0, 0.1)',
                         borderRadius: '12px',
                         border: '1px solid #fde68a'
                     }}>
@@ -365,7 +365,7 @@ export default function Step2Inventario({
             <div style={{
                 marginTop: '24px',
                 padding: '12px 16px',
-                backgroundColor: doesTrackStock ? '#f0fdf4' : '#fffbeb',
+                backgroundColor: doesTrackStock ? 'rgba(0, 196, 140, 0.1)' : 'rgba(255, 184, 0, 0.1)',
                 border: `1px solid ${doesTrackStock ? '#bbf7d0' : '#fde68a'}`,
                 borderRadius: '8px',
                 display: 'flex',
@@ -380,7 +380,7 @@ export default function Step2Inventario({
                         margin: 0, 
                         fontSize: '0.9rem', 
                         fontWeight: '600',
-                        color: doesTrackStock ? '#166534' : '#92400e'
+                        color: doesTrackStock ? 'var(--success-color)' : '#92400e'
                     }}>
                         {doesTrackStock 
                             ? 'Inventario configurado con control de stock' 

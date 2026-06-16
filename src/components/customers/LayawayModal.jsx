@@ -68,7 +68,9 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
 
             if (!movExito) throw new Error("No se pudo registrar en caja.");
 
-            await layawayRepository.addPayment(layaway.id, amount);
+            // ✅ FIX: pasar cajaId para que el historial del apartado registre
+            // qué caja procesó este abono (antes quedaba null).
+            await layawayRepository.addPayment(layaway.id, amount, cajaActual.id);
 
             showMessageModal('✅ Abono registrado correctamente.');
             setPaymentAmount('');
@@ -86,7 +88,8 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
 
     const handleDeliver = async (layaway) => {
         const pending = layaway.totalAmount - layaway.paidAmount;
-        if (pending > 0.50) {
+        // ✅ FIX: umbral alineado con addPayment ($0.01) en lugar del anterior $0.50
+        if (pending > 0.01) {
             showMessageModal(`⚠️ Saldo pendiente de $${pending.toFixed(2)}. Liquídalo primero.`);
             return;
         }
@@ -165,7 +168,7 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
 };
 
     return (
-        <div className="modal" style={{ display: 'flex', zIndex: 8001 }}>
+        <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-high)' }}>
             <div className="modal-content layaway-modal-content">
                 
                 {/* Header */}
@@ -199,8 +202,9 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
                         <div className="layaways-list">
                             {layaways.map(layaway => {
                                 const pending = layaway.totalAmount - (layaway.paidAmount || 0);
-                                const progress = (layaway.paidAmount / layaway.totalAmount) * 100;
-                                const isReady = pending <= 0.1;
+                                const progress = Math.min((layaway.paidAmount / layaway.totalAmount) * 100, 100);
+                                // ✅ FIX: umbral de isReady alineado a $0.01 para coincidir con addPayment y handleDeliver
+                                const isReady = pending <= 0.01 || layaway.status === 'ready';
                                 const daysElapsed = getDaysElapsed(layaway.createdAt);
                                 const isOverdue = checkIsOverdue(layaway.deadline);
                                 const isPayingThis = activePaymentId === layaway.id;
@@ -223,6 +227,29 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
         {isReady ? 'Listo' : (isOverdue ? 'Vencido' : 'Pendiente')}
     </div>
 </div>
+
+                                        {/* ✅ FIX 4: Banner de alerta para apartados vencidos */}
+                                        {isOverdue && !isReady && (
+                                            <div style={{
+                                                background: '#fff5f5',
+                                                border: '1px solid #fc8181',
+                                                borderRadius: '8px',
+                                                padding: '10px 14px',
+                                                marginBottom: '10px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '10px',
+                                                fontSize: '0.85rem',
+                                                color: '#c53030'
+                                            }}>
+                                                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                                                <div>
+                                                    <strong>Apartado vencido.</strong>{' '}
+                                                    Venció el {layaway.deadline ? new Date(layaway.deadline).toLocaleDateString() : 'fecha desconocida'}.
+                                                    {' '}Los abonos están bloqueados. Cancela el apartado para devolver el stock al inventario.
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {/* 2. Productos (Diseño Híbrido) */}
                                         <div className="layaway-products-container">

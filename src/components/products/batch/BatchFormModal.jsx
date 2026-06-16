@@ -58,7 +58,7 @@ export default function BatchFormModal({
   const payFromCajaId = `${idPrefix}-pay-from-caja`;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 9999 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-high)' }}>
       <div className="modal-content batch-modal-wrapper">
 
         {/* ENCABEZADO */}

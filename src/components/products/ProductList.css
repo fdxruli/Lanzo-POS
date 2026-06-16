@@ -405,6 +405,13 @@
   margin-left: 2px;
 }
 
+.product-list-container .stock-breakdown {
+  margin-top: 2px;
+  font-size: 0.65rem;
+  line-height: 1.2;
+  color: var(--text-light, #64748b);
+}
+
 .product-list-container .text-red {
   color: var(--error-color, #ef4444);
 }

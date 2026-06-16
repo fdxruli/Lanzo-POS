@@ -56,7 +56,7 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ zIndex: 9999 }}>
+    <div className="modal" style={{ zIndex: 'var(--z-modal-high)' }}>
       <div className="modal-content">
         <h2 className="modal-title">Precios de Mayoreo</h2>
         <p className="modal-subtitle">Precio Base actual: ${basePrice || '0.00'}</p>

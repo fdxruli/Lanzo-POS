@@ -4,13 +4,14 @@
   top: 0;
   left: 0;
   width: 100%;
-  height: 100%;
+  height: 100vh;
+  height: 100dvh;
   background-color: rgba(0, 0, 0, 0.5); /* Fondo oscuro semitransparente */
   display: flex;
   justify-content: center; /* Centra horizontalmente */
   align-items: center;     /* Centra verticalmente */
-  z-index: 8000;           /* Asegura que esté por encima de otros elementos (navbar, listas, etc.) */
   backdrop-filter: blur(2px); /* Opcional: efecto borroso en el fondo */
+  z-index: var(--z-modal-high);
 }
 
 .history-modal-content {

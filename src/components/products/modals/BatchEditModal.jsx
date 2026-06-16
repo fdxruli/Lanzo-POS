@@ -111,7 +111,7 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
     };
 
     return (
-        <div className="modal" style={{ zIndex: 9999 }}>
+        <div className="modal" style={{ zIndex: 'var(--z-modal-high)' }}>
             <div className="modal-content" style={{ maxWidth: '600px' }}>
                 {/* Cabecera */}
                 <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '15px', marginBottom: '20px' }}>

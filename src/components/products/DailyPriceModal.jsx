@@ -104,7 +104,7 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
     if (!show) return null;
 
     return (
-        <div className="modal" style={{ display: 'flex', zIndex: 2300 }}>
+        <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
             <div className="modal-content" style={{ maxWidth: '700px', height: '80vh', display: 'flex', flexDirection: 'column' }}>
                 <h2 className="modal-title">📝 Actualización Rápida de Precios</h2>
                 <p style={{ marginBottom: '10px', color: '#666' }}>Ajusta costos y precios según el mercado de hoy.</p>

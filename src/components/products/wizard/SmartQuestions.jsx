@@ -13,10 +13,10 @@ export default function SmartQuestions({
 
     return (
         <div className="smart-questions-container" style={{
-            backgroundColor: '#f8fafc',
+            backgroundColor: 'var(--light-background)',
             padding: '20px',
             borderRadius: '12px',
-            border: '1px solid #e2e8f0',
+            border: '1px solid var(--border-color)',
             marginBottom: '20px'
         }}>
             {/* Header con progreso */}
@@ -32,7 +32,7 @@ export default function SmartQuestions({
                         margin: 0,
                         fontSize: '0.95rem',
                         fontWeight: '600',
-                        color: '#1e293b'
+                        color: 'var(--text-dark)'
                     }}>
                         Ayúdame a configurar este producto
                     </p>
@@ -45,20 +45,20 @@ export default function SmartQuestions({
                         <div style={{
                             flex: 1,
                             height: '6px',
-                            backgroundColor: '#e2e8f0',
+                            backgroundColor: 'var(--border-color)',
                             borderRadius: '3px',
                             overflow: 'hidden'
                         }}>
                             <div style={{
                                 height: '100%',
                                 width: `${progress.percentage}%`,
-                                backgroundColor: '#3b82f6',
+                                backgroundColor: 'var(--primary-color)',
                                 transition: 'width 0.3s ease'
                             }}></div>
                         </div>
                         <span style={{
                             fontSize: '0.8rem',
-                            color: '#64748b',
+                            color: 'var(--text-light)',
                             fontWeight: '500'
                         }}>
                             {progress.answered}/{progress.total}
@@ -92,10 +92,10 @@ function SmartQuestionItem({ question, value, onAnswer, delay = 0 }) {
     return (
         <div style={{
             animation: `fadeIn 0.3s ease ${delay}ms backwards`,
-            backgroundColor: 'white',
+            backgroundColor: 'var(--card-background-color)',
             padding: '16px',
             borderRadius: '10px',
-            border: isAnswered ? '2px solid #3b82f6' : '1px solid #e2e8f0',
+            border: isAnswered ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
             boxShadow: isAnswered ? '0 2px 8px rgba(59, 130, 246, 0.15)' : 'none',
             transition: 'all 0.3s ease'
         }}>
@@ -112,7 +112,7 @@ function SmartQuestionItem({ question, value, onAnswer, delay = 0 }) {
                         margin: 0,
                         fontSize: '1rem',
                         fontWeight: '600',
-                        color: '#1e293b'
+                        color: 'var(--text-dark)'
                     }}>
                         {question.question}
                     </p>
@@ -120,7 +120,7 @@ function SmartQuestionItem({ question, value, onAnswer, delay = 0 }) {
                         <p style={{
                             margin: '4px 0 0 0',
                             fontSize: '0.85rem',
-                            color: '#64748b'
+                            color: 'var(--text-light)'
                         }}>
                             💡 {question.helpText}
                         </p>
@@ -182,8 +182,8 @@ function GridOptions({ options, value, onChange }) {
                         style={{
                             padding: '12px',
                             borderRadius: '10px',
-                            border: isSelected ? '2px solid #3b82f6' : '2px solid #e2e8f0',
-                            backgroundColor: isSelected ? '#eff6ff' : 'white',
+                            border: isSelected ? '2px solid var(--primary-color)' : '2px solid var(--border-color)',
+                            backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.1)' : 'var(--card-background-color)',
                             cursor: 'pointer',
                             transition: 'all 0.2s',
                             textAlign: 'left',
@@ -199,7 +199,7 @@ function GridOptions({ options, value, onChange }) {
                                 display: 'block',
                                 fontSize: '0.9rem',
                                 fontWeight: '600',
-                                color: isSelected ? '#1d4ed8' : '#1e293b'
+                                color: isSelected ? 'var(--primary-color)' : 'var(--text-dark)'
                             }}>
                                 {option.label}
                             </span>
@@ -207,7 +207,7 @@ function GridOptions({ options, value, onChange }) {
                                 <span style={{
                                     display: 'block',
                                     fontSize: '0.75rem',
-                                    color: isSelected ? '#3b82f6' : '#94a3b8',
+                                    color: isSelected ? 'var(--primary-color)' : 'var(--text-light)',
                                     marginTop: '2px'
                                 }}>
                                     {option.description}
@@ -234,9 +234,9 @@ function YesNoOptions({ value, onChange }) {
                     flex: 1,
                     padding: '12px 20px',
                     borderRadius: '8px',
-                    border: value === true ? '2px solid #22c55e' : '2px solid #e2e8f0',
-                    backgroundColor: value === true ? '#f0fdf4' : 'white',
-                    color: value === true ? '#166534' : '#64748b',
+                    border: value === true ? '2px solid var(--success-color)' : '2px solid var(--border-color)',
+                    backgroundColor: value === true ? 'rgba(0, 196, 140, 0.1)' : 'var(--card-background-color)',
+                    color: value === true ? 'var(--success-color)' : 'var(--text-light)',
                     fontWeight: value === true ? '600' : '500',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
@@ -252,9 +252,9 @@ function YesNoOptions({ value, onChange }) {
                     flex: 1,
                     padding: '12px 20px',
                     borderRadius: '8px',
-                    border: value === false ? '2px solid #ef4444' : '2px solid #e2e8f0',
-                    backgroundColor: value === false ? '#fef2f2' : 'white',
-                    color: value === false ? '#991b1b' : '#64748b',
+                    border: value === false ? '2px solid var(--error-color)' : '2px solid var(--border-color)',
+                    backgroundColor: value === false ? 'rgba(255, 59, 92, 0.1)' : 'var(--card-background-color)',
+                    color: value === false ? 'var(--error-color)' : 'var(--text-light)',
                     fontWeight: value === false ? '600' : '500',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
@@ -282,18 +282,18 @@ function NumberInput({ value, onChange, unit, placeholder }) {
                     flex: 1,
                     padding: '12px',
                     borderRadius: '8px',
-                    border: '2px solid #e2e8f0',
+                    border: '2px solid var(--border-color)',
                     fontSize: '1rem',
                     outline: 'none',
                     transition: 'border-color 0.2s'
                 }}
-                onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
-                onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+                onFocus={(e) => e.target.style.borderColor = 'var(--primary-color)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--border-color)'}
             />
             {unit && (
                 <span style={{
                     fontSize: '0.9rem',
-                    color: '#64748b',
+                    color: 'var(--text-light)',
                     fontWeight: '500',
                     minWidth: '80px'
                 }}>
@@ -321,9 +321,9 @@ function SelectOptions({ options, value, onChange, displayMode = 'compact' }) {
                             style={{
                                 padding: '8px 16px',
                                 borderRadius: '20px',
-                                border: isSelected ? '2px solid #3b82f6' : '1px solid #e2e8f0',
-                                backgroundColor: isSelected ? '#eff6ff' : 'white',
-                                color: isSelected ? '#1d4ed8' : '#64748b',
+                                border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                                backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.1)' : 'var(--card-background-color)',
+                                color: isSelected ? 'var(--primary-color)' : 'var(--text-light)',
                                 fontWeight: isSelected ? '600' : '500',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s',
@@ -368,9 +368,9 @@ function MultiSelectOptions({ options, value = [], onChange }) {
                         style={{
                             padding: '8px 16px',
                             borderRadius: '20px',
-                            border: isSelected ? '2px solid #3b82f6' : '1px solid #e2e8f0',
-                            backgroundColor: isSelected ? '#eff6ff' : 'white',
-                            color: isSelected ? '#1d4ed8' : '#64748b',
+                            border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                            backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.1)' : 'var(--card-background-color)',
+                            color: isSelected ? 'var(--primary-color)' : 'var(--text-light)',
                             fontWeight: isSelected ? '600' : '500',
                             cursor: 'pointer',
                             transition: 'all 0.2s',

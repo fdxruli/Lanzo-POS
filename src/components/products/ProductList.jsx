@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useProductStore } from '../../store/useProductStore';
 import { searchProductsInDB } from '../../services/database';
+import { getAvailableStock, getCommittedStock } from '../../services/db/utils';
 import WasteModal from './WasteModal';
 import './ProductList.css';
 
@@ -193,6 +194,8 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
           {displayProducts.map(item => {
             const categoryName = categoryMap.get(item.categoryId) || 'General';
             const isActive = item.isActive !== false;
+            const availableStock = getAvailableStock(item);
+            const committedStock = getCommittedStock(item);
 
             // Alertas
             const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
@@ -267,7 +270,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                     )}
                     {isLowStock && isTracked && (
                       <div className="alert-banner alert-orange">
-                        ⚠️ Stock Bajo ({item.stock} {showMinMax && item.minStock !== null && item.minStock !== undefined ? `≤ ${item.minStock}` : ''})
+                        ⚠️ Stock Bajo ({availableStock} {showMinMax && item.minStock !== null && item.minStock !== undefined ? `≤ ${item.minStock}` : ''})
                       </div>
                     )}
                   </div>
@@ -280,10 +283,15 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                     <span className="stat-value price">${item.price?.toFixed(2)}</span>
                   </div>
                   <div className="stat-block">
-                    <span className="stat-label">Existencia</span>
-                    <span className={`stat-value stock ${item.stock <= 0 ? 'text-red' : ''}`}>
-                      {isTracked ? item.stock : '∞'} <small>{unitLabel}</small>
+                    <span className="stat-label">Disponible</span>
+                    <span className={`stat-value stock ${availableStock <= 0 ? 'text-red' : ''}`}>
+                      {isTracked ? availableStock : '∞'} <small>{unitLabel}</small>
                     </span>
+                    {isTracked && (
+                      <span className="stock-breakdown">
+                        Total: {item.stock ?? 0} | Comprometido: {committedStock}
+                      </span>
+                    )}
                   </div>
                   <div className="stat-block">
                     <span className="stat-label">Margen</span>

@@ -96,7 +96,7 @@ export default function ProductFormWizard({
             {/* Barra de Progreso Superior */}
             <div style={{
                 marginBottom: '25px',
-                backgroundColor: 'white',
+                backgroundColor: 'var(--card-background-color)',
                 padding: '20px',
                 borderRadius: '12px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
@@ -126,7 +126,7 @@ export default function ProductFormWizard({
                                         borderRadius: '50%',
                                         backgroundColor: isCompleted || isCurrent 
                                             ? 'var(--primary-color)' 
-                                            : '#e2e8f0',
+                                            : 'var(--border-color)',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
@@ -145,7 +145,7 @@ export default function ProductFormWizard({
                                     marginTop: '8px',
                                     color: isCompleted || isCurrent 
                                         ? 'var(--primary-color)' 
-                                        : '#94a3b8',
+                                        : 'var(--text-light)',
                                     fontWeight: isCurrent ? '600' : '400'
                                 }}>
                                     {step.name}
@@ -159,7 +159,7 @@ export default function ProductFormWizard({
                                         left: '50%',
                                         width: '100%',
                                         height: '2px',
-                                        backgroundColor: '#e2e8f0',
+                                        backgroundColor: 'var(--border-color)',
                                         zIndex: 0,
                                         transform: 'translateY(-50%)'
                                     }}>
@@ -179,7 +179,7 @@ export default function ProductFormWizard({
                 {/* Barra de progreso lineal */}
                 <div style={{
                     height: '6px',
-                    backgroundColor: '#f1f5f9',
+                    backgroundColor: 'var(--light-background)',
                     borderRadius: '3px',
                     overflow: 'hidden',
                     marginTop: '10px'
@@ -195,7 +195,7 @@ export default function ProductFormWizard({
 
             {/* Contenido del Paso */}
             <div style={{
-                backgroundColor: 'white',
+                backgroundColor: 'var(--card-background-color)',
                 padding: '25px',
                 borderRadius: '12px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
@@ -284,9 +284,9 @@ export default function ProductFormWizard({
                 <div style={{
                     marginTop: '20px',
                     padding: '15px',
-                    backgroundColor: '#eff6ff',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     borderRadius: '12px',
-                    border: '1px solid #bfdbfe',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
                     display: 'flex',
                     alignItems: 'flex-start',
                     gap: '12px'
@@ -297,7 +297,7 @@ export default function ProductFormWizard({
                             margin: 0, 
                             fontSize: '0.9rem', 
                             fontWeight: '600', 
-                            color: '#0369a1',
+                            color: 'var(--text-dark)',
                             marginBottom: '4px'
                         }}>
                             Modo {getRubroLabel(activeRubroContext)}
@@ -305,7 +305,7 @@ export default function ProductFormWizard({
                         <p style={{ 
                             margin: 0, 
                             fontSize: '0.85rem', 
-                            color: '#0c4a6e' 
+                            color: 'var(--text-color)' 
                         }}>
                             {getRubroTip(activeRubroContext)}
                         </p>
