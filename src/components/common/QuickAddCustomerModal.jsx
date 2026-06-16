@@ -63,7 +63,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved }
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 11001 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
       <div className="modal-content quick-add-modal">
         <h2 className="modal-title">Anadir Cliente Rapido</h2>
         <form onSubmit={handleSubmit}>

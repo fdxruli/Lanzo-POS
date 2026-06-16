@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
@@ -23,9 +23,6 @@ function Layout() {
 
   const reconcileOrphanedOrders = useActiveOrders(state => state.reconcileOrphanedOrders);
 
-  const licenseDetails = useAppStore(state => state.licenseDetails);
-  const initializeApp = useAppStore(state => state.initializeApp);
-
   const showAssistantBot = useAppStore(state => state.showAssistantBot);
   const showTicker = useAppStore(state => state.showTicker);
   const licenseStatus = useAppStore(state => state.licenseStatus);
@@ -41,8 +38,8 @@ function Layout() {
     // Restablece el scroll del documento principal
     window.scrollTo(0, 0);
 
-    // Si tu CSS hace que el scroll ocurra dentro de un contenedor específico 
-    // en lugar del body, también restablecemos el scroll de ese contenedor:
+    // Si tu CSS hace que el scroll ocurra dentro de un contenedor especÃ­fico 
+    // en lugar del body, tambiÃ©n restablecemos el scroll de ese contenedor:
     const contentWrapper = document.querySelector('.content-wrapper');
     const pageContainer = document.querySelector('.page-container');
 
@@ -52,25 +49,25 @@ function Layout() {
 
   useEffect(() => {
     const initializeData = async () => {
-      Logger.log("🚀 Inicializando Stores modulares y auditoría...");
+      Logger.log("ðŸš€ Inicializando Stores modulares y auditorÃ­a...");
 
       // A. PRIMERO: Ejecutar el recolector de basura de inventario
       try {
         const result = await reconcileOrphanedOrders();
         if (result?.count > 0) {
-          Logger.warn(`${result.count} órdenes inactivas requieren revisión manual.`);
+          Logger.warn(`${result.count} Ã³rdenes inactivas requieren revisiÃ³n manual.`);
         }
         if (result?.recovered > 0) {
-          Logger.warn(`${result.recovered} órdenes ocultas se restauraron al listado de mesas.`);
+          Logger.warn(`${result.recovered} Ã³rdenes ocultas se restauraron al listado de mesas.`);
         }
         if (result?.repairedBatchParents > 0) {
           Logger.warn(`${result.repairedBatchParents} productos se resincronizaron desde sus lotes.`);
         }
       } catch (error) {
-        Logger.error("Fallo durante la reconciliación de órdenes:", error);
+        Logger.error("Fallo durante la reconciliaciÃ³n de Ã³rdenes:", error);
       }
 
-      // B. DESPUÉS: Cargar la información a la UI (ahora con el stock real)
+      // B. DESPUÃ‰S: Cargar la informaciÃ³n a la UI (ahora con el stock real)
       loadStats();
       loadProducts();
       loadSales();
@@ -79,28 +76,13 @@ function Layout() {
     initializeData();
   }, [loadProducts, loadSales, loadStats, reconcileOrphanedOrders]);
 
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      if (licenseDetails?.expiresAt) {
-        const now = new Date();
-        const expires = new Date(licenseDetails.expiresAt);
-        if (now > expires) {
-          Logger.log("🕒 El tiempo de licencia ha expirado. Re-verificando estado...");
-          initializeApp();
-        }
-      }
-    }, 60000);
-
-    return () => clearInterval(intervalId);
-  }, [licenseDetails, initializeApp]);
-
   return (
     <div className="app-layout">
       <Toaster
         position="top-center"
         containerStyle={{
-          zIndex: 2000, // Z-index sensato y coherente con la arquitectura modal
-          top: 20
+          zIndex: 'var(--z-toast)',
+          top: 'max(20px, env(safe-area-inset-top, 0px))'
         }}
         // -------------------------
         toastOptions={{

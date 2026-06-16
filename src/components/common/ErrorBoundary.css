@@ -8,7 +8,7 @@
   --incident-danger: #ff4d5f;
   position: fixed !important;
   inset: 0;
-  z-index: 10000;
+  z-index: var(--z-critical-blocker);
   box-sizing: border-box;
   width: 100% !important;
   height: 100vh;

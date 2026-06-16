@@ -262,7 +262,7 @@ DESCRIBE TU PROBLEMA:
                   value={licenseKey}
                   onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
                   disabled={isLoading || !isOnline}
-                  maxLength={23}
+                  maxLength={64}
                   className={licenseKey ? 'has-value' : ''}
                 />
               </div>

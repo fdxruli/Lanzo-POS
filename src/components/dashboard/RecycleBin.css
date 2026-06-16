@@ -169,48 +169,56 @@
 }
 
 /* --- ACCIONES EN FILA --- */
-.action-group {
+.recycle-bin-container .action-group {
   display: flex;
   gap: 8px;
   justify-content: center;
+  align-items: center;
 }
 
-.btn-icon {
+.recycle-bin-container .btn-icon {
   width: 34px;
   height: 34px;
+  min-width: 34px;
+  min-height: 34px;
   border-radius: var(--border-radius-sm);
   border: 1px solid transparent;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
   padding: 0;
+  margin: 0;
+  vertical-align: middle;
+  line-height: 1;
 }
 
 /* ===================================================
    🔧 CORRECCIÓN CRÍTICA DE ICONOS
    ================================================ */
 
-/* Resetear estilos conflictivos de SVG */
-.btn-icon svg {
-  width: 18px !important;
-  height: 18px !important;
-  stroke-width: 2.5px !important;
-  /* ✅ QUITAR fill:none - Esta era la causa del problema */
-  fill: currentColor !important;
+/* Lucide icons are stroke-based: fill MUST be none */
+.recycle-bin-container .btn-icon svg {
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  stroke-width: 2px !important;
+  fill: none !important;
   stroke: currentColor !important;
   display: block !important;
+  pointer-events: none;
 }
 
 /* Botón Restaurar */
-.btn-restore {
+.recycle-bin-container .btn-restore {
   background-color: rgba(123, 97, 255, 0.1);
   color: #7B61FF;
   border: 1px solid rgba(123, 97, 255, 0.2);
 }
 
-.btn-restore:hover:not(:disabled) {
+.recycle-bin-container .btn-restore:hover:not(:disabled) {
   background-color: #7B61FF;
   color: white;
   transform: translateY(-2px);
@@ -218,19 +226,19 @@
 }
 
 /* Botón Eliminar Permanente */
-.btn-delete-forever {
+.recycle-bin-container .btn-delete-forever {
   background-color: #f1f5f9;
   color: #64748b;
   border: 1px solid #e2e8f0;
 }
 
-.btn-delete-forever:hover:not(:disabled) {
+.recycle-bin-container .btn-delete-forever:hover:not(:disabled) {
   background-color: #fee2e2;
   color: #ef4444;
   border-color: #fecaca;
 }
 
-.btn-icon:disabled {
+.recycle-bin-container .btn-icon:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   filter: grayscale(100%);

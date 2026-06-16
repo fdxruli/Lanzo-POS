@@ -9,7 +9,7 @@
   top: 1rem;
   left: 1rem;
   right: 1rem;
-  z-index: 11000;
+  z-index: var(--z-toast);
 
   /* Naranja rojizo: más urgente que una advertencia, menos que un error fatal */
   background: linear-gradient(135deg, #f97316 0%, #dc2626 100%);

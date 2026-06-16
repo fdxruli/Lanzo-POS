@@ -39,6 +39,8 @@ const BUSINESS_RUBROS = [
 export default function SetupModal() {
   const handleSetup = useAppStore((state) => state.handleSetup);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const profileImportCandidate = useAppStore((state) => state.profileImportCandidate);
+  const dismissProfileImportCandidate = useAppStore((state) => state.dismissProfileImportCandidate);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [name, setName] = useState('');
@@ -70,6 +72,41 @@ export default function SetupModal() {
       setSelectedTypes([rubroForzado]);
     }
   }, [licenseDetails, isAllAllowed, allowedRubrosList]);
+
+  const normalizeCandidateTypes = (candidate) => {
+    const types = candidate?.business_type;
+    if (Array.isArray(types)) return types.filter(Boolean);
+    if (typeof types === 'string') {
+      return types
+        .replace(/[{}"]/g, '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const handleImportCandidate = () => {
+    if (!profileImportCandidate) return;
+
+    setName(profileImportCandidate.name || '');
+    setPhone(profileImportCandidate.phone || '');
+    setAddress(profileImportCandidate.address || '');
+    setSelectedTypes(normalizeCandidateTypes(profileImportCandidate));
+
+    if (profileImportCandidate.logo) {
+      setLogoPreview(profileImportCandidate.logo);
+      setLogoData(profileImportCandidate.logo);
+    }
+
+    dismissProfileImportCandidate();
+    setActiveSection('info');
+  };
+
+  const handleSkipImportCandidate = () => {
+    dismissProfileImportCandidate();
+    setActiveSection('info');
+  };
 
   const isStep1Complete = useMemo(() => name.trim().length > 0, [name]);
   const isStep2Complete = selectedTypes.length > 0;
@@ -231,6 +268,35 @@ export default function SetupModal() {
         <div className="setup-form-wrapper">
           <form id="business-setup-form" onSubmit={handleSubmit}>
             <div className="form-inner-container">
+              {profileImportCandidate && (
+                <div className="profile-import-panel">
+                  <div className="profile-import-copy">
+                    <strong>Configuracion anterior encontrada</strong>
+                    <span>
+                      Puedes copiar los datos de {profileImportCandidate.name || 'tu negocio anterior'} a esta licencia.
+                      No se guardara nada hasta finalizar la configuracion.
+                    </span>
+                  </div>
+                  <div className="profile-import-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleImportCandidate}
+                      disabled={isSubmitting}
+                    >
+                      Copiar datos
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleSkipImportCandidate}
+                      disabled={isSubmitting}
+                    >
+                      Empezar desde cero
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* --- ACORDEÓN 1: INFORMACIÓN --- */}
               <div className={`accordion-item ${activeSection === 'info' ? 'open' : ''} ${isStep1Complete ? 'completed' : ''}`}>

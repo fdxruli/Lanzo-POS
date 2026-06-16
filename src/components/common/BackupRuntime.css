@@ -7,7 +7,7 @@
   --backup-banner-text: #78350f;
 
   position: relative;
-  z-index: 1800;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   gap: 12px;

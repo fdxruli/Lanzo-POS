@@ -128,7 +128,7 @@ export default function BackupReminder() {
   // Nivel 3: Modal opaco central bloqueante
   if (effectiveLevel === 3) {
     return (
-      <div className="modal" style={{ display: 'flex', zIndex: 9999 }}>
+      <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-critical)' }}>
         <div className="modal-content" style={{ borderLeft: '6px solid #dc2626' }}>
           <h2 style={{ color: 'var(--text-dark)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <AlertOctagon size={24} color="#dc2626" /> Riesgo de Pérdida de Datos

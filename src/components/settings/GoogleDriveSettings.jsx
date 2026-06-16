@@ -17,6 +17,18 @@ function revokeGoogleToken(accessToken) {
   revoke(accessToken, () => {});
 }
 
+function getOAuthErrorMessage(oauthError) {
+  if (globalThis.navigator?.onLine === false) {
+    return 'No hay conexión a internet. Revisa tu red e intenta conectar Google Drive nuevamente.';
+  }
+
+  if (oauthError?.error === 'access_denied') {
+    return 'No se autorizó el acceso a Google Drive. Puedes intentarlo nuevamente cuando estés listo.';
+  }
+
+  return 'Google no pudo autorizar el acceso a Drive. Inténtalo de nuevo y, si el problema continúa, contacta a soporte.';
+}
+
 function GoogleDriveOAuthControls() {
   const driveAccessToken = useAppStore((state) => state.driveAccessToken);
   const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
@@ -53,7 +65,7 @@ function GoogleDriveOAuthControls() {
     },
     onError: (oauthError) => {
       setIsConnecting(false);
-      const message = oauthError.error_description || 'Google no pudo autorizar el acceso a Drive.';
+      const message = getOAuthErrorMessage(oauthError);
       setError(message);
       toast.error(message);
     },

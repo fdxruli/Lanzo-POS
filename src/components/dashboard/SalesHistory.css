@@ -66,6 +66,22 @@
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sale-folio-tag {
+  display: inline-block;
+  background-color: rgba(123, 97, 255, 0.12);
+  color: var(--secondary-color, #7B61FF);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 .sale-total {
@@ -146,6 +162,22 @@
 .delete-order-btn:hover {
   background-color: var(--error-color);
   color: white;
+}
+
+.delete-order-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.cancelled-sale-badge {
+  padding: 2px 7px;
+  color: var(--error-color);
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .warning-cost-tag {

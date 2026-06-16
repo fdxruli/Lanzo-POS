@@ -62,7 +62,7 @@ const CriticalStorageLockScreen = () => {
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-      background: 'rgba(0,0,0,0.95)', color: '#fff', zIndex: 2147483647,
+      background: 'rgba(0,0,0,0.95)', color: '#fff', zIndex: 'var(--z-critical-blocker)',
       display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
       padding: '2rem', textAlign: 'center', fontFamily: 'sans-serif'
     }}>

@@ -1,7 +1,7 @@
 /* src/components/common/MessageModal.css */
 
 #message-modal {
-  z-index: 1500;
+  z-index: var(--z-modal-critical);
 }
 
 .modal-message {

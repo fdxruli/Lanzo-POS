@@ -1,9 +1,9 @@
 // src/components/dashboard/SalesHistory.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { salesRepository } from '../../services/db/sales';
 import './SalesHistory.css';
 
-export default function SalesHistory({ sales, onDeleteSale }) {
+export default function SalesHistory({ sales, onDeleteSale, onArchiveSale }) {
   // Estado para manejar qué padres están expandidos y la data de sus hijos
   const [expandedSplits, setExpandedSplits] = useState({});
 
@@ -35,7 +35,7 @@ export default function SalesHistory({ sales, onDeleteSale }) {
         ...prev,
         [saleId]: { loading: false, children: childRecords, error: null }
       }));
-    } catch (error) {
+    } catch {
       setExpandedSplits(prev => ({
         ...prev,
         [saleId]: { loading: false, children: [], error: 'Error al cargar tickets hijos' }
@@ -53,6 +53,7 @@ export default function SalesHistory({ sales, onDeleteSale }) {
         <div className="sales-history-list">
           {mainSales.map((sale) => {
             const isSplitParent = sale.cancelReason === 'split_settled';
+            const isCancelled = sale.status === 'cancelled';
             const expandedData = expandedSplits[sale.id];
 
             return (
@@ -62,9 +63,15 @@ export default function SalesHistory({ sales, onDeleteSale }) {
                   {/* Cabecera de la venta */}
                     <div className="sale-header">
                       <div className="sale-date">
+                        <span className="sale-folio-tag">
+                          Folio: {sale.folio || sale.id?.substring(0, 6) || '---'}
+                        </span>
                         {new Date(sale.timestamp).toLocaleString()}
                         {isSplitParent && (
                           <span className="split-badge">Cuentas Separadas</span>
+                        )}
+                        {isCancelled && (
+                          <span className="cancelled-sale-badge">Cancelada</span>
                         )}
                       </div>
                       <div className={`sale-total ${isSplitParent ? 'split-total' : ''}`}>
@@ -115,9 +122,11 @@ export default function SalesHistory({ sales, onDeleteSale }) {
 
                     <button
                       className="delete-order-btn"
-                      onClick={() => onDeleteSale(sale.timestamp)}
+                      onClick={() => (
+                        isCancelled ? onArchiveSale(sale) : onDeleteSale(sale)
+                      )}
                     >
-                      Eliminar {isSplitParent ? 'Origen' : 'Venta'}
+                      {isCancelled ? 'Mover a papelera' : `Cancelar ${isSplitParent ? 'origen' : 'venta'}`}
                     </button>
                   </div>
 

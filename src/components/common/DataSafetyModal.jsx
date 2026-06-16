@@ -27,7 +27,7 @@ export default function DataSafetyModal() {
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 9999 }}>
+    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-critical)' }}>
       <div className="modal-content" style={{ borderLeft: '6px solid var(--error-color)', maxWidth: '550px' }}>
         <h2 style={{ color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>
           ⚠️ ADVERTENCIA CRÍTICA

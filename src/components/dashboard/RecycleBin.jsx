@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRecycleBinStore } from '../../store/useRecycleBinStore';
 import { 
   Trash2, 
   RotateCcw, 
   Search, 
   Recycle, 
-  AlertTriangle,
   Archive
 } from 'lucide-react';
 import './RecycleBin.css';
+import { useSalesStore } from '../../store/useSalesStore';
+import { showMessageModal } from '../../services/utils';
 
 const RecycleBin = () => {
   const { 
@@ -21,11 +22,12 @@ const RecycleBin = () => {
   } = useRecycleBinStore();
   
   const [searchTerm, setSearchTerm] = useState('');
+  const loadRecentSales = useSalesStore((state) => state.loadRecentSales);
 
   // Cargar datos al entrar a la pantalla
   useEffect(() => {
     loadRecycleBin();
-  }, []);
+  }, [loadRecycleBin]);
 
   // Filtrar items
   const filteredItems = deletedItems.filter(item => 
@@ -35,7 +37,17 @@ const RecycleBin = () => {
 
   const handleRestore = async (item) => {
     if (confirm(`¿Restaurar "${item.mainLabel || item.name}" a su lugar original?`)) {
-      await restoreItem(item);
+      const result = await restoreItem(item);
+      if (result?.success === false) {
+        showMessageModal(result.message || 'No se pudo restaurar el elemento.', null, { type: 'error' });
+        return;
+      }
+      if (item.type === 'Pedido') await loadRecentSales();
+      showMessageModal(
+        item.type === 'Pedido'
+          ? 'Venta restaurada y movimientos de inventario reaplicados.'
+          : 'Elemento restaurado correctamente.'
+      );
     }
   };
 

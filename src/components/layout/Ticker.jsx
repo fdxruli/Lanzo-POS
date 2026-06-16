@@ -23,6 +23,7 @@ const MAX_INVENTORY_ALERTS = 8;
 const BACKUP_ALERT_THRESHOLD = 5;
 const SECONDS_PER_MESSAGE = 10;
 const MIN_ANIMATION_DURATION = 15;
+const GRACE_PERIOD_DAYS = 7;
 
 const URGENCY = {
   CRITICAL: 0,
@@ -50,6 +51,17 @@ function getDayText(days) {
   if (days <= 0) return 'hoy';
   if (days === 1) return 'mañana';
   return `en ${days} días`;
+}
+
+function deriveGracePeriodEnd(expiresAt) {
+  if (!expiresAt) return null;
+
+  const expiryDate = new Date(expiresAt);
+  if (Number.isNaN(expiryDate.getTime())) return null;
+
+  return new Date(
+    expiryDate.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
 }
 
 function readBackupAlert() {
@@ -181,18 +193,23 @@ export default function Ticker() {
 
   const { messages, isPriority } = useMemo(() => {
     const now = new Date();
-    const graceDate = gracePeriodEnds ? new Date(gracePeriodEnds) : null;
+    const effectiveGracePeriodEnds =
+      gracePeriodEnds ||
+      (licenseStatus === 'grace_period'
+        ? deriveGracePeriodEnd(licenseDetails?.expires_at)
+        : null);
+    const graceDate = effectiveGracePeriodEnds ? new Date(effectiveGracePeriodEnds) : null;
     const expiryDate = licenseDetails?.expires_at
       ? new Date(licenseDetails.expires_at)
       : null;
     const isGracePeriod = licenseStatus === 'grace_period'
       || (expiryDate && graceDate && expiryDate < now && graceDate > now);
 
-    if (isGracePeriod && gracePeriodEnds) {
+    if (isGracePeriod && effectiveGracePeriodEnds) {
       const warning = {
         id: 'license-grace',
         icon: AlertTriangle,
-        text: `Tu licencia ha caducado. El sistema se bloqueará ${getDayText(getDaysRemaining(gracePeriodEnds))}. Renueva tu plan para evitar interrupciones.`,
+        text: `Tu licencia ha caducado. El sistema se bloqueará ${getDayText(getDaysRemaining(effectiveGracePeriodEnds))}. Renueva tu plan para evitar interrupciones.`,
         urgency: URGENCY.CRITICAL,
         route: '/configuracion'
       };

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import DeviceManager from '../common/DeviceManager';
 
@@ -16,8 +17,11 @@ export default function LicenseSettings() {
     const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
     const licenseDetails = useAppStore((state) => state.licenseDetails);
     const logout = useAppStore((state) => state.logout);
+    const renewLicense = useAppStore((state) => state.renewLicense);
 
     const [selectedRubros, setSelectedRubros] = useState([]);
+    const [isRenewing, setIsRenewing] = useState(false);
+    const [renewalError, setRenewalError] = useState('');
 
     const licenseFeatures = licenseDetails?.features || {};
     const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
@@ -70,15 +74,13 @@ export default function LicenseSettings() {
     };
 
     const handleLogout = () => {
-        const confirmMessage = "⚠️ ADVERTENCIA DE SEGURIDAD ⚠️\n\n" +
-            "¿Estás seguro de que deseas cerrar sesión en este dispositivo?\n\n" +
-            "Ten en cuenta lo siguiente:\n" +
-            "1. Es posible que NO puedas volver a activar la misma licencia si ya está vinculada a este equipo.\n" +
-            "2. Probablemente NO se generará una nueva licencia de prueba porque este dispositivo ya tiene historial de uso.\n\n" +
-            "¿Deseas continuar de todos modos?";
+        const confirmMessage =
+            "Cerrar sesion solo saldra de la app en este equipo.\n\n" +
+            "La licencia seguira vinculada a este dispositivo. Si quieres liberar el cupo remoto, usa el boton Liberar en la lista de dispositivos.\n\n" +
+            "Deseas cerrar sesion localmente?";
 
         if (window.confirm(confirmMessage)) {
-            logout(); 
+            logout();
         }
     };
 
@@ -140,6 +142,41 @@ export default function LicenseSettings() {
         return `****-****-${key.slice(-6).toUpperCase()}`;
     };
 
+    const getGracePeriodState = () => {
+        const expiryDateString = licenseDetails?.expires_at;
+        if (!expiryDateString) return { inGracePeriod: false };
+
+        const now = new Date();
+        const expiryDate = new Date(expiryDateString);
+        if (Number.isNaN(expiryDate.getTime())) return { inGracePeriod: false };
+
+        const graceEndDate = new Date(expiryDate);
+        graceEndDate.setDate(graceEndDate.getDate() + 7);
+
+        return {
+            inGracePeriod: now > expiryDate && now < graceEndDate
+        };
+    };
+
+    const gracePeriodState = getGracePeriodState();
+
+    const handleRenewLicense = async () => {
+        setIsRenewing(true);
+        setRenewalError('');
+
+        try {
+            const result = await renewLicense();
+
+            if (!result?.success) {
+                setRenewalError(result?.message || 'No se pudo renovar la licencia.');
+            }
+        } catch (error) {
+            setRenewalError(error?.message || 'Ocurrio un error al renovar la licencia.');
+        } finally {
+            setIsRenewing(false);
+        }
+    };
+
     const renderLicenseInfo = () => {
         if (!licenseDetails || !licenseDetails.valid) return <p>No hay licencia activa.</p>;
         
@@ -171,6 +208,30 @@ export default function LicenseSettings() {
                     </div>
                     {/* ---------------------------------- */}
 
+                    {gracePeriodState.inGracePeriod && (
+                        <div className="license-renewal-panel">
+                            <div className="license-renewal-copy">
+                                <strong>Renovacion disponible</strong>
+                                <span>Extiende esta licencia por 3 meses mas.</span>
+                            </div>
+                            <button
+                                type="button"
+                                className="btn btn-primary license-renewal-button"
+                                onClick={handleRenewLicense}
+                                disabled={isRenewing}
+                            >
+                                <RefreshCw size={18} />
+                                <span>{isRenewing ? 'Renovando...' : 'Renovar 3 meses'}</span>
+                            </button>
+                        </div>
+                    )}
+
+                    {renewalError && (
+                        <div className="license-renewal-error">
+                            {renewalError}
+                        </div>
+                    )}
+
                     <div className="license-detail">
                         <span className="license-label">Dispositivos Permitidos:</span>
                         <span className="license-value">
@@ -190,7 +251,7 @@ export default function LicenseSettings() {
                     style={{ width: 'auto', marginTop: '1rem' }} 
                     onClick={handleLogout}
                 >
-                    Cerrar Sesión en este dispositivo
+                    Cerrar sesion local
                 </button>
             </div>
         );

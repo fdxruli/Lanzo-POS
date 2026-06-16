@@ -2,7 +2,7 @@
  * Estilos para PaymentModal.jsx
  */
 #payment-modal {
-  z-index: 9999;
+  z-index: var(--z-modal-high);
 }
 
 .payment-details {

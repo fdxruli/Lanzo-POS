@@ -7,7 +7,7 @@
   bottom: 0;
   background-color: rgba(0, 0, 0, 0.6); /* Fondo semitransparente */
   backdrop-filter: blur(4px); /* Efecto borroso moderno */
-  z-index: 9999; /* Siempre encima de todo */
+  z-index: var(--z-modal-critical);
   
   /* ESTO SOLUCIONA TU PROBLEMA DE CENTRADO: */
   display: flex;
