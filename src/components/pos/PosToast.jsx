@@ -22,18 +22,19 @@ export default function PosToast({ message, duration = 2000 }) {
         <div
             style={{
                 position: 'fixed',
-                bottom: '80px',
+                top: 'max(20px, env(safe-area-inset-top, 0px))',
                 left: '50%',
                 transform: 'translateX(-50%)',
                 backgroundColor: 'rgba(0, 0, 0, 0.8)',
                 color: 'white',
                 padding: '10px 20px',
                 borderRadius: '30px',
-                zIndex: 10010,
+                zIndex: 'var(--z-toast)',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                 fontSize: '0.9rem',
                 fontWeight: '500',
                 animation: 'fadeIn 0.2s ease-out',
+                pointerEvents: 'none',
             }}
         >
             {message}

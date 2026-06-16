@@ -545,7 +545,7 @@ export default function SplitBillModal({
   return (
     <div
       className="modal"
-      style={{ display: 'flex', zIndex: 10040 }}
+      style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }}
       onClick={onClose}
       role="button"
       tabIndex={0}

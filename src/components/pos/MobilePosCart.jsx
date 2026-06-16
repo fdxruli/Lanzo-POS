@@ -23,8 +23,8 @@ export default function MobilePosCart({
 
     return (
         <div 
-            className="modal" 
-            style={{ display: 'flex', zIndex: 10005, alignItems: 'flex-end' }}
+            className="modal mobile-pos-cart-modal" 
+            style={{ display: 'flex', zIndex: 'var(--z-modal-base)', alignItems: 'flex-end' }}
             onClick={onClose}
         >
             <div
