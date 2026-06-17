@@ -7,6 +7,7 @@ import { useAppStore } from '../../store/useAppStore';
 
 export default function DeviceManager({ licenseKey }) {
   const logout = useAppStore((state) => state.logout);
+  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const [devices, setDevices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -51,6 +52,11 @@ export default function DeviceManager({ licenseKey }) {
   }, [fetchDevices]);
 
   const handleRelease = async (device) => {
+    if (currentDeviceRole === 'staff') {
+      showMessageModal('Solo el dispositivo administrador puede liberar dispositivos.', null, { type: 'error' });
+      return;
+    }
+
     if (!navigator.onLine) {
       showMessageModal('Se requiere internet para liberar un dispositivo.', null, { type: 'error' });
       return;
@@ -138,7 +144,19 @@ export default function DeviceManager({ licenseKey }) {
                   {device.is_current_device && (
                     <span className="device-status-badge current">Este dispositivo</span>
                   )}
+
+                  {device.device_role && (
+                    <span className={`device-status-badge role-${device.device_role}`}>
+                      {device.device_role === 'admin' ? 'Admin' : 'Staff'}
+                    </span>
+                  )}
                 </div>
+
+                {(device.staff_display_name || device.staff_username || device.staff_user_id) && (
+                  <small>
+                    Staff: {device.staff_display_name || device.staff_username || device.staff_user_id}
+                  </small>
+                )}
 
                 <small>
                   Ultimo uso: {new Date(device.last_used_at).toLocaleDateString()}
@@ -149,9 +167,9 @@ export default function DeviceManager({ licenseKey }) {
                 <button
                   className="btn btn-cancel btn-deactivate-device"
                   onClick={() => handleRelease(device)}
-                  disabled={isOfflineData}
+                  disabled={isOfflineData || currentDeviceRole === 'staff'}
                   title={isOfflineData ? 'Conectate para gestionar' : 'Liberar dispositivo'}
-                  style={isOfflineData ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                  style={isOfflineData || currentDeviceRole === 'staff' ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                 >
                   Liberar
                 </button>

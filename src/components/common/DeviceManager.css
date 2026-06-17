@@ -81,6 +81,14 @@
   background-color: var(--secondary-color); /* Color púrpura */
 }
 
+.device-status-badge.role-admin {
+  background-color: #075985;
+}
+
+.device-status-badge.role-staff {
+  background-color: #7c3aed;
+}
+
 
 .btn-deactivate-device {
   width: auto; /* Anula el width: 100% de .btn-cancel */

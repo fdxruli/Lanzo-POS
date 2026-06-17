@@ -275,6 +275,11 @@ export default function SetupModal() {
                   Elige el giro principal de tu operación. Esta selección es vital porque configurará tu entorno, habilitando los módulos y herramientas específicas que realmente necesitas.
                 </p>
               )}
+              {activeSection === 'backup' && (
+                <p className="fade-in-text">
+                  Configurar un respaldo cifrado garantiza que tu información esté siempre protegida y bajo tu control. Este paso es fundamental para poder recuperar tus datos de manera segura y privada en caso de pérdida o cambio de dispositivo.
+                </p>
+              )}
             </div>
           </div>
         </div>
