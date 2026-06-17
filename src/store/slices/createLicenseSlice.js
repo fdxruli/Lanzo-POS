@@ -142,6 +142,7 @@ export const createLicenseSlice = (set, get) => ({
   currentStaffUser: null,
   staffLoginLicenseKey: null,
   staffLoginMessage: null,
+  staffLoginError: null,
   // CORRECCIÓN 1: Nombre unificado con 'a' (_isInitializing), eliminando el typo '_isInitilizing'
   // que existía en el monolito original y que hacía que la guardia anti-doble-ejecución no funcionara.
   _isInitializing: false,
@@ -228,6 +229,7 @@ export const createLicenseSlice = (set, get) => ({
           set({
             appStatus: 'staff_login_required',
             staffLoginMessage: 'Necesitas internet para iniciar sesion staff.',
+            staffLoginError: null,
             _isInitializing: false
           });
           return;
@@ -241,6 +243,7 @@ export const createLicenseSlice = (set, get) => ({
             appStatus: 'staff_login_required',
             currentStaffUser: null,
             staffLoginMessage: staffSession?.message || 'Inicia sesion staff para continuar.',
+            staffLoginError: null,
             _isInitializing: false
           });
           return;
@@ -257,7 +260,8 @@ export const createLicenseSlice = (set, get) => ({
           licenseDetails: restoredLicense,
           currentDeviceRole: 'staff',
           currentStaffUser: restoredLicense.staff_user,
-          staffLoginMessage: null
+          staffLoginMessage: null,
+          staffLoginError: null
         });
 
         await get()._loadProfile(restoredLicense.license_key);
@@ -509,7 +513,8 @@ export const createLicenseSlice = (set, get) => ({
           currentDeviceRole: 'staff',
           currentStaffUser: null,
           staffLoginLicenseKey: localLicense.license_key,
-          staffLoginMessage: serverValidation.details || serverValidation.message || 'Inicia sesion staff para continuar.'
+          staffLoginMessage: serverValidation.details || serverValidation.message || 'Inicia sesion staff para continuar.',
+          staffLoginError: null
         });
         return;
       }
@@ -930,7 +935,8 @@ export const createLicenseSlice = (set, get) => ({
           currentDeviceRole: licenseDataToSave.device_role || 'admin',
           currentStaffUser: licenseDataToSave.device_role === 'staff' ? licenseDataToSave.staff_user || null : null,
           staffLoginLicenseKey: null,
-          staffLoginMessage: null
+          staffLoginMessage: null,
+          staffLoginError: null
         });
         await get()._loadProfile(licenseKey);
         return { success: true };
@@ -948,7 +954,8 @@ export const createLicenseSlice = (set, get) => ({
           currentDeviceRole: 'staff',
           currentStaffUser: null,
           staffLoginLicenseKey: licenseKey,
-          staffLoginMessage: result.message || 'Este dispositivo requiere login staff.'
+          staffLoginMessage: result.message || 'Este dispositivo requiere login staff.',
+          staffLoginError: null
         });
 
         return {
@@ -1030,8 +1037,37 @@ export const createLicenseSlice = (set, get) => ({
     });
 
     if (!result.success) {
-      set({ staffLoginMessage: result.message });
-      return { success: false, message: result.message };
+      const isStaffAlreadyInUse = result.code === 'STAFF_ALREADY_IN_USE';
+      const message = isStaffAlreadyInUse
+        ? [
+          'Este usuario staff ya está activo en otro dispositivo. Pide al administrador liberar ese dispositivo desde Configuración > Licencia y Rubros > Dispositivos.',
+          result.active_device_name ? `Dispositivo activo: ${result.active_device_name}` : null
+        ].filter(Boolean).join('\n')
+        : result.message;
+
+      set({
+        appStatus: isStaffAlreadyInUse ? 'staff_login_required' : state.appStatus,
+        currentDeviceRole: isStaffAlreadyInUse ? 'staff' : state.currentDeviceRole,
+        currentStaffUser: isStaffAlreadyInUse ? null : state.currentStaffUser,
+        staffLoginLicenseKey: licenseKey,
+        staffLoginMessage: message,
+        staffLoginError: {
+          code: result.code || 'STAFF_LOGIN_FAILED',
+          message,
+          active_device_name: result.active_device_name || null,
+          active_device_last_used_at: result.active_device_last_used_at || null,
+          active_device_activated_at: result.active_device_activated_at || null
+        }
+      });
+
+      return {
+        success: false,
+        code: result.code,
+        message,
+        active_device_name: result.active_device_name || null,
+        active_device_last_used_at: result.active_device_last_used_at || null,
+        active_device_activated_at: result.active_device_activated_at || null
+      };
     }
 
     const licenseDataToSave = {
@@ -1050,7 +1086,8 @@ export const createLicenseSlice = (set, get) => ({
       currentDeviceRole: 'staff',
       currentStaffUser: licenseDataToSave.staff_user,
       staffLoginLicenseKey: licenseKey,
-      staffLoginMessage: null
+      staffLoginMessage: null,
+      staffLoginError: null
     });
 
     await get()._loadProfile(licenseKey);
@@ -1067,7 +1104,8 @@ export const createLicenseSlice = (set, get) => ({
       currentDeviceRole: 'staff',
       currentStaffUser: null,
       staffLoginLicenseKey: licenseKey || null,
-      staffLoginMessage: 'Sesion staff cerrada.'
+      staffLoginMessage: 'Sesion staff cerrada.',
+      staffLoginError: null
     });
   },
 
@@ -1090,6 +1128,7 @@ export const createLicenseSlice = (set, get) => ({
       currentStaffUser: null,
       staffLoginLicenseKey: null,
       staffLoginMessage: null,
+      staffLoginError: null,
       realtimeSubscription: null,
       _isInitializingSecurity: false,
       _securityCleanupScheduled: false,
@@ -1120,7 +1159,8 @@ export const createLicenseSlice = (set, get) => ({
             currentDeviceRole: 'staff',
             currentStaffUser: null,
             staffLoginLicenseKey: licenseDetails.license_key,
-            staffLoginMessage: serverCheck.details || serverCheck.message || 'Inicia sesion staff para continuar.'
+            staffLoginMessage: serverCheck.details || serverCheck.message || 'Inicia sesion staff para continuar.',
+            staffLoginError: null
           });
           return false;
         }
