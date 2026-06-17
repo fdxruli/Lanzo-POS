@@ -5,7 +5,8 @@ import {
   activateLicense,
   revalidateLicense,
   createFreeTrial,
-  getStableDeviceId
+  getStableDeviceId,
+  clearLicenseSecurityCache
 } from '../../services/supabase';
 import { startLicenseListener, stopLicenseListener } from '../../services/licenseRealtime';
 import {
@@ -16,12 +17,23 @@ import {
 
 const FATAL_REASONS = [
   'banned',
+  'cloned',
   'deleted',
   'revoked',
+  'not_found',
+  'suspended',
+  'device_banned',
+  'device_not_allowed',
   'device_limit_reached',
   'license_not_found',
+  'license_suspended',
+  'license_revoked',
   'invalid_license',
-  'invalid'
+  'invalid',
+  'LICENSE_NOT_FOUND',
+  'LICENSE_SUSPENDED',
+  'DEVICE_NOT_ALLOWED',
+  'CLONING_DETECTED'
 ];
 
 const RENEWAL_REASONS = ['expired_subscription', 'LICENSE_EXPIRED', 'license_expired'];
@@ -42,6 +54,26 @@ const isRealtimeEnabledForLicense = (licenseDetails) => (
 const getLicenseSyncMode = (licenseDetails) => (
   isRealtimeEnabledForLicense(licenseDetails) ? 'hybrid_realtime' : 'hybrid_polling'
 );
+
+const normalizeValidationCode = (validation = {}) => (
+  validation.reason ||
+  validation.status ||
+  validation.error ||
+  validation.code ||
+  ''
+).toString();
+
+const isFatalValidationFailure = (validation = {}) => {
+  const code = normalizeValidationCode(validation);
+  const normalized = code.toLowerCase();
+
+  return FATAL_REASONS.some((reason) => reason.toLowerCase() === normalized);
+};
+
+const clearLocalLicenseSession = async () => {
+  clearLicenseFromStorage();
+  await clearLicenseSecurityCache();
+};
 
 const deriveGracePeriodEnd = (validationData = {}, fallbackLicense = {}) => {
   if (validationData.grace_period_ends) return validationData.grace_period_ends;
@@ -135,18 +167,10 @@ export const createLicenseSlice = (set, get) => ({
       await get()._processOfflineMode(localLicense);
       set({ _isInitializing: false });
 
-      // CORRECCIÓN 2: Eliminada variable 'isRecentlyLoaded' que era código muerto
-      // (se leía de sessionStorage pero nunca se usaba en ninguna condición).
-      const lastCheck = sessionStorage.getItem('Lanzo_last_validation');
-      const now = Date.now();
-
-      const shouldValidate =
-        navigator.onLine && (!lastCheck || now - parseInt(lastCheck) > 5 * 60 * 1000);
-
-      if (shouldValidate) {
+      if (navigator.onLine) {
         get()._validateInBackground(localLicense.license_key);
       } else {
-        Logger.log('[AppStore] Validación reciente detectada, omitiendo check.');
+        Logger.log('[AppStore] Sin red al iniciar, se mantiene cache local.');
       }
     } catch (criticalError) {
       Logger.error('Error crítico inicializando:', criticalError);
@@ -194,21 +218,28 @@ export const createLicenseSlice = (set, get) => ({
           serverValidation.realtime_topic !== localLicense.realtime_topic,
         wasRevoked:
           !serverValidation.valid &&
-          ['banned', 'deleted', 'revoked'].includes(serverValidation.reason),
+          isFatalValidationFailure(serverValidation),
         needsRenewal:
           !serverValidation.valid &&
           ['expired_subscription', 'LICENSE_EXPIRED'].includes(serverValidation.reason)
       };
 
       if (criticalChanges.wasRevoked) {
-        Logger.error('[Background] ALERTA CRÍTICA: Licencia revocada remotamente');
+        await clearLocalLicenseSession();
+        set({
+          appStatus: 'unauthenticated',
+          licenseDetails: null,
+          licenseStatus: normalizeValidationCode(serverValidation) || 'invalid',
+          companyProfile: null,
+          profileImportCandidate: null,
+          pendingTermsUpdate: null
+        });
+
+        Logger.error('[Background] Licencia remota no disponible:', normalizeValidationCode(serverValidation));
 
         showMessageModal(
-          'LICENCIA REVOCADA\n\nTu licencia ha sido desactivada remotamente. La sesión se cerrará por seguridad.',
-          async () => {
-            await get().logout();
-            window.location.reload();
-          },
+          'LICENCIA NO DISPONIBLE\n\nLa licencia local ya no existe o fue desactivada en el servidor. Ingresa una licencia valida para continuar.',
+          null,
           {
             type: 'error',
             confirmButtonText: 'Entendido',
@@ -218,7 +249,6 @@ export const createLicenseSlice = (set, get) => ({
         );
         return;
       }
-
       if (criticalChanges.needsRenewal) {
         Logger.warn('[Background] Licencia expirada detectada');
 
@@ -351,13 +381,16 @@ export const createLicenseSlice = (set, get) => ({
       serverValidation.reason !== 'offline_grace' &&
       !isWithinGracePeriod
     ) {
-      if (FATAL_REASONS.includes(serverValidation.reason)) {
+      if (isFatalValidationFailure(serverValidation)) {
         Logger.warn('[AppStore] Licencia revocada fatalmente:', serverValidation.reason);
-        clearLicenseFromStorage();
+        await clearLocalLicenseSession();
         set({
           appStatus: 'unauthenticated',
           licenseDetails: null,
-          licenseStatus: serverValidation.reason || 'invalid'
+          licenseStatus: normalizeValidationCode(serverValidation) || 'invalid',
+          companyProfile: null,
+          profileImportCandidate: null,
+          pendingTermsUpdate: null
         });
         return;
       }
@@ -440,7 +473,7 @@ export const createLicenseSlice = (set, get) => ({
       console.warn('[AppStore] Caché local expirado (30 días sin conexión)');
       console.warn(`Fecha de expiración: ${localLicense.localExpiry}`);
       console.warn(`Fecha actual: ${now.toISOString()}`);
-      clearLicenseFromStorage();
+      await clearLocalLicenseSession();
       set({ appStatus: 'unauthenticated' });
       return;
     }
@@ -466,7 +499,7 @@ export const createLicenseSlice = (set, get) => ({
         Logger.log('[AppStore] Licencia en PERÍODO DE GRACIA (offline)');
       } else {
         console.warn('[AppStore] Licencia expirada localmente');
-        clearLicenseFromStorage();
+        await clearLocalLicenseSession();
         set({ appStatus: 'unauthenticated' });
         return;
       }
@@ -816,7 +849,7 @@ export const createLicenseSlice = (set, get) => ({
   logout: async () => {
     await get().stopLicenseSync();
 
-    clearLicenseFromStorage();
+    await clearLocalLicenseSession();
 
     // CORRECCIÓN 5: Añadidos serverHealth y serverMessage al reset del logout.
     // Sin esto, si el usuario cerraba sesión con un banner de error activo,
