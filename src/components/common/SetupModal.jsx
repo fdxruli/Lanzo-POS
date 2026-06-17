@@ -39,6 +39,7 @@ const BUSINESS_RUBROS = [
 export default function SetupModal() {
   const handleSetup = useAppStore((state) => state.handleSetup);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const logout = useAppStore((state) => state.logout);
   const profileImportCandidate = useAppStore((state) => state.profileImportCandidate);
   const dismissProfileImportCandidate = useAppStore((state) => state.dismissProfileImportCandidate);
 
@@ -181,13 +182,27 @@ export default function SetupModal() {
 
       const currentLicenseKey = licenseDetails?.license_key;
 
-      if (currentLicenseKey) {
-        const acceptResult = await acceptLegalTerms(currentLicenseKey, terms.id);
-        if (!acceptResult.success && acceptResult.message !== 'ALREADY_ACCEPTED') {
-          throw new Error("Error registrando la aceptación de términos.");
-        }
+      if (!currentLicenseKey) {
+        throw new Error('No hay una licencia activa para finalizar la configuracion.');
       }
 
+      const acceptResult = await acceptLegalTerms(currentLicenseKey, terms.id);
+      if (!acceptResult.success && acceptResult.message !== 'ALREADY_ACCEPTED') {
+        const reason = acceptResult.message || acceptResult.error;
+
+        if (reason === 'LICENSE_NOT_FOUND_OR_INACTIVE' || reason === 'DEVICE_NOT_AUTHORIZED') {
+          await logout();
+          throw new Error(
+            'La licencia local ya no existe o este dispositivo no esta autorizado. Ingresa una licencia valida para continuar.'
+          );
+        }
+
+        if (reason === 'TERM_NOT_FOUND') {
+          throw new Error('No se encontro la version actual de terminos. Intenta de nuevo.');
+        }
+
+        throw new Error('Error registrando la aceptacion de terminos.');
+      }
       await backupManager.configure(backupPin, backupDirectory);
       await handleSetup({
         name,
