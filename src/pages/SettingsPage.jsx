@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import './SettingsPage.css';
 import GeneralSettings from '../components/settings/GeneralSettings';
 import LicenseSettings from '../components/settings/LicenseSettings';
@@ -7,10 +7,22 @@ import BackupSettings from '../components/settings/BackupSettings';
 import DbMigrationTester from '../components/debug/DbMigrationTester';
 import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
+import { useAppStore } from '../store/useAppStore';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general');
   const [searchParams, setSearchParams] = useSearchParams();
+  const canAccess = useAppStore((state) => state.canAccess);
+  useAppStore((state) => state.currentDeviceRole);
+  useAppStore((state) => state.currentStaffUser);
+  const visibleTabs = [
+    { key: 'general', label: 'Datos y Apariencia', allowed: canAccess('settings') },
+    { key: 'license', label: 'Licencia y Rubros', allowed: canAccess('license') },
+    { key: 'maintenance', label: 'Datos y Mantenimiento', allowed: canAccess('sync') || canAccess('inventory') },
+    { key: 'backup', label: 'Respaldos', allowed: canAccess('sync') },
+    { key: 'debug', label: 'Depuracion DB', allowed: import.meta.env.DEV },
+    { key: 'test-ventas', label: 'Test Ventas', allowed: import.meta.env.DEV }
+  ].filter((tab) => tab.allowed);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -24,13 +36,16 @@ export default function SettingsPage() {
     };
 
     // CORRECCIÓN: Manejar tanto si existe el param como si no
-    if (tabParam && tabMap[tabParam]) {
-      setActiveTab(tabMap[tabParam]);
+    const requestedTab = tabParam && tabMap[tabParam] ? tabMap[tabParam] : 'general';
+    const fallbackTab = visibleTabs[0]?.key || 'general';
+
+    if (visibleTabs.some((tab) => tab.key === requestedTab)) {
+      setActiveTab(requestedTab);
     } else {
       // Si no hay parámetro (o es inválido), forzamos la vista general
-      setActiveTab('general');
+      setActiveTab(fallbackTab);
     }
-  }, [searchParams]);
+  }, [searchParams, visibleTabs]);
 
   const handleTabChange = (tabKey) => {
     // Si es 'general', limpiamos la URL, si no, ponemos el parámetro
@@ -44,24 +59,28 @@ export default function SettingsPage() {
         <button
           className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`}
           onClick={() => handleTabChange('general')}
+          hidden={!visibleTabs.some((tab) => tab.key === 'general')}
         >
           Datos y Apariencia
         </button>
         <button
           className={`tab-btn ${activeTab === 'license' ? 'active' : ''}`}
           onClick={() => handleTabChange('license')}
+          hidden={!visibleTabs.some((tab) => tab.key === 'license')}
         >
           Licencia y Rubros
         </button>
         <button
           className={`tab-btn ${activeTab === 'maintenance' ? 'active' : ''}`}
           onClick={() => handleTabChange('maintenance')}
+          hidden={!visibleTabs.some((tab) => tab.key === 'maintenance')}
         >
           Datos y Mantenimiento
         </button>
         <button
           className={`tab-btn ${activeTab === 'backup' ? 'active' : ''}`}
           onClick={() => handleTabChange('backup')}
+          hidden={!visibleTabs.some((tab) => tab.key === 'backup')}
         >
           Respaldos
         </button>

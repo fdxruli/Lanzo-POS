@@ -227,6 +227,155 @@
   border: 1px solid #34d399;
 }
 
+.license-plan-badge--admin {
+  color: #075985;
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+}
+
+.license-staff-feature-note,
+.license-staff-feature-warning,
+.staff-users-error {
+  margin: var(--spacing-md) 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.license-staff-feature-note {
+  color: #065f46;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+}
+
+.license-staff-feature-warning,
+.staff-users-error {
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+}
+
+.staff-users-section {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--border-color);
+}
+
+.staff-users-header,
+.staff-user-form-actions,
+.staff-user-row,
+.staff-user-row-actions {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.staff-users-header,
+.staff-user-row {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.staff-users-header h4 {
+  margin-bottom: 4px;
+}
+
+.staff-users-header p {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 0.9rem;
+}
+
+.staff-user-form {
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-background-color);
+}
+
+.staff-permissions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: var(--spacing-md);
+}
+
+.staff-permission-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--light-background);
+  color: var(--text-dark);
+  font-size: 0.9rem;
+}
+
+.staff-permission-toggle input {
+  display: inline-block;
+  width: auto;
+  opacity: 1;
+  position: static;
+}
+
+.staff-user-form-actions {
+  justify-content: flex-end;
+  margin-top: var(--spacing-md);
+}
+
+.staff-users-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.staff-user-row {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-background-color);
+}
+
+.staff-user-row > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.staff-user-row span,
+.staff-user-row small {
+  color: var(--text-light);
+  font-size: 0.85rem;
+}
+
+.staff-user-row-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.staff-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.staff-status-badge.active {
+  color: #065f46;
+  background: #d1fae5;
+}
+
+.staff-status-badge.inactive {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
 .license-status-active {
   color: var(--success-color);
   font-weight: bold;
