@@ -50,6 +50,9 @@ function Navbar() {
   const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
   const dismissedBackupNotice = useAppStore((state) => state.dismissedBackupNotice);
   const showBackupNotice = useAppStore((state) => state.showBackupNotice);
+  const canAccess = useAppStore((state) => state.canAccess);
+  useAppStore((state) => state.currentDeviceRole);
+  useAppStore((state) => state.currentStaffUser);
 
   const location = useLocation();
   const isAboutPage = location.pathname === '/acerca-de';
@@ -142,7 +145,19 @@ function Navbar() {
     { to: '/acerca-de', label: 'Acerca de', description: 'Información y versión de Lanzo', icon: <Info size={21} /> }
   ];
 
-  const isSectionFromMenu = drawerLinks.some((link) => location.pathname.startsWith(link.to));
+  const routePermissions = {
+    '/': 'pos',
+    '/caja': 'cash_register',
+    '/pedidos': 'orders',
+    '/productos': 'products',
+    '/clientes': 'customers',
+    '/ventas': 'reports',
+    '/configuracion': 'settings'
+  };
+  const isRouteAllowed = (to) => !routePermissions[to] || canAccess(routePermissions[to]);
+  const visibleDrawerLinks = drawerLinks.filter((link) => isRouteAllowed(link.to));
+
+  const isSectionFromMenu = visibleDrawerLinks.some((link) => location.pathname.startsWith(link.to));
   const backupNotice = getBackupRuntimeNotice(backupStatus, needsDriveReauth);
   const hasDismissedBackupNotice = backupNotice?.key === dismissedBackupNotice;
   const hasMenuAction = updateAvailable || isInstallable || hasDismissedBackupNotice;
@@ -218,6 +233,7 @@ function Navbar() {
           to="/caja"
           className={getBottomClass}
           onClick={handleProtectedNavClick}
+          hidden={!isRouteAllowed('/caja')}
           aria-disabled={isBackupLoading}
           tabIndex={isBackupLoading ? -1 : 0}
         >
@@ -229,6 +245,7 @@ function Navbar() {
           to="/productos"
           className={getBottomClass}
           onClick={handleProtectedNavClick}
+          hidden={!isRouteAllowed('/productos')}
           aria-disabled={isBackupLoading}
           tabIndex={isBackupLoading ? -1 : 0}
         >
@@ -240,6 +257,7 @@ function Navbar() {
           to="/"
           className={getBottomClass}
           onClick={handleProtectedNavClick}
+          hidden={!isRouteAllowed('/')}
           aria-disabled={isBackupLoading}
           tabIndex={isBackupLoading ? -1 : 0}
           end
@@ -252,6 +270,7 @@ function Navbar() {
           to="/ventas"
           className={getBottomClass}
           onClick={handleProtectedNavClick}
+          hidden={!isRouteAllowed('/ventas')}
           aria-disabled={isBackupLoading}
           tabIndex={isBackupLoading ? -1 : 0}
         >
@@ -312,7 +331,7 @@ function Navbar() {
         </div>
 
         <div className="drawer-links">
-          {drawerLinks.map((link) => (
+          {visibleDrawerLinks.map((link) => (
             <div className="drawer-link-row" key={link.to}>
               <NavLink
                 to={link.to}
@@ -412,6 +431,7 @@ function Navbar() {
             className={getDesktopClass}
             end
             onClick={handleProtectedNavClick}
+            hidden={!isRouteAllowed('/')}
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
           >
@@ -422,13 +442,14 @@ function Navbar() {
             to="/caja"
             className={getDesktopClass}
             onClick={handleProtectedNavClick}
+            hidden={!isRouteAllowed('/caja')}
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
           >
             <Inbox size={20} /> Caja
           </NavLink>
 
-          {features.hasKDS && (
+          {features.hasKDS && isRouteAllowed('/pedidos') && (
             <NavLink
               to="/pedidos"
               className={getDesktopClass}
@@ -444,6 +465,7 @@ function Navbar() {
             to="/productos"
             className={getDesktopClass}
             onClick={handleProtectedNavClick}
+            hidden={!isRouteAllowed('/productos')}
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
           >
@@ -454,6 +476,7 @@ function Navbar() {
             to="/clientes"
             className={getDesktopClass}
             onClick={handleProtectedNavClick}
+            hidden={!isRouteAllowed('/clientes')}
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
           >
@@ -464,6 +487,7 @@ function Navbar() {
             to="/ventas"
             className={getDesktopClass}
             onClick={handleProtectedNavClick}
+            hidden={!isRouteAllowed('/ventas')}
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
           >
@@ -476,6 +500,7 @@ function Navbar() {
             to="/configuracion"
             className={getDesktopClass}
             onClick={handleProtectedNavClick}
+            hidden={!isRouteAllowed('/configuracion')}
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}

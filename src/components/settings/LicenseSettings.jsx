@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import DeviceManager from '../common/DeviceManager';
+import StaffUsersSettings from './StaffUsersSettings';
 
 const BUSINESS_RUBROS = [
     { id: 'food_service', label: 'Restaurante / Cocina' },
@@ -16,7 +17,11 @@ export default function LicenseSettings() {
     const companyProfile = useAppStore((state) => state.companyProfile);
     const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
     const licenseDetails = useAppStore((state) => state.licenseDetails);
+    const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+    const currentStaffUser = useAppStore((state) => state.currentStaffUser);
+    const canAccess = useAppStore((state) => state.canAccess);
     const logout = useAppStore((state) => state.logout);
+    const logoutStaff = useAppStore((state) => state.logoutStaff);
     const renewLicense = useAppStore((state) => state.renewLicense);
 
     const [selectedRubros, setSelectedRubros] = useState([]);
@@ -28,6 +33,9 @@ export default function LicenseSettings() {
     const allowedRubrosList = licenseFeatures.allowed_rubros || ['*'];
     const isAllAllowed = allowedRubrosList.includes('*');
     const isProLicense = licenseFeatures.realtime_license_sync === true;
+    const staffRolesEnabled = licenseFeatures.staff_roles === true;
+    const isStaffDevice = currentDeviceRole === 'staff';
+    const canManageStaff = !isStaffDevice && staffRolesEnabled && canAccess('license');
 
     useEffect(() => {
         if (companyProfile?.business_type) {
@@ -82,6 +90,12 @@ export default function LicenseSettings() {
 
         if (window.confirm(confirmMessage)) {
             logout();
+        }
+    };
+
+    const handleStaffLogout = () => {
+        if (window.confirm('Deseas cerrar solo la sesion staff en este dispositivo?')) {
+            logoutStaff();
         }
     };
 
@@ -208,6 +222,37 @@ export default function LicenseSettings() {
                             {licenseDetails.status === 'active' ? 'Activa' : (licenseDetails.status || 'Inactiva')}
                         </span>
                     </div>
+
+                    <div className="license-detail">
+                        <span className="license-label">Tipo de dispositivo:</span>
+                        <span className="license-id-value">
+                            <span className="license-value">
+                                {isStaffDevice ? 'Staff' : 'Administrador'}
+                            </span>
+                            {!isStaffDevice && (
+                                <span className="license-plan-badge license-plan-badge--admin">
+                                    Admin
+                                </span>
+                            )}
+                        </span>
+                    </div>
+
+                    {isStaffDevice && currentStaffUser && (
+                        <>
+                            <div className="license-detail">
+                                <span className="license-label">Staff:</span>
+                                <span className="license-value">{currentStaffUser.display_name || currentStaffUser.username}</span>
+                            </div>
+                            <div className="license-detail">
+                                <span className="license-label">Usuario:</span>
+                                <span className="license-value">@{currentStaffUser.username}</span>
+                            </div>
+                            <div className="license-detail">
+                                <span className="license-label">Rol:</span>
+                                <span className="license-value">{currentStaffUser.role_name || 'staff'}</span>
+                            </div>
+                        </>
+                    )}
                     
                     {/* --- NUEVO CAMPO DE VENCIMIENTO --- */}
                     <div className="license-detail">
@@ -251,15 +296,33 @@ export default function LicenseSettings() {
                         <span className="license-value">{maxRubrosAllowed === 999 ? 'Ilimitado' : maxRubrosAllowed}</span>
                     </div>
                 </div>
-                <h4 className="device-manager-title">Dispositivos Vinculados</h4>
-                <DeviceManager licenseKey={licenseDetails.license_key} />
+                {staffRolesEnabled ? (
+                    <div className="license-staff-feature-note">
+                        Roles staff disponibles en esta licencia.
+                    </div>
+                ) : (
+                    <div className="license-staff-feature-warning">
+                        Este plan no incluye usuarios staff.
+                    </div>
+                )}
+
+                {!isStaffDevice && canAccess('devices') && (
+                    <>
+                        <h4 className="device-manager-title">Dispositivos Vinculados</h4>
+                        <DeviceManager licenseKey={licenseDetails.license_key} />
+                    </>
+                )}
+
+                {canManageStaff && (
+                    <StaffUsersSettings licenseKey={licenseDetails.license_key} />
+                )}
                 
                 <button 
                     className="btn btn-cancel" 
                     style={{ width: 'auto', marginTop: '1rem' }} 
-                    onClick={handleLogout}
+                    onClick={isStaffDevice ? handleStaffLogout : handleLogout}
                 >
-                    Cerrar sesion local
+                    {isStaffDevice ? 'Cerrar sesion staff' : 'Cerrar sesion local'}
                 </button>
             </div>
         );
