@@ -1,5 +1,5 @@
 // src/services/licenseService.js
-import { supabaseClient } from './supabase';
+import { getDeviceSecurityToken, supabaseClient } from './supabase';
 import { loadData, saveData, STORES } from './database';
 import Logger from './Logger';
 import { checkInternetConnection, getStableDeviceId } from './utils';
@@ -146,5 +146,106 @@ export const renewLicenseService = async (licenseKey) => {
             success: false,
             message: error.message || 'Error de conexion al renovar.'
         };
+    }
+};
+
+const getAdminStaffRpcContext = async (licenseKey) => {
+    const [deviceFingerprint, securityToken] = await Promise.all([
+        getStableDeviceId(),
+        getDeviceSecurityToken()
+    ]);
+
+    if (!licenseKey || !deviceFingerprint || !securityToken) {
+        throw new Error('No se pudo confirmar el dispositivo administrador.');
+    }
+
+    return {
+        p_license_key: licenseKey,
+        p_admin_device_fingerprint: deviceFingerprint,
+        p_admin_security_token: securityToken
+    };
+};
+
+export const listStaffUsersService = async (licenseKey) => {
+    try {
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) {
+            return { success: false, message: 'Necesitas conexion a internet para consultar usuarios staff.' };
+        }
+
+        const context = await getAdminStaffRpcContext(licenseKey);
+        const { data, error } = await supabaseClient.rpc('admin_list_staff_users', context);
+
+        if (error) throw error;
+
+        return {
+            success: Boolean(data?.success),
+            data: data?.data || [],
+            message: data?.message || data?.error || null
+        };
+    } catch (error) {
+        Logger.error('Error listando usuarios staff:', error);
+        return { success: false, message: error.message || 'No se pudieron cargar usuarios staff.' };
+    }
+};
+
+export const createStaffUserService = async (licenseKey, payload) => {
+    try {
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) {
+            return { success: false, message: 'Necesitas conexion a internet para crear usuarios staff.' };
+        }
+
+        const context = await getAdminStaffRpcContext(licenseKey);
+        const { data, error } = await supabaseClient.rpc('admin_create_staff_user', {
+            ...context,
+            p_username: payload.username,
+            p_password: payload.password,
+            p_display_name: payload.display_name,
+            p_permissions: payload.permissions || {},
+            p_role_name: payload.role_name || 'staff'
+        });
+
+        if (error) throw error;
+
+        return {
+            success: Boolean(data?.success),
+            staff_user: data?.staff_user || null,
+            message: data?.message || data?.error || data?.code || null
+        };
+    } catch (error) {
+        Logger.error('Error creando usuario staff:', error);
+        return { success: false, message: error.message || 'No se pudo crear usuario staff.' };
+    }
+};
+
+export const updateStaffUserService = async (licenseKey, staffUserId, payload) => {
+    try {
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) {
+            return { success: false, message: 'Necesitas conexion a internet para actualizar usuarios staff.' };
+        }
+
+        const context = await getAdminStaffRpcContext(licenseKey);
+        const { data, error } = await supabaseClient.rpc('admin_update_staff_user', {
+            ...context,
+            p_staff_user_id: staffUserId,
+            p_display_name: payload.display_name,
+            p_permissions: payload.permissions || {},
+            p_is_active: payload.is_active,
+            p_new_password: payload.new_password || null,
+            p_role_name: payload.role_name || 'staff'
+        });
+
+        if (error) throw error;
+
+        return {
+            success: Boolean(data?.success),
+            staff_user: data?.staff_user || null,
+            message: data?.message || data?.error || data?.code || null
+        };
+    } catch (error) {
+        Logger.error('Error actualizando usuario staff:', error);
+        return { success: false, message: error.message || 'No se pudo actualizar usuario staff.' };
     }
 };

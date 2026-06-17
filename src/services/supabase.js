@@ -23,6 +23,10 @@ async function getSecureCredentials() {
     }
 }
 
+export async function getDeviceSecurityToken() {
+    return getSecureCredentials();
+}
+
 async function setSecureCredentials(newToken) {
     try {
         await saveData(STORES.SYNC_CACHE, {
@@ -32,6 +36,44 @@ async function setSecureCredentials(newToken) {
     } catch (e) {
         Logger.warn("No se pudo guardar el token de seguridad:", e);
     }
+}
+
+const STAFF_SESSION_TOKEN_KEY = 'staff_session_token';
+const STAFF_SESSION_ID_KEY = 'staff_session_id';
+
+async function getStaffSessionToken() {
+    try {
+        const record = await loadData(STORES.SYNC_CACHE, STAFF_SESSION_TOKEN_KEY);
+        return record ? record.value : null;
+    } catch {
+        return null;
+    }
+}
+
+async function setStaffSessionCredentials(sessionToken, sessionId = null) {
+    try {
+        await Promise.all([
+            saveData(STORES.SYNC_CACHE, {
+                key: STAFF_SESSION_TOKEN_KEY,
+                value: sessionToken || null
+            }),
+            saveData(STORES.SYNC_CACHE, {
+                key: STAFF_SESSION_ID_KEY,
+                value: sessionId || null
+            })
+        ]);
+    } catch (e) {
+        Logger.warn("No se pudo guardar la sesion staff:", e);
+    }
+}
+
+export async function hasStaffSessionToken() {
+    const token = await getStaffSessionToken();
+    return Boolean(token);
+}
+
+export async function clearStaffSessionCache() {
+    await setStaffSessionCredentials(null, null);
 }
 
 function pickSecurityTokenFromLicense(license = {}) {
@@ -72,6 +114,8 @@ async function getSecurityTokenForValidation(storedLicense = null) {
 export async function clearLicenseSecurityCache() {
     try {
         await saveData(STORES.SYNC_CACHE, { key: 'device_security_token', value: null });
+        await saveData(STORES.SYNC_CACHE, { key: STAFF_SESSION_TOKEN_KEY, value: null });
+        await saveData(STORES.SYNC_CACHE, { key: STAFF_SESSION_ID_KEY, value: null });
         await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
         await saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: null });
     } catch (error) {
@@ -283,6 +327,88 @@ async function resetRateLimit() {
 
 export const activateLicense = async function (licenseKey) {
     try {
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) {
+            return {
+                valid: false,
+                message: "No tienes conexion a internet. La activacion requiere estar en linea."
+            };
+        }
+
+        await checkRateLimit();
+
+        const deviceFingerprint = await getStableDeviceId();
+        const friendlyName = getFriendlyDeviceName(navigator.userAgent);
+        const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
+
+        const { data, error } = await supabaseClient.rpc(
+            'activate_license_on_device',
+            {
+                license_key_param: licenseKey,
+                device_fingerprint_param: deviceFingerprint,
+                device_name_param: friendlyName,
+                device_info_param: deviceInfo
+            }
+        );
+
+        if (error) throw error;
+
+        if (data?.success) {
+            resetRateLimit();
+            safeLocalStorageSet('fp', deviceFingerprint);
+
+            const initialToken =
+                data.device_security_token ||
+                data.security_token ||
+                data.details?.security_token ||
+                data.details?.token ||
+                data.details?.device_security_token;
+
+            if (initialToken) {
+                await setSecureCredentials(initialToken);
+            } else {
+                Logger.warn("Advertencia: El servidor no devolvio token inicial tras activar.");
+            }
+
+            const details = {
+                ...data.details,
+                device_role: data.device_role || data.details?.device_role || 'admin',
+                staff_user: data.staff_user || data.details?.staff_user || null
+            };
+
+            return { valid: true, message: data.message, details };
+        }
+
+        if (data?.staff_login_required || data?.code === 'STAFF_LOGIN_REQUIRED') {
+            return {
+                valid: false,
+                staff_login_required: true,
+                code: 'STAFF_LOGIN_REQUIRED',
+                message: data.message || 'Este dispositivo requiere login staff.',
+                details: data.details || null
+            };
+        }
+
+        await registerFailedAttempt();
+        return {
+            valid: false,
+            code: data?.code || data?.error,
+            message: data?.error || data?.message || 'Error de activacion.'
+        };
+    } catch (error) {
+        const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
+
+        if (!isRateLimit) {
+            Logger.error('Error activando licencia:', error);
+            await registerFailedAttempt();
+        }
+
+        return { valid: false, message: error.message };
+    }
+};
+
+export const activateLicenseLegacy = async function (licenseKey) {
+    try {
         // 1. Verificación Estricta de Red
         // A diferencia de revalidar, ACTIVAR requiere internet obligatoriamente.
         // No gastamos intentos de rate limit si ni siquiera hay red.
@@ -332,7 +458,13 @@ export const activateLicense = async function (licenseKey) {
             }
             // ---------------------------------
 
-            return { valid: true, message: data.message, details: data.details };
+            const details = {
+                ...data.details,
+                device_role: data.device_role || data.details?.device_role || 'admin',
+                staff_user: data.staff_user || data.details?.staff_user || null
+            };
+
+            return { valid: true, message: data.message, details };
         } else {
             // El servidor respondió, pero rechazó la activación (ej. licencia tope alcanzado)
             await registerFailedAttempt();
@@ -353,6 +485,169 @@ export const activateLicense = async function (licenseKey) {
 
         return { valid: false, message: error.message };
     }
+};
+
+export const staffLoginOnDevice = async function ({
+    licenseKey,
+    username,
+    password
+}) {
+    try {
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) {
+            return {
+                success: false,
+                code: 'ONLINE_REQUIRED',
+                message: 'Necesitas internet para iniciar sesion staff.'
+            };
+        }
+
+        if (!licenseKey || !username || !password) {
+            return {
+                success: false,
+                code: 'MISSING_CREDENTIALS',
+                message: 'Ingresa usuario y contrasena.'
+            };
+        }
+
+        const deviceFingerprint = await getStableDeviceId();
+        const friendlyName = getFriendlyDeviceName(navigator.userAgent);
+        const deviceInfo = { userAgent: navigator.userAgent, platform: navigator.platform };
+
+        const { data, error } = await supabaseClient.rpc('staff_login_on_device', {
+            p_license_key: licenseKey,
+            p_device_fingerprint: deviceFingerprint,
+            p_device_name: friendlyName,
+            p_device_info: deviceInfo,
+            p_username: username.trim(),
+            p_password: password
+        });
+
+        if (error) throw error;
+
+        if (!data?.success) {
+            return {
+                success: false,
+                code: data?.code || data?.error || 'STAFF_LOGIN_FAILED',
+                message: data?.message || data?.error || 'No se pudo iniciar sesion staff.'
+            };
+        }
+
+        const deviceToken =
+            data.device_security_token ||
+            data.details?.device_security_token ||
+            data.details?.security_token ||
+            data.details?.token ||
+            null;
+
+        if (deviceToken) {
+            await setSecureCredentials(deviceToken);
+        }
+
+        await setStaffSessionCredentials(data.staff_session_token, data.staff_session_id);
+        safeLocalStorageSet('fp', deviceFingerprint);
+
+        return {
+            success: true,
+            device_role: data.device_role || 'staff',
+            staff_user: data.staff_user || data.details?.staff_user || null,
+            details: {
+                ...data.details,
+                device_role: data.device_role || data.details?.device_role || 'staff',
+                staff_user: data.staff_user || data.details?.staff_user || null
+            }
+        };
+    } catch (error) {
+        Logger.error('Error iniciando sesion staff:', error);
+        return {
+            success: false,
+            code: error?.code || 'STAFF_LOGIN_ERROR',
+            message: error?.message || 'No se pudo iniciar sesion staff.'
+        };
+    }
+};
+
+export const verifyStaffSession = async function (licenseKey) {
+    try {
+        const isOnline = await checkInternetConnection();
+        if (!isOnline) {
+            return {
+                success: false,
+                valid: false,
+                code: 'ONLINE_REQUIRED',
+                message: 'Necesitas internet para restaurar la sesion staff.'
+            };
+        }
+
+        const staffSessionToken = await getStaffSessionToken();
+        if (!staffSessionToken || !licenseKey) {
+            return {
+                success: false,
+                valid: false,
+                code: 'STAFF_SESSION_REQUIRED',
+                message: 'Inicia sesion staff para continuar.'
+            };
+        }
+
+        const deviceFingerprint = await getStableDeviceId();
+        const { data, error } = await supabaseClient.rpc('verify_staff_session', {
+            p_license_key: licenseKey,
+            p_device_fingerprint: deviceFingerprint,
+            p_staff_session_token: staffSessionToken
+        });
+
+        if (error) throw error;
+
+        if (!data?.success || data?.valid === false) {
+            await clearStaffSessionCache();
+            return {
+                success: false,
+                valid: false,
+                code: data?.code || data?.reason || 'STAFF_SESSION_INVALID',
+                message: data?.message || 'La sesion staff ya no es valida.'
+            };
+        }
+
+        return {
+            success: true,
+            valid: true,
+            staff_user: data.staff_user || null,
+            details: data.details || null
+        };
+    } catch (error) {
+        Logger.warn('No se pudo verificar sesion staff:', error?.message || error);
+        return {
+            success: false,
+            valid: false,
+            code: error?.code || 'STAFF_SESSION_ERROR',
+            message: error?.message || 'No se pudo verificar la sesion staff.'
+        };
+    }
+};
+
+export const staffLogoutSession = async function (licenseKey) {
+    try {
+        const staffSessionToken = await getStaffSessionToken();
+        const deviceFingerprint = await getStableDeviceId();
+
+        if (navigator.onLine && staffSessionToken && licenseKey) {
+            const { error } = await supabaseClient.rpc('staff_logout_session', {
+                p_license_key: licenseKey,
+                p_device_fingerprint: deviceFingerprint,
+                p_staff_session_token: staffSessionToken
+            });
+
+            if (error) {
+                Logger.warn('Logout staff remoto fallo; se limpia sesion local:', error.message);
+            }
+        }
+    } catch (error) {
+        Logger.warn('No se pudo cerrar sesion staff remotamente:', error?.message || error);
+    } finally {
+        await clearStaffSessionCache();
+    }
+
+    return { success: true };
 };
 
 let currentRevalidationPromise = null;
