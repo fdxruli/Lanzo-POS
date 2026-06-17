@@ -194,6 +194,39 @@
   color: var(--text-dark);
 }
 
+.license-id-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.license-key-value {
+  font-family: monospace;
+  letter-spacing: 1px;
+}
+
+.license-plan-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.license-plan-badge--pro {
+  color: #065f46;
+  background: #d1fae5;
+  border: 1px solid #34d399;
+}
+
 .license-status-active {
   color: var(--success-color);
   font-weight: bold;
@@ -253,6 +286,14 @@
 }
 
 @media (max-width: 640px) {
+  .license-detail {
+    gap: 10px;
+  }
+
+  .license-id-value {
+    flex-wrap: wrap;
+  }
+
   .license-renewal-panel {
     align-items: stretch;
     flex-direction: column;
