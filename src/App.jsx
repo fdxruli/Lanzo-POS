@@ -5,12 +5,13 @@ import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import NavigationGuard from './components/common/NavigationGuard';
 import Logger from './services/Logger';
-import { db, STORES } from './services/db/dexie';
 // --- COMPONENTES CRÍTICOS (Eager Loading) ---
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
+import StaffLoginModal from './components/common/StaffLoginModal';
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
+import PermissionRoute from './components/common/PermissionRoute';
 import ReconnectionBanner from './components/common/ReconnectionBanner';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
@@ -199,6 +200,13 @@ function App() {
         </ErrorBoundary>
       );
 
+    case 'staff_login_required':
+      return (
+        <ErrorBoundary>
+          <StaffLoginModal />
+        </ErrorBoundary>
+      );
+
     case 'locked_renewal':
       return (
         <ErrorBoundary>
@@ -239,13 +247,13 @@ function App() {
                   }
                 />
                 <Route path="/" element={<Layout />}>
-                  <Route index element={<Suspense fallback={<PageLoader />}><PosPage /></Suspense>} />
-                  <Route path="caja" element={<Suspense fallback={<PageLoader />}><CajaPage /></Suspense>} />
-                  <Route path='pedidos' element={<Suspense fallback={<PageLoader />}><OrdersPage /></Suspense>} />
-                  <Route path="productos" element={<Suspense fallback={<PageLoader />}><ProductsPage /></Suspense>} />
-                  <Route path="clientes" element={<Suspense fallback={<PageLoader />}><CustomersPage /></Suspense>} />
-                  <Route path="ventas" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
-                  <Route path="configuracion" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
+                  <Route index element={<PermissionRoute permission="pos"><Suspense fallback={<PageLoader />}><PosPage /></Suspense></PermissionRoute>} />
+                  <Route path="caja" element={<PermissionRoute permission="cash_register"><Suspense fallback={<PageLoader />}><CajaPage /></Suspense></PermissionRoute>} />
+                  <Route path='pedidos' element={<PermissionRoute permission="orders"><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
+                  <Route path="productos" element={<PermissionRoute permission="products"><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
+                  <Route path="clientes" element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
+                  <Route path="ventas" element={<PermissionRoute permission="reports"><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></PermissionRoute>} />
+                  <Route path="configuracion" element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></PermissionRoute>} />
                   <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
                 </Route>
               </Routes>
