@@ -6,7 +6,12 @@ import {
   revalidateLicense,
   createFreeTrial,
   getStableDeviceId,
-  clearLicenseSecurityCache
+  clearLicenseSecurityCache,
+  clearStaffSessionCache,
+  hasStaffSessionToken,
+  staffLoginOnDevice,
+  staffLogoutSession,
+  verifyStaffSession
 } from '../../services/supabase';
 import { startLicenseListener, stopLicenseListener } from '../../services/licenseRealtime';
 import {
@@ -46,6 +51,12 @@ const RECOVERABLE_VALIDATION_REASONS = [
   'NETWORK_ERROR',
   'OFFLINE_PRECHECK',
   'offline_grace_expired'
+];
+const STAFF_LOGIN_REASONS = [
+  'STAFF_LOGIN_REQUIRED',
+  'staff_login_required',
+  'STAFF_SESSION_REQUIRED',
+  'STAFF_SESSION_INVALID'
 ];
 const GRACE_PERIOD_DAYS = 7;
 const LICENSE_SYNC_INTERVAL_MS = 30 * 60 * 1000;
@@ -88,6 +99,13 @@ const isRecoverableValidationFailure = (validation = {}) => {
   );
 };
 
+const isStaffLoginRequiredFailure = (validation = {}) => {
+  const code = normalizeValidationCode(validation);
+  return STAFF_LOGIN_REASONS.some(
+    (reason) => reason.toLowerCase() === code.toLowerCase()
+  ) || validation.staff_login_required === true;
+};
+
 const clearLocalLicenseSession = async () => {
   clearLicenseFromStorage();
   await clearLicenseSecurityCache();
@@ -120,10 +138,22 @@ export const createLicenseSlice = (set, get) => ({
   licenseStatus: 'active',
   gracePeriodEnds: null,
   licenseDetails: null,
+  currentDeviceRole: null,
+  currentStaffUser: null,
+  staffLoginLicenseKey: null,
+  staffLoginMessage: null,
   // CORRECCIÓN 1: Nombre unificado con 'a' (_isInitializing), eliminando el typo '_isInitilizing'
   // que existía en el monolito original y que hacía que la guardia anti-doble-ejecución no funcionara.
   _isInitializing: false,
   pendingTermsUpdate: null,
+
+  isAdminDevice: () => get().currentDeviceRole !== 'staff',
+  canAccess: (permission) => {
+    const state = get();
+    if (state.currentDeviceRole !== 'staff') return true;
+    if (!state.currentStaffUser) return false;
+    return state.currentStaffUser.permissions?.[permission] === true;
+  },
 
   performSystemHealthCheck: async () => {
     const state = get();
@@ -182,6 +212,60 @@ export const createLicenseSlice = (set, get) => ({
       }
 
       Logger.log('[AppStore] Carga rápida activada - Usando caché local');
+      const hasStoredStaffSession = await hasStaffSessionToken();
+      const localDeviceRole = localLicense.device_role || (localLicense.staff_user ? 'staff' : 'admin');
+
+      if (localDeviceRole === 'staff' || hasStoredStaffSession) {
+        set({
+          licenseDetails: { ...localLicense, device_role: 'staff' },
+          currentDeviceRole: 'staff',
+          currentStaffUser: null,
+          staffLoginLicenseKey: localLicense.license_key
+        });
+
+        if (!navigator.onLine) {
+          Logger.warn('[Staff] Sesion staff requiere verificacion online al iniciar.');
+          set({
+            appStatus: 'staff_login_required',
+            staffLoginMessage: 'Necesitas internet para iniciar sesion staff.',
+            _isInitializing: false
+          });
+          return;
+        }
+
+        const staffSession = await verifyStaffSession(localLicense.license_key);
+
+        if (!staffSession?.valid) {
+          await clearStaffSessionCache();
+          set({
+            appStatus: 'staff_login_required',
+            currentStaffUser: null,
+            staffLoginMessage: staffSession?.message || 'Inicia sesion staff para continuar.',
+            _isInitializing: false
+          });
+          return;
+        }
+
+        const restoredLicense = {
+          ...localLicense,
+          device_role: 'staff',
+          staff_user: staffSession.staff_user || localLicense.staff_user || null
+        };
+
+        await saveLicenseToStorage(restoredLicense);
+        set({
+          licenseDetails: restoredLicense,
+          currentDeviceRole: 'staff',
+          currentStaffUser: restoredLicense.staff_user,
+          staffLoginMessage: null
+        });
+
+        await get()._loadProfile(restoredLicense.license_key);
+        set({ _isInitializing: false });
+        get()._validateInBackground(restoredLicense.license_key);
+        return;
+      }
+
       await get()._processOfflineMode(localLicense);
       set({ _isInitializing: false });
 
@@ -399,6 +483,18 @@ export const createLicenseSlice = (set, get) => ({
       serverValidation.reason !== 'offline_grace' &&
       !isWithinGracePeriod
     ) {
+      if (isStaffLoginRequiredFailure(serverValidation) || get().currentDeviceRole === 'staff') {
+        await clearStaffSessionCache();
+        set({
+          appStatus: 'staff_login_required',
+          currentDeviceRole: 'staff',
+          currentStaffUser: null,
+          staffLoginLicenseKey: localLicense.license_key,
+          staffLoginMessage: serverValidation.details || serverValidation.message || 'Inicia sesion staff para continuar.'
+        });
+        return;
+      }
+
       if (isFatalValidationFailure(serverValidation)) {
         Logger.warn('[AppStore] Licencia revocada fatalmente:', serverValidation.reason);
         await clearLocalLicenseSession();
@@ -463,7 +559,9 @@ export const createLicenseSlice = (set, get) => ({
     set({
       licenseDetails: finalLicenseData,
       licenseStatus: finalStatus,
-      gracePeriodEnds: derivedGracePeriodEnd
+      gracePeriodEnds: derivedGracePeriodEnd,
+      currentDeviceRole: finalLicenseData.device_role || 'admin',
+      currentStaffUser: finalLicenseData.device_role === 'staff' ? finalLicenseData.staff_user || null : null
     });
 
     await get()._loadProfile(finalLicenseData.license_key);
@@ -532,7 +630,9 @@ export const createLicenseSlice = (set, get) => ({
     set({
       licenseDetails: updatedLocalLicense,
       licenseStatus: localStatus,
-      gracePeriodEnds: updatedLocalLicense.grace_period_ends || null
+      gracePeriodEnds: updatedLocalLicense.grace_period_ends || null,
+      currentDeviceRole: updatedLocalLicense.device_role || 'admin',
+      currentStaffUser: updatedLocalLicense.device_role === 'staff' ? updatedLocalLicense.staff_user || null : null
     });
 
     await get()._loadProfile(updatedLocalLicense.license_key);
@@ -806,9 +906,37 @@ export const createLicenseSlice = (set, get) => ({
       if (result.valid) {
         const licenseDataToSave = { ...result.details, valid: true };
         await saveLicenseToStorage(licenseDataToSave);
-        set({ licenseDetails: licenseDataToSave });
+        set({
+          licenseDetails: licenseDataToSave,
+          currentDeviceRole: licenseDataToSave.device_role || 'admin',
+          currentStaffUser: licenseDataToSave.device_role === 'staff' ? licenseDataToSave.staff_user || null : null,
+          staffLoginLicenseKey: null,
+          staffLoginMessage: null
+        });
         await get()._loadProfile(licenseKey);
         return { success: true };
+      }
+
+      if (result.staff_login_required) {
+        set({
+          appStatus: 'staff_login_required',
+          licenseDetails: {
+            ...(result.details || {}),
+            license_key: licenseKey,
+            valid: false,
+            device_role: 'staff'
+          },
+          currentDeviceRole: 'staff',
+          currentStaffUser: null,
+          staffLoginLicenseKey: licenseKey,
+          staffLoginMessage: result.message || 'Este dispositivo requiere login staff.'
+        });
+
+        return {
+          success: false,
+          staffLoginRequired: true,
+          message: result.message || 'Este dispositivo requiere login staff.'
+        };
       }
 
       const errorMsg = (result.message || '').toLowerCase();
@@ -830,7 +958,11 @@ export const createLicenseSlice = (set, get) => ({
           };
 
           await saveLicenseToStorage(recoveredData);
-          set({ licenseDetails: recoveredData });
+          set({
+            licenseDetails: recoveredData,
+            currentDeviceRole: recoveredData.device_role || 'admin',
+            currentStaffUser: recoveredData.device_role === 'staff' ? recoveredData.staff_user || null : null
+          });
           await get()._loadProfile(licenseKey);
           return { success: true };
         }
@@ -864,6 +996,62 @@ export const createLicenseSlice = (set, get) => ({
     }
   },
 
+  handleStaffLogin: async ({ username, password }) => {
+    const state = get();
+    const licenseKey = state.staffLoginLicenseKey || state.licenseDetails?.license_key;
+
+    if (!licenseKey) {
+      return { success: false, message: 'No hay licencia para iniciar sesion staff.' };
+    }
+
+    const result = await staffLoginOnDevice({
+      licenseKey,
+      username,
+      password
+    });
+
+    if (!result.success) {
+      set({ staffLoginMessage: result.message });
+      return { success: false, message: result.message };
+    }
+
+    const licenseDataToSave = {
+      ...state.licenseDetails,
+      ...result.details,
+      license_key: result.details?.license_key || licenseKey,
+      valid: true,
+      device_role: 'staff',
+      staff_user: result.staff_user || result.details?.staff_user || null
+    };
+
+    await saveLicenseToStorage(licenseDataToSave);
+
+    set({
+      licenseDetails: licenseDataToSave,
+      currentDeviceRole: 'staff',
+      currentStaffUser: licenseDataToSave.staff_user,
+      staffLoginLicenseKey: licenseKey,
+      staffLoginMessage: null
+    });
+
+    await get()._loadProfile(licenseKey);
+    return { success: true };
+  },
+
+  logoutStaff: async () => {
+    const licenseKey = get().licenseDetails?.license_key || get().staffLoginLicenseKey;
+    await get().stopLicenseSync();
+    await staffLogoutSession(licenseKey);
+
+    set({
+      appStatus: 'staff_login_required',
+      currentDeviceRole: 'staff',
+      currentStaffUser: null,
+      staffLoginLicenseKey: licenseKey || null,
+      staffLoginMessage: 'Sesion staff cerrada.'
+    });
+  },
+
   logout: async () => {
     await get().stopLicenseSync();
 
@@ -879,6 +1067,10 @@ export const createLicenseSlice = (set, get) => ({
       profileImportCandidate: null,
       licenseStatus: 'active',
       gracePeriodEnds: null,
+      currentDeviceRole: null,
+      currentStaffUser: null,
+      staffLoginLicenseKey: null,
+      staffLoginMessage: null,
       realtimeSubscription: null,
       _isInitializingSecurity: false,
       _securityCleanupScheduled: false,
@@ -901,6 +1093,18 @@ export const createLicenseSlice = (set, get) => ({
         Logger.log('Verificando integridad de sesión con servidor...');
 
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
+
+        if (isStaffLoginRequiredFailure(serverCheck)) {
+          await clearStaffSessionCache();
+          set({
+            appStatus: 'staff_login_required',
+            currentDeviceRole: 'staff',
+            currentStaffUser: null,
+            staffLoginLicenseKey: licenseDetails.license_key,
+            staffLoginMessage: serverCheck.details || serverCheck.message || 'Inicia sesion staff para continuar.'
+          });
+          return false;
+        }
 
         const now = new Date();
         const derivedGracePeriodEnd = deriveGracePeriodEnd(serverCheck, licenseDetails);
@@ -994,6 +1198,9 @@ export const createLicenseSlice = (set, get) => ({
           licenseDetails.expires_at !== updatedDetails.expires_at ||
           licenseDetails.grace_period_ends !== updatedDetails.grace_period_ends ||
           licenseDetails.realtime_topic !== updatedDetails.realtime_topic ||
+          licenseDetails.device_role !== updatedDetails.device_role ||
+          JSON.stringify(licenseDetails.staff_user || null) !==
+          JSON.stringify(updatedDetails.staff_user || null) ||
           JSON.stringify(licenseDetails.features || {}) !==
           JSON.stringify(updatedDetails.features || {});
 
@@ -1002,7 +1209,9 @@ export const createLicenseSlice = (set, get) => ({
           set({
             licenseStatus: newStatus,
             gracePeriodEnds: derivedGracePeriodEnd,
-            licenseDetails: updatedDetails
+            licenseDetails: updatedDetails,
+            currentDeviceRole: updatedDetails.device_role || 'admin',
+            currentStaffUser: updatedDetails.device_role === 'staff' ? updatedDetails.staff_user || null : null
           });
           await saveLicenseToStorage(updatedDetails);
         }

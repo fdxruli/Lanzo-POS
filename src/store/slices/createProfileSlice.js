@@ -135,6 +135,9 @@ export const createProfileSlice = (set, get) => ({
     if (hasUsableProfile(companyData)) {
       Logger.log('[AppStore] Aplicacion lista (ready)');
       set({ appStatus: 'ready' });
+    } else if (get().currentDeviceRole === 'staff') {
+      Logger.warn('[Profile] Staff sin perfil local/remoto usable; se permite entrada sin Setup.');
+      set({ appStatus: 'ready' });
     } else {
       Logger.log('[AppStore] Requiere configuracion inicial');
       set({ appStatus: 'setup_required' });
