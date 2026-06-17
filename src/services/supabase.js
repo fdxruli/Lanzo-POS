@@ -34,6 +34,16 @@ async function setSecureCredentials(newToken) {
     }
 }
 
+export async function clearLicenseSecurityCache() {
+    try {
+        await saveData(STORES.SYNC_CACHE, { key: 'device_security_token', value: null });
+        await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+        await saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: null });
+    } catch (error) {
+        Logger.warn('No se pudo limpiar por completo el contexto seguro de licencia:', error);
+    }
+}
+
 // --- Helpers ---
 
 function getFriendlyDeviceName(userAgent) {
@@ -822,10 +832,14 @@ export const acceptLegalTerms = async (licenseKey, termId) => {
         });
 
         if (error) throw error;
+        if (data?.success === false) {
+            const reason = data.error || data.code || 'TERM_ACCEPTANCE_FAILED';
+            return { success: false, message: reason, error: reason };
+        }
         return data; // { success: true }
 
     } catch (error) {
         Logger.error('Error registrando aceptación de términos:', error);
-        return { success: false, error: error.message };
+        return { success: false, message: error.message, error: error.message };
     }
 };
