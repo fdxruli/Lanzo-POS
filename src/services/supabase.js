@@ -34,6 +34,41 @@ async function setSecureCredentials(newToken) {
     }
 }
 
+function pickSecurityTokenFromLicense(license = {}) {
+    const candidates = [
+        license.security_token,
+        license.token,
+        license.device_security_token,
+        license.new_security_token,
+        license.details?.security_token,
+        license.details?.token,
+        license.details?.device_security_token,
+        license.details?.new_security_token
+    ];
+
+    return candidates.find(
+        (token) => typeof token === 'string' && token.trim().length > 0
+    )?.trim() || null;
+}
+
+async function getSecurityTokenForValidation(storedLicense = null) {
+    const indexedToken = await getSecureCredentials();
+
+    if (indexedToken) {
+        return indexedToken;
+    }
+
+    const recoveredToken = pickSecurityTokenFromLicense(storedLicense);
+
+    if (recoveredToken) {
+        await setSecureCredentials(recoveredToken);
+        Logger.warn('[Security] Token de dispositivo recuperado desde licencia local.');
+        return recoveredToken;
+    }
+
+    return null;
+}
+
 export async function clearLicenseSecurityCache() {
     try {
         await saveData(STORES.SYNC_CACHE, { key: 'device_security_token', value: null });
@@ -283,7 +318,12 @@ export const activateLicense = async function (licenseKey) {
             // --- AGREGAR ESTO URGENTEMENTE ---
             // Si tu RPC de activación devuelve el token, guárdalo YA.
             // Si el token viene en data.device_security_token o data.details.token:
-            const initialToken = data.device_security_token || (data.details && data.details.token);
+            const initialToken =
+                data.device_security_token ||
+                data.security_token ||
+                data.details?.security_token ||
+                data.details?.token ||
+                data.details?.device_security_token;
 
             if (initialToken) {
                 await setSecureCredentials(initialToken);
@@ -353,15 +393,12 @@ export const revalidateLicense = async function (licenseKeyProp) {
 
             const deviceFingerprint = await getStableDeviceId();
 
-            // 🟢 NUEVO 1: Recuperamos el token secreto de IndexedDB antes de llamar al servidor
-            const securityToken = await getSecureCredentials();
+            const securityToken = await getSecurityTokenForValidation(storedLicense);
 
-            // 🟢 NUEVO 2: Cambiamos el nombre de la función y los parámetros
-            // Nota: Los parámetros ahora deben coincidir con tu SQL (p_license_key, etc.)
             const validationPromise = supabaseClient.rpc('verify_device_license_unified', {
-                p_license_key: licenseKey,           // Antes: license_key_param
-                p_device_fingerprint: deviceFingerprint, // Antes: device_fingerprint_param
-                p_security_token: securityToken || null  // ¡El nuevo ingrediente secreto!
+                p_license_key: licenseKey,
+                p_device_fingerprint: deviceFingerprint,
+                p_security_token: securityToken || null
             });
 
             const { data, error } = await Promise.race([validationPromise, timeoutPromise]);
