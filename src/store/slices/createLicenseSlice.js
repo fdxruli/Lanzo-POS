@@ -37,6 +37,16 @@ const FATAL_REASONS = [
 ];
 
 const RENEWAL_REASONS = ['expired_subscription', 'LICENSE_EXPIRED', 'license_expired'];
+const RECOVERABLE_VALIDATION_REASONS = [
+  'DEVICE_TOKEN_REQUIRED',
+  'token_required',
+  'no_secure_context',
+  'server_rejected',
+  'VALIDATION_TIMEOUT',
+  'NETWORK_ERROR',
+  'OFFLINE_PRECHECK',
+  'offline_grace_expired'
+];
 const GRACE_PERIOD_DAYS = 7;
 const LICENSE_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const ENABLE_LICENSE_REALTIME = import.meta.env.VITE_ENABLE_LICENSE_REALTIME === 'true';
@@ -68,6 +78,14 @@ const isFatalValidationFailure = (validation = {}) => {
   const normalized = code.toLowerCase();
 
   return FATAL_REASONS.some((reason) => reason.toLowerCase() === normalized);
+};
+
+const isRecoverableValidationFailure = (validation = {}) => {
+  const code = normalizeValidationCode(validation).toLowerCase();
+
+  return RECOVERABLE_VALIDATION_REASONS.some(
+    (reason) => reason.toLowerCase() === code
+  );
 };
 
 const clearLocalLicenseSession = async () => {
@@ -131,7 +149,7 @@ export const createLicenseSlice = (set, get) => ({
     }
 
     Logger.log(`[HealthCheck] Retorno tras ${timeAwayMinutes.toFixed(1)}m de inactividad. Revalidando integridad...`);
-    
+
     // Consumir el timestamp para evitar ejecuciones en bucle
     sessionStorage.removeItem('lanzo_last_active');
 
@@ -921,8 +939,38 @@ export const createLicenseSlice = (set, get) => ({
             return false;
           }
 
-          Logger.warn('[Integrity] Fallo fatal de seguridad:', serverCheck.reason);
-          await logout();
+          if (isRecoverableValidationFailure(serverCheck)) {
+            const reason = normalizeValidationCode(serverCheck);
+
+            Logger.warn(
+              '[Integrity] Validación recuperable; manteniendo sesión local:',
+              reason
+            );
+
+            await get()._processOfflineMode(licenseDetails);
+
+            set({
+              serverHealth: 'degraded',
+              serverMessage:
+                'No se pudo completar la validación segura del dispositivo. ' +
+                'La sesión local se conserva mientras se recupera el almacenamiento o la conexión.'
+            });
+
+            return false;
+          }
+
+          if (isFatalValidationFailure(serverCheck)) {
+            Logger.warn('[Integrity] Fallo fatal de seguridad:', serverCheck.reason);
+            await logout();
+            return false;
+          }
+
+          Logger.warn(
+            '[Integrity] Respuesta no concluyente del servidor; manteniendo sesión local:',
+            serverCheck.reason || serverCheck.status || serverCheck.error
+          );
+
+          await get()._processOfflineMode(licenseDetails);
           return false;
         }
 
@@ -947,7 +995,7 @@ export const createLicenseSlice = (set, get) => ({
           licenseDetails.grace_period_ends !== updatedDetails.grace_period_ends ||
           licenseDetails.realtime_topic !== updatedDetails.realtime_topic ||
           JSON.stringify(licenseDetails.features || {}) !==
-            JSON.stringify(updatedDetails.features || {});
+          JSON.stringify(updatedDetails.features || {});
 
         if (hasChanges) {
           Logger.log(`[Integrity] Sesión actualizada. Estado: ${newStatus}`);
