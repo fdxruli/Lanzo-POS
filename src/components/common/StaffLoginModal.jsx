@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LogIn, LockKeyhole, WifiOff } from 'lucide-react';
+import { AlertTriangle, LogIn, LockKeyhole, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import './StaffLoginModal.css';
 
@@ -13,7 +13,14 @@ export default function StaffLoginModal() {
   const handleStaffLogin = useAppStore((state) => state.handleStaffLogin);
   const logout = useAppStore((state) => state.logout);
   const staffLoginMessage = useAppStore((state) => state.staffLoginMessage);
+  const staffLoginError = useAppStore((state) => state.staffLoginError);
   const licenseKey = useAppStore((state) => state.staffLoginLicenseKey || state.licenseDetails?.license_key);
+  const staffAlreadyInUse = staffLoginError?.code === 'STAFF_ALREADY_IN_USE';
+  const staffAlreadyInUseMessage = (staffLoginMessage || staffLoginError?.message || '')
+    .split('\n')
+    .filter((line) => !line.startsWith('Dispositivo activo:'))
+    .join(' ')
+    .trim();
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -45,7 +52,7 @@ export default function StaffLoginModal() {
     });
 
     if (!result?.success) {
-      setErrorMessage(result?.message || 'No se pudo iniciar sesion staff.');
+      setErrorMessage(result?.code === 'STAFF_ALREADY_IN_USE' ? '' : result?.message || 'No se pudo iniciar sesion staff.');
       setIsLoading(false);
     }
   };
@@ -70,7 +77,23 @@ export default function StaffLoginModal() {
           </div>
         )}
 
-        {staffLoginMessage && !errorMessage && (
+        {staffAlreadyInUse && (
+          <div className="staff-login-warning" role="alert">
+            <div className="staff-login-warning-header">
+              <AlertTriangle size={18} aria-hidden="true" />
+              <span>{staffAlreadyInUseMessage || 'Este usuario staff ya está activo en otro dispositivo.'}</span>
+            </div>
+            {staffLoginError?.active_device_name && (
+              <div className="staff-login-warning-device">
+                <span>Dispositivo activo:</span>
+                <strong>{staffLoginError.active_device_name}</strong>
+              </div>
+            )}
+            <p>Pide al administrador liberar el dispositivo anterior o desactivar/reactivar tu usuario staff.</p>
+          </div>
+        )}
+
+        {staffLoginMessage && !errorMessage && !staffAlreadyInUse && (
           <div className="staff-login-note" role="status">
             {staffLoginMessage}
           </div>
