@@ -38,6 +38,9 @@ const FATAL_REASONS = [
   'LICENSE_NOT_FOUND',
   'LICENSE_SUSPENDED',
   'DEVICE_NOT_ALLOWED',
+  'DEVICE_BANNED',
+  'DEVICE_RELEASED',
+  'device_released',
   'CLONING_DETECTED'
 ];
 
@@ -58,6 +61,16 @@ const STAFF_LOGIN_REASONS = [
   'STAFF_SESSION_REQUIRED',
   'STAFF_SESSION_INVALID'
 ];
+const STAFF_DEVICE_AUTH_REASONS = [
+  'DEVICE_NOT_ALLOWED',
+  'DEVICE_BANNED',
+  'DEVICE_RELEASED',
+  'device_not_allowed',
+  'device_banned',
+  'device_released'
+];
+const STAFF_DEVICE_AUTH_MESSAGE =
+  'Este dispositivo fue liberado o ya no está autorizado. Inicia sesión staff nuevamente o pide al administrador revisar los dispositivos.';
 const GRACE_PERIOD_DAYS = 7;
 const LICENSE_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const ENABLE_LICENSE_REALTIME = import.meta.env.VITE_ENABLE_LICENSE_REALTIME === 'true';
@@ -105,6 +118,28 @@ const isStaffLoginRequiredFailure = (validation = {}) => {
     (reason) => reason.toLowerCase() === code.toLowerCase()
   ) || validation.staff_login_required === true;
 };
+
+const isStaffDeviceAuthorizationFailure = (validation = {}) => {
+  const code = normalizeValidationCode(validation);
+
+  return STAFF_DEVICE_AUTH_REASONS.some(
+    (reason) => reason.toLowerCase() === code.toLowerCase()
+  );
+};
+
+const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => (
+  licenseDetails?.device_role === 'staff' ||
+  state.licenseDetails?.device_role === 'staff' ||
+  state.currentDeviceRole === 'staff' ||
+  state.appStatus === 'staff_login_required' ||
+  await hasStaffSessionToken()
+);
+
+const getStaffLoginMessage = (validation = {}) => (
+  isStaffDeviceAuthorizationFailure(validation)
+    ? STAFF_DEVICE_AUTH_MESSAGE
+    : validation.details || validation.message || 'Inicia sesion staff para continuar.'
+);
 
 const clearLocalLicenseSession = async () => {
   clearLicenseFromStorage();
@@ -154,6 +189,35 @@ export const createLicenseSlice = (set, get) => ({
     if (state.currentDeviceRole !== 'staff') return true;
     if (!state.currentStaffUser) return false;
     return state.currentStaffUser.permissions?.[permission] === true;
+  },
+
+  _requireStaffLogin: async (licenseSource = null, validation = {}) => {
+    const state = get();
+    const sourceLicense = licenseSource || state.licenseDetails || {};
+    const licenseKey = sourceLicense.license_key || state.staffLoginLicenseKey || null;
+    const nextLicenseDetails = sourceLicense.license_key
+      ? {
+        ...sourceLicense,
+        device_role: 'staff',
+        staff_user: null
+      }
+      : state.licenseDetails;
+
+    await clearStaffSessionCache();
+
+    if (nextLicenseDetails?.license_key) {
+      await saveLicenseToStorage(nextLicenseDetails);
+    }
+
+    set({
+      appStatus: 'staff_login_required',
+      ...(nextLicenseDetails ? { licenseDetails: nextLicenseDetails } : {}),
+      currentDeviceRole: 'staff',
+      currentStaffUser: null,
+      staffLoginLicenseKey: licenseKey,
+      staffLoginMessage: getStaffLoginMessage(validation),
+      staffLoginError: null
+    });
   },
 
   performSystemHealthCheck: async () => {
@@ -286,6 +350,11 @@ export const createLicenseSlice = (set, get) => ({
 
   _validateInBackground: async (licenseKey) => {
     try {
+      if (get().appStatus === 'staff_login_required') {
+        Logger.log('[Background] Login staff requerido; se conserva la pantalla actual.');
+        return;
+      }
+
       Logger.log('[Background] Iniciando validación silenciosa...');
 
       const BACKGROUND_TIMEOUT = 8000;
@@ -305,6 +374,11 @@ export const createLicenseSlice = (set, get) => ({
       const localLicense = await getLicenseFromStorage();
       if (!localLicense) {
         Logger.warn('[Background] No hay licencia local para comparar.');
+        return;
+      }
+
+      if (get().appStatus === 'staff_login_required') {
+        Logger.log('[Background] Login staff requerido tras validar; no se fuerza salida.');
         return;
       }
 
@@ -344,6 +418,14 @@ export const createLicenseSlice = (set, get) => ({
       };
 
       if (criticalChanges.wasRevoked) {
+        if (
+          isStaffDeviceAuthorizationFailure(serverValidation) &&
+          await hasStaffValidationContext(get(), localLicense)
+        ) {
+          await get()._requireStaffLogin(localLicense, serverValidation);
+          return;
+        }
+
         await clearLocalLicenseSession();
         set({
           appStatus: 'unauthenticated',
@@ -506,16 +588,14 @@ export const createLicenseSlice = (set, get) => ({
       serverValidation.reason !== 'offline_grace' &&
       !isWithinGracePeriod
     ) {
-      if (isStaffLoginRequiredFailure(serverValidation) || get().currentDeviceRole === 'staff') {
-        await clearStaffSessionCache();
-        set({
-          appStatus: 'staff_login_required',
-          currentDeviceRole: 'staff',
-          currentStaffUser: null,
-          staffLoginLicenseKey: localLicense.license_key,
-          staffLoginMessage: serverValidation.details || serverValidation.message || 'Inicia sesion staff para continuar.',
-          staffLoginError: null
-        });
+      if (
+        isStaffLoginRequiredFailure(serverValidation) ||
+        (
+          isStaffDeviceAuthorizationFailure(serverValidation) &&
+          await hasStaffValidationContext(get(), localLicense)
+        )
+      ) {
+        await get()._requireStaffLogin(localLicense, serverValidation);
         return;
       }
 
@@ -668,6 +748,7 @@ export const createLicenseSlice = (set, get) => ({
     if (
       state.appStatus === 'loading' ||
       state.appStatus === 'unauthenticated' ||
+      state.appStatus === 'staff_login_required' ||
       state._isInitializing ||
       !state.licenseDetails?.license_key
     ) {
@@ -691,6 +772,11 @@ export const createLicenseSlice = (set, get) => ({
       Logger.log(`[LicenseSync] Revalidando licencia (${reason}).`);
       const isValid = await state.verifySessionIntegrity();
       sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
+
+      if (get().appStatus === 'staff_login_required') {
+        return false;
+      }
+
       await get().refreshLicenseSyncMode(reason);
 
       if (isValid) {
@@ -848,9 +934,18 @@ export const createLicenseSlice = (set, get) => ({
           await get().runLicenseSyncCheck('realtime_event');
         },
 
-        onDeviceChanged: (event) => {
+        onDeviceChanged: async (event) => {
           if (event.status === 'banned' || event.status === 'deleted') {
             Logger.warn('[Realtime] Dispositivo revocado');
+
+            const validation = {
+              reason: event.status === 'banned' ? 'DEVICE_BANNED' : 'DEVICE_RELEASED'
+            };
+
+            if (await hasStaffValidationContext(get(), state.licenseDetails)) {
+              await get()._requireStaffLogin(state.licenseDetails, validation);
+              return;
+            }
 
             showMessageModal(
               'ACCESO REVOCADO: Tu dispositivo ha sido desactivado remotamente.',
@@ -962,6 +1057,26 @@ export const createLicenseSlice = (set, get) => ({
           success: false,
           staffLoginRequired: true,
           message: result.message || 'Este dispositivo requiere login staff.'
+        };
+      }
+
+      if (
+        isStaffDeviceAuthorizationFailure(result) &&
+        await hasStaffValidationContext(get(), {
+          ...(result.details || {}),
+          license_key: licenseKey
+        })
+      ) {
+        await get()._requireStaffLogin({
+          ...(result.details || {}),
+          license_key: licenseKey,
+          device_role: 'staff'
+        }, result);
+
+        return {
+          success: false,
+          staffLoginRequired: true,
+          message: getStaffLoginMessage(result)
         };
       }
 
@@ -1152,16 +1267,14 @@ export const createLicenseSlice = (set, get) => ({
 
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
 
-        if (isStaffLoginRequiredFailure(serverCheck)) {
-          await clearStaffSessionCache();
-          set({
-            appStatus: 'staff_login_required',
-            currentDeviceRole: 'staff',
-            currentStaffUser: null,
-            staffLoginLicenseKey: licenseDetails.license_key,
-            staffLoginMessage: serverCheck.details || serverCheck.message || 'Inicia sesion staff para continuar.',
-            staffLoginError: null
-          });
+        if (
+          isStaffLoginRequiredFailure(serverCheck) ||
+          (
+            isStaffDeviceAuthorizationFailure(serverCheck) &&
+            await hasStaffValidationContext(get(), licenseDetails)
+          )
+        ) {
+          await get()._requireStaffLogin(licenseDetails, serverCheck);
           return false;
         }
 
