@@ -529,7 +529,10 @@ export const staffLoginOnDevice = async function ({
             return {
                 success: false,
                 code: data?.code || data?.error || 'STAFF_LOGIN_FAILED',
-                message: data?.message || data?.error || 'No se pudo iniciar sesion staff.'
+                message: data?.message || data?.error || 'No se pudo iniciar sesion staff.',
+                active_device_name: data?.active_device_name || null,
+                active_device_last_used_at: data?.active_device_last_used_at || null,
+                active_device_activated_at: data?.active_device_activated_at || null
             };
         }
 
