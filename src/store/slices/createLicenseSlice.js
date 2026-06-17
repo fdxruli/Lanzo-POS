@@ -318,6 +318,19 @@ export const createLicenseSlice = (set, get) => ({
           JSON.stringify(localLicense.features || {}),
         realtimeTopicChanged:
           serverValidation.realtime_topic !== localLicense.realtime_topic,
+        maxDevicesChanged:
+          serverValidation.max_devices !== localLicense.max_devices,
+        planCodeChanged:
+          serverValidation.plan_code !== localLicense.plan_code,
+        planNameChanged:
+          serverValidation.plan_name !== localLicense.plan_name,
+        productNameChanged:
+          serverValidation.product_name !== localLicense.product_name,
+        deviceRoleChanged:
+          serverValidation.device_role !== localLicense.device_role,
+        staffUserChanged:
+          JSON.stringify(serverValidation.staff_user || null) !==
+          JSON.stringify(localLicense.staff_user || null),
         wasRevoked:
           !serverValidation.valid &&
           isFatalValidationFailure(serverValidation),
@@ -384,7 +397,13 @@ export const createLicenseSlice = (set, get) => ({
         criticalChanges.expiryChanged ||
         criticalChanges.graceChanged ||
         criticalChanges.featuresChanged ||
-        criticalChanges.realtimeTopicChanged
+        criticalChanges.realtimeTopicChanged ||
+        criticalChanges.maxDevicesChanged ||
+        criticalChanges.planCodeChanged ||
+        criticalChanges.planNameChanged ||
+        criticalChanges.productNameChanged ||
+        criticalChanges.deviceRoleChanged ||
+        criticalChanges.staffUserChanged
       ) {
         Logger.log('[Background] Cambios detectados en licencia, actualizando...');
         await get()._processServerValidation(serverValidation, localLicense);
@@ -1198,6 +1217,10 @@ export const createLicenseSlice = (set, get) => ({
           licenseDetails.expires_at !== updatedDetails.expires_at ||
           licenseDetails.grace_period_ends !== updatedDetails.grace_period_ends ||
           licenseDetails.realtime_topic !== updatedDetails.realtime_topic ||
+          licenseDetails.max_devices !== updatedDetails.max_devices ||
+          licenseDetails.plan_code !== updatedDetails.plan_code ||
+          licenseDetails.plan_name !== updatedDetails.plan_name ||
+          licenseDetails.product_name !== updatedDetails.product_name ||
           licenseDetails.device_role !== updatedDetails.device_role ||
           JSON.stringify(licenseDetails.staff_user || null) !==
           JSON.stringify(updatedDetails.staff_user || null) ||
