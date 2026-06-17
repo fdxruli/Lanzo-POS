@@ -45,21 +45,12 @@ export async function restoreWhitelistedDatabase(database, exportedBlob, {
     ...sourceTableNames.filter((tableName) => !BACKUP_TABLE_NAMES.includes(tableName))
   ])];
 
-  await database.transaction('rw', includedTables, async () => {
-    for (const table of includedTables) {
-      await table.clear();
-    }
-
-    await Dexie.waitFor(
-      importInto(database, exportedBlob, {
-        noTransaction: true,
-        skipTables,
-        overwriteValues: true,
-        clearTablesBeforeImport: false,
-        acceptNameDiff: false,
-        progressCallback
-      })
-    );
+  await importInto(database, exportedBlob, {
+    skipTables,
+    overwriteValues: true,
+    clearTablesBeforeImport: true,
+    acceptNameDiff: false,
+    progressCallback
   });
 
   return metadata;
