@@ -27,6 +27,7 @@ export default function LicenseSettings() {
     const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
     const allowedRubrosList = licenseFeatures.allowed_rubros || ['*'];
     const isAllAllowed = allowedRubrosList.includes('*');
+    const isProLicense = licenseFeatures.realtime_license_sync === true;
 
     useEffect(() => {
         if (companyProfile?.business_type) {
@@ -185,8 +186,15 @@ export default function LicenseSettings() {
                 <div className="license-info">
                     <div className="license-detail">
                         <span className="license-label">ID Licencia:</span>
-                        <span className="license-value" style={{ fontFamily: 'monospace', letterSpacing: '1px' }}>
-                            {getMaskedLicense()}
+                        <span className="license-id-value">
+                            <span className="license-value license-key-value">
+                                {getMaskedLicense()}
+                            </span>
+                            {isProLicense && (
+                                <span className="license-plan-badge license-plan-badge--pro">
+                                    PRO
+                                </span>
+                            )}
                         </span>
                     </div>
                     
