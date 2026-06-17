@@ -253,6 +253,7 @@ function App() {
                   <Route path="productos" element={<PermissionRoute permission="products"><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
                   <Route path="clientes" element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
                   <Route path="ventas" element={<PermissionRoute permission="reports"><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></PermissionRoute>} />
+                  {/* /configuracion requiere admin/settings; license/devices/sync/inventory solo habilitan tabs internos si ya hay acceso. */}
                   <Route path="configuracion" element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></PermissionRoute>} />
                   <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
                 </Route>
