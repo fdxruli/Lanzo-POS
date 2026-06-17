@@ -152,6 +152,8 @@ function Navbar() {
     '/productos': 'products',
     '/clientes': 'customers',
     '/ventas': 'reports',
+    // Configuracion es la entrada general: requiere admin/settings.
+    // license/devices/sync/inventory solo habilitan tabs internos tras entrar.
     '/configuracion': 'settings'
   };
   const isRouteAllowed = (to) => !routePermissions[to] || canAccess(routePermissions[to]);

@@ -116,7 +116,7 @@ export default function StaffUsersSettings({ licenseKey }) {
   const togglePermission = (permission) => {
     setForm((current) => ({
       ...current,
-      role_name: current.role_name === 'custom' ? 'custom' : 'custom',
+      role_name: 'custom',
       permissions: {
         ...current.permissions,
         [permission]: !current.permissions?.[permission]
