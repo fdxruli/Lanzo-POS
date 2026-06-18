@@ -24,10 +24,28 @@ function persistDismissedBackupNotice(noticeKey) {
   }
 }
 
+const isRealtimeLicense = (state = {}) => (
+  state.licenseDetails?.features?.realtime_license_sync === true
+);
+
+const getDefaultServerMessage = (health) => {
+  if (health === 'degraded') {
+    return 'Supabase está respondiendo más lento de lo normal. Lanzo POS seguirá reintentando en segundo plano.';
+  }
+
+  return 'No se pudo mantener comunicación estable con Supabase. Lanzo POS seguirá reintentando en segundo plano.';
+};
+
 export const createUISlice = (set, get) => ({
   appStatus: 'loading',
-  serverHealth: 'ok',
+
+  // Estado de Supabase visible solo para licencias con realtime habilitado.
+  // FREE/BASIC no deben ver banners de conexión.
+  serverHealth: 'ok', // ok | degraded | down
   serverMessage: null,
+  serverStatusReason: null,
+  serverStatusUpdatedAt: null,
+
   isBackupLoading: false,
   showAssistantBot: (() => {
     try {
@@ -46,19 +64,81 @@ export const createUISlice = (set, get) => ({
     }
   })(),
 
-  dismissServerAlert: () => {
-    Logger.log('User dismissed server alert');
-    set({ serverMessage: null });
+  shouldShowServerStatusBanner: () => {
+    const state = get();
+
+    return (
+      isRealtimeLicense(state) &&
+      state.serverHealth !== 'ok' &&
+      Boolean(state.serverMessage)
+    );
   },
 
-  reportServerFailure: (message) => {
-    const currentMsg = get().serverMessage;
-    if (!currentMsg) {
-      set({
-        serverHealth: 'down',
-        serverMessage: message || 'Conexión interrumpida con el servidor de licencias'
-      });
+  clearServerStatus: () => {
+    set({
+      serverHealth: 'ok',
+      serverMessage: null,
+      serverStatusReason: null,
+      serverStatusUpdatedAt: null
+    });
+  },
+
+  dismissServerAlert: () => {
+    Logger.log('User dismissed server alert');
+
+    set({
+      serverHealth: 'ok',
+      serverMessage: null,
+      serverStatusReason: null,
+      serverStatusUpdatedAt: null
+    });
+  },
+
+  reportServerStatus: (health = 'down', message = null, reason = 'server_status') => {
+    const state = get();
+
+    // Regla principal:
+    // FREE/BASIC no deben mostrar avisos de conexión.
+    if (!isRealtimeLicense(state)) {
+      if (state.serverHealth !== 'ok' || state.serverMessage) {
+        set({
+          serverHealth: 'ok',
+          serverMessage: null,
+          serverStatusReason: null,
+          serverStatusUpdatedAt: null
+        });
+      }
+
+      return false;
     }
+
+    const normalizedHealth = health === 'degraded' ? 'degraded' : 'down';
+    const nextMessage = message || getDefaultServerMessage(normalizedHealth);
+
+    if (
+      state.serverHealth === normalizedHealth &&
+      state.serverMessage === nextMessage &&
+      state.serverStatusReason === reason
+    ) {
+      return true;
+    }
+
+    set({
+      serverHealth: normalizedHealth,
+      serverMessage: nextMessage,
+      serverStatusReason: reason,
+      serverStatusUpdatedAt: Date.now()
+    });
+
+    return true;
+  },
+
+  reportServerFailure: (message, options = {}) => {
+    return get().reportServerStatus(
+      options.health || 'down',
+      message,
+      options.reason || 'server_failure'
+    );
   },
 
   setShowAssistantBot: (value) => {
