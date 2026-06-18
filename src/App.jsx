@@ -9,6 +9,7 @@ import Logger from './services/Logger';
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
 import StaffLoginModal from './components/common/StaffLoginModal';
+import LicenseChangeRequiredModal from './components/common/LicenseChangeRequiredModal';
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
 import PermissionRoute from './components/common/PermissionRoute';
@@ -66,8 +67,8 @@ const lazyRetry = (importFn, componentName = 'Component') => {
             <h3>Error de carga del módulo</h3>
             <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
-              {!navigator.onLine 
-                ? "Parece que no tienes conexión a internet." 
+              {!navigator.onLine
+                ? "Parece que no tienes conexión a internet."
                 : "Puede haber un problema con la caché o la conexión."}
             </p>
             <button
@@ -183,6 +184,13 @@ function App() {
         <div id="app-loader" style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>
           <div className="loader-spinner"></div>
         </div>
+      );
+
+    case 'license_change_required':
+      return (
+        <ErrorBoundary>
+          <LicenseChangeRequiredModal />
+        </ErrorBoundary>
       );
 
     case 'unauthenticated':
