@@ -6,6 +6,7 @@ import {
   activateLicense,
   revalidateLicense,
   createFreeTrial,
+  clearStaffSessionCache,
   hasStaffSessionToken,
   verifyStaffSession
 } from '../../services/supabase';
@@ -74,9 +75,9 @@ export const createLicenseSlice = (set, get) => ({
   }),
 
   ...createLicenseSessionActions({
-  set,
-  get
-}),
+    set,
+    get
+  }),
 
   performSystemHealthCheck: async () => {
     const state = get();
