@@ -195,6 +195,7 @@ export const createLicenseSlice = (set, get) => ({
     const state = get();
     const sourceLicense = licenseSource || state.licenseDetails || {};
     const licenseKey = sourceLicense.license_key || state.staffLoginLicenseKey || null;
+
     const nextLicenseDetails = sourceLicense.license_key
       ? {
         ...sourceLicense,
@@ -202,6 +203,11 @@ export const createLicenseSlice = (set, get) => ({
         staff_user: null
       }
       : state.licenseDetails;
+
+    // Si un staff queda bloqueado/liberado/no autorizado, apagamos cualquier
+    // sincronización activa para evitar revalidaciones de fondo o un canal
+    // Realtime vivo mientras el usuario está en StaffLoginModal.
+    await get().stopLicenseSync();
 
     await clearStaffSessionCache();
 
@@ -500,31 +506,34 @@ export const createLicenseSlice = (set, get) => ({
 
       sessionStorage.setItem('Lanzo_app_loaded', Date.now().toString());
       sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
-      set({ serverHealth: 'ok', serverMessage: null });
+      get().clearServerStatus?.();
     } catch (error) {
       const isOnlineNow = await checkInternetConnection();
       if (isOnlineNow) {
         if (error.message === 'BACKGROUND_TIMEOUT') {
           Logger.warn('[Salud] Detectada latencia alta en Supabase');
-          set({
-            serverHealth: 'degraded',
-            serverMessage:
-              'Nuestros servidores están respondiendo más lento de lo normal. Tu licencia sigue activa en modo local.'
-          });
+
+          get().reportServerStatus?.(
+            'degraded',
+            'Supabase está respondiendo más lento de lo normal. Los cambios de configuración pueden tardar unos segundos en reflejarse.',
+            'background_timeout'
+          );
         } else if (
           error.message?.includes('fetch') ||
+          error.message?.includes('network') ||
           error.code === 'PGRST301' ||
           error.code?.startsWith('5')
         ) {
-          Logger.warn('[Salud] Detectada caída en Supabase');
-          set({
-            serverHealth: 'down',
-            serverMessage:
-              'Estamos realizando mantenimiento en la base de datos. Algunas funciones online no estarán disponibles momentáneamente.'
-          });
+          Logger.warn('[Salud] Detectada caída o interrupción de Supabase');
+
+          get().reportServerStatus?.(
+            'down',
+            'No se pudo contactar Supabase en este momento. Lanzo POS seguirá reintentando automáticamente.',
+            'background_network_error'
+          );
         }
       } else {
-        set({ serverHealth: 'ok', serverMessage: null });
+        get().clearServerStatus?.();
       }
 
       if (error.message === 'BACKGROUND_TIMEOUT') {
@@ -780,7 +789,7 @@ export const createLicenseSlice = (set, get) => ({
       await get().refreshLicenseSyncMode(reason);
 
       if (isValid) {
-        set({ serverHealth: 'ok', serverMessage: null });
+        get().clearServerStatus?.();
       }
 
       return isValid;
@@ -817,6 +826,10 @@ export const createLicenseSlice = (set, get) => ({
       licenseSyncMode: nextMode,
       licenseSyncLicenseKey: licenseKey
     });
+
+    if (nextMode !== 'hybrid_realtime') {
+      get().clearServerStatus?.();
+    }
 
     licenseSyncTimer = setInterval(() => {
       get().runLicenseSyncCheck('interval');
@@ -972,10 +985,14 @@ export const createLicenseSlice = (set, get) => ({
         // Antes, licenseRealtime.js importaba useAppStore directamente (acoplamiento incorrecto).
         // Ahora el servicio notifica hacia arriba a través de este callback, sin conocer el store.
         onPermanentFailure: (message) => {
-          get().reportServerFailure(message);
+          get().reportServerFailure(message, {
+            health: 'down',
+            reason: 'realtime_permanent_failure'
+          });
         },
 
         onConnectionRestored: () => {
+          get().clearServerStatus?.();
           get().runLicenseSyncCheck('realtime_reconnected');
         }
       });
