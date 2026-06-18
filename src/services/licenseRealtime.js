@@ -9,6 +9,10 @@ let reconnectAttempts = 0;
 let onlineListener = null;
 
 const closingChannels = new WeakSet();
+const handledClosedChannels = new WeakSet();
+
+let realtimeFallbackReported = false;
+
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY = 3000;
 
@@ -26,6 +30,15 @@ const DEVICE_EVENTS = new Set([
   'DEVICE_DELETED',
   'DEVICE_RELEASED'
 ]);
+
+const reportRealtimeFallbackOnce = (callbacks = {}, message) => {
+  if (realtimeFallbackReported) return;
+
+  realtimeFallbackReported = true;
+  callbacks.onPermanentFailure?.(
+    message || 'La conexión en tiempo real se interrumpió. Lanzo POS seguirá funcionando en modo híbrido.'
+  );
+};
 
 /**
  * Inicia la escucha segura en tiempo real.
@@ -46,8 +59,12 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
     return null;
   }
 
+  if (isConnecting || isReconnecting || reconnectTimer) {
+    return activeChannel;
+  }
+
   if (!navigator.onLine) {
-    Logger.warn('[Realtime] Sin conexion. Abortando WebSocket y esperando red.');
+    Logger.warn('[Realtime] Sin conexión. Realtime queda en espera hasta recuperar red.');
     handleReconnect(licenseKey, deviceFingerprint, realtimeTopic, callbacks);
     return null;
   }
@@ -110,29 +127,44 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
         isReconnecting = false;
         activeChannel = channel;
         reconnectAttempts = 0;
+        realtimeFallbackReported = false;
         if (reconnectTimer) clearTimeout(reconnectTimer);
         callbacks.onConnectionRestored?.();
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         Logger.error('[Realtime] Error de conexion:', err || status);
         isConnecting = false;
 
-        supabaseClient.removeChannel(channel).catch(() => {});
+        supabaseClient.removeChannel(channel).catch(() => { });
         if (activeChannel === channel) activeChannel = null;
 
         handleReconnect(licenseKey, deviceFingerprint, realtimeTopic, callbacks);
       } else if (status === 'CLOSED') {
+        if (handledClosedChannels.has(channel)) {
+          return;
+        }
+
+        handledClosedChannels.add(channel);
+
         isConnecting = false;
         isReconnecting = false;
+
         const wasManualClose = closingChannels.has(channel);
         closingChannels.delete(channel);
-        supabaseClient.removeChannel(channel).catch(() => {});
-        if (activeChannel === channel) activeChannel = null;
+
+        supabaseClient.removeChannel(channel).catch(() => { });
+
+        if (activeChannel === channel) {
+          activeChannel = null;
+        }
 
         if (!wasManualClose) {
           Logger.warn('[Realtime] Canal cerrado inesperadamente. Usando fallback/reintento.');
-          callbacks.onPermanentFailure?.(
-            'La conexion en tiempo real se cerro. Se usara sincronizacion hibrida.'
+
+          reportRealtimeFallbackOnce(
+            callbacks,
+            'La conexión en tiempo real se interrumpió. Lanzo POS seguirá funcionando en modo híbrido.'
           );
+
           handleReconnect(licenseKey, deviceFingerprint, realtimeTopic, callbacks);
         }
       }
@@ -162,8 +194,9 @@ const handleReconnect = (key, fp, topic, callbacks = {}) => {
     };
 
     window.addEventListener('online', onlineListener);
-    callbacks.onPermanentFailure?.(
-      'Conexion perdida. Lanzo POS trabajara offline hasta que regrese.'
+    reportRealtimeFallbackOnce(
+      callbacks,
+      'Conexión perdida. Lanzo POS trabajará offline hasta que regrese internet.'
     );
     return;
   }
@@ -184,8 +217,9 @@ const handleReconnect = (key, fp, topic, callbacks = {}) => {
     }, delay);
   } else {
     Logger.error('[Realtime] Sin conexion tras maximos reintentos. Modo hibrido.');
-    callbacks.onPermanentFailure?.(
-      'No se pudo establecer conexion en tiempo real con el servidor. Se trabajara en modo hibrido.'
+    reportRealtimeFallbackOnce(
+      callbacks,
+      'No se pudo establecer conexión en tiempo real con el servidor. Se trabajará en modo híbrido.'
     );
   }
 };
