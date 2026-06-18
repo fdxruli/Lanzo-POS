@@ -12,7 +12,6 @@ import StaffLoginModal from './components/common/StaffLoginModal';
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
 import PermissionRoute from './components/common/PermissionRoute';
-import ReconnectionBanner from './components/common/ReconnectionBanner';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
 import InstallPrompt from './components/common/InstallPrompt';
@@ -222,7 +221,6 @@ function App() {
           <PersistenceWarningBanner />
           <BackupRuntime />
           <BackupReminder />
-          <ReconnectionBanner />
           <ServerStatusBanner />
           <UpdatePrompt />
           <InstallPrompt />
