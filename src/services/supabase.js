@@ -392,8 +392,16 @@ export const activateLicense = async function (licenseKey) {
         await registerFailedAttempt();
         return {
             valid: false,
-            code: data?.code || data?.error,
-            message: data?.error || data?.message || 'Error de activacion.'
+            code: data?.code || data?.error || data?.reason,
+            reason: data?.reason || data?.code || data?.error,
+            block_reason: data?.block_reason || data?.details?.block_reason || null,
+            message: data?.message || data?.error || 'Error de activacion.',
+            plan_code: data?.plan_code || data?.details?.plan_code || null,
+            plan_name: data?.plan_name || data?.details?.plan_name || null,
+            product_name: data?.product_name || data?.details?.product_name || null,
+            max_devices: data?.max_devices ?? data?.details?.max_devices ?? null,
+            device_role: data?.device_role || data?.details?.device_role || null,
+            details: data?.details || data || null
         };
     } catch (error) {
         const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
