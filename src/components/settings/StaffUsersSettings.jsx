@@ -28,6 +28,22 @@ const EMPTY_PERMISSIONS = Object.fromEntries(
   Object.keys(PERMISSION_LABELS).map((permission) => [permission, false])
 );
 
+const ROLE_LABELS = {
+  staff: 'Personal',
+  cashier: 'Cajero',
+  waiter: 'Mesero',
+  supervisor: 'Encargado',
+  custom: 'Personalizado'
+};
+
+const ROLE_DESCRIPTIONS = {
+  staff: 'Acceso básico al punto de venta.',
+  cashier: 'Puede vender, cobrar y aplicar descuentos.',
+  waiter: 'Pensado para tomar pedidos.',
+  supervisor: 'Puede operar y revisar reportes, inventario y caja.',
+  custom: 'Permisos configurados manualmente.'
+};
+
 const ROLE_TEMPLATES = {
   staff: { ...EMPTY_PERMISSIONS, pos: true },
   waiter: { ...EMPTY_PERMISSIONS, pos: true, orders: true },
@@ -243,7 +259,9 @@ export default function StaffUsersSettings({ licenseKey }) {
               disabled={isSaving}
             >
               {ROLE_OPTIONS.map((role) => (
-                <option key={role} value={role}>{role}</option>
+                <option key={role} value={role}>
+                  {ROLE_LABELS[role] || role}
+                </option>
               ))}
             </select>
           </div>
@@ -301,7 +319,9 @@ export default function StaffUsersSettings({ licenseKey }) {
             <div className="staff-user-row" key={staffUser.id}>
               <div>
                 <strong>{staffUser.display_name || staffUser.username}</strong>
-                <span>@{staffUser.username} · {staffUser.role_name || 'staff'}</span>
+                <span>
+                  @{staffUser.username} · {ROLE_LABELS[staffUser.role_name] || 'Personal'}
+                </span>
                 <small>
                   Ultimo login: {staffUser.last_login_at ? new Date(staffUser.last_login_at).toLocaleString() : 'Sin login'}
                 </small>
