@@ -6,16 +6,13 @@ import {
   activateLicense,
   revalidateLicense,
   createFreeTrial,
-  clearLicenseSecurityCache,
-  clearStaffSessionCache,
   hasStaffSessionToken,
   verifyStaffSession
 } from '../../services/supabase';
 
 import {
   saveLicenseToStorage,
-  getLicenseFromStorage,
-  clearLicenseFromStorage
+  getLicenseFromStorage
 } from '../../services/licenseStorage';
 
 import {
@@ -30,7 +27,6 @@ import {
   isStaffLoginRequiredFailure,
   isStaffDeviceAuthorizationFailure,
   isLicensePlanBlockFailure,
-  buildLicensePlanBlockInfo,
   deriveGracePeriodEnd,
   getStaffLoginMessage
 } from './license/licenseGuards';
@@ -44,10 +40,12 @@ import {
   hasStaffValidationContext
 } from './license/licenseStaffActions';
 
-const clearLocalLicenseSession = async () => {
-  clearLicenseFromStorage();
-  await clearLicenseSecurityCache();
-};
+import {
+  createLicenseSessionActions,
+  clearLocalLicenseSessionForLicenseSlice
+} from './license/licenseSessionActions';
+
+const clearLocalLicenseSession = clearLocalLicenseSessionForLicenseSlice;
 
 export const createLicenseSlice = (set, get) => ({
   ...createLicenseInitialState(),
@@ -75,65 +73,10 @@ export const createLicenseSlice = (set, get) => ({
     get
   }),
 
-  _requireLicenseChange: async (licenseSource = null, validation = {}) => {
-    const state = get();
-    const sourceLicense = licenseSource || state.licenseDetails || {};
-    const blockInfo = buildLicensePlanBlockInfo(validation, sourceLicense);
-
-    Logger.warn('[LicensePlan] Licencia bloqueada por cambio de plan:', blockInfo);
-
-    await get().stopLicenseSync();
-    await clearStaffSessionCache();
-    await clearLocalLicenseSession();
-
-    set({
-      appStatus: 'license_change_required',
-      licenseDetails: null,
-      licenseStatus: blockInfo.reason || 'license_plan_blocked',
-      licensePlanBlockInfo: blockInfo,
-      gracePeriodEnds: null,
-      companyProfile: null,
-      profileImportCandidate: null,
-      currentDeviceRole: null,
-      currentStaffUser: null,
-      staffLoginLicenseKey: null,
-      staffLoginMessage: null,
-      staffLoginError: null,
-      pendingTermsUpdate: null,
-      realtimeSubscription: null,
-      _isInitializing: false,
-      _isInitializingSecurity: false,
-      _securityCleanupScheduled: false,
-      licenseSyncActive: false,
-      licenseSyncMode: 'idle',
-      licenseSyncLicenseKey: null,
-      _isLicenseSyncChecking: false,
-      serverHealth: 'ok',
-      serverMessage: null
-    });
-  },
-
-  confirmLicenseChangeRequired: async () => {
-    await clearLocalLicenseSession();
-
-    set({
-      appStatus: 'unauthenticated',
-      licenseDetails: null,
-      licenseStatus: 'active',
-      licensePlanBlockInfo: null,
-      gracePeriodEnds: null,
-      companyProfile: null,
-      profileImportCandidate: null,
-      currentDeviceRole: null,
-      currentStaffUser: null,
-      staffLoginLicenseKey: null,
-      staffLoginMessage: null,
-      staffLoginError: null,
-      pendingTermsUpdate: null,
-      serverHealth: 'ok',
-      serverMessage: null
-    });
-  },
+  ...createLicenseSessionActions({
+  set,
+  get
+}),
 
   performSystemHealthCheck: async () => {
     const state = get();
@@ -834,39 +777,6 @@ export const createLicenseSlice = (set, get) => ({
     } catch (error) {
       return { success: false, message: error.message };
     }
-  },
-
-  logout: async () => {
-    await get().stopLicenseSync();
-
-    await clearLocalLicenseSession();
-
-    // CORRECCIÓN 5: Añadidos serverHealth y serverMessage al reset del logout.
-    // Sin esto, si el usuario cerraba sesión con un banner de error activo,
-    // ese banner quedaba visible en la pantalla de login/bienvenida.
-    set({
-      appStatus: 'unauthenticated',
-      licenseDetails: null,
-      licensePlanBlockInfo: null,
-      companyProfile: null,
-      profileImportCandidate: null,
-      licenseStatus: 'active',
-      gracePeriodEnds: null,
-      currentDeviceRole: null,
-      currentStaffUser: null,
-      staffLoginLicenseKey: null,
-      staffLoginMessage: null,
-      staffLoginError: null,
-      realtimeSubscription: null,
-      _isInitializingSecurity: false,
-      _securityCleanupScheduled: false,
-      licenseSyncActive: false,
-      licenseSyncMode: 'idle',
-      licenseSyncLicenseKey: null,
-      _isLicenseSyncChecking: false,
-      serverHealth: 'ok',
-      serverMessage: null
-    });
   },
 
   verifySessionIntegrity: async () => {
