@@ -71,6 +71,11 @@ const STAFF_DEVICE_AUTH_REASONS = [
 ];
 const STAFF_DEVICE_AUTH_MESSAGE =
   'Este dispositivo fue liberado o ya no está autorizado. Inicia sesión staff nuevamente o pide al administrador revisar los dispositivos.';
+
+const LICENSE_PLAN_BLOCK_REASONS = [
+  'PLAN_DOWNGRADE_STAFF_NOT_INCLUDED',
+  'PLAN_DOWNGRADE_DEVICE_LIMIT'
+];
 const GRACE_PERIOD_DAYS = 7;
 const LICENSE_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const ENABLE_LICENSE_REALTIME = import.meta.env.VITE_ENABLE_LICENSE_REALTIME === 'true';
@@ -127,6 +132,86 @@ const isStaffDeviceAuthorizationFailure = (validation = {}) => {
   );
 };
 
+const getLicensePlanBlockReason = (validation = {}) => (
+  validation.block_reason ||
+  validation.details?.block_reason ||
+  validation.reason ||
+  validation.code ||
+  validation.status ||
+  ''
+).toString();
+
+const hasLicensePlanBlockReason = (validation = {}) => {
+  const reason = getLicensePlanBlockReason(validation);
+
+  return LICENSE_PLAN_BLOCK_REASONS.some(
+    (item) => item.toLowerCase() === reason.toLowerCase()
+  );
+};
+
+const isLicensePlanBlockFailure = (validation = {}) => (
+  hasLicensePlanBlockReason(validation) && validation.valid !== true
+);
+
+const buildLicensePlanBlockInfo = (validation = {}, fallbackLicense = {}) => {
+  const reason = getLicensePlanBlockReason(validation) || 'LICENSE_PLAN_CHANGED';
+
+  const planName =
+    validation.plan_name ||
+    validation.details?.plan_name ||
+    fallbackLicense.plan_name ||
+    'Plan actual';
+
+  const planCode =
+    validation.plan_code ||
+    validation.details?.plan_code ||
+    fallbackLicense.plan_code ||
+    null;
+
+  const productName =
+    validation.product_name ||
+    validation.details?.product_name ||
+    fallbackLicense.product_name ||
+    'Lanzo POS';
+
+  const maxDevices =
+    validation.max_devices ??
+    validation.details?.max_devices ??
+    fallbackLicense.max_devices ??
+    null;
+
+  const deviceRole =
+    validation.device_role ||
+    validation.details?.device_role ||
+    fallbackLicense.device_role ||
+    null;
+
+  const licenseKey =
+    validation.license_key ||
+    validation.details?.license_key ||
+    fallbackLicense.license_key ||
+    null;
+
+  const defaultMessage = reason === 'PLAN_DOWNGRADE_STAFF_NOT_INCLUDED'
+    ? 'Esta licencia cambió a un plan que no incluye usuarios staff. Este dispositivo fue bloqueado por seguridad.'
+    : reason === 'PLAN_DOWNGRADE_DEVICE_LIMIT'
+      ? 'Esta licencia cambió a un plan con menos dispositivos permitidos. Este equipo quedó fuera del límite permitido.'
+      : 'La licencia cambió de plan y este dispositivo necesita ingresar una licencia compatible.';
+
+  return {
+    reason,
+    block_reason: reason,
+    message: validation.message || validation.details || defaultMessage,
+    license_key: licenseKey,
+    plan_code: planCode,
+    plan_name: planName,
+    product_name: productName,
+    max_devices: maxDevices,
+    device_role: deviceRole,
+    received_at: new Date().toISOString()
+  };
+};
+
 const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => (
   licenseDetails?.device_role === 'staff' ||
   state.licenseDetails?.device_role === 'staff' ||
@@ -178,6 +263,7 @@ export const createLicenseSlice = (set, get) => ({
   staffLoginLicenseKey: null,
   staffLoginMessage: null,
   staffLoginError: null,
+  licensePlanBlockInfo: null,
   // CORRECCIÓN 1: Nombre unificado con 'a' (_isInitializing), eliminando el typo '_isInitilizing'
   // que existía en el monolito original y que hacía que la guardia anti-doble-ejecución no funcionara.
   _isInitializing: false,
@@ -189,6 +275,66 @@ export const createLicenseSlice = (set, get) => ({
     if (state.currentDeviceRole !== 'staff') return true;
     if (!state.currentStaffUser) return false;
     return state.currentStaffUser.permissions?.[permission] === true;
+  },
+
+  _requireLicenseChange: async (licenseSource = null, validation = {}) => {
+    const state = get();
+    const sourceLicense = licenseSource || state.licenseDetails || {};
+    const blockInfo = buildLicensePlanBlockInfo(validation, sourceLicense);
+
+    Logger.warn('[LicensePlan] Licencia bloqueada por cambio de plan:', blockInfo);
+
+    await get().stopLicenseSync();
+    await clearStaffSessionCache();
+    await clearLocalLicenseSession();
+
+    set({
+      appStatus: 'license_change_required',
+      licenseDetails: null,
+      licenseStatus: blockInfo.reason || 'license_plan_blocked',
+      licensePlanBlockInfo: blockInfo,
+      gracePeriodEnds: null,
+      companyProfile: null,
+      profileImportCandidate: null,
+      currentDeviceRole: null,
+      currentStaffUser: null,
+      staffLoginLicenseKey: null,
+      staffLoginMessage: null,
+      staffLoginError: null,
+      pendingTermsUpdate: null,
+      realtimeSubscription: null,
+      _isInitializing: false,
+      _isInitializingSecurity: false,
+      _securityCleanupScheduled: false,
+      licenseSyncActive: false,
+      licenseSyncMode: 'idle',
+      licenseSyncLicenseKey: null,
+      _isLicenseSyncChecking: false,
+      serverHealth: 'ok',
+      serverMessage: null
+    });
+  },
+
+  confirmLicenseChangeRequired: async () => {
+    await clearLocalLicenseSession();
+
+    set({
+      appStatus: 'unauthenticated',
+      licenseDetails: null,
+      licenseStatus: 'active',
+      licensePlanBlockInfo: null,
+      gracePeriodEnds: null,
+      companyProfile: null,
+      profileImportCandidate: null,
+      currentDeviceRole: null,
+      currentStaffUser: null,
+      staffLoginLicenseKey: null,
+      staffLoginMessage: null,
+      staffLoginError: null,
+      pendingTermsUpdate: null,
+      serverHealth: 'ok',
+      serverMessage: null
+    });
   },
 
   _requireStaffLogin: async (licenseSource = null, validation = {}) => {
@@ -308,6 +454,13 @@ export const createLicenseSlice = (set, get) => ({
         const staffSession = await verifyStaffSession(localLicense.license_key);
 
         if (!staffSession?.valid) {
+          const serverCheck = await revalidateLicense(localLicense.license_key);
+
+          if (isLicensePlanBlockFailure(serverCheck)) {
+            await get()._requireLicenseChange(localLicense, serverCheck);
+            return;
+          }
+
           await clearStaffSessionCache();
           set({
             appStatus: 'staff_login_required',
@@ -378,6 +531,13 @@ export const createLicenseSlice = (set, get) => ({
       }
 
       const localLicense = await getLicenseFromStorage();
+      const sourceLicense = localLicense || get().licenseDetails || { license_key: licenseKey };
+
+      if (isLicensePlanBlockFailure(serverValidation)) {
+        await get()._requireLicenseChange(sourceLicense, serverValidation);
+        return;
+      }
+
       if (!localLicense) {
         Logger.warn('[Background] No hay licencia local para comparar.');
         return;
@@ -589,6 +749,10 @@ export const createLicenseSlice = (set, get) => ({
     const now = new Date();
     const derivedGracePeriodEnd = deriveGracePeriodEnd(serverValidation, localLicense);
     const graceEnd = derivedGracePeriodEnd ? new Date(derivedGracePeriodEnd) : null;
+    if (isLicensePlanBlockFailure(serverValidation)) {
+      await get()._requireLicenseChange(localLicense, serverValidation);
+      return;
+    }
 
     const isWithinGracePeriod = graceEnd && graceEnd > now;
 
@@ -1041,17 +1205,56 @@ export const createLicenseSlice = (set, get) => ({
 
       if (result.valid) {
         const licenseDataToSave = { ...result.details, valid: true };
+
+        const activatedAsStaffWithoutStaffPlan =
+          licenseDataToSave.device_role === 'staff' &&
+          licenseDataToSave.features?.staff_roles !== true;
+
+        if (activatedAsStaffWithoutStaffPlan) {
+          await get()._requireLicenseChange(
+            {
+              ...licenseDataToSave,
+              license_key: licenseDataToSave.license_key || licenseKey
+            },
+            {
+              valid: false,
+              reason: 'DEVICE_NOT_ALLOWED',
+              block_reason: 'PLAN_DOWNGRADE_STAFF_NOT_INCLUDED',
+              message:
+                'Esta licencia ya no incluye usuarios staff. Este dispositivo no puede continuar con esta licencia.',
+              license_key: licenseDataToSave.license_key || licenseKey,
+              plan_code: licenseDataToSave.plan_code,
+              plan_name: licenseDataToSave.plan_name,
+              product_name: licenseDataToSave.product_name,
+              max_devices: licenseDataToSave.max_devices,
+              device_role: licenseDataToSave.device_role
+            }
+          );
+
+          return {
+            success: false,
+            licenseChangeRequired: true,
+            message: 'Esta licencia ya no incluye usuarios staff.'
+          };
+        }
+
         await saveLicenseToStorage(licenseDataToSave);
-        set({
-          licenseDetails: licenseDataToSave,
-          currentDeviceRole: licenseDataToSave.device_role || 'admin',
-          currentStaffUser: licenseDataToSave.device_role === 'staff' ? licenseDataToSave.staff_user || null : null,
-          staffLoginLicenseKey: null,
-          staffLoginMessage: null,
-          staffLoginError: null
-        });
-        await get()._loadProfile(licenseKey);
-        return { success: true };
+      }
+
+      if (isLicensePlanBlockFailure(result)) {
+        await get()._requireLicenseChange(
+          {
+            ...(result.details || {}),
+            license_key: licenseKey
+          },
+          result
+        );
+
+        return {
+          success: false,
+          licenseChangeRequired: true,
+          message: result.message || 'Esta licencia requiere cambiarse en este dispositivo.'
+        };
       }
 
       if (result.staff_login_required) {
@@ -1252,6 +1455,7 @@ export const createLicenseSlice = (set, get) => ({
     set({
       appStatus: 'unauthenticated',
       licenseDetails: null,
+      licensePlanBlockInfo: null,
       companyProfile: null,
       profileImportCandidate: null,
       licenseStatus: 'active',
@@ -1283,6 +1487,11 @@ export const createLicenseSlice = (set, get) => ({
         Logger.log('Verificando integridad de sesión con servidor...');
 
         const serverCheck = await revalidateLicense(licenseDetails.license_key);
+
+        if (isLicensePlanBlockFailure(serverCheck)) {
+          await get()._requireLicenseChange(licenseDetails, serverCheck);
+          return false;
+        }
 
         if (
           isStaffLoginRequiredFailure(serverCheck) ||
