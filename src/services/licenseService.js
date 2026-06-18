@@ -22,7 +22,7 @@ export const getLicenseDevicesSmart = async (licenseKey) => {
         if (error) throw error;
 
         if (data.success) {
-            useAppStore.setState({ serverHealth: 'ok', serverMessage: null });
+            useAppStore.getState().clearServerStatus?.();
 
             await saveData(STORES.SYNC_CACHE, {
                 key: CACHE_KEY,
@@ -50,10 +50,11 @@ export const getLicenseDevicesSmart = async (licenseKey) => {
 
             if (isServerError) {
                 Logger.error('Detectado fallo en Supabase con Internet activo');
-                useAppStore.setState({
-                    serverHealth: 'down',
-                    serverMessage: 'El proveedor de la base de datos esta momentaneamente inaccesible. Mostrando datos locales.'
-                });
+                useAppStore.getState().reportServerStatus?.(
+                    'down',
+                    'Supabase no respondió al consultar los dispositivos. Se mostrarán datos locales si existen.',
+                    'license_devices_lookup'
+                );
             }
         }
 
