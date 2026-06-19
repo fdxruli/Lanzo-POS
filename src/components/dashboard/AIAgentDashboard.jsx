@@ -40,6 +40,7 @@ import { getAvailableAgentTools, runAgentTools } from '../../agents/agentToolReg
 import { useAgentPreview } from '../../hooks/dashboard/useAgentPreview';
 import DataPreviewBanner from './DataPreviewBanner';
 import './AIAgentDashboard.css';
+import './AIAgentStructuredResult.css';
 
 const isBrowserOnline = () => (typeof navigator === 'undefined' ? true : navigator.onLine);
 
