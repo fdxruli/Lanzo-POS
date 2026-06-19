@@ -1,19 +1,11 @@
 /**
  * OperationalDiagnostics.jsx
- * 
+ *
  * Orquestador de UI para diagnóstico operativo del negocio.
- * Reemplaza a BusinessTips.jsx como módulo de alertas duras basadas en datos.
- * 
- * Responsabilidades:
- * - Leer rubro del negocio desde el store/perfil
- * - Renderizar el hook de diagnóstico correspondiente
- * - Manejar estados de carga y error
- * - Mostrar alertas accionables con métricas calculadas
- * 
- * NO contiene lógica de cálculo - delega todo a hooks especializados por rubro.
+ * Alterna entre diagnóstico clásico basado en reglas duras y el dashboard de agentes de IA.
  */
 
-import React, { useMemo, useEffect, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -34,31 +26,21 @@ import {
   Bot
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
-import { useSalesStore } from '../../store/useSalesStore';
 import { useRestaurantDiagnostics } from '../../hooks/diagnostics/useRestaurantDiagnostics';
 import { usePharmacyDiagnostics } from '../../hooks/diagnostics/usePharmacyDiagnostics';
 import { useRetailDiagnostics } from '../../hooks/diagnostics/useRetailDiagnostics';
 import AIAgentDashboard from './AIAgentDashboard';
 import './OperationalDiagnostics.css';
 
-// ============================================================
-// CONFIGURACIÓN Y MAPEO DE RUBROS
-// ============================================================
-
 const BUSINESS_TYPE_MAPPING = {
-  // Restaurante / Comida
   restaurant: { type: 'restaurant', label: 'Restaurante', icon: ChefHat },
   'dark-kitchen': { type: 'restaurant', label: 'Dark Kitchen', icon: ChefHat },
   cocina: { type: 'restaurant', label: 'Cocina', icon: ChefHat },
   food: { type: 'restaurant', label: 'Comida', icon: ChefHat },
   fruteria: { type: 'restaurant', label: 'Frutería', icon: ShoppingCart },
-
-  // Farmacia
   pharmacy: { type: 'pharmacy', label: 'Farmacia', icon: Pill },
   farmacia: { type: 'pharmacy', label: 'Farmacia', icon: Pill },
   drogueria: { type: 'pharmacy', label: 'Droguería', icon: Pill },
-
-  // Retail / Abarrotes
   retail: { type: 'retail', label: 'Retail', icon: ShoppingCart },
   abarrotes: { type: 'retail', label: 'Abarrotes', icon: ShoppingCart },
   tienda: { type: 'retail', label: 'Tienda', icon: ShoppingCart },
@@ -74,26 +56,10 @@ const DIAGNOSTIC_HOOKS = {
 };
 
 const ALERT_TYPE_CONFIG = {
-  danger: {
-    icon: XCircle,
-    className: 'alert-danger',
-    label: 'Crítico'
-  },
-  warning: {
-    icon: AlertTriangle,
-    className: 'alert-warning',
-    label: 'Advertencia'
-  },
-  info: {
-    icon: AlertCircle,
-    className: 'alert-info',
-    label: 'Información'
-  },
-  success: {
-    icon: CheckCircle,
-    className: 'alert-success',
-    label: 'Correcto'
-  }
+  danger: { icon: XCircle, className: 'alert-danger', label: 'Crítico' },
+  warning: { icon: AlertTriangle, className: 'alert-warning', label: 'Advertencia' },
+  info: { icon: AlertCircle, className: 'alert-info', label: 'Información' },
+  success: { icon: CheckCircle, className: 'alert-success', label: 'Correcto' }
 };
 
 const CATEGORY_CONFIG = {
@@ -103,13 +69,6 @@ const CATEGORY_CONFIG = {
   pricing: { label: 'Precios', icon: TrendingUp }
 };
 
-// ============================================================
-// SUB-COMPONENTES
-// ============================================================
-
-/**
- * Skeleton de carga para el estado isLoading
- */
 const DiagnosticSkeleton = () => (
   <div className="diagnostic-skeleton">
     <div className="skeleton-header">
@@ -131,9 +90,6 @@ const DiagnosticSkeleton = () => (
   </div>
 );
 
-/**
- * Tarjeta de alerta individual
- */
 const AlertCard = React.memo(({ alert, onNavigate }) => {
   const TypeConfig = ALERT_TYPE_CONFIG[alert.type] || ALERT_TYPE_CONFIG.info;
   const TypeIcon = TypeConfig.icon;
@@ -141,9 +97,7 @@ const AlertCard = React.memo(({ alert, onNavigate }) => {
   const CategoryIcon = CategoryConfig.icon;
 
   const handleClick = useCallback(() => {
-    if (alert.link) {
-      onNavigate?.(alert.link);
-    }
+    if (alert.link) onNavigate?.(alert.link);
   }, [alert.link, onNavigate]);
 
   return (
@@ -176,10 +130,10 @@ const AlertCard = React.memo(({ alert, onNavigate }) => {
       <div className="alert-body">
         <h4 className="alert-title">{alert.title}</h4>
         <p className="alert-message">
-          {alert.message.split('\n').map((line, i) => (
-            <React.Fragment key={i}>
+          {String(alert.message || '').split('\n').map((line, index, arr) => (
+            <React.Fragment key={`${alert.id}-line-${index}`}>
               {line}
-              {i < alert.message.split('\n').length - 1 && <br />}
+              {index < arr.length - 1 && <br />}
             </React.Fragment>
           ))}
         </p>
@@ -207,7 +161,7 @@ const AlertCard = React.memo(({ alert, onNavigate }) => {
 
         {alert.link && (
           <button className="alert-action-button" type="button">
-            Ir a {alert.link.replace('/?', '').split('=')[0]}
+            Ir ahora
             <TrendingUp size={14} />
           </button>
         )}
@@ -218,9 +172,6 @@ const AlertCard = React.memo(({ alert, onNavigate }) => {
 
 AlertCard.displayName = 'AlertCard';
 
-/**
- * Estado vacío cuando no hay alertas
- */
 const NoAlertsState = ({ businessType }) => {
   const typeConfig = BUSINESS_TYPE_MAPPING[businessType] || { label: 'Negocio' };
 
@@ -240,16 +191,11 @@ const NoAlertsState = ({ businessType }) => {
   );
 };
 
-/**
- * Selector de rubro (para depuración o cambio manual)
- */
 const BusinessTypeSelector = ({ currentType, onSelect }) => {
   const types = useMemo(() => {
     const unique = new Map();
-    Object.values(BUSINESS_TYPE_MAPPING).forEach(t => {
-      if (!unique.has(t.type)) {
-        unique.set(t.type, t);
-      }
+    Object.values(BUSINESS_TYPE_MAPPING).forEach(type => {
+      if (!unique.has(type.type)) unique.set(type.type, type);
     });
     return Array.from(unique.values());
   }, []);
@@ -275,9 +221,17 @@ const BusinessTypeSelector = ({ currentType, onSelect }) => {
   );
 };
 
-// ============================================================
-// COMPONENTE PRINCIPAL
-// ============================================================
+const SummaryCard = ({ icon: Icon, label, value, theme }) => (
+  <div className="summary-card">
+    <div className={`summary-icon ${theme}`}>
+      <Icon size={20} />
+    </div>
+    <div className="summary-content">
+      <span className="summary-label">{label}</span>
+      <span className="summary-value">{value}</span>
+    </div>
+  </div>
+);
 
 export default function OperationalDiagnostics({
   allowRubroOverride = false,
@@ -287,53 +241,32 @@ export default function OperationalDiagnostics({
   customers = [],
   wasteLogs = []
 }) {
-  // Estado local para override de rubro (depuración)
   const [rubroOverride, setRubroOverride] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [showAIAgent, setShowAIAgent] = useState(false);
 
-  // Obtener datos de las tiendas
   const companyProfile = useAppStore(state => state.companyProfile);
 
-  // Memoizar datos para evitar referencias nuevas en cada render
-  const stableSales = useMemo(() => sales, [sales]);
-  const stableMenu = useMemo(() => menu, [menu]);
-  const stableCustomers = useMemo(() => customers, [customers]);
-  const stableWasteLogs = useMemo(() => wasteLogs, [wasteLogs]);
-  
-  // Determinar tipo de negocio (string para hooks)
   const businessTypeString = useMemo(() => {
-    // Si hay override, usarlo
     if (rubroOverride) return rubroOverride;
 
-    // Leer desde perfil
     let types = companyProfile?.business_type || [];
     if (typeof types === 'string') {
-      types = types.split(',').map(s => s.trim().toLowerCase());
+      types = types.split(',').map(type => type.trim().toLowerCase());
     }
 
-    // Mapear primer tipo reconocido
     for (const type of types) {
       const mapped = BUSINESS_TYPE_MAPPING[type];
       if (mapped) return mapped.type;
     }
 
-    // Default: retail
     return 'retail';
   }, [companyProfile, rubroOverride]);
 
-  // businessType como array para AIAgentDashboard
-  const businessTypeArray = useMemo(() => {
-    return [businessTypeString];
-  }, [businessTypeString]);
-
-  // Seleccionar hook correspondiente
+  const businessTypeArray = useMemo(() => [businessTypeString], [businessTypeString]);
   const DiagnosticHook = DIAGNOSTIC_HOOKS[businessTypeString] || DIAGNOSTIC_HOOKS.retail;
+  const diagnostics = DiagnosticHook(lastRefresh);
 
-  // Ejecutar diagnóstico
-  const diagnostics = DiagnosticHook();
-
-  // Manejar navegación
   const handleNavigate = useCallback((link) => {
     if (onNavigate) {
       onNavigate(link);
@@ -342,37 +275,20 @@ export default function OperationalDiagnostics({
     }
   }, [onNavigate]);
 
-  // Forzar refresh (para depuración)
   const handleRefresh = useCallback(() => {
     setLastRefresh(Date.now());
   }, []);
 
-  // Toggle entre modo diagnóstico y modo IA
   const handleToggleMode = useCallback(() => {
     setShowAIAgent(prev => !prev);
   }, []);
 
-  // Renderizar contenido según estado
-  const renderContent = () => {
-    // Modo IA Agent
-    if (showAIAgent) {
-      return (
-        <AIAgentDashboard
-          sales={stableSales}
-          menu={stableMenu}
-          customers={stableCustomers}
-          wasteLogs={stableWasteLogs}
-          businessType={businessTypeArray}
-        />
-      );
-    }
+  const currentTypeConfig = BUSINESS_TYPE_MAPPING[businessTypeString] || { label: 'Negocio', icon: Activity };
+  const TypeIcon = currentTypeConfig.icon;
 
-    // Estado de carga
-    if (diagnostics.isLoading || diagnostics === Promise.resolve()) {
-      return <DiagnosticSkeleton />;
-    }
+  const renderClassicContent = () => {
+    if (diagnostics.isLoading) return <DiagnosticSkeleton />;
 
-    // Estado de error
     if (diagnostics.error) {
       return (
         <div className="diagnostic-error">
@@ -387,40 +303,25 @@ export default function OperationalDiagnostics({
       );
     }
 
-    // Sin alertas
     if (!diagnostics.alerts || diagnostics.alerts.length === 0) {
       return <NoAlertsState businessType={businessTypeString} />;
     }
 
-    // Listado de alertas
     return (
       <div className="alerts-list">
         {diagnostics.alerts.map(alert => (
-          <AlertCard
-            key={alert.id}
-            alert={alert}
-            onNavigate={handleNavigate}
-          />
+          <AlertCard key={alert.id} alert={alert} onNavigate={handleNavigate} />
         ))}
       </div>
     );
   };
 
-  // Tipo de negocio actual (para display)
-  const currentTypeConfig = BUSINESS_TYPE_MAPPING[businessTypeString] || { label: 'Negocio', icon: Activity };
-  const TypeIcon = currentTypeConfig.icon;
-
   return (
     <div className="operational-diagnostics">
-      {/* Header */}
       <div className="diagnostics-header">
         <div className="header-content">
           <div className="header-icon-wrapper">
-            {showAIAgent ? (
-              <Bot size={28} className="header-icon" />
-            ) : (
-              <TypeIcon size={28} className="header-icon" />
-            )}
+            {showAIAgent ? <Bot size={28} className="header-icon" /> : <TypeIcon size={28} className="header-icon" />}
           </div>
           <div className="header-text">
             <h2 className="header-title">
@@ -429,21 +330,14 @@ export default function OperationalDiagnostics({
             <p className="header-subtitle">
               {showAIAgent
                 ? 'Análisis inteligente con contexto de tu negocio'
-                : `${currentTypeConfig.label} • ${diagnostics.summary?.totalAlerts || 0} alertas${diagnostics.summary?.criticalCount > 0
-                  ? ` (${diagnostics.summary.criticalCount} críticas)`
-                  : ''
-                }`
+                : `${currentTypeConfig.label} • ${diagnostics.summary?.totalAlerts || 0} alertas${diagnostics.summary?.criticalCount > 0 ? ` (${diagnostics.summary.criticalCount} críticas)` : ''}`
               }
             </p>
           </div>
         </div>
 
         <div className="header-actions">
-          <button
-            className="mode-toggle-button"
-            onClick={handleToggleMode}
-            type="button"
-          >
+          <button className="mode-toggle-button" onClick={handleToggleMode} type="button">
             {showAIAgent ? (
               <>
                 <BrainCircuit size={16} />
@@ -458,10 +352,7 @@ export default function OperationalDiagnostics({
           </button>
 
           {allowRubroOverride && (
-            <BusinessTypeSelector
-              currentType={businessTypeString}
-              onSelect={setRubroOverride}
-            />
+            <BusinessTypeSelector currentType={businessTypeString} onSelect={setRubroOverride} />
           )}
 
           {!showAIAgent && (
@@ -473,107 +364,82 @@ export default function OperationalDiagnostics({
               aria-label="Refrescar diagnóstico"
               title="Actualizar diagnóstico"
             >
-              <RefreshCw size={18} className={diagnostics.isLoading ? 'spinning' : ''} />
+              {diagnostics.isLoading ? <Loader2 size={18} className="spinning" /> : <RefreshCw size={18} />}
             </button>
           )}
         </div>
       </div>
 
-      {/* Summary Cards (solo si hay datos y NO está en modo IA) */}
       {!showAIAgent && diagnostics.summary && !diagnostics.isLoading && (
         <div className="diagnostics-summary">
           {diagnostics.summary.ticketLeakage && (
-            <div className="summary-card">
-              <div className="summary-icon revenue">
-                <DollarSign size={20} />
-              </div>
-              <div className="summary-content">
-                <span className="summary-label">Fuga de Ticket</span>
-                <span className="summary-value">
-                  {Math.round(diagnostics.summary.ticketLeakage.leakageRate * 100)}%
-                </span>
-              </div>
-            </div>
+            <SummaryCard
+              icon={DollarSign}
+              label="Fuga de Ticket"
+              value={`${Math.round(diagnostics.summary.ticketLeakage.leakageRate * 100)}%`}
+              theme="revenue"
+            />
           )}
 
           {diagnostics.summary.wasteImpact && (
-            <div className="summary-card">
-              <div className="summary-icon operations">
-                <Activity size={20} />
-              </div>
-              <div className="summary-content">
-                <span className="summary-label">Merma</span>
-                <span className="summary-value">
-                  {Math.round(diagnostics.summary.wasteImpact.wasteRatio * 100)}%
-                </span>
-              </div>
-            </div>
+            <SummaryCard
+              icon={Activity}
+              label="Merma"
+              value={`${Math.round(diagnostics.summary.wasteImpact.wasteRatio * 100)}%`}
+              theme="operations"
+            />
           )}
 
           {diagnostics.summary.expirationRisk && (
-            <div className="summary-card">
-              <div className="summary-icon inventory">
-                <Package size={20} />
-              </div>
-              <div className="summary-content">
-                <span className="summary-label">Caducidad</span>
-                <span className="summary-value">
-                  {diagnostics.summary.expirationRisk.criticalCount + diagnostics.summary.expirationRisk.warningCount} lotes
-                </span>
-              </div>
-            </div>
+            <SummaryCard
+              icon={Package}
+              label="Caducidad"
+              value={`${diagnostics.summary.expirationRisk.criticalCount + diagnostics.summary.expirationRisk.warningCount} lotes`}
+              theme="inventory"
+            />
           )}
 
           {diagnostics.summary.stockoutRisk && (
-            <div className="summary-card">
-              <div className="summary-icon inventory">
-                <TrendingDown size={20} />
-              </div>
-              <div className="summary-content">
-                <span className="summary-label">Quiebre Stock</span>
-                <span className="summary-value">
-                  {diagnostics.summary.stockoutRisk.criticalCount + diagnostics.summary.stockoutRisk.warningCount} productos
-                </span>
-              </div>
-            </div>
+            <SummaryCard
+              icon={TrendingDown}
+              label="Quiebre Stock"
+              value={`${diagnostics.summary.stockoutRisk.criticalCount + diagnostics.summary.stockoutRisk.warningCount} productos`}
+              theme="inventory"
+            />
           )}
 
           {diagnostics.summary.deadStock && (
-            <div className="summary-card">
-              <div className="summary-icon inventory">
-                <Clock size={20} />
-              </div>
-              <div className="summary-content">
-                <span className="summary-label">Capital Muerto</span>
-                <span className="summary-value">
-                  ${diagnostics.summary.deadStock.totalDeadStockValue.toFixed(0)}
-                </span>
-              </div>
-            </div>
+            <SummaryCard
+              icon={Clock}
+              label="Capital Muerto"
+              value={`$${diagnostics.summary.deadStock.totalDeadStockValue.toFixed(0)}`}
+              theme="inventory"
+            />
           )}
 
           {diagnostics.summary.margins && (
-            <div className="summary-card">
-              <div className="summary-icon pricing">
-                <TrendingUp size={20} />
-              </div>
-              <div className="summary-content">
-                <span className="summary-label">Margen Prom.</span>
-                <span className="summary-value">
-                  {diagnostics.summary.margins.avgMargin.toFixed(1)}%
-                </span>
-              </div>
-            </div>
+            <SummaryCard
+              icon={TrendingUp}
+              label="Margen Prom."
+              value={`${diagnostics.summary.margins.avgMargin.toFixed(1)}%`}
+              theme="pricing"
+            />
           )}
         </div>
       )}
 
-      {/* Contenido Principal */}
       <div className="diagnostics-content">
-        {renderContent()}
+        {showAIAgent ? (
+          <AIAgentDashboard
+            sales={sales}
+            menu={menu}
+            customers={customers}
+            wasteLogs={wasteLogs}
+            businessType={businessTypeArray}
+          />
+        ) : renderClassicContent()}
       </div>
 
-      {/* Footer con timestamp */}
       <div className="diagnostics-footer">
         <span className="last-update">
           <Clock size={12} />
@@ -583,7 +449,7 @@ export default function OperationalDiagnostics({
         {diagnostics.rawData && (
           <span className="data-summary">
             {diagnostics.rawData.salesCount || 0} ventas •
-            {diagnostics.rawData.menuCount || 0} productos •
+            {diagnostics.rawData.menuCount || diagnostics.rawData.inventoryCount || 0} productos •
             {diagnostics.rawData.batchesCount || 0} lotes
           </span>
         )}
