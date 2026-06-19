@@ -1,10 +1,11 @@
 /**
  * AIAgentDashboard - Componente modular de IA para análisis de negocio.
  *
- * El flujo ya no se limita a mandar un resumen plano a la IA:
+ * Flujo actual:
  * 1. Agrega datos locales por agente.
  * 2. Ejecuta herramientas internas MCP-lite según agente/rubro.
- * 3. Inyecta los hallazgos estructurados al prompt.
+ * 3. Inyecta hallazgos estructurados al prompt.
+ * 4. Renderiza JSON accionable si el proveedor lo respeta, con fallback Markdown.
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
@@ -23,10 +24,17 @@ import {
   Clock,
   BarChart3,
   Activity,
-  Wrench
+  Wrench,
+  Target,
+  ArrowRight,
+  Lightbulb,
+  HelpCircle,
+  ShieldCheck,
+  ListChecks
 } from 'lucide-react';
 import { buildAgentPayload, DATE_RANGES, formatDateRangeLabel } from '../../utils/buildAgentPayload';
 import { buildPrompt, parseMarkdownResponse, validateAgentData } from '../../utils/aiPromptBuilder';
+import { parseAgentResponse } from '../../utils/parseAgentResponse';
 import { analyzeWithAI, AIApiError, validateAIConnection, getAIConfigStatus } from '../../services/aiService';
 import { getAvailableAgentTools, runAgentTools } from '../../agents/agentToolRegistry';
 import { useAgentPreview } from '../../hooks/dashboard/useAgentPreview';
@@ -69,6 +77,27 @@ const DATE_RANGE_OPTIONS = [
   { id: DATE_RANGES.THIS_MONTH, label: 'Este Mes', icon: BarChart3 },
   { id: DATE_RANGES.LAST_MONTH, label: 'Mes Anterior', icon: BarChart3 }
 ];
+
+const SEVERITY_LABELS = {
+  success: 'Correcto',
+  info: 'Info',
+  warning: 'Alerta',
+  danger: 'Crítico'
+};
+
+const PRIORITY_LABELS = {
+  high: 'Alta',
+  medium: 'Media',
+  low: 'Baja'
+};
+
+const ACTION_TYPE_LABELS = {
+  navigate: 'Navegar',
+  review: 'Revisar',
+  draft: 'Preparar',
+  checklist: 'Checklist',
+  manual: 'Manual'
+};
 
 const DateRangeSelector = ({ selectedRange, onSelect, disabled }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -178,7 +207,7 @@ const AnalysisSkeleton = () => (
   </div>
 );
 
-const AnalysisResult = ({ result }) => {
+const MarkdownAnalysisResult = ({ result }) => {
   const sections = useMemo(() => parseMarkdownResponse(result), [result]);
 
   if (sections.length === 0) {
@@ -201,6 +230,171 @@ const AnalysisResult = ({ result }) => {
           </ul>
         </div>
       ))}
+    </div>
+  );
+};
+
+const SeverityBadge = ({ severity = 'info' }) => (
+  <span className={`structured-badge severity-${severity}`}>
+    {SEVERITY_LABELS[severity] || SEVERITY_LABELS.info}
+  </span>
+);
+
+const PriorityBadge = ({ priority = 'medium' }) => (
+  <span className={`priority-pill priority-${priority}`}>
+    {PRIORITY_LABELS[priority] || PRIORITY_LABELS.medium}
+  </span>
+);
+
+const FindingCard = ({ finding }) => (
+  <article className={`structured-card finding-card severity-${finding.severity}`}>
+    <div className="structured-card-header">
+      <div className="structured-card-title">
+        <Target size={18} />
+        <h5>{finding.title}</h5>
+      </div>
+      <SeverityBadge severity={finding.severity} />
+    </div>
+
+    {finding.metric && <p className="structured-metric">{finding.metric}</p>}
+    {finding.summary && <p className="structured-description">{finding.summary}</p>}
+
+    {finding.evidence?.length > 0 && (
+      <ul className="structured-evidence">
+        {finding.evidence.map((entry, index) => (
+          <li key={`${finding.id}-evidence-${index}`}>{entry}</li>
+        ))}
+      </ul>
+    )}
+
+    {finding.toolId && <span className="tool-reference">tool: {finding.toolId}</span>}
+  </article>
+);
+
+const ActionCard = ({ action }) => {
+  const handleRoute = () => {
+    if (!action.route) return;
+    window.location.href = action.route;
+  };
+
+  return (
+    <article className={`structured-card action-card priority-${action.priority}`}>
+      <div className="structured-card-header">
+        <div className="structured-card-title">
+          <ListChecks size={18} />
+          <h5>{action.label}</h5>
+        </div>
+        <PriorityBadge priority={action.priority} />
+      </div>
+
+      <div className="action-meta-row">
+        <span>{ACTION_TYPE_LABELS[action.type] || ACTION_TYPE_LABELS.manual}</span>
+        {action.confirmationRequired && (
+          <span className="confirmation-pill">
+            <ShieldCheck size={12} />
+            requiere confirmar
+          </span>
+        )}
+      </div>
+
+      {action.description && <p className="structured-description">{action.description}</p>}
+      {action.reason && <p className="structured-reason"><strong>Por qué:</strong> {action.reason}</p>}
+      {action.expectedImpact && <p className="structured-reason"><strong>Impacto:</strong> {action.expectedImpact}</p>}
+
+      {action.route && (
+        <button className="structured-action-button" type="button" onClick={handleRoute}>
+          Ir a {action.route}
+          <ArrowRight size={14} />
+        </button>
+      )}
+    </article>
+  );
+};
+
+const OpportunityCard = ({ opportunity }) => (
+  <article className="structured-card opportunity-card">
+    <div className="structured-card-title">
+      <Lightbulb size={18} />
+      <h5>{opportunity.title}</h5>
+    </div>
+    {opportunity.description && <p className="structured-description">{opportunity.description}</p>}
+    <div className="opportunity-meta">
+      {opportunity.impact && <span>Impacto: {opportunity.impact}</span>}
+      {opportunity.effort && <span>Esfuerzo: {opportunity.effort}</span>}
+    </div>
+    {opportunity.firstStep && <p className="structured-reason"><strong>Primer paso:</strong> {opportunity.firstStep}</p>}
+  </article>
+);
+
+const StructuredAnalysisResult = ({ result }) => {
+  const parsed = useMemo(() => parseAgentResponse(result), [result]);
+
+  if (!parsed.isStructured) {
+    return <MarkdownAnalysisResult result={parsed.markdown || result} />;
+  }
+
+  return (
+    <div className="structured-analysis-result">
+      <section className={`structured-summary severity-${parsed.severity}`}>
+        <div>
+          <div className="structured-summary-heading">
+            <BrainCircuit size={18} />
+            <span>Resumen ejecutivo</span>
+          </div>
+          <p>{parsed.executiveSummary}</p>
+        </div>
+        <div className="confidence-meter">
+          <span>Confianza</span>
+          <strong>{Math.round(parsed.confidence * 100)}%</strong>
+        </div>
+      </section>
+
+      {parsed.findings.length > 0 && (
+        <section className="structured-section">
+          <h4 className="section-title">Hallazgos</h4>
+          <div className="structured-grid">
+            {parsed.findings.map(finding => (
+              <FindingCard key={finding.id} finding={finding} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {parsed.actions.length > 0 && (
+        <section className="structured-section">
+          <h4 className="section-title">Acciones recomendadas</h4>
+          <div className="structured-grid">
+            {parsed.actions.map(action => (
+              <ActionCard key={action.id} action={action} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {parsed.opportunities.length > 0 && (
+        <section className="structured-section">
+          <h4 className="section-title">Oportunidades</h4>
+          <div className="structured-grid">
+            {parsed.opportunities.map(opportunity => (
+              <OpportunityCard key={opportunity.id} opportunity={opportunity} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {parsed.questionsToAskUser.length > 0 && (
+        <section className="structured-section questions-section">
+          <h4 className="section-title">
+            <HelpCircle size={18} />
+            Datos que mejorarían el análisis
+          </h4>
+          <ul className="section-items">
+            {parsed.questionsToAskUser.map((question, index) => (
+              <li key={`question-${index}`}>{question}</li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 };
@@ -423,7 +617,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
           <div className="header-text">
             <h2 className="header-title">Agentes de IA</h2>
             <p className="header-subtitle">
-              Análisis inteligente con herramientas internas del negocio
+              Análisis inteligente con herramientas internas y acciones guiadas
             </p>
           </div>
         </div>
@@ -547,7 +741,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
             <BrainCircuit size={32} className="analyzing-icon" />
           </div>
           <p className="state-text">
-            Procesando datos agregados y herramientas internas...
+            Procesando herramientas internas y preparando acciones guiadas...
           </p>
           <AnalysisSkeleton />
         </section>
@@ -583,7 +777,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
               {lastToolRun?.availableToolCount ? ` • ${lastToolRun.availableToolCount} tools` : ''}
             </span>
           </div>
-          <AnalysisResult result={analysisResult} />
+          <StructuredAnalysisResult result={analysisResult} />
         </section>
       )}
 
