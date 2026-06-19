@@ -6,9 +6,11 @@
  * 2. Ejecuta herramientas internas MCP-lite según agente/rubro.
  * 3. Inyecta hallazgos estructurados al prompt.
  * 4. Renderiza JSON accionable si el proveedor lo respeta, con fallback Markdown.
+ * 5. Ejecuta acciones guiadas seguras dentro del POS.
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   BrainCircuit,
   Package,
@@ -37,8 +39,10 @@ import { buildPrompt, parseMarkdownResponse, validateAgentData } from '../../uti
 import { parseAgentResponse } from '../../utils/parseAgentResponse';
 import { analyzeWithAI, AIApiError, validateAIConnection, getAIConfigStatus } from '../../services/aiService';
 import { getAvailableAgentTools, runAgentTools } from '../../agents/agentToolRegistry';
+import { resolveAgentAction, executeAgentAction } from '../../agents/agentActionRouter';
 import { useAgentPreview } from '../../hooks/dashboard/useAgentPreview';
 import DataPreviewBanner from './DataPreviewBanner';
+import AgentActionConfirmModal from './AgentActionConfirmModal';
 import './AIAgentDashboard.css';
 import './AIAgentStructuredResult.css';
 
@@ -272,11 +276,13 @@ const FindingCard = ({ finding }) => (
   </article>
 );
 
-const ActionCard = ({ action }) => {
-  const handleRoute = () => {
-    if (!action.route) return;
-    window.location.href = action.route;
-  };
+const ActionCard = ({ action, onAction }) => {
+  const hasRoute = Boolean(action.route);
+  const buttonLabel = hasRoute
+    ? 'Abrir guía y navegar'
+    : action.type === 'draft'
+      ? 'Abrir borrador guiado'
+      : 'Abrir guía';
 
   return (
     <article className={`structured-card action-card priority-${action.priority}`}>
@@ -302,12 +308,10 @@ const ActionCard = ({ action }) => {
       {action.reason && <p className="structured-reason"><strong>Por qué:</strong> {action.reason}</p>}
       {action.expectedImpact && <p className="structured-reason"><strong>Impacto:</strong> {action.expectedImpact}</p>}
 
-      {action.route && (
-        <button className="structured-action-button" type="button" onClick={handleRoute}>
-          Ir a {action.route}
-          <ArrowRight size={14} />
-        </button>
-      )}
+      <button className="structured-action-button" type="button" onClick={() => onAction(action)}>
+        {buttonLabel}
+        <ArrowRight size={14} />
+      </button>
     </article>
   );
 };
@@ -327,7 +331,7 @@ const OpportunityCard = ({ opportunity }) => (
   </article>
 );
 
-const StructuredAnalysisResult = ({ result }) => {
+const StructuredAnalysisResult = ({ result, onAction }) => {
   const parsed = useMemo(() => parseAgentResponse(result), [result]);
 
   if (!parsed.isStructured) {
@@ -366,7 +370,7 @@ const StructuredAnalysisResult = ({ result }) => {
           <h4 className="section-title">Acciones recomendadas</h4>
           <div className="structured-grid">
             {parsed.actions.map(action => (
-              <ActionCard key={action.id} action={action} />
+              <ActionCard key={action.id} action={action} onAction={onAction} />
             ))}
           </div>
         </section>
@@ -422,12 +426,14 @@ const ToolPreview = ({ tools }) => {
 };
 
 export default function AIAgentDashboard({ sales = [], menu = [], customers = [], wasteLogs = [], businessType = [] }) {
+  const navigate = useNavigate();
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [selectedDateRange, setSelectedDateRange] = useState(DATE_RANGES.LAST_7_DAYS);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [analysisError, setAnalysisError] = useState(null);
   const [lastToolRun, setLastToolRun] = useState(null);
+  const [pendingGuidedAction, setPendingGuidedAction] = useState(null);
 
   const [connectionStatus, setConnectionStatus] = useState({
     isOnline: isBrowserOnline(),
@@ -542,6 +548,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
     setAnalysisError(null);
     setAnalysisResult(null);
     setLastToolRun(null);
+    setPendingGuidedAction(null);
 
     try {
       const aggregatedPayload = await buildAgentPayload(selectedAgent, selectedDateRange, {
@@ -599,10 +606,31 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
     }
   }, [selectedAgent, selectedDateRange, connectionStatus, menu, wasteLogs, sales, customers, businessContext, businessType]);
 
+  const handleOpenGuidedAction = useCallback((action) => {
+    setPendingGuidedAction(resolveAgentAction(action));
+  }, []);
+
+  const handleCloseGuidedAction = useCallback(() => {
+    setPendingGuidedAction(null);
+  }, []);
+
+  const handleConfirmGuidedAction = useCallback(() => {
+    if (!pendingGuidedAction) return;
+    const result = executeAgentAction(pendingGuidedAction, navigate);
+
+    if (!result.success) {
+      setAnalysisError(result.message || 'No se pudo ejecutar la acción guiada.');
+      return;
+    }
+
+    setPendingGuidedAction(null);
+  }, [navigate, pendingGuidedAction]);
+
   useEffect(() => {
     setAnalysisResult(null);
     setAnalysisError(null);
     setLastToolRun(null);
+    setPendingGuidedAction(null);
   }, [selectedAgent, selectedDateRange]);
 
   const activeAgent = useMemo(
@@ -778,7 +806,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
               {lastToolRun?.availableToolCount ? ` • ${lastToolRun.availableToolCount} tools` : ''}
             </span>
           </div>
-          <StructuredAnalysisResult result={analysisResult} />
+          <StructuredAnalysisResult result={analysisResult} onAction={handleOpenGuidedAction} />
         </section>
       )}
 
@@ -791,6 +819,13 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
           </p>
         </section>
       )}
+
+      <AgentActionConfirmModal
+        isOpen={Boolean(pendingGuidedAction)}
+        action={pendingGuidedAction}
+        onClose={handleCloseGuidedAction}
+        onConfirm={handleConfirmGuidedAction}
+      />
     </div>
   );
 }
