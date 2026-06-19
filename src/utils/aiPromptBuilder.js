@@ -1,31 +1,77 @@
 /**
- * AI Prompt Builder - Generador de prompts estructurados para agentes de IA
+ * AI Prompt Builder - Generador de prompts estructurados para agentes de IA.
  *
  * Construye prompts del sistema que inyectan contexto del negocio y exigen
- * respuestas en formato Markdown con viñetas, sin saludos y con pasos accionables.
+ * respuestas JSON accionables. Mantiene parseMarkdownResponse como fallback
+ * para proveedores que no respeten el contrato estructurado.
  */
 
-// ============================================================
-// 1. PLANTILLAS DE PROMPTS POR AGENTE
-// ============================================================
+const STRUCTURED_OUTPUT_INSTRUCTIONS = `
+
+CONTRATO DE SALIDA OBLIGATORIO:
+- Responde ÚNICAMENTE con JSON válido.
+- NO uses Markdown.
+- NO uses bloques de código.
+- NO agregues texto antes ni después del JSON.
+- Si falta información, usa arrays vacíos o explica la limitación dentro de findings/actions.
+- No inventes métricas; si haces una inferencia, dilo explícitamente en evidence o reason.
+
+SCHEMA EXACTO:
+{
+  "formatVersion": "1.0",
+  "executiveSummary": "Resumen ejecutivo de 2 a 4 líneas, directo y útil para dueño de negocio local.",
+  "severity": "success | info | warning | danger",
+  "confidence": 0.0,
+  "findings": [
+    {
+      "id": "finding-1",
+      "title": "Título corto del hallazgo",
+      "summary": "Explicación concreta basada en los datos.",
+      "severity": "success | info | warning | danger",
+      "metric": "Métrica principal si aplica, ejemplo: $850 en merma o 35% fuga de ticket",
+      "evidence": ["Dato o tool que respalda el hallazgo"],
+      "toolId": "id de herramienta interna si aplica"
+    }
+  ],
+  "actions": [
+    {
+      "id": "action-1",
+      "label": "Acción clara y corta",
+      "description": "Qué debe hacer el usuario y por qué.",
+      "priority": "high | medium | low",
+      "type": "navigate | review | draft | checklist | manual",
+      "route": "Ruta interna sugerida si aplica, por ejemplo /productos o /ventas?tab=waste",
+      "reason": "Razón basada en datos o herramienta interna.",
+      "expectedImpact": "Impacto esperado en venta, margen, operación o retención.",
+      "confirmationRequired": true
+    }
+  ],
+  "opportunities": [
+    {
+      "id": "opportunity-1",
+      "title": "Oportunidad detectada",
+      "description": "Explicación breve.",
+      "impact": "high | medium | low",
+      "effort": "high | medium | low",
+      "firstStep": "Primer paso recomendado"
+    }
+  ],
+  "questionsToAskUser": ["Pregunta útil si falta información para una mejor recomendación"],
+  "toolReferences": ["ids de tools usadas o datos clave"]
+}`;
 
 const AGENT_PROMPTS = {
   inventoryAuditor: {
     role: 'Auditor de Inventario',
-    systemPrompt: `Eres un auditor de inventario experto para retail y restaurantes. Analizas datos de mermas, rotación de productos y niveles de stock.
+    systemPrompt: `Eres un auditor de inventario experto para retail, restaurantes y negocios locales. Analizas mermas, rotación de productos, capital detenido, niveles de stock y riesgos de agotado.
 
-REGLAS DE RESPUESTA:
-- NO uses saludos ni introducciones
-- Responde ÚNICAMENTE en formato Markdown con viñetas
-- Sé directo y accionable
-- Usa tono profesional pero accesible
-- Prioriza recomendaciones por impacto económico
-
-ESTRUCTURA OBLIGATORIA:
-1. 📊 Hallazgos Principales (máximo 5 puntos)
-2. ⚠️ Alertas Críticas (si aplican)
-3. 💡 Recomendaciones Accionables (mínimo 3, máximo 7)
-4. 📈 Oportunidades de Mejora (máximo 3)`,
+REGLAS DE RAZONAMIENTO:
+- Sé directo y accionable.
+- Prioriza por impacto económico y riesgo operativo.
+- Usa los hallazgos de agentToolRun como herramientas internas, no como texto decorativo.
+- Diferencia entre dato confirmado e inferencia.
+- No propongas acciones destructivas automáticas; solo recomendaciones o navegación guiada.
+- Para acciones sensibles usa confirmationRequired: true.${STRUCTURED_OUTPUT_INSTRUCTIONS}`,
 
     contextInjection: `
 CONTEXTO DEL NEGOCIO:
@@ -34,26 +80,21 @@ CONTEXTO DEL NEGOCIO:
 - Total productos en menú: {totalProducts}
 - Productos con stock activo: {productsWithStock}
 
-DATOS AGREGADOS:
+DATOS AGREGADOS Y HERRAMIENTAS INTERNAS:
 {aggregatedData}`
   },
 
   financialAnalyst: {
     role: 'Analista Financiero',
-    systemPrompt: `Eres un analista financiero especializado en PYMEs de retail y servicios. Analizas ticket promedio, patrones de venta temporal y métodos de pago.
+    systemPrompt: `Eres un analista financiero especializado en PYMEs, restaurantes, retail y comercios locales. Analizas ticket promedio, utilidad bruta, margen, patrones temporales, métodos de pago y oportunidades de ingreso.
 
-REGLAS DE RESPUESTA:
-- NO uses saludos ni introducciones
-- Responde ÚNICAMENTE en formato Markdown con viñetas
-- Sé directo y accionable
-- Usa tono profesional pero accesible
-- Prioriza recomendaciones por ROI potencial
-
-ESTRUCTURA OBLIGATORIA:
-1. 📊 Métricas Clave del Período (máximo 6 puntos)
-2. 📈 Patrones Detectados (temporalidad, pagos)
-3. 💰 Oportunidades de Ingreso (mínimo 3, máximo 5)
-4. 🎯 Acciones Inmediatas (máximo 3)`,
+REGLAS DE RAZONAMIENTO:
+- Sé directo y accionable.
+- Prioriza por ROI potencial y facilidad de ejecución.
+- Usa los hallazgos de agentToolRun como herramientas internas, no como texto decorativo.
+- Si detectas fuga de ticket, propone combos o acciones de venta cruzada.
+- Si el margen es bajo, prioriza revisión de precio/costo antes de aumentar ventas.
+- No inventes ingresos futuros; puedes estimar solo si aclaras que es una inferencia.${STRUCTURED_OUTPUT_INSTRUCTIONS}`,
 
     contextInjection: `
 CONTEXTO DEL NEGOCIO:
@@ -62,26 +103,21 @@ CONTEXTO DEL NEGOCIO:
 - Total ventas procesadas: {totalSales}
 - Tickets únicos: {uniqueTickets}
 
-DATOS AGREGADOS:
+DATOS AGREGADOS Y HERRAMIENTAS INTERNAS:
 {aggregatedData}`
   },
 
   customerStrategist: {
     role: 'Estratega de Clientes',
-    systemPrompt: `Eres un estratega de clientes experto en retención y fidelización para comercios locales. Analizas recurrencia, deuda de clientes y ticket promedio por cliente.
+    systemPrompt: `Eres un estratega de clientes experto en retención, recurrencia, cobranza sana y fidelización para comercios locales. Analizas clientes activos, deuda, visitas, ticket y oportunidades de recompra.
 
-REGLAS DE RESPUESTA:
-- NO uses saludos ni introducciones
-- Responde ÚNICAMENTE en formato Markdown con viñetas
-- Sé directo y accionable
-- Usa tono profesional pero accesible
-- Prioriza recomendaciones por impacto en retención
-
-ESTRUCTURA OBLIGATORIA:
-1. 📊 Perfil de Clientes (máximo 5 puntos)
-2. ⚠️ Situación de Deuda (si aplica)
-3. 🎯 Estrategias de Fidelización (mínimo 3, máximo 6)
-4. 📋 Acciones de Cobro/Recuperación (si aplica)`,
+REGLAS DE RAZONAMIENTO:
+- Sé directo y accionable.
+- Prioriza acciones que ayuden a que el cliente regrese o pague sin dañar la relación.
+- Usa los hallazgos de agentToolRun como herramientas internas, no como texto decorativo.
+- No expongas datos personales innecesarios; resume por patrones.
+- Si hay deuda, sugiere seguimiento respetuoso y claro.
+- Si hay pocos clientes registrados, recomienda mejorar captura de clientes en caja.${STRUCTURED_OUTPUT_INSTRUCTIONS}`,
 
     contextInjection: `
 CONTEXTO DEL NEGOCIO:
@@ -90,14 +126,10 @@ CONTEXTO DEL NEGOCIO:
 - Total clientes en base: {totalCustomers}
 - Clientes activos en período: {activeCustomers}
 
-DATOS AGREGADOS:
+DATOS AGREGADOS Y HERRAMIENTAS INTERNAS:
 {aggregatedData}`
   }
 };
-
-// ============================================================
-// 2. FORMATO DE DATOS AGREGADOS
-// ============================================================
 
 const formatKeyToTitle = (key) => String(key)
   .replace(/([A-Z])/g, ' $1')
@@ -120,7 +152,8 @@ const shouldFormatAsCurrency = (key = '') => {
     || normalized.includes('capital')
     || normalized.includes('ticket')
     || normalized.includes('spent')
-    || normalized.includes('discount');
+    || normalized.includes('discount')
+    || normalized.includes('impact');
 };
 
 const formatValue = (value, key = '') => {
@@ -150,7 +183,7 @@ const formatNestedObject = (value, depth = 0) => {
   if (Array.isArray(value)) {
     if (value.length === 0) return 'Sin registros';
 
-    return value.slice(0, 10).map((item, idx) => {
+    return value.slice(0, 12).map((item, idx) => {
       if (item && typeof item === 'object') {
         const itemStr = Object.entries(item)
           .map(([k, v]) => `${formatKeyToTitle(k)}: ${formatValue(v, k)}`)
@@ -194,10 +227,6 @@ const formatAggregatedData = (data) => {
     .filter(Boolean)
     .join('\n');
 };
-
-// ============================================================
-// 3. CONSTRUCTOR DE PROMPT FINAL
-// ============================================================
 
 const aggregateContextFields = (agentType, aggregatedData, businessContext) => {
   const context = {};
@@ -256,10 +285,6 @@ export const buildPrompt = (agentType, aggregatedData, businessContext = {}) => 
     agentType
   };
 };
-
-// ============================================================
-// 4. UTILIDADES PARA CONSTRUCCIÓN DE RESPUESTA
-// ============================================================
 
 export const parseMarkdownResponse = (markdown) => {
   if (!markdown) return [];
