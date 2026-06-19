@@ -1,6 +1,6 @@
 /**
  * AI Prompt Builder - Generador de prompts estructurados para agentes de IA
- * 
+ *
  * Construye prompts del sistema que inyectan contexto del negocio y exigen
  * respuestas en formato Markdown con viñetas, sin saludos y con pasos accionables.
  */
@@ -96,141 +96,109 @@ DATOS AGREGADOS:
 };
 
 // ============================================================
-// 2. FORMATO DE DATOS AGREGADOS (Stringificación)
+// 2. FORMATO DE DATOS AGREGADOS
 // ============================================================
 
-/**
- * Convierte un objeto de datos agregados en un string legible para IA
- * @param {Object} data - Datos agregados del agente
- * @returns {string} - Datos formateados en texto estructurado
- */
+const formatKeyToTitle = (key) => String(key)
+  .replace(/([A-Z])/g, ' $1')
+  .replace(/^./, str => str.toUpperCase())
+  .replace(/\b\w/g, str => str.toUpperCase());
+
+const shouldFormatAsPercent = (key = '') => {
+  const normalized = key.toLowerCase();
+  return normalized.includes('pct') || normalized.includes('percent') || normalized.includes('rate') || normalized.includes('ratio');
+};
+
+const shouldFormatAsCurrency = (key = '') => {
+  const normalized = key.toLowerCase();
+  return normalized.includes('revenue')
+    || normalized.includes('cost')
+    || normalized.includes('profit')
+    || normalized.includes('amount')
+    || normalized.includes('debt')
+    || normalized.includes('loss')
+    || normalized.includes('capital')
+    || normalized.includes('ticket')
+    || normalized.includes('spent')
+    || normalized.includes('discount');
+};
+
+const formatValue = (value, key = '') => {
+  if (typeof value === 'number') {
+    if (shouldFormatAsPercent(key)) {
+      const percentage = value > 0 && value <= 1 ? value * 100 : value;
+      return `${percentage.toFixed(1)}%`;
+    }
+
+    if (shouldFormatAsCurrency(key)) {
+      return `$${value.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    return value.toLocaleString('es-MX', { maximumFractionDigits: 2 });
+  }
+
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+  if (value instanceof Date) return value.toLocaleDateString('es-MX');
+  if (value === null || value === undefined) return 'N/A';
+
+  return String(value);
+};
+
+const formatNestedObject = (value, depth = 0) => {
+  if (!value || typeof value !== 'object') return formatValue(value);
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'Sin registros';
+
+    return value.slice(0, 10).map((item, idx) => {
+      if (item && typeof item === 'object') {
+        const itemStr = Object.entries(item)
+          .map(([k, v]) => `${formatKeyToTitle(k)}: ${formatValue(v, k)}`)
+          .join(', ');
+        return `${idx + 1}. ${itemStr}`;
+      }
+      return `${idx + 1}. ${formatValue(item)}`;
+    }).join('\n');
+  }
+
+  return Object.entries(value)
+    .map(([k, v]) => {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        return `${'  '.repeat(depth)}• ${formatKeyToTitle(k)}:\n${formatNestedObject(v, depth + 1)}`;
+      }
+      if (Array.isArray(v)) {
+        return `${'  '.repeat(depth)}• ${formatKeyToTitle(k)}:\n${formatNestedObject(v, depth + 1)}`;
+      }
+      return `${'  '.repeat(depth)}• ${formatKeyToTitle(k)}: ${formatValue(v, k)}`;
+    })
+    .join('\n');
+};
+
 const formatAggregatedData = (data) => {
   if (!data || typeof data !== 'object') return 'Sin datos disponibles';
 
-  const lines = [];
-
-  // Procesar cada clave del objeto
-  Object.entries(data).forEach(([key, value]) => {
-    // Formatear según el tipo de dato
-    if (Array.isArray(value)) {
-      if (value.length === 0) return;
-      
-      // Array de objetos con estructura específica
-      if (typeof value[0] === 'object' && value[0] !== null) {
-        lines.push(`\n${formatKeyToTitle(key)}:`);
-        value.slice(0, 10).forEach((item, idx) => {
-          const itemStr = Object.entries(item)
-            .map(([k, v]) => `${formatKeyToTitle(k)}: ${formatValue(v, k)}`)
-            .join(', ');
-          lines.push(`  ${idx + 1}. ${itemStr}`);
-        });
-        if (value.length > 10) {
-          lines.push(`  ... y ${value.length - 10} registros más`);
-        }
-      } else {
-        // Array simple
-        lines.push(`${formatKeyToTitle(key)}: ${value.slice(0, 5).join(', ')}${value.length > 5 ? '...' : ''}`);
+  return Object.entries(data)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .map(([key, value]) => {
+      if (Array.isArray(value)) {
+        if (value.length === 0) return null;
+        return `\n${formatKeyToTitle(key)}:\n${formatNestedObject(value)}`;
       }
-    } else if (typeof value === 'object' && value !== null) {
-      // Objeto anidado
-      lines.push(`\n${formatKeyToTitle(key)}:`);
-      Object.entries(value).forEach(([k, v]) => {
-        lines.push(`  • ${formatKeyToTitle(k)}: ${formatValue(v, k)}`);
-      });
-    } else {
-      // Valor primitivo
-      lines.push(`${formatKeyToTitle(key)}: ${formatValue(value, key)}`);
-    }
-  });
 
-  return lines.join('\n');
-};
+      if (typeof value === 'object') {
+        return `\n${formatKeyToTitle(key)}:\n${formatNestedObject(value)}`;
+      }
 
-/**
- * Convierte camelCase a Título Legible
- */
-const formatKeyToTitle = (key) => {
-  return key
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, str => str.toUpperCase())
-    .replace(/\b\w/g, str => str.toUpperCase());
-};
-
-/**
- * Formatea valores según su tipo
- */
-const formatValue = (value, key = '') => {
-  if (typeof value === 'number') {
-    // Moneda
-    if (value >= 100 || value <= -100) {
-      return `$${value.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    }
-    // Porcentaje
-    if (value >= 0 && value <= 1 && key && key.toLowerCase().includes('ratio')) {
-      return `${(value * 100).toFixed(1)}%`;
-    }
-    // Número normal
-    return value.toLocaleString('es-MX');
-  }
-  
-  if (typeof value === 'boolean') {
-    return value ? 'Sí' : 'No';
-  }
-  
-  if (value instanceof Date) {
-    return value.toLocaleDateString('es-MX');
-  }
-  
-  return String(value);
+      return `${formatKeyToTitle(key)}: ${formatValue(value, key)}`;
+    })
+    .filter(Boolean)
+    .join('\n');
 };
 
 // ============================================================
 // 3. CONSTRUCTOR DE PROMPT FINAL
 // ============================================================
 
-/**
- * Construye el prompt completo para un agente específico
- * @param {string} agentType - Tipo de agente ('inventoryAuditor', 'financialAnalyst', 'customerStrategist')
- * @param {Object} aggregatedData - Datos agregados del buildAgentPayload
- * @param {Object} businessContext - Contexto del negocio (tipo, fecha, etc.)
- * @returns {Object} - { systemPrompt, userPrompt, role }
- */
-export const buildPrompt = (agentType, aggregatedData, businessContext = {}) => {
-  const agentConfig = AGENT_PROMPTS[agentType];
-  
-  if (!agentConfig) {
-    throw new Error(`Agente no reconocido: ${agentType}`);
-  }
-
-  // Construir inyección de contexto
-  const contextData = {
-    businessType: businessContext.businessType || 'No especificado',
-    dateRange: businessContext.dateRange || 'No especificado',
-    ...aggregateContextFields(agentType, aggregatedData, businessContext)
-  };
-
-  const contextInjection = agentConfig.contextInjection
-    .replace(/{businessType}/g, contextData.businessType)
-    .replace(/{dateRange}/g, contextData.dateRange)
-    .replace(/{totalProducts}/g, contextData.totalProducts || 'N/A')
-    .replace(/{productsWithStock}/g, contextData.productsWithStock || 'N/A')
-    .replace(/{totalSales}/g, contextData.totalSales || 'N/A')
-    .replace(/{uniqueTickets}/g, contextData.uniqueTickets || 'N/A')
-    .replace(/{totalCustomers}/g, contextData.totalCustomers || 'N/A')
-    .replace(/{activeCustomers}/g, contextData.activeCustomers || 'N/A')
-    .replace(/{aggregatedData}/g, formatAggregatedData(aggregatedData));
-
-  return {
-    systemPrompt: agentConfig.systemPrompt,
-    userPrompt: contextInjection,
-    role: agentConfig.role,
-    agentType
-  };
-};
-
-/**
- * Agrega campos de contexto específicos según el tipo de agente
- */
 const aggregateContextFields = (agentType, aggregatedData, businessContext) => {
   const context = {};
 
@@ -242,12 +210,12 @@ const aggregateContextFields = (agentType, aggregatedData, businessContext) => {
 
     case 'financialAnalyst':
       context.totalSales = aggregatedData?.salesStats?.totalTransactions || 0;
-      context.uniqueTickets = aggregatedData?.salesStats?.uniqueTickets || 0;
+      context.uniqueTickets = aggregatedData?.salesStats?.totalTransactions || 0;
       break;
 
     case 'customerStrategist':
-      context.totalCustomers = businessContext.totalCustomers || 0;
-      context.activeCustomers = aggregatedData?.customerStats?.activeCustomers || 0;
+      context.totalCustomers = businessContext.totalCustomers || aggregatedData?.customerBaseStats?.totalRegisteredCustomers || 0;
+      context.activeCustomers = aggregatedData?.customerBaseStats?.activeThisPeriod || 0;
       break;
 
     default:
@@ -257,15 +225,42 @@ const aggregateContextFields = (agentType, aggregatedData, businessContext) => {
   return context;
 };
 
+export const buildPrompt = (agentType, aggregatedData, businessContext = {}) => {
+  const agentConfig = AGENT_PROMPTS[agentType];
+
+  if (!agentConfig) {
+    throw new Error(`Agente no reconocido: ${agentType}`);
+  }
+
+  const contextData = {
+    businessType: businessContext.businessType || 'No especificado',
+    dateRange: businessContext.dateRange || 'No especificado',
+    ...aggregateContextFields(agentType, aggregatedData, businessContext)
+  };
+
+  const contextInjection = agentConfig.contextInjection
+    .replace(/{businessType}/g, contextData.businessType)
+    .replace(/{dateRange}/g, contextData.dateRange)
+    .replace(/{totalProducts}/g, contextData.totalProducts ?? 'N/A')
+    .replace(/{productsWithStock}/g, contextData.productsWithStock ?? 'N/A')
+    .replace(/{totalSales}/g, contextData.totalSales ?? 'N/A')
+    .replace(/{uniqueTickets}/g, contextData.uniqueTickets ?? 'N/A')
+    .replace(/{totalCustomers}/g, contextData.totalCustomers ?? 'N/A')
+    .replace(/{activeCustomers}/g, contextData.activeCustomers ?? 'N/A')
+    .replace(/{aggregatedData}/g, formatAggregatedData(aggregatedData));
+
+  return {
+    systemPrompt: agentConfig.systemPrompt,
+    userPrompt: contextInjection,
+    role: agentConfig.role,
+    agentType
+  };
+};
+
 // ============================================================
 // 4. UTILIDADES PARA CONSTRUCCIÓN DE RESPUESTA
 // ============================================================
 
-/**
- * Parsea una respuesta Markdown de la IA en componentes React
- * @param {string} markdown - Respuesta en Markdown
- * @returns {Array} - Array de secciones parseadas
- */
 export const parseMarkdownResponse = (markdown) => {
   if (!markdown) return [];
 
@@ -292,7 +287,6 @@ export const parseMarkdownResponse = (markdown) => {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    // Detectar header con emoji
     const headerMatch = trimmed.match(emojiHeaderRegex);
     if (headerMatch) {
       flushSection();
@@ -300,21 +294,18 @@ export const parseMarkdownResponse = (markdown) => {
       return;
     }
 
-    // Detectar bullet point
     const bulletMatch = trimmed.match(bulletRegex);
     if (bulletMatch && currentSection) {
       currentItems.push(bulletMatch[2]);
       return;
     }
 
-    // Detectar número
     const numberedMatch = trimmed.match(numberedRegex);
     if (numberedMatch && currentSection) {
       currentItems.push(numberedMatch[2]);
       return;
     }
 
-    // Línea de texto normal (agregar como item si hay sección activa)
     if (currentSection && trimmed.length > 0) {
       currentItems.push(trimmed);
     }
@@ -324,12 +315,6 @@ export const parseMarkdownResponse = (markdown) => {
   return sections;
 };
 
-/**
- * Valida que los datos agregados cumplan con el mínimo para análisis
- * @param {string} agentType - Tipo de agente
- * @param {Object} data - Datos agregados
- * @returns {{ valid: boolean, reason?: string }}
- */
 export const validateAgentData = (agentType, data) => {
   if (!data || typeof data !== 'object') {
     return { valid: false, reason: 'Datos no disponibles' };
@@ -349,7 +334,7 @@ export const validateAgentData = (agentType, data) => {
       break;
 
     case 'customerStrategist':
-      if (!data.customerStats || data.customerStats.activeCustomers === 0) {
+      if (!data.customerBaseStats || data.customerBaseStats.activeThisPeriod === 0) {
         return { valid: false, reason: 'No hay clientes activos en el período' };
       }
       break;
