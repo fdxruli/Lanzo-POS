@@ -3,9 +3,10 @@
  *
  * Orquestador de UI para diagnóstico operativo del negocio.
  * Alterna entre diagnóstico clásico basado en reglas duras y el dashboard de agentes de IA.
+ * Los agentes IA quedan disponibles solo cuando la licencia trae ai_agents=true.
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -67,6 +68,24 @@ const CATEGORY_CONFIG = {
   operations: { label: 'Operaciones', icon: Activity },
   inventory: { label: 'Inventario', icon: Package },
   pricing: { label: 'Precios', icon: TrendingUp }
+};
+
+const hasAIAgentsEntitlement = (licenseDetails) => {
+  if (!licenseDetails?.valid) return false;
+
+  const features = licenseDetails.features || {};
+  const planCode = String(
+    licenseDetails.plan_code ||
+    licenseDetails.planCode ||
+    licenseDetails.plan ||
+    ''
+  ).toLowerCase();
+
+  return (
+    features.ai_agents === true ||
+    licenseDetails.ai_agents === true ||
+    planCode.includes('pro')
+  );
 };
 
 const DiagnosticSkeleton = () => (
@@ -246,6 +265,7 @@ export default function OperationalDiagnostics({
   const [showAIAgent, setShowAIAgent] = useState(false);
 
   const companyProfile = useAppStore(state => state.companyProfile);
+  const licenseDetails = useAppStore(state => state.licenseDetails);
 
   const businessTypeString = useMemo(() => {
     if (rubroOverride) return rubroOverride;
@@ -266,6 +286,13 @@ export default function OperationalDiagnostics({
   const businessTypeArray = useMemo(() => [businessTypeString], [businessTypeString]);
   const DiagnosticHook = DIAGNOSTIC_HOOKS[businessTypeString] || DIAGNOSTIC_HOOKS.retail;
   const diagnostics = DiagnosticHook(lastRefresh);
+  const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
+
+  useEffect(() => {
+    if (!canUseAIAgents && showAIAgent) {
+      setShowAIAgent(false);
+    }
+  }, [canUseAIAgents, showAIAgent]);
 
   const handleNavigate = useCallback((link) => {
     if (onNavigate) {
@@ -280,8 +307,9 @@ export default function OperationalDiagnostics({
   }, []);
 
   const handleToggleMode = useCallback(() => {
+    if (!canUseAIAgents && !showAIAgent) return;
     setShowAIAgent(prev => !prev);
-  }, []);
+  }, [canUseAIAgents, showAIAgent]);
 
   const currentTypeConfig = BUSINESS_TYPE_MAPPING[businessTypeString] || { label: 'Negocio', icon: Activity };
   const TypeIcon = currentTypeConfig.icon;
@@ -337,19 +365,21 @@ export default function OperationalDiagnostics({
         </div>
 
         <div className="header-actions">
-          <button className="mode-toggle-button" onClick={handleToggleMode} type="button">
-            {showAIAgent ? (
-              <>
-                <BrainCircuit size={16} />
-                <span>Modo Clásico</span>
-              </>
-            ) : (
-              <>
-                <Bot size={16} />
-                <span>Modo Agente IA</span>
-              </>
-            )}
-          </button>
+          {canUseAIAgents && (
+            <button className="mode-toggle-button" onClick={handleToggleMode} type="button">
+              {showAIAgent ? (
+                <>
+                  <BrainCircuit size={16} />
+                  <span>Modo Clásico</span>
+                </>
+              ) : (
+                <>
+                  <Bot size={16} />
+                  <span>Modo Agente IA</span>
+                </>
+              )}
+            </button>
+          )}
 
           {allowRubroOverride && (
             <BusinessTypeSelector currentType={businessTypeString} onSelect={setRubroOverride} />
@@ -429,7 +459,7 @@ export default function OperationalDiagnostics({
       )}
 
       <div className="diagnostics-content">
-        {showAIAgent ? (
+        {showAIAgent && canUseAIAgents ? (
           <AIAgentDashboard
             sales={sales}
             menu={menu}
