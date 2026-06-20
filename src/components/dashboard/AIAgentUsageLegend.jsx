@@ -1,15 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Calendar, RefreshCw, ShieldCheck } from 'lucide-react';
 import { getAIAgentUsage } from '../../services/aiAgentUsageService';
 import './AIAgentUsageLegend.css';
 
 const POLL_INTERVAL_MS = 15000;
 
+const formatPeriodDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toLocaleDateString('es-MX', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+};
+
 const getUsageText = (usage) => {
   if (!usage?.success) return usage?.message || 'No se pudo consultar el uso de agentes IA.';
-  if (usage.remaining <= 0) return 'Ya usaste todos los análisis IA disponibles para esta licencia Pro.';
-  if (usage.remaining === 1) return 'Te queda 1 análisis IA disponible para esta licencia Pro.';
-  return `Te quedan ${usage.remaining} análisis IA disponibles para esta licencia Pro.`;
+  if (usage.remaining <= 0) return `Ya usaste los ${usage.limit} análisis IA de tu periodo Pro actual.`;
+  if (usage.remaining === 1) return `Te queda 1 de ${usage.limit} análisis IA en tu periodo Pro actual.`;
+  return `Te quedan ${usage.remaining} de ${usage.limit} análisis IA en tu periodo Pro actual.`;
+};
+
+const getPeriodText = (usage) => {
+  if (!usage?.success || !usage.periodStart || !usage.periodEnd) return null;
+
+  const start = formatPeriodDate(usage.periodStart);
+  const end = formatPeriodDate(usage.periodEnd);
+
+  if (!start || !end) return null;
+  return `Periodo vigente: ${start} → ${end}`;
 };
 
 export default function AIAgentUsageLegend({ enabled = true }) {
@@ -66,6 +88,8 @@ export default function AIAgentUsageLegend({ enabled = true }) {
   if (!enabled) return null;
 
   const isError = usage && !usage.success;
+  const periodText = getPeriodText(usage);
+  const periodEnd = formatPeriodDate(usage?.periodEnd);
 
   return (
     <section className={`ai-agent-usage-legend ${isLoading ? 'is-loading' : ''} ${isError ? 'is-error' : ''}`}>
@@ -78,6 +102,12 @@ export default function AIAgentUsageLegend({ enabled = true }) {
           <p className="ai-agent-usage-text">
             {isLoading && !usage ? 'Consultando análisis disponibles...' : getUsageText(usage)}
           </p>
+          {periodText && (
+            <p className="ai-agent-period-meta">
+              <Calendar size={13} />
+              {periodText}
+            </p>
+          )}
           {lastUpdated && (
             <p className="ai-agent-usage-text">
               Actualizado: {lastUpdated.toLocaleTimeString()}
@@ -90,7 +120,7 @@ export default function AIAgentUsageLegend({ enabled = true }) {
         <div className="ai-agent-usage-panel">
           <div className="ai-agent-usage-numbers">
             <div className="ai-agent-usage-stat">
-              <span>Total</span>
+              <span>Límite periodo</span>
               <strong>{usage.limit}</strong>
             </div>
             <div className="ai-agent-usage-stat">
@@ -100,6 +130,10 @@ export default function AIAgentUsageLegend({ enabled = true }) {
             <div className="ai-agent-usage-stat">
               <span>Disponibles</span>
               <strong>{usage.remaining}</strong>
+            </div>
+            <div className="ai-agent-usage-stat">
+              <span>Vence</span>
+              <strong className="ai-agent-usage-date">{periodEnd || 'N/D'}</strong>
             </div>
           </div>
           <div className="ai-agent-usage-progress" aria-hidden="true">
