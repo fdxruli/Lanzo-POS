@@ -4,8 +4,9 @@
  * Producción: usa Supabase Edge Function `lanzo-ai-agent` para proteger la API key,
  * validar licencia/dispositivo y aplicar límites por plan.
  *
- * Desarrollo: todavía conserva proveedores directos si se fuerza VITE_AI_PROVIDER a
- * google/openai/deepseek/qwen/local. No usar proveedores directos en producción.
+ * Importante: por seguridad y contabilidad de uso, los agentes IA usan Edge por
+ * defecto aunque exista VITE_AI_PROVIDER=google/openai/deepseek en Vercel.
+ * Solo se permite proveedor directo en navegador si VITE_ALLOW_DIRECT_BROWSER_AI=true.
  */
 
 import { loadData, STORES } from './database';
@@ -17,6 +18,7 @@ import { getDeviceSecurityToken, getStableDeviceId, supabaseClient } from './sup
 
 const EDGE_PROVIDER = 'edge';
 const EDGE_FUNCTION_NAME = import.meta.env.VITE_AI_EDGE_FUNCTION || 'lanzo-ai-agent';
+const ALLOW_DIRECT_BROWSER_AI = import.meta.env.VITE_ALLOW_DIRECT_BROWSER_AI === 'true';
 
 const DEFAULT_MODELS = {
   edge: 'Supabase Edge',
@@ -91,7 +93,16 @@ export class AIApiError extends Error {
 // ============================================================
 
 const resolveProvider = (provider) => {
-  return provider || import.meta.env.VITE_AI_PROVIDER || EDGE_PROVIDER;
+  const requestedProvider = provider || import.meta.env.VITE_AI_PROVIDER || EDGE_PROVIDER;
+
+  // Seguridad de producción: no permitir que una variable vieja de Vercel
+  // mande los análisis directo al navegador, porque eso evita el registro
+  // en ai_agent_usage y deja expuestas las API keys del proveedor.
+  if (requestedProvider !== EDGE_PROVIDER && !ALLOW_DIRECT_BROWSER_AI) {
+    return EDGE_PROVIDER;
+  }
+
+  return requestedProvider;
 };
 
 const getFirstConfiguredValue = (...values) => {
