@@ -31,6 +31,7 @@ import { useRestaurantDiagnostics } from '../../hooks/diagnostics/useRestaurantD
 import { usePharmacyDiagnostics } from '../../hooks/diagnostics/usePharmacyDiagnostics';
 import { useRetailDiagnostics } from '../../hooks/diagnostics/useRetailDiagnostics';
 import AIAgentDashboard from './AIAgentDashboard';
+import AIAgentUsageLegend from './AIAgentUsageLegend';
 import './OperationalDiagnostics.css';
 
 const BUSINESS_TYPE_MAPPING = {
@@ -460,13 +461,16 @@ export default function OperationalDiagnostics({
 
       <div className="diagnostics-content">
         {showAIAgent && canUseAIAgents ? (
-          <AIAgentDashboard
-            sales={sales}
-            menu={menu}
-            customers={customers}
-            wasteLogs={wasteLogs}
-            businessType={businessTypeArray}
-          />
+          <>
+            <AIAgentUsageLegend enabled={canUseAIAgents} />
+            <AIAgentDashboard
+              sales={sales}
+              menu={menu}
+              customers={customers}
+              wasteLogs={wasteLogs}
+              businessType={businessTypeArray}
+            />
+          </>
         ) : renderClassicContent()}
       </div>
 
