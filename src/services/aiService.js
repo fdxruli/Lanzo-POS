@@ -2,19 +2,11 @@
  * AI Service - Servicio de comunicación con agentes de IA de Lanzo.
  *
  * Producción: usa Supabase Edge Function `lanzo-ai-agent` para proteger la API key,
- * validar licencia/dispositivo y aplicar límites por plan.
- *
- * Importante: por seguridad y contabilidad de uso, los agentes IA usan Edge por
- * defecto aunque exista VITE_AI_PROVIDER=google/openai/deepseek en Vercel.
- * Solo se permite proveedor directo en navegador si VITE_ALLOW_DIRECT_BROWSER_AI=true.
+ * validar licencia/dispositivo y aplicar límites por periodo Pro.
  */
 
 import { loadData, STORES } from './database';
 import { getDeviceSecurityToken, getStableDeviceId, supabaseClient } from './supabase';
-
-// ============================================================
-// 1. CONFIGURACIÓN Y CONSTANTES
-// ============================================================
 
 const EDGE_PROVIDER = 'edge';
 const EDGE_FUNCTION_NAME = import.meta.env.VITE_AI_EDGE_FUNCTION || 'lanzo-ai-agent';
@@ -38,20 +30,15 @@ const DEFAULT_CONFIG = {
 
 const API_ENDPOINTS = {
   openai: 'https://api.openai.com/v1/chat/completions',
-  anthropic: 'https://api.anthropic.com/v1/messages',
   local: 'http://localhost:11434/v1/chat/completions',
-  google: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
   deepseek: 'https://api.deepseek.com/v1/chat/completions',
-  qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions'
+  qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
+  google: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
 };
 
 const OPENAI_COMPATIBLE_PROVIDERS = ['openai', 'local', 'deepseek', 'qwen'];
 const DIRECT_PROVIDERS = ['google', ...OPENAI_COMPATIBLE_PROVIDERS];
 const SUPPORTED_PROVIDERS = [EDGE_PROVIDER, ...DIRECT_PROVIDERS];
-
-// ============================================================
-// 2. MANEJO DE ERRORES ESPECÍFICOS
-// ============================================================
 
 export class AIApiError extends Error {
   constructor(message, statusCode, originalError = null, code = null) {
@@ -65,16 +52,20 @@ export class AIApiError extends Error {
 
   static fromResponse(response, errorBody) {
     const messages = {
+      400: 'Solicitud inválida. El prompt puede estar mal formado.',
       401: 'API Key inválida o expirada. Verifica tu configuración.',
       403: 'Acceso denegado. La API Key no tiene permisos para este modelo.',
       429: 'Límite de tasa alcanzado. Por favor espera unos segundos e intenta nuevamente.',
-      400: 'Solicitud inválida. El prompt puede estar mal formado.',
       500: 'Error interno del servidor de IA. Intenta más tarde.',
       503: 'Servicio de IA no disponible temporalmente.'
     };
 
-    const defaultMessage = messages[response.status] || `Error de IA (${response.status}): ${errorBody?.message || 'Error desconocido'}`;
-    return new AIApiError(defaultMessage, response.status, errorBody, errorBody?.code || null);
+    return new AIApiError(
+      messages[response.status] || `Error de IA (${response.status}): ${errorBody?.message || 'Error desconocido'}`,
+      response.status,
+      errorBody,
+      errorBody?.code || null
+    );
   }
 
   static fromNetwork(error) {
@@ -88,32 +79,26 @@ export class AIApiError extends Error {
   }
 }
 
-// ============================================================
-// 3. SERVICIO PRINCIPAL - UTILIDADES
-// ============================================================
+const normalizeText = (value = '') => String(value)
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim();
 
 const resolveProvider = (provider) => {
   const requestedProvider = provider || import.meta.env.VITE_AI_PROVIDER || EDGE_PROVIDER;
-
-  // Seguridad de producción: no permitir que una variable vieja de Vercel
-  // mande los análisis directo al navegador, porque eso evita el registro
-  // en ai_agent_usage y deja expuestas las API keys del proveedor.
-  if (requestedProvider !== EDGE_PROVIDER && !ALLOW_DIRECT_BROWSER_AI) {
-    return EDGE_PROVIDER;
-  }
-
+  if (requestedProvider !== EDGE_PROVIDER && !ALLOW_DIRECT_BROWSER_AI) return EDGE_PROVIDER;
   return requestedProvider;
 };
 
-const getFirstConfiguredValue = (...values) => {
-  return values.find(value => typeof value === 'string' && value.trim().length > 0)?.trim();
-};
+const getFirstConfiguredValue = (...values) => (
+  values.find(value => typeof value === 'string' && value.trim().length > 0)?.trim()
+);
 
 const isProviderSupported = (provider) => SUPPORTED_PROVIDERS.includes(provider);
 
 const getApiKey = (provider) => {
   const resolvedProvider = resolveProvider(provider);
-
   if (resolvedProvider === EDGE_PROVIDER) return 'edge-function-protected';
 
   const keys = {
@@ -121,8 +106,7 @@ const getApiKey = (provider) => {
     deepseek: getFirstConfiguredValue(import.meta.env.VITE_DEEPSEEK_API_KEY, import.meta.env.VITE_AI_API_KEY),
     openai: getFirstConfiguredValue(import.meta.env.VITE_OPENAI_API_KEY, import.meta.env.VITE_AI_API_KEY),
     local: 'no-key-required',
-    qwen: getFirstConfiguredValue(import.meta.env.VITE_QWEN_API_KEY, import.meta.env.VITE_AI_API_KEY),
-    anthropic: getFirstConfiguredValue(import.meta.env.VITE_ANTHROPIC_API_KEY)
+    qwen: getFirstConfiguredValue(import.meta.env.VITE_QWEN_API_KEY, import.meta.env.VITE_AI_API_KEY)
   };
 
   if (!Object.prototype.hasOwnProperty.call(keys, resolvedProvider)) {
@@ -130,14 +114,8 @@ const getApiKey = (provider) => {
   }
 
   const apiKey = keys[resolvedProvider];
-
   if (!apiKey) {
-    throw new AIApiError(
-      `API Key para ${resolvedProvider} no configurada en el archivo .env`,
-      401,
-      null,
-      'AI_KEY_MISSING'
-    );
+    throw new AIApiError(`API Key para ${resolvedProvider} no configurada en el archivo .env`, 401, null, 'AI_KEY_MISSING');
   }
 
   return apiKey;
@@ -165,47 +143,38 @@ const readSyncCacheValue = async (key) => {
 
 const buildAIAgentAuthContext = async (config = {}) => {
   const localLicense = readLocalLicense();
-  const licenseKey =
-    config.licenseKey ||
-    config.auth?.licenseKey ||
-    localLicense?.license_key ||
-    localLicense?.licenseKey ||
-    localLicense?.key ||
-    null;
-
-  const deviceFingerprint =
-    config.deviceFingerprint ||
-    config.auth?.deviceFingerprint ||
-    await getStableDeviceId();
-
-  const deviceSecurityToken =
-    config.deviceSecurityToken ||
-    config.auth?.deviceSecurityToken ||
-    await getDeviceSecurityToken();
-
-  const staffSessionToken =
-    config.staffSessionToken ||
-    config.auth?.staffSessionToken ||
-    await readSyncCacheValue('staff_session_token');
 
   return {
-    licenseKey,
-    deviceFingerprint,
-    deviceSecurityToken,
-    staffSessionToken: staffSessionToken || null
+    licenseKey: config.licenseKey || config.auth?.licenseKey || localLicense?.license_key || localLicense?.licenseKey || localLicense?.key || null,
+    deviceFingerprint: config.deviceFingerprint || config.auth?.deviceFingerprint || await getStableDeviceId(),
+    deviceSecurityToken: config.deviceSecurityToken || config.auth?.deviceSecurityToken || await getDeviceSecurityToken(),
+    staffSessionToken: config.staffSessionToken || config.auth?.staffSessionToken || await readSyncCacheValue('staff_session_token') || null
   };
+};
+
+const inferAgentType = (systemPrompt = '', userPrompt = '', requestedAgentType = '') => {
+  const explicit = String(requestedAgentType || '').trim();
+  if (explicit && explicit !== 'unknown') return explicit;
+
+  const combined = normalizeText(`${systemPrompt} ${userPrompt}`);
+  if (combined.includes('auditor de inventario')) return 'inventoryAuditor';
+  if (combined.includes('analista financiero')) return 'financialAnalyst';
+  if (combined.includes('estratega de clientes')) return 'customerStrategist';
+
+  return explicit || 'unknown';
 };
 
 const mapEdgeErrorMessage = (payload = {}) => {
   const code = payload.code || payload.reason;
-
   const messages = {
     AUTH_PAYLOAD_REQUIRED: 'No se pudo confirmar la licencia/dispositivo para usar IA.',
     LICENSE_NOT_FOUND: 'Licencia no encontrada. Vuelve a iniciar sesión.',
     LICENSE_NOT_ACTIVE: 'La licencia no está activa. Verifica tu plan.',
+    LICENSE_EXPIRED: 'La licencia está expirada. Renueva tu plan para usar IA.',
     AI_AGENTS_NOT_AVAILABLE: 'Los agentes de IA solo están disponibles en el plan Pro.',
-    AI_AGENT_LIMIT_DISABLED: 'Esta licencia no tiene análisis de IA disponibles.',
-    AI_AGENT_LIMIT_REACHED: `Ya alcanzaste el límite de ${payload.limit || 15} análisis de IA para esta licencia Pro.`,
+    AI_AGENT_PERIOD_NOT_FOUND: 'No hay un periodo Pro vigente para usar agentes IA.',
+    AI_AGENT_LIMIT_DISABLED: 'Este periodo no tiene análisis de IA disponibles.',
+    AI_AGENT_LIMIT_REACHED: `Ya alcanzaste el límite de ${payload.limit || 15} análisis IA de tu periodo Pro actual.`,
     DEVICE_NOT_ALLOWED: 'Este dispositivo no está autorizado para esta licencia.',
     DEVICE_TOKEN_REQUIRED: 'Falta el token seguro del dispositivo. Vuelve a validar la licencia.',
     DEVICE_TOKEN_INVALID: 'El token de este dispositivo no es válido. Vuelve a iniciar sesión.',
@@ -214,7 +183,8 @@ const mapEdgeErrorMessage = (payload = {}) => {
     AI_KEY_MISSING: 'Falta configurar AI_API_KEY u OPENAI_API_KEY en Supabase Secrets.',
     AI_PROVIDER_ERROR: payload.message || 'El proveedor de IA devolvió un error.',
     PROMPT_TOO_LARGE: payload.message || 'El análisis contiene demasiados datos. Reduce el rango.',
-    AI_REQUEST_FAILED: payload.message || 'No se pudo contactar al proveedor de IA.'
+    AI_REQUEST_FAILED: payload.message || 'No se pudo contactar al proveedor de IA.',
+    AI_EMPTY_RESPONSE: payload.message || 'El proveedor IA devolvió una respuesta vacía.'
   };
 
   return messages[code] || payload.message || 'No se pudo generar el análisis de IA.';
@@ -222,7 +192,6 @@ const mapEdgeErrorMessage = (payload = {}) => {
 
 const parseFunctionError = async (error) => {
   const response = error?.context || error?.response;
-
   if (response && typeof response.json === 'function') {
     try {
       return await response.clone().json();
@@ -230,16 +199,11 @@ const parseFunctionError = async (error) => {
       return null;
     }
   }
-
   return null;
 };
 
-// ============================================================
-// 4. BUILDERS ESPECÍFICOS POR PROVEEDOR DIRECTO
-// ============================================================
-
 const buildOpenAIPayload = (systemPrompt, userPrompt, config) => ({
-  model: config.model || DEFAULT_CONFIG.model,
+  model: config.model,
   temperature: config.temperature ?? DEFAULT_CONFIG.temperature,
   max_tokens: config.maxTokens ?? DEFAULT_CONFIG.maxTokens,
   messages: [
@@ -258,55 +222,23 @@ const buildGeminiPayload = (systemPrompt, userPrompt, config) => ({
     parts: [{ text: userPrompt }]
   }],
   generationConfig: {
-    temperature: config.temperature ?? 0.2,
-    maxOutputTokens: config.maxTokens ?? 2048
+    temperature: config.temperature ?? DEFAULT_CONFIG.temperature,
+    maxOutputTokens: config.maxTokens ?? DEFAULT_CONFIG.maxTokens
   }
 });
 
-// ============================================================
-// 5. PARSERS ESPECÍFICOS POR PROVEEDOR
-// ============================================================
-
 const parseOpenAIResponse = (data) => {
-  if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-    throw new AIApiError('Respuesta de IA vacía o sin contenido', 500, data, 'AI_EMPTY_RESPONSE');
-  }
-
-  const choice = data.choices[0];
-
-  if (!choice.message || !choice.message.content) {
-    throw new AIApiError('Respuesta de IA sin contenido válido', 500, data, 'AI_EMPTY_RESPONSE');
-  }
-
-  return choice.message.content.trim();
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) throw new AIApiError('Respuesta de IA vacía o sin contenido', 500, data, 'AI_EMPTY_RESPONSE');
+  return content.trim();
 };
 
 const parseGeminiResponse = (data) => {
-  if (!data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
-    throw new AIApiError('Respuesta de Gemini vacía o sin contenido', 500, data, 'AI_EMPTY_RESPONSE');
-  }
-
-  const candidate = data.candidates[0];
-
-  if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
-    throw new AIApiError('Respuesta de Gemini sin contenido válido', 500, data, 'AI_EMPTY_RESPONSE');
-  }
-
-  const text = candidate.content.parts
-    .map(part => part.text || '')
-    .join('')
-    .trim();
-
-  if (!text) {
-    throw new AIApiError('Respuesta de Gemini sin texto', 500, data, 'AI_EMPTY_RESPONSE');
-  }
-
+  const parts = data?.candidates?.[0]?.content?.parts;
+  const text = Array.isArray(parts) ? parts.map(part => part.text || '').join('').trim() : '';
+  if (!text) throw new AIApiError('Respuesta de Gemini sin contenido válido', 500, data, 'AI_EMPTY_RESPONSE');
   return text;
 };
-
-// ============================================================
-// 6. EJECUTORES DE REQUESTS
-// ============================================================
 
 const executeEdgeRequest = async (systemPrompt, userPrompt, config) => {
   if (!supabaseClient) {
@@ -314,20 +246,14 @@ const executeEdgeRequest = async (systemPrompt, userPrompt, config) => {
   }
 
   const auth = await buildAIAgentAuthContext(config);
-
   if (!auth.licenseKey || !auth.deviceFingerprint || !auth.deviceSecurityToken) {
-    throw new AIApiError(
-      'Faltan datos seguros de licencia/dispositivo para usar agentes de IA. Vuelve a validar la licencia.',
-      401,
-      { auth },
-      'AUTH_PAYLOAD_REQUIRED'
-    );
+    throw new AIApiError('Faltan datos seguros de licencia/dispositivo para usar agentes de IA. Vuelve a validar la licencia.', 401, { auth }, 'AUTH_PAYLOAD_REQUIRED');
   }
 
   const { data, error } = await supabaseClient.functions.invoke(EDGE_FUNCTION_NAME, {
     body: {
       auth,
-      agentType: config.agentType || 'unknown',
+      agentType: inferAgentType(systemPrompt, userPrompt, config.agentType),
       systemPrompt,
       userPrompt,
       options: {
@@ -340,21 +266,11 @@ const executeEdgeRequest = async (systemPrompt, userPrompt, config) => {
   if (error) {
     const functionPayload = await parseFunctionError(error);
     const payload = functionPayload || { code: error.code, message: error.message };
-    throw new AIApiError(
-      mapEdgeErrorMessage(payload),
-      error.context?.status || error.status || 500,
-      payload,
-      payload.code || 'EDGE_FUNCTION_ERROR'
-    );
+    throw new AIApiError(mapEdgeErrorMessage(payload), error.context?.status || error.status || 500, payload, payload.code || 'EDGE_FUNCTION_ERROR');
   }
 
   if (!data?.success) {
-    throw new AIApiError(
-      mapEdgeErrorMessage(data),
-      data?.code === 'AI_AGENT_LIMIT_REACHED' ? 429 : 403,
-      data,
-      data?.code || 'EDGE_REJECTED'
-    );
+    throw new AIApiError(mapEdgeErrorMessage(data), data?.code === 'AI_AGENT_LIMIT_REACHED' ? 429 : 403, data, data?.code || 'EDGE_REJECTED');
   }
 
   if (!data.content || typeof data.content !== 'string') {
@@ -364,130 +280,74 @@ const executeEdgeRequest = async (systemPrompt, userPrompt, config) => {
   return data.content.trim();
 };
 
-const executeOpenAIRequest = async (url, payload, apiKey, timeoutMs) => {
+const fetchJsonWithTimeout = async (url, options, timeoutMs) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-
+    const response = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      let errorBody;
-      try {
-        errorBody = await response.json();
-      } catch {
-        errorBody = { message: response.statusText };
-      }
-      throw AIApiError.fromResponse(response, errorBody);
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      body = { message: response.statusText };
     }
 
-    return response.json();
+    if (!response.ok) throw AIApiError.fromResponse(response, body);
+    return body;
   } catch (error) {
     clearTimeout(timeoutId);
     if (error instanceof AIApiError) throw error;
     throw AIApiError.fromNetwork(error);
   }
 };
-
-const executeGeminiRequest = async (url, payload, apiKey, timeoutMs) => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      let errorBody;
-      try {
-        errorBody = await response.json();
-      } catch {
-        errorBody = { message: response.statusText };
-      }
-      throw AIApiError.fromResponse(response, errorBody);
-    }
-
-    return response.json();
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof AIApiError) throw error;
-    throw AIApiError.fromNetwork(error);
-  }
-};
-
-// ============================================================
-// 7. FUNCIÓN PRINCIPAL
-// ============================================================
 
 export const analyzeWithAI = async (systemPrompt, userPrompt, config = {}) => {
   if (!systemPrompt || !userPrompt) throw new AIApiError('Prompts requeridos', 400, null, 'PROMPT_REQUIRED');
 
   const provider = resolveProvider(config.provider);
-
-  if (provider === EDGE_PROVIDER) {
-    return executeEdgeRequest(systemPrompt, userPrompt, config);
-  }
+  if (provider === EDGE_PROVIDER) return executeEdgeRequest(systemPrompt, userPrompt, config);
 
   const apiKey = getApiKey(provider);
-  const defaultModelForProvider = getDefaultModelForProvider(provider);
-
   const mergedConfig = {
     ...DEFAULT_CONFIG,
     ...config,
-    model: config.model || import.meta.env.VITE_AI_MODEL || defaultModelForProvider
+    model: config.model || import.meta.env.VITE_AI_MODEL || getDefaultModelForProvider(provider)
   };
-
-  let data;
 
   if (provider === 'google') {
     const endpoint = API_ENDPOINTS.google.replace('{model}', mergedConfig.model);
-    const payload = buildGeminiPayload(systemPrompt, userPrompt, mergedConfig);
-    data = await executeGeminiRequest(endpoint, payload, apiKey, mergedConfig.timeoutMs);
+    const data = await fetchJsonWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey
+      },
+      body: JSON.stringify(buildGeminiPayload(systemPrompt, userPrompt, mergedConfig))
+    }, mergedConfig.timeoutMs);
     return parseGeminiResponse(data);
   }
 
   if (OPENAI_COMPATIBLE_PROVIDERS.includes(provider)) {
-    const endpoint = API_ENDPOINTS[provider];
-    if (!endpoint) throw new AIApiError(`Proveedor "${provider}" no soportado`, 400, null, 'UNSUPPORTED_PROVIDER');
-
-    const payload = buildOpenAIPayload(systemPrompt, userPrompt, mergedConfig);
-    data = await executeOpenAIRequest(endpoint, payload, apiKey, mergedConfig.timeoutMs);
+    const data = await fetchJsonWithTimeout(API_ENDPOINTS[provider], {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(buildOpenAIPayload(systemPrompt, userPrompt, mergedConfig))
+    }, mergedConfig.timeoutMs);
     return parseOpenAIResponse(data);
   }
 
   throw new AIApiError(`Proveedor "${provider}" no soportado`, 400, null, 'UNSUPPORTED_PROVIDER');
 };
 
-// ============================================================
-// 8. UTILIDADES PARA DEBUG Y TESTING
-// ============================================================
-
 export const hasApiKey = (provider = resolveProvider()) => {
   const resolvedProvider = resolveProvider(provider);
-
-  if (resolvedProvider === EDGE_PROVIDER) {
-    return Boolean(supabaseClient);
-  }
-
+  if (resolvedProvider === EDGE_PROVIDER) return Boolean(supabaseClient);
   try {
     return !!getApiKey(resolvedProvider);
   } catch {
@@ -511,53 +371,27 @@ export const getAIConfigStatus = () => {
   };
 };
 
-export const getDefaultModelForProvider = (provider) => {
-  return DEFAULT_MODELS[provider] || DEFAULT_MODELS.openai;
-};
+export const getDefaultModelForProvider = (provider) => DEFAULT_MODELS[provider] || DEFAULT_MODELS.openai;
 
 export const validateAIConnection = async (options = {}) => {
   const provider = resolveProvider(options.provider);
-  const model =
-    provider === EDGE_PROVIDER
-      ? DEFAULT_MODELS.edge
-      : options.model || import.meta.env.VITE_AI_MODEL || getDefaultModelForProvider(provider);
+  const model = provider === EDGE_PROVIDER
+    ? DEFAULT_MODELS.edge
+    : options.model || import.meta.env.VITE_AI_MODEL || getDefaultModelForProvider(provider);
 
   if (provider === EDGE_PROVIDER) {
     if (!supabaseClient) {
-      return {
-        valid: false,
-        error: 'Supabase no está configurado para invocar Edge Functions.',
-        provider,
-        model
-      };
+      return { valid: false, error: 'Supabase no está configurado para invocar Edge Functions.', provider, model };
     }
 
     try {
       const auth = await buildAIAgentAuthContext(options);
-
       if (!auth.licenseKey || !auth.deviceFingerprint || !auth.deviceSecurityToken) {
-        return {
-          valid: false,
-          error: 'Falta contexto seguro de licencia/dispositivo. Vuelve a validar la licencia.',
-          provider,
-          model
-        };
+        return { valid: false, error: 'Falta contexto seguro de licencia/dispositivo. Vuelve a validar la licencia.', provider, model };
       }
-
-      return {
-        valid: true,
-        provider,
-        model,
-        timestamp: new Date().toISOString()
-      };
+      return { valid: true, provider, model, timestamp: new Date().toISOString() };
     } catch (error) {
-      return {
-        valid: false,
-        error: error.message || 'No se pudo validar el contexto local de IA.',
-        provider,
-        model,
-        timestamp: new Date().toISOString()
-      };
+      return { valid: false, error: error.message || 'No se pudo validar el contexto local de IA.', provider, model, timestamp: new Date().toISOString() };
     }
   }
 
@@ -565,42 +399,17 @@ export const validateAIConnection = async (options = {}) => {
 
   try {
     getApiKey(provider);
-
     const testResponse = await analyzeWithAI(
       'Responde ÚNICAMENTE con la palabra "OK". No agregues nada más.',
       'Test de conexión',
-      {
-        model,
-        provider,
-        temperature: 0,
-        maxTokens: 10,
-        timeoutMs
-      }
+      { model, provider, temperature: 0, maxTokens: 10, timeoutMs }
     );
 
-    if (testResponse.toUpperCase().includes('OK')) {
-      return {
-        valid: true,
-        provider,
-        model,
-        timestamp: new Date().toISOString()
-      };
-    }
-
-    return {
-      valid: false,
-      error: 'Respuesta inesperada de la API',
-      provider,
-      model
-    };
+    return testResponse.toUpperCase().includes('OK')
+      ? { valid: true, provider, model, timestamp: new Date().toISOString() }
+      : { valid: false, error: 'Respuesta inesperada de la API', provider, model };
   } catch (error) {
-    return {
-      valid: false,
-      error: error.message || 'Error de conexión',
-      provider,
-      model,
-      timestamp: new Date().toISOString()
-    };
+    return { valid: false, error: error.message || 'Error de conexión', provider, model, timestamp: new Date().toISOString() };
   }
 };
 
