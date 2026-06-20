@@ -34,21 +34,39 @@ const buildAIAgentAuthContext = async () => {
   };
 };
 
+const safeNumber = (value, fallback = 0) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const safeText = (value) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
 const normalizeUsage = (data = {}) => {
-  const limit = Number(data.limit || 0);
-  const used = Number(data.used || 0);
-  const remaining = Number(data.remaining ?? Math.max(limit - used, 0));
+  const limit = Math.max(safeNumber(data.limit, 0), 0);
+  const used = Math.max(safeNumber(data.used, 0), 0);
+  const remaining = Math.max(safeNumber(data.remaining, limit - used), 0);
+  const periodId = safeText(data.period_id || data.periodId);
 
   return {
     success: data.success === true,
-    limit: Number.isFinite(limit) ? limit : 0,
-    used: Number.isFinite(used) ? used : 0,
-    remaining: Number.isFinite(remaining) ? Math.max(remaining, 0) : 0,
+    limit,
+    used,
+    remaining,
     planCode: data.plan_code || data.planCode || null,
     planName: data.plan_name || data.planName || null,
     code: data.code || null,
     message: data.message || null,
-    aiAgents: data.ai_agents === true || data.aiAgents === true
+    aiAgents: data.ai_agents === true || data.aiAgents === true,
+    periodId,
+    periodType: data.period_type || data.periodType || null,
+    periodStatus: data.period_status || data.periodStatus || null,
+    periodStart: safeText(data.period_start || data.periodStart),
+    periodEnd: safeText(data.period_end || data.periodEnd),
+    isPeriodScoped: Boolean(periodId)
   };
 };
 
