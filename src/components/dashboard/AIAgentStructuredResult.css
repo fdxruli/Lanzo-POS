@@ -222,6 +222,56 @@
   padding: var(--spacing-md);
 }
 
+/* ============================================================
+   BLOQUEO FRONTEND DURANTE ANÁLISIS IA
+   ============================================================ */
+body:has(.ai-agent-dashboard .analysis-state) {
+  overflow: hidden;
+}
+
+.ai-agent-dashboard:has(.analysis-state)::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  pointer-events: auto;
+  cursor: progress;
+}
+
+.ai-agent-dashboard:has(.analysis-state)::after {
+  content: 'Agente IA en proceso\A\AEspera el resultado o un error antes de cambiar de sección.\AEsto evita perder el análisis mientras se consume una solicitud del periodo Pro.';
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  width: min(92vw, 420px);
+  padding: 1.5rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
+  color: #111827;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.55;
+  text-align: center;
+  white-space: pre-line;
+  pointer-events: auto;
+  cursor: progress;
+}
+
+@media (max-width: 480px) {
+  .ai-agent-dashboard:has(.analysis-state)::after {
+    width: min(90vw, 340px);
+    padding: 1.25rem;
+    font-size: 0.875rem;
+  }
+}
+
 @media (min-width: 768px) {
   .structured-summary {
     flex-direction: row;
