@@ -1,5 +1,5 @@
 // src/pages/DashboardPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Logger from '../services/Logger';
 
@@ -8,12 +8,14 @@ import { useStatsStore } from '../store/useStatsStore';
 import { useSalesStore } from '../store/useSalesStore';
 import { useRecycleBinStore } from '../store/useRecycleBinStore';
 import { useProductStore } from '../store/useProductStore';
+import { useAppStore } from '../store/useAppStore';
 
 // --- COMPONENTES ---
 import StatsGrid from '../components/dashboard/StatsGrid';
 import SalesHistory from '../components/dashboard/SalesHistory';
 import RecycleBin from '../components/dashboard/RecycleBin';
 import BusinessTips from '../components/dashboard/BusinessTips';
+import OperationalDiagnostics from '../components/dashboard/OperationalDiagnostics';
 import WasteHistory from '../components/dashboard/WasteHistory';
 import RestockSuggestions from '../components/dashboard/RestockSuggestion';
 import ExpirationAlert from '../components/dashboard/ExpirationAlert';
@@ -26,6 +28,24 @@ import './DashboardPage.css';
 import { Save, BarChart3, Trash2, ArrowRight } from 'lucide-react';
 import { CANCELLATION_ACTIONS } from '../services/sales/cancelSaleCore';
 
+const hasAIAgentsEntitlement = (licenseDetails) => {
+  if (!licenseDetails?.valid) return false;
+
+  const features = licenseDetails.features || {};
+  const planCode = String(
+    licenseDetails.plan_code ||
+    licenseDetails.planCode ||
+    licenseDetails.plan ||
+    ''
+  ).toLowerCase();
+
+  return (
+    features.ai_agents === true ||
+    licenseDetails.ai_agents === true ||
+    planCode.includes('pro')
+  );
+};
+
 export default function DashboardPage() {
   const [customers, setCustomers] = useState([]);
   const [activeTab, setActiveTab] = useState('stats');
@@ -33,6 +53,8 @@ export default function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const features = useFeatureConfig();
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
 
   // 1. ESTADÍSTICAS
   const stats = useStatsStore((state) => state.stats);
@@ -78,7 +100,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
-    // Mapeo de URL a estado interno
     const tabMap = {
       'stats': 'stats',
       'tips': 'tips',
@@ -91,16 +112,13 @@ export default function DashboardPage() {
     if (tabParam && tabMap[tabParam]) {
       setActiveTab(tabMap[tabParam]);
     } else {
-      // --- AGREGA ESTO ---
-      // Si no hay parámetro en la URL, forzamos la vista de Estadísticas
       setActiveTab('stats');
     }
   }, [searchParams]);
 
-
   const handleTabChange = (tabKey) => {
     if (tabKey === 'stats') {
-      setSearchParams({}); // Limpia la URL para la vista por defecto
+      setSearchParams({});
     } else {
       setSearchParams({ tab: tabKey });
     }
@@ -319,7 +337,18 @@ export default function DashboardPage() {
 
       {/* 4. CONSEJOS */}
       {activeTab === 'tips' && (
-        <BusinessTips sales={sales} menu={menu} customers={customers} wasteLogs={wasteLogs} />
+        canUseAIAgents ? (
+          <OperationalDiagnostics sales={sales} menu={menu} customers={customers} wasteLogs={wasteLogs} />
+        ) : (
+          <BusinessTips
+            sales={sales}
+            menu={menu}
+            customers={customers}
+            wasteLogs={wasteLogs}
+            activeRubros={features.activeRubros}
+            onNavigate={(route) => navigate(route)}
+          />
+        )
       )}
 
       {/* 5. CADUCIDAD */}
