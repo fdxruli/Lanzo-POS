@@ -106,8 +106,15 @@ export const saveBatchAndSyncProductSafe = (batchData) =>
 
 export const saveBatchAndSyncProduct = saveBatchAndSyncProductSafe;
 
-export const processBatchDeductions = (deductions) =>
-    safeExecute(() => productsRepository.processBatchDeductions(deductions));
+export const createProductWithInitialInventorySafe = (productData, initialBatches = []) =>
+    safeExecute(async () => {
+        const result = await productsRepository.createProductWithInitialInventory(productData, initialBatches);
+        evaluator.ping();
+        return result;
+    });
+
+export const processBatchDeductions = (deductions, options = {}) =>
+    safeExecute(() => productsRepository.processBatchDeductions(deductions, options));
 
 export const executeSaleTransactionSafe = (sale, deductions) =>
     safeExecute(() => salesRepository.executeSaleTransaction(sale, deductions));

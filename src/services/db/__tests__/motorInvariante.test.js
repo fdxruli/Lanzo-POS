@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db, STORES } from '../dexie';
 import { productsRepository } from '../products';
-import { saveDataSafe } from '../index';
+import { saveDataSafe, processBatchDeductions } from '../index';
 
 describe('Motor Invariante V4.1', () => {
   // Limpiar la base de datos antes de cada test
@@ -287,6 +287,81 @@ describe('Motor Invariante V4.1', () => {
       expect(restoredBatch.cost).toBe(15);
       expect(result.restoredInventoryValue).toBe(30);
       expect(result.restored.find(entry => entry.type === 'batch')?.restorationValue).toBe(30);
+    });
+  });
+
+  describe('Deducciones de lotes - allowPartial', () => {
+    const seedProductWithBatches = async () => {
+      const productId = 'prod-allow-partial-001';
+      const validBatchId = 'batch-allow-partial-valid';
+      const insufficientBatchId = 'batch-allow-partial-insufficient';
+
+      await db.table(STORES.MENU).put({
+        id: productId,
+        name: 'Producto allowPartial',
+        name_lower: 'producto allowpartial',
+        stock: 6,
+        trackStock: true,
+        isActive: true,
+        hasBatches: true,
+        createdAt: new Date().toISOString()
+      });
+
+      await db.table(STORES.PRODUCT_BATCHES).bulkPut([
+        {
+          id: validBatchId,
+          productId,
+          sku: 'ALLOW-PARTIAL-OK',
+          stock: 5,
+          isActive: true,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: insufficientBatchId,
+          productId,
+          sku: 'ALLOW-PARTIAL-NO-STOCK',
+          stock: 1,
+          isActive: true,
+          createdAt: new Date().toISOString()
+        }
+      ]);
+
+      return { productId, validBatchId, insufficientBatchId };
+    };
+
+    it('debe abortar todo cuando allowPartial=false y una deduccion no tiene stock suficiente', async () => {
+      const { validBatchId, insufficientBatchId } = await seedProductWithBatches();
+
+      await expect(productsRepository.processBatchDeductions([
+        { batchId: validBatchId, quantity: 2, reason: 'Deduccion valida' },
+        { batchId: insufficientBatchId, quantity: 2, reason: 'Deduccion invalida' }
+      ], { validateStock: true, allowPartial: false })).rejects.toThrow('Validaci');
+
+      const validBatch = await db.table(STORES.PRODUCT_BATCHES).get(validBatchId);
+      const insufficientBatch = await db.table(STORES.PRODUCT_BATCHES).get(insufficientBatchId);
+
+      expect(validBatch.stock).toBe(5);
+      expect(insufficientBatch.stock).toBe(1);
+    });
+
+    it('debe procesar solo deducciones validas cuando allowPartial=true via wrapper seguro', async () => {
+      const { productId, validBatchId, insufficientBatchId } = await seedProductWithBatches();
+
+      const result = await processBatchDeductions([
+        { batchId: validBatchId, quantity: 2, reason: 'Deduccion valida' },
+        { batchId: insufficientBatchId, quantity: 2, reason: 'Deduccion invalida' }
+      ], { validateStock: true, allowPartial: true });
+
+      const validBatch = await db.table(STORES.PRODUCT_BATCHES).get(validBatchId);
+      const insufficientBatch = await db.table(STORES.PRODUCT_BATCHES).get(insufficientBatchId);
+      const product = await db.table(STORES.MENU).get(productId);
+
+      expect(result.success).toBe(true);
+      expect(result.metrics.deductionsProcessed).toBe(1);
+      expect(result.metrics.validationErrors).toBe(1);
+      expect(validBatch.stock).toBe(3);
+      expect(insufficientBatch.stock).toBe(1);
+      expect(product.stock).toBe(4);
     });
   });
 

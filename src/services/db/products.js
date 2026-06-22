@@ -14,6 +14,95 @@ import Logger from '../Logger';
 import { collectBatchRestorations, restoreBatchStock } from '../sales/batchRestoration';
 import { searchProductsInTable } from './productSearch';
 
+const addShelfLifeToDate = (baseDate, shelfLifeValue, shelfLifeUnit) => {
+    const expiryDate = new Date(baseDate);
+    const shelfValue = Number(shelfLifeValue) || 0;
+    const unit = String(shelfLifeUnit || 'days').toLowerCase();
+
+    if (shelfValue <= 0) return null;
+    if (unit === 'hours') expiryDate.setHours(expiryDate.getHours() + shelfValue);
+    else if (unit === 'months') expiryDate.setMonth(expiryDate.getMonth() + shelfValue);
+    else expiryDate.setDate(expiryDate.getDate() + shelfValue);
+
+    return expiryDate.toISOString();
+};
+
+const validateInitialBatchForProduct = (batch, product) => {
+    if (!batch?.id) {
+        throw new DatabaseError(DB_ERROR_CODES.VALIDATION_ERROR, 'El lote inicial no tiene ID.');
+    }
+
+    if (batch.productId !== product.id) {
+        throw new DatabaseError(DB_ERROR_CODES.VALIDATION_ERROR, 'El lote inicial no pertenece al producto creado.');
+    }
+
+    if (batch.stock < 0 || batch.cost < 0 || batch.price < 0) {
+        throw new DatabaseError(
+            DB_ERROR_CODES.VALIDATION_ERROR,
+            'El lote inicial no puede tener stock, costo o precio negativos.'
+        );
+    }
+
+    if (product.expirationMode === 'STRICT') {
+        if (!String(batch.manufacturerBatchId || '').trim()) {
+            throw new DatabaseError(
+                DB_ERROR_CODES.VALIDATION_ERROR,
+                'El modo estricto requiere lote de fabricante antes de ingresar stock inicial.'
+            );
+        }
+
+        if (!batch.expiryDate) {
+            throw new DatabaseError(
+                DB_ERROR_CODES.VALIDATION_ERROR,
+                'El modo estricto requiere fecha de caducidad antes de ingresar stock inicial.'
+            );
+        }
+    }
+
+    if (batch.expiryDate && Number.isNaN(new Date(batch.expiryDate).getTime())) {
+        throw new DatabaseError(DB_ERROR_CODES.VALIDATION_ERROR, 'La caducidad del lote inicial no es valida.');
+    }
+};
+
+const normalizeInitialBatchForProduct = (batch, product, now) => {
+    if (batch.productId && batch.productId !== product.id) {
+        throw new DatabaseError(DB_ERROR_CODES.VALIDATION_ERROR, 'El lote inicial no pertenece al producto creado.');
+    }
+
+    let expiryDate = batch.expiryDate || null;
+
+    if (product.expirationMode === 'SHELF_LIFE' && !expiryDate) {
+        expiryDate = addShelfLifeToDate(now, product.shelfLifeValue, product.shelfLifeUnit);
+        if (!expiryDate) {
+            throw new DatabaseError(
+                DB_ERROR_CODES.VALIDATION_ERROR,
+                'El modo vida util requiere un valor de vida util valido antes de ingresar stock inicial.'
+            );
+        }
+    }
+
+    const normalizedBatch = {
+        ...batch,
+        id: batch.id || generateID('batch'),
+        productId: product.id,
+        stock: normalizeStock(batch.stock),
+        committedStock: normalizeStock(batch.committedStock || 0),
+        cost: Number(batch.cost) || 0,
+        price: Number(batch.price) || 0,
+        trackStock: batch.trackStock !== false,
+        isActive: batch.isActive !== undefined ? batch.isActive : Number(batch.stock) > 0,
+        createdAt: batch.createdAt || now,
+        updatedAt: batch.updatedAt || now,
+        expiryDate,
+        alertTargetDate: expiryDate || batch.alertTargetDate || null,
+        alertType: expiryDate ? (batch.alertType || 'CADUCIDAD_LEGAL') : (batch.alertType || null),
+        manufacturerBatchId: batch.manufacturerBatchId ? String(batch.manufacturerBatchId).trim() : null
+    };
+
+    validateInitialBatchForProduct(normalizedBatch, product);
+    return normalizedBatch;
+};
+
 export const searchProductsInDB = async (searchTerm, status = 'active') => {
     try {
         return await searchProductsInTable(
@@ -31,6 +120,108 @@ export const searchProductsInDB = async (searchTerm, status = 'active') => {
  * Maneja lógica compleja de lotes, variantes y sincronización de precios.
  */
 export const productsRepository = {
+
+  /**
+   * Crea un producto nuevo junto con su inventario inicial en una sola
+   * transaccion. Esta es la ruta obligatoria para altas nuevas porque evita
+   * productos padres guardados sin sus lotes, o lotes que no respetan la
+   * politica de caducidad del producto.
+   */
+  async createProductWithInitialInventory(productData, initialBatches = []) {
+    try {
+      const now = new Date().toISOString();
+
+      return await db.transaction('rw', [db.table(STORES.PRODUCT_BATCHES), db.table(STORES.MENU)], async () => {
+        if (!productData?.id) {
+          throw new DatabaseError(DB_ERROR_CODES.VALIDATION_ERROR, 'El producto nuevo no tiene ID.');
+        }
+
+        const existingProduct = await db.table(STORES.MENU).get(productData.id);
+        if (existingProduct) {
+          throw new DatabaseError(
+            DB_ERROR_CODES.CONSTRAINT_VIOLATION,
+            'Ya existe un producto con este ID. Recarga e intenta de nuevo.'
+          );
+        }
+
+        const productToCreate = {
+          ...productData,
+          stock: normalizeStock(productData.stock),
+          committedStock: normalizeStock(productData.committedStock || 0),
+          isActive: productData.isActive !== false,
+          createdAt: productData.createdAt || now,
+          updatedAt: productData.updatedAt || now
+        };
+
+        const validatedProduct = validateOrThrow(productSchema, productToCreate, 'Create Product');
+
+        if (
+          validatedProduct.trackStock !== false
+          && validatedProduct.batchManagement?.enabled !== false
+          && validatedProduct.stock > 0
+          && initialBatches.length === 0
+        ) {
+          throw new DatabaseError(
+            DB_ERROR_CODES.VALIDATION_ERROR,
+            'El stock inicial debe guardarse como lote para mantener los invariantes de inventario.'
+          );
+        }
+
+        await db.table(STORES.MENU).put(validatedProduct);
+
+        const normalizedBatches = initialBatches.map((batch) => (
+          normalizeInitialBatchForProduct(batch, validatedProduct, now)
+        ));
+
+        let totalStock = 0;
+        let totalCommittedStock = 0;
+        let totalValue = 0;
+        let inventoryValue = 0;
+        let isVariantProduct = false;
+
+        for (const batch of normalizedBatches) {
+          await db.table(STORES.PRODUCT_BATCHES).put(batch);
+
+          totalCommittedStock += getCommittedStock(batch);
+
+          if (batch.attributes && Object.keys(batch.attributes).length > 0) {
+            isVariantProduct = true;
+          }
+
+          if (batch.isActive && Number(batch.stock) > 0) {
+            totalStock += Number(batch.stock) || 0;
+            totalValue += (Number(batch.cost) || 0) * (Number(batch.stock) || 0);
+            inventoryValue += (Number(batch.cost) || 0) * (Number(batch.stock) || 0);
+          }
+        }
+
+        if (normalizedBatches.length > 0) {
+          const syncedProduct = {
+            ...validatedProduct,
+            stock: normalizeStock(totalStock),
+            committedStock: normalizeStock(totalCommittedStock),
+            cost: isVariantProduct
+              ? validatedProduct.cost
+              : (totalStock > 0 ? Number((totalValue / totalStock).toFixed(4)) : validatedProduct.cost),
+            hasBatches: true,
+            updatedAt: now
+          };
+
+          validateOrThrow(productSchema, syncedProduct, 'Create Product Parent Sync');
+          await db.table(STORES.MENU).put(syncedProduct);
+        }
+
+        return {
+          productId: validatedProduct.id,
+          batchesCreated: normalizedBatches.length,
+          inventoryValue: Number(inventoryValue.toFixed(2))
+        };
+      });
+    } catch (error) {
+      if (error?.name === 'DatabaseError') throw error;
+      throw handleDexieError(error, 'Create Product With Initial Inventory');
+    }
+  },
 
   /**
    * MOTOR INVARIANTE V4.1: Método atómico para restauración de stock en cancelaciones
@@ -473,7 +664,7 @@ export const productsRepository = {
             validateStock: options.validateStock !== false, // Por defecto: true
             logDetails: options.logDetails === true,        // Por defecto: false (performance)
             dryRun: options.dryRun === true,                // Por defecto: false
-            allowPartial: options.allowPartial === false,   // Si true, procesa lo que pueda
+            allowPartial: options.allowPartial === true,    // Si true, procesa lo que pueda
             tolerance: options.tolerance || 0.0001          // Tolerancia para comparación de floats
         };
 
