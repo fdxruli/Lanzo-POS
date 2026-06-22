@@ -8,10 +8,13 @@ import { runPostSaleEffects } from './postSaleEffects';
 import { Money } from '../../utils/moneyMath';
 import { generateID } from '../utils';
 import { SALE_STATUS } from './financialStats';
-import { syncMiddleware } from '../sync/syncMiddleware';
-import { conflictResolver } from '../sync/conflictResolver';
 import { evaluator } from '../BackupRiskEvaluator';
 import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
+
+const requiresPrescriptionControl = (product = {}) => (
+    product?.requiresPrescription === true ||
+    Boolean(product?.prescriptionType && product.prescriptionType !== 'otc')
+);
 
 export const processSaleCore = async ({
     order,
@@ -48,7 +51,7 @@ export const processSaleCore = async ({
         if (features.hasLabFields) {
             const restrictedItem = itemsToProcess.find(item => {
                 const realProduct = productMap.get(item.parentId || item.id);
-                return realProduct && realProduct.requiresPrescription === true;
+                return requiresPrescriptionControl(realProduct);
             });
 
             if (restrictedItem) {
