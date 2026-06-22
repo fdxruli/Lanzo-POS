@@ -4,6 +4,81 @@ import {
 } from './constants';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 
+const toNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getModifierIdentity = (modifier = {}) => (
+    modifier.ingredientId || modifier.id || modifier.optionId || modifier.name || ''
+);
+
+const flattenProductModifierOptions = (product = {}) => {
+    if (!Array.isArray(product.modifiers)) return [];
+
+    return product.modifiers.flatMap((group) => (
+        Array.isArray(group?.options)
+            ? group.options.map((option) => ({
+                ...option,
+                groupName: group.name
+            }))
+            : []
+    ));
+};
+
+const resolveAuthoritativeModifiers = (dbProduct, item) => {
+    const selectedModifiers = Array.isArray(item?.selectedModifiers)
+        ? item.selectedModifiers
+        : [];
+
+    const catalogOptions = flattenProductModifierOptions(dbProduct);
+    const catalogByIdentity = new Map();
+
+    catalogOptions.forEach((option) => {
+        const identity = getModifierIdentity(option);
+        if (!identity) return;
+        if (!catalogByIdentity.has(identity)) catalogByIdentity.set(identity, option);
+    });
+
+    const selectedIdentities = new Set(selectedModifiers.map(getModifierIdentity).filter(Boolean));
+    const missingRequiredGroup = (dbProduct.modifiers || []).find((group) => (
+        group?.required &&
+        Array.isArray(group.options) &&
+        !group.options.some((option) => selectedIdentities.has(getModifierIdentity(option)))
+    ));
+
+    if (missingRequiredGroup) {
+        throw new Error(`SEGURIDAD: Falta seleccionar un modificador obligatorio de "${missingRequiredGroup.name}" para el producto "${item.name}".`);
+    }
+
+    if (selectedModifiers.length === 0) {
+        return { unitTotal: 0, modifiers: [] };
+    }
+
+    let unitTotal = 0;
+    const modifiers = selectedModifiers.map((modifier) => {
+        const identity = getModifierIdentity(modifier);
+        const catalogOption = catalogByIdentity.get(identity);
+
+        if (!catalogOption) {
+            throw new Error(`SEGURIDAD: El modificador "${modifier?.name || identity || 'desconocido'}" no existe en la configuracion del producto "${item.name}".`);
+        }
+
+        const authoritativePrice = toNumber(catalogOption.price);
+        unitTotal += authoritativePrice;
+
+        return {
+            ...modifier,
+            name: catalogOption.name || modifier.name,
+            price: authoritativePrice,
+            ingredientId: catalogOption.ingredientId || modifier.ingredientId || null,
+            quantity: modifier.quantity || catalogOption.quantity || 1
+        };
+    });
+
+    return { unitTotal, modifiers };
+};
+
 export const normalizeAndValidatePricing = async ({
     itemsToProcess,
     total,
@@ -13,16 +88,13 @@ export const normalizeAndValidatePricing = async ({
     calculatePricingDetails,
     Logger
 }) => {
-    // 1. Instanciamos la Caché Local
     const productCache = new Map();
 
-    // 2. Función Helper para obtener producto (Carga o devuelve caché)
     const ensureProductInCache = async (id) => {
-        if (productCache.has(id)) return; // Ya existe, no hacer nada
+        if (productCache.has(id)) return;
 
         const realProduct = await loadData(STORES.MENU, id);
         if (realProduct) {
-            // Si maneja lotes, cargamos sus lotes activos también
             if (realProduct.batchManagement?.enabled) {
                 const activeBatches = await queryBatchesByProductIdAndActive(id, true);
                 realProduct.activeBatches = activeBatches || [];
@@ -31,20 +103,13 @@ export const normalizeAndValidatePricing = async ({
         }
     };
 
-    // 3. Pre-carga Paralela (OPTIMIZACIÓN CLAVE) ⚡
-    // Identificamos IDs únicos y los cargamos todos a la vez usando Promise.all
-    // Esto es mucho más rápido que cargar uno por uno dentro del bucle.
     const uniqueIds = [...new Set(itemsToProcess.map(i => i.parentId || i.id))];
     await Promise.all(uniqueIds.map(id => ensureProductInCache(id)));
 
     let securityViolation = false;
     let calculatedRealTotal = 0;
-
-    // 4. Memoria Temporal (Aislamiento de Estado)
-    // Registramos los valores autorizados sin tocar el carrito original todavía.
     const authorizedValues = new Map();
 
-    // 5. FASE 1: Validación Estricta (Solo lectura)
     itemsToProcess.forEach((item, index) => {
         const lineId = getCartLineId(item, index);
         const realId = item.parentId || item.id;
@@ -54,48 +119,45 @@ export const normalizeAndValidatePricing = async ({
             throw new Error(`SEGURIDAD: El producto "${item.name}" (ID: ${realId}) no existe en la BD.`);
         }
 
-        // CORRECCIÓN: Extraemos la verdad absoluta
         const pricing = calculatePricingDetails(dbProduct, item.quantity);
-        const authoritativePrice = pricing.unitPrice;
-        const exactLineTotal = pricing.exactTotal; 
+        const authoritativeModifiers = resolveAuthoritativeModifiers(dbProduct, item);
+        const authoritativePrice = pricing.unitPrice + authoritativeModifiers.unitTotal;
+        const exactLineTotal = pricing.exactTotal + (authoritativeModifiers.unitTotal * toNumber(item.quantity));
 
-        const priceDifference = Math.abs(authoritativePrice - parseFloat(item.price));
+        const priceDifference = Math.abs(authoritativePrice - toNumber(item.price));
 
         if (priceDifference > PRICE_DRIFT_TOLERANCE) {
-            Logger?.warn(`🛑 ATAQUE DETECTADO: "${item.name}" venía con $${item.price}, real es $${authoritativePrice}.`);
+            Logger?.warn(`ATAQUE DETECTADO: "${item.name}" venia con $${item.price}, real es $${authoritativePrice}.`);
             securityViolation = true;
         }
 
         const authoritativeCost = parseFloat(dbProduct.cost) || 0;
-        
-        // CORRECCIÓN: Sumamos el importe absoluto del bloque. Cero multiplicaciones.
+
         calculatedRealTotal += exactLineTotal;
 
         authorizedValues.set(lineId, {
             price: authoritativePrice,
             cost: authoritativeCost,
-            exactTotal: exactLineTotal // Guardamos para la Fase 3
+            exactTotal: exactLineTotal,
+            selectedModifiers: authoritativeModifiers.modifiers
         });
     });
 
-    // 6. FASE 2: Decisión de Seguridad
-    const totalDifference = Math.abs(calculatedRealTotal - parseFloat(total));
+    const totalDifference = Math.abs(calculatedRealTotal - toNumber(total));
 
     if (securityViolation || totalDifference > TOTAL_DRIFT_TOLERANCE) {
-        // El error se lanza AQUÍ, antes de haber mutado un solo byte de los datos originales.
-        // Si la venta se bloquea, el estado del carrito de la UI permanece inmaculado.
-        throw new Error(`⛔ ALERTA DE SEGURIDAD CRÍTICA ⛔\n\nSe detectó una inconsistencia en los precios (Posible manipulación).\n\nTotal Esperado: $${total}\nTotal Real Calculado: $${calculatedRealTotal.toFixed(2)}\n\nLa venta ha sido bloqueada por seguridad. Por favor recarga el carrito.`);
+        throw new Error(`ALERTA DE SEGURIDAD CRITICA\n\nSe detecto una inconsistencia en los precios (Posible manipulacion).\n\nTotal Esperado: $${total}\nTotal Real Calculado: $${calculatedRealTotal.toFixed(2)}\n\nLa venta ha sido bloqueada por seguridad. Por favor recarga el carrito.`);
     }
 
-    // 7. FASE 3: Aplicación Segura (Mutación Controlada)
-    // Solo llegamos a esta línea si la validación completa fue exitosa. 
-    // Ahora es seguro preparar los items para la base de datos.
     itemsToProcess.forEach((item, index) => {
         const safeData = authorizedValues.get(getCartLineId(item, index));
         if (safeData) {
             item.price = safeData.price;
             item.cost = safeData.cost;
-            item.exactTotal = safeData.exactTotal; // Inyección de la fuente de la verdad
+            item.exactTotal = safeData.exactTotal;
+            if (safeData.selectedModifiers.length > 0) {
+                item.selectedModifiers = safeData.selectedModifiers;
+            }
         }
     });
 };
