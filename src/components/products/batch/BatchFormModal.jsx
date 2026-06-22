@@ -15,6 +15,7 @@ import RetailBatchFields from './fieldsets/RetailBatchFields';
 import PharmacyBatchFields from './fieldsets/PharmacyBatchFields';
 import FruteriaBatchFields from './fieldsets/FruteriaBatchFields';
 import RestaurantBatchFields from './fieldsets/RestaurantBatchFields';
+import { getBatchStockInputProps } from './utils/batchStockInput';
 import './BatchFormModal.css'; // Asegúrate de importar los nuevos estilos
 
 function RubroFieldset(props) {
@@ -56,6 +57,7 @@ export default function BatchFormModal({
 
   const idPrefix = `batch-${String(isEditing ? batchToEdit?.id : product?.id || 'new').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const payFromCajaId = `${idPrefix}-pay-from-caja`;
+  const stockInputProps = getBatchStockInputProps(product, rubroGroup, features);
 
   return (
     <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-high)' }}>
@@ -210,7 +212,7 @@ export default function BatchFormModal({
                       ) : (
                         <>
                           <label htmlFor={`${idPrefix}-expiryDate`} style={{ color: '#b91c1c', fontWeight: 'bold' }}>
-                            <Package size={16} /> Fecha de Caducidad / Producción (Opcional)
+                            <Package size={16} /> Fecha de caducidad manual (Opcional)
                           </label>
                           <input
                             id={`${idPrefix}-expiryDate`}
@@ -219,6 +221,9 @@ export default function BatchFormModal({
                             onChange={(event) => setFieldValue('expiryDate', event.target.value)}
                             className="form-input"
                           />
+                          <small style={{ color: '#92400e', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
+                            Se guardará exactamente esta fecha; no se sumará la vida útil.
+                          </small>
                           <button
                             type="button"
                             onClick={() => {
@@ -262,7 +267,8 @@ export default function BatchFormModal({
                   id={`${idPrefix}-stock`}
                   type="number"
                   min="0"
-                  step="1"
+                  step={stockInputProps.step}
+                  inputMode={stockInputProps.inputMode}
                   value={formValues.stock}
                   onChange={(event) => setFieldValue('stock', event.target.value)}
                   className="form-input"

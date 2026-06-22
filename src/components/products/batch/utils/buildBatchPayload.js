@@ -37,19 +37,6 @@ export function buildBatchPayload({
         now.setDate(now.getDate() + shelfValue);
       }
       finalExpiryDate = now.toISOString();
-    } else {
-      const baseDate = new Date(values.expiryDate);
-      const shelfValue = Number(product.shelfLifeValue) || 0;
-      const unit = (product.shelfLifeUnit || 'days').toLowerCase();
-      
-      if (unit === 'hours') {
-        baseDate.setHours(baseDate.getHours() + shelfValue);
-      } else if (unit === 'months') {
-        baseDate.setMonth(baseDate.getMonth() + shelfValue);
-      } else {
-        baseDate.setDate(baseDate.getDate() + shelfValue);
-      }
-      finalExpiryDate = baseDate.toISOString();
     }
   }
 

@@ -57,7 +57,7 @@ export default function ProductFormWizard({
     // Manejar envío del formulario
     const handleSubmit = async () => {
         // Validar último paso
-        const isValid = wizard.validateStep3?.() || true;
+        const isValid = wizard.validateStep3 ? wizard.validateStep3() : true;
         if (!isValid) return;
 
         setIsSaving?.(true);

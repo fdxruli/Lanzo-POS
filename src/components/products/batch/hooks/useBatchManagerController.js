@@ -3,12 +3,12 @@ import { useDebounce } from '../../../../hooks/useDebounce';
 import { useProductStore } from '../../../../store/useProductStore';
 import {
   saveBatchAndSyncProductSafe,
-  saveDataSafe,
   executeBatchWithPaymentSafe,
   executeProductionBatchSafe,
   loadData,
   searchProductsInDB,
-  STORES
+  STORES,
+  updateProductSafe
 } from '../../../../services/database';
 import { showMessageModal } from '../../../../services/utils';
 import { loadBatchesForManager } from '../../../../services/inventoryMovement';
@@ -210,11 +210,12 @@ export function useBatchManagerController({
           }
         };
 
-        const updateProductResult = await saveDataSafe(STORES.MENU, updatedProduct);
+        const updateProductResult = await updateProductSafe(resolvedSelectedProduct.id, updatedProduct);
         if (!updateProductResult?.success) {
           throw updateProductResult?.error || new Error(updateProductResult?.message || 'No se pudo actualizar el producto.');
         }
 
+        setSelectedProductSnapshot(updatedProduct);
         await useProductStore.getState().loadInitialProducts();
       }
 

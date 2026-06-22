@@ -2,6 +2,7 @@ import React from 'react';
 import { useProductQuestions } from '../../../hooks/useProductQuestions';
 import SmartQuestions from './SmartQuestions';
 import DynamicHelp from './DynamicHelp';
+import Step2ExpirationControl from './Step2ExpirationControl';
 
 const COMMON_UNITS = [
     { val: 'pza', label: 'Pieza (pza)' },
@@ -118,6 +119,11 @@ export default function Step2Inventario({
                     wizard={wizard}
                 />
             )}
+
+            <Step2ExpirationControl
+                wizard={wizard}
+                activeRubroContext={activeRubroContext}
+            />
 
             {/* Interruptor de Control de Stock */}
             <div

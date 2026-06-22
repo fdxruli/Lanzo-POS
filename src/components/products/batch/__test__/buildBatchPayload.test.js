@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildBatchPayload } from '../utils/buildBatchPayload';
 
 describe('buildBatchPayload', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('crea payload con variantes para lote nuevo', () => {
     const payload = buildBatchPayload({
       batchToEdit: null,
@@ -74,5 +78,66 @@ describe('buildBatchPayload', () => {
       attributes: null,
       sku: null
     });
+  });
+
+  it('usa la fecha manual de SHELF_LIFE como caducidad final sin sumar vida util otra vez', () => {
+    const payload = buildBatchPayload({
+      batchToEdit: null,
+      product: {
+        id: 'prod-shelf',
+        expirationMode: 'SHELF_LIFE',
+        shelfLifeValue: 7,
+        shelfLifeUnit: 'days'
+      },
+      values: {
+        notes: '',
+        expiryDate: '2026-03-15',
+        attribute1: '',
+        attribute2: '',
+        location: ''
+      },
+      parsed: {
+        nStock: 5,
+        nCost: 10,
+        nPrice: 15
+      },
+      features: { hasVariants: false },
+      finalSku: null
+    });
+
+    expect(payload.expiryDate).toBe('2026-03-15T00:00:00.000Z');
+    expect(payload.alertTargetDate).toBe('2026-03-15T00:00:00.000Z');
+  });
+
+  it('calcula caducidad automatica de SHELF_LIFE desde hoy cuando no hay fecha manual', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'));
+
+    const payload = buildBatchPayload({
+      batchToEdit: null,
+      product: {
+        id: 'prod-shelf',
+        expirationMode: 'SHELF_LIFE',
+        shelfLifeValue: 7,
+        shelfLifeUnit: 'days'
+      },
+      values: {
+        notes: '',
+        expiryDate: '',
+        attribute1: '',
+        attribute2: '',
+        location: ''
+      },
+      parsed: {
+        nStock: 5,
+        nCost: 10,
+        nPrice: 15
+      },
+      features: { hasVariants: false },
+      finalSku: null
+    });
+
+    expect(payload.expiryDate).toBe('2026-03-08T00:00:00.000Z');
+    expect(payload.alertTargetDate).toBe('2026-03-08T00:00:00.000Z');
   });
 });
