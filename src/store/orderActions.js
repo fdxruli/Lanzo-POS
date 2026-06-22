@@ -8,6 +8,7 @@ import { Money } from '../utils/moneyMath';
 import {
   createCartLineId,
   ensureCartLineId,
+  getCartLineId,
   isCartLineMatch,
   shouldCreateSeparateCartLine
 } from '../utils/cartLineIdentity';
@@ -309,6 +310,9 @@ export const createOrderActions = (set, get) => ({
             existingItem = order[existingItemIndex];
             quantityToCheck = existingItem.quantity + 1;
           }
+          const targetLineId = existingItem
+            ? getCartLineId(existingItem, existingItemIndex)
+            : product.lineId || createCartLineId(product);
 
           const validation = validateWholesaleCondition(product, quantityToCheck);
 
@@ -343,8 +347,8 @@ export const createOrderActions = (set, get) => ({
               () => {
                 get().updateOrderItems(orderId, (innerState) => {
                   const currentOrder = [...(innerState || [])];
-                  const idx = currentOrder.findIndex((item) =>
-                    (product.isVariant && product.batchId) ? item.batchId === product.batchId : item.id === product.id
+                  const idx = currentOrder.findIndex((item, index) =>
+                    isCartLineMatch(item, targetLineId, index)
                   );
                   if (idx >= 0) {
                     currentOrder[idx] = {
@@ -367,8 +371,8 @@ export const createOrderActions = (set, get) => ({
                   action: () => {
                     get().updateOrderItems(orderId, (innerState) => {
                       const currentOrder = [...(innerState || [])];
-                      const idx = currentOrder.findIndex((item) =>
-                        (product.isVariant && product.batchId) ? item.batchId === product.batchId : item.id === product.id
+                      const idx = currentOrder.findIndex((item, index) =>
+                        isCartLineMatch(item, targetLineId, index)
                       );
                       if (idx >= 0) {
                         currentOrder[idx] = {
@@ -408,7 +412,7 @@ export const createOrderActions = (set, get) => ({
           } else {
             const newItem = {
               ...product,
-              lineId: product.lineId || createCartLineId(product),
+              lineId: targetLineId,
               quantity: 1,
               price: initialPrice,
               originalPrice: product.originalPrice ?? product.price,
