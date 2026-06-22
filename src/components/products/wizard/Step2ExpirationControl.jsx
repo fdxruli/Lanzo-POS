@@ -7,21 +7,39 @@ const REQUIRED_EXPIRATION_RUBROS = new Set([
     'verduleria/fruteria'
 ]);
 
+const OPTIONAL_EXPIRATION_RUBROS = new Set([
+    'abarrotes'
+]);
+
 const MODE_OPTIONS = [
     {
         value: 'STRICT',
-        label: 'Por lote',
+        label: 'Si, por fecha de lote',
         description: 'Requiere fecha de caducidad al recibir inventario.'
     },
     {
         value: 'SHELF_LIFE',
-        label: 'Vida util',
+        label: 'Si, por vida util',
         description: 'Calcula caducidad con dias o meses desde recepcion.'
     }
 ];
 
 export default function Step2ExpirationControl({ wizard, activeRubroContext }) {
-    if (!REQUIRED_EXPIRATION_RUBROS.has(activeRubroContext)) return null;
+    const isRequired = REQUIRED_EXPIRATION_RUBROS.has(activeRubroContext);
+    const isOptional = OPTIONAL_EXPIRATION_RUBROS.has(activeRubroContext);
+
+    if (!isRequired && !isOptional) return null;
+
+    const modeOptions = isOptional
+        ? [
+            {
+                value: 'NONE',
+                label: 'No',
+                description: 'No controla caducidad para este producto.'
+            },
+            ...MODE_OPTIONS
+        ]
+        : MODE_OPTIONS;
 
     const {
         expirationMode,
@@ -36,7 +54,7 @@ export default function Step2ExpirationControl({ wizard, activeRubroContext }) {
     const handleModeChange = (mode) => {
         setExpirationMode(mode);
 
-        if (mode === 'STRICT') {
+        if (mode !== 'SHELF_LIFE') {
             setShelfLifeValue('');
             setShelfLifeUnit('days');
         }
@@ -58,14 +76,16 @@ export default function Step2ExpirationControl({ wizard, activeRubroContext }) {
                 alignItems: 'center',
                 gap: '8px'
             }}>
-                Caducidad requerida
+                {isRequired ? 'Caducidad requerida' : 'Este producto maneja caducidad?'}
             </h4>
             <p style={{
                 margin: '0 0 12px 0',
                 fontSize: '0.85rem',
                 color: '#92400e'
             }}>
-                Este rubro necesita una politica de caducidad antes de guardar el producto.
+                {isRequired
+                    ? 'Este rubro necesita una politica de caducidad antes de guardar el producto.'
+                    : 'Puedes dejarlo sin caducidad o activar control por lote para perecederos.'}
             </p>
 
             <div style={{
@@ -73,7 +93,7 @@ export default function Step2ExpirationControl({ wizard, activeRubroContext }) {
                 gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
                 gap: '10px'
             }}>
-                {MODE_OPTIONS.map((option) => {
+                {modeOptions.map((option) => {
                     const isSelected = expirationMode === option.value;
 
                     return (

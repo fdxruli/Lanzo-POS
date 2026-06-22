@@ -30,6 +30,9 @@ export default function Step2Inventario({
         unit, setUnit,
         supplier, setSupplier,
         storageLocation, setStorageLocation,
+        expirationMode,
+        manufacturerBatchId, setManufacturerBatchId,
+        expiryDate, setExpiryDate,
         step2Errors
     } = wizard;
 
@@ -47,6 +50,12 @@ export default function Step2Inventario({
 
     // Determinar si es rubro que usa peso/medida
     const isBulkRubro = ['verduleria/fruteria', 'abarrotes'].includes(activeRubroContext);
+    const shouldShowInitialBatchFields = (
+        wizard.isNewProduct &&
+        doesTrackStock &&
+        expirationMode === 'STRICT' &&
+        Number(stock) > 0
+    );
 
     // Helper para cambiar tipo de venta con unidad lógica
     const handleTypeChange = (type) => {
@@ -213,6 +222,81 @@ export default function Step2Inventario({
                             </span>
                         )}
                     </div>
+
+                    {shouldShowInitialBatchFields && (
+                        <div style={{
+                            marginTop: '16px',
+                            marginBottom: '20px',
+                            padding: '15px',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            borderRadius: '12px',
+                            border: `2px solid ${step2Errors?.manufacturerBatchId || step2Errors?.expiryDate ? 'var(--error-color)' : '#fcd34d'}`
+                        }}>
+                            <h4 style={{
+                                margin: '0 0 8px 0',
+                                fontSize: '0.95rem',
+                                color: '#92400e'
+                            }}>
+                                Datos del lote inicial
+                            </h4>
+                            <p style={{
+                                margin: '0 0 12px 0',
+                                fontSize: '0.85rem',
+                                color: '#92400e'
+                            }}>
+                                En modo estricto, el stock inicial debe registrarse con lote de fabricante y caducidad.
+                            </p>
+
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                                gap: '12px'
+                            }}>
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" htmlFor="initial-manufacturer-batch-id">
+                                        Lote fabricante
+                                    </label>
+                                    <input
+                                        id="initial-manufacturer-batch-id"
+                                        type="text"
+                                        className="form-input"
+                                        value={manufacturerBatchId}
+                                        onChange={(e) => setManufacturerBatchId(e.target.value)}
+                                        placeholder="Ej: LOT-2026-001"
+                                        style={{
+                                            borderColor: step2Errors?.manufacturerBatchId ? 'var(--error-color)' : 'var(--border-color)'
+                                        }}
+                                    />
+                                    {step2Errors?.manufacturerBatchId && (
+                                        <span style={{ color: 'var(--error-color)', fontSize: '0.85rem', marginTop: '4px', display: 'block' }}>
+                                            {step2Errors.manufacturerBatchId}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" htmlFor="initial-expiry-date">
+                                        Fecha de caducidad
+                                    </label>
+                                    <input
+                                        id="initial-expiry-date"
+                                        type="date"
+                                        className="form-input"
+                                        value={expiryDate}
+                                        onChange={(e) => setExpiryDate(e.target.value)}
+                                        style={{
+                                            borderColor: step2Errors?.expiryDate ? 'var(--error-color)' : 'var(--border-color)'
+                                        }}
+                                    />
+                                    {step2Errors?.expiryDate && (
+                                        <span style={{ color: 'var(--error-color)', fontSize: '0.85rem', marginTop: '4px', display: 'block' }}>
+                                            {step2Errors.expiryDate}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Tipo de Venta para rubros que lo necesitan (solo si NO hay preguntas inteligentes) */}
                     {isBulkRubro && questions.visibleQuestions.length === 0 && (
