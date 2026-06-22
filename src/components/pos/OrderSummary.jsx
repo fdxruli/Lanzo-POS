@@ -16,6 +16,7 @@ import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { db, STORES } from '../../services/db/dexie';
 import { getCartLineId } from '../../utils/cartLineIdentity';
+import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
 import './OrderSummary.css';
 
 const generateStoreCode = (companyName) => {
@@ -221,6 +222,7 @@ export default function OrderSummary({
               const quantity = item.quantity || 1;
               const lineTotal = item.price * quantity;
               const isUnitSale = item.saleType === 'unit' || !item.saleType;
+              const quantityInputProps = getOrderQuantityInputProps(item);
 
               return (
                 <div key={lineId} className={itemClasses}>
@@ -319,12 +321,13 @@ export default function OrderSummary({
                         value={item.quantity || ''}
                         onChange={(event) => handleBulkInputChange(lineId, event.target.value)}
                         placeholder="0.0"
-                        step="0.1"
+                        step={quantityInputProps.step}
+                        inputMode={quantityInputProps.inputMode}
                         min="0"
                         aria-label={`Cantidad de ${item.name}`}
                       />
                       <span className="unit-label">
-                        {item.bulkData?.purchase?.unit?.toUpperCase() || 'KG'}
+                        {quantityInputProps.unit.toUpperCase()}
                       </span>
                     </div>
                   )}
