@@ -7,6 +7,7 @@ import './index.css';
 import { storageManager } from './services/storageManager';
 import Logger from './services/Logger';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import { cleanupDevelopmentServiceWorkers } from './services/devServiceWorkerCleanup';
 
 function Thrower({ error }) {
   throw error;
@@ -35,6 +36,9 @@ const router = createBrowserRouter([
  * si puede persisitr datos antes de que se haga la primer escritura a Dexie
  */
 (async () => {
+  const canContinueBoot = await cleanupDevelopmentServiceWorkers();
+  if (!canContinueBoot) return;
+
   try {
     Logger.info('🚀 Boot: Inicializando StorageManager...');
     const conditions = await storageManager.initialize();

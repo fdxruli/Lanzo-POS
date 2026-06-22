@@ -6,6 +6,21 @@ const STEPS = [
     { id: 3, name: 'Precio', icon: '💰' }
 ];
 
+const EXPIRATION_DEFAULTS_BY_RUBRO = {
+    farmacia: 'STRICT',
+    consultorio: 'STRICT',
+    food_service: 'SHELF_LIFE',
+    restaurante: 'SHELF_LIFE',
+    cafeteria: 'SHELF_LIFE',
+    'verduleria/fruteria': 'SHELF_LIFE'
+};
+
+const EXPIRATION_REQUIRED_RUBROS = new Set(Object.keys(EXPIRATION_DEFAULTS_BY_RUBRO));
+
+const getDefaultExpirationMode = (rubro) => EXPIRATION_DEFAULTS_BY_RUBRO[rubro] || 'NONE';
+
+const requiresExpirationConfig = (rubro) => EXPIRATION_REQUIRED_RUBROS.has(rubro);
+
 export function useProductWizard(productToEdit, activeRubroContext) {
     const [currentStep, setCurrentStep] = useState(1);
     const [stepErrors, setStepErrors] = useState({});
@@ -28,6 +43,11 @@ export function useProductWizard(productToEdit, activeRubroContext) {
     const [supplier, setSupplier] = useState(productToEdit?.supplier || '');
     const [storageLocation, setStorageLocation] = useState(productToEdit?.location || '');
     const [conversionFactor, setConversionFactor] = useState(productToEdit?.conversionFactor || { enabled: false, purchaseUnit: '', factor: '' });
+    const [expirationMode, setExpirationMode] = useState(
+        productToEdit?.expirationMode || getDefaultExpirationMode(activeRubroContext)
+    );
+    const [shelfLifeValue, setShelfLifeValue] = useState(productToEdit?.shelfLifeValue || '');
+    const [shelfLifeUnit, setShelfLifeUnit] = useState(productToEdit?.shelfLifeUnit || 'days');
 
     // Estados del Paso 3 - Precio y Detalles
     const [cost, setCost] = useState(productToEdit?.cost || '');
@@ -36,6 +56,14 @@ export function useProductWizard(productToEdit, activeRubroContext) {
     const [description, setDescription] = useState(productToEdit?.description || '');
     const [imageData, setImageData] = useState(productToEdit?.image || null);
     const [imagePreview, setImagePreview] = useState(productToEdit?.image || 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir');
+
+    useEffect(() => {
+        if (productToEdit) return;
+
+        setExpirationMode(getDefaultExpirationMode(activeRubroContext));
+        setShelfLifeValue('');
+        setShelfLifeUnit('days');
+    }, [activeRubroContext, productToEdit]);
 
     // Calcular margen cuando cambia costo o precio
     useEffect(() => {
@@ -63,10 +91,16 @@ export function useProductWizard(productToEdit, activeRubroContext) {
     const validateStep2 = useCallback(() => {
         const errors = {};
         if (doesTrackStock && stock < 0) errors.stock = 'El stock no puede ser negativo';
+        if (requiresExpirationConfig(activeRubroContext) && expirationMode === 'NONE') {
+            errors.expirationMode = 'Este rubro requiere control de caducidad';
+        }
+        if (expirationMode === 'SHELF_LIFE' && (!shelfLifeValue || Number(shelfLifeValue) <= 0)) {
+            errors.shelfLifeValue = 'Indica una vida útil válida';
+        }
         
         setStepErrors(prev => ({ ...prev, 2: errors }));
         return Object.keys(errors).length === 0;
-    }, [doesTrackStock, stock]);
+    }, [activeRubroContext, doesTrackStock, expirationMode, shelfLifeValue, stock]);
 
     // Validar Paso 3
     const validateStep3 = useCallback(() => {
@@ -140,25 +174,32 @@ export function useProductWizard(productToEdit, activeRubroContext) {
     }, [cost]);
 
     // Obtener todos los datos del producto
-    const getProductData = useCallback(() => ({
-        name: name.trim(),
-        barcode: barcode.trim(),
-        categoryId,
-        trackStock: doesTrackStock,
-        stock: doesTrackStock ? (parseFloat(stock) || 0) : undefined,
-        minStock: doesTrackStock ? minStock : undefined,
-        saleType,
-        unit,
-        supplier: supplier.trim(),
-        location: storageLocation.trim(),
-        cost: parseFloat(cost) || 0,
-        price: parseFloat(price) || 0,
-        description: description.trim(),
-        image: imageData
-    }), [
+    const getProductData = useCallback(() => {
+        const usesShelfLife = expirationMode === 'SHELF_LIFE';
+
+        return {
+            name: name.trim(),
+            barcode: barcode.trim(),
+            categoryId,
+            trackStock: doesTrackStock,
+            stock: doesTrackStock ? (parseFloat(stock) || 0) : undefined,
+            minStock: doesTrackStock ? minStock : undefined,
+            saleType,
+            unit,
+            supplier: supplier.trim(),
+            location: storageLocation.trim(),
+            cost: parseFloat(cost) || 0,
+            price: parseFloat(price) || 0,
+            description: description.trim(),
+            image: imageData,
+            expirationMode,
+            shelfLifeValue: usesShelfLife && shelfLifeValue !== '' ? Number(shelfLifeValue) : null,
+            shelfLifeUnit: usesShelfLife ? shelfLifeUnit : null
+        };
+    }, [
         name, barcode, categoryId, doesTrackStock, stock, minStock,
         saleType, unit, supplier, storageLocation, cost, price,
-        description, imageData
+        description, imageData, expirationMode, shelfLifeValue, shelfLifeUnit
     ]);
 
     return {
@@ -192,6 +233,9 @@ export function useProductWizard(productToEdit, activeRubroContext) {
         supplier, setSupplier,
         storageLocation, setStorageLocation,
         conversionFactor, setConversionFactor,
+        expirationMode, setExpirationMode,
+        shelfLifeValue, setShelfLifeValue,
+        shelfLifeUnit, setShelfLifeUnit,
         step2Errors: stepErrors[2],
 
         // Paso 3 - Precio y Detalles
