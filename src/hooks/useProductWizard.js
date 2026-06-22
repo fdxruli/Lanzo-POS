@@ -48,6 +48,10 @@ export function useProductWizard(productToEdit, activeRubroContext) {
     );
     const [shelfLifeValue, setShelfLifeValue] = useState(productToEdit?.shelfLifeValue || '');
     const [shelfLifeUnit, setShelfLifeUnit] = useState(productToEdit?.shelfLifeUnit || 'days');
+    const [manufacturerBatchId, setManufacturerBatchId] = useState(productToEdit?.manufacturerBatchId || '');
+    const [expiryDate, setExpiryDate] = useState(
+        productToEdit?.expiryDate ? String(productToEdit.expiryDate).split('T')[0] : ''
+    );
 
     // Estados del Paso 3 - Precio y Detalles
     const [cost, setCost] = useState(productToEdit?.cost || '');
@@ -90,17 +94,39 @@ export function useProductWizard(productToEdit, activeRubroContext) {
     // Validar Paso 2
     const validateStep2 = useCallback(() => {
         const errors = {};
-        if (doesTrackStock && stock < 0) errors.stock = 'El stock no puede ser negativo';
+        const initialStock = Number(stock) || 0;
+        const isCreatingProduct = !productToEdit;
+
+        if (doesTrackStock && initialStock < 0) errors.stock = 'El stock no puede ser negativo';
         if (requiresExpirationConfig(activeRubroContext) && expirationMode === 'NONE') {
             errors.expirationMode = 'Este rubro requiere control de caducidad';
         }
         if (expirationMode === 'SHELF_LIFE' && (!shelfLifeValue || Number(shelfLifeValue) <= 0)) {
             errors.shelfLifeValue = 'Indica una vida útil válida';
         }
-        
+        if (isCreatingProduct && doesTrackStock && initialStock > 0 && expirationMode === 'STRICT') {
+            if (!String(manufacturerBatchId || '').trim()) {
+                errors.manufacturerBatchId = 'Indica el lote de fabricante para el stock inicial';
+            }
+            if (!expiryDate) {
+                errors.expiryDate = 'Indica la fecha de caducidad del lote inicial';
+            } else if (Number.isNaN(new Date(expiryDate).getTime())) {
+                errors.expiryDate = 'Indica una fecha de caducidad valida';
+            }
+        }
+
         setStepErrors(prev => ({ ...prev, 2: errors }));
         return Object.keys(errors).length === 0;
-    }, [activeRubroContext, doesTrackStock, expirationMode, shelfLifeValue, stock]);
+    }, [
+        activeRubroContext,
+        doesTrackStock,
+        expirationMode,
+        expiryDate,
+        manufacturerBatchId,
+        productToEdit,
+        shelfLifeValue,
+        stock
+    ]);
 
     // Validar Paso 3
     const validateStep3 = useCallback(() => {
@@ -194,12 +220,15 @@ export function useProductWizard(productToEdit, activeRubroContext) {
             image: imageData,
             expirationMode,
             shelfLifeValue: usesShelfLife && shelfLifeValue !== '' ? Number(shelfLifeValue) : null,
-            shelfLifeUnit: usesShelfLife ? shelfLifeUnit : null
+            shelfLifeUnit: usesShelfLife ? shelfLifeUnit : null,
+            manufacturerBatchId: manufacturerBatchId.trim() || null,
+            expiryDate: expiryDate || null
         };
     }, [
         name, barcode, categoryId, doesTrackStock, stock, minStock,
         saleType, unit, supplier, storageLocation, cost, price,
-        description, imageData, expirationMode, shelfLifeValue, shelfLifeUnit
+        description, imageData, expirationMode, shelfLifeValue, shelfLifeUnit,
+        manufacturerBatchId, expiryDate
     ]);
 
     return {
@@ -236,7 +265,10 @@ export function useProductWizard(productToEdit, activeRubroContext) {
         expirationMode, setExpirationMode,
         shelfLifeValue, setShelfLifeValue,
         shelfLifeUnit, setShelfLifeUnit,
+        manufacturerBatchId, setManufacturerBatchId,
+        expiryDate, setExpiryDate,
         step2Errors: stepErrors[2],
+        isNewProduct: !productToEdit,
 
         // Paso 3 - Precio y Detalles
         cost, setCost,
