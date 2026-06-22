@@ -6,6 +6,12 @@ import { commitStock, releaseCommittedStock, getSortedBatchesForProduct } from '
 import { SALE_STATUS } from '../services/sales/financialStats';
 import { Money } from '../utils/moneyMath';
 import {
+  createCartLineId,
+  ensureCartLineId,
+  isCartLineMatch,
+  shouldCreateSeparateCartLine
+} from '../utils/cartLineIdentity';
+import {
   compareOrderVersions,
   getNextPersistedOrderVersion
 } from '../services/orders/orderVersioning';
@@ -88,8 +94,9 @@ const findScannedProductIndex = (items, product) =>
   });
 
 const buildScannedLineId = (product) =>
+  product?.lineId ||
   product?.uniqueLineId ||
-  `${product?.id || 'scan'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  createCartLineId(product);
 
 export const summarizeScannedProducts = (items = []) => {
   const groupedItems = [];
@@ -103,10 +110,12 @@ export const summarizeScannedProducts = (items = []) => {
 
     if (!shouldAggregateScannedProduct(item)) {
       for (let index = 0; index < quantity; index += 1) {
+        const lineId = buildScannedLineId(item);
         groupedItems.push({
           ...item,
           quantity: 1,
-          uniqueLineId: buildScannedLineId(item),
+          lineId,
+          uniqueLineId: item.uniqueLineId || lineId,
         });
       }
 
@@ -149,10 +158,12 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
     const quantity = Math.max(1, Number(groupedItem.quantity) || 1);
 
     if (!shouldAggregateScannedProduct(groupedItem)) {
+      const lineId = buildScannedLineId(groupedItem);
       const newItem = {
         ...groupedItem,
         quantity: 1,
-        uniqueLineId: buildScannedLineId(groupedItem),
+        lineId,
+        uniqueLineId: groupedItem.uniqueLineId || lineId,
         exceedsStock: groupedItem.trackStock && 1 > (groupedItem.stock || 99999),
       };
 
@@ -182,6 +193,7 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
     const newItem = {
       ...groupedItem,
       quantity,
+      lineId: buildScannedLineId(groupedItem),
       exceedsStock: groupedItem.trackStock && quantity > (groupedItem.stock || 99999),
     };
 
@@ -279,12 +291,16 @@ export const createOrderActions = (set, get) => ({
       addItem: (product, orderId = get().currentOrderId) => {
         get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
-          const existingItemIndex = order.findIndex((item) => {
-            if (product.isVariant && product.batchId) {
-              return item.batchId === product.batchId;
-            }
-            return item.id === product.id;
-          });
+          const canAggregateProduct = !shouldCreateSeparateCartLine(product);
+          const existingItemIndex = canAggregateProduct
+            ? order.findIndex((item) => {
+                if (shouldCreateSeparateCartLine(item)) return false;
+                if (product.isVariant && product.batchId) {
+                  return item.batchId === product.batchId;
+                }
+                return item.id === product.id;
+              })
+            : -1;
 
           let quantityToCheck = 1;
           let existingItem = null;
@@ -392,6 +408,7 @@ export const createOrderActions = (set, get) => ({
           } else {
             const newItem = {
               ...product,
+              lineId: product.lineId || createCartLineId(product),
               quantity: 1,
               price: initialPrice,
               originalPrice: product.originalPrice ?? product.price,
@@ -442,6 +459,7 @@ export const createOrderActions = (set, get) => ({
             } else {
               const newItem = {
                 ...resolvedProduct,
+                lineId: createCartLineId(resolvedProduct),
                 uniqueLineId: `${resolvedProduct.id}-${Date.now()}`,
                 quantity: 1,
                 exceedsStock: resolvedProduct.trackStock && 1 > (resolvedProduct.stock || 99999)
@@ -455,6 +473,7 @@ export const createOrderActions = (set, get) => ({
           } else {
             const newItem = {
               ...resolvedProduct,
+              lineId: createCartLineId(resolvedProduct),
               quantity: 1,
               exceedsStock: resolvedProduct.trackStock && 1 > (resolvedProduct.stock || 99999)
             };
@@ -498,11 +517,11 @@ export const createOrderActions = (set, get) => ({
         return actionResult;
       },
 
-      updateItemQuantity: (itemId, newQuantity, orderId = get().currentOrderId) => {
+      updateItemQuantity: (lineId, newQuantity, orderId = get().currentOrderId) => {
         get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
-          return order.map((item) => {
-            if (item.id === itemId) {
+          return order.map((item, index) => {
+            if (isCartLineMatch(item, lineId, index)) {
               const safeQuantity = newQuantity === null ? 0 : newQuantity;
               const validation = validateWholesaleCondition(item, safeQuantity);
 
@@ -530,7 +549,7 @@ export const createOrderActions = (set, get) => ({
                     () => {
                       get().updateOrderItems(orderId, (innerState) => {
                         return (innerState || []).map(i => {
-                          if (i.id === itemId) {
+                          if (isCartLineMatch(i, lineId)) {
                             return { ...i, price: validation.tierPrice, forceWholesale: true, forceSafePrice: false };
                           }
                           return i;
@@ -547,7 +566,7 @@ export const createOrderActions = (set, get) => ({
                         action: () => {
                           get().updateOrderItems(orderId, (innerState) => {
                             return (innerState || []).map(i => {
-                              if (i.id === itemId) {
+                              if (isCartLineMatch(i, lineId)) {
                                 return { ...i, forceSafePrice: true, forceWholesale: false };
                               }
                               return i;
@@ -577,8 +596,10 @@ export const createOrderActions = (set, get) => ({
         });
       },
 
-      removeItem: (itemId, orderId = get().currentOrderId) => {
-        get().updateOrderItems(orderId, (prevOrder) => (prevOrder || []).filter((item) => item.id !== itemId));
+      removeItem: (lineId, orderId = get().currentOrderId) => {
+        get().updateOrderItems(orderId, (prevOrder) => (
+          (prevOrder || []).filter((item, index) => !isCartLineMatch(item, lineId, index))
+        ));
       },
 
       clearOrder: (orderId = get().currentOrderId) => {
@@ -586,7 +607,7 @@ export const createOrderActions = (set, get) => ({
       },
 
       setOrder: (newOrder, orderId = get().currentOrderId) => {
-        get().updateOrderItems(orderId, newOrder);
+        get().updateOrderItems(orderId, (newOrder || []).map(ensureCartLineId));
       },
 
       setTableData: (tableData, orderId = get().currentOrderId) => {

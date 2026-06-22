@@ -7,6 +7,11 @@ import { getAvailableStock } from '../services/db/utils';
 import { commitStock, releaseCommittedStock, getSortedBatchesForProduct } from '../services/sales/inventoryFlow';
 import { SALE_STATUS } from '../services/sales/financialStats';
 import { Money } from '../utils/moneyMath';
+import {
+  createCartLineId,
+  isCartLineMatch,
+  shouldCreateSeparateCartLine
+} from '../utils/cartLineIdentity';
 import { useActiveOrders } from '../hooks/pos/useActiveOrders';
 
 const OPEN_FULFILLMENT_STATUS = 'open';
@@ -48,8 +53,9 @@ const findScannedProductIndex = (items, product) =>
   });
 
 const buildScannedLineId = (product) =>
+  product?.lineId ||
   product?.uniqueLineId ||
-  `${product?.id || 'scan'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  createCartLineId(product);
 
 export const summarizeScannedProducts = (items = []) => {
   const groupedItems = [];
@@ -63,10 +69,12 @@ export const summarizeScannedProducts = (items = []) => {
 
     if (!shouldAggregateScannedProduct(item)) {
       for (let index = 0; index < quantity; index += 1) {
+        const lineId = buildScannedLineId(item);
         groupedItems.push({
           ...item,
           quantity: 1,
-          uniqueLineId: buildScannedLineId(item),
+          lineId,
+          uniqueLineId: item.uniqueLineId || lineId,
         });
       }
 
@@ -109,10 +117,12 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
     const quantity = Math.max(1, Number(groupedItem.quantity) || 1);
 
     if (!shouldAggregateScannedProduct(groupedItem)) {
+      const lineId = buildScannedLineId(groupedItem);
       const newItem = {
         ...groupedItem,
         quantity: 1,
-        uniqueLineId: buildScannedLineId(groupedItem),
+        lineId,
+        uniqueLineId: groupedItem.uniqueLineId || lineId,
         exceedsStock: groupedItem.trackStock && 1 > (groupedItem.stock || 99999),
       };
 
@@ -319,12 +329,16 @@ export const useOrderStore = create((set, get) => {
       addItem: (product) => {
         useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => {
           const order = prevOrder || [];
-          const existingItemIndex = order.findIndex((item) => {
-            if (product.isVariant && product.batchId) {
-              return item.batchId === product.batchId;
-            }
-            return item.id === product.id;
-          });
+          const canAggregateProduct = !shouldCreateSeparateCartLine(product);
+          const existingItemIndex = canAggregateProduct
+            ? order.findIndex((item) => {
+                if (shouldCreateSeparateCartLine(item)) return false;
+                if (product.isVariant && product.batchId) {
+                  return item.batchId === product.batchId;
+                }
+                return item.id === product.id;
+              })
+            : -1;
 
           let quantityToCheck = 1;
           let existingItem = null;
@@ -432,6 +446,7 @@ export const useOrderStore = create((set, get) => {
           } else {
             const newItem = {
               ...product,
+              lineId: product.lineId || createCartLineId(product),
               quantity: 1,
               price: initialPrice,
               originalPrice: product.price,
@@ -482,6 +497,7 @@ export const useOrderStore = create((set, get) => {
             } else {
               const newItem = {
                 ...resolvedProduct,
+                lineId: createCartLineId(resolvedProduct),
                 uniqueLineId: `${resolvedProduct.id}-${Date.now()}`,
                 quantity: 1,
                 exceedsStock: resolvedProduct.trackStock && 1 > (resolvedProduct.stock || 99999)
@@ -495,6 +511,7 @@ export const useOrderStore = create((set, get) => {
           } else {
             const newItem = {
               ...resolvedProduct,
+              lineId: createCartLineId(resolvedProduct),
               quantity: 1,
               exceedsStock: resolvedProduct.trackStock && 1 > (resolvedProduct.stock || 99999)
             };
@@ -538,11 +555,11 @@ export const useOrderStore = create((set, get) => {
         return actionResult;
       },
 
-      updateItemQuantity: (itemId, newQuantity) => {
+      updateItemQuantity: (lineId, newQuantity) => {
         useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => {
           const order = prevOrder || [];
-          return order.map((item) => {
-            if (item.id === itemId) {
+          return order.map((item, index) => {
+            if (isCartLineMatch(item, lineId, index)) {
               const safeQuantity = newQuantity === null ? 0 : newQuantity;
               const validation = validateWholesaleCondition(item, safeQuantity);
 
@@ -570,7 +587,7 @@ export const useOrderStore = create((set, get) => {
                     () => {
                       useActiveOrders.getState().updateCurrentOrderItems((innerState) => {
                         return (innerState || []).map(i => {
-                          if (i.id === itemId) {
+                          if (isCartLineMatch(i, lineId)) {
                             return { ...i, price: validation.tierPrice, forceWholesale: true, forceSafePrice: false };
                           }
                           return i;
@@ -586,8 +603,8 @@ export const useOrderStore = create((set, get) => {
                         text: 'No, Precio Regular',
                         action: () => {
                           useActiveOrders.getState().updateCurrentOrderItems((innerState) => {
-                            return (innerState || []).map(i => {
-                              if (i.id === itemId) {
+                        return (innerState || []).map(i => {
+                              if (isCartLineMatch(i, lineId)) {
                                 return { ...i, forceSafePrice: true, forceWholesale: false };
                               }
                               return i;
@@ -617,8 +634,10 @@ export const useOrderStore = create((set, get) => {
         });
       },
 
-      removeItem: (itemId) => {
-        useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => (prevOrder || []).filter((item) => item.id !== itemId));
+      removeItem: (lineId) => {
+        useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => (
+          (prevOrder || []).filter((item, index) => !isCartLineMatch(item, lineId, index))
+        ));
       },
 
       clearOrder: () => {

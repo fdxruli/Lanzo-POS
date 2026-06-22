@@ -251,6 +251,32 @@ describe('useActiveOrders unified store', () => {
     expect(useActiveOrders.getState().pendingInventoryResolutions.has('one')).toBe(false);
   });
 
+  it('updates and removes cart lines by lineId without touching duplicate product ids', () => {
+    useActiveOrders.setState({
+      activeOrders: new Map([[
+        'one',
+        makeOrder('one', [
+          { id: 'product-1', lineId: 'line-a', name: 'Product', quantity: 1, price: 10, saleType: 'unit' },
+          { id: 'product-1', lineId: 'line-b', name: 'Product', quantity: 2, price: 10, saleType: 'unit' }
+        ])
+      ]]),
+      currentOrderId: 'one'
+    });
+
+    useActiveOrders.getState().updateItemQuantity('line-b', 4);
+
+    expect(useActiveOrders.getState().activeOrders.get('one')?.items).toMatchObject([
+      { id: 'product-1', lineId: 'line-a', quantity: 1 },
+      { id: 'product-1', lineId: 'line-b', quantity: 4 }
+    ]);
+
+    useActiveOrders.getState().removeItem('line-a');
+
+    expect(useActiveOrders.getState().activeOrders.get('one')?.items).toMatchObject([
+      { id: 'product-1', lineId: 'line-b', quantity: 4 }
+    ]);
+  });
+
   it('loads an open sale into the unified session', async () => {
     dbState.sales.set('sale-open', {
       id: 'sale-open',

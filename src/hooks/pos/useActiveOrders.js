@@ -7,6 +7,7 @@ import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
 import { releaseCommittedStock } from '../../services/sales/inventoryFlow';
+import { normalizeCartItems } from '../../utils/cartLineIdentity';
 import {
   getOrderDeviceId,
   getNextPersistedOrderVersion,
@@ -151,7 +152,7 @@ export const useActiveOrders = create(
 
         const order = {
           id: sale.id,
-          items: Array.isArray(sale.items) ? sale.items : [],
+          items: normalizeCartItems(sale.items),
           customer: sale.customerId ? { id: sale.customerId } : null,
           tableData: normalizeTableData(sale.tableData),
           createdAt: sale.timestamp || new Date().toISOString(),
@@ -232,13 +233,13 @@ export const useActiveOrders = create(
     /**
      * Quita item de una orden específica
      * @param {string} orderId - ID de la orden
-     * @param {string} productId - ID del producto
+     * @param {string} lineId - ID de la línea del ticket
      */
-    removeItemFromOrder: (orderId, productId) => {
+    removeItemFromOrder: (orderId, lineId) => {
       const state = get();
       if (!state.activeOrders.has(orderId)) return;
 
-      get().removeItem(productId, orderId);
+      get().removeItem(lineId, orderId);
     },
 
     updateOrder: (orderId, updates) => {
@@ -281,7 +282,8 @@ export const useActiveOrders = create(
           return state;
         }
 
-        const newItems = typeof updater === 'function' ? updater(order.items) : updater;
+        const updatedItems = typeof updater === 'function' ? updater(order.items) : updater;
+        const newItems = normalizeCartItems(updatedItems);
         const nextOrders = new Map(state.activeOrders);
         
         nextOrders.set(orderId, {
@@ -751,7 +753,7 @@ export const useActiveOrders = create(
         openSales.forEach(sale => {
           ordersMap.set(sale.id, {
             id: sale.id,
-            items: Array.isArray(sale.items) ? sale.items : [],
+            items: normalizeCartItems(sale.items),
             customer: sale.customerId ? { id: sale.customerId } : null,
             tableData: normalizeTableData(sale.tableData),
             createdAt: sale.timestamp || new Date().toISOString(),
@@ -774,7 +776,7 @@ export const useActiveOrders = create(
             const selectedOrder = newest.order || existing;
             ordersMap.set(orderId, {
               ...selectedOrder,
-              items: Array.isArray(selectedOrder.items) ? selectedOrder.items : [],
+              items: normalizeCartItems(selectedOrder.items),
               tableData: normalizeTableData(selectedOrder.tableData ?? null),
               total: selectedOrder.total ?? calculateOrderTotalExact(selectedOrder.items),
               isSaved: true,
@@ -786,11 +788,11 @@ export const useActiveOrders = create(
             });
           } else {
             // Orden está en localStorage pero NO en BD: preservarla como borrador
-            const draftItems = Array.isArray(draftOrder.items) ? draftOrder.items : [];
+            const draftItems = normalizeCartItems(draftOrder.items);
             // 🔥 FIX: Si la orden es la activa y get() tiene los items (pero el tab no por fallo de guardado),
             const cartState = get();
             const isActiveInCart = cartState.currentOrderId === orderId;
-            const currentActiveItems = selectCurrentOrder(cartState)?.items || [];
+            const currentActiveItems = normalizeCartItems(selectCurrentOrder(cartState)?.items || []);
             const cartHasItems = currentActiveItems.length > 0;
             // 🔧 IMPORTANT: NUNCA descartar órdenes del localStorage, incluso si parecen vacías
             ordersMap.set(orderId, {
@@ -899,7 +901,7 @@ export const useActiveOrders = create(
             // La orden aún no fue persistida: la insertamos con el lock ya puesto.
             await db.table(STORES.SALES).put({
               id: orderId,
-              items: order.items || [],
+              items: normalizeCartItems(order.items),
               total: order.total || 0,
               tableData: order.tableData || null,
               status: 'open',
@@ -1002,7 +1004,7 @@ export const useActiveOrders = create(
 
       return {
         id: current.id,
-        items: current.items,
+        items: normalizeCartItems(current.items),
         customer: current.customer,
         tableData: current.tableData,
         total: current.total
@@ -1061,7 +1063,13 @@ export const useActiveOrders = create(
       return {
         ...currentState,
         ...persistedState,
-        activeOrders: persistedOrders,
+        activeOrders: new Map(Array.from(persistedOrders.entries()).map(([orderId, order]) => [
+          orderId,
+          {
+            ...order,
+            items: normalizeCartItems(order?.items)
+          }
+        ])),
         currentOrderId
       };
     }

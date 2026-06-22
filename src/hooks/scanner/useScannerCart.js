@@ -1,8 +1,9 @@
 // src/hooks/scanner/useScannerCart.js
 import { useState, useCallback, useMemo } from 'react';
+import { createCartLineId, getCartLineId } from '../../utils/cartLineIdentity';
 
 const buildLineId = (product) =>
-  `${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  createCartLineId(product);
 
 const shouldAggregate = (product) =>
   product?.saleType !== 'bulk' || Boolean(product?.batchId) || Boolean(product?.isVariant);
@@ -26,13 +27,15 @@ export function useScannerCart() {
   const addItem = useCallback((product) => {
     setItems((prevItems) => {
       if (!shouldAggregate(product)) {
+        const lineId = buildLineId(product);
         // For non-aggregatable products (bulk without batch), always add as new line
         return [
           ...prevItems,
           {
             ...product,
             quantity: 1,
-            uniqueLineId: buildLineId(product),
+            lineId,
+            uniqueLineId: lineId,
           },
         ];
       }
@@ -40,12 +43,14 @@ export function useScannerCart() {
       const existingIndex = findItemIndex(prevItems, product);
 
       if (existingIndex === -1) {
+        const lineId = buildLineId(product);
         return [
           ...prevItems,
           {
             ...product,
             quantity: 1,
-            uniqueLineId: buildLineId(product),
+            lineId,
+            uniqueLineId: lineId,
           },
         ];
       }
@@ -67,12 +72,14 @@ export function useScannerCart() {
 
     setItems((prevItems) => {
       if (!shouldAggregate(baseProduct)) {
+        const lineId = buildLineId(baseProduct);
         return [
           ...prevItems,
           {
             ...baseProduct,
             quantity: 1,
-            uniqueLineId: buildLineId(baseProduct),
+            lineId,
+            uniqueLineId: lineId,
           },
         ];
       }
@@ -80,12 +87,14 @@ export function useScannerCart() {
       const existingIndex = findItemIndex(prevItems, baseProduct);
 
       if (existingIndex === -1) {
+        const lineId = buildLineId(baseProduct);
         return [
           ...prevItems,
           {
             ...baseProduct,
             quantity: 1,
-            uniqueLineId: buildLineId(baseProduct),
+            lineId,
+            uniqueLineId: lineId,
           },
         ];
       }
@@ -99,16 +108,14 @@ export function useScannerCart() {
     });
   }, [isConfirming]);
 
-  const removeQuantity = useCallback((productId, batchId = null) => {
+  const removeQuantity = useCallback((lineId, batchId = null) => {
     if (isConfirming) return;
 
     setItems((prevItems) => {
-      const index = prevItems.findIndex((item) => {
-        if (batchId) {
-          return item.id === productId && item.batchId === batchId;
-        }
-        return item.id === productId;
-      });
+      const index = prevItems.findIndex((item, itemIndex) => (
+        getCartLineId(item, itemIndex) === lineId ||
+        (batchId && item.id === lineId && item.batchId === batchId)
+      ));
 
       if (index === -1) return prevItems;
 
