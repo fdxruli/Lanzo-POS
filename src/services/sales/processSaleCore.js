@@ -69,6 +69,7 @@ export const processSaleCore = async ({
             ignoreStock,
             loadData,
             loadMultipleData,
+            queryBatchesByProductIdAndActive,
             STORES
         });
 
@@ -232,7 +233,8 @@ export const processSaleCore = async ({
                 saleId: sale.id,
                 timestamp: sale.timestamp,
                 items: processedItems.map(item => ({
-                    productId: item.id,
+                    productId: item.parentId || item.id,
+                    lineId: item.lineId || null,
                     quantity: item.quantity,
                     batchId: item.batchId,
                     priceAtSale: item.price,
@@ -267,7 +269,8 @@ export const processSaleCore = async ({
         // Indica claramente: venta segura localmente, pero qué efectos fallaron
         return {
             success: true,
-            saleId: sale.timestamp,
+            saleId: sale.id,
+            timestamp: sale.timestamp,
             folio: sale.folio,
             postEffectsFailed,
             postEffectsError: postEffectsFailed ? postEffectsError : null,

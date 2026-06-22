@@ -2,6 +2,7 @@ import {
     PRICE_DRIFT_TOLERANCE,
     TOTAL_DRIFT_TOLERANCE
 } from './constants';
+import { getCartLineId } from '../../utils/cartLineIdentity';
 
 export const normalizeAndValidatePricing = async ({
     itemsToProcess,
@@ -44,7 +45,8 @@ export const normalizeAndValidatePricing = async ({
     const authorizedValues = new Map();
 
     // 5. FASE 1: Validación Estricta (Solo lectura)
-    itemsToProcess.forEach((item) => {
+    itemsToProcess.forEach((item, index) => {
+        const lineId = getCartLineId(item, index);
         const realId = item.parentId || item.id;
         const dbProduct = productCache.get(realId);
 
@@ -69,7 +71,7 @@ export const normalizeAndValidatePricing = async ({
         // CORRECCIÓN: Sumamos el importe absoluto del bloque. Cero multiplicaciones.
         calculatedRealTotal += exactLineTotal;
 
-        authorizedValues.set(item.id, {
+        authorizedValues.set(lineId, {
             price: authoritativePrice,
             cost: authoritativeCost,
             exactTotal: exactLineTotal // Guardamos para la Fase 3
@@ -88,8 +90,8 @@ export const normalizeAndValidatePricing = async ({
     // 7. FASE 3: Aplicación Segura (Mutación Controlada)
     // Solo llegamos a esta línea si la validación completa fue exitosa. 
     // Ahora es seguro preparar los items para la base de datos.
-    itemsToProcess.forEach((item) => {
-        const safeData = authorizedValues.get(item.id);
+    itemsToProcess.forEach((item, index) => {
+        const safeData = authorizedValues.get(getCartLineId(item, index));
         if (safeData) {
             item.price = safeData.price;
             item.cost = safeData.cost;
