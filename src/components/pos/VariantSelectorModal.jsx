@@ -4,6 +4,7 @@ import { useInventoryMovement } from '../../hooks/useInventoryMovement';
 import './VariantSelectorModal.css';
 import Logger from '../../services/Logger';
 import { getAvailableStock } from '../../services/db/utils';
+import { createCartLineId } from '../../utils/cartLineIdentity';
 import { getAvailableVariantBatches } from './variantUtils';
 
 // Iconos SVG
@@ -118,7 +119,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
   const handleSelectVariant = (batch) => {
     const variantItem = {
       ...product,
-      id: batch.id,
+      id: product.id,
       parentId: product.id,
       name: `${product.name} (${batch.displayColor} ${batch.displayTalla})`,
       price: batch.price,
@@ -127,6 +128,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
       trackStock: true,
       isVariant: true,
       batchId: batch.id,
+      lineId: createCartLineId({ ...product, batchId: batch.id }),
       sku: batch.sku
     };
     onConfirm(variantItem);

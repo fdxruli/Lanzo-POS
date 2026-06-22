@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Check, AlertCircle, Info } from 'lucide-react'; 
+import { createCartLineId } from '../../utils/cartLineIdentity';
 import './ProductModifiersModal.css';
 
 export default function ProductModifiersModal({ show, onClose, product, onConfirm }) {
@@ -64,8 +65,10 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
             originalPrice: finalPrice,
             selectedModifiers: cleanedModifiers,
             notes: note,
-            id: `${product.id}-mod-${Date.now()}`,
-            parentId: product.id
+            id: product.id,
+            parentId: product.id,
+            lineId: createCartLineId(product),
+            forceNewLine: true
         };
 
         onConfirm(modifiedProduct);

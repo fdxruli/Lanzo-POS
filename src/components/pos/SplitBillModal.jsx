@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { loadData, STORES } from '../../services/database';
 import { Money } from '../../utils/moneyMath';
+import { getCartLineId } from '../../utils/cartLineIdentity';
 import { normalizeStock } from '../../services/db/utils';
 import './SplitBillModal.css';
 
@@ -621,7 +622,7 @@ export default function SplitBillModal({
                   // If fully assigned, show as completed
                   if (poolQty <= 0) {
                     return (
-                      <div key={`${item.id || 'line'}-${index}`} className="split-pool-item completed">
+                      <div key={getCartLineId(item, index)} className="split-pool-item completed">
                         <div className="split-pool-item-info">
                           <span className="split-pool-item-name">{item.name}</span>
                           <span className="split-pool-item-price">
@@ -634,7 +635,7 @@ export default function SplitBillModal({
                   }
 
                   return (
-                    <div key={`${item.id || 'line'}-${index}`} className="split-pool-item">
+                    <div key={getCartLineId(item, index)} className="split-pool-item">
                       <div className="split-pool-item-info">
                         <span className="split-pool-item-name">{item.name}</span>
                         <span className="split-pool-item-price">

@@ -15,6 +15,7 @@ import { useState, useEffect } from 'react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { db, STORES } from '../../services/db/dexie';
+import { getCartLineId } from '../../utils/cartLineIdentity';
 import './OrderSummary.css';
 
 const generateStoreCode = (companyName) => {
@@ -93,23 +94,23 @@ export default function OrderSummary({
   const total = getTotalPrice();
   const tablesBadgeTotal = activeTablesCount + kitchenRejectedOpenCount;
 
-  const handleQuantityChange = (id, change) => {
-    const item = order.find((orderItem) => orderItem.id === id);
+  const handleQuantityChange = (lineId, change) => {
+    const item = order.find((orderItem, index) => getCartLineId(orderItem, index) === lineId);
     if (!item) return;
 
     if (item.saleType === 'unit' || !item.saleType) {
       const newQuantity = (item.quantity || 0) + change;
-      if (newQuantity <= 0) removeItem(id);
-      else updateItemQuantity(id, newQuantity);
+      if (newQuantity <= 0) removeItem(lineId);
+      else updateItemQuantity(lineId, newQuantity);
     }
   };
 
-  const handleBulkInputChange = (id, value) => {
+  const handleBulkInputChange = (lineId, value) => {
     const newQuantity = parseFloat(value);
     if (newQuantity === 0) {
-      removeItem(id);
+      removeItem(lineId);
     } else {
-      updateItemQuantity(id, Number.isNaN(newQuantity) || newQuantity < 0 ? null : newQuantity);
+      updateItemQuantity(lineId, Number.isNaN(newQuantity) || newQuantity < 0 ? null : newQuantity);
     }
   };
 
@@ -213,7 +214,8 @@ export default function OrderSummary({
       ) : (
         <>
           <div className="order-list">
-            {order.map((item) => {
+            {order.map((item, index) => {
+              const lineId = getCartLineId(item, index);
               const itemClasses = `order-item${item.exceedsStock ? ' exceeds-stock' : ''}`;
               const hasModifiers = item.selectedModifiers && item.selectedModifiers.length > 0;
               const quantity = item.quantity || 1;
@@ -221,7 +223,7 @@ export default function OrderSummary({
               const isUnitSale = item.saleType === 'unit' || !item.saleType;
 
               return (
-                <div key={item.id} className={itemClasses}>
+                <div key={lineId} className={itemClasses}>
                   <div className="order-item-info">
                     <div className="order-item-header">
                       <span className="order-item-name">
@@ -271,7 +273,7 @@ export default function OrderSummary({
                         <button
                           type="button"
                           className="btn-fix-stock"
-                          onClick={() => updateItemQuantity(item.id, item.stock)}
+                          onClick={() => updateItemQuantity(lineId, item.stock)}
                           title="Ajustar cantidad al máximo disponible"
                         >
                           Ajustar a {item.stock}
@@ -285,7 +287,7 @@ export default function OrderSummary({
                       <button
                         type="button"
                         className="quantity-btn"
-                        onClick={() => handleQuantityChange(item.id, -1)}
+                        onClick={() => handleQuantityChange(lineId, -1)}
                         aria-label={`Quitar una unidad de ${item.name}`}
                       >
                         −
@@ -294,7 +296,7 @@ export default function OrderSummary({
                       <button
                         type="button"
                         className="quantity-btn"
-                        onClick={() => handleQuantityChange(item.id, 1)}
+                        onClick={() => handleQuantityChange(lineId, 1)}
                         aria-label={`Agregar una unidad de ${item.name}`}
                       >
                         +
@@ -305,7 +307,7 @@ export default function OrderSummary({
                       <button
                         type="button"
                         className="btn-remove-item"
-                        onClick={() => removeItem(item.id)}
+                        onClick={() => removeItem(lineId)}
                         title="Eliminar del pedido"
                         aria-label={`Eliminar ${item.name} del pedido`}
                       >
@@ -315,7 +317,7 @@ export default function OrderSummary({
                         type="number"
                         className="bulk-input"
                         value={item.quantity || ''}
-                        onChange={(event) => handleBulkInputChange(item.id, event.target.value)}
+                        onChange={(event) => handleBulkInputChange(lineId, event.target.value)}
                         placeholder="0.0"
                         step="0.1"
                         min="0"

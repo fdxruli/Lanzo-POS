@@ -7,6 +7,7 @@ import {
 } from '../../store/useOrderStore';
 import { resolveWithCache } from '../../services/barcodeCache';
 import { playBeep, playErrorBeep } from '../../services/audioBeep';
+import { createCartLineId, getCartLineId } from '../../utils/cartLineIdentity';
 import './ScannerModal.css';
 import Logger from '../../services/Logger';
 
@@ -35,7 +36,7 @@ const REACTIVATION_DELAY_MS = 500;
 const FEEDBACK_RESET_MS = 800;
 
 const buildScanLineId = (product) =>
-  `${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  createCartLineId(product);
 
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
   const addMultipleScannedProducts = useOrderStore(
@@ -100,23 +101,29 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     // Extraemos solo la info base del producto, ignorando los campos agrupados
     const { quantity, uniqueLineId, ...baseProduct } = productInfo;
 
-    setScannedItems((prevItems) => [
-      ...prevItems,
-      {
-        ...baseProduct,
-        quantity: 1, // Siempre 1 en el registro plano
-        uniqueLineId: buildScanLineId(baseProduct),
-      },
-    ]);
+    setScannedItems((prevItems) => {
+      const lineId = buildScanLineId(baseProduct);
+      return [
+        ...prevItems,
+        {
+          ...baseProduct,
+          quantity: 1, // Siempre 1 en el registro plano
+          lineId,
+          uniqueLineId: lineId,
+        },
+      ];
+    });
   }, [isConfirming]);
 
   // Lógica para decrementar cantidad
-  const handleRemoveQuantity = useCallback((productId) => {
+  const handleRemoveQuantity = useCallback((lineId) => {
     if (isConfirming) return;
 
     setScannedItems((prevItems) => {
       // Encontrar el último escaneo de este producto
-      const lastIndex = prevItems.map(item => item.id).lastIndexOf(productId);
+      const lastIndex = prevItems
+        .map((item, index) => getCartLineId(item, index))
+        .lastIndexOf(lineId);
 
       // Si no existe, no hacemos nada (caso borde de seguridad)
       if (lastIndex === -1) return prevItems;
@@ -159,14 +166,18 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
           return;
         }
 
-        setScannedItems((prevItems) => [
-          ...prevItems,
-          {
-            ...product,
-            quantity: 1,
-            uniqueLineId: buildScanLineId(product),
-          },
-        ]);
+        setScannedItems((prevItems) => {
+          const lineId = buildScanLineId(product);
+          return [
+            ...prevItems,
+            {
+              ...product,
+              quantity: 1,
+              lineId,
+              uniqueLineId: lineId,
+            },
+          ];
+        });
         setScanFeedback(`OK ${product.name} - $${product.price.toFixed(2)}`);
       } catch (error) {
         Logger.error('Error procesando codigo escaneado:', error);
@@ -418,9 +429,11 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                     Escanea tu primer producto
                   </p>
                 ) : (
-                  groupedScannedItems.map((item, index) => (
+                  groupedScannedItems.map((item, index) => {
+                    const lineId = getCartLineId(item, index);
+                    return (
                     <div
-                      key={item.uniqueLineId || `${item.id}-${item.batchId ?? index}`}
+                      key={lineId}
                       className="scanned-item"
                     >
                       <span
@@ -438,7 +451,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                         <button
                           type="button"
                           className="scanner-qty-btn"
-                          onClick={() => handleRemoveQuantity(item.id)}
+                          onClick={() => handleRemoveQuantity(lineId)}
                           disabled={isConfirming}
                           title="Reducir cantidad"
                         >
@@ -461,7 +474,8 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                         ${(item.price * item.quantity).toFixed(2)}
                       </span>
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
               <div className="scanner-total-container">
