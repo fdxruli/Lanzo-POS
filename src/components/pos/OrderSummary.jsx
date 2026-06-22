@@ -345,7 +345,6 @@ export default function OrderSummary({
               >
                 <CreditCard size={21} aria-hidden="true" />
                 <span>Cobrar</span>
-                <strong>${total.toFixed(2)}</strong>
               </button>
 
               {showRestaurantActions && (
