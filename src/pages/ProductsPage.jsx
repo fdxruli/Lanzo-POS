@@ -1,7 +1,7 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { saveDataSafe, deleteDataSafe, saveBatchAndSyncProductSafe, loadData, saveData, deleteData, saveBulk, queryByIndex, STORES, saveBatchAndSyncProduct, saveImageToDB, softDeleteWithCascadeSafe, updateProductSafe } from '../services/database';
-import { showMessageModal, generateID, fileToBase64 } from '../services/utils';
+import { saveDataSafe, saveBatchAndSyncProductSafe, STORES, saveImageToDB, softDeleteWithCascadeSafe, updateProductSafe, createProductWithInitialInventorySafe } from '../services/database';
+import { showMessageModal, generateID } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
@@ -16,7 +16,6 @@ import BatchManager from '../components/products/BatchManager';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import DailyPriceModal from '../components/products/DailyPriceModal';
 import { useAppStore } from '../store/useAppStore';
-import ProductWizard from '../components/products/ProductWizard';
 import './ProductsPage.css';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom'
@@ -280,6 +279,12 @@ export default function ProductsPage() {
                 )
             );
 
+            const initialCost = parseFloat(productData.cost) || 0;
+            const initialPrice = parseFloat(productData.price) || 0;
+            const initialStock = parseFloat(productData.stock) || 0;
+            const hasVariants = productData.quickVariants && productData.quickVariants.length > 0;
+            const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
+
             if (isEditingExistingProduct) {
                 // Modo Edición
                 const updatedProduct = { ...editingProduct, ...baseProductData };
@@ -292,28 +297,12 @@ export default function ProductsPage() {
                     isActive: true,
                     createdAt: new Date().toISOString(),
                 };
-                const dbRes = await saveData(STORES.MENU, newProduct);
-                result = dbRes ? { success: true } : { success: false, error: new Error('Fallo al guardar') };
-            }
+                const initialBatches = [];
 
-            // --- 2. PROCESAMIENTO DE STOCK Y VARIANTES (Aquí está la magia) ---
-
-            if (result.success) {
-                const initialCost = parseFloat(productData.cost) || 0;
-                const initialPrice = parseFloat(productData.price) || 0;
-                const initialStock = parseFloat(productData.stock) || 0;
-
-                // Detectamos si vienen variantes del Wizard
-                const hasVariants = productData.quickVariants && productData.quickVariants.length > 0;
-
-                // Caso A: Producto Simple (Sin variantes, con stock inicial declarado)
-                // Solo creamos lote simple si es NUEVO, NO es receta y NO tiene variantes
-                const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
-
-                if (!isEditingExistingProduct && !isRecipeProduct && !hasVariants && initialStock > 0) {
-                    const initialBatch = {
+                if (!isRecipeProduct && !hasVariants && initialStock > 0) {
+                    initialBatches.push({
                         id: `batch-${productId}-initial`,
-                        productId: productId,
+                        productId,
                         cost: initialCost,
                         price: initialPrice,
                         stock: initialStock,
@@ -321,14 +310,49 @@ export default function ProductsPage() {
                         trackStock: true,
                         isActive: true,
                         notes: "Stock Inicial",
+                        expiryDate: productData.expiryDate || null,
+                        alertTargetDate: productData.alertTargetDate || null,
+                        alertType: productData.alertType || null,
+                        manufacturerBatchId: productData.manufacturerBatchId || null,
                         sku: null,
                         attributes: null
-                    };
-                    const batchRes = await saveBatchAndSyncProductSafe(initialBatch);
-                    if (batchRes.success) valueDifference = initialCost * initialStock;
+                    });
                 }
 
-                // Caso B: Variantes desde el Wizard (ROPA/CALZADO)  <-- ¡NUEVO CÓDIGO!
+                if (hasVariants) {
+                    for (const variant of productData.quickVariants) {
+                        if ((variant.talla || variant.color) && (parseFloat(variant.stock) > 0 || variant.sku)) {
+                            initialBatches.push({
+                                id: generateID('batch'),
+                                productId,
+                                stock: parseFloat(variant.stock) || 0,
+                                cost: parseFloat(variant.cost) || initialCost,
+                                price: parseFloat(variant.price) || initialPrice,
+                                sku: variant.sku || null,
+                                attributes: {
+                                    talla: variant.talla || '',
+                                    color: variant.color || ''
+                                },
+                                isActive: true,
+                                createdAt: new Date().toISOString(),
+                                notes: 'Ingreso rápido (Modo Asistido)',
+                                trackStock: true,
+                                expiryDate: variant.expiryDate || productData.expiryDate || null,
+                                alertTargetDate: variant.alertTargetDate || productData.alertTargetDate || null,
+                                alertType: variant.alertType || productData.alertType || null,
+                                manufacturerBatchId: variant.manufacturerBatchId || productData.manufacturerBatchId || null
+                            });
+                        }
+                    }
+                }
+
+                result = await createProductWithInitialInventorySafe(newProduct, initialBatches);
+                if (result.success) valueDifference = result.inventoryValue || 0;
+            }
+
+            // --- 2. PROCESAMIENTO DE STOCK Y VARIANTES EN EDICIÓN ---
+
+            if (result.success && isEditingExistingProduct) {
                 if (hasVariants) {
                     for (const variant of productData.quickVariants) {
                         // Validamos que la variante tenga sentido (talla/color y stock o SKU)
