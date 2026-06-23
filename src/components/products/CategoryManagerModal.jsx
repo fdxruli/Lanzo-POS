@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import CategoryForm from './CategoryForm';
 import './CategoryManagerModal.css';
 
-export default function CategoryManagerModal({ show, onClose, categories, onRefresh, onDelete }) {
+export default function CategoryManagerModal({ show, onClose, categories, onSave, onRefresh, onDelete }) {
   const [editingCategory, setEditingCategory] = useState(null);
 
   if (!show) return null;
@@ -27,6 +27,7 @@ export default function CategoryManagerModal({ show, onClose, categories, onRefr
         <div style={{ marginBottom: '20px' }}>
           <CategoryForm 
             initialData={editingCategory}
+            onSave={onSave}
             onSaveSuccess={handleSaveSuccess}
             onCancel={editingCategory ? () => setEditingCategory(null) : null}
           />

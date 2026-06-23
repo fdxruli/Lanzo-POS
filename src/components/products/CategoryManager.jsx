@@ -3,7 +3,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import CategoryForm from './CategoryForm';
 import './CategoryManager.css';
 
-export default function CategoryManager({ categories, onRefresh, onDelete }) {
+export default function CategoryManager({ categories, onSave, onRefresh, onDelete }) {
   const [editingCategory, setEditingCategory] = useState(null);
 
   const handleSaveSuccess = () => {
@@ -17,6 +17,7 @@ export default function CategoryManager({ categories, onRefresh, onDelete }) {
         <h3>{editingCategory ? 'Editar' : 'Nueva'} Categoría</h3>
         <CategoryForm 
           initialData={editingCategory} 
+          onSave={onSave}
           onSaveSuccess={handleSaveSuccess}
           onCancel={editingCategory ? () => setEditingCategory(null) : null}
         />
