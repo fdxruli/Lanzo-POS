@@ -11,10 +11,12 @@ describe('quantityInputStep', () => {
     expect(getQuantityStepByUnit(' KG ')).toBe('0.001');
   });
 
-  it('usa precision de tres decimales para kg y litros', () => {
+  it('usa precision de tres decimales para kg, litros y metros', () => {
     expect(getQuantityStepByUnit('kg')).toBe('0.001');
     expect(getQuantityStepByUnit('lt')).toBe('0.001');
     expect(getQuantityStepByUnit('l')).toBe('0.001');
+    expect(getQuantityStepByUnit('mt')).toBe('0.001');
+    expect(getQuantityStepByUnit('metro')).toBe('0.001');
   });
 
   it('usa enteros para gramos, mililitros y piezas', () => {
