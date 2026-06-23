@@ -13,6 +13,7 @@ import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore';
 import { useStatsStore } from '../../store/useStatsStore';
+import { normalizeBusinessTypes } from '../../utils/businessType';
 
 import { useBotWorker } from '../../hooks/useBotWorker';
 
@@ -99,7 +100,7 @@ const AssistantBot = () => {
     lowStockCount,
     licenseDays,
     license: { daysRemaining: licenseDays },
-    businessType: companyProfile?.business_type || [],
+    businessType: normalizeBusinessTypes(companyProfile?.business_type, 'abarrotes'),
     stats,
   }), [
     cartOrder.length, // Solo la longitud, no el array completo
