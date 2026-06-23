@@ -13,12 +13,11 @@ import {
   AlertTriangle,
   TrendingDown
 } from 'lucide-react';
-import { useSalesStore } from '../../store/useSalesStore';
 import './StatsGrid.css';
 import TopProducts from './TopProducts';
 import TopCustomers from './TopCustomers';
 import { AreaTrendChart, BarWeekdayChart } from './TrendChart';
-import { getOrdersSince, loadData as loadDBData, STORES } from '../../services/db/index';
+import { reportingService } from '../../services/db/reporting';
 
 
 // Periodos disponibles
@@ -30,80 +29,82 @@ const TIME_PERIODS = {
   all: { label: 'Total', days: Infinity }
 };
 
-export default function StatsGrid({ stats, customers = [] }) {
-  const sales = useSalesStore((state) => state.sales);
+const buildPeriodRanges = (timeRange) => {
+  const now = new Date();
+  const period = TIME_PERIODS[timeRange];
+
+  let startDate = null;
+  if (period.days === 1) {
+    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  } else if (period.days === 'month') {
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (period.days !== Infinity) {
+    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    startDate.setDate(startDate.getDate() - (period.days - 1));
+  }
+
+  let prevPeriodStart = null;
+  let prevPeriodEnd = null;
+  if (period.days === 1) {
+    prevPeriodStart = new Date(startDate);
+    prevPeriodStart.setDate(prevPeriodStart.getDate() - 1);
+    prevPeriodEnd = new Date(startDate.getTime() - 1);
+  } else if (period.days === 'month') {
+    prevPeriodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    prevPeriodEnd = new Date(startDate.getTime() - 1);
+  } else if (period.days !== Infinity) {
+    const prevPeriodEndDate = new Date(startDate.getTime() - 1);
+    prevPeriodStart = new Date(prevPeriodEndDate);
+    prevPeriodStart.setDate(prevPeriodStart.getDate() - (period.days - 1));
+    prevPeriodEnd = prevPeriodEndDate;
+  }
+
+  return {
+    current: startDate ? { start: startDate, end: now } : null,
+    previous: prevPeriodStart ? { start: prevPeriodStart, end: prevPeriodEnd } : null
+  };
+};
+
+const formatCurrency = (val) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
+
+export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0, activeRubros = [] }) {
   const [timeRange, setTimeRange] = useState('today');
   const [filteredSales, setFilteredSales] = useState([]);
   const [prevPeriodSales, setPrevPeriodSales] = useState([]);
-  const [isLoadingData, setIsLoadingData] = useState(true);
-
-
-
-  const recentSalesLength = sales?.length || 0;
-  const latestSaleId = sales?.[0]?.id || null;
 
   useEffect(() => {
     async function loadPeriodSales() {
-      setIsLoadingData(true);
       try {
-        const now = new Date();
-        const period = TIME_PERIODS[timeRange];
+        const ranges = buildPeriodRanges(timeRange);
+        const [currentReport, previousReport] = await Promise.all([
+          reportingService.getDashboardReport({
+            rangoFechas: ranges.current,
+            rubros: activeRubros,
+            incluirCanceladas: false,
+            incluirMermas: false,
+            incluirProductos: false
+          }),
+          ranges.previous
+            ? reportingService.getDashboardReport({
+              rangoFechas: ranges.previous,
+              rubros: activeRubros,
+              incluirCanceladas: false,
+              incluirMermas: false,
+              incluirProductos: false
+            })
+            : Promise.resolve({ sales: [] })
+        ]);
 
-        let startDate = null;
-        if (period.days === 1) {
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        } else if (period.days === 'month') {
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        } else if (period.days !== Infinity) {
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          startDate.setDate(startDate.getDate() - (period.days - 1));
-        }
-
-        let prevPeriodStart = null;
-        if (period.days === 1) {
-          prevPeriodStart = new Date(startDate);
-          prevPeriodStart.setDate(prevPeriodStart.getDate() - 1);
-        } else if (period.days === 'month') {
-          prevPeriodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        } else if (period.days !== Infinity) {
-          const prevPeriodEnd = new Date(startDate);
-          prevPeriodEnd.setDate(prevPeriodEnd.getDate() - 1);
-          prevPeriodStart = new Date(prevPeriodEnd);
-          prevPeriodStart.setDate(prevPeriodStart.getDate() - (period.days - 1));
-        }
-
-        let current = [];
-        let previous = [];
-
-        if (period.days === Infinity) {
-          const allSales = await loadDBData(STORES.SALES);
-          current = allSales || [];
-        } else {
-          const queryStart = prevPeriodStart || startDate;
-          const salesData = await getOrdersSince(queryStart.toISOString());
-
-          if (prevPeriodStart) {
-            current = salesData.filter(s => new Date(s.timestamp) >= startDate);
-            previous = salesData.filter(s => new Date(s.timestamp) >= prevPeriodStart && new Date(s.timestamp) < startDate);
-          } else {
-            current = salesData.filter(s => new Date(s.timestamp) >= startDate);
-          }
-        }
-
-        const validCurrent = current.filter(sale => sale.fulfillmentStatus !== 'cancelled' && sale.status !== 'open' && sale.status !== 'cancelled');
-        const validPrev = previous.filter(sale => sale.fulfillmentStatus !== 'cancelled' && sale.status !== 'open' && sale.status !== 'cancelled');
-
-        setFilteredSales(validCurrent);
-        setPrevPeriodSales(validPrev);
+        setFilteredSales(currentReport.sales || []);
+        setPrevPeriodSales(previousReport.sales || []);
 
       } catch (err) {
         console.error("Error loading period sales", err);
-      } finally {
-        setIsLoadingData(false);
       }
     }
     loadPeriodSales();
-  }, [timeRange, recentSalesLength, latestSaleId]);
+  }, [activeRubros, reportRefreshKey, timeRange]);
 
   // Calcular métricas para el periodo seleccionado
   const metrics = useMemo(() => {
@@ -252,11 +253,6 @@ export default function StatsGrid({ stats, customers = [] }) {
       filteredSales
     };
   }, [stats, filteredSales, prevPeriodSales, timeRange]);
-
-  const formatCurrency = (val) =>
-    new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
-
-
 
   return (
     <div className="stats-container-wrapper">
