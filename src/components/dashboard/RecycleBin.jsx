@@ -11,13 +11,35 @@ import './RecycleBin.css';
 import { useSalesStore } from '../../store/useSalesStore';
 import { showMessageModal } from '../../services/utils';
 
+const formatDate = (dateString) => {
+  if (!dateString) return '-';
+  return new Date(dateString).toLocaleString('es-MX', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+  });
+};
+
+const getTypeBadge = (type) => {
+  switch (type) {
+    case 'Producto': return <span className="badge badge-product">Producto</span>;
+    case 'Cliente': return <span className="badge badge-customer">Cliente</span>;
+    case 'Pedido': return <span className="badge badge-sale">Venta</span>;
+    case 'Categoria': return <span className="badge badge-default">Categoria</span>;
+    default: return <span className="badge badge-default">{type}</span>;
+  }
+};
+
 const RecycleBin = () => {
   const { 
     deletedItems, 
     loadRecycleBin, 
+    fetchRecycleBinPage,
     restoreItem, 
     permanentlyDelete, 
     emptyBin, 
+    currentPageIndex,
+    totalItems,
+    hasPrev,
+    hasMore,
     isLoading 
   } = useRecycleBinStore();
   
@@ -63,22 +85,6 @@ const RecycleBin = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleString('es-MX', {
-      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-    });
-  };
-
-  const getTypeBadge = (type) => {
-    switch (type) {
-      case 'Producto': return <span className="badge badge-product">Producto</span>;
-      case 'Cliente': return <span className="badge badge-customer">Cliente</span>;
-      case 'Pedido': return <span className="badge badge-sale">Venta</span>;
-      default: return <span className="badge badge-default">{type}</span>;
-    }
-  };
-
   return (
     <div className="recycle-bin-container">
       {/* Header */}
@@ -86,7 +92,7 @@ const RecycleBin = () => {
         <h2>
           <Recycle className="text-blue-500" size={24} />
           Papelera de Reciclaje 
-          <span className="text-gray-400 text-sm ml-2">({deletedItems.length})</span>
+          <span className="text-gray-400 text-sm ml-2">({deletedItems.length}/{totalItems})</span>
         </h2>
         
         <div className="recycle-actions">
@@ -101,7 +107,7 @@ const RecycleBin = () => {
           </div>
           
           {deletedItems.length > 0 && (
-            <button className="btn-empty-bin" onClick={handleEmptyBin} disabled={isLoading}>
+            <button type="button" className="btn-empty-bin" onClick={handleEmptyBin} disabled={isLoading}>
               <Trash2 size={16} />
               {isLoading ? 'Procesando...' : 'Vaciar Todo'}
             </button>
@@ -131,8 +137,8 @@ const RecycleBin = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item, index) => (
-                <tr key={`${item.uniqueId}-${index}`}>
+              {filteredItems.map((item) => (
+                <tr key={item.uniqueId || item.id || item.timestamp}>
                   <td>
                     <strong>{item.mainLabel || item.name}</strong>
                     {item.code && (
@@ -146,6 +152,7 @@ const RecycleBin = () => {
                   <td>
                     <div className="action-group">
                       <button 
+                        type="button"
                         className="btn-icon btn-restore" 
                         onClick={() => handleRestore(item)}
                         title="Restaurar"
@@ -154,6 +161,7 @@ const RecycleBin = () => {
                         <RotateCcw size={16} />
                       </button>
                       <button 
+                        type="button"
                         className="btn-icon btn-delete-forever" 
                         onClick={() => handleDeleteForever(item)}
                         title="Eliminar permanentemente"
@@ -168,6 +176,25 @@ const RecycleBin = () => {
             </tbody>
           </table>
         )}
+      </div>
+      <div className="recycle-pagination">
+        <button
+          type="button"
+          className="btn-recycle-page"
+          onClick={() => fetchRecycleBinPage('prev')}
+          disabled={isLoading || !hasPrev}
+        >
+          Anterior
+        </button>
+        <span>Pagina {currentPageIndex + 1}</span>
+        <button
+          type="button"
+          className="btn-recycle-page"
+          onClick={() => fetchRecycleBinPage('next')}
+          disabled={isLoading || !hasMore}
+        >
+          Siguiente
+        </button>
       </div>
     </div>
   );

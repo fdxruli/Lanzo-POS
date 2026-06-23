@@ -137,6 +137,33 @@
   background-color: var(--light-background);
 }
 
+.recycle-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  color: var(--text-light);
+  font-size: 0.85rem;
+}
+
+.btn-recycle-page {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--card-background-color);
+  color: var(--text-dark);
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-recycle-page:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* --- BADGES (Etiquetas) --- */
 .badge {
   padding: 4px 10px;

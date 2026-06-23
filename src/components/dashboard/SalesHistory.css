@@ -14,6 +14,57 @@
   color: var(--text-dark);
 }
 
+.sales-history-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.history-export-actions,
+.history-pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.history-filters {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.5fr) repeat(5, minmax(110px, 1fr));
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+
+.history-filters input,
+.history-filters select {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--card-background-color);
+  color: var(--text-dark);
+  padding: 0 8px;
+  font-size: 0.8rem;
+}
+
+.history-secondary-btn {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--card-background-color);
+  color: var(--text-dark);
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-secondary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .empty-message {
   text-align: center;
   color: var(--text-light);
@@ -189,6 +240,23 @@
   font-weight: bold;
 }
 
+.cancellation-audit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: var(--spacing-sm);
+  padding: 8px;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  border-radius: var(--border-radius-sm);
+  background: rgba(220, 38, 38, 0.06);
+  color: var(--text-color);
+  font-size: 0.78rem;
+}
+
+.cancellation-audit strong {
+  color: var(--error-color);
+}
+
 /* Modificadores para Ticket Padre Dividido */
 .split-parent-card {
   border-left: 4px solid var(--primary-color);
@@ -301,4 +369,16 @@
 
 .child-item-row {
   margin-bottom: 2px;
+}
+
+@media (max-width: 900px) {
+  .history-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .history-filters {
+    grid-template-columns: 1fr;
+  }
 }
