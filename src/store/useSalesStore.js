@@ -10,9 +10,13 @@ import { cancelSale, moveCancelledSaleToTrash } from '../services/salesService';
 export const useSalesStore = create((set, get) => ({
   sales: [],
   wasteLogs: [],
+  salesCursorStack: [null],
+  currentSalesPageIndex: 0,
+  hasMoreSales: true,
   wasteCursorStack: [null],
   currentWastePageIndex: 0,
   hasMoreWaste: true,
+  isSalesLoading: false,
   isWasteLoading: false,
   isLoading: false,
 
@@ -20,23 +24,72 @@ export const useSalesStore = create((set, get) => ({
     set({ isLoading: true });
     try {
       const [recentSales, wastePage] = await Promise.all([
-        loadDataPaginated(STORES.SALES, { limit: 50, direction: 'prev', timeIndex: 'timestamp' }),
-        loadDataPaginated(STORES.WASTE, { limit: 50, direction: 'prev', timeIndex: 'timestamp' })
+        loadDataPaginated(STORES.SALES, { limit: 50, timeIndex: 'timestamp' }),
+        loadDataPaginated(STORES.WASTE, { limit: 50, timeIndex: 'timestamp' })
       ]);
 
+      const nextSalesCursor = recentSales?.nextCursor || null;
       const nextWasteCursor = wastePage?.nextCursor || null;
       set({
         sales: recentSales?.data || [],
         wasteLogs: wastePage?.data || [],
+        salesCursorStack: nextSalesCursor ? [null, nextSalesCursor] : [null],
+        currentSalesPageIndex: 0,
+        hasMoreSales: !!nextSalesCursor,
         wasteCursorStack: nextWasteCursor ? [null, nextWasteCursor] : [null],
         currentWastePageIndex: 0,
         hasMoreWaste: !!nextWasteCursor,
+        isSalesLoading: false,
         isWasteLoading: false,
         isLoading: false
       });
     } catch (error) {
       Logger.error('Error cargando ventas y mermas recientes:', error);
-      set({ isLoading: false, isWasteLoading: false });
+      set({ isLoading: false, isSalesLoading: false, isWasteLoading: false });
+    }
+  },
+
+  fetchSalesPage: async (direction = 'current') => {
+    const state = get();
+    if (state.isSalesLoading) return;
+
+    let targetPageIndex = state.currentSalesPageIndex;
+
+    if (direction === 'next') {
+      if (!state.hasMoreSales) return;
+      targetPageIndex += 1;
+    } else if (direction === 'prev') {
+      if (state.currentSalesPageIndex === 0) return;
+      targetPageIndex = Math.max(0, state.currentSalesPageIndex - 1);
+    }
+
+    const targetCursor = state.salesCursorStack[targetPageIndex] ?? null;
+    set({ isSalesLoading: true });
+
+    try {
+      const { data, nextCursor } = await loadDataPaginated(STORES.SALES, {
+        limit: 50,
+        cursor: targetCursor,
+        timeIndex: 'timestamp'
+      });
+
+      const newSalesCursorStack = [...state.salesCursorStack];
+      if (nextCursor) {
+        newSalesCursorStack[targetPageIndex + 1] = nextCursor;
+      } else {
+        newSalesCursorStack.length = targetPageIndex + 1;
+      }
+
+      set({
+        sales: data || [],
+        salesCursorStack: newSalesCursorStack,
+        currentSalesPageIndex: targetPageIndex,
+        hasMoreSales: !!nextCursor,
+        isSalesLoading: false
+      });
+    } catch (error) {
+      Logger.error('Error en fetchSalesPage:', error);
+      set({ isSalesLoading: false });
     }
   },
 
@@ -121,7 +174,7 @@ export const useSalesStore = create((set, get) => ({
   },
 
   deleteSale: async (
-    timestamp,
+    saleIdentifier,
     {
       restoreStock = false,
       dispositionPlan = null,
@@ -138,8 +191,12 @@ export const useSalesStore = create((set, get) => ({
       const currentSales = get().sales;
 
       // 2. Pasar currentSales para respetar la firma original de la función (evita la regresión)
+      const saleToCancel = currentSales.find((sale) => (
+        sale.id === saleIdentifier || sale.timestamp === saleIdentifier
+      ));
       const result = await cancelSale({
-        timestamp,
+        saleId: saleToCancel?.id || saleIdentifier,
+        timestamp: saleToCancel?.timestamp || saleIdentifier,
         restoreStock: normalizedRestoreStock,
         currentSales,
         dispositionPlan,
@@ -151,7 +208,10 @@ export const useSalesStore = create((set, get) => ({
       if (result.success) {
         set(state => ({
           sales: state.sales.map(sale =>
-            sale.timestamp === timestamp ? (result.sale || sale) : sale
+            sale.id === (result.sale?.id || saleToCancel?.id || saleIdentifier)
+              || sale.timestamp === (result.sale?.timestamp || saleToCancel?.timestamp || saleIdentifier)
+              ? (result.sale || sale)
+              : sale
           )
         }));
       }
