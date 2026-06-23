@@ -8,7 +8,7 @@ import CategoryManagerModal from '../components/products/CategoryManagerModal';
 import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
 import VariantInventoryView from '../components/products/VarianteInvetoryView';
-
+import { categoriesRepository } from '../service/db/general';
 import { useProductStore, broadcastDBChange } from '../store/useProductStore';
 import { useStatsStore } from '../store/useStatsStore';
 
@@ -164,22 +164,29 @@ export default function ProductsPage() {
     };
 
     const handleSaveCategory = async (categoryData) => {
-        // Usamos la versión segura
-        const result = await saveDataSafe(STORES.CATEGORIES, categoryData);
+        try {
+            const isEditing = Boolean(categoryData.id);
+            const savedCategory = await categoriesRepository.saveCategory(categoryData);
 
-        if (result.success) {
             await refreshCategories();
-            
-            // ─────────────────────────────────────────────────────────────
-            // REACTIVIDAD: Notificar a otras pestañas que la BD cambió
-            // ─────────────────────────────────────────────────────────────
+
             broadcastDBChange({
-                action: 'category-saved',
-                categoryId: categoryData.id,
+                action: isEditing ? 'category-updated' : 'category-created',
+                categoryId: savedCategory.id,
+                categoryName: savedCategory.name,
                 timestamp: Date.now(),
             });
-        } else {
-            handleActionableError(result);
+
+            return savedCategory;
+        } catch (error) {
+            if (error.name === 'DatabaseError') {
+                handleActionableError({ error });
+            } else {
+                Logger.error('Error guardando categoría:', error);
+                showMessageModal(`Error: ${error.message}`);
+            }
+
+            throw error;
         }
     };
 
@@ -216,11 +223,23 @@ export default function ProductsPage() {
                 return;
             }
 
-            await refreshCategories();
-            
             if (filters.categoryId === categoryId) {
                 setFilters({ categoryId: null });
             }
+
+            await refreshCategories();
+            await refreshData();
+
+            broadcastDBChange({
+                action: 'category-deleted',
+                categoryId,
+                cascade: {
+                    store: STORES.MENU,
+                    field: 'categoryId',
+                    setTo: '',
+                },
+                timestamp: Date.now(),
+            });
 
             showMessageModal('✅ Categoría eliminada.');
         } catch (error) {
@@ -477,7 +496,7 @@ export default function ProductsPage() {
 
             if (result.success) {
                 await refreshData();
-                
+
                 // ─────────────────────────────────────────────────────────────
                 // REACTIVIDAD: Notificar a otras pestañas que la BD cambió
                 // ─────────────────────────────────────────────────────────────
@@ -567,13 +586,13 @@ export default function ProductsPage() {
             {
                 activeTab === 'add-product' && (
                     <>
-                            <ProductForm
-                                onSave={handleSaveProduct}
-                                onCancel={() => handleTabChange('view-products')}
-                                productToEdit={editingProduct}
-                                categories={categories}
-                                onOpenCategoryManager={() => setShowCategoryModal(true)}
-                            />
+                        <ProductForm
+                            onSave={handleSaveProduct}
+                            onCancel={() => handleTabChange('view-products')}
+                            productToEdit={editingProduct}
+                            categories={categories}
+                            onOpenCategoryManager={() => setShowCategoryModal(true)}
+                        />
                     </>
                 )
             }
@@ -608,6 +627,7 @@ export default function ProductsPage() {
                 activeTab === 'categories' && (
                     <CategoryManager
                         categories={categories}
+                        onSave={handleSaveCategory}
                         onRefresh={refreshCategories}
                         onDelete={handleDeleteCategory}
                     />
@@ -631,9 +651,8 @@ export default function ProductsPage() {
                 show={showCategoryModal}
                 onClose={() => setShowCategoryModal(false)}
                 categories={categories}
+                onSave={handleSaveCategory}
                 onRefresh={refreshCategories}
-                // Usamos handleDeleteCategory que ya tiene la lógica de 
-                // borrado en cascada y manejo de errores
                 onDelete={handleDeleteCategory}
             />
 
