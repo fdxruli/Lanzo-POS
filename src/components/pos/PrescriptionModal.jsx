@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getCartLineId } from '../../utils/cartLineIdentity';
 
 export default function PrescriptionModal({ show, onClose, onConfirm, itemsRequiringPrescription }) {
     const [doctorName, setDoctorName] = useState('');
@@ -25,8 +26,8 @@ export default function PrescriptionModal({ show, onClose, onConfirm, itemsRequi
                 </p>
 
                 <ul style={{ background: '#fff3cd', padding: '10px 20px', borderRadius: '8px', marginBottom: '20px', listStyle: 'disc' }}>
-                    {itemsRequiringPrescription.map(item => (
-                        <li key={item.id} style={{ color: '#856404', fontWeight: '600' }}>
+                    {itemsRequiringPrescription.map((item, index) => (
+                        <li key={getCartLineId(item, index)} style={{ color: '#856404', fontWeight: '600' }}>
                             {item.name}
                         </li>
                     ))}
