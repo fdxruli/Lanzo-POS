@@ -151,6 +151,76 @@ describe('salesRepository.executeSaleTransaction', () => {
     });
   });
 
+  it('rechaza fiado con abono inicial si no hay caja abierta', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+    state.maps[state.STORES.MENU].set('credit-product', {
+      id: 'credit-product',
+      name: 'Producto a credito',
+      trackStock: true,
+      stock: 10,
+      committedStock: 0
+    });
+
+    await expect(
+      salesRepository.executeSaleTransaction(
+        {
+          id: 'sale-credit-cash-down-payment',
+          paymentMethod: 'fiado',
+          total: 500,
+          abono: '100',
+          saldoPendiente: '400',
+          customerId: 'customer-1',
+          items: [
+            { id: 'credit-product', quantity: 1, stockDeducted: 1, batchesUsed: [] }
+          ]
+        },
+        []
+      )
+    ).rejects.toMatchObject({
+      name: 'DatabaseError',
+      code: 'VALIDATION_ERROR',
+      message: 'La venta tiene componente de efectivo y requiere una caja abierta.'
+    });
+
+    expect(state.maps[state.STORES.SALES].has('sale-credit-cash-down-payment')).toBe(false);
+  });
+
+  it('permite fiado sin abono inicial aunque no haya caja abierta', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+    state.maps[state.STORES.CUSTOMERS].set('customer-1', {
+      id: 'customer-1',
+      debt: '0'
+    });
+    state.maps[state.STORES.MENU].set('credit-product', {
+      id: 'credit-product',
+      name: 'Producto a credito',
+      trackStock: true,
+      stock: 10,
+      committedStock: 0
+    });
+
+    const result = await salesRepository.executeSaleTransaction(
+      {
+        id: 'sale-credit-no-down-payment',
+        paymentMethod: 'fiado',
+        total: 500,
+        abono: '0',
+        saldoPendiente: '500',
+        customerId: 'customer-1',
+        items: [
+          { id: 'credit-product', quantity: 1, stockDeducted: 1, batchesUsed: [] }
+        ]
+      },
+      []
+    );
+
+    expect(result.success).toBe(true);
+    expect(state.maps[state.STORES.SALES].get('sale-credit-no-down-payment')).not.toHaveProperty('cash_session_id');
+    expect(state.maps[state.STORES.CUSTOMERS].get('customer-1')).toMatchObject({
+      debt: '500'
+    });
+  });
+
   it('convierte stock comprometido de lote a descuento real', async () => {
     state.maps[state.STORES.MENU].set('milk', {
       id: 'milk',
