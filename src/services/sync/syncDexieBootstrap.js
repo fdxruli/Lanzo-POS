@@ -4,11 +4,25 @@ import { POS_SYNC_STORES } from './syncConstants';
 
 let posSyncSchemaRegistered = false;
 
+const hasTable = (tableName) => db.tables.some((table) => table.name === tableName);
+
+const hasAllSyncStores = () => (
+  hasTable(POS_SYNC_STORES.OUTBOX)
+  && hasTable(POS_SYNC_STORES.META)
+  && hasTable(POS_SYNC_STORES.CONFLICTS)
+);
+
 export const ensurePosSyncDexieSchema = () => {
-  if (posSyncSchemaRegistered) return true;
+  if (posSyncSchemaRegistered || hasAllSyncStores()) {
+    posSyncSchemaRegistered = true;
+    return true;
+  }
 
   if (db.isOpen()) {
-    Logger.warn('[PosSync/Dexie] La base ya esta abierta; no se puede registrar schema Fase 0 en caliente. Recarga la app si faltan stores de sync.');
+    Logger.warn(
+      '[PosSync/Dexie] La base ya esta abierta; no se puede registrar schema POS Sync en caliente. ' +
+      'Recarga la app si faltan stores de sync.'
+    );
     return false;
   }
 
@@ -19,7 +33,7 @@ export const ensurePosSyncDexieSchema = () => {
   });
 
   posSyncSchemaRegistered = true;
-  Logger.log('[PosSync/Dexie] Schema Fase 0 registrado: sync_outbox, sync_meta, sync_conflicts.');
+  Logger.log('[PosSync/Dexie] Schema POS Sync registrado: sync_outbox, sync_meta, sync_conflicts.');
   return true;
 };
 
