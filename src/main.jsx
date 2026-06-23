@@ -8,6 +8,7 @@ import { storageManager } from './services/storageManager';
 import Logger from './services/Logger';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { cleanupDevelopmentServiceWorkers } from './services/devServiceWorkerCleanup';
+import { startPosSyncAutoBootstrap } from './services/sync/posSyncAutoBootstrap';
 
 function Thrower({ error }) {
   throw error;
@@ -66,6 +67,8 @@ const router = createBrowserRouter([
     Logger.error('❌ Boot: Error crítico en StorageManager', err);
     // No bloquear el boot, solo registrar
   }
+
+  startPosSyncAutoBootstrap();
 
   // Ahora renderizar React
   ReactDOM.createRoot(document.getElementById('root')).render(
