@@ -280,8 +280,17 @@ export const generalRepository = {
     const { cascade = {}, reason = 'Eliminado por usuario' } = options;
     const { updates = [], deletes = [] } = cascade;
 
+    const transactionStores = [
+      ...new Set([
+        sourceStore,
+        trashStore,
+        ...updates.map(u => u.store),
+        ...deletes.map(d => d.store)
+      ].filter(Boolean))
+    ];
+
     try {
-      await db.transaction('rw', [sourceStore, ...updates.map(u => u.store), ...deletes.map(d => d.store)], async () => {
+      await db.transaction('rw', transactionStores, async () => {
         const item = await db.table(sourceStore).get(id);
 
         if (!item) {
