@@ -8,7 +8,7 @@ import CategoryManagerModal from '../components/products/CategoryManagerModal';
 import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
 import VariantInventoryView from '../components/products/VarianteInvetoryView';
-import { categoriesRepository } from '../service/db/general';
+import { categoriesRepository } from '../services/db/general';
 import { useProductStore, broadcastDBChange } from '../store/useProductStore';
 import { useStatsStore } from '../store/useStatsStore';
 
