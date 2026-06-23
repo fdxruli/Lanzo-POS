@@ -6,6 +6,7 @@ import { loadDataPaginated, STORES, initDB, db } from '../services/db/index';
 import Logger from '../services/Logger';
 import { Money } from '../utils/moneyMath';
 import { registrarMovimientoCaja, MOVIMIENTO_TIPOS, CAJA_CONFIG } from '../services/cajaService';
+import { useAppStore } from '../store/useAppStore';
 import {
   CASH_OPENING_POLICY_EVENT,
   CASH_OPENING_POLICY,
@@ -169,7 +170,7 @@ export function useCaja() {
     return cajaActiva;
   }, []);
 
-  const ajustarMontoInicial = async (nuevoMonto) => {
+  const ajustarMontoInicial = async (nuevoMonto, motivo = '') => {
     if (!cajaActual) return;
 
     const montoSafe = Money.init(nuevoMonto);
@@ -178,30 +179,79 @@ export function useCaja() {
       return;
     }
 
+    const motivoLimpio = String(motivo || '').trim();
+    if (!motivoLimpio) {
+      showMessageModal('Error: Indica el motivo del ajuste de fondo inicial.');
+      return false;
+    }
+
     try {
       const versionEsperada = cajaActual.updatedAt || cajaActual.fecha_apertura;
 
-      const cajaGuardada = await db.transaction('rw', db.table(STORES.CAJAS), async () => {
+      const { cajaGuardada, movimientoAuditoria } = await db.transaction('rw', [
+        db.table(STORES.CAJAS),
+        db.table(STORES.MOVIMIENTOS_CAJA)
+      ], async () => {
         const cajaDb = await db.table(STORES.CAJAS).get(cajaActual.id);
         if (!cajaDb) throw new Error("CRITICAL: La caja no existe.");
+
+        if (cajaDb.estado !== 'abierta') {
+          throw new Error("CAJA_CLOSED: Solo se puede ajustar el fondo inicial de una caja abierta.");
+        }
 
         const currentVersion = cajaDb.updatedAt || cajaDb.fecha_apertura;
         if (currentVersion !== versionEsperada) {
           throw new Error("CONCURRENCY_ERROR: Modificación concurrente detectada.");
         }
 
+        const montoAnteriorSafe = Money.init(cajaDb.monto_inicial || 0);
+        const diferenciaSafe = Money.subtract(montoSafe, montoAnteriorSafe);
+        const now = new Date().toISOString();
+        const currentStaffUser = useAppStore.getState().currentStaffUser;
+        const responsable = currentStaffUser?.name
+          || currentStaffUser?.username
+          || currentStaffUser?.email
+          || 'Administrador local';
+
         cajaDb.monto_inicial = Money.toExactString(montoSafe);
-        cajaDb.updatedAt = new Date().toISOString();
+        cajaDb.updatedAt = now;
         await db.table(STORES.CAJAS).put(cajaDb);
-        return cajaDb;
+
+        const movimientoAuditoria = {
+          id: generateID('mov'),
+          caja_id: cajaDb.id,
+          cash_session_id: cajaDb.id,
+          tipo: 'fondo_inicial_ajuste',
+          monto: Money.toExactString(diferenciaSafe.abs()),
+          concepto: `Ajuste fondo inicial: $${Money.toNumber(montoAnteriorSafe).toFixed(2)} -> $${Money.toNumber(montoSafe).toFixed(2)}. Motivo: ${motivoLimpio}`,
+          fecha: now,
+          actor: responsable,
+          audit: {
+            eventType: 'INITIAL_FUND_ADJUSTMENT',
+            previousAmount: Money.toExactString(montoAnteriorSafe),
+            newAmount: Money.toExactString(montoSafe),
+            delta: Money.toExactString(diferenciaSafe),
+            reason: motivoLimpio,
+            actor: responsable,
+            actorId: currentStaffUser?.id || null,
+            changedAt: now
+          }
+        };
+
+        await db.table(STORES.MOVIMIENTOS_CAJA).put(movimientoAuditoria);
+        return { cajaGuardada: cajaDb, movimientoAuditoria };
       });
 
       setCajaActual(cajaGuardada);
+      setMovimientosCaja((prev) => [movimientoAuditoria, ...prev]);
+      totalesCacheRef.current = { ...totalesCacheRef.current, teoricoTimestamp: 0 };
       showMessageModal('Fondo inicial ajustado.');
+      return true;
     } catch (error) {
       Logger.error('Error de concurrencia ajustando monto', error);
       showMessageModal(`Error: ${error.message}`);
       await sincronizarEstadoCaja();
+      return false;
     }
   };
 
