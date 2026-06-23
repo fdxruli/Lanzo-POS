@@ -1,34 +1,50 @@
 import React, { useState, useEffect } from 'react';
 
+const DEFAULT_CATEGORY_FORM = {
+  id: '',
+  name: '',
+  color: '#3b82f6',
+  sortOrder: 0
+};
+
+const buildCategoryFormData = (category) => {
+  if (!category) {
+    return { ...DEFAULT_CATEGORY_FORM };
+  }
+
+  return {
+    id: category.id || '',
+    name: category.name || '',
+    color: category.color || DEFAULT_CATEGORY_FORM.color,
+    sortOrder: category.sortOrder || 0
+  };
+};
+
 export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCancel }) {
-  const [formData, setFormData] = useState({
-    id: '', name: '', color: '#3b82f6', sortOrder: 0
-  });
+  const [formData, setFormData] = useState(DEFAULT_CATEGORY_FORM);
   const [error, setError] = useState('');
 
+  const resetForm = () => {
+    setFormData({ ...DEFAULT_CATEGORY_FORM });
+    setError('');
+  };
+
   useEffect(() => {
-    if (initialData) {
-      setFormData({
-        id: initialData.id,
-        name: initialData.name,
-        color: initialData.color || '#3b82f6',
-        sortOrder: initialData.sortOrder || 0
-      });
-    } else {
-      setFormData({
-        id: '',
-        name: '',
-        color: '#3b82f6',
-        sortOrder: 0
-      });
-    }
+    setFormData(buildCategoryFormData(initialData));
+    setError('');
   }, [initialData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!formData.name.trim()) {
+    const normalizedFormData = {
+      ...formData,
+      name: formData.name.trim(),
+      sortOrder: Number(formData.sortOrder) || 0
+    };
+
+    if (!normalizedFormData.name) {
       setError('El nombre es obligatorio.');
       return;
     }
@@ -38,16 +54,19 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
         throw new Error('No se configuró el guardado de categorías.');
       }
 
-      const savedCategory = await onSave(formData);
+      const savedCategory = await onSave(normalizedFormData);
 
-      onSaveSuccess?.(savedCategory);
+      await Promise.resolve(onSaveSuccess?.(savedCategory));
 
-      if (!initialData) {
-        setFormData({ id: '', name: '', color: '#3b82f6', sortOrder: 0 });
-      }
+      resetForm();
     } catch (err) {
       setError(err.message || 'No se pudo guardar la categoría.');
     }
+  };
+
+  const handleCancel = () => {
+    resetForm();
+    onCancel?.();
   };
 
   return (
@@ -89,7 +108,7 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
           {formData.id ? 'Actualizar' : 'Guardar'}
         </button>
         {onCancel && (
-          <button type="button" className="btn btn-cancel" onClick={onCancel}>
+          <button type="button" className="btn btn-cancel" onClick={handleCancel}>
             Cancelar
           </button>
         )}
