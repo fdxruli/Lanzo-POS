@@ -67,7 +67,12 @@ export const LICENSE_PLAN_BLOCK_REASONS = [
 
 export const GRACE_PERIOD_DAYS = 7;
 
+// Polling normal para planes sin realtime. Mantiene bajo el consumo de Supabase.
 export const LICENSE_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+
+// Red de seguridad para PWA móvil con realtime. Si Android/iOS pausa el WebSocket
+// sin disparar CLOSED/TIMED_OUT, este check evita esperar 30 minutos.
+export const REALTIME_SAFETY_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
 export const ENABLE_LICENSE_REALTIME =
   import.meta.env.VITE_ENABLE_LICENSE_REALTIME === 'true';
