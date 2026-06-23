@@ -3,7 +3,8 @@
 import Logger from '../../../services/Logger';
 
 import {
-  LICENSE_SYNC_INTERVAL_MS
+  LICENSE_SYNC_INTERVAL_MS,
+  REALTIME_SAFETY_SYNC_INTERVAL_MS
 } from './licenseConstants';
 
 import {
@@ -13,6 +14,27 @@ import {
 let licenseSyncTimer = null;
 let licenseSyncOnlineListener = null;
 let isLicenseSyncCheckRunning = false;
+
+const getSyncIntervalForMode = (mode) => (
+  mode === 'hybrid_realtime'
+    ? REALTIME_SAFETY_SYNC_INTERVAL_MS
+    : LICENSE_SYNC_INTERVAL_MS
+);
+
+const restartLicenseSyncTimer = (get, mode) => {
+  if (licenseSyncTimer) {
+    clearInterval(licenseSyncTimer);
+    licenseSyncTimer = null;
+  }
+
+  const intervalMs = getSyncIntervalForMode(mode);
+
+  licenseSyncTimer = setInterval(() => {
+    get().runLicenseSyncCheck(mode === 'hybrid_realtime' ? 'realtime_safety_interval' : 'interval');
+  }, intervalMs);
+
+  Logger.log(`[LicenseSync] Intervalo activo cada ${Math.round(intervalMs / 1000)}s (${mode}).`);
+};
 
 export const createLicenseSyncActions = ({
   set,
@@ -100,13 +122,12 @@ export const createLicenseSyncActions = ({
       get().clearServerStatus?.();
     }
 
-    licenseSyncTimer = setInterval(() => {
-      get().runLicenseSyncCheck('interval');
-    }, LICENSE_SYNC_INTERVAL_MS);
+    restartLicenseSyncTimer(get, nextMode);
 
     licenseSyncOnlineListener = () => {
       Logger.log('[LicenseSync] Red recuperada. Revalidando sesión.');
       get().runLicenseSyncCheck('online');
+      get().recoverRealtimeSecurity?.('online');
     };
 
     window.addEventListener('online', licenseSyncOnlineListener);
@@ -116,6 +137,7 @@ export const createLicenseSyncActions = ({
 
       if (!channel) {
         set({ licenseSyncMode: 'hybrid_polling' });
+        restartLicenseSyncTimer(get, 'hybrid_polling');
       }
     } else {
       await get().stopRealtimeSecurity();
@@ -139,6 +161,7 @@ export const createLicenseSyncActions = ({
     }
 
     set({ licenseSyncMode: nextMode });
+    restartLicenseSyncTimer(get, nextMode);
 
     Logger.log(`[LicenseSync] Modo actualizado a ${nextMode} (${reason}).`);
 
@@ -147,6 +170,7 @@ export const createLicenseSyncActions = ({
 
       if (!channel) {
         set({ licenseSyncMode: 'hybrid_polling' });
+        restartLicenseSyncTimer(get, 'hybrid_polling');
       }
     } else {
       await get().stopRealtimeSecurity();
