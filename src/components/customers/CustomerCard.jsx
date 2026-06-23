@@ -13,6 +13,13 @@ import {
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { formatCustomerDebt, getSafeCustomerDebt } from '../../utils/customerUtils';
 
+const SYNC_BADGES = {
+    pending: { label: 'Pendiente', className: 'warning' },
+    synced: { label: 'Sincronizado', className: 'success' },
+    conflict: { label: 'Conflicto', className: 'danger' },
+    error: { label: 'Error sync', className: 'danger' }
+};
+
 const CustomerCard = memo(({
     customer,
     isWhatsAppLoading,
@@ -33,6 +40,7 @@ const CustomerCard = memo(({
         : Number(globalLimit) || 0;
     const creditUsage = creditLimit > 0 ? Math.round((parsedDebt / creditLimit) * 100) : 0;
     const isOverLimit = creditLimit > 0 && parsedDebt > creditLimit;
+    const syncBadge = SYNC_BADGES[customer.syncStatus] || null;
     const initials = customer.name
         ?.split(/\s+/)
         .filter(Boolean)
@@ -49,6 +57,14 @@ const CustomerCard = memo(({
                     <div>
                         <h3 className="customer-name">{customer.name}</h3>
                         <span className="customer-record-label">Cliente registrado</span>
+                        {syncBadge && (
+                            <span
+                                className={`customer-status-badge ${syncBadge.className}`}
+                                title={customer.conflictReason || 'Estado de sincronizacion'}
+                            >
+                                {syncBadge.label}
+                            </span>
+                        )}
                     </div>
                 </div>
 
