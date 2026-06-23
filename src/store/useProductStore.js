@@ -179,12 +179,33 @@ function setupReactiveListeners(get) {
  * @param {object} metadata - Información opcional sobre qué cambió
  */
 export function broadcastDBChange(metadata = {}) {
-    if (broadcastChannel && broadcastChannel.readyState === 'connected') {
-        broadcastChannel.postMessage({
-            type: 'db-changed',
-            timestamp: Date.now(),
-            metadata,
-        });
+    if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') {
+        return;
+    }
+
+    const payload = {
+        type: 'db-changed',
+        timestamp: Date.now(),
+        metadata,
+    };
+
+    try {
+        if (broadcastChannel) {
+            broadcastChannel.postMessage(payload);
+            return;
+        }
+
+        // Fallback: si el store aún no inicializó su listener global,
+        // creamos un canal temporal solo para emitir el evento.
+        const tempChannel = new BroadcastChannel('product-store-invalidation');
+        tempChannel.postMessage(payload);
+
+        // Lo cerramos en el siguiente tick para no cortar el envío inmediatamente.
+        setTimeout(() => {
+            tempChannel.close();
+        }, 0);
+    } catch (error) {
+        Logger.warn('[ProductStore] No se pudo emitir broadcast de cambio:', error);
     }
 }
 
@@ -248,7 +269,30 @@ export const useProductStore = create((set, get) => ({
 
         // 3. Rehidratar desde IndexedDB y liberar el bloqueo
         get()
-            .fetchPage('current')
+            .refreshCategories()
+            .then(() => {
+                const { categories, filters } = get();
+
+                const hasDeletedSelectedCategory =
+                    filters.categoryId &&
+                    filters.categoryId !== 'CAT_DYNAMIC_AGOTADOS' &&
+                    !categories.some((category) => category.id === filters.categoryId);
+
+                if (hasDeletedSelectedCategory) {
+                    set({
+                        filters: {
+                            ...filters,
+                            categoryId: null,
+                            outOfStockOnly: false,
+                        },
+                        cursorStack: [null],
+                        currentPageIndex: 0,
+                        hasMore: true,
+                    });
+                }
+
+                return get().fetchPage('current');
+            })
             .catch((error) => {
                 Logger.error('[ProductStore] Error during invalidation re-fetch:', error);
             })
@@ -256,11 +300,9 @@ export const useProductStore = create((set, get) => ({
                 set({ isInvalidating: false });
                 Logger.debug('[ProductStore] Invalidation complete');
 
-                // Si llegó una petición mientras estábamos en vuelo, ejecutarla ahora.
                 if (pendingInvalidation) {
                     pendingInvalidation = false;
                     Logger.info('[ProductStore] Executing pending invalidation after mutex release');
-                    // Resetear el tiempo para que no quede bloqueado por BURST_DEDUPE_MS
                     lastInvalidationTime = 0;
                     get().invalidateAndReset();
                 }
