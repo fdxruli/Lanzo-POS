@@ -1,6 +1,7 @@
 import { db, STORES } from './db/dexie';
 import { isFinanciallyClosedSale } from './sales/financialStats';
 import { Money } from '../utils/moneyMath';
+import { getFinancialQuality, getLineRevenue, isMissingUnitCost, normalizeFinancialNumber } from './sales/financialPolicy';
 
 const DEFAULT_REBUILD_WINDOW_DAYS = 30;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -107,6 +108,8 @@ const buildDailyStatsFromTicketHistory = (sales = []) => {
         date: dateKey,
         revenue: Money.init(0),
         validRevenue: Money.init(0),
+        unconfirmedRevenue: Money.init(0),
+        unreliableProfitDueToMissingCosts: Money.init(0),
         profit: Money.init(0),
         orders: 0,
         itemsSold: Money.init(0),
@@ -115,7 +118,7 @@ const buildDailyStatsFromTicketHistory = (sales = []) => {
     }
 
     const dayStat = dailyMap.get(dateKey);
-    dayStat.revenue = Money.add(dayStat.revenue, sale.total || 0);
+    dayStat.revenue = Money.add(dayStat.revenue, normalizeFinancialNumber(sale.total || 0));
     dayStat.orders += 1;
 
     if (!Array.isArray(sale.items)) return;
@@ -123,21 +126,26 @@ const buildDailyStatsFromTicketHistory = (sales = []) => {
     sale.items.forEach((item) => {
       const qty = Money.init(item?.quantity || 0);
       const qtyNumber = Number(qty.round(3).toString());
-      const lineRevenue = Money.multiply(item?.price || 0, qty);
+      const lineRevenue = getLineRevenue(item);
       const rawCost = item?.cost;
-      const hasMissingCost = rawCost === undefined || rawCost === null || rawCost === '';
-      const normalizedCost = hasMissingCost ? 0 : rawCost;
-      const unitProfit = Money.subtract(item?.price || 0, normalizedCost);
-      const lineProfit = Money.multiply(unitProfit, qty);
+      const unitCost = normalizeFinancialNumber(rawCost);
 
       dayStat.itemsSold = Money.add(dayStat.itemsSold, qty);
-      dayStat.validRevenue = Money.add(dayStat.validRevenue, lineRevenue);
-      dayStat.profit = Money.add(dayStat.profit, lineProfit);
 
-      if (hasMissingCost) {
+      if (isMissingUnitCost(rawCost)) {
         dayStat.hasMissingCosts = true;
+        dayStat.unconfirmedRevenue = Money.add(dayStat.unconfirmedRevenue, lineRevenue);
+        dayStat.unreliableProfitDueToMissingCosts = Money.add(
+          dayStat.unreliableProfitDueToMissingCosts,
+          lineRevenue
+        );
         anomaliesFound += qtyNumber > 0 ? qtyNumber : 0;
+        return;
       }
+
+      const lineCost = Money.multiply(unitCost, qty);
+      dayStat.validRevenue = Money.add(dayStat.validRevenue, lineRevenue);
+      dayStat.profit = Money.add(dayStat.profit, Money.subtract(lineRevenue, lineCost));
     });
   });
 
@@ -148,8 +156,14 @@ const buildDailyStatsFromTicketHistory = (sales = []) => {
       ...stat,
       revenue: Money.toNumber(stat.revenue),
       validRevenue: Money.toNumber(stat.validRevenue),
+      unconfirmedRevenue: Money.toNumber(stat.unconfirmedRevenue),
+      unreliableProfitDueToMissingCosts: Money.toNumber(stat.unreliableProfitDueToMissingCosts),
       profit: Money.toNumber(stat.profit),
-      itemsSold: Number(stat.itemsSold.round(3).toString())
+      itemsSold: Number(stat.itemsSold.round(3).toString()),
+      ...getFinancialQuality(
+        Money.toNumber(stat.validRevenue),
+        Money.toNumber(stat.unconfirmedRevenue)
+      )
     }))
   };
 };
@@ -260,7 +274,7 @@ const rebuildDailyStats = async (options = {}) => {
       ? 'todo el historial'
       : `${range.startDateKey} a ${range.endDateKey}`;
     const anomalyLabel = anomaliesFound > 0
-      ? ` Se encontraron ${anomaliesFound} productos vendidos sin costo registrado; se calcularon con costo 0.`
+      ? ` Se encontraron ${anomaliesFound} productos vendidos sin costo registrado; quedaron fuera de utilidad confirmada.`
       : '';
 
     return {

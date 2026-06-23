@@ -1,4 +1,5 @@
 import { Money } from '../../utils/moneyMath';
+import { getFinancialQuality, getLineRevenue, isMissingUnitCost, normalizeFinancialNumber } from './financialPolicy';
 
 export const SALE_STATUS = Object.freeze({
   OPEN: 'open',
@@ -25,7 +26,7 @@ export async function buildProductCostMap(db, stores) {
   return productCostMap;
 }
 
-export function buildDailyStatsFromSales(sales, productCostMap = new Map(), logger = console) {
+export function buildDailyStatsFromSales(sales, productCostMap = new Map(), _logger = console) {
   const dailyMap = new Map();
 
   (sales || []).forEach((sale) => {
@@ -38,7 +39,9 @@ export function buildDailyStatsFromSales(sales, productCostMap = new Map(), logg
         id: dateKey,
         date: dateKey,
         revenue: Money.init(0),
-        validRevenue: Money.init(0), // Nuevo: ingresos aplicables a la ganancia
+        validRevenue: Money.init(0),
+        unconfirmedRevenue: Money.init(0),
+        unreliableProfitDueToMissingCosts: Money.init(0),
         profit: Money.init(0),
         orders: 0,
         itemsSold: Money.init(0),
@@ -47,7 +50,7 @@ export function buildDailyStatsFromSales(sales, productCostMap = new Map(), logg
     }
 
     const dayStat = dailyMap.get(dateKey);
-    dayStat.revenue = Money.add(dayStat.revenue, sale.total || 0);
+    dayStat.revenue = Money.add(dayStat.revenue, normalizeFinancialNumber(sale.total || 0));
     dayStat.orders += 1;
 
     if (!Array.isArray(sale.items)) return;
@@ -56,33 +59,43 @@ export function buildDailyStatsFromSales(sales, productCostMap = new Map(), logg
       const qty = Money.init(item.quantity || 0);
       dayStat.itemsSold = Money.add(dayStat.itemsSold, qty);
 
-      // Usar exactTotal si existe para evitar pérdida de centavos por redondeos de mayoreo/fracciones
-      const lineRevenue = item.exactTotal !== undefined && item.exactTotal !== null
-        ? Money.init(item.exactTotal)
-        : Money.multiply(item.price || 0, qty);
-
+      const lineRevenue = getLineRevenue(item);
       const realId = item.parentId || item.id;
-      let rawCost = item.cost ?? productCostMap.get(realId);
+      const rawCost = item.cost ?? productCostMap.get(realId);
+      const unitCost = normalizeFinancialNumber(rawCost);
 
-      // Exclusión Estricta: Si no hay costo o es exactamente 0
-      if (rawCost === null || rawCost === undefined || rawCost === '' || Number(rawCost) === 0) {
+      if (isMissingUnitCost(rawCost)) {
         dayStat.hasMissingCosts = true;
-      } else {
-        dayStat.validRevenue = Money.add(dayStat.validRevenue, lineRevenue);
-        const lineCost = Money.multiply(rawCost, qty);
-        const lineProfit = Money.subtract(lineRevenue, lineCost);
-        dayStat.profit = Money.add(dayStat.profit, lineProfit);
+        dayStat.unconfirmedRevenue = Money.add(dayStat.unconfirmedRevenue, lineRevenue);
+        dayStat.unreliableProfitDueToMissingCosts = Money.add(
+          dayStat.unreliableProfitDueToMissingCosts,
+          lineRevenue
+        );
+        return;
       }
+
+      dayStat.validRevenue = Money.add(dayStat.validRevenue, lineRevenue);
+      const lineCost = Money.multiply(unitCost, qty);
+      const lineProfit = Money.subtract(lineRevenue, lineCost);
+      dayStat.profit = Money.add(dayStat.profit, lineProfit);
     });
   });
 
-  return Array.from(dailyMap.values()).map((stat) => ({
-    ...stat,
-    revenue: Money.toNumber(stat.revenue),
-    validRevenue: Money.toNumber(stat.validRevenue), // Exportado al objeto final
-    profit: Money.toNumber(stat.profit),
-    itemsSold: Number(stat.itemsSold.round(3).toString())
-  }));
+  return Array.from(dailyMap.values()).map((stat) => {
+    const validRevenue = Money.toNumber(stat.validRevenue);
+    const unconfirmedRevenue = Money.toNumber(stat.unconfirmedRevenue);
+
+    return {
+      ...stat,
+      revenue: Money.toNumber(stat.revenue),
+      validRevenue,
+      unconfirmedRevenue,
+      unreliableProfitDueToMissingCosts: Money.toNumber(stat.unreliableProfitDueToMissingCosts),
+      profit: Money.toNumber(stat.profit),
+      itemsSold: Number(stat.itemsSold.round(3).toString()),
+      ...getFinancialQuality(validRevenue, unconfirmedRevenue)
+    };
+  });
 }
 
 export async function rebuildDailyStatsCacheFromSales(db, stores, productCostMap = new Map(), logger = console) {

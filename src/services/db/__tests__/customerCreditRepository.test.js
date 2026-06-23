@@ -12,6 +12,62 @@ describe('customerCreditRepository.processPayment', () => {
     await db.table(STORES.CUSTOMERS).clear();
   });
 
+  it('rechaza abono en efectivo sin cajaId y no modifica deuda ni ledger', async () => {
+    await db.table(STORES.CUSTOMERS).put({
+      id: 'cust-1',
+      name: 'Cliente Test',
+      debt: '100',
+      debtCents: 10000,
+      createdAt: '2026-06-16T10:00:00.000Z',
+      updatedAt: '2026-06-16T10:00:00.000Z'
+    });
+
+    await expect(
+      customerCreditRepository.processPayment('cust-1', 30, 'efectivo')
+    ).rejects.toMatchObject({
+      name: 'DatabaseError',
+      code: 'VALIDATION_ERROR',
+      message: 'CAJA_REQUIRED: No se puede registrar un abono en efectivo sin caja abierta.'
+    });
+
+    const customer = await db.table(STORES.CUSTOMERS).get('cust-1');
+    expect(customer.debt).toBe('100');
+    expect(await db.table(STORES.CUSTOMER_LEDGER).count()).toBe(0);
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(0);
+  });
+
+  it('rechaza abono en cash si la caja existe pero esta cerrada', async () => {
+    await db.table(STORES.CUSTOMERS).put({
+      id: 'cust-1',
+      name: 'Cliente Test',
+      debt: '100',
+      debtCents: 10000,
+      createdAt: '2026-06-16T10:00:00.000Z',
+      updatedAt: '2026-06-16T10:00:00.000Z'
+    });
+
+    await db.table(STORES.CAJAS).put({
+      id: 'caja-1',
+      estado: 'cerrada',
+      entradas_efectivo: '0',
+      salidas_efectivo: '0',
+      fecha_apertura: '2026-06-16T09:00:00.000Z'
+    });
+
+    await expect(
+      customerCreditRepository.processPayment('cust-1', 30, 'cash', 'caja-1')
+    ).rejects.toMatchObject({
+      name: 'DatabaseError',
+      code: 'VALIDATION_ERROR',
+      message: 'CAJA_REQUIRED: No se puede registrar un abono en efectivo sin caja abierta.'
+    });
+
+    const customer = await db.table(STORES.CUSTOMERS).get('cust-1');
+    expect(customer.debt).toBe('100');
+    expect(await db.table(STORES.CUSTOMER_LEDGER).count()).toBe(0);
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(0);
+  });
+
   it('registra un abono con caja dentro de la misma transaccion', async () => {
     await db.table(STORES.CUSTOMERS).put({
       id: 'cust-1',
