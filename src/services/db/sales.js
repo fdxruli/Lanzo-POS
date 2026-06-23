@@ -17,13 +17,17 @@ import Logger from '../Logger';
 const getRealProductId = (item) => item?.parentId || item?.id;
 const isCommittedSaleItem = (item) => item?.inventoryReservation?.source === 'table';
 const hasBatchDeductions = (item) => Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0;
-const saleHasCashComponent = (sale = {}) => (
-    sale.paymentMethod === 'efectivo' ||
-    (
-        sale.paymentMethod === 'fiado' &&
-        Money.init(sale.abono || 0).gt(0)
-    )
-);
+const saleHasCashComponent = (sale = {}) => {
+    const paymentMethod = String(sale.paymentMethod || '').trim().toLowerCase();
+
+    return (
+        ['efectivo', 'cash'].includes(paymentMethod) ||
+        (
+            paymentMethod === 'fiado' &&
+            Money.init(sale.abono || 0).gt(0)
+        )
+    );
+};
 
 const buildNonBatchSalesMap = (saleItems = []) => {
     const summary = new Map();
