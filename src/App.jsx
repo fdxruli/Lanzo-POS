@@ -137,27 +137,67 @@ function App() {
   }, [appStatus, startLicenseSync, stopLicenseSync]);
 
   useEffect(() => {
+    let resumeCheckTimer = null;
+
+    const markInactive = () => {
+      sessionStorage.setItem('lanzo_last_active', Date.now().toString());
+    };
+
+    const scheduleResumeCheck = (reason) => {
+      if (document.visibilityState === 'hidden') return;
+
+      if (resumeCheckTimer) {
+        window.clearTimeout(resumeCheckTimer);
+      }
+
+      resumeCheckTimer = window.setTimeout(() => {
+        resumeCheckTimer = null;
+        useAppStore.getState().performSystemHealthCheck(reason);
+      }, 250);
+    };
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // Toda esa lógica masiva debe vivir en el store, no en el componente UI
-        useAppStore.getState().performSystemHealthCheck();
+        scheduleResumeCheck('visibility');
       } else {
-        sessionStorage.setItem('lanzo_last_active', Date.now().toString());
+        markInactive();
       }
     };
 
-    const handlePageShow = (event) => {
-      if (event.persisted && document.visibilityState === 'visible') {
-        handleVisibilityChange();
-      }
+    const handlePageShow = () => {
+      scheduleResumeCheck('pageshow');
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const handleWindowFocus = () => {
+      scheduleResumeCheck('focus');
+    };
+
+    const handleOnline = () => {
+      scheduleResumeCheck('online');
+    };
+
+    const handlePageHide = () => {
+      markInactive();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('resume', handlePageShow);
     window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('pagehide', handlePageHide);
 
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (resumeCheckTimer) {
+        window.clearTimeout(resumeCheckTimer);
+      }
+
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('resume', handlePageShow);
       window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('pagehide', handlePageHide);
     };
   }, []);
 
