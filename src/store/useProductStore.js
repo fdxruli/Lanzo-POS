@@ -246,7 +246,7 @@ export const useProductStore = create((set, get) => ({
 
         // PASO 2 – Mutex con reintento:
         // Si ya hay una invalidación en vuelo, programamos un reintento
-        // en lugar de descartar silenciosamente la petición.
+        // en lugar de descartarla silenciosamente la petición.
         if (state.isInvalidating) {
             Logger.debug('[ProductStore] Invalidation in progress – scheduling retry');
             pendingInvalidation = true;
@@ -480,3 +480,10 @@ export const useProductStore = create((set, get) => ({
         set({ categories: sortedCategories });
     },
 }));
+
+// Mantiene la sincronización cross-tab disponible en cualquier ruta que importe el store.
+// Antes los listeners solo se inicializaban desde POS, dejando vistas como Productos/Categorías
+// sin escucha reactiva si no se había montado el POS en esa pestaña.
+if (typeof window !== 'undefined') {
+    useProductStore.getState().initialize();
+}
