@@ -96,6 +96,7 @@ const groupRestorationEvents = (restored = []) => {
 
 export const cancelSaleCore = async (
   {
+    saleId = null,
     saleTimestamp,
     restoreStock = false,
     currentSales = [],
@@ -129,12 +130,19 @@ export const cancelSaleCore = async (
     ].filter(Boolean);
 
     await db.transaction('rw', stores, async () => {
-      const cachedSale = currentSales.find((sale) => sale?.timestamp === saleTimestamp);
-      let saleFound = cachedSale?.id
-        ? await db.table(STORES.SALES).get(cachedSale.id)
+      const cachedSale = currentSales.find((sale) => (
+        (saleId && sale?.id === saleId) ||
+        (saleTimestamp && sale?.timestamp === saleTimestamp)
+      ));
+      let saleFound = saleId
+        ? await db.table(STORES.SALES).get(saleId)
         : null;
 
-      if (!saleFound) {
+      if (!saleFound && cachedSale?.id) {
+        saleFound = await db.table(STORES.SALES).get(cachedSale.id);
+      }
+
+      if (!saleFound && saleTimestamp) {
         const sales = await db.table(STORES.SALES)
           .where('timestamp')
           .equals(saleTimestamp)
@@ -142,10 +150,14 @@ export const cancelSaleCore = async (
         saleFound = sales[0];
       }
 
+      if (!saleFound && cachedSale) {
+        saleFound = cachedSale;
+      }
+
       if (!saleFound) {
         throw new CancellationError(
           'NOT_FOUND',
-          `Venta con timestamp ${saleTimestamp} no encontrada.`
+          `Venta ${saleId || saleTimestamp || ''} no encontrada.`
         );
       }
 
