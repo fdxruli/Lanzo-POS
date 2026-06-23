@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Users
 } from 'lucide-react';
+import { normalizeBusinessType } from '../../utils/businessType';
 import './BusinessTips.css';
 
 const currencyFormatter = new Intl.NumberFormat('es-MX', {
@@ -46,13 +47,13 @@ const getProductStock = (product = {}) => getNumber(
 
 const getRubroLabel = (activeRubros = []) => {
   const first = Array.isArray(activeRubros) ? activeRubros[0] : activeRubros;
-  const normalized = String(first || '').toLowerCase();
+  const normalized = normalizeBusinessType(first);
 
   const labels = {
     food_service: 'negocio de comida',
     farmacia: 'farmacia',
     abarrotes: 'tienda',
-    retail: 'negocio',
+    'verduleria/fruteria': 'fruteria o verduleria',
     apparel: 'tienda de ropa',
     hardware: 'ferretería'
   };
@@ -209,7 +210,7 @@ export default function BusinessTips({
       onNavigate(route);
       return;
     }
-    window.location.href = route;
+    window.location.assign(route);
   };
 
   return (

@@ -1,4 +1,5 @@
 import { Leaf, Utensils, AlertTriangle, ArrowLeft, ArrowRight, Trash2, Info, CheckCircle } from 'lucide-react';
+import { normalizeBusinessTypes } from '../../utils/businessType';
 import './WasteHistory.css';
 
 const getReasonStyle = (reason = '') => {
@@ -34,8 +35,9 @@ export default function WasteHistory({
     const displayedLoss = totalLoss ?? pageLoss;
     const displayedCount = totalCount ?? logs.length;
 
-    const isVerduleria = activeRubros.includes('verduleria/fruteria');
-    const isFoodService = activeRubros.includes('food_service');
+    const normalizedRubros = normalizeBusinessTypes(activeRubros);
+    const isVerduleria = normalizedRubros.includes('verduleria/fruteria');
+    const isFoodService = normalizedRubros.includes('food_service');
     const themeClass = isVerduleria ? 'theme-verduleria' : isFoodService ? 'theme-food' : 'theme-default';
 
     const getProductIcon = () => {

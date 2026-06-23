@@ -32,23 +32,17 @@ import { usePharmacyDiagnostics } from '../../hooks/diagnostics/usePharmacyDiagn
 import { useRetailDiagnostics } from '../../hooks/diagnostics/useRetailDiagnostics';
 import AIAgentDashboard from './AIAgentDashboard';
 import AIAgentUsageLegend from './AIAgentUsageLegend';
+import { normalizeBusinessType, normalizeBusinessTypes } from '../../utils/businessType';
 import './OperationalDiagnostics.css';
 
 const BUSINESS_TYPE_MAPPING = {
-  restaurant: { type: 'restaurant', label: 'Restaurante', icon: ChefHat },
-  'dark-kitchen': { type: 'restaurant', label: 'Dark Kitchen', icon: ChefHat },
-  cocina: { type: 'restaurant', label: 'Cocina', icon: ChefHat },
-  food: { type: 'restaurant', label: 'Comida', icon: ChefHat },
-  fruteria: { type: 'restaurant', label: 'Frutería', icon: ShoppingCart },
-  pharmacy: { type: 'pharmacy', label: 'Farmacia', icon: Pill },
-  farmacia: { type: 'pharmacy', label: 'Farmacia', icon: Pill },
-  drogueria: { type: 'pharmacy', label: 'Droguería', icon: Pill },
-  retail: { type: 'retail', label: 'Retail', icon: ShoppingCart },
-  abarrotes: { type: 'retail', label: 'Abarrotes', icon: ShoppingCart },
-  tienda: { type: 'retail', label: 'Tienda', icon: ShoppingCart },
-  minimarket: { type: 'retail', label: 'Minimarket', icon: ShoppingCart },
-  apparel: { type: 'retail', label: 'Ropa', icon: ShoppingCart },
-  hardware: { type: 'retail', label: 'Ferretería', icon: ShoppingCart }
+  food_service: { diagnosticType: 'restaurant', label: 'Restaurante / Cocina', icon: ChefHat },
+  'verduleria/fruteria': { diagnosticType: 'restaurant', label: 'Fruteria / Verduleria', icon: ShoppingCart },
+  farmacia: { diagnosticType: 'pharmacy', label: 'Farmacia', icon: Pill },
+  abarrotes: { diagnosticType: 'retail', label: 'Abarrotes', icon: ShoppingCart },
+  apparel: { diagnosticType: 'retail', label: 'Ropa', icon: ShoppingCart },
+  hardware: { diagnosticType: 'retail', label: 'Ferreteria', icon: ShoppingCart },
+  otro: { diagnosticType: 'retail', label: 'Negocio', icon: ShoppingCart }
 };
 
 const DIAGNOSTIC_HOOKS = {
@@ -213,11 +207,10 @@ const NoAlertsState = ({ businessType }) => {
 
 const BusinessTypeSelector = ({ currentType, onSelect }) => {
   const types = useMemo(() => {
-    const unique = new Map();
-    Object.values(BUSINESS_TYPE_MAPPING).forEach(type => {
-      if (!unique.has(type.type)) unique.set(type.type, type);
-    });
-    return Array.from(unique.values());
+    return Object.entries(BUSINESS_TYPE_MAPPING).map(([type, config]) => ({
+      ...config,
+      type
+    }));
   }, []);
 
   return (
@@ -262,30 +255,20 @@ export default function OperationalDiagnostics({
   wasteLogs = []
 }) {
   const [rubroOverride, setRubroOverride] = useState(null);
-  const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [lastRefresh, setLastRefresh] = useState(() => Date.now());
   const [showAIAgent, setShowAIAgent] = useState(false);
 
   const companyProfile = useAppStore(state => state.companyProfile);
   const licenseDetails = useAppStore(state => state.licenseDetails);
 
   const businessTypeString = useMemo(() => {
-    if (rubroOverride) return rubroOverride;
-
-    let types = companyProfile?.business_type || [];
-    if (typeof types === 'string') {
-      types = types.split(',').map(type => type.trim().toLowerCase());
-    }
-
-    for (const type of types) {
-      const mapped = BUSINESS_TYPE_MAPPING[type];
-      if (mapped) return mapped.type;
-    }
-
-    return 'retail';
+    if (rubroOverride) return normalizeBusinessType(rubroOverride, 'abarrotes');
+    return normalizeBusinessTypes(companyProfile?.business_type, 'abarrotes')[0];
   }, [companyProfile, rubroOverride]);
 
   const businessTypeArray = useMemo(() => [businessTypeString], [businessTypeString]);
-  const DiagnosticHook = DIAGNOSTIC_HOOKS[businessTypeString] || DIAGNOSTIC_HOOKS.retail;
+  const diagnosticType = BUSINESS_TYPE_MAPPING[businessTypeString]?.diagnosticType || 'retail';
+  const DiagnosticHook = DIAGNOSTIC_HOOKS[diagnosticType] || DIAGNOSTIC_HOOKS.retail;
   const diagnostics = DiagnosticHook(lastRefresh);
   const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
 

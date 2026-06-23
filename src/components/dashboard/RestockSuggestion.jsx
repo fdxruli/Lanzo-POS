@@ -5,6 +5,7 @@ import { getLowStockProductsReport } from '../../services/inventoryAnalysis';
 import { showMessageModal, getProductAlerts, LOW_STOCK_THRESHOLD } from '../../services/utils';
 import { getAvailableStock } from '../../services/db/utils';
 import Logger from '../../services/Logger';
+import { normalizeBusinessType } from '../../utils/businessType';
 import './RestockSuggestion.css';
 
 /**
@@ -45,9 +46,11 @@ const toSafeNumber = (value, fallback = 0) => {
  * @returns {string} - Mensaje formateado para copiar
  */
 const formatOrderMessage = (supplierName, items, businessType = 'general') => {
-  const isRestaurant = businessType?.toLowerCase() === 'restaurante' || 
-                       businessType?.toLowerCase() === 'restaurante';
-  const isPharmacy = businessType?.toLowerCase() === 'farmacia';
+  const normalizedBusinessType = normalizeBusinessType(businessType);
+  const isRestaurant = normalizedBusinessType === 'food_service'
+    || normalizedBusinessType === 'verduleria/fruteria';
+  const isPharmacy = normalizedBusinessType === 'farmacia';
+  const isRetail = ['abarrotes', 'apparel', 'hardware', 'otro'].includes(normalizedBusinessType);
   
   // Determinar unidades prioritarias según rubro
   const getPriorityUnit = (item) => {
@@ -63,7 +66,7 @@ const formatOrderMessage = (supplierName, items, businessType = 'general') => {
     }
     
     // Farmacia/Retail: priorizar cajas/piezas
-    if (isPharmacy || businessType?.toLowerCase() === 'retail') {
+    if (isPharmacy || isRetail) {
       if (['caja', 'cajas', 'box', 'boxes'].includes(unit)) return 'caja(s)';
       if (['pza', 'pieza', 'piezas', 'unit', 'units'].includes(unit)) return 'pza(s)';
       return unit;
@@ -80,7 +83,7 @@ const formatOrderMessage = (supplierName, items, businessType = 'general') => {
     header += '\n🍽️ *Restaurante - Unidades Críticas*\n';
   } else if (isPharmacy) {
     header += '\n💊 *Farmacia - Control de Lotes*\n';
-  } else if (businessType?.toLowerCase() === 'retail') {
+  } else if (isRetail) {
     header += '\n🏪 *Retail - Inventario General*\n';
   }
   

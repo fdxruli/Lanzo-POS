@@ -41,6 +41,7 @@ import { analyzeWithAI, AIApiError, validateAIConnection, getAIConfigStatus } fr
 import { getAvailableAgentTools, runAgentTools } from '../../agents/agentToolRegistry';
 import { resolveAgentAction, executeAgentAction } from '../../agents/agentActionRouter';
 import { useAgentPreview } from '../../hooks/dashboard/useAgentPreview';
+import { normalizeBusinessTypes } from '../../utils/businessType';
 import DataPreviewBanner from './DataPreviewBanner';
 import AgentActionConfirmModal from './AgentActionConfirmModal';
 import './AIAgentDashboard.css';
@@ -453,10 +454,15 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
     customers
   );
 
+  const normalizedBusinessTypes = useMemo(
+    () => normalizeBusinessTypes(businessType, 'abarrotes'),
+    [businessType]
+  );
+
   const availableTools = useMemo(() => {
     if (!selectedAgent) return [];
-    return getAvailableAgentTools({ agentType: selectedAgent, businessTypes: businessType });
-  }, [selectedAgent, businessType]);
+    return getAvailableAgentTools({ agentType: selectedAgent, businessTypes: normalizedBusinessTypes });
+  }, [selectedAgent, normalizedBusinessTypes]);
 
   const isDataEmpty = useMemo(() => {
     if (!selectedAgent) return true;
@@ -527,9 +533,9 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
   }, [validateConnection]);
 
   const businessContext = useMemo(() => ({
-    businessType: Array.isArray(businessType) ? businessType.join(', ') : String(businessType || 'No especificado'),
+    businessType: normalizedBusinessTypes.join(', '),
     totalCustomers: customers.length
-  }), [businessType, customers]);
+  }), [normalizedBusinessTypes, customers]);
 
   const handleAnalyze = useCallback(async () => {
     if (!selectedAgent || !selectedDateRange) return;
@@ -563,7 +569,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
 
       const agentToolRun = await runAgentTools({
         agentType: selectedAgent,
-        businessTypes: businessType,
+        businessTypes: normalizedBusinessTypes,
         rawData: { menu, wasteLogs, sales, customers },
         aggregatedPayload
       });
@@ -604,7 +610,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
     } finally {
       setIsAnalyzing(false);
     }
-  }, [selectedAgent, selectedDateRange, connectionStatus, menu, wasteLogs, sales, customers, businessContext, businessType]);
+  }, [selectedAgent, selectedDateRange, connectionStatus, menu, wasteLogs, sales, customers, businessContext, normalizedBusinessTypes]);
 
   const handleOpenGuidedAction = useCallback((action) => {
     setPendingGuidedAction(resolveAgentAction(action));
