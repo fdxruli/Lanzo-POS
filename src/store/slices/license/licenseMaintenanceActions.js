@@ -10,14 +10,19 @@ import {
     renewLicenseService
 } from '../../../services/licenseService';
 
+const isRealtimeLicenseMode = (state = {}) => (
+    state.licenseSyncMode === 'hybrid_realtime' ||
+    state.licenseDetails?.features?.realtime_license_sync === true
+);
+
 export const createLicenseMaintenanceActions = ({
     set,
     get
 }) => ({
-    performSystemHealthCheck: async () => {
+    performSystemHealthCheck: async (reason = 'wake') => {
         const state = get();
 
-        // Caso límite 1: No interrumpir la carga inicial ni ejecutar en pantallas sin autenticación
+        // Caso límite 1: No interrumpir la carga inicial ni ejecutar en pantallas sin autenticación.
         if (
             state.appStatus === 'loading' ||
             state._isInitializing ||
@@ -26,16 +31,20 @@ export const createLicenseMaintenanceActions = ({
             return;
         }
 
+        const isRealtimeMode = isRealtimeLicenseMode(state);
         const lastActiveRaw = sessionStorage.getItem('lanzo_last_active');
         const now = Date.now();
 
-        if (!lastActiveRaw) return;
+        if (!lastActiveRaw && !isRealtimeMode) return;
 
-        const timeAwayMs = now - parseInt(lastActiveRaw, 10);
-        const timeAwayMinutes = timeAwayMs / (1000 * 60);
+        const lastActive = lastActiveRaw ? parseInt(lastActiveRaw, 10) : now;
+        const timeAwayMs = Number.isFinite(lastActive) ? now - lastActive : 0;
+        const timeAwayMinutes = Math.max(timeAwayMs, 0) / (1000 * 60);
 
-        // Caso límite 2: Control de ráfagas. Solo revalidar si la app estuvo dormida más de 3 minutos.
-        if (timeAwayMinutes < 3) {
+        // Antes se omitía todo si la app estuvo fuera menos de 3 minutos. En PWA móvil
+        // eso deja canales WebSocket dormidos/stale aunque la app esté abierta. Para
+        // licencias realtime siempre recuperamos el canal al volver a primer plano.
+        if (!isRealtimeMode && timeAwayMinutes < 3) {
             Logger.log(
                 `[HealthCheck] Inactividad breve (${timeAwayMinutes.toFixed(1)}m), omitiendo check de servidor.`
             );
@@ -43,20 +52,25 @@ export const createLicenseMaintenanceActions = ({
         }
 
         Logger.log(
-            `[HealthCheck] Retorno tras ${timeAwayMinutes.toFixed(1)}m de inactividad. Revalidando integridad...`
+            `[HealthCheck] Retorno tras ${timeAwayMinutes.toFixed(1)}m (${reason}). Revalidando integridad...`
         );
 
-        // Consumir el timestamp para evitar ejecuciones en bucle
+        // Consumir el timestamp para evitar ejecuciones en bucle.
         sessionStorage.removeItem('lanzo_last_active');
 
-        // Caso límite 3: Verificación de red antes de golpear la API
+        // Caso límite 3: Verificación de red antes de golpear la API.
         if (!navigator.onLine) {
             Logger.warn('[HealthCheck] El sistema está offline tras despertar. Operando con caché local.');
             return;
         }
 
-        // Reutilizar la lógica que ya maneja periodos de gracia, expiración y actualizaciones de términos
-        await state.runLicenseSyncCheck('wake');
+        if (isRealtimeMode && typeof state.recoverRealtimeSecurity === 'function') {
+            await state.recoverRealtimeSecurity(reason);
+            return;
+        }
+
+        // Reutilizar la lógica que ya maneja periodos de gracia, expiración y actualizaciones de términos.
+        await state.runLicenseSyncCheck(reason);
     },
 
     renewLicense: async () => {
