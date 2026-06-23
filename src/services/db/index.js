@@ -2,6 +2,7 @@ import { db, STORES } from './dexie';
 import { generalRepository } from './general';
 import { productsRepository, searchProductsInDB } from './products';
 import { salesRepository } from './sales';
+import { reportingService } from './reporting';
 import { DatabaseError, DB_ERROR_CODES, getAvailableStock } from './utils';
 import { fixStockInconsistencies, rebuildDailyStats } from '../maintenance';
 import { layawayRepository } from './layaways';
@@ -14,6 +15,7 @@ import { updateProduct, updateProductSafe, bulkUpdateProducts } from './productU
 // EXPORTACIÓN DE CONSTANTES Y CLASES (Compatibilidad 100%)
 // ============================================================
 export { db, STORES, DB_ERROR_CODES, DatabaseError, productsRepository };
+export { reportingService };
 
 // ============================================================
 // FUNCIONES DE INICIALIZACIÓN
