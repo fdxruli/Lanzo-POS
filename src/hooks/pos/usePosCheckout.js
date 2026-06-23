@@ -4,6 +4,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { broadcastDBChange } from '../../store/useProductStore';
 import { showMessageModal } from '../../services/utils';
 import { useActiveOrders } from './useActiveOrders';
+import { Money } from '../../utils/moneyMath';
 
 /**
  * Hook para manejar el flujo completo de checkout del POS.
@@ -265,7 +266,14 @@ export function usePosCheckout({
         // El snapshot NO se destruye aquí. El flujo esperado es:
         //   closeModal('payment') → openModal('quickCaja') → handleQuickCajaSubmit
         //   → openModal('payment') [snapshot aún vivo] → handleProcessOrder [snapshot válido]
-        if (paymentData.paymentMethod === 'efectivo' && (!pos.cajaActual || pos.cajaActual.estado !== 'abierta')) {
+        const hasCashComponent =
+            paymentData.paymentMethod === 'efectivo' ||
+            (
+                paymentData.paymentMethod === 'fiado' &&
+                Money.init(paymentData.amountPaid || 0).gt(0)
+            );
+
+        if (hasCashComponent && (!pos.cajaActual || pos.cajaActual.estado !== 'abierta')) {
             modal.closeModal('payment'); // Cierre programático, snapshot sobrevive
             modal.openModal('quickCaja');
             return;
