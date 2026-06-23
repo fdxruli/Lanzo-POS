@@ -1,4 +1,5 @@
 import './syncDexieBootstrap';
+import Dexie from 'dexie';
 import { db } from '../db/dexie';
 import Logger from '../Logger';
 import { generateIdempotencyKey } from './idempotency';
@@ -34,15 +35,16 @@ export const syncOutboxService = {
     await ensureOpen();
 
     const createdAt = nowIso();
+    const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({ entityType, operation, entityId });
     const row = {
-      id: idempotencyKey || generateIdempotencyKey({ entityType, operation, entityId }),
+      id: resolvedIdempotencyKey,
       licenseKey: licenseKey || null,
       entityType,
       operation,
       entityId: entityId || null,
       payload,
       status: OUTBOX_STATUS.PENDING,
-      idempotencyKey: idempotencyKey || generateIdempotencyKey({ entityType, operation, entityId }),
+      idempotencyKey: resolvedIdempotencyKey,
       attempts: 0,
       lastError: null,
       metadata,
