@@ -1,9 +1,28 @@
-import React from 'react';
 import { Leaf, Utensils, AlertTriangle, ArrowLeft, ArrowRight, Trash2, Info, CheckCircle } from 'lucide-react';
 import './WasteHistory.css';
 
+const getReasonStyle = (reason = '') => {
+    const lowerReason = reason.toLowerCase();
+
+    if (lowerReason.includes('venci') || lowerReason.includes('caduca')) {
+        return { badge: 'badge-red', severity: 'severity-high' };
+    }
+
+    if (lowerReason.includes('error') || lowerReason.includes('devolu')) {
+        return { badge: 'badge-orange', severity: 'severity-medium' };
+    }
+
+    if (lowerReason.includes('mal estado') || lowerReason.includes('dañ') || lowerReason.includes('dano') || lowerReason.includes('podri')) {
+        return { badge: 'badge-yellow', severity: 'severity-medium' };
+    }
+
+    return { badge: 'badge-gray', severity: 'severity-low' };
+};
+
 export default function WasteHistory({
     logs,
+    totalCount = null,
+    totalLoss = null,
     onNext = () => {},
     onPrev = () => {},
     hasMoreWaste = false,
@@ -11,59 +30,45 @@ export default function WasteHistory({
     isWasteLoading = false,
     activeRubros = []
 }) {
-    const totalLoss = logs.reduce((sum, log) => sum + (log.lossAmount || 0), 0);
+    const pageLoss = logs.reduce((sum, log) => sum + (Number(log.lossAmount) || 0), 0);
+    const displayedLoss = totalLoss ?? pageLoss;
+    const displayedCount = totalCount ?? logs.length;
 
-    // Determine the main theme based on rubro
     const isVerduleria = activeRubros.includes('verduleria/fruteria');
     const isFoodService = activeRubros.includes('food_service');
     const themeClass = isVerduleria ? 'theme-verduleria' : isFoodService ? 'theme-food' : 'theme-default';
 
-    // Helper for icons based on rubro
     const getProductIcon = () => {
         if (isVerduleria) return <Leaf size={20} />;
         if (isFoodService) return <Utensils size={20} />;
         return <AlertTriangle size={20} />;
     };
 
-    // Helper for reason styling
-    const getReasonStyle = (reason = '') => {
-        const lowerReason = reason.toLowerCase();
-        if (lowerReason.includes('venci') || lowerReason.includes('caduca')) {
-            return { badge: 'badge-red', severity: 'severity-high' };
-        }
-        if (lowerReason.includes('error') || lowerReason.includes('devolu')) {
-            return { badge: 'badge-orange', severity: 'severity-medium' };
-        }
-        if (lowerReason.includes('mal estado') || lowerReason.includes('dañ') || lowerReason.includes('podri')) {
-            return { badge: 'badge-yellow', severity: 'severity-medium' };
-        }
-        return { badge: 'badge-gray', severity: 'severity-low' };
-    };
-
     return (
         <div className={`waste-history-wrapper ${themeClass}`}>
-            {/* Summary Card */}
             <div className="waste-summary-card">
                 <div className="waste-header-title">
                     <Trash2 size={28} color="#ef4444" />
                     <div>
                         <h3>Reporte de Mermas</h3>
                         <small style={{ color: '#6b7280' }}>
-                            {isVerduleria ? 'Control de mermas y desperdicios de productos' : 
-                             isFoodService ? 'Control de ingredientes y platillos desperdiciados' : 
-                             'Control de pérdidas y mermas'}
+                            {isVerduleria ? 'Control de mermas y desperdicios de productos' :
+                                isFoodService ? 'Control de ingredientes y platillos desperdiciados' :
+                                    'Control de pérdidas y mermas'}
                         </small>
                     </div>
                 </div>
                 <div className="waste-total-box">
-                    <div className="waste-total-label">Pérdida Registrada (Pág.)</div>
+                    <div className="waste-total-label">Pérdida Registrada</div>
                     <div className="waste-total-value">
-                        -${totalLoss.toFixed(2)}
+                        -${displayedLoss.toFixed(2)}
                     </div>
+                    <small style={{ color: '#6b7280' }}>
+                        {displayedCount} registros totales
+                    </small>
                 </div>
             </div>
 
-            {/* List or Empty State */}
             {logs.length === 0 ? (
                 <div className="waste-empty-state">
                     <CheckCircle size={48} className="waste-empty-icon" />
@@ -89,22 +94,22 @@ export default function WasteHistory({
                                         </div>
                                     </div>
                                     <div className="waste-loss-amount">
-                                        -${log.lossAmount?.toFixed(2)}
+                                        -${Number(log.lossAmount || 0).toFixed(2)}
                                     </div>
                                 </div>
-                                
+
                                 <div className="waste-card-body">
                                     <span className={`waste-reason-badge ${badge}`}>
                                         <Info size={14} />
                                         {log.reason || 'Sin motivo'}
                                     </span>
-                                    
+
                                     {log.notes && (
                                         <div className="waste-notes">
-                                            "{log.notes}"
+                                            &quot;{log.notes}&quot;
                                         </div>
                                     )}
-                                    
+
                                     <div className="waste-date">
                                         {new Date(log.timestamp).toLocaleDateString()} {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
@@ -115,7 +120,6 @@ export default function WasteHistory({
                 </div>
             )}
 
-            {/* Pagination controls */}
             <div className="waste-pagination">
                 <button
                     className="waste-page-btn"
