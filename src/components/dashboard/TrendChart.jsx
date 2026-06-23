@@ -23,8 +23,10 @@ const formatCurrency = (value) => {
   return `$${numValue.toFixed(0)}`;
 };
 
+const defaultValueFormatter = formatCurrency;
+
 // Extraemos CustomTooltip a nivel de módulo para evitar el error de "components created during render"
-const CustomTooltip = ({ active, payload }) => {
+const CustomTooltip = ({ active, payload, formatter = defaultValueFormatter }) => {
   if (active && payload && payload.length && payload[0]) {
     const dataPoint = payload[0].payload;
     const label = dataPoint?.name ?? 'N/A';
@@ -32,7 +34,7 @@ const CustomTooltip = ({ active, payload }) => {
     return (
       <div className="custom-tooltip">
         <p className="tooltip-label">{label}</p>
-        <p className="tooltip-value">{formatCurrency(value)}</p>
+        <p className="tooltip-value">{formatter(value)}</p>
       </div>
     );
   }
@@ -73,7 +75,12 @@ const ChartFallback = ({ height = 180 }) => (
 /**
  * Gráfica de área con Recharts para evolución temporal
  */
-export function AreaTrendChart({ data, height = 200, color = 'var(--primary-color)' }) {
+export function AreaTrendChart({
+  data,
+  height = 200,
+  color = 'var(--primary-color)',
+  valueFormatter = defaultValueFormatter
+}) {
   const gradientId = useId().replace(/:/g, '');
 
   // Validar y normalizar datos
@@ -116,10 +123,10 @@ export function AreaTrendChart({ data, height = 200, color = 'var(--primary-colo
               tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={formatCurrency}
+              tickFormatter={valueFormatter}
               width={60}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip formatter={valueFormatter} />} />
             <Area
               type="monotone"
               dataKey="value"
@@ -139,7 +146,7 @@ export function AreaTrendChart({ data, height = 200, color = 'var(--primary-colo
 /**
  * Gráfica de barras con Recharts para días de semana
  */
-export function BarWeekdayChart({ data, height = 180 }) {
+export function BarWeekdayChart({ data, height = 180, valueFormatter = defaultValueFormatter }) {
   // Validar y normalizar datos
   const normalizedData = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -173,10 +180,10 @@ export function BarWeekdayChart({ data, height = 180 }) {
               tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={formatCurrency}
+              tickFormatter={valueFormatter}
               width={60}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip formatter={valueFormatter} />} />
             <Bar
               dataKey="value"
               fill="var(--primary-color)"

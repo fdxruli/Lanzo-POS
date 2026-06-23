@@ -11,13 +11,16 @@ import {
   Globe,
   BarChart2,
   AlertTriangle,
-  TrendingDown
+  TrendingDown,
+  RefreshCw
 } from 'lucide-react';
 import './StatsGrid.css';
 import TopProducts from './TopProducts';
 import TopCustomers from './TopCustomers';
 import { AreaTrendChart, BarWeekdayChart } from './TrendChart';
 import { reportingService } from '../../services/db/reporting';
+import { normalizeFinancialNumber, summarizeFinancialSales } from '../../services/sales/financialPolicy';
+import { useStatsStore } from '../../store/useStatsStore';
 
 
 // Periodos disponibles
@@ -68,10 +71,188 @@ const buildPeriodRanges = (timeRange) => {
 const formatCurrency = (val) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
 
+const formatCompactCurrency = (val) => {
+  const value = Number(val || 0);
+  if (Math.abs(value) >= 1000) return `$${(value / 1000).toFixed(1)}k`;
+  return `$${value.toFixed(0)}`;
+};
+
+const formatNumber = (val) => new Intl.NumberFormat('es-MX', {
+  maximumFractionDigits: 1
+}).format(Number(val || 0));
+
+const formatPercent = (val) => `${Number(val || 0).toFixed(1)}%`;
+
+const METRIC_OPTIONS = {
+  revenue: {
+    label: 'Ventas',
+    color: 'var(--success-color, #10b981)',
+    formatter: formatCompactCurrency,
+    fullFormatter: formatCurrency
+  },
+  profit: {
+    label: 'Utilidad',
+    color: 'var(--primary-color, #6366f1)',
+    formatter: formatCompactCurrency,
+    fullFormatter: formatCurrency
+  },
+  orders: {
+    label: 'Pedidos',
+    color: 'var(--secondary-color, #7c3aed)',
+    formatter: formatNumber,
+    fullFormatter: formatNumber
+  },
+  avgTicket: {
+    label: 'Ticket',
+    color: '#0ea5e9',
+    formatter: formatCompactCurrency,
+    fullFormatter: formatCurrency
+  },
+  margin: {
+    label: 'Margen',
+    color: '#f59e0b',
+    formatter: formatPercent,
+    fullFormatter: formatPercent
+  },
+  waste: {
+    label: 'Merma',
+    color: 'var(--error-color, #dc2626)',
+    formatter: formatCompactCurrency,
+    fullFormatter: formatCurrency
+  }
+};
+
+const getDateKey = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const getDateLabel = (dateKey) => {
+  const parts = String(dateKey || '').split('-');
+  return parts.length === 3 ? `${parts[2]}/${parts[1]}` : 'Fecha invalida';
+};
+
+const summarizeWaste = (wasteLogs = []) => (
+  wasteLogs.reduce((sum, log) => sum + normalizeFinancialNumber(log.lossAmount || log.amount || log.cost || 0), 0)
+);
+
+const createEmptyDayMetric = () => ({
+  revenue: 0,
+  profit: 0,
+  confirmedRevenue: 0,
+  orders: 0,
+  waste: 0
+});
+
+const getMetricValue = (summary, metricKey) => {
+  switch (metricKey) {
+    case 'profit':
+      return summary.profitConfirmed;
+    case 'orders':
+      return summary.orders;
+    case 'avgTicket':
+      return summary.avgTicket;
+    case 'margin':
+      return summary.marginPercent;
+    case 'waste':
+      return summary.totalWaste;
+    case 'revenue':
+    default:
+      return summary.revenue;
+  }
+};
+
+const getTrendPercent = (current, previous) => {
+  if (previous > 0) return ((current - previous) / previous) * 100;
+  if (current > 0) return 100;
+  return 0;
+};
+
+const buildDailyMetricData = ({ sales = [], wasteLogs = [], period, now, metricKey }) => {
+  const dayMap = new Map();
+
+  const periodStart = period.days === 'month'
+    ? new Date(now.getFullYear(), now.getMonth(), 1)
+    : (period.days === Infinity
+      ? null
+      : new Date(now.getFullYear(), now.getMonth(), now.getDate() - (period.days - 1)));
+
+  if (periodStart !== null) {
+    const currentDate = new Date(periodStart);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    if (period.days === 1) {
+      const yesterday = new Date(currentDate);
+      yesterday.setDate(yesterday.getDate() - 1);
+      dayMap.set(getDateKey(yesterday), createEmptyDayMetric());
+    }
+
+    while (currentDate <= today) {
+      dayMap.set(getDateKey(currentDate), createEmptyDayMetric());
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+  }
+
+  sales.forEach((sale) => {
+    const dateKey = getDateKey(sale.timestamp);
+    if (!dateKey) return;
+    if (!dayMap.has(dateKey)) dayMap.set(dateKey, createEmptyDayMetric());
+
+    const dayMetric = dayMap.get(dateKey);
+    const financialSummary = summarizeFinancialSales([sale]);
+    dayMetric.revenue += financialSummary.totalRevenue;
+    dayMetric.profit += financialSummary.confirmedProfit;
+    dayMetric.confirmedRevenue += financialSummary.confirmedRevenue;
+    dayMetric.orders += 1;
+  });
+
+  wasteLogs.forEach((log) => {
+    const dateKey = getDateKey(log.timestamp || log.date || log.createdAt);
+    if (!dateKey) return;
+    if (!dayMap.has(dateKey)) dayMap.set(dateKey, createEmptyDayMetric());
+    dayMap.get(dateKey).waste += summarizeWaste([log]);
+  });
+
+  return Array.from(dayMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([dateKey, value]) => {
+      let metricValue = value.revenue;
+      if (metricKey === 'profit') metricValue = value.profit;
+      if (metricKey === 'orders') metricValue = value.orders;
+      if (metricKey === 'avgTicket') metricValue = value.orders > 0 ? value.revenue / value.orders : 0;
+      if (metricKey === 'margin') metricValue = value.confirmedRevenue > 0 ? (value.profit / value.confirmedRevenue) * 100 : 0;
+      if (metricKey === 'waste') metricValue = value.waste;
+
+      return {
+        name: getDateLabel(dateKey),
+        value: metricValue
+      };
+    });
+};
+
 export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0, activeRubros = [] }) {
   const [timeRange, setTimeRange] = useState('today');
+  const [selectedMetric, setSelectedMetric] = useState('revenue');
   const [filteredSales, setFilteredSales] = useState([]);
   const [prevPeriodSales, setPrevPeriodSales] = useState([]);
+  const [filteredWasteLogs, setFilteredWasteLogs] = useState([]);
+  const [prevPeriodWasteLogs, setPrevPeriodWasteLogs] = useState([]);
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const forceRecalculate = useStatsStore((state) => state.forceRecalculate);
+
+  const handleRecalculateReports = async () => {
+    setIsRecalculating(true);
+    try {
+      await forceRecalculate();
+      setLocalRefreshKey(Date.now());
+    } catch (error) {
+      console.error('Error recalculando reportes', error);
+    } finally {
+      setIsRecalculating(false);
+    }
+  };
 
   useEffect(() => {
     async function loadPeriodSales() {
@@ -82,7 +263,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
             rangoFechas: ranges.current,
             rubros: activeRubros,
             incluirCanceladas: false,
-            incluirMermas: false,
+            incluirMermas: true,
             incluirProductos: false
           }),
           ranges.previous
@@ -90,169 +271,108 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
               rangoFechas: ranges.previous,
               rubros: activeRubros,
               incluirCanceladas: false,
-              incluirMermas: false,
+              incluirMermas: true,
               incluirProductos: false
             })
-            : Promise.resolve({ sales: [] })
+            : Promise.resolve({ sales: [], wasteLogs: [] })
         ]);
 
         setFilteredSales(currentReport.sales || []);
         setPrevPeriodSales(previousReport.sales || []);
+        setFilteredWasteLogs(currentReport.wasteLogs || []);
+        setPrevPeriodWasteLogs(previousReport.wasteLogs || []);
 
       } catch (err) {
         console.error("Error loading period sales", err);
       }
     }
     loadPeriodSales();
-  }, [activeRubros, reportRefreshKey, timeRange]);
+  }, [activeRubros, localRefreshKey, reportRefreshKey, timeRange]);
 
   // Calcular métricas para el periodo seleccionado
   const metrics = useMemo(() => {
     const now = new Date();
     const period = TIME_PERIODS[timeRange];
-
-    // Calcular métricas principales
-    let revenue = 0;
-    let profitConfirmed = 0;      // ← Ganancia confirmada (con costo)
-    let estimatedProfit = 0;      // ← Ganancia estimada (sin costo = 100% ingreso)
+    const financialSummary = summarizeFinancialSales(filteredSales);
+    const revenue = financialSummary.totalRevenue;
+    const unreliableProfit = financialSummary.unreliableProfitDueToMissingCosts;
+    const profitConfirmed = financialSummary.confirmedProfit;
+    const confirmedRevenue = financialSummary.confirmedRevenue;
+    const unconfirmedRevenue = financialSummary.unconfirmedRevenue;
     const orders = filteredSales.length;
-    let items = 0;
-    let confirmedRevenue = 0;     // ← Ingresos con costo conocido
-    let unconfirmedRevenue = 0;   // ← Ingresos sin costo registrado
-    let hasMissingCosts = false;
-
-    filteredSales.forEach(sale => {
-      const parsedTotal = parseFloat(String(sale.total).replace(/[^0-9.-]+/g, ""));
-      revenue += isNaN(parsedTotal) ? 0 : parsedTotal;
-
-      (sale.items || []).forEach(item => {
-        items += item.quantity;
-        const rawCost = item.cost;
-        const itemRevenue = (item.price || 0) * item.quantity;
-
-        if (rawCost === null || rawCost === undefined || rawCost === '' || Number(rawCost) === 0) {
-          hasMissingCosts = true;
-          estimatedProfit += itemRevenue;  // ← 100% como ganancia bruta
-          unconfirmedRevenue += itemRevenue;
-        } else {
-          confirmedRevenue += itemRevenue;
-          profitConfirmed += ((item.price || 0) - rawCost) * item.quantity;
-        }
-      });
-    });
-
-    const totalProfit = profitConfirmed + estimatedProfit;
-
+    const items = financialSummary.itemsSold;
+    const hasMissingCosts = financialSummary.hasMissingCosts;
+    const totalWaste = summarizeWaste(filteredWasteLogs);
+    const totalProfit = profitConfirmed;
     const avgTicket = orders > 0 ? revenue / orders : 0;
-    const marginPercent = revenue > 0 ? (totalProfit / revenue) * 100 : 0;
-
-    // Calcular métricas del periodo anterior para tendencia
-    let prevRevenue = 0;
-    prevPeriodSales.forEach(sale => {
-      prevRevenue += Number(sale.total) || 0;
+    const marginPercent = financialSummary.confirmedMarginPct;
+    const selectedMetricConfig = METRIC_OPTIONS[selectedMetric];
+    const currentSummary = {
+      revenue,
+      profitConfirmed,
+      orders,
+      avgTicket,
+      marginPercent,
+      totalWaste
+    };
+    const prevFinancialSummary = summarizeFinancialSales(prevPeriodSales);
+    const prevRevenue = prevFinancialSummary.totalRevenue;
+    const prevOrders = prevPeriodSales.length;
+    const prevSummary = {
+      revenue: prevRevenue,
+      profitConfirmed: prevFinancialSummary.confirmedProfit,
+      orders: prevOrders,
+      avgTicket: prevOrders > 0 ? prevRevenue / prevOrders : 0,
+      marginPercent: prevFinancialSummary.confirmedMarginPct,
+      totalWaste: summarizeWaste(prevPeriodWasteLogs)
+    };
+    const selectedMetricValue = getMetricValue(currentSummary, selectedMetric);
+    const previousMetricValue = getMetricValue(prevSummary, selectedMetric);
+    const metricTrend = period.days === Infinity
+      ? null
+      : getTrendPercent(selectedMetricValue, previousMetricValue);
+    const revenueTrend = period.days === Infinity
+      ? null
+      : getTrendPercent(revenue, prevRevenue);
+    const metricDailyData = buildDailyMetricData({
+      sales: filteredSales,
+      wasteLogs: filteredWasteLogs,
+      period,
+      now,
+      metricKey: selectedMetric
     });
-
-    let revenueTrend = 0;
-    if (period.days === Infinity) {
-      revenueTrend = null;
-    } else if (prevRevenue > 0) {
-      revenueTrend = ((revenue - prevRevenue) / prevRevenue) * 100;
-    } else if (revenue > 0) {
-      revenueTrend = 100;
-    } else {
-      revenueTrend = 0;
-    }
-
-    // Datos para gráficas - ventas por día de semana
-    const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-    const dailyRevenueMap = {};
-    filteredSales.forEach(sale => {
-      const dayIndex = new Date(sale.timestamp).getDay();
-      dailyRevenueMap[dayIndex] = (dailyRevenueMap[dayIndex] || 0) + (Number(sale.total) || 0);
-    });
-
-    const dailyRevenue = [];
-    if (period.days <= 7) {
-      // Para periodos cortos (Hoy, 7 días), ordenamos dinámicamente para que el eje X termine en "Hoy"
-      const currentDayIndex = now.getDay();
-      for (let i = 1; i <= 7; i++) {
-        const dIndex = (currentDayIndex + i) % 7;
-        dailyRevenue.push({ name: dayNames[dIndex], value: dailyRevenueMap[dIndex] || 0 });
-      }
-    } else {
-      // Para periodos largos (15 días, mes, histórico), usamos orden estándar: Lunes a Domingo
-      const standardOrder = [1, 2, 3, 4, 5, 6, 0];
-      standardOrder.forEach(dIndex => {
-        dailyRevenue.push({ name: dayNames[dIndex], value: dailyRevenueMap[dIndex] || 0 });
-      });
-    }
-
-    // Evolución diaria para mini gráfica (formato Recharts)
-    const dayMap = new Map();
-
-    const periodStart = period.days === 'month'
-      ? new Date(now.getFullYear(), now.getMonth(), 1)
-      : (period.days === Infinity
-        ? null
-        : new Date(now.getFullYear(), now.getMonth(), now.getDate() - (period.days - 1)));
-
-    if (periodStart !== null) {
-      const currentDate = new Date(periodStart);
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-      // CORRECCIÓN: Inyectar punto de anclaje (ayer con valor 0) si el periodo es 1 día 
-      // para permitir el trazo del área en Recharts.
-      if (period.days === 1) {
-        const yesterday = new Date(currentDate);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const dateKeyYesterday = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-        dayMap.set(dateKeyYesterday, 0);
-      }
-
-      while (currentDate <= today) {
-        const dateKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
-        dayMap.set(dateKey, 0);
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-    }
-
-    filteredSales.forEach(sale => {
-      const d = new Date(sale.timestamp);
-      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      dayMap.set(dateKey, (dayMap.get(dateKey) || 0) + (Number(sale.total) || 0));
-    });
-
-    const evolutionData = Array.from(dayMap.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([dateKey, value]) => {
-        const parts = dateKey.split('-');
-        if (parts.length !== 3) {
-          return { name: 'Fecha inválida', value: Number(value) || 0 };
-        }
-        const [, month, day] = parts;
-        return { name: `${day}/${month}`, value: Number(value) || 0 };
-      });
 
     return {
       revenue,
       profitConfirmed,
-      estimatedProfit,
+      unreliableProfit,
       totalProfit,
       orders,
       items,
       avgTicket,
       marginPercent,
-      coveragePercent: revenue > 0 ? (confirmedRevenue / revenue) * 100 : 100,
+      totalWaste,
+      coveragePercent: financialSummary.reportReliabilityPct,
+      missingCostRevenuePct: financialSummary.missingCostRevenuePct,
+      qualityStatus: financialSummary.qualityStatus,
+      shouldWarnFinancialQuality: financialSummary.shouldWarn,
+      shouldBlockProfitAnalysis: financialSummary.shouldBlockProfitAnalysis,
       inventory: stats.inventoryValue,
       hasMissingCosts,
       revenueTrend,
-      dailyRevenue,
-      evolutionData,
+      metricTrend,
+      selectedMetricValue,
+      selectedMetricLabel: selectedMetricConfig.label,
+      selectedMetricColor: selectedMetricConfig.color,
+      selectedMetricFormatter: selectedMetricConfig.formatter,
+      selectedMetricFullFormatter: selectedMetricConfig.fullFormatter,
+      dailyRevenue: metricDailyData,
+      evolutionData: metricDailyData,
       confirmedRevenue,
       unconfirmedRevenue,
       filteredSales
     };
-  }, [stats, filteredSales, prevPeriodSales, timeRange]);
+  }, [filteredSales, filteredWasteLogs, prevPeriodSales, prevPeriodWasteLogs, selectedMetric, stats, timeRange]);
 
   return (
     <div className="stats-container-wrapper">
@@ -268,20 +388,46 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
           </p>
         </div>
 
-        {/* Selector de periodo - Mobile first: scroll horizontal */}
-        <div className="time-filter-scroll">
-          {Object.entries(TIME_PERIODS).map(([key, { label }]) => (
-            <button
-              key={key}
-              className={`filter-pill ${timeRange === key ? 'active' : ''}`}
-              onClick={() => setTimeRange(key)}
-              title={`Ver últimos ${label}`}
-            >
-              {label === 'Hoy' && <Calendar size={14} />}
-              {label === 'Total' && <Globe size={14} />}
-              {label}
-            </button>
-          ))}
+        <div className="stats-controls-stack">
+          {/* Selector de periodo - Mobile first: scroll horizontal */}
+          <div className="time-filter-scroll">
+            {Object.entries(TIME_PERIODS).map(([key, { label }]) => (
+              <button
+                key={key}
+                type="button"
+                className={`filter-pill ${timeRange === key ? 'active' : ''}`}
+                onClick={() => setTimeRange(key)}
+                title={`Ver últimos ${label}`}
+              >
+                {label === 'Hoy' && <Calendar size={14} />}
+                {label === 'Total' && <Globe size={14} />}
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="metric-filter-scroll" aria-label="Metrica de tendencia">
+            {Object.entries(METRIC_OPTIONS).map(([key, { label }]) => (
+              <button
+                key={key}
+                type="button"
+                className={`metric-pill ${selectedMetric === key ? 'active' : ''}`}
+                onClick={() => setSelectedMetric(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="recalc-report-button"
+            onClick={handleRecalculateReports}
+            disabled={isRecalculating}
+          >
+            <RefreshCw size={15} className={isRecalculating ? 'spin-icon' : ''} />
+            {isRecalculating ? 'Recalculando...' : 'Recalcular reportes'}
+          </button>
         </div>
       </div>
 
@@ -291,19 +437,23 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
           <div className="evolution-header">
             <div className="evolution-title">
               <Activity size={18} />
-              <span>Tendencia de Ventas</span>
+              <span>{`Tendencia de ${metrics.selectedMetricLabel}`}</span>
+              <strong className="evolution-metric-value">
+                {metrics.selectedMetricFullFormatter(metrics.selectedMetricValue)}
+              </strong>
             </div>
-            {metrics.revenueTrend !== null && (
-              <div className={`evolution-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
-                {metrics.revenueTrend >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                <span>{`${metrics.revenueTrend >= 0 ? '+' : ''}${metrics.revenueTrend.toFixed(1)}%`}</span>
+            {metrics.metricTrend !== null && (
+              <div className={`evolution-trend ${metrics.metricTrend >= 0 ? 'positive' : 'negative'}`}>
+                {metrics.metricTrend >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                <span>{`${metrics.metricTrend >= 0 ? '+' : ''}${metrics.metricTrend.toFixed(1)}%`}</span>
               </div>
             )}
           </div>
           <AreaTrendChart
             data={metrics.evolutionData}
             height={200}
-            color={metrics.revenueTrend >= 0 || metrics.revenueTrend === null ? 'var(--success-color, #10b981)' : 'var(--error-color, #dc2626)'}
+            color={metrics.selectedMetricColor}
+            valueFormatter={metrics.selectedMetricFormatter}
           />
         </div>
       )}
@@ -328,29 +478,22 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
         </div>
 
         {/* TARJETA 2: UTILIDAD */}
-        <div className={`stat-card-modern profit-card ${metrics.hasMissingCosts && metrics.coveragePercent < 100 ? 'card-warning-state' : ''}`}>
+        <div className={`stat-card-modern profit-card ${metrics.shouldWarnFinancialQuality ? 'card-warning-state' : ''}`}>
           <div className="card-icon-wrapper purple">
             <TrendingUp size={24} />
           </div>
           <div className="card-content">
-            <span className="card-label">Ganancia Estimada</span>
-            <h2 className="card-value-main">{formatCurrency(metrics.totalProfit || 0)}</h2>
+            <span className="card-label">Utilidad Confirmada</span>
+            <h2 className="card-value-main">{formatCurrency(metrics.profitConfirmed || 0)}</h2>
 
-            {metrics.hasMissingCosts && metrics.coveragePercent < 100 ? (
-              <div className="error-message-inline" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: '6px', gap: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: '500' }}>
-                    <strong>{formatCurrency(metrics.profitConfirmed)}</strong>{` confirmada`}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '0.85rem' }}>
-                    {`+ `}<strong>{formatCurrency(metrics.estimatedProfit)}</strong>{` estimada (sin costo)`}
-                  </span>
-                </div>
-                <small style={{ color: 'var(--text-muted)', fontSize: '0.70rem', marginTop: '2px', lineHeight: '1.2' }}>
-                  {`Total: ${formatCurrency(metrics.totalProfit)} | ${metrics.coveragePercent.toFixed(1)}% tiene costo registrado`}
-                </small>
+            {metrics.shouldWarnFinancialQuality ? (
+              <div className="financial-quality-warning">
+                <AlertTriangle size={14} />
+                <span>
+                  {metrics.shouldBlockProfitAnalysis
+                    ? 'Utilidad no definitiva: demasiadas ventas sin costo.'
+                    : 'Utilidad con advertencia por costos faltantes.'}
+                </span>
               </div>
             ) : (
               <div className="card-mini-stats">
@@ -359,10 +502,45 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
                 </span>
               </div>
             )}
+            <small className="financial-quality-text">
+              {`Calidad del reporte financiero: ${metrics.coveragePercent.toFixed(1)}% confiable`}
+            </small>
           </div>
         </div>
 
-        {/* TARJETA 3: PEDIDOS */}
+        {/* TARJETA 3: UTILIDAD NO CONFIABLE */}
+        <div className={`stat-card-modern small-card ${metrics.hasMissingCosts ? 'card-warning-state' : ''}`}>
+          <div className="card-header-small">
+            <span className="card-label">Utilidad no confiable</span>
+            <AlertTriangle size={18} className="icon-muted" />
+          </div>
+          <div className="card-value-small">{formatCurrency(metrics.unreliableProfit || 0)}</div>
+          <small className="text-muted">
+            {`${metrics.missingCostRevenuePct.toFixed(1)}% de ventas sin costo`}
+          </small>
+        </div>
+
+        {/* TARJETA 4: CONFIABILIDAD */}
+        <div className={`stat-card-modern small-card ${metrics.shouldWarnFinancialQuality ? 'card-warning-state' : ''}`}>
+          <div className="card-header-small">
+            <span className="card-label">Confiabilidad financiera</span>
+            <Activity size={18} className="icon-muted" />
+          </div>
+          <div className="card-value-small">{`${metrics.coveragePercent.toFixed(1)}%`}</div>
+          <div className="reliability-meter" aria-hidden="true">
+            <div
+              className={`reliability-meter-fill ${metrics.qualityStatus}`}
+              style={{ width: `${Math.max(0, Math.min(100, metrics.coveragePercent))}%` }}
+            />
+          </div>
+          <small className="text-muted">
+            {metrics.hasMissingCosts
+              ? `${formatCurrency(metrics.unconfirmedRevenue)} sin costo`
+              : 'Costos completos en el periodo'}
+          </small>
+        </div>
+
+        {/* TARJETA 5: PEDIDOS */}
         <div className="stat-card-modern small-card">
           <div className="card-header-small">
             <span className="card-label">Pedidos</span>
@@ -372,7 +550,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
           <small className="text-muted">Tickets cobrados</small>
         </div>
 
-        {/* TARJETA 4: TICKET PROMEDIO */}
+        {/* TARJETA 6: TICKET PROMEDIO */}
         <div className="stat-card-modern small-card">
           <div className="card-header-small">
             <span className="card-label">Ticket Promedio</span>
@@ -382,7 +560,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
           <small className="text-muted">Gasto por cliente</small>
         </div>
 
-        {/* TARJETA 5: PRODUCTOS */}
+        {/* TARJETA 7: PRODUCTOS */}
         <div className="stat-card-modern small-card">
           <div className="card-header-small">
             <span className="card-label">Prod. Vendidos</span>
@@ -392,7 +570,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
           <small className="text-muted">Unidades entregadas</small>
         </div>
 
-        {/* TARJETA 6: INVENTARIO */}
+        {/* TARJETA 8: INVENTARIO */}
         <div className={`stat-card-modern inventory-card ${metrics.inventory === null ? 'card-error-state' : ''}`}>
           <div className="inventory-content">
             <div className="inventory-text-group">
@@ -425,17 +603,18 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
 
       {/* Sección de gráficas y datos adicionales */}
       <div className="stats-insights-section" style={{ alignItems: 'flex-start' }}>
-        {/* Gráfica de días de semana */}
+        {/* Gráfica por fecha real */}
         {metrics.dailyRevenue.length > 0 && (
           <div className="stats-insight-card" style={{ width: '100%' }}>
             <div className="insight-header">
               <Calendar size={18} />
-              <h4>Ventas por Día de Semana</h4>
+              <h4>{`${metrics.selectedMetricLabel} por fecha`}</h4>
             </div>
             <div style={{ marginTop: '10px' }}>
               <BarWeekdayChart
                 data={metrics.dailyRevenue}
                 height={260}
+                valueFormatter={metrics.selectedMetricFormatter}
               />
             </div>
           </div>
