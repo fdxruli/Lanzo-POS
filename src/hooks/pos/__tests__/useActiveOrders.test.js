@@ -94,6 +94,7 @@ import {
   selectCurrentOrderTableData,
   useActiveOrders
 } from '../useActiveOrders';
+import { showMessageModal } from '../../../services/utils';
 
 const makeOrder = (id, items = []) => ({
   id,
@@ -275,6 +276,41 @@ describe('useActiveOrders unified store', () => {
     expect(useActiveOrders.getState().activeOrders.get('one')?.items).toMatchObject([
       { id: 'product-1', lineId: 'line-b', quantity: 4 }
     ]);
+  });
+
+  it('authorizes below-cost wholesale on the target lineId only', () => {
+    useActiveOrders.setState({
+      activeOrders: new Map([[
+        'one',
+        makeOrder('one', [
+          { id: 'product-1', lineId: 'line-existing', name: 'Product', quantity: 1, price: 10, saleType: 'unit' }
+        ])
+      ]]),
+      currentOrderId: 'one'
+    });
+
+    useActiveOrders.getState().addItem({
+      id: 'product-1',
+      lineId: 'line-new',
+      name: 'Product',
+      quantity: 1,
+      price: 10,
+      cost: 8,
+      saleType: 'unit',
+      trackStock: false,
+      selectedModifiers: [{ name: 'Extra', price: 0 }],
+      wholesaleTiers: [{ min: 1, price: 5 }]
+    });
+
+    expect(showMessageModal).toHaveBeenCalledOnce();
+    showMessageModal.mock.calls[0][1]();
+
+    const items = useActiveOrders.getState().activeOrders.get('one')?.items;
+    expect(items).toMatchObject([
+      { id: 'product-1', lineId: 'line-existing', quantity: 1, price: 10 },
+      { id: 'product-1', lineId: 'line-new', quantity: 1, price: 5, forceWholesale: true }
+    ]);
+    expect(items[0].forceWholesale).toBeUndefined();
   });
 
   it('loads an open sale into the unified session', async () => {

@@ -1,6 +1,7 @@
 // src/hooks/useFeatureConfig.js
 import { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { normalizeBusinessType, normalizeBusinessTypes } from '../utils/businessType';
 
 /**
  * CONFIGURACIÓN CENTRAL DE REGLAS DE NEGOCIO
@@ -39,16 +40,13 @@ export function useFeatureConfig(specificRubro = null) {
   const config = useMemo(() => {
     let companyRubros = [];
 
-    if (Array.isArray(businessTypes)) {
-      companyRubros = businessTypes.filter(Boolean); // Asegura que no tenga valores vacíos
-    } else if (typeof businessTypes === 'string' && businessTypes.trim()) {
-      companyRubros = businessTypes.split(',').map(s => s.trim()).filter(Boolean);
-    }
+    companyRubros = normalizeBusinessTypes(businessTypes);
 
-    if (companyRubros.length === 0) companyRubros = ['otro'];
-
+    const normalizedSpecificRubro = specificRubro
+      ? normalizeBusinessType(specificRubro, null)
+      : null;
     const typesToEvaluate = specificRubro
-      ? (companyRubros.includes(specificRubro) ? [specificRubro] : [])
+      ? (companyRubros.includes(normalizedSpecificRubro) ? [normalizedSpecificRubro] : [])
       : companyRubros;
 
     const enabledFeatures = new Set();

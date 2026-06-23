@@ -4,6 +4,7 @@ import { registerExpirationWaste, registerPartialExpirationWaste } from '../serv
 import { useInventoryMovement } from '../hooks/useInventoryMovement';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
+import { normalizeBusinessType } from '../utils/businessType';
 
 const STORAGE_KEY = 'ignored_expirations_ttl';
 const IGNORE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 horas
@@ -179,18 +180,17 @@ export const useExpirationAlert = () => {
   // Información contextual por rubro
   const businessContext = useMemo(() => {
     const rawType = companyProfile?.business_type;
-    const type = (Array.isArray(rawType) ? rawType[0] : rawType) || 'general';
-    const lowerType = type.toLowerCase();
+    const type = normalizeBusinessType(rawType);
 
-    const isPharmacy = lowerType.includes('farmacia') || lowerType.includes('botica') || lowerType.includes('salud');
-    const isFood = lowerType.includes('food') || lowerType.includes('restaurante') || lowerType.includes('cafeteria') || lowerType.includes('alimento');
-    const isGrocery = lowerType.includes('abarrotes') || lowerType.includes('tienda') || lowerType.includes('mercado');
+    const isPharmacy = type === 'farmacia';
+    const isFood = type === 'food_service' || type === 'verduleria/fruteria';
+    const isGrocery = type === 'abarrotes';
 
     return {
       isPharmacy,
       isFood,
       isGrocery,
-      type: lowerType
+      type
     };
   }, [companyProfile]);
 

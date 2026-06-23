@@ -6,6 +6,8 @@
  * para que la IA razone con herramientas y no solo con un resumen plano.
  */
 
+import { normalizeBusinessTypes as normalizeCanonicalBusinessTypes } from '../utils/businessType';
+
 const TOOL_SEVERITY = {
   INFO: 'info',
   WARNING: 'warning',
@@ -13,28 +15,19 @@ const TOOL_SEVERITY = {
   SUCCESS: 'success'
 };
 
-const BUSINESS_ALIASES = {
-  restaurant: ['restaurant', 'dark-kitchen', 'cocina', 'food', 'comida', 'fruteria'],
-  pharmacy: ['pharmacy', 'farmacia', 'drogueria'],
-  retail: ['retail', 'abarrotes', 'tienda', 'minimarket', 'apparel', 'hardware']
-};
-
 const normalizeBusinessTypes = (businessTypes = []) => {
-  const rawTypes = Array.isArray(businessTypes) ? businessTypes : [businessTypes];
-  const normalized = rawTypes
-    .flatMap(type => String(type || '').split(','))
-    .map(type => type.trim().toLowerCase())
-    .filter(Boolean);
-
+  const canonicalTypes = normalizeCanonicalBusinessTypes(businessTypes, 'abarrotes');
   const detected = new Set();
 
-  normalized.forEach(type => {
-    Object.entries(BUSINESS_ALIASES).forEach(([canonical, aliases]) => {
-      if (aliases.includes(type)) detected.add(canonical);
-    });
+  canonicalTypes.forEach(type => {
+    if (type === 'food_service' || type === 'verduleria/fruteria') {
+      detected.add('restaurant');
+    } else if (type === 'farmacia') {
+      detected.add('pharmacy');
+    } else {
+      detected.add('retail');
+    }
   });
-
-  if (detected.size === 0) detected.add('retail');
 
   return Array.from(detected);
 };

@@ -1,5 +1,6 @@
 // Configuración de contextos del bot según la ruta actual
 import { RUBRO_CONTEXTS, abarrotesContext } from './botContextByRubro'
+import { normalizeBusinessType } from '../utils/businessType'
 
 
 const getPageKey = (pathname) => {
@@ -35,7 +36,8 @@ export const initializeGlobalAlert = () => {
 // 2. Función para obtener acciones rápidas (solicitada por AssistantBot)
 export const getQuickActions = (pathname, rubroType = 'abarrotes') => {
   // Intentar buscar en la config específica
-  const rubroConfig = RUBRO_CONTEXTS[rubroType] || RUBRO_CONTEXTS['abarrotes'];
+  const normalizedRubroType = normalizeBusinessType(rubroType, 'abarrotes');
+  const rubroConfig = RUBRO_CONTEXTS[normalizedRubroType] || RUBRO_CONTEXTS['abarrotes'];
   const pageKey = getPageKey(pathname);
 
   if (rubroConfig[pageKey]?.default?.actions) {
@@ -62,7 +64,7 @@ export const getBotContext = (pathname, data = {}) => {
 
   // 1. Identificar el rubro del negocio (asume que businessType es un array, tomamos el primero)
   // Normalizamos el string para que coincida con las claves de RUBRO_CONTEXTS
-  const currentRubro = businessType.length > 0 ? businessType[0].toLowerCase() : 'abarrotes';
+  const currentRubro = normalizeBusinessType(businessType, 'abarrotes');
 
   // 2. Obtener la configuración del rubro o usar abarrotes por defecto
   const contextConfig = RUBRO_CONTEXTS[currentRubro] || RUBRO_CONTEXTS['abarrotes'] || abarrotesContext;
