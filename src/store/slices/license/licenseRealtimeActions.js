@@ -9,6 +9,8 @@ import {
   isRealtimeEnabledForLicense
 } from './licenseGuards';
 
+const waitForRealtimeCleanup = () => new Promise((resolve) => setTimeout(resolve, 200));
+
 export const createLicenseRealtimeActions = ({
   set,
   get,
@@ -52,7 +54,7 @@ export const createLicenseRealtimeActions = ({
     try {
       if (state.realtimeSubscription) {
         await get().stopRealtimeSecurity();
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await waitForRealtimeCleanup();
       }
 
       const channel = startLicenseListener(
@@ -129,6 +131,51 @@ export const createLicenseRealtimeActions = ({
       return null;
     } finally {
       set({ _isInitializingSecurity: false });
+    }
+  },
+
+  recoverRealtimeSecurity: async (reason = 'manual') => {
+    const state = get();
+
+    if (state._isRecoveringRealtime) {
+      Logger.log(`[Realtime] Recuperación ya en curso; se omite ${reason}.`);
+      return state.realtimeSubscription;
+    }
+
+    if (!state.licenseDetails?.license_key) {
+      return null;
+    }
+
+    if (!isRealtimeEnabledForLicense(state.licenseDetails)) {
+      await get().stopRealtimeSecurity();
+      return null;
+    }
+
+    if (!navigator.onLine) {
+      Logger.warn(`[Realtime] No se recupera canal (${reason}): sin conexión.`);
+      return null;
+    }
+
+    set({ _isRecoveringRealtime: true });
+
+    try {
+      Logger.log(`[Realtime] Recuperando canal privado (${reason}).`);
+
+      await get().stopRealtimeSecurity();
+      await waitForRealtimeCleanup();
+
+      const channel = await get().startRealtimeSecurity();
+
+      // La PWA móvil puede perder eventos mientras estuvo pausada. Al recuperar el
+      // WebSocket forzamos una revalidación inmediata para no depender del polling.
+      await get().runLicenseSyncCheck(`realtime_recover_${reason}`);
+
+      return channel;
+    } catch (error) {
+      Logger.warn('[Realtime] Falló recuperación del canal:', error);
+      return null;
+    } finally {
+      set({ _isRecoveringRealtime: false });
     }
   },
 
