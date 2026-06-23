@@ -1,5 +1,5 @@
 // src/pages/DashboardPage.jsx
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Logger from '../services/Logger';
 
@@ -22,6 +22,7 @@ import ExpirationAlert from '../components/dashboard/ExpirationAlert';
 import SaleCancellationModal from '../components/dashboard/SaleCancellationModal';
 
 import { loadData, STORES } from '../services/database';
+import { reportingService } from '../services/db/reporting';
 import { showMessageModal } from '../services/utils';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
@@ -46,8 +47,30 @@ const hasAIAgentsEntitlement = (licenseDetails) => {
   );
 };
 
+const buildWarningsMessage = (warnings = []) => {
+  if (!warnings.length) return '';
+
+  const preview = warnings
+    .slice(0, 3)
+    .map((warning, index) => `${index + 1}. ${warning.message}`)
+    .join('\n');
+
+  const tail = warnings.length > 3
+    ? `\n... y ${warnings.length - 3} advertencias mas.`
+    : '';
+
+  return `\n\nAdvertencias:\n${preview}${tail}`;
+};
+
 export default function DashboardPage() {
   const [customers, setCustomers] = useState([]);
+  const [reportingData, setReportingData] = useState({
+    sales: [],
+    wasteLogs: [],
+    menu: [],
+    isLoading: true,
+    refreshKey: 0
+  });
   const [activeTab, setActiveTab] = useState('stats');
   const [saleToCancel, setSaleToCancel] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -75,6 +98,13 @@ export default function DashboardPage() {
 
   // 3. PRODUCTOS
   const menu = useProductStore((state) => state.menu);
+  const analyticsSales = reportingData.sales;
+  const analyticsWasteLogs = reportingData.wasteLogs;
+  const analyticsMenu = reportingData.isLoading ? menu : reportingData.menu;
+  const totalWasteLoss = useMemo(
+    () => analyticsWasteLogs.reduce((sum, log) => sum + (Number(log.lossAmount) || 0), 0),
+    [analyticsWasteLogs]
+  );
 
   // 4. PAPELERA
   const loadRecycleBin = useRecycleBinStore(state => state.loadRecycleBin);
@@ -91,12 +121,42 @@ export default function DashboardPage() {
     }
   };
 
+  const loadDashboardReporting = useCallback(async () => {
+    setReportingData((current) => ({ ...current, isLoading: true }));
+
+    try {
+      const report = await reportingService.getDashboardReport({
+        rangoFechas: null,
+        rubros: features.activeRubros,
+        incluirCanceladas: false,
+        incluirMermas: true,
+        incluirProductos: true
+      });
+
+      setReportingData({
+        sales: report.sales || [],
+        wasteLogs: report.wasteLogs || [],
+        menu: report.menu || [],
+        isLoading: false,
+        refreshKey: Date.now()
+      });
+    } catch (error) {
+      Logger.error('Error cargando reporte analitico del dashboard:', error);
+      setReportingData((current) => ({
+        ...current,
+        isLoading: false,
+        refreshKey: Date.now()
+      }));
+    }
+  }, [features.activeRubros]);
+
   useEffect(() => {
     Logger.log("🔄 Actualizando Dashboard...");
     loadStats();
     loadRecentSales();
+    loadDashboardReporting();
     loadCustomers();
-  }, [loadRecentSales, loadStats]);
+  }, [loadDashboardReporting, loadRecentSales, loadStats]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -124,21 +184,6 @@ export default function DashboardPage() {
     }
   };
 
-  const buildWarningsMessage = (warnings = []) => {
-    if (!warnings.length) return '';
-
-    const preview = warnings
-      .slice(0, 3)
-      .map((warning, index) => `${index + 1}. ${warning.message}`)
-      .join('\n');
-
-    const tail = warnings.length > 3
-      ? `\n... y ${warnings.length - 3} advertencias mas.`
-      : '';
-
-    return `\n\nAdvertencias:\n${preview}${tail}`;
-  };
-
   const handleDeleteSale = (sale) => {
     setSaleToCancel(sale);
   };
@@ -150,7 +195,10 @@ export default function DashboardPage() {
       showMessageModal(result.message || 'No se pudo mover la venta a papelera.', null, { type: 'error' });
       return;
     }
-    await loadRecycleBin();
+    await Promise.all([
+      loadRecycleBin(),
+      loadDashboardReporting()
+    ]);
     showMessageModal('Venta cancelada movida a la papelera.');
   };
 
@@ -169,6 +217,10 @@ export default function DashboardPage() {
 
     if (result.success) {
       setSaleToCancel(null);
+      await Promise.all([
+        loadRecentSales(),
+        loadDashboardReporting()
+      ]);
       const warnings = Array.isArray(result.warnings) ? result.warnings : [];
       if (warnings.length > 0) {
         showMessageModal(
@@ -179,7 +231,6 @@ export default function DashboardPage() {
         return;
       }
 
-      if (result.wasteRecordIds?.length > 0) await loadRecentSales();
       showMessageModal('Venta cancelada y registrada en el historial.');
       return;
     }
@@ -271,7 +322,12 @@ export default function DashboardPage() {
 
       {/* 1. ESTADÍSTICAS */}
       {activeTab === 'stats' && (
-        <StatsGrid stats={stats} customers={customers} />
+        <StatsGrid
+          stats={stats}
+          customers={customers}
+          reportRefreshKey={reportingData.refreshKey}
+          activeRubros={features.activeRubros}
+        />
       )}
 
       {/* 2. REABASTECIMIENTO */}
@@ -338,13 +394,18 @@ export default function DashboardPage() {
       {/* 4. CONSEJOS */}
       {activeTab === 'tips' && (
         canUseAIAgents ? (
-          <OperationalDiagnostics sales={sales} menu={menu} customers={customers} wasteLogs={wasteLogs} />
+          <OperationalDiagnostics
+            sales={analyticsSales}
+            menu={analyticsMenu}
+            customers={customers}
+            wasteLogs={analyticsWasteLogs}
+          />
         ) : (
           <BusinessTips
-            sales={sales}
-            menu={menu}
+            sales={analyticsSales}
+            menu={analyticsMenu}
             customers={customers}
-            wasteLogs={wasteLogs}
+            wasteLogs={analyticsWasteLogs}
             activeRubros={features.activeRubros}
             onNavigate={(route) => navigate(route)}
           />
@@ -360,6 +421,8 @@ export default function DashboardPage() {
       {activeTab === 'waste' && features.hasWaste && (
         <WasteHistory
           logs={wasteLogs}
+          totalCount={analyticsWasteLogs.length}
+          totalLoss={totalWasteLoss}
           onNext={() => fetchWastePage('next')}
           onPrev={() => fetchWastePage('prev')}
           hasMoreWaste={hasMoreWaste}
