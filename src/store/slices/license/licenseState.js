@@ -3,6 +3,7 @@
 export const createLicenseInitialState = () => ({
   realtimeSubscription: null,
   _isInitializingSecurity: false,
+  _isRecoveringRealtime: false,
   _securityCleanupScheduled: false,
   licenseSyncActive: false,
   licenseSyncMode: 'idle',
