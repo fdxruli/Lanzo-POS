@@ -87,6 +87,10 @@ export default function DashboardPage() {
   // 2. VENTAS Y MERMAS
   const sales = useSalesStore((state) => state.sales);
   const loadRecentSales = useSalesStore((state) => state.loadRecentSales);
+  const fetchSalesPage = useSalesStore((state) => state.fetchSalesPage);
+  const hasMoreSales = useSalesStore((state) => state.hasMoreSales);
+  const currentSalesPageIndex = useSalesStore((state) => state.currentSalesPageIndex);
+  const isSalesLoading = useSalesStore((state) => state.isSalesLoading);
   const deleteSale = useSalesStore((state) => state.deleteSale);
   const archiveCancelledSale = useSalesStore((state) => state.archiveCancelledSale);
   const isSaleLoading = useSalesStore((state) => state.isLoading);
@@ -108,8 +112,6 @@ export default function DashboardPage() {
 
   // 4. PAPELERA
   const loadRecycleBin = useRecycleBinStore(state => state.loadRecycleBin);
-  const deletedItems = useRecycleBinStore(state => state.deletedItems);
-  const restoreItem = useRecycleBinStore(state => state.restoreItem);
 
   const loadCustomers = async () => {
     try {
@@ -208,7 +210,7 @@ export default function DashboardPage() {
     const restoreStock = dispositionPlan.some(
       (entry) => entry.action === CANCELLATION_ACTIONS.RESTOCK
     );
-    const result = await deleteSale(saleToCancel.timestamp, {
+    const result = await deleteSale(saleToCancel.id || saleToCancel.timestamp, {
       restoreStock,
       dispositionPlan,
       reason,
@@ -284,14 +286,12 @@ export default function DashboardPage() {
           Consejos Lan
         </button>
 
-        {features.hasMinMax && (
-          <button
-            className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`}
-            onClick={() => handleTabChange('restock')}
-          >
-            Reabastecimiento
-          </button>
-        )}
+        <button
+          className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`}
+          onClick={() => handleTabChange('restock')}
+        >
+          Reabastecimiento
+        </button>
 
         <button
           className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
@@ -372,6 +372,11 @@ export default function DashboardPage() {
                   sales={sales}
                   onDeleteSale={handleDeleteSale}
                   onArchiveSale={handleArchiveCancelledSale}
+                  onNext={() => fetchSalesPage('next')}
+                  onPrev={() => fetchSalesPage('prev')}
+                  hasMore={hasMoreSales}
+                  currentPageIndex={currentSalesPageIndex}
+                  isLoading={isSalesLoading}
                 />
               </div>
             </section>
@@ -383,7 +388,7 @@ export default function DashboardPage() {
                 <span className="panel-subtitle">Elementos eliminados</span>
               </div>
               <div className="panel-body">
-                <RecycleBin items={deletedItems} onRestoreItem={restoreItem} />
+                <RecycleBin />
               </div>
             </section>
 
