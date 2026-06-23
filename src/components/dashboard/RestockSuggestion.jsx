@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clipboard, Truck, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { getLowStockProductsReport } from '../../services/inventoryAnalysis';
-import { showMessageModal, getProductAlerts, LOW_STOCK_THRESHOLD } from '../../services/utils';
+import { showMessageModal, getProductAlerts } from '../../services/utils';
 import { getAvailableStock } from '../../services/db/utils';
 import Logger from '../../services/Logger';
-import { normalizeBusinessType } from '../../utils/businessType';
+import { normalizeBusinessTypes } from '../../utils/businessType';
 import './RestockSuggestion.css';
 
 /**
@@ -46,16 +46,18 @@ const toSafeNumber = (value, fallback = 0) => {
  * @returns {string} - Mensaje formateado para copiar
  */
 const formatOrderMessage = (supplierName, items, businessType = 'general') => {
-  const normalizedBusinessType = normalizeBusinessType(businessType);
-  const isRestaurant = normalizedBusinessType === 'food_service'
-    || normalizedBusinessType === 'verduleria/fruteria';
-  const isPharmacy = normalizedBusinessType === 'farmacia';
-  const isRetail = ['abarrotes', 'apparel', 'hardware', 'otro'].includes(normalizedBusinessType);
-  
+  const normalizedBusinessTypes = normalizeBusinessTypes(businessType);
+  const hasBusinessType = (type) => normalizedBusinessTypes.includes(type);
+  const isRestaurant = hasBusinessType('food_service') || hasBusinessType('verduleria/fruteria');
+  const isPharmacy = hasBusinessType('farmacia');
+  const isApparel = hasBusinessType('apparel');
+  const isHardware = hasBusinessType('hardware');
+  const isRetail = normalizedBusinessTypes.some((type) => ['abarrotes', 'apparel', 'hardware', 'otro'].includes(type));
+
   // Determinar unidades prioritarias según rubro
   const getPriorityUnit = (item) => {
     const unit = item.unit?.toLowerCase() || 'pza';
-    
+
     // Restaurante: priorizar unidades de medida críticas (Kg, L, g, ml)
     if (isRestaurant) {
       if (['kg', 'kilo', 'kilos'].includes(unit)) return 'Kg';
@@ -64,35 +66,42 @@ const formatOrderMessage = (supplierName, items, businessType = 'general') => {
       if (['ml', 'mililitro', 'mililitros'].includes(unit)) return 'ml';
       return unit;
     }
-    
+
     // Farmacia/Retail: priorizar cajas/piezas
     if (isPharmacy || isRetail) {
       if (['caja', 'cajas', 'box', 'boxes'].includes(unit)) return 'caja(s)';
       if (['pza', 'pieza', 'piezas', 'unit', 'units'].includes(unit)) return 'pza(s)';
       return unit;
     }
-    
+
     // General: usar unidad del item
     return item.unit || 'pza';
   };
 
-  let header = `📋 *PEDIDO PARA: ${supplierName.toUpperCase()}*`;
-  
+  let header = `PEDIDO PARA: ${supplierName.toUpperCase()}`;
+
   // Agregar contexto del rubro en el encabezado
   if (isRestaurant) {
-    header += '\n🍽️ *Restaurante - Unidades Críticas*\n';
+    header += '\nComida - comprar por ingrediente / unidad critica\n';
   } else if (isPharmacy) {
-    header += '\n💊 *Farmacia - Control de Lotes*\n';
+    header += '\nFarmacia - verificar lote, caducidad y proveedor\n';
+  } else if (isApparel) {
+    header += '\nRopa - revisar variante, talla y color\n';
+  } else if (isHardware) {
+    header += '\nFerreteria - revisar unidad de compra y venta\n';
   } else if (isRetail) {
-    header += '\n🏪 *Retail - Inventario General*\n';
+    header += '\nRetail - inventario general\n';
   }
-  
+
   header += '\n';
 
   const body = items
     .map((item) => {
       const priorityUnit = getPriorityUnit(item);
-      return `- ${item.suggestedOrder} ${priorityUnit} de *${item.name}*`;
+      const coverage = Number.isFinite(item.coverageDays)
+        ? ` (cobertura: ${Math.floor(item.coverageDays)} dias)`
+        : '';
+      return `- ${item.suggestedOrder} ${priorityUnit} de ${item.name}${coverage}`;
     })
     .join('\n');
 
@@ -109,17 +118,17 @@ export default function RestockSuggestion() {
   // ==========================================================================
   // ESTADO
   // ==========================================================================
-  
+
   const [lowStockItems, setLowStockItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
-  
+
   // Estado para el modal de fallback del clipboard
   const [showClipboardFallback, setShowClipboardFallback] = useState(false);
   const [clipboardFallbackText, setClipboardFallbackText] = useState('');
-  
+
   // Obtener rubro del negocio desde el store global
   const companyProfile = useAppStore((state) => state.companyProfile);
   const businessType = companyProfile?.business_type || 'general';
@@ -139,21 +148,22 @@ export default function RestockSuggestion() {
     } else {
       setIsSyncing(true);
     }
-    
+
     setHasError(false);
     setErrorMessage('');
 
     try {
       const report = await getLowStockProductsReport();
-      
+
       // Validación defensiva de datos
       // ALINEACIÓN CON TICKER: Usar getProductAlerts para detectar stock bajo
       const validatedReport = (report || [])
         .map((item) => {
           // Usar los mismos criterios que el Ticker para detectar alertas
-          const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
+          const { isNearingExpiry, expiryDays } = getProductAlerts(item);
           const availableStock = getAvailableStock(item);
-          
+          const minStock = toSafeNumber(item?.minStock, 0);
+
           return {
             ...item,
             id: item?.id || `fallback-${Date.now()}-${Math.random()}`,
@@ -161,13 +171,18 @@ export default function RestockSuggestion() {
             currentStock: toSafeNumber(availableStock, 0), // Usar stock disponible (sin comprometido)
             availableStock: toSafeNumber(availableStock, 0),
             physicalStock: toSafeNumber(item?.stock, 0),
-            minStock: toSafeNumber(item?.minStock, 0),
+            minStock,
             suggestedOrder: toSafeNumber(item?.suggestedOrder, 1),
             supplierName: item?.supplierName || FALLBACK_SUPPLIER,
             unit: item?.unit || 'pza',
+            coverageDays: item?.coverageDays ?? null,
+            averageDailySales: toSafeNumber(item?.averageDailySales, 0),
+            averageDailyWaste: toSafeNumber(item?.averageDailyWaste, 0),
+            leadTimeDays: toSafeNumber(item?.leadTimeDays, 0),
+            expiringStockBeforeLeadTime: toSafeNumber(item?.expiringStockBeforeLeadTime, 0),
             isActive: item?.isActive !== false,
             // Flags de alerta sincronizadas con Ticker
-            hasLowStock: isLowStock,
+            hasLowStock: minStock > 0 && toSafeNumber(availableStock, 0) <= minStock,
             isNearingExpiry,
             expiryDays
           };
@@ -176,7 +191,7 @@ export default function RestockSuggestion() {
         .filter((item) => item.isActive && item.hasLowStock);
 
       setLowStockItems(validatedReport);
-      
+
       if (isManualSync) {
         showMessageModal(
           `✅ Inventario sincronizado. ${validatedReport.length} productos con stock bajo detectados.`,
@@ -188,7 +203,7 @@ export default function RestockSuggestion() {
       Logger.error('Error cargando sugerencias de compra:', error);
       setHasError(true);
       setErrorMessage(error?.message || 'Error desconocido al cargar el inventario');
-      
+
       showMessageModal(
         '⚠️ Error al cargar el inventario. Verifica tu conexión o reintenta.',
         null,
@@ -222,20 +237,27 @@ export default function RestockSuggestion() {
 
   const groupedBySupplier = useMemo(() => {
     const groups = {};
-    
+
     lowStockItems.forEach((item) => {
       const supplier = item.supplierName;
-      
+
       if (!groups[supplier]) {
         groups[supplier] = [];
       }
-      
+
       groups[supplier].push({
         ...item,
         // Validación defensiva de números para renderizado
-        currentStock: toSafeNumber(item.currentStock, 0),        availableStock: toSafeNumber(item.availableStock, 0),
-        physicalStock: toSafeNumber(item.physicalStock, 0),        minStock: toSafeNumber(item.minStock, 0),
-        suggestedOrder: toSafeNumber(item.suggestedOrder, 1)
+        currentStock: toSafeNumber(item.currentStock, 0),
+        availableStock: toSafeNumber(item.availableStock, 0),
+        physicalStock: toSafeNumber(item.physicalStock, 0),
+        minStock: toSafeNumber(item.minStock, 0),
+        suggestedOrder: toSafeNumber(item.suggestedOrder, 1),
+        coverageDays: item.coverageDays,
+        averageDailySales: toSafeNumber(item.averageDailySales, 0),
+        averageDailyWaste: toSafeNumber(item.averageDailyWaste, 0),
+        leadTimeDays: toSafeNumber(item.leadTimeDays, 0),
+        expiringStockBeforeLeadTime: toSafeNumber(item.expiringStockBeforeLeadTime, 0)
       });
     });
 
@@ -267,7 +289,7 @@ export default function RestockSuggestion() {
   const handleCopyList = useCallback((supplierName, items) => {
     // Validación temprana de navigator.clipboard
     const isClipboardAvailable = !!(navigator?.clipboard);
-    
+
     // Generar mensaje contextualizado por rubro
     const orderText = formatOrderMessage(supplierName, items, businessType);
 
@@ -289,7 +311,7 @@ export default function RestockSuggestion() {
       })
       .catch((error) => {
         Logger.warn('Clipboard API falló:', error);
-        
+
         // Fallback por error en la API (permisos denegados, etc.)
         setClipboardFallbackText(orderText);
         setShowClipboardFallback(true);
@@ -304,7 +326,7 @@ export default function RestockSuggestion() {
     if (textarea) {
       textarea.select();
       textarea.setSelectionRange(0, 99999); // Para móviles
-      
+
       try {
         document.execCommand('copy');
         showMessageModal(
@@ -321,7 +343,7 @@ export default function RestockSuggestion() {
   // ==========================================================================
   // TODO: FUNCIÓN PARA ENVIAR ORDEN DE COMPRA A LA BASE DE DATOS
   // ==========================================================================
-  
+
   /**
    * TODO: Implementar envío de orden de compra a la base de datos
    * 
@@ -348,7 +370,8 @@ export default function RestockSuggestion() {
    *   status: 'pending' // pending, approved, received, cancelled
    * }
    */
-  const handleCreatePurchaseOrder = useCallback(async (supplierName, items) => {
+  /*
+  const handleCreatePurchaseOrder = async (supplierName, items) => {
     // TODO: Implementar lógica de negocio de Lanzo POS
     // 1. Importar servicio de órdenes de compra: import { createPurchaseOrder } from '../../services/purchaseOrders';
     // 2. Validar permisos del usuario
@@ -367,7 +390,8 @@ export default function RestockSuggestion() {
       success: false,
       error: 'NOT_IMPLEMENTED'
     };
-  }, [businessType]);
+  };
+  */
 
   // ==========================================================================
   // RENDERIZADO
@@ -427,7 +451,7 @@ export default function RestockSuggestion() {
             </span>
           </div>
         </div>
-        
+
         <div className="restock-header-actions">
           <button
             className="btn-sync"
@@ -464,7 +488,7 @@ export default function RestockSuggestion() {
                   <FileText size={14} />
                   <span className="btn-label">Crear Orden</span>
                 </button> */}
-                
+
                 <button
                   className="btn-copy-list"
                   onClick={() => handleCopyList(supplier, items)}
@@ -484,6 +508,7 @@ export default function RestockSuggestion() {
                   <tr>
                     <th>Producto</th>
                     <th className="text-center">Stock</th>
+                    <th className="text-center">Cobertura</th>
                     <th className="text-right">Pedir</th>
                   </tr>
                 </thead>
@@ -503,6 +528,9 @@ export default function RestockSuggestion() {
                             min: {item.minStock}
                           </span>
                         </div>
+                      </td>
+                      <td className="stock-cell text-center">
+                        {Number.isFinite(item.coverageDays) ? `${Math.floor(item.coverageDays)} dias` : 'Sin ventas'}
                       </td>
                       <td className="order-cell">
                         {item.suggestedOrder} {item.unit}
@@ -528,13 +556,13 @@ export default function RestockSuggestion() {
               <AlertTriangle size={20} color="var(--warning-color)" />
               <h4 id="fallback-title">Clipboard no disponible</h4>
             </div>
-            
+
             <div className="clipboard-fallback-modal-body">
               <p style={{ marginBottom: 'var(--spacing-sm)', color: 'var(--text-light)', fontSize: '0.9rem' }}>
                 Tu navegador no permite acceso automático al portapapeles (posiblemente por HTTP o permisos).
                 Selecciona y copia manualmente:
               </p>
-              
+
               <textarea
                 className="clipboard-fallback-textarea"
                 value={clipboardFallbackText}
@@ -542,12 +570,12 @@ export default function RestockSuggestion() {
                 rows={10}
                 onClick={(e) => e.target.select()}
               />
-              
+
               <div className="clipboard-fallback-instructions">
                 💡 <strong>Instrucciones:</strong> Haz click en el texto, presiona Ctrl+A (Cmd+A en Mac) para seleccionar todo, luego Ctrl+C (Cmd+C) para copiar.
               </div>
             </div>
-            
+
             <div className="clipboard-fallback-modal-footer">
               <button
                 className="btn-close-fallback"
