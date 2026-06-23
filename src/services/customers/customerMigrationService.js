@@ -191,7 +191,7 @@ export const customerMigrationService = {
     return { success: true, migrated, snapshotCount };
   },
 
-  async pullFullSnapshot
+  pullFullSnapshot
 };
 
 export default customerMigrationService;
