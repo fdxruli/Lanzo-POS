@@ -40,6 +40,18 @@ const setRuntimeStatus = async (status, { licenseKey = runtime.licenseKey, reaso
   }
 };
 
+const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
+  for (const [entityType, handler] of entityHandlers.entries()) {
+    if (!handler?.onStart) continue;
+
+    try {
+      await handler.onStart({ licenseDetails, licenseKey, reason });
+    } catch (error) {
+      Logger.warn(`[PosSync] Handler ${entityType} fallo en onStart:`, error);
+    }
+  }
+};
+
 const dispatchPulledEvents = async (events = []) => {
   if (!Array.isArray(events) || events.length === 0) return;
 
@@ -121,6 +133,7 @@ export const posSyncOrchestrator = {
     }
 
     await setRuntimeStatus(SYNC_STATUS.ONLINE, { licenseKey, reason });
+    await runEntityStartHooks({ licenseDetails, licenseKey, reason });
 
     await this.pullIncremental('start');
     await this.processOutbox('start');
