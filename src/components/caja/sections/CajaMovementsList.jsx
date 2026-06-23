@@ -29,7 +29,9 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
         );
       } else if (filtroTipo === 'ajuste') {
         filtrados = filtrados.filter(m =>
-          m.tipo === 'ajuste_entrada' || m.tipo === 'ajuste_salida'
+          m.tipo === 'ajuste_entrada' ||
+          m.tipo === 'ajuste_salida' ||
+          m.tipo === 'fondo_inicial_ajuste'
         );
       }
     }
@@ -45,18 +47,25 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
       const esEntrada = ['entrada', 'ajuste_entrada', 'venta', 'abono'].includes(mov.tipo);
       const esSalida = ['salida', 'ajuste_salida'].includes(mov.tipo);
       const esAjuste = ['ajuste_entrada', 'ajuste_salida'].includes(mov.tipo);
+      const esAjusteFondoInicial = mov.tipo === 'fondo_inicial_ajuste';
       const esVentaTarjeta = mov.tipo === 'venta_tarjeta';
       const esEliminacion = ['venta_eliminada', 'merma'].includes(mov.tipo);
+      const deltaSafe = esAjusteFondoInicial ? Money.init(mov.audit?.delta || 0) : Money.init(0);
 
       let prefijo = '';
       let tone = 'neutral';
       if (esEntrada) { tone = 'positive'; prefijo = '+'; }
       else if (esSalida) { tone = 'negative'; prefijo = '-'; }
+      else if (esAjusteFondoInicial) {
+        tone = deltaSafe.gt(0) ? 'positive' : deltaSafe.lt(0) ? 'negative' : 'neutral';
+        prefijo = deltaSafe.gt(0) ? '+' : deltaSafe.lt(0) ? '-' : '';
+      }
       else if (esEliminacion) { tone = 'warning'; prefijo = '-'; }
       else if (esVentaTarjeta) { tone = 'card'; prefijo = '+'; }
 
       let badge = '';
       if (esAjuste) badge = 'Ajuste';
+      else if (esAjusteFondoInicial) badge = 'Fondo inicial';
       else if (esVentaTarjeta) badge = 'Tarjeta/Transf.';
       else if (mov.tipo === 'venta_eliminada') badge = 'Venta eliminada';
       else if (mov.tipo === 'merma') badge = 'Merma';
@@ -65,9 +74,10 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
 
       return {
         id: mov.id,
-        concepto: esAjuste ? `[Ajuste] ${mov.concepto}` : mov.concepto,
+        concepto: esAjuste || esAjusteFondoInicial ? `[Ajuste] ${mov.concepto}` : mov.concepto,
         monto: `${prefijo}$${Money.toNumber(mov.monto).toFixed(2)}`,
         hora: new Date(mov.fecha).toLocaleTimeString(),
+        actor: mov.actor || mov.audit?.actor || null,
         badge,
         tone
       };
@@ -163,6 +173,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
                 <span className="movement-amount">{mov.monto}</span>
                 <div className="movement-details">
                   <small>{mov.hora}</small>
+                  {mov.actor && <small>Responsable: {mov.actor}</small>}
                   {mov.badge && <span className="movement-badge">{mov.badge}</span>}
                 </div>
               </div>
