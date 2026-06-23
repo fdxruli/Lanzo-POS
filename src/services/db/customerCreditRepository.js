@@ -5,6 +5,10 @@ import { normalizeCustomerDebtCents } from './customerDebtIndex';
 import { Money } from '../../utils/moneyMath'; // <-- OBLIGATORIO
 import { registrarMovimientoCajaEnTransaccion } from '../cajaService';
 
+const isCashPaymentMethod = (paymentMethod) => (
+    ['efectivo', 'cash'].includes(String(paymentMethod || '').trim().toLowerCase())
+);
+
 export const customerCreditRepository = {
     /**
      * Registra un abono de forma atómica.
@@ -14,9 +18,17 @@ export const customerCreditRepository = {
     async processPayment(customerId, amount, paymentMethod = 'efectivo', cajaId, note = '', allocations = null) {
         // 1. Defensa y sanitización inicial
         const amountSafe = Money.init(amount);
+        const isCashPayment = isCashPaymentMethod(paymentMethod);
 
         if (amountSafe.lte(0)) {
             throw new Error("El monto del abono debe ser estrictamente mayor a 0.");
+        }
+
+        if (isCashPayment && !cajaId) {
+            throw new DatabaseError(
+                DB_ERROR_CODES.VALIDATION_ERROR,
+                'CAJA_REQUIRED: No se puede registrar un abono en efectivo sin caja abierta.'
+            );
         }
 
         return await db.transaction('rw', [
@@ -32,6 +44,22 @@ export const customerCreditRepository = {
             }
 
             // 2. Validación de deuda estricta con Big.js
+            if (isCashPayment) {
+                const caja = await tx.table(STORES.CAJAS).get(cajaId);
+                if (!caja) {
+                    throw new DatabaseError(
+                        DB_ERROR_CODES.NOT_FOUND,
+                        `CAJA_REQUIRED: La caja ${cajaId} no existe.`
+                    );
+                }
+                if (caja.estado !== 'abierta') {
+                    throw new DatabaseError(
+                        DB_ERROR_CODES.VALIDATION_ERROR,
+                        'CAJA_REQUIRED: No se puede registrar un abono en efectivo sin caja abierta.'
+                    );
+                }
+            }
+
             const currentDebtSafe = Money.init(customer.debt || 0);
             if (amountSafe.gt(currentDebtSafe)) {
                 throw new Error(`El abono ($${Money.toNumber(amountSafe)}) excede la deuda actual de la base de datos ($${Money.toNumber(currentDebtSafe)}).`);
