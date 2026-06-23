@@ -14,15 +14,8 @@ import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
 import { customerCreditRepository } from '../services/db/customerCreditRepository';
 import { db } from '../services/db/dexie';
-import { generateID } from '../services/utils';
-import {
-  saveDataSafe,
-  loadCustomersByDebtPaginated,
-  loadData,
-  STORES,
-  recycleData,
-  DB_ERROR_CODES
-} from '../services/database';
+import { loadData, STORES, DB_ERROR_CODES } from '../services/database';
+import { customerRepository } from '../services/customers/customerRepository';
 import { getSafeCustomerDebt, formatCustomerDebt } from '../utils/customerUtils';
 import './CustomersPage.css';
 
@@ -109,19 +102,18 @@ export default function CustomersPage() {
   useEffect(() => {
     const tabParam = searchParams.get('tab');
 
-    // Mapeo: URL -> Estado Interno
     if (tabParam === 'add') {
       setActiveTab('add-customer');
-    } else if (tabParam === 'list') { // Usaremos 'list' para ver clientes
+    } else if (tabParam === 'list') {
       setActiveTab('view-customers');
-      setEditingCustomer(null); // Aseguramos limpiar edición al entrar por URL
+      setEditingCustomer(null);
     }
   }, [searchParams]);
 
   const handleTabChange = (internalTab) => {
     if (internalTab === 'view-customers') {
       setSearchParams({ tab: 'list' });
-      handleCancelEdit(); // Mantenemos tu limpieza original
+      handleCancelEdit();
     } else if (internalTab === 'add-customer') {
       setSearchParams({ tab: 'add' });
     }
@@ -147,7 +139,7 @@ export default function CustomersPage() {
         data = [],
         hasMore: nextHasMore = false,
         snapshotAt: resolvedSnapshotAt = snapshotOverride
-      } = await loadCustomersByDebtPaginated({
+      } = await customerRepository.listCustomersPage({
         limit: PAGE_SIZE,
         offset: targetOffset,
         snapshotAt: snapshotOverride
@@ -201,6 +193,22 @@ export default function CustomersPage() {
     loadInitialCustomers();
   }, [loadInitialCustomers]);
 
+  useEffect(() => {
+    const refreshFromSync = () => {
+      loadInitialCustomers().catch((error) => {
+        Logger.warn('[CustomersPage] No se pudo refrescar tras sync:', error);
+      });
+    };
+
+    window.addEventListener('lanzo:customers-sync-updated', refreshFromSync);
+    window.addEventListener('online', refreshFromSync);
+
+    return () => {
+      window.removeEventListener('lanzo:customers-sync-updated', refreshFromSync);
+      window.removeEventListener('online', refreshFromSync);
+    };
+  }, [loadInitialCustomers]);
+
   const loadMoreCustomers = useCallback(async () => {
     if (loading || isLoadingMore || requestInFlightRef.current || !hasMore) return;
 
@@ -215,29 +223,26 @@ export default function CustomersPage() {
     const message = result?.error?.message || result?.message || 'Error en base de datos.';
     const details = result?.error?.details || {};
 
-    // Opcion 1: Sugerir Recarga (DB Bloqueada/Desconectada)
     if (details.actionable === 'SUGGEST_RELOAD') {
       showMessageModal(message, () => window.location.reload(), {
         confirmButtonText: 'Recargar Pagina'
       });
-    }
-    // Opcion 2: Sugerir Respaldo (Disco Lleno)
-    else if (details.actionable === 'SUGGEST_BACKUP') {
+    } else if (details.actionable === 'SUGGEST_BACKUP') {
       showMessageModal(message, () => navigate('/configuracion'), {
         confirmButtonText: 'Ir a Respaldar'
       });
-    }
-    // Opcion 3: Error generico
-    else {
+    } else {
       showMessageModal(message, null, { type: 'error' });
     }
   };
 
   const getCustomerPhoneFieldError = (result) => {
-    const code = result?.error?.code;
-    const field = result?.error?.details?.field;
+    if (result?.fieldErrors?.phone) return result.fieldErrors.phone;
 
-    if (code === DB_ERROR_CODES.CONSTRAINT_VIOLATION && field === 'phone') {
+    const code = result?.error?.code || result?.code;
+    const field = result?.error?.details?.field || result?.field;
+
+    if ((code === DB_ERROR_CODES.CONSTRAINT_VIOLATION && field === 'phone') || code === 'DUPLICATE_PHONE') {
       return result?.error?.message || result?.message || 'El telefono ya esta registrado para otro cliente.';
     }
 
@@ -246,11 +251,9 @@ export default function CustomersPage() {
 
   const handleSaveCustomer = async (customerData) => {
     try {
-      const id = editingCustomer ? editingCustomer.id : generateID('cust');
-      const existingDebt = editingCustomer ? getSafeCustomerDebt(editingCustomer.debt) : 0;
-      const dataToSave = { ...customerData, id, debt: existingDebt };
-
-      const result = await saveDataSafe(STORES.CUSTOMERS, dataToSave);
+      const result = await customerRepository.saveCustomer(customerData, {
+        existingCustomer: editingCustomer
+      });
 
       if (!result.success) {
         const phoneFieldError = getCustomerPhoneFieldError(result);
@@ -265,7 +268,9 @@ export default function CustomersPage() {
       setEditingCustomer(null);
       setActiveTab('view-customers');
       await loadInitialCustomers();
-      showMessageModal('Cliente guardado con exito!');
+      showMessageModal(result.pending
+        ? 'Cliente guardado localmente. Sincronizacion pendiente.'
+        : 'Cliente guardado con exito!');
 
       return { success: true };
     } catch (error) {
@@ -274,6 +279,7 @@ export default function CustomersPage() {
       return { success: false };
     }
   };
+
   const handleEditCustomer = (customer) => {
     setEditingCustomer(customer);
     setSearchParams({ tab: 'add' });
@@ -283,33 +289,26 @@ export default function CustomersPage() {
     if (window.confirm('¿Seguro que quieres eliminar este cliente?')) {
       const customer = customers.find(c => c.id === customerId);
 
-      // Validación de negocio (Deuda)
       if (customer && getSafeCustomerDebt(customer.debt) > 0) {
         showMessageModal('No se puede eliminar un cliente con deuda pendiente.', null, { type: 'error' });
         return;
       }
 
-      setLoading(true); // Opcional: mostrar spinner rápido
+      setLoading(true);
 
       try {
-        // --- USANDO LA NUEVA LÓGICA CENTRALIZADA ---
-        const result = await recycleData(
-          STORES.CUSTOMERS,           // Origen
-          STORES.DELETED_CUSTOMERS,   // Destino (Papelera)
-          customerId,                 // ID
-          "Eliminado desde Directorio" // Razón para auditoría
-        );
+        const result = await customerRepository.deleteCustomer(customerId);
 
         if (result.success) {
-          // Éxito: Recargar la lista
-          loadInitialCustomers();
-          showMessageModal('Cliente enviado a la papelera.');
+          await loadInitialCustomers();
+          showMessageModal(result.pending
+            ? 'Cliente eliminado localmente. Sincronizacion pendiente.'
+            : 'Cliente enviado a la papelera.');
         } else {
-          // Error
-          showMessageModal(`No se pudo eliminar: ${result.message}`);
+          showMessageModal(`No se pudo eliminar: ${result.message || 'Error desconocido'}`);
         }
       } catch (error) {
-        Logger.error("Error eliminando cliente:", error);
+        Logger.error('Error eliminando cliente:', error);
         showMessageModal('Error inesperado al eliminar.');
       } finally {
         setLoading(false);
@@ -338,6 +337,7 @@ export default function CustomersPage() {
       await sincronizarEstadoCaja();
     }
 
+    customerRepository.showAbonosCloudNoticeIfNeeded();
     setSelectedCustomer(customer);
     setIsAbonoModalOpen(true);
   };
@@ -356,7 +356,6 @@ export default function CustomersPage() {
 
   const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null) => {
     try {
-      // 1. Verificación estricta de pre-condiciones en UI
       const cajaVigente = await resolveOpenCaja();
 
       if (!cajaVigente) {
@@ -366,10 +365,8 @@ export default function CustomersPage() {
       }
 
       const concepto = `Abono de cliente: ${customer.name}`;
-      const deudaAnterior = getSafeCustomerDebt(customer.debt); // Capturamos para el recibo antes de mutar
+      const deudaAnterior = getSafeCustomerDebt(customer.debt);
 
-      // 2. Ejecutar la transacción Atómica (Ledger + Cliente + Caja)
-      // Delegamos TODO al repositorio. Si algo falla aquí, Dexie hace rollback automático.
       const result = await customerCreditRepository.processPayment(
         customer.id,
         amount,
@@ -379,19 +376,12 @@ export default function CustomersPage() {
         allocations
       );
 
-      // 3. Manejo del Caso de Éxito
       if (result && result.success) {
         showMessageModal('¡Abono registrado exitosamente!');
         handleCloseModals();
-
-        // Recargar la lista de clientes para que la UI refleje la nueva deuda
         loadInitialCustomers();
-
-        // Sincronizar estado de caja para reflejar la entrada de efectivo
-        // y el nuevo movimiento inmediatamente (sin esperar el polling)
         await sincronizarEstadoCaja();
 
-        // 4. Enviar Recibo (Opcional) usando la deuda real calculada por la BD (result.newDebt)
         if (sendReceipt) {
           const message =
             `*--- Recibo de Abono ---*\n` +
@@ -406,21 +396,14 @@ export default function CustomersPage() {
           sendWhatsAppMessage(customer.phone, message);
         }
       }
-
     } catch (error) {
       Logger.error('Error crítico en abono:', error);
-
-      // Mostrar el error exacto que arrojó el motor transaccional (ej. Abono excede deuda)
       const errorMsg = error.message || 'Error desconocido al procesar la transacción.';
       showMessageModal(`Transacción abortada: ${errorMsg}`, null, { type: 'error' });
-
       handleCloseModals();
     }
   };
 
-  /**
-   * FUNCIÓN DE WHATSAPP (¡ACTUALIZADA!)
-   */
   const handleWhatsApp = async (customer) => {
     if (!customer.phone) {
       showMessageModal('Este cliente no tiene un teléfono registrado.');
@@ -434,7 +417,6 @@ export default function CustomersPage() {
       if (getSafeCustomerDebt(customer.debt) > 0) {
         const allSales = await loadData(STORES.SALES);
 
-        // 1. Obtener ventas a crédito históricas (ordenadas de la más reciente a la más antigua)
         const fiadoSales = allSales
           .filter(sale =>
             sale.customerId === customer.id &&
@@ -443,7 +425,6 @@ export default function CustomersPage() {
           )
           .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-        // 2. Distribuir la deuda actual entre las notas más recientes (Lógica LIFO inversa)
         let remainingDebtToAllocate = getSafeCustomerDebt(customer.debt);
         const salesToReport = [];
 
@@ -460,10 +441,8 @@ export default function CustomersPage() {
           remainingDebtToAllocate -= amountOwedForThisSale;
         }
 
-        // Reordenar cronológicamente para el reporte (opcional, pero se lee mejor)
         salesToReport.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-        // 3. Construir el mensaje detallado
         message = `*--- Estado de Cuenta ---*
 *Negocio:* ${companyName}
 Hola *${customer.name}*,
@@ -478,16 +457,13 @@ A continuación el detalle de su saldo pendiente con nosotros.
         if (salesToReport.length > 0) {
           salesToReport.forEach(sale => {
             const saleDate = new Date(sale.timestamp).toLocaleDateString();
-
-            // Lista de productos limpia
-            let itemsString = "";
+            let itemsString = '';
             sale.items.forEach(item => {
               itemsString += `  • ${item.name} (x${item.quantity})\n`;
             });
 
-            // Lógica para mostrar si hubo abono inicial
             const abonoInicial = sale.abono || 0;
-            let detallesPago = "";
+            let detallesPago = '';
 
             if (abonoInicial > 0) {
               detallesPago = `*Total Nota:* $${sale.total.toFixed(2)}\n*Abono inicial:* -$${abonoInicial.toFixed(2)}\n*Saldo Original:* $${sale.saldoPendiente.toFixed(2)}`;
@@ -511,15 +487,13 @@ ${itemsString}
         }
 
         message += `\n¡Gracias por su preferencia!`;
-
       } else {
         message = `Hola ${customer.name}, te comunicas de ${companyName}. ¿En qué podemos ayudarte?`;
       }
 
       sendWhatsAppMessage(customer.phone, message);
-
     } catch (error) {
-      Logger.error("Error al generar mensaje de WhatsApp:", error);
+      Logger.error('Error al generar mensaje de WhatsApp:', error);
       showMessageModal('Error al generar el mensaje. Abriendo chat simple.');
       sendWhatsAppMessage(customer.phone, '');
     } finally {
@@ -527,86 +501,85 @@ ${itemsString}
     }
   };
 
-  // RENDER (Sin cambios, solo pasamos los props)
   return (
     <>
       <main className="customers-page">
-      <section className="customers-hero" aria-labelledby="customers-page-title">
-        <div className="customers-hero__identity">
-          <p className="customers-eyebrow">Directorio y credito</p>
-          <h1 id="customers-page-title">Clientes</h1>
-        </div>
-
-        <div className="customers-hero__metric">
-          <span>Fiado total</span>
-          <strong>${customerPortfolio.totalDebt.toFixed(2)}</strong>
-        </div>
-
-        <div className="customers-hero__metric customers-hero__metric--alert">
-          <span>Clientes excedidos</span>
-          <div>
-            <strong>{customerPortfolio.overLimitCount}</strong>
-            {customerPortfolio.overLimitCount > 0 && (
-              <span className="customers-alert-badge">
-                <AlertTriangle size={16} aria-hidden="true" />
-                Limite excedido
-              </span>
-            )}
+        <section className="customers-hero" aria-labelledby="customers-page-title">
+          <div className="customers-hero__identity">
+            <p className="customers-eyebrow">Directorio y credito</p>
+            <h1 id="customers-page-title">Clientes</h1>
           </div>
-        </div>
 
-        <button
-          type="button"
-          className={`customers-add-button ${activeTab === 'add-customer' ? 'is-active' : ''}`}
-          onClick={() => {
-            if (activeTab === 'add-customer') {
-              handleTabChange('view-customers');
-            } else {
-              handleTabChange('add-customer');
-            }
-          }}
-          aria-pressed={activeTab === 'add-customer'}
-        >
+          <div className="customers-hero__metric">
+            <span>Fiado total</span>
+            <strong>${customerPortfolio.totalDebt.toFixed(2)}</strong>
+          </div>
+
+          <div className="customers-hero__metric customers-hero__metric--alert">
+            <span>Clientes excedidos</span>
+            <div>
+              <strong>{customerPortfolio.overLimitCount}</strong>
+              {customerPortfolio.overLimitCount > 0 && (
+                <span className="customers-alert-badge">
+                  <AlertTriangle size={16} aria-hidden="true" />
+                  Limite excedido
+                </span>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className={`customers-add-button ${activeTab === 'add-customer' ? 'is-active' : ''}`}
+            onClick={() => {
+              if (activeTab === 'add-customer') {
+                handleTabChange('view-customers');
+              } else {
+                handleTabChange('add-customer');
+              }
+            }}
+            aria-pressed={activeTab === 'add-customer'}
+          >
+            {activeTab === 'add-customer' ? (
+              <>
+                <Users size={20} aria-hidden="true" />
+                Ver lista
+              </>
+            ) : (
+              <>
+                <UserPlus size={20} aria-hidden="true" />
+                {editingCustomer ? 'Editar cliente' : 'Añadir cliente'}
+              </>
+            )}
+          </button>
+        </section>
+
+        <div className="customers-page__content">
           {activeTab === 'add-customer' ? (
-            <>
-              <Users size={20} aria-hidden="true" />
-              Ver lista
-            </>
+            <CustomerForm
+              onSave={handleSaveCustomer}
+              onCancel={() => handleTabChange('view-customers')}
+              customerToEdit={editingCustomer}
+              globalCreditLimit={globalCreditLimit}
+            />
           ) : (
-            <>
-              <UserPlus size={20} aria-hidden="true" />
-              {editingCustomer ? 'Editar cliente' : 'Añadir cliente'}
-            </>
+            <CustomerList
+              customers={customers}
+              isLoading={loading && customers.length === 0}
+              isLoadingMore={isLoadingMore}
+              hasMore={hasMore}
+              onLoadMore={loadMoreCustomers}
+              onRefreshList={loadInitialCustomers}
+              onEdit={handleEditCustomer}
+              onDelete={handleDeleteCustomer}
+              onViewHistory={handleViewHistory}
+              onAbonar={handleOpenAbono}
+              onViewLayaways={handleOpenLayaways}
+              onWhatsApp={handleWhatsApp}
+              onWhatsAppLoading={whatsAppLoading}
+            />
           )}
-        </button>
-      </section>
-
-      <div className="customers-page__content">
-      {activeTab === 'add-customer' ? (
-          <CustomerForm
-            onSave={handleSaveCustomer}
-            onCancel={() => handleTabChange('view-customers')}
-            customerToEdit={editingCustomer}
-            globalCreditLimit={globalCreditLimit}
-        />
-      ) : (
-        <CustomerList
-          customers={customers}
-          isLoading={loading && customers.length === 0}
-          isLoadingMore={isLoadingMore}
-          hasMore={hasMore}
-          onLoadMore={loadMoreCustomers}
-          onRefreshList={loadInitialCustomers}
-          onEdit={handleEditCustomer}
-          onDelete={handleDeleteCustomer}
-          onViewHistory={handleViewHistory}
-          onAbonar={handleOpenAbono}
-          onViewLayaways={handleOpenLayaways}
-          onWhatsApp={handleWhatsApp}
-          onWhatsAppLoading={whatsAppLoading}
-        />
-      )}
-      </div>
+        </div>
       </main>
 
       <PurchaseHistoryModal
@@ -627,8 +600,7 @@ ${itemsString}
         onClose={handleCloseModals}
         customer={selectedCustomer}
         onUpdate={() => {
-          // Opcional: Si queremos refrescar algo global al cambiar un apartado
-          // Por ejemplo, si los apartados afectaran la deuda global del cliente (que por ahora no lo hacen, van separados)
+          // Apartados siguen fuera del alcance cloud Fase 1.
         }}
       />
     </>
