@@ -216,25 +216,44 @@ const salesPulseTool = {
   run: ({ aggregatedPayload }) => {
     const stats = aggregatedPayload.salesStats || {};
     const grossMarginPct = Number(stats.grossMarginPct || 0);
+    const missingCostRevenuePct = Number(stats.missingCostRevenuePct || 0);
+    const reportReliabilityPct = Number(stats.reportReliabilityPct ?? 100);
+    const qualityBlocked = stats.shouldBlockProfitAnalysis === true;
+    const qualityWarning = stats.shouldWarnFinancialQuality === true;
+    const severity = qualityBlocked
+      ? TOOL_SEVERITY.DANGER
+      : qualityWarning
+        ? TOOL_SEVERITY.WARNING
+        : grossMarginPct > 25
+          ? TOOL_SEVERITY.SUCCESS
+          : grossMarginPct > 10
+            ? TOOL_SEVERITY.WARNING
+            : TOOL_SEVERITY.DANGER;
 
     return makeToolResult({
       id: salesPulseTool.id,
       title: 'Pulso financiero',
-      severity: grossMarginPct > 25 ? TOOL_SEVERITY.SUCCESS : grossMarginPct > 10 ? TOOL_SEVERITY.WARNING : TOOL_SEVERITY.DANGER,
-      summary: `Ingreso $${Number(stats.totalRevenue || 0).toFixed(2)}, utilidad bruta $${Number(stats.grossProfit || 0).toFixed(2)} y margen ${grossMarginPct.toFixed(1)}%.`,
+      severity,
+      summary: `Ingreso $${Number(stats.totalRevenue || 0).toFixed(2)}, utilidad confirmada $${Number(stats.grossProfit || 0).toFixed(2)}, margen confirmado ${grossMarginPct.toFixed(1)}% y reporte ${reportReliabilityPct.toFixed(1)}% confiable.`,
       metrics: {
         totalRevenue: stats.totalRevenue || 0,
         grossProfit: stats.grossProfit || 0,
         grossMarginPct,
+        reportReliabilityPct,
+        missingCostRevenue: stats.missingCostRevenue || 0,
+        missingCostRevenuePct,
+        unreliableProfitDueToMissingCosts: stats.unreliableProfitDueToMissingCosts || 0,
         avgTicket: stats.avgTicket || 0,
         totalTransactions: stats.totalTransactions || 0,
         projectedMonthly: stats.projectedMonthly
       },
       actions: [
+        qualityBlocked ? 'Bloquear decisiones de utilidad hasta capturar costos faltantes: mas del 15% del ingreso no tiene costo.' : null,
+        !qualityBlocked && qualityWarning ? 'Advertir que la utilidad es preliminar: mas del 10% del ingreso no tiene costo.' : null,
         grossMarginPct < 20 ? 'Revisar precios/costos de los productos principales porque el margen está bajo.' : null,
         Number(stats.avgTicket || 0) > 0 ? 'Usar ticket promedio como base para diseñar combos y metas por turno.' : null
       ].filter(Boolean),
-      confidence: 0.88
+      confidence: Math.max(0.3, Math.min(0.88, reportReliabilityPct / 100))
     });
   }
 };

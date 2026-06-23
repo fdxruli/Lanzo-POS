@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { db, STORES } from '../../services/db/dexie';
+import { isMissingUnitCost, normalizeFinancialNumber } from '../../services/sales/financialPolicy';
 
 const CONFIG = {
   DEAD_STOCK: {
@@ -31,11 +32,11 @@ const INITIAL_STATE = {
 const formatCurrency = (amount) => `$${Number(amount || 0).toFixed(2)}`;
 
 const calculateMargin = (price, cost) => {
-  const numericPrice = Number(price || 0);
-  const numericCost = Number(cost || 0);
+  const numericPrice = normalizeFinancialNumber(price || 0);
+  const numericCost = normalizeFinancialNumber(cost || 0);
 
   if (numericPrice <= 0) return 0;
-  if (numericCost <= 0) return 1;
+  if (isMissingUnitCost(numericCost)) return null;
 
   return (numericPrice - numericCost) / numericPrice;
 };
@@ -61,7 +62,7 @@ const getActiveInventory = async () => {
     .filter(product =>
       product.isActive !== false
       && product.trackStock !== false
-      && Number(product.stock || 0) > 0
+      && normalizeFinancialNumber(product.stock || 0) > 0
     )
     .toArray();
 };
@@ -102,9 +103,9 @@ const analyzeDeadStock = (sales, inventory) => {
   inventory.forEach(product => {
     if (soldProductIds.has(product.id)) return;
 
-    const stock = Number(product.stock || 0);
-    const cost = Number(product.cost || 0);
-    const price = Number(product.price || 0);
+    const stock = normalizeFinancialNumber(product.stock || 0);
+    const cost = normalizeFinancialNumber(product.cost || 0);
+    const price = normalizeFinancialNumber(product.price || 0);
     const stockValue = cost * stock;
 
     if (stockValue >= CONFIG.DEAD_STOCK.MIN_INVESTMENT) {
@@ -140,14 +141,32 @@ const analyzeMargins = (inventory) => {
   const criticalMargin = [];
   const warningMargin = [];
   const healthyMargin = [];
+  const missingCostProducts = [];
+  const knownCostMargins = [];
 
   inventory.forEach(product => {
     const margin = calculateMargin(product.price, product.cost);
+    const price = normalizeFinancialNumber(product.price || 0);
+    const cost = normalizeFinancialNumber(product.cost || 0);
+    const stock = normalizeFinancialNumber(product.stock || 0);
+
+    if (margin === null) {
+      missingCostProducts.push({
+        productId: product.id,
+        name: product.name,
+        sku: product.sku,
+        category: product.categoryName || product.category,
+        cost,
+        price,
+        stock,
+        revenueAtRisk: price * stock
+      });
+      return;
+    }
+
     const marginPercent = margin * 100;
-    const price = Number(product.price || 0);
-    const cost = Number(product.cost || 0);
-    const stock = Number(product.stock || 0);
     const profitPerUnit = price - cost;
+    knownCostMargins.push(margin);
 
     const productData = {
       productId: product.id,
@@ -180,8 +199,11 @@ const analyzeMargins = (inventory) => {
     criticalCount: criticalMargin.length,
     warningCount: warningMargin.length,
     healthyCount: healthyMargin.length,
-    avgMargin: inventory.length > 0
-      ? inventory.reduce((sum, product) => sum + calculateMargin(product.price, product.cost), 0) / inventory.length * 100
+    missingCostProducts,
+    missingCostCount: missingCostProducts.length,
+    missingCostRevenueAtRisk: missingCostProducts.reduce((sum, product) => sum + product.revenueAtRisk, 0),
+    avgMargin: knownCostMargins.length > 0
+      ? knownCostMargins.reduce((sum, margin) => sum + margin, 0) / knownCostMargins.length * 100
       : 0
   };
 };
@@ -209,8 +231,8 @@ const analyzeCostIncreases = (inventory, batches) => {
 
     const latestBatch = sortedBatches[0];
     const previousBatch = sortedBatches[1];
-    const latestCost = Number(latestBatch.cost || 0);
-    const previousCost = Number(previousBatch.cost || 0);
+    const latestCost = normalizeFinancialNumber(latestBatch.cost || 0);
+    const previousCost = normalizeFinancialNumber(previousBatch.cost || 0);
 
     if (previousCost <= 0) return;
 
@@ -220,7 +242,7 @@ const analyzeCostIncreases = (inventory, batches) => {
     if (costIncreasePercent > 10) {
       const currentMargin = calculateMargin(product.price, latestCost);
 
-      if (currentMargin < CONFIG.MARGIN.WARNING_THRESHOLD) {
+      if (currentMargin !== null && currentMargin < CONFIG.MARGIN.WARNING_THRESHOLD) {
         productsWithCostIncrease.push({
           productId: product.id,
           name: product.name,
@@ -229,10 +251,10 @@ const analyzeCostIncreases = (inventory, batches) => {
           latestCost,
           costIncrease,
           costIncreasePercent,
-          currentPrice: Number(product.price || 0),
+          currentPrice: normalizeFinancialNumber(product.price || 0),
           currentMargin: currentMargin * 100,
           recommendedPrice: latestCost / (1 - CONFIG.MARGIN.WARNING_THRESHOLD),
-          stock: Number(product.stock || 0)
+          stock: normalizeFinancialNumber(product.stock || 0)
         });
       }
     }
@@ -272,6 +294,28 @@ const buildAlerts = (deadStock, margins, costIncreases) => {
       },
       action: 'Arma promoción de liquidación o mejora exhibición de estos productos.',
       link: '/productos?filter=dead-stock'
+    });
+  }
+
+  if (margins && margins.missingCostCount > 0) {
+    const topProducts = margins.missingCostProducts
+      .slice(0, 5)
+      .map(product => `* ${product.name}: ${product.stock} u. sin costo, ventas potenciales ${formatCurrency(product.revenueAtRisk)}`)
+      .join('\n');
+
+    alerts.push({
+      id: 'retail-missing-costs',
+      type: margins.missingCostCount >= 5 ? 'danger' : 'warning',
+      priority: 1,
+      category: 'pricing',
+      title: `Costos Faltantes: ${margins.missingCostCount} Productos`,
+      message: `Estos productos no deben contarse como utilidad real hasta capturar costo:\n\n${topProducts}`,
+      metrics: {
+        missingCostProducts: margins.missingCostCount,
+        revenueAtRisk: formatCurrency(margins.missingCostRevenueAtRisk)
+      },
+      action: 'Captura costo de compra para desbloquear margen y utilidad confiables.',
+      link: '/productos?filter=missing-cost'
     });
   }
 

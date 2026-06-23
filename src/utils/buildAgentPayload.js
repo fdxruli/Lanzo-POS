@@ -5,7 +5,7 @@
  * (sumar totales, listar top items, NO datos crudos completos)
  */
 
-import { db, STORES } from '../services/db/dexie';
+import { summarizeFinancialSales } from '../services/sales/financialPolicy';
 
 // ============================================================
 // 1. CONFIGURACIÓN Y CONSTANTES
@@ -260,21 +260,12 @@ export const buildFinancialPayload = async (start, end, sales = []) => {
     return sDate >= start && sDate <= end && !isTestData && !isCancelled;
   });
 
-  let totalRevenue = 0;
-  let totalCost = 0;
-  let totalDiscounts = 0;
-
-  filteredSales.forEach(s => {
-    totalRevenue += Number(s.total || 0);
-    totalDiscounts += Number(s.discount || 0); // Asumiendo que guardas el descuento
-
-    s.items?.forEach(item => {
-      totalCost += Number(item.cost || 0) * Number(item.quantity || 0);
-    });
-  });
-
-  const grossProfit = totalRevenue - totalCost;
-  const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+  const financialSummary = summarizeFinancialSales(filteredSales);
+  const totalRevenue = financialSummary.totalRevenue;
+  const totalCost = financialSummary.confirmedCost;
+  const totalDiscounts = financialSummary.totalDiscounts;
+  const grossProfit = financialSummary.confirmedProfit;
+  const grossMargin = financialSummary.confirmedMarginPct;
 
   const totalTransactions = filteredSales.length;
   const avgTicket = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
@@ -286,9 +277,18 @@ export const buildFinancialPayload = async (start, end, sales = []) => {
   return {
     salesStats: {
       totalRevenue,
-      totalCost,          // Vital para el analista
-      grossProfit,        // Vital para el analista
+      totalCost,          // Costo confirmado; costos faltantes no se asumen como 0
+      grossProfit,        // Utilidad confirmada
       grossMarginPct: Number(grossMargin.toFixed(2)),
+      confirmedRevenue: financialSummary.confirmedRevenue,
+      missingCostRevenue: financialSummary.unconfirmedRevenue,
+      unreliableProfitDueToMissingCosts: financialSummary.unreliableProfitDueToMissingCosts,
+      missingCostRevenuePct: Number(financialSummary.missingCostRevenuePct.toFixed(2)),
+      reportReliabilityPct: Number(financialSummary.reportReliabilityPct.toFixed(2)),
+      financialQualityStatus: financialSummary.qualityStatus,
+      hasMissingCosts: financialSummary.hasMissingCosts,
+      shouldWarnFinancialQuality: financialSummary.shouldWarn,
+      shouldBlockProfitAnalysis: financialSummary.shouldBlockProfitAnalysis,
       totalDiscounts,
       totalTransactions,
       avgTicket,
@@ -555,7 +555,7 @@ const aggregateCustomerSpending = (sales, customers) => {
     .slice(0, 10);
 };
 
-const calculateRecurrence = (sales, customers) => {
+export const calculateRecurrence = (sales, _customers) => {
   const customerVisits = new Map();
 
   sales.forEach(sale => {

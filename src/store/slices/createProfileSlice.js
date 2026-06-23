@@ -5,6 +5,7 @@ import {
   saveBusinessProfile,
   uploadFile
 } from '../../services/supabase';
+import { normalizeBusinessTypes as normalizeCanonicalBusinessTypes } from '../../utils/businessType';
 
 let _profileLoadGeneration = 0;
 
@@ -13,17 +14,19 @@ const LEGACY_COMPANY_KEY = 'company';
 const getProfileCacheKey = (licenseKey) => `company:${licenseKey}`;
 
 const normalizeBusinessTypes = (businessType) => {
-  if (Array.isArray(businessType)) return businessType.filter(Boolean);
+  let rawTypes = [];
 
-  if (typeof businessType === 'string') {
-    return businessType
+  if (Array.isArray(businessType)) {
+    rawTypes = businessType.filter(Boolean);
+  } else if (typeof businessType === 'string') {
+    rawTypes = businessType
       .replace(/[{}"]/g, '')
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
   }
 
-  return [];
+  return rawTypes.length > 0 ? normalizeCanonicalBusinessTypes(rawTypes) : [];
 };
 
 const hasUsableProfile = (profile) => {

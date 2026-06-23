@@ -10,6 +10,7 @@ import {
   isFinanciallyClosedSale,
   rebuildDailyStatsCacheFromSales
 } from '../services/sales/financialStats';
+import { getFinancialQuality } from '../services/sales/financialPolicy';
 
 async function getInventoryValueOptimized(db) {
   const productCostMap = await buildProductCostMap(db, STORES);
@@ -62,11 +63,18 @@ async function persistDailyStatsForSale(sale, productCostMap) {
     id: saleDayStat.id,
     date: saleDayStat.date,
     revenue: Money.toNumber(Money.add(existingDay.revenue || 0, saleDayStat.revenue || 0)),
+    validRevenue: Money.toNumber(Money.add(existingDay.validRevenue || 0, saleDayStat.validRevenue || 0)),
+    unconfirmedRevenue: Money.toNumber(Money.add(existingDay.unconfirmedRevenue || 0, saleDayStat.unconfirmedRevenue || 0)),
+    unreliableProfitDueToMissingCosts: Money.toNumber(Money.add(
+      existingDay.unreliableProfitDueToMissingCosts || 0,
+      saleDayStat.unreliableProfitDueToMissingCosts || 0
+    )),
     profit: Money.toNumber(Money.add(existingDay.profit || 0, saleDayStat.profit || 0)),
     orders: (existingDay.orders || 0) + (saleDayStat.orders || 0),
     itemsSold: Number(Money.add(existingDay.itemsSold || 0, saleDayStat.itemsSold || 0).round(3).toString()),
     hasMissingCosts: Boolean(existingDay.hasMissingCosts || saleDayStat.hasMissingCosts)
   };
+  Object.assign(mergedDay, getFinancialQuality(mergedDay.validRevenue || 0, mergedDay.unconfirmedRevenue || 0));
 
   await saveData(STORES.DAILY_STATS, mergedDay);
   return saleDayStat;
