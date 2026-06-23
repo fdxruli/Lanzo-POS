@@ -17,6 +17,13 @@ import Logger from '../Logger';
 const getRealProductId = (item) => item?.parentId || item?.id;
 const isCommittedSaleItem = (item) => item?.inventoryReservation?.source === 'table';
 const hasBatchDeductions = (item) => Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0;
+const saleHasCashComponent = (sale = {}) => (
+    sale.paymentMethod === 'efectivo' ||
+    (
+        sale.paymentMethod === 'fiado' &&
+        Money.init(sale.abono || 0).gt(0)
+    )
+);
 
 const buildNonBatchSalesMap = (saleItems = []) => {
     const summary = new Map();
@@ -381,7 +388,17 @@ const processSaleWithinTransaction = async ({
                 (a, b) => Date.parse(b.fecha_apertura || 0) - Date.parse(a.fecha_apertura || 0)
             )[0];
             sale.cash_session_id = activeCashSession.id;
+        } else if (saleHasCashComponent(sale)) {
+            throw new DatabaseError(
+                DB_ERROR_CODES.VALIDATION_ERROR,
+                'La venta tiene componente de efectivo y requiere una caja abierta.'
+            );
         }
+    } else if (saleHasCashComponent(sale)) {
+        throw new DatabaseError(
+            DB_ERROR_CODES.VALIDATION_ERROR,
+            'La venta tiene componente de efectivo y requiere una caja abierta.'
+        );
     }
 
     const affectedProductIds = collectAffectedProductIds(sale, deductions);
@@ -520,6 +537,9 @@ export const salesRepository = {
                     message: error.message
                 };
             }
+            if (error?.name === 'DatabaseError') {
+                throw error;
+            }
             throw handleDexieError(error, 'Execute Sale Transaction');
         }
     },
@@ -640,6 +660,10 @@ export const salesRepository = {
                     isConcurrencyError: true,
                     message: error.message
                 };
+            }
+
+            if (error?.name === 'DatabaseError') {
+                throw error;
             }
 
             throw handleDexieError(error, 'Execute Split Open Table Order Transaction');
