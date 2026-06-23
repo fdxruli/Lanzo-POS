@@ -79,6 +79,36 @@ const resolveAuthoritativeModifiers = (dbProduct, item) => {
     return { unitTotal, modifiers };
 };
 
+const resolveAuthoritativePricing = (dbProduct, item, calculatePricingDetails) => {
+    if (!item?.batchId) {
+        return {
+            ...calculatePricingDetails(dbProduct, item.quantity),
+            cost: toNumber(dbProduct.cost)
+        };
+    }
+
+    const selectedBatch = (dbProduct.activeBatches || []).find((batch) => batch.id === item.batchId);
+
+    if (!selectedBatch) {
+        throw new Error(`SEGURIDAD: El lote/variante "${item.batchId}" del producto "${item.name}" no existe o no esta activo.`);
+    }
+
+    const batchBackedProduct = {
+        ...dbProduct,
+        price: toNumber(selectedBatch.price),
+        originalPrice: toNumber(selectedBatch.price),
+        cost: toNumber(selectedBatch.cost),
+        isVariant: true,
+        batchId: selectedBatch.id,
+        activeBatches: [selectedBatch]
+    };
+
+    return {
+        ...calculatePricingDetails(batchBackedProduct, item.quantity),
+        cost: toNumber(selectedBatch.cost)
+    };
+};
+
 export const normalizeAndValidatePricing = async ({
     itemsToProcess,
     total,
@@ -119,7 +149,7 @@ export const normalizeAndValidatePricing = async ({
             throw new Error(`SEGURIDAD: El producto "${item.name}" (ID: ${realId}) no existe en la BD.`);
         }
 
-        const pricing = calculatePricingDetails(dbProduct, item.quantity);
+        const pricing = resolveAuthoritativePricing(dbProduct, item, calculatePricingDetails);
         const authoritativeModifiers = resolveAuthoritativeModifiers(dbProduct, item);
         const authoritativePrice = pricing.unitPrice + authoritativeModifiers.unitTotal;
         const exactLineTotal = pricing.exactTotal + (authoritativeModifiers.unitTotal * toNumber(item.quantity));
@@ -131,7 +161,7 @@ export const normalizeAndValidatePricing = async ({
             securityViolation = true;
         }
 
-        const authoritativeCost = parseFloat(dbProduct.cost) || 0;
+        const authoritativeCost = pricing.cost;
 
         calculatedRealTotal += exactLineTotal;
 
