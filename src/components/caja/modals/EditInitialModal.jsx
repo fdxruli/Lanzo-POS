@@ -7,12 +7,13 @@ import { useConfirmDiscard } from '../../../hooks/useConfirmDiscard';
 
 const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = false }) => {
   const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
   const inputRef = useRef(null);
   const modalRef = useRef(null);
   const focusedElementRef = useRef(null);
   const initialAmount = currentAmount !== undefined ? String(currentAmount) : '';
   const requestClose = useConfirmDiscard({
-    hasChanges: String(amount) !== initialAmount,
+    hasChanges: String(amount) !== initialAmount || reason.trim() !== '',
     onClose,
     isDisabled
   });
@@ -21,6 +22,7 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
     if (show) {
       focusedElementRef.current = document.activeElement;
       setAmount(currentAmount !== undefined ? currentAmount : '');
+      setReason('');
     }
   }, [show, currentAmount]);
 
@@ -72,7 +74,12 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
         showMessageModal('El fondo inicial no puede ser negativo.', null, { type: 'error' });
         return;
       }
-      onSave(Money.toExactString(safeVal));
+      const cleanReason = reason.trim();
+      if (!cleanReason) {
+        showMessageModal('Indica el motivo del ajuste de fondo inicial.', null, { type: 'error' });
+        return;
+      }
+      onSave(Money.toExactString(safeVal), cleanReason);
       onClose();
     } catch (error) {
       Logger.error('Error en fondo inicial:', error);
@@ -132,6 +139,19 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
                   placeholder="0.00"
                 />
               </div>
+            </div>
+
+            <div className="caja-modal__field">
+              <label htmlFor="fondo-inicial-motivo">Motivo del ajuste</label>
+              <textarea
+                id="fondo-inicial-motivo"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                disabled={isDisabled}
+                placeholder="Ej. Diferencia detectada en conteo inicial"
+                rows={3}
+                required
+              />
             </div>
 
             <footer className="caja-modal__actions">
