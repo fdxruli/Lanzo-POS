@@ -69,6 +69,22 @@
   display: none;
 }
 
+.chart-metric-controls {
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0.5rem;
+  padding-top: 0.75rem;
+}
+
+.chart-metric-label {
+  color: var(--text-muted, #6b7280);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .filter-pill {
   border: none;
   background: transparent;
@@ -529,6 +545,12 @@
 @media (min-width: 1024px) {
   .stats-controls-stack {
     align-items: flex-end;
+  }
+
+  .chart-metric-controls {
+    align-items: center;
+    flex-direction: row;
+    justify-content: space-between;
   }
 
   .stats-grid-modern {

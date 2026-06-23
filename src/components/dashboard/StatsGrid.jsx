@@ -68,8 +68,10 @@ const buildPeriodRanges = (timeRange) => {
   };
 };
 
-const formatCurrency = (val) =>
-  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
+const currencyFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+const numberFormatter = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 });
+
+const formatCurrency = (val) => currencyFormatter.format(val);
 
 const formatCompactCurrency = (val) => {
   const value = Number(val || 0);
@@ -77,9 +79,7 @@ const formatCompactCurrency = (val) => {
   return `$${value.toFixed(0)}`;
 };
 
-const formatNumber = (val) => new Intl.NumberFormat('es-MX', {
-  maximumFractionDigits: 1
-}).format(Number(val || 0));
+const formatNumber = (val) => numberFormatter.format(Number(val || 0));
 
 const formatPercent = (val) => `${Number(val || 0).toFixed(1)}%`;
 
@@ -406,19 +406,6 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
             ))}
           </div>
 
-          <div className="metric-filter-scroll" aria-label="Metrica de tendencia">
-            {Object.entries(METRIC_OPTIONS).map(([key, { label }]) => (
-              <button
-                key={key}
-                type="button"
-                className={`metric-pill ${selectedMetric === key ? 'active' : ''}`}
-                onClick={() => setSelectedMetric(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
           <button
             type="button"
             className="recalc-report-button"
@@ -448,6 +435,21 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
                 <span>{`${metrics.metricTrend >= 0 ? '+' : ''}${metrics.metricTrend.toFixed(1)}%`}</span>
               </div>
             )}
+          </div>
+          <div className="chart-metric-controls">
+            <span className="chart-metric-label">Métrica de gráfica</span>
+            <div className="metric-filter-scroll" aria-label="Metrica de grafica">
+              {Object.entries(METRIC_OPTIONS).map(([key, { label }]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`metric-pill ${selectedMetric === key ? 'active' : ''}`}
+                  onClick={() => setSelectedMetric(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <AreaTrendChart
             data={metrics.evolutionData}

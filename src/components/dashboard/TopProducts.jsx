@@ -25,8 +25,9 @@ const PRODUCT_VIEWS = {
   }
 };
 
-const formatCurrency = (val) =>
-  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
+const currencyFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+
+const formatCurrency = (val) => currencyFormatter.format(val);
 
 const formatQuantity = (value) => {
   const qty = Number(value || 0);
@@ -90,20 +91,20 @@ export default function TopProducts({ sales = [], limit = 5 }) {
 
   const topProducts = useMemo(() => {
     if (activeView === 'profit') {
-      return [...productStats]
+      return productStats.slice()
         .filter(product => product.confirmedProfit > 0)
         .sort((a, b) => b.confirmedProfit - a.confirmedProfit)
         .slice(0, limit);
     }
 
     if (activeView === 'lowMargin') {
-      return [...productStats]
+      return productStats.slice()
         .filter(product => product.quantity > 0 && product.marginPct !== null && product.marginPct < 20)
         .sort((a, b) => (b.quantity * (20 - b.marginPct)) - (a.quantity * (20 - a.marginPct)))
         .slice(0, limit);
     }
 
-    return [...productStats]
+    return productStats.slice()
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, limit);
   }, [activeView, productStats, limit]);
