@@ -1,59 +1,140 @@
 import { supabaseClient } from './supabase';
 import { buildPosSyncAuthContext } from './sync/posSyncClient';
-import { SYNC_LIMITS } from './sync/syncConstants';
+import { syncOutboxService } from './sync/syncOutboxService';
+import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, SYNC_ENTITY_TYPES, SYNC_LIMITS, SYNC_OPERATIONS } from './sync/syncConstants';
+import { createProductWithInitialInventorySafe, loadData, loadDataPaginated, saveBatchAndSyncProductSafe, saveImageToDB, softDeleteWithCascadeSafe, STORES, updateProductSafe } from './database';
+import { db } from './db/dexie';
+import { categoriesRepository } from './db/general';
+import { generateID } from './utils';
+import { useAppStore } from '../store/useAppStore';
 
+export const PRODUCT_SYNC_STATUS = Object.freeze({ PENDING: 'pending', SYNCED: 'synced', CONFLICT: 'conflict', ERROR: 'error', LOCAL: 'local' });
 const parse = (data) => (typeof data === 'string' ? JSON.parse(data) : (data || {}));
 const limitOf = (n) => Math.min(Math.max(Number(n) || SYNC_LIMITS.DEFAULT_PULL_LIMIT, 1), SYNC_LIMITS.MAX_PULL_LIMIT);
+const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+const now = () => new Date().toISOString();
+const txt = (v) => String(v ?? '').trim();
+const opt = (v) => txt(v) || null;
+const num = (v, d = 0) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+const idem = (t, id) => `${t}:${id || 'new'}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+const normName = (v) => txt(v).toLowerCase().replace(/\s+/g, ' ');
+const normBarcode = (v) => txt(v).replace(/\s+/g, '');
+const normSku = (v) => txt(v).toLowerCase().replace(/\s+/g, '');
+const notify = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('lanzo:products-sync-updated')); };
+const runtime = () => { const details = useAppStore.getState()?.licenseDetails || {}; return { licenseKey: getLicenseKeyFromDetails(details), cloud: isCloudProductsSyncEnabled(details) }; };
 
 async function base(licenseKey) {
   if (!supabaseClient) throw new Error('SUPABASE_NOT_CONFIGURED');
   const c = await buildPosSyncAuthContext({ licenseKey });
   if (!c.licenseKey || !c.deviceFingerprint || !c.securityToken) throw new Error('POS_SYNC_AUTH_CONTEXT_INCOMPLETE');
-  return {
-    p_license_key: c.licenseKey,
-    p_device_fingerprint: c.deviceFingerprint,
-    p_security_token: c.securityToken,
-    p_staff_session_token: c.staffSessionToken || null
-  };
+  return { p_license_key: c.licenseKey, p_device_fingerprint: c.deviceFingerprint, p_security_token: c.securityToken, p_staff_session_token: c.staffSessionToken || null };
 }
-
-async function rpc(name, args) {
-  const { data, error } = await supabaseClient.rpc(name, args);
-  if (error) throw error;
-  return parse(data);
-}
+async function rpc(name, args) { const { data, error } = await supabaseClient.rpc(name, args); if (error) throw error; return parse(data); }
+const asError = (r, fallback) => { const e = new Error(r?.message || r?.code || fallback); e.code = r?.code; e.response = r; return e; };
 
 export const productCloudRepository = {
-  async upsertCategory({ licenseKey, category, expectedVersion = null, idempotencyKey }) {
-    return rpc('pos_upsert_category', { ...(await base(licenseKey)), p_category: category, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey });
-  },
-  async deleteCategory({ licenseKey, categoryId, expectedVersion = null, idempotencyKey }) {
-    return rpc('pos_delete_category', { ...(await base(licenseKey)), p_category_id: categoryId, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey });
-  },
-  async upsertProduct({ licenseKey, product, initialBatches = [], expectedVersion = null, idempotencyKey }) {
-    return rpc('pos_upsert_product', { ...(await base(licenseKey)), p_product: product, p_initial_batches: initialBatches, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey });
-  },
-  async deleteProduct({ licenseKey, productId, expectedVersion = null, idempotencyKey }) {
-    return rpc('pos_delete_product', { ...(await base(licenseKey)), p_product_id: productId, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey });
-  },
-  async toggleProductStatus({ licenseKey, productId, isActive, expectedVersion = null, idempotencyKey }) {
-    return rpc('pos_toggle_product_status', { ...(await base(licenseKey)), p_product_id: productId, p_is_active: Boolean(isActive), p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey });
-  },
-  async upsertProductBatch({ licenseKey, batch, expectedVersion = null, idempotencyKey }) {
-    return rpc('pos_upsert_product_batch', { ...(await base(licenseKey)), p_batch: batch, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey });
-  },
-  async deleteProductBatch({ licenseKey, batchId, expectedVersion = null, idempotencyKey }) {
-    return rpc('pos_delete_product_batch', { ...(await base(licenseKey)), p_batch_id: batchId, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey });
-  },
-  async pullCatalogSnapshot({ licenseKey, entityType = 'all', limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, includeDeleted = true }) {
-    return rpc('pos_pull_product_catalog_snapshot', { ...(await base(licenseKey)), p_entity_type: entityType, p_limit: limitOf(limit), p_offset: Math.max(Number(offset) || 0, 0), p_include_deleted: Boolean(includeDeleted) });
-  },
-  async pullCatalogChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {
-    return rpc('pos_pull_product_catalog_changes', { ...(await base(licenseKey)), p_since_change_seq: Math.max(Number(sinceChangeSeq) || 0, 0), p_limit: limitOf(limit) });
-  },
-  async migrateLocalCatalog({ licenseKey, categories = [], products = [], batches = [], batchId }) {
-    return rpc('pos_migrate_local_product_catalog', { ...(await base(licenseKey)), p_categories: categories, p_products: products, p_batches: batches, p_batch_id: batchId });
-  }
+  async upsertCategory({ licenseKey, category, expectedVersion = null, idempotencyKey }) { return rpc('pos_upsert_category', { ...(await base(licenseKey)), p_category: category, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey }); },
+  async deleteCategory({ licenseKey, categoryId, expectedVersion = null, idempotencyKey }) { return rpc('pos_delete_category', { ...(await base(licenseKey)), p_category_id: categoryId, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey }); },
+  async upsertProduct({ licenseKey, product, initialBatches = [], expectedVersion = null, idempotencyKey }) { return rpc('pos_upsert_product', { ...(await base(licenseKey)), p_product: product, p_initial_batches: initialBatches, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey }); },
+  async deleteProduct({ licenseKey, productId, expectedVersion = null, idempotencyKey }) { return rpc('pos_delete_product', { ...(await base(licenseKey)), p_product_id: productId, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey }); },
+  async toggleProductStatus({ licenseKey, productId, isActive, expectedVersion = null, idempotencyKey }) { return rpc('pos_toggle_product_status', { ...(await base(licenseKey)), p_product_id: productId, p_is_active: Boolean(isActive), p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey }); },
+  async upsertProductBatch({ licenseKey, batch, expectedVersion = null, idempotencyKey }) { return rpc('pos_upsert_product_batch', { ...(await base(licenseKey)), p_batch: batch, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey }); },
+  async deleteProductBatch({ licenseKey, batchId, expectedVersion = null, idempotencyKey }) { return rpc('pos_delete_product_batch', { ...(await base(licenseKey)), p_batch_id: batchId, p_expected_version: expectedVersion, p_idempotency_key: idempotencyKey }); },
+  async pullCatalogSnapshot({ licenseKey, entityType = 'all', limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, includeDeleted = true }) { return rpc('pos_pull_product_catalog_snapshot', { ...(await base(licenseKey)), p_entity_type: entityType, p_limit: limitOf(limit), p_offset: Math.max(Number(offset) || 0, 0), p_include_deleted: Boolean(includeDeleted) }); },
+  async pullCatalogChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) { return rpc('pos_pull_product_catalog_changes', { ...(await base(licenseKey)), p_since_change_seq: Math.max(Number(sinceChangeSeq) || 0, 0), p_limit: limitOf(limit) }); },
+  async migrateLocalCatalog({ licenseKey, categories = [], products = [], batches = [], batchId }) { return rpc('pos_migrate_local_product_catalog', { ...(await base(licenseKey)), p_categories: categories, p_products: products, p_batches: batches, p_batch_id: batchId }); }
 };
 
+const categoryToCloud = (c) => ({ id: c.id, name: txt(c.name), name_key: normName(c.name), color: c.color || '#cccccc', sort_order: num(c.sortOrder, 0), is_active: c.isActive !== false, created_at: c.createdAt || now(), updated_at: c.updatedAt || now(), metadata: { ...(c.metadata || {}), phase: 'fase2_products_catalog' } });
+const productToCloud = (p) => ({ id: p.id, category_id: opt(p.categoryId), name: txt(p.name), description: opt(p.description), barcode: opt(p.barcode), barcode_key: normBarcode(p.barcode_normalized || p.barcode), sku: opt(p.sku), sku_key: normSku(p.sku_normalized || p.sku), image_ref: opt(p.imageRef || p.image), image_url: opt(p.imageUrl), location: opt(p.location), price: num(p.price), cost: num(p.cost), stock: num(p.stock), committed_stock: num(p.committedStock), min_stock: p.minStock ?? null, max_stock: p.maxStock ?? null, track_stock: p.trackStock !== false, is_active: p.isActive !== false, product_type: p.productType || 'sellable', sale_type: p.saleType || 'unit', bulk_data: p.bulkData ?? null, conversion_factor: p.conversionFactor ?? null, batch_management: p.batchManagement ?? null, recipe: p.recipe ?? null, modifiers: p.modifiers ?? null, wholesale_tiers: p.wholesaleTiers ?? null, prescription_type: opt(p.prescriptionType), active_substance: opt(p.activeSubstance), laboratory: opt(p.laboratory), requires_prescription: p.requiresPrescription ?? null, presentation: opt(p.presentation), expiration_mode: p.expirationMode || 'NONE', shelf_life_value: p.shelfLifeValue ?? null, shelf_life_unit: p.shelfLifeUnit ?? null, low_stock_alert_status: p.lowStockAlertStatus ?? null, active_stock_status: num(p.activeStockStatus), created_at: p.createdAt || now(), updated_at: p.updatedAt || now(), metadata: { ...(p.metadata || {}), phase: 'fase2_products_catalog', image_strategy: 'local_reference_only' } });
+const batchToCloud = (b) => ({ id: b.id, product_id: b.productId, sku: opt(b.sku), sku_key: normSku(b.skuKey || b.sku), stock: num(b.stock), committed_stock: num(b.committedStock), cost: num(b.cost), price: num(b.price), track_stock: b.trackStock !== false, is_active: b.isActive !== false, status: b.status || (b.isActive === false ? 'inactive' : 'active'), expiry_date: b.expiryDate ?? null, alert_target_date: b.alertTargetDate ?? b.expiryDate ?? null, alert_type: b.alertType ?? null, manufacturer_batch_id: opt(b.manufacturerBatchId), supplier: opt(b.supplier), attributes: b.attributes ?? null, location: opt(b.location), notes: opt(b.notes), update_global_price: b.updateGlobalPrice === true, created_at: b.createdAt || now(), updated_at: b.updatedAt || now(), metadata: { ...(b.metadata || {}), phase: 'fase2_products_catalog' } });
+
+async function apply(resp = {}) {
+  for (const c of resp.categories || []) await db.table(STORES.CATEGORIES).put({ id: c.id, name: c.name, color: c.color || '#cccccc', sortOrder: num(c.sort_order), isActive: c.deleted_at ? false : c.is_active !== false, createdAt: c.created_at, updatedAt: c.updated_at, deletedAt: c.deleted_at || null, serverVersion: c.server_version, cloudUpdatedAt: c.updated_at, syncStatus: PRODUCT_SYNC_STATUS.SYNCED, lastSyncedAt: now() });
+  for (const p of resp.products || []) await db.table(STORES.MENU).put({ ...(await db.table(STORES.MENU).get(p.id)), id: p.id, name: p.name, name_lower: txt(p.name).toLowerCase(), categoryId: p.category_id || '', description: p.description || '', barcode: p.barcode || '', barcode_normalized: p.barcode_key || '', sku: p.sku || '', sku_normalized: p.sku_key || '', image: p.image_ref || null, imageRef: p.image_ref || null, imageUrl: p.image_url || null, location: p.location || '', price: num(p.price), cost: num(p.cost), stock: num(p.stock), committedStock: num(p.committed_stock), minStock: p.min_stock ?? null, maxStock: p.max_stock ?? null, trackStock: p.track_stock ?? true, isActive: p.deleted_at ? false : p.is_active !== false, productType: p.product_type || 'sellable', saleType: p.sale_type || 'unit', bulkData: p.bulk_data ?? null, conversionFactor: p.conversion_factor ?? null, batchManagement: p.batch_management ?? null, recipe: p.recipe ?? null, modifiers: p.modifiers ?? null, wholesaleTiers: p.wholesale_tiers ?? null, expirationMode: p.expiration_mode || 'NONE', shelfLifeValue: p.shelf_life_value ?? null, shelfLifeUnit: p.shelf_life_unit ?? null, lowStockAlertStatus: p.low_stock_alert_status ?? null, activeStockStatus: num(p.active_stock_status), createdAt: p.created_at, updatedAt: p.updated_at, deletedAt: p.deleted_at || null, serverVersion: p.server_version, cloudUpdatedAt: p.updated_at, syncStatus: PRODUCT_SYNC_STATUS.SYNCED, lastSyncedAt: now() });
+  for (const b of resp.batches || []) await db.table(STORES.PRODUCT_BATCHES).put({ ...(await db.table(STORES.PRODUCT_BATCHES).get(b.id)), id: b.id, productId: b.product_id, sku: b.sku || '', skuKey: b.sku_key || '', stock: num(b.stock), committedStock: num(b.committed_stock), cost: num(b.cost), price: num(b.price), trackStock: b.track_stock ?? true, isActive: b.deleted_at ? false : b.is_active !== false, status: b.status || 'active', activeStockStatus: num(b.active_stock_status), expiryDate: b.expiry_date || null, alertTargetDate: b.alert_target_date || null, alertType: b.alert_type || null, manufacturerBatchId: b.manufacturer_batch_id || null, supplier: b.supplier || null, attributes: b.attributes || null, location: b.location || null, notes: b.notes || null, updateGlobalPrice: b.update_global_price === true, createdAt: b.created_at, updatedAt: b.updated_at, deletedAt: b.deleted_at || null, serverVersion: b.server_version, cloudUpdatedAt: b.updated_at, syncStatus: PRODUCT_SYNC_STATUS.SYNCED, lastSyncedAt: now() });
+  if (resp.category) await apply({ categories: [resp.category] });
+  if (resp.product) await apply({ products: [resp.product] });
+  if (resp.batch) await apply({ batches: [resp.batch] });
+  notify();
+}
+
+async function prepareProduct(productData, existingProduct = null) {
+  const editing = Boolean(existingProduct?.id && !existingProduct?.isNew);
+  const productId = editing ? existingProduct.id : (productData.id || generateID('prod'));
+  let image = productData.image;
+  if (productData.image instanceof File) { image = `img-${Date.now()}`; await saveImageToDB(image, productData.image); }
+  else if (!productData.image && existingProduct?.image) image = existingProduct.image;
+  const product = { ...productData, id: productId, image, updatedAt: now(), trackStock: productData.trackStock !== false, batchManagement: productData.trackStock === false ? { ...(existingProduct?.batchManagement || {}), ...(productData.batchManagement || {}), enabled: false } : (productData.batchManagement || existingProduct?.batchManagement || { enabled: true, selectionStrategy: 'fifo' }) };
+  delete product.quickVariants;
+  if (!editing) Object.assign(product, { stock: 0, isActive: true, createdAt: now() });
+  const cost = num(productData.cost), price = num(productData.price), stock = num(productData.stock);
+  const variants = Array.isArray(productData.quickVariants) ? productData.quickVariants : [];
+  const recipe = productData.productType === 'sellable' && Array.isArray(productData.recipe) && productData.recipe.length > 0;
+  const batches = [];
+  if (!editing && !recipe && variants.length === 0 && stock > 0) batches.push({ id: `batch-${productId}-initial`, productId, cost, price, stock, createdAt: now(), trackStock: true, isActive: true, status: 'active', notes: 'Stock Inicial', expiryDate: productData.expiryDate || null, alertTargetDate: productData.alertTargetDate || null, alertType: productData.alertType || null, manufacturerBatchId: productData.manufacturerBatchId || null, sku: null, attributes: null });
+  for (const v of variants) if ((v.talla || v.color) && (num(v.stock) > 0 || v.sku)) batches.push({ id: generateID('batch'), productId, stock: num(v.stock), cost: num(v.cost, cost), price: num(v.price, price), sku: v.sku || null, attributes: { talla: v.talla || '', color: v.color || '' }, isActive: true, status: 'active', createdAt: now(), notes: 'Ingreso rápido (Modo Asistido)', trackStock: true, expiryDate: v.expiryDate || productData.expiryDate || null, alertTargetDate: v.alertTargetDate || productData.alertTargetDate || null, alertType: v.alertType || productData.alertType || null, manufacturerBatchId: v.manufacturerBatchId || productData.manufacturerBatchId || null });
+  return { productId, product: editing ? { ...existingProduct, ...product } : product, batches, editing, inventoryValue: batches.reduce((s, b) => s + num(b.stock) * num(b.cost), 0) };
+}
+
+async function localSave(prepared, sync = {}) {
+  const product = { ...prepared.product, ...sync };
+  let result;
+  if (prepared.editing) { result = await updateProductSafe(prepared.productId, product); if (result?.success) for (const b of prepared.batches) await saveBatchAndSyncProductSafe({ ...b, ...sync }); }
+  else result = await createProductWithInitialInventorySafe(product, prepared.batches.map((b) => ({ ...b, ...sync })));
+  return { ...result, productId: prepared.productId, inventoryValue: prepared.inventoryValue };
+}
+
+async function enqueue(licenseKey, entityType, operation, entityId, payload, idempotencyKey) { return syncOutboxService.enqueueOperation({ licenseKey, entityType, operation, entityId, payload, idempotencyKey, metadata: { source: 'productRepository', phase: 'fase2_products_catalog' } }); }
+
+export const productRepository = {
+  listProductsPage: (options = {}) => loadDataPaginated(STORES.MENU, options),
+  listCategories: () => categoriesRepository.getActiveCategories(),
+  async saveCategory(data) {
+    const { licenseKey, cloud } = runtime(); const category = { id: data.id || generateID('cat'), ...data, createdAt: data.createdAt || now(), updatedAt: now(), isActive: true };
+    if (!cloud) return categoriesRepository.saveCategory(category);
+    const idempotencyKey = idem('category.upsert', category.id), expectedVersion = category.serverVersion || null;
+    if (!online()) { const local = await categoriesRepository.saveCategory({ ...category, syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.CATEGORY, SYNC_OPERATIONS.UPSERT, category.id, { category: categoryToCloud(category), expectedVersion }, idempotencyKey); notify(); return { ...local, pending: true }; }
+    const r = await productCloudRepository.upsertCategory({ licenseKey, category: categoryToCloud(category), expectedVersion, idempotencyKey }); if (r?.success === false) throw asError(r, 'CATEGORY_SYNC_FAILED'); await apply(r); return r.category;
+  },
+  async deleteCategory(categoryId) {
+    const { licenseKey, cloud } = runtime(); if (!cloud) return softDeleteWithCascadeSafe(STORES.CATEGORIES, STORES.DELETED_CATEGORIES, categoryId, { reason: 'Eliminada desde Catálogo de Productos', cascade: { updates: [{ store: STORES.MENU, index: 'categoryId', value: categoryId, field: 'categoryId', setTo: '' }] } });
+    const category = await loadData(STORES.CATEGORIES, categoryId); const idempotencyKey = idem('category.delete', categoryId);
+    if (!online()) { await db.table(STORES.CATEGORIES).update(categoryId, { isActive: false, deletedAt: now(), syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await db.table(STORES.MENU).where('categoryId').equals(categoryId).modify({ categoryId: '', syncStatus: PRODUCT_SYNC_STATUS.PENDING }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.CATEGORY, SYNC_OPERATIONS.DELETE, categoryId, { categoryId, expectedVersion: category?.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; }
+    const r = await productCloudRepository.deleteCategory({ licenseKey, categoryId, expectedVersion: category?.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'CATEGORY_DELETE_FAILED'); await pullCatalogChanges(); return { success: true };
+  },
+  async saveProduct(productData, { existingProduct = null } = {}) {
+    const p = await prepareProduct(productData, existingProduct); const { licenseKey, cloud } = runtime(); if (!cloud) return localSave(p);
+    const idempotencyKey = idem('product.upsert', p.productId); const payload = { product: productToCloud(p.product), initialBatches: p.batches.map(batchToCloud), expectedVersion: p.editing ? existingProduct?.serverVersion || null : null };
+    if (!online()) { const result = await localSave(p, { syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT, SYNC_OPERATIONS.UPSERT, p.productId, payload, idempotencyKey); notify(); return { ...result, pending: true }; }
+    const r = await productCloudRepository.upsertProduct({ licenseKey, product: payload.product, initialBatches: payload.initialBatches, expectedVersion: payload.expectedVersion, idempotencyKey }); if (r?.success === false) throw asError(r, 'PRODUCT_SYNC_FAILED'); await apply(r); return { success: true, productId: p.productId, inventoryValue: p.inventoryValue };
+  },
+  async deleteProduct(product) {
+    const { licenseKey, cloud } = runtime(); if (!cloud) return softDeleteWithCascadeSafe(STORES.MENU, STORES.DELETED_MENU, product.id, { reason: 'Eliminado desde Catálogo de Productos' });
+    const idempotencyKey = idem('product.delete', product.id); if (!online()) { await db.table(STORES.MENU).update(product.id, { isActive: false, deletedAt: now(), syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT, SYNC_OPERATIONS.DELETE, product.id, { productId: product.id, expectedVersion: product.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; }
+    const r = await productCloudRepository.deleteProduct({ licenseKey, productId: product.id, expectedVersion: product.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'PRODUCT_DELETE_FAILED'); await apply(r); return { success: true };
+  },
+  async toggleProductStatus(product) {
+    const isActive = !(product.isActive !== false); const { licenseKey, cloud } = runtime(); if (!cloud) return updateProductSafe(product.id, { ...product, isActive, updatedAt: now() });
+    const idempotencyKey = idem('product.toggle_status', product.id); await db.table(STORES.MENU).update(product.id, { isActive, syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey });
+    if (!online()) { await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT, SYNC_OPERATIONS.TOGGLE_STATUS, product.id, { productId: product.id, isActive, expectedVersion: product.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; }
+    const r = await productCloudRepository.toggleProductStatus({ licenseKey, productId: product.id, isActive, expectedVersion: product.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'PRODUCT_TOGGLE_FAILED'); await apply(r); return { success: true };
+  },
+  async saveBatch(batchData, { existingBatch = null } = {}) {
+    const { licenseKey, cloud } = runtime(); if (!cloud) return saveBatchAndSyncProductSafe(batchData);
+    const idempotencyKey = idem('product_batch.upsert', batchData.id); const local = await saveBatchAndSyncProductSafe({ ...batchData, syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); if (!local?.success) return local;
+    const payload = { batch: batchToCloud(batchData), expectedVersion: existingBatch?.serverVersion || batchData.serverVersion || null };
+    if (!online()) { await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT_BATCH, SYNC_OPERATIONS.UPSERT, batchData.id, payload, idempotencyKey); notify(); return { ...local, pending: true }; }
+    const r = await productCloudRepository.upsertProductBatch({ licenseKey, batch: payload.batch, expectedVersion: payload.expectedVersion, idempotencyKey }); if (r?.success === false) throw asError(r, 'BATCH_SYNC_FAILED'); await apply(r); return local;
+  },
+  async deleteBatch(batch) {
+    const { licenseKey, cloud } = runtime(); if (!cloud) return saveBatchAndSyncProductSafe({ ...batch, stock: 0, isActive: false, status: 'archived', deletedAt: now() });
+    const idempotencyKey = idem('product_batch.delete', batch.id); await saveBatchAndSyncProductSafe({ ...batch, stock: 0, isActive: false, status: 'archived', deletedAt: now(), syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey });
+    if (!online()) { await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT_BATCH, SYNC_OPERATIONS.DELETE, batch.id, { batchId: batch.id, expectedVersion: batch.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; }
+    const r = await productCloudRepository.deleteProductBatch({ licenseKey, batchId: batch.id, expectedVersion: batch.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'BATCH_DELETE_FAILED'); await apply(r); return { success: true };
+  },
+  async pullFullSnapshot() { const { licenseKey } = runtime(); for (const entityType of ['category', 'product', 'product_batch']) { let offset = 0, more = true; while (more) { const r = await productCloudRepository.pullCatalogSnapshot({ licenseKey, entityType, offset, includeDeleted: true }); if (r?.success === false) throw asError(r, 'SNAPSHOT_FAILED'); await apply(r); const count = (r.categories?.length || 0) + (r.products?.length || 0) + (r.batches?.length || 0); offset += count; more = Boolean(r.has_more) && count > 0; } } return { success: true }; }
+};
+
+export async function pullCatalogChanges() { const { licenseKey } = runtime(); if (!licenseKey || !online()) return { skipped: true }; const r = await productCloudRepository.pullCatalogChanges({ licenseKey, sinceChangeSeq: 0 }); if (r?.success === false) throw asError(r, 'CHANGES_FAILED'); await apply(r); return r; }
 export default productCloudRepository;
