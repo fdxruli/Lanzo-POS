@@ -10,16 +10,10 @@ import { getDeviceSecurityToken, getStableDeviceId, supabaseClient } from './sup
 
 const EDGE_PROVIDER = 'edge';
 const EDGE_FUNCTION_NAME = import.meta.env.VITE_AI_EDGE_FUNCTION || 'lanzo-ai-agent';
-const ALLOW_DIRECT_BROWSER_AI = import.meta.env.VITE_ALLOW_DIRECT_BROWSER_AI === 'true';
+const AI_USAGE_GATE_STYLE_ID = 'lanzo-ai-usage-gate-style';
 
 const DEFAULT_MODELS = {
-  edge: 'Supabase Edge',
-  openai: 'gpt-4o-mini',
-  google: 'gemini-2.5-flash-lite',
-  anthropic: 'claude-3-5-sonnet-20241022',
-  local: 'llama3.2',
-  deepseek: 'deepseek-chat',
-  qwen: 'qwen-plus'
+  edge: 'Supabase Edge'
 };
 
 const DEFAULT_CONFIG = {
@@ -27,18 +21,6 @@ const DEFAULT_CONFIG = {
   maxTokens: 2048,
   timeoutMs: 60000
 };
-
-const API_ENDPOINTS = {
-  openai: 'https://api.openai.com/v1/chat/completions',
-  local: 'http://localhost:11434/v1/chat/completions',
-  deepseek: 'https://api.deepseek.com/v1/chat/completions',
-  qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
-  google: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
-};
-
-const OPENAI_COMPATIBLE_PROVIDERS = ['openai', 'local', 'deepseek', 'qwen'];
-const DIRECT_PROVIDERS = ['google', ...OPENAI_COMPATIBLE_PROVIDERS];
-const SUPPORTED_PROVIDERS = [EDGE_PROVIDER, ...DIRECT_PROVIDERS];
 
 export class AIApiError extends Error {
   constructor(message, statusCode, originalError = null, code = null) {
@@ -49,77 +31,9 @@ export class AIApiError extends Error {
     this.code = code;
     this.timestamp = new Date().toISOString();
   }
-
-  static fromResponse(response, errorBody) {
-    const messages = {
-      400: 'Solicitud inválida. El prompt puede estar mal formado.',
-      401: 'API Key inválida o expirada. Verifica tu configuración.',
-      403: 'Acceso denegado. La API Key no tiene permisos para este modelo.',
-      429: 'Límite de tasa alcanzado. Por favor espera unos segundos e intenta nuevamente.',
-      500: 'Error interno del servidor de IA. Intenta más tarde.',
-      503: 'Servicio de IA no disponible temporalmente.'
-    };
-
-    return new AIApiError(
-      messages[response.status] || `Error de IA (${response.status}): ${errorBody?.message || 'Error desconocido'}`,
-      response.status,
-      errorBody,
-      errorBody?.code || null
-    );
-  }
-
-  static fromNetwork(error) {
-    if (error.name === 'AbortError') {
-      return new AIApiError('La solicitud tardó demasiado. Por favor intenta con un análisis más pequeño.', 408, error, 'REQUEST_TIMEOUT');
-    }
-    if (error.message?.includes('Failed to fetch')) {
-      return new AIApiError('No se pudo conectar con el servicio de IA. Verifica tu conexión a internet.', 0, error, 'NETWORK_ERROR');
-    }
-    return new AIApiError(`Error de red: ${error.message}`, 0, error, 'NETWORK_ERROR');
-  }
 }
 
-const normalizeText = (value = '') => String(value)
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .trim();
-
-const resolveProvider = (provider) => {
-  const requestedProvider = provider || import.meta.env.VITE_AI_PROVIDER || EDGE_PROVIDER;
-  if (requestedProvider !== EDGE_PROVIDER && !ALLOW_DIRECT_BROWSER_AI) return EDGE_PROVIDER;
-  return requestedProvider;
-};
-
-const getFirstConfiguredValue = (...values) => (
-  values.find(value => typeof value === 'string' && value.trim().length > 0)?.trim()
-);
-
-const isProviderSupported = (provider) => SUPPORTED_PROVIDERS.includes(provider);
-
-const getApiKey = (provider) => {
-  const resolvedProvider = resolveProvider(provider);
-  if (resolvedProvider === EDGE_PROVIDER) return 'edge-function-protected';
-
-  const keys = {
-    google: getFirstConfiguredValue(import.meta.env.VITE_GEMINI_API_KEY, import.meta.env.VITE_AI_API_KEY),
-    deepseek: getFirstConfiguredValue(import.meta.env.VITE_DEEPSEEK_API_KEY, import.meta.env.VITE_AI_API_KEY),
-    openai: getFirstConfiguredValue(import.meta.env.VITE_OPENAI_API_KEY, import.meta.env.VITE_AI_API_KEY),
-    local: 'no-key-required',
-    qwen: getFirstConfiguredValue(import.meta.env.VITE_QWEN_API_KEY, import.meta.env.VITE_AI_API_KEY)
-  };
-
-  if (!Object.prototype.hasOwnProperty.call(keys, resolvedProvider)) {
-    throw new AIApiError(`Proveedor "${resolvedProvider}" no soportado`, 400, null, 'UNSUPPORTED_PROVIDER');
-  }
-
-  const apiKey = keys[resolvedProvider];
-  if (!apiKey) {
-    throw new AIApiError(`API Key para ${resolvedProvider} no configurada en el archivo .env`, 401, null, 'AI_KEY_MISSING');
-  }
-
-  return apiKey;
-};
+const isEdgeProvider = (provider) => (provider || import.meta.env.VITE_AI_PROVIDER || EDGE_PROVIDER) === EDGE_PROVIDER;
 
 const readLocalLicense = () => {
   try {
@@ -152,6 +66,12 @@ const buildAIAgentAuthContext = async (config = {}) => {
   };
 };
 
+const normalizeText = (value = '') => String(value)
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim();
+
 const inferAgentType = (systemPrompt = '', userPrompt = '', requestedAgentType = '') => {
   const explicit = String(requestedAgentType || '').trim();
   if (explicit && explicit !== 'unknown') return explicit;
@@ -180,6 +100,8 @@ const mapEdgeErrorMessage = (payload = {}) => {
     DEVICE_TOKEN_INVALID: 'El token de este dispositivo no es válido. Vuelve a iniciar sesión.',
     STAFF_SESSION_REQUIRED: 'Se requiere una sesión staff válida para usar agentes de IA.',
     STAFF_SESSION_INVALID: 'La sesión staff expiró o ya no es válida.',
+    USAGE_LOOKUP_ERROR: payload.message || 'No se pudo consultar el uso de agentes IA.',
+    USAGE_RESERVATION_ERROR: payload.message || 'No se pudo reservar el uso del agente IA.',
     AI_KEY_MISSING: 'Falta configurar AI_API_KEY u OPENAI_API_KEY en Supabase Secrets.',
     AI_PROVIDER_ERROR: payload.message || 'El proveedor de IA devolvió un error.',
     PROMPT_TOO_LARGE: payload.message || 'El análisis contiene demasiados datos. Reduce el rango.',
@@ -202,45 +124,124 @@ const parseFunctionError = async (error) => {
   return null;
 };
 
-const buildOpenAIPayload = (systemPrompt, userPrompt, config) => ({
-  model: config.model,
-  temperature: config.temperature ?? DEFAULT_CONFIG.temperature,
-  max_tokens: config.maxTokens ?? DEFAULT_CONFIG.maxTokens,
-  messages: [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userPrompt }
-  ],
-  stream: false
-});
+const normalizeUsageStatus = (payload = {}) => {
+  const limit = Math.max(Number(payload.limit ?? 0), 0);
+  const used = Math.max(Number(payload.used ?? 0), 0);
+  const remaining = Number.isFinite(Number(payload.remaining))
+    ? Math.max(Number(payload.remaining), 0)
+    : Math.max(limit - used, 0);
 
-const buildGeminiPayload = (systemPrompt, userPrompt, config) => ({
-  systemInstruction: {
-    parts: [{ text: systemPrompt }]
-  },
-  contents: [{
-    role: 'user',
-    parts: [{ text: userPrompt }]
-  }],
-  generationConfig: {
-    temperature: config.temperature ?? DEFAULT_CONFIG.temperature,
-    maxOutputTokens: config.maxTokens ?? DEFAULT_CONFIG.maxTokens
+  return {
+    ...payload,
+    limit,
+    used,
+    remaining,
+    isLimitReached: limit > 0 && remaining <= 0
+  };
+};
+
+const formatUsagePeriodEnd = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const buildUsageLimitMessage = (usage = {}) => {
+  const limit = usage.limit || 15;
+  const periodEnd = formatUsagePeriodEnd(usage.period_end || usage.periodEnd || usage.periodEndAt);
+  const baseMessage = `Ya alcanzaste el límite de ${limit} análisis IA de tu periodo Pro actual.`;
+  return periodEnd
+    ? `${baseMessage} El botón de análisis queda bloqueado hasta el siguiente periodo (${periodEnd}) o hasta que el administrador aumente el límite.`
+    : `${baseMessage} El botón de análisis queda bloqueado hasta el siguiente periodo o hasta que el administrador aumente el límite.`;
+};
+
+const ensureAIUsageGateStyle = () => {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(AI_USAGE_GATE_STYLE_ID)) return;
+
+  const style = document.createElement('style');
+  style.id = AI_USAGE_GATE_STYLE_ID;
+  style.textContent = `
+    html[data-lanzo-ai-usage-exhausted="true"] .agent-selection::after {
+      content: attr(data-lanzo-ai-usage-message);
+      display: block;
+      margin-top: 1rem;
+      padding: 0.875rem 1rem;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 0.75rem;
+      background: rgba(245, 158, 11, 0.1);
+      color: #92400e;
+      font-size: 0.875rem;
+      font-weight: 600;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    html[data-lanzo-ai-usage-exhausted="true"] .agent-card,
+    html[data-lanzo-ai-usage-exhausted="true"] .analyze-button,
+    html[data-lanzo-ai-usage-exhausted="true"] .selector-trigger {
+      pointer-events: none !important;
+      opacity: 0.55 !important;
+      cursor: not-allowed !important;
+      filter: grayscale(0.25);
+    }
+  `;
+  document.head.appendChild(style);
+};
+
+const setAIUsageGateNotice = (usage = {}) => {
+  if (typeof document === 'undefined') return;
+  ensureAIUsageGateStyle();
+  document.documentElement.setAttribute('data-lanzo-ai-usage-exhausted', 'true');
+  document.documentElement.setAttribute('data-lanzo-ai-usage-message', buildUsageLimitMessage(usage));
+};
+
+const clearAIUsageGateNotice = () => {
+  if (typeof document === 'undefined') return;
+  document.documentElement.removeAttribute('data-lanzo-ai-usage-exhausted');
+  document.documentElement.removeAttribute('data-lanzo-ai-usage-message');
+};
+
+export const getAIAgentUsageStatus = async (config = {}) => {
+  if (!supabaseClient) {
+    throw new AIApiError('Supabase no está configurado. Revisa VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.', 500, null, 'SUPABASE_NOT_CONFIGURED');
   }
-});
 
-const parseOpenAIResponse = (data) => {
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new AIApiError('Respuesta de IA vacía o sin contenido', 500, data, 'AI_EMPTY_RESPONSE');
-  return content.trim();
+  const auth = await buildAIAgentAuthContext(config);
+  if (!auth.licenseKey || !auth.deviceFingerprint || !auth.deviceSecurityToken) {
+    throw new AIApiError('Faltan datos seguros de licencia/dispositivo para consultar el uso de agentes IA.', 401, { auth }, 'AUTH_PAYLOAD_REQUIRED');
+  }
+
+  const { data, error } = await supabaseClient.functions.invoke(EDGE_FUNCTION_NAME, {
+    body: {
+      action: 'usage',
+      auth
+    }
+  });
+
+  if (error) {
+    const functionPayload = await parseFunctionError(error);
+    const payload = functionPayload || { code: error.code, message: error.message };
+    throw new AIApiError(mapEdgeErrorMessage(payload), error.context?.status || error.status || 500, payload, payload.code || 'EDGE_FUNCTION_ERROR');
+  }
+
+  if (!data?.success) {
+    throw new AIApiError(mapEdgeErrorMessage(data), 403, data, data?.code || 'EDGE_REJECTED');
+  }
+
+  return normalizeUsageStatus(data);
 };
 
-const parseGeminiResponse = (data) => {
-  const parts = data?.candidates?.[0]?.content?.parts;
-  const text = Array.isArray(parts) ? parts.map(part => part.text || '').join('').trim() : '';
-  if (!text) throw new AIApiError('Respuesta de Gemini sin contenido válido', 500, data, 'AI_EMPTY_RESPONSE');
-  return text;
-};
+export const analyzeWithAI = async (systemPrompt, userPrompt, config = {}) => {
+  if (!systemPrompt || !userPrompt) {
+    throw new AIApiError('Prompts requeridos', 400, null, 'PROMPT_REQUIRED');
+  }
 
-const executeEdgeRequest = async (systemPrompt, userPrompt, config) => {
+  if (!isEdgeProvider(config.provider)) {
+    throw new AIApiError('En producción, los agentes IA deben ejecutarse mediante Supabase Edge Function.', 400, null, 'DIRECT_AI_DISABLED');
+  }
+
   if (!supabaseClient) {
     throw new AIApiError('Supabase no está configurado. Revisa VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.', 500, null, 'SUPABASE_NOT_CONFIGURED');
   }
@@ -266,11 +267,24 @@ const executeEdgeRequest = async (systemPrompt, userPrompt, config) => {
   if (error) {
     const functionPayload = await parseFunctionError(error);
     const payload = functionPayload || { code: error.code, message: error.message };
+    if ((payload.code || payload.reason) === 'AI_AGENT_LIMIT_REACHED') {
+      setAIUsageGateNotice(normalizeUsageStatus(payload));
+    }
     throw new AIApiError(mapEdgeErrorMessage(payload), error.context?.status || error.status || 500, payload, payload.code || 'EDGE_FUNCTION_ERROR');
   }
 
   if (!data?.success) {
+    if (data?.code === 'AI_AGENT_LIMIT_REACHED') {
+      setAIUsageGateNotice(normalizeUsageStatus(data));
+    }
     throw new AIApiError(mapEdgeErrorMessage(data), data?.code === 'AI_AGENT_LIMIT_REACHED' ? 429 : 403, data, data?.code || 'EDGE_REJECTED');
+  }
+
+  const usageStatus = normalizeUsageStatus(data.usageStatus || data);
+  if (usageStatus.isLimitReached) {
+    setAIUsageGateNotice(usageStatus);
+  } else {
+    clearAIUsageGateNotice();
   }
 
   if (!data.content || typeof data.content !== 'string') {
@@ -280,141 +294,64 @@ const executeEdgeRequest = async (systemPrompt, userPrompt, config) => {
   return data.content.trim();
 };
 
-const fetchJsonWithTimeout = async (url, options, timeoutMs) => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    let body;
-    try {
-      body = await response.json();
-    } catch {
-      body = { message: response.statusText };
-    }
-
-    if (!response.ok) throw AIApiError.fromResponse(response, body);
-    return body;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof AIApiError) throw error;
-    throw AIApiError.fromNetwork(error);
-  }
-};
-
-export const analyzeWithAI = async (systemPrompt, userPrompt, config = {}) => {
-  if (!systemPrompt || !userPrompt) throw new AIApiError('Prompts requeridos', 400, null, 'PROMPT_REQUIRED');
-
-  const provider = resolveProvider(config.provider);
-  if (provider === EDGE_PROVIDER) return executeEdgeRequest(systemPrompt, userPrompt, config);
-
-  const apiKey = getApiKey(provider);
-  const mergedConfig = {
-    ...DEFAULT_CONFIG,
-    ...config,
-    model: config.model || import.meta.env.VITE_AI_MODEL || getDefaultModelForProvider(provider)
-  };
-
-  if (provider === 'google') {
-    const endpoint = API_ENDPOINTS.google.replace('{model}', mergedConfig.model);
-    const data = await fetchJsonWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey
-      },
-      body: JSON.stringify(buildGeminiPayload(systemPrompt, userPrompt, mergedConfig))
-    }, mergedConfig.timeoutMs);
-    return parseGeminiResponse(data);
-  }
-
-  if (OPENAI_COMPATIBLE_PROVIDERS.includes(provider)) {
-    const data = await fetchJsonWithTimeout(API_ENDPOINTS[provider], {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(buildOpenAIPayload(systemPrompt, userPrompt, mergedConfig))
-    }, mergedConfig.timeoutMs);
-    return parseOpenAIResponse(data);
-  }
-
-  throw new AIApiError(`Proveedor "${provider}" no soportado`, 400, null, 'UNSUPPORTED_PROVIDER');
-};
-
-export const hasApiKey = (provider = resolveProvider()) => {
-  const resolvedProvider = resolveProvider(provider);
-  if (resolvedProvider === EDGE_PROVIDER) return Boolean(supabaseClient);
-  try {
-    return !!getApiKey(resolvedProvider);
-  } catch {
-    return false;
-  }
-};
+export const hasApiKey = (provider = EDGE_PROVIDER) => isEdgeProvider(provider) && Boolean(supabaseClient);
 
 export const getAIConfigStatus = () => {
-  const provider = resolveProvider();
-  const supported = isProviderSupported(provider);
-  const hasKey = provider === EDGE_PROVIDER ? Boolean(supabaseClient) : hasApiKey(provider);
-  const envModel = import.meta.env.VITE_AI_MODEL;
-
+  const provider = EDGE_PROVIDER;
   return {
-    configured: hasKey && supported,
+    configured: Boolean(supabaseClient),
     provider,
-    hasKey,
-    supported,
-    model: provider === EDGE_PROVIDER ? DEFAULT_MODELS.edge : envModel || DEFAULT_MODELS[provider] || DEFAULT_MODELS.openai,
-    error: supported ? null : `Proveedor "${provider}" no soportado`
+    hasKey: Boolean(supabaseClient),
+    supported: true,
+    model: DEFAULT_MODELS.edge,
+    error: null
   };
 };
 
-export const getDefaultModelForProvider = (provider) => DEFAULT_MODELS[provider] || DEFAULT_MODELS.openai;
+export const getDefaultModelForProvider = () => DEFAULT_MODELS.edge;
 
 export const validateAIConnection = async (options = {}) => {
-  const provider = resolveProvider(options.provider);
-  const model = provider === EDGE_PROVIDER
-    ? DEFAULT_MODELS.edge
-    : options.model || import.meta.env.VITE_AI_MODEL || getDefaultModelForProvider(provider);
+  const provider = EDGE_PROVIDER;
+  const model = DEFAULT_MODELS.edge;
 
-  if (provider === EDGE_PROVIDER) {
-    if (!supabaseClient) {
-      return { valid: false, error: 'Supabase no está configurado para invocar Edge Functions.', provider, model };
-    }
-
-    try {
-      const auth = await buildAIAgentAuthContext(options);
-      if (!auth.licenseKey || !auth.deviceFingerprint || !auth.deviceSecurityToken) {
-        return { valid: false, error: 'Falta contexto seguro de licencia/dispositivo. Vuelve a validar la licencia.', provider, model };
-      }
-      return { valid: true, provider, model, timestamp: new Date().toISOString() };
-    } catch (error) {
-      return { valid: false, error: error.message || 'No se pudo validar el contexto local de IA.', provider, model, timestamp: new Date().toISOString() };
-    }
+  if (!supabaseClient) {
+    clearAIUsageGateNotice();
+    return { valid: false, error: 'Supabase no está configurado para invocar Edge Functions.', provider, model };
   }
 
-  const { timeoutMs = 10000 } = options;
-
   try {
-    getApiKey(provider);
-    const testResponse = await analyzeWithAI(
-      'Responde ÚNICAMENTE con la palabra "OK". No agregues nada más.',
-      'Test de conexión',
-      { model, provider, temperature: 0, maxTokens: 10, timeoutMs }
-    );
+    const auth = await buildAIAgentAuthContext(options);
+    if (!auth.licenseKey || !auth.deviceFingerprint || !auth.deviceSecurityToken) {
+      clearAIUsageGateNotice();
+      return { valid: false, error: 'Falta contexto seguro de licencia/dispositivo. Vuelve a validar la licencia.', provider, model };
+    }
 
-    return testResponse.toUpperCase().includes('OK')
-      ? { valid: true, provider, model, timestamp: new Date().toISOString() }
-      : { valid: false, error: 'Respuesta inesperada de la API', provider, model };
+    const usageStatus = await getAIAgentUsageStatus({ ...options, auth });
+    if (usageStatus.isLimitReached) {
+      const error = buildUsageLimitMessage(usageStatus);
+      setAIUsageGateNotice(usageStatus);
+      return {
+        valid: false,
+        error,
+        provider,
+        model,
+        code: 'AI_AGENT_LIMIT_REACHED',
+        usageStatus,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    clearAIUsageGateNotice();
+    return { valid: true, provider, model, usageStatus, timestamp: new Date().toISOString() };
   } catch (error) {
-    return { valid: false, error: error.message || 'Error de conexión', provider, model, timestamp: new Date().toISOString() };
+    clearAIUsageGateNotice();
+    return { valid: false, error: error.message || 'No se pudo validar el contexto local de IA.', provider, model, timestamp: new Date().toISOString() };
   }
 };
 
 export default {
   analyzeWithAI,
+  getAIAgentUsageStatus,
   hasApiKey,
   getAIConfigStatus,
   getDefaultModelForProvider,
