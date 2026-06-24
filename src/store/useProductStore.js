@@ -13,6 +13,7 @@ let broadcastChannel = null;
 let visibilityListener = null;
 let focusListener = null;
 let pageshowListener = null;
+let productsSyncListener = null;
 let listenersInitialized = false;
 
 // De-duplicación: colapsa la ráfaga de eventos simultáneos (visibilitychange +
@@ -38,6 +39,13 @@ function setupReactiveListeners(get) {
     listenersInitialized = true;
 
     if (typeof window === 'undefined') return () => { };
+
+    productsSyncListener = (event) => {
+        Logger.debug('[ProductStore] lanzo:products-sync-updated detected', event.detail);
+        get().invalidateAndReset();
+    };
+
+    window.addEventListener('lanzo:products-sync-updated', productsSyncListener);
 
     // ─────────────────────────────────────────────────────────────────
     // 1. BROADCAST CHANNEL: Sincronización cross-tab
@@ -168,6 +176,10 @@ function setupReactiveListeners(get) {
         if (pageshowListener) {
             window.removeEventListener('pageshow', pageshowListener);
             pageshowListener = null;
+        }
+        if (productsSyncListener) {
+            window.removeEventListener('lanzo:products-sync-updated', productsSyncListener);
+            productsSyncListener = null;
         }
     };
 }

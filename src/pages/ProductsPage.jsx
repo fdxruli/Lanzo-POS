@@ -1,5 +1,5 @@
 // src/pages/ProductsPage.jsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
@@ -13,7 +13,7 @@ import BatchManager from '../components/products/BatchManager';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import DailyPriceModal from '../components/products/DailyPriceModal';
 import { useAppStore } from '../store/useAppStore';
-import { productRepository } from '../services/productCloudRepository';
+import { productRepository } from '../services/products/productRepository';
 import './ProductsPage.css';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
