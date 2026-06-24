@@ -22,6 +22,56 @@ import {
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
+const stringifyCloudError = (error) => {
+  const values = [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.code,
+    error?.status,
+    error?.statusCode,
+    error?.name,
+    error?.error_description,
+    error?.error
+  ].filter((value) => value !== null && value !== undefined);
+
+  return values.map((value) => {
+    if (typeof value === 'string') return value;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }).join(' ').toLowerCase();
+};
+
+const isRetryableCloudError = (error) => {
+  if (!isOnline()) return true;
+  if (error?.name === 'TypeError') return true;
+
+  const code = String(error?.code || '').toLowerCase();
+  const message = stringifyCloudError(error);
+
+  return (
+    code === '57014' || // PostgreSQL query_canceled / statement_timeout
+    code.startsWith('08') || // connection_exception family
+    code.startsWith('53') || // insufficient resources / temporary pressure
+    message.includes('failed to fetch') ||
+    message.includes('networkerror') ||
+    message.includes('network request failed') ||
+    message.includes('canceling statement due to statement timeout') ||
+    message.includes('statement timeout') ||
+    message.includes('query timeout') ||
+    message.includes('timeout') ||
+    message.includes('temporarily unavailable') ||
+    message.includes('connection terminated') ||
+    message.includes('connection reset') ||
+    message.includes('502') ||
+    message.includes('503') ||
+    message.includes('504')
+  );
+};
+
 const buildPhoneFieldError = (message = 'El telefono ya esta registrado para otro cliente.') => ({
   success: false,
   fieldErrors: { phone: message },
@@ -183,9 +233,9 @@ export const customerRepository = {
 
       return { success: true, data: saved, response };
     } catch (error) {
-      Logger.warn('[Customers] Upsert cloud fallo. Encolando solo si parece red/offline:', error);
+      Logger.warn('[Customers] Upsert cloud fallo:', error);
 
-      if (!isOnline() || error?.message?.includes('Failed to fetch') || error?.name === 'TypeError') {
+      if (isRetryableCloudError(error)) {
         const localResult = await customerLocalRepository.saveCustomerLocal(localCandidate, {
           existingCustomer,
           syncStatus: CUSTOMER_SYNC_STATUS.PENDING,
@@ -203,11 +253,13 @@ export const customerRepository = {
           expectedVersion
         });
 
+        posSyncOrchestrator.processOutbox('customer_retryable_upsert').catch(() => {});
+
         return {
           success: true,
           pending: true,
           data: localCandidate,
-          message: 'Cliente guardado localmente. La sincronizacion quedo pendiente.'
+          message: 'Cliente guardado localmente. La sincronizacion quedo pendiente y se reintentara automaticamente.'
         };
       }
 
@@ -284,7 +336,7 @@ export const customerRepository = {
     } catch (error) {
       Logger.warn('[Customers] Delete cloud fallo:', error);
 
-      if (!isOnline() || error?.message?.includes('Failed to fetch') || error?.name === 'TypeError') {
+      if (isRetryableCloudError(error)) {
         const localResult = await customerLocalRepository.markCustomerDeletedPending(existingCustomer, { operationId: idempotencyKey });
         if (!localResult.success) return localResult;
 
@@ -297,10 +349,12 @@ export const customerRepository = {
           expectedVersion
         });
 
+        posSyncOrchestrator.processOutbox('customer_retryable_delete').catch(() => {});
+
         return {
           success: true,
           pending: true,
-          message: 'Cliente eliminado localmente. La sincronizacion quedo pendiente.'
+          message: 'Cliente eliminado localmente. La sincronizacion quedo pendiente y se reintentara automaticamente.'
         };
       }
 
