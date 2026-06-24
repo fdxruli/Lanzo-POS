@@ -8,7 +8,7 @@ import {
   searchProductsInDB,
   STORES
 } from '../../../../services/database';
-import { productRepository } from '../../../../services/productCloudRepository';
+import { productRepository } from '../../../../services/products/productRepository';
 import { showMessageModal } from '../../../../services/utils';
 import { loadBatchesForManager } from '../../../../services/inventoryMovement';
 import { useStatsStore } from '../../../../store/useStatsStore';

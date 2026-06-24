@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { saveBatchAndSyncProductSafe } from '../../../services/db';
+import { useState, useEffect } from 'react';
+import { productRepository } from '../../../services/products/productRepository';
 import Logger from '../../../services/Logger';
 
 export default function BatchEditModal({ batchData, onClose, onSave, features }) {
@@ -93,7 +93,9 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
             };
 
             // --- GUARDADO ---
-            const result = await saveBatchAndSyncProductSafe(payload);
+            const result = await productRepository.saveBatch(payload, {
+                existingBatch: batchData
+            });
 
             if (result.success) {
                 Logger.info(`Lote/Variante ${payload.sku} actualizada.`);
