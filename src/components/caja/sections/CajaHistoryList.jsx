@@ -5,11 +5,12 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  UserRound
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 
-const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
+const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de cortes', eyebrow = 'Turnos anteriores' }) => {
   const [paginaActual, setPaginaActual] = useState(1);
 
   const historialRender = useMemo(() => {
@@ -19,10 +20,18 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
     return historialPaginado.map(c => {
       const diffSafe = Money.init(c.diferencia || 0);
       const isCuadrada = diffSafe.abs().lt(1);
+      const responsible = c.responsable_apertura || c.responsibleName || c.staff_display_name || c.staffDisplayName || null;
+      const opened = c.fecha_apertura ? new Date(c.fecha_apertura) : null;
+      const closed = c.fecha_cierre ? new Date(c.fecha_cierre) : null;
 
       return {
         id: c.id,
-        fecha: new Date(c.fecha_apertura).toLocaleDateString(),
+        fecha: opened ? opened.toLocaleDateString() : 'Sin fecha',
+        hora: opened ? opened.toLocaleTimeString() : '',
+        cierreFecha: closed ? closed.toLocaleString() : null,
+        estado: c.estado || 'cerrada',
+        responsible,
+        actor: c.deviceRole === 'staff' || c.staffUserId ? 'Staff' : c.cloudCash ? 'Admin' : null,
         isCuadrada,
         cierre: c.monto_cierre ? `$${Money.toNumber(c.monto_cierre || 0).toFixed(2)}` : 'N/A',
         dif: `${diffSafe.gt(0) ? '+' : ''}$${Money.toNumber(diffSafe).toFixed(2)}`,
@@ -33,13 +42,8 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
 
   const totalPaginas = Math.ceil(historial.length / itemsPerPage);
 
-  const handlePaginaAnterior = () => {
-    setPaginaActual(p => Math.max(1, p - 1));
-  };
-
-  const handlePaginaSiguiente = () => {
-    setPaginaActual(p => Math.min(totalPaginas, p + 1));
-  };
+  const handlePaginaAnterior = () => setPaginaActual(p => Math.max(1, p - 1));
+  const handlePaginaSiguiente = () => setPaginaActual(p => Math.min(totalPaginas, p + 1));
 
   const sectionHeading = (
     <div className="section-header">
@@ -48,8 +52,8 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
           <CalendarClock size={19} />
         </span>
         <div>
-          <p className="section-eyebrow">Turnos anteriores</p>
-          <h3 id="history-title" className="section-title">Historial de cortes</h3>
+          <p className="section-eyebrow">{eyebrow}</p>
+          <h3 id="history-title" className="section-title">{title}</h3>
         </div>
       </div>
       {historial.length > 0 && <span className="items-count">{historial.length}</span>}
@@ -80,13 +84,17 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
             </span>
             <div className="history-content">
               <div className="movement-header">
-                <strong className="movement-title">{c.fecha}</strong>
+                <strong className="movement-title">{c.fecha} {c.hora}</strong>
                 <span className={`status-badge ${c.isCuadrada ? 'success' : 'error'}`}>
                   {c.isCuadrada ? 'Cuadrada' : 'Descuadre'}
                 </span>
               </div>
               <div className="movement-details">
+                <span>Estado: {c.estado}</span>
                 <span>Cierre: {c.cierre}</span>
+                {c.responsible && <span><UserRound size={12} aria-hidden="true" /> {c.responsible}</span>}
+                {c.actor && <span>{c.actor}</span>}
+                {c.cierreFecha && <span>Cerrada: {c.cierreFecha}</span>}
                 {!c.isCuadrada && (
                   <span className={`history-difference ${c.difTone}`}>Dif: {c.dif}</span>
                 )}
@@ -98,20 +106,12 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
 
       {totalPaginas > 1 && (
         <div className="pagination">
-          <button
-            onClick={handlePaginaAnterior}
-            disabled={paginaActual === 1}
-            aria-label="Página anterior"
-          >
+          <button onClick={handlePaginaAnterior} disabled={paginaActual === 1} aria-label="Página anterior">
             <ChevronLeft size={16} aria-hidden="true" />
             Anterior
           </button>
           <span>Página {paginaActual} de {totalPaginas}</span>
-          <button
-            onClick={handlePaginaSiguiente}
-            disabled={paginaActual === totalPaginas}
-            aria-label="Página siguiente"
-          >
+          <button onClick={handlePaginaSiguiente} disabled={paginaActual === totalPaginas} aria-label="Página siguiente">
             Siguiente
             <ChevronRight size={16} aria-hidden="true" />
           </button>
