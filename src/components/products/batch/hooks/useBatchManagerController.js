@@ -2,14 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDebounce } from '../../../../hooks/useDebounce';
 import { useProductStore } from '../../../../store/useProductStore';
 import {
-  saveBatchAndSyncProductSafe,
   executeBatchWithPaymentSafe,
   executeProductionBatchSafe,
   loadData,
   searchProductsInDB,
-  STORES,
-  updateProductSafe
+  STORES
 } from '../../../../services/database';
+import { productRepository } from '../../../../services/productCloudRepository';
 import { showMessageModal } from '../../../../services/utils';
 import { loadBatchesForManager } from '../../../../services/inventoryMovement';
 import { useStatsStore } from '../../../../store/useStatsStore';
@@ -52,29 +51,21 @@ export function useBatchManagerController({
 
     const hydrateSelectedProduct = async () => {
       if (!selectedProductId) {
-        if (isActive) {
-          setSelectedProductSnapshot(null);
-        }
+        if (isActive) setSelectedProductSnapshot(null);
         return;
       }
 
       if (selectedProduct?.id === selectedProductId) {
-        if (isActive) {
-          setSelectedProductSnapshot(selectedProduct);
-        }
+        if (isActive) setSelectedProductSnapshot(selectedProduct);
         return;
       }
 
       try {
         const productFromDB = await loadData(STORES.MENU, selectedProductId);
-        if (isActive) {
-          setSelectedProductSnapshot(productFromDB || null);
-        }
+        if (isActive) setSelectedProductSnapshot(productFromDB || null);
       } catch (error) {
         Logger.error('Error hidratando producto seleccionado en lotes:', error);
-        if (isActive) {
-          setSelectedProductSnapshot(null);
-        }
+        if (isActive) setSelectedProductSnapshot(null);
       }
     };
 
@@ -86,11 +77,8 @@ export function useBatchManagerController({
   }, [selectedProduct, selectedProductId]);
 
   useEffect(() => {
-    if (resolvedSelectedProduct) {
-      setSearchTerm(resolvedSelectedProduct.name);
-    } else {
-      setSearchTerm('');
-    }
+    if (resolvedSelectedProduct) setSearchTerm(resolvedSelectedProduct.name);
+    else setSearchTerm('');
   }, [resolvedSelectedProduct?.id, resolvedSelectedProduct?.name]);
 
   useEffect(() => {
@@ -100,30 +88,22 @@ export function useBatchManagerController({
       const term = debouncedSearchTerm.trim();
 
       if (!term) {
-        if (isActive) {
-          setFilteredProducts([]);
-        }
+        if (isActive) setFilteredProducts([]);
         return;
       }
 
       const selectedName = (resolvedSelectedProduct?.name || '').trim().toLowerCase();
       if (selectedName && term.toLowerCase() === selectedName) {
-        if (isActive) {
-          setFilteredProducts([]);
-        }
+        if (isActive) setFilteredProducts([]);
         return;
       }
 
       try {
         const results = await searchProductsInDB(term);
-        if (isActive) {
-          setFilteredProducts(results.slice(0, 10));
-        }
+        if (isActive) setFilteredProducts(results.slice(0, 10));
       } catch (error) {
         Logger.error('Error buscando productos para lotes:', error);
-        if (isActive) {
-          setFilteredProducts([]);
-        }
+        if (isActive) setFilteredProducts([]);
       }
     };
 
@@ -161,9 +141,7 @@ export function useBatchManagerController({
 
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && selectedProductId) {
-        fetchBatches();
-      }
+      if (document.visibilityState === 'visible' && selectedProductId) fetchBatches();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -210,7 +188,10 @@ export function useBatchManagerController({
           }
         };
 
-        const updateProductResult = await updateProductSafe(resolvedSelectedProduct.id, updatedProduct);
+        const updateProductResult = await productRepository.saveProduct(updatedProduct, {
+          existingProduct: resolvedSelectedProduct
+        });
+
         if (!updateProductResult?.success) {
           throw updateProductResult?.error || new Error(updateProductResult?.message || 'No se pudo actualizar el producto.');
         }
@@ -230,7 +211,9 @@ export function useBatchManagerController({
       } else if (isNewProduction) {
         saveBatchResult = await executeProductionBatchSafe(batchData, resolvedSelectedProduct.recipe);
       } else {
-        saveBatchResult = await saveBatchAndSyncProductSafe(batchData);
+        saveBatchResult = await productRepository.saveBatch(batchData, {
+          existingBatch: isEditing ? batchToEdit : null
+        });
       }
 
       if (!saveBatchResult?.success) {
@@ -242,7 +225,7 @@ export function useBatchManagerController({
       showMessageModal(
         isNewProduction
           ? 'Lote producido e ingredientes descontados correctamente.'
-          : 'Lote guardado y stock actualizado.'
+          : (saveBatchResult.pending ? 'Lote guardado localmente. Se sincronizará al volver internet.' : 'Lote guardado y stock actualizado.')
       );
       return { success: true, rawMaterialsCost: saveBatchResult.rawMaterialsCost || 0 };
     } catch (error) {
@@ -250,7 +233,7 @@ export function useBatchManagerController({
       showMessageModal(`Error: ${error.message}`);
       return false;
     }
-  }, [fetchBatches, refreshData, resolvedSelectedProduct, selectedProductId]);
+  }, [batchToEdit, fetchBatches, refreshData, resolvedSelectedProduct, selectedProductId]);
 
   const handleDeleteBatch = useCallback(async (batch) => {
     const stockNumber = Number(batch.stock);
@@ -269,7 +252,7 @@ export function useBatchManagerController({
     }
 
     const userNote = window.prompt(confirmMessage + '\n\n(Opcional) Puedes escribir una nota o motivo para archivar este lote:');
-    if (userNote === null) return; // El usuario canceló
+    if (userNote === null) return;
 
     const finalNote = userNote.trim() ? ` - Nota del usuario: ${userNote.trim()}` : '';
 
@@ -279,31 +262,30 @@ export function useBatchManagerController({
         stock: 0,
         isActive: false,
         isArchived: true,
+        status: 'archived',
         deletedAt: new Date().toISOString(),
         notes: (hasStock || hasNegativeStock)
           ? `[${actionType.toUpperCase()} - ${new Date().toLocaleDateString()}] Stock original antes de archivar: ${stockNumber}. ${batch.notes || ''}${finalNote}`
           : `${batch.notes || ''}${finalNote}`
       };
 
-      const archiveResult = await saveBatchAndSyncProductSafe(archivedBatch);
+      const archiveResult = await productRepository.deleteBatch(archivedBatch);
       if (!archiveResult?.success) {
         throw archiveResult?.error || new Error(archiveResult?.message || 'No se pudo archivar el lote.');
       }
 
       if (stockNumber !== 0) {
         const valueDifference = -(stockNumber * Number(batch.cost || 0));
-        if (valueDifference !== 0) {
-          await adjustInventoryValue(valueDifference);
-        }
+        if (valueDifference !== 0) await adjustInventoryValue(valueDifference);
       }
 
       await fetchBatches();
       await refreshData();
 
       showMessageModal(
-        actionType === 'Normal'
-          ? 'Lote archivado correctamente.'
-          : `Lote archivado (${actionType} registrada).`
+        archiveResult.pending
+          ? 'Lote archivado localmente. Se sincronizará al volver internet.'
+          : (actionType === 'Normal' ? 'Lote archivado correctamente.' : `Lote archivado (${actionType} registrada).`)
       );
     } catch (error) {
       Logger.error(error);
