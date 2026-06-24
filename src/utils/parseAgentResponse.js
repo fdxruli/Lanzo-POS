@@ -4,7 +4,8 @@
  * Normaliza respuestas estructuradas del agente.
  * El proveedor puede devolver JSON puro, JSON dentro de ```json```,
  * JSON escapado, arrays, wrappers de Edge Function o texto Markdown.
- * Si no se puede parsear, devolvemos fallback Markdown.
+ * Si no se puede parsear perfecto, intenta rescatar campos JSON para evitar
+ * mostrar JSON crudo en móvil/PWA.
  */
 
 const VALID_SEVERITIES = new Set(['success', 'info', 'warning', 'danger']);
@@ -226,6 +227,25 @@ const repairLooseJsonText = (text) => sanitizeJsonLike(text)
   .replace(/:\s*'([^'\n\r]*)'/g, ': "$1"')
   .trim();
 
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const decodeJsonishString = (value = '') => {
+  const raw = asString(value);
+  if (!raw) return '';
+
+  try {
+    return JSON.parse(`"${raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`).trim();
+  } catch {
+    return raw
+      .replace(/\\n/g, ' ')
+      .replace(/\\r/g, ' ')
+      .replace(/\\t/g, ' ')
+      .replace(/\\"/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+};
+
 const extractBalancedJson = (text, openChar, closeChar) => {
   const start = text.indexOf(openChar);
   if (start < 0) return '';
@@ -365,6 +385,121 @@ function parseRawResponse(rawResponse, depth = 0) {
 
   return null;
 }
+
+const extractStringField = (text, keys) => {
+  const source = sanitizeJsonLike(text);
+
+  for (const key of keys) {
+    const pattern = new RegExp(`["“]${escapeRegExp(key)}["”]\\s*:\\s*["“]((?:\\\\.|[^"”\\\\])*)["”]`, 'i');
+    const match = source.match(pattern);
+    if (match?.[1]) return decodeJsonishString(match[1]);
+  }
+
+  return '';
+};
+
+const extractNumberField = (text, keys, fallback = undefined) => {
+  const source = sanitizeJsonLike(text);
+
+  for (const key of keys) {
+    const pattern = new RegExp(`["“]${escapeRegExp(key)}["”]\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`, 'i');
+    const match = source.match(pattern);
+    if (match?.[1] !== undefined) {
+      const numeric = Number(match[1]);
+      if (Number.isFinite(numeric)) return numeric;
+    }
+  }
+
+  return fallback;
+};
+
+const extractArrayBlockForKey = (text, keys) => {
+  const source = sanitizeJsonLike(text);
+
+  for (const key of keys) {
+    const pattern = new RegExp(`["“]${escapeRegExp(key)}["”]\\s*:\\s*\\[`, 'i');
+    const match = source.match(pattern);
+    if (!match || match.index === undefined) continue;
+
+    const fromArray = source.slice(match.index + match[0].lastIndexOf('['));
+    const balanced = extractBalancedJson(fromArray, '[', ']');
+    if (balanced) return balanced;
+  }
+
+  return '';
+};
+
+const extractLooseObjectSnippets = (arrayBlock = '') => {
+  const snippets = [];
+  let cursor = 0;
+
+  while (cursor < arrayBlock.length) {
+    const rest = arrayBlock.slice(cursor);
+    const objectSnippet = extractBalancedJson(rest, '{', '}');
+    if (!objectSnippet) break;
+    snippets.push(objectSnippet);
+    cursor += rest.indexOf(objectSnippet) + objectSnippet.length;
+  }
+
+  return snippets;
+};
+
+const parseArrayForKey = (text, keys) => {
+  const block = extractArrayBlockForKey(text, keys);
+  if (!block) return [];
+
+  const parsed = parseJsonCandidate(block, 0);
+  if (Array.isArray(parsed)) return parsed;
+
+  return extractLooseObjectSnippets(block)
+    .map(snippet => parseJsonCandidate(snippet, 0) || {
+      title: extractStringField(snippet, ['title', 'titulo', 'título', 'label', 'name', 'hallazgo', 'accion', 'acción', 'oportunidad']),
+      summary: extractStringField(snippet, ['summary', 'description', 'descripcion', 'descripción', 'detalle', 'reason', 'razon', 'razón']),
+      severity: extractStringField(snippet, ['severity', 'nivel', 'riesgo', 'status', 'estado']),
+      priority: extractStringField(snippet, ['priority', 'prioridad', 'urgency', 'urgencia']),
+      type: extractStringField(snippet, ['type', 'tipo', 'actionType', 'action_type']),
+      metric: extractStringField(snippet, ['metric', 'metrica', 'métrica', 'value', 'valor']),
+      expectedImpact: extractStringField(snippet, ['expectedImpact', 'expected_impact', 'impactoEsperado', 'impacto_esperado', 'impact']),
+      firstStep: extractStringField(snippet, ['firstStep', 'first_step', 'primerPaso', 'primer_paso', 'siguientePaso'])
+    })
+    .filter(item => asObject(item) && Object.values(item).some(Boolean));
+};
+
+const salvageJsonLikeResponse = (rawText) => {
+  const text = sanitizeJsonLike(stripCodeFence(rawText));
+  if (!text || (!text.includes('{') && !text.includes('[') && !/"(?:formatVersion|executiveSummary|findings|actions)"/i.test(text))) {
+    return null;
+  }
+
+  const executiveSummary = extractStringField(text, ['executiveSummary', 'executive_summary', 'summary', 'resumen', 'resumenEjecutivo', 'resumen_ejecutivo']);
+  const severity = extractStringField(text, ['severity', 'nivel', 'status', 'estado']) || 'warning';
+  const confidence = extractNumberField(text, ['confidence', 'confianza'], 0.55);
+  const findings = parseArrayForKey(text, ['findings', 'hallazgos', 'insights', 'diagnostics', 'diagnosticos', 'diagnósticos', 'issues', 'alertas']);
+  const actions = parseArrayForKey(text, ['actions', 'acciones', 'recommendedActions', 'recommended_actions', 'recommendations', 'recomendaciones', 'nextSteps', 'next_steps']);
+  const opportunities = parseArrayForKey(text, ['opportunities', 'oportunidades', 'growthOpportunities', 'growth_opportunities']);
+  const questionsToAskUser = parseArrayForKey(text, ['questionsToAskUser', 'questions_to_ask_user', 'questions', 'preguntas', 'preguntasAlUsuario']);
+
+  const hasRecoveredContent = executiveSummary || findings.length > 0 || actions.length > 0 || opportunities.length > 0;
+  if (!hasRecoveredContent) return null;
+
+  return {
+    formatVersion: extractStringField(text, ['formatVersion', 'format_version', 'version']) || '1.0-rescued',
+    executiveSummary: executiveSummary || 'La IA devolvió una respuesta tipo JSON, pero llegó incompleta o con formato inválido. Se rescató lo legible para evitar mostrar JSON crudo.',
+    severity,
+    confidence,
+    findings: findings.length > 0 ? findings : [{
+      id: 'rescued-summary',
+      title: 'Resumen recuperado del agente',
+      summary: executiveSummary || 'Respuesta JSON recuperada parcialmente.',
+      severity,
+      evidence: ['El JSON llegó con formato no parseable en el navegador móvil/PWA, pero se recuperó el contenido principal.']
+    }],
+    actions,
+    opportunities,
+    questionsToAskUser,
+    toolReferences: ['json-recovery-fallback']
+  };
+};
 
 const inferArrayBucket = (items) => {
   const sample = items.find(asObject);
@@ -519,6 +654,11 @@ export const parseAgentResponse = (rawResponse) => {
       markdown: '',
       error: 'Respuesta vacía del proveedor de IA'
     };
+  }
+
+  const salvagedPayload = salvageJsonLikeResponse(rawText);
+  if (salvagedPayload) {
+    return normalizeAgentResponse(salvagedPayload);
   }
 
   return {
