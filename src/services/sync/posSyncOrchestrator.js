@@ -18,12 +18,17 @@ const entityHandlers = new Map();
 
 const runtime = {
   started: false,
+  startInProgress: false,
   licenseKey: null,
   status: SYNC_STATUS.DISABLED,
   pullInProgress: false,
+  outboxInProgress: false,
   realtimeChannel: null,
+  realtimeTopic: null,
   onlineListener: null
 };
+
+const isBrowserOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
 const setRuntimeStatus = async (status, { licenseKey = runtime.licenseKey, reason = null } = {}) => {
   runtime.status = status;
@@ -38,6 +43,12 @@ const setRuntimeStatus = async (status, { licenseKey = runtime.licenseKey, reaso
   if (reason) {
     Logger.log(`[PosSync] Estado ${status}: ${reason}`);
   }
+};
+
+const stopRealtimeChannel = async () => {
+  await stopPosRealtimeListener(runtime.realtimeChannel);
+  runtime.realtimeChannel = null;
+  runtime.realtimeTopic = null;
 };
 
 const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
@@ -79,9 +90,11 @@ const attachOnlineListener = () => {
 
   runtime.onlineListener = () => {
     Logger.log('[PosSync] Red recuperada. Ejecutando pull incremental y outbox.');
+
     posSyncOrchestrator.pullIncremental('online').catch((error) => {
       Logger.warn('[PosSync] Pull al reconectar fallo:', error);
     });
+
     posSyncOrchestrator.processOutbox('online').catch((error) => {
       Logger.warn('[PosSync] Outbox al reconectar fallo:', error);
     });
@@ -94,6 +107,7 @@ const detachOnlineListener = () => {
   if (runtime.onlineListener && typeof window !== 'undefined') {
     window.removeEventListener('online', runtime.onlineListener);
   }
+
   runtime.onlineListener = null;
 };
 
@@ -113,74 +127,148 @@ export const posSyncOrchestrator = {
 
   async start({ licenseDetails, reason = 'manual' } = {}) {
     const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+    const posTopic = buildPosRealtimeTopic(licenseDetails);
 
     if (!licenseKey || !isCloudPosSyncEnabled(licenseDetails)) {
       await this.stop({ preserveStatus: false });
       runtime.licenseKey = licenseKey;
-      await setRuntimeStatus(SYNC_STATUS.DISABLED, { licenseKey, reason: 'cloud_pos_sync_off' });
-      return { started: false, status: SYNC_STATUS.DISABLED };
-    }
-
-    runtime.started = true;
-    runtime.licenseKey = licenseKey;
-
-    attachOnlineListener();
-    await syncOutboxService.resetStuckProcessing(SYNC_LIMITS.STUCK_PROCESSING_MS);
-
-    if (!navigator.onLine) {
-      await setRuntimeStatus(SYNC_STATUS.OFFLINE, { licenseKey, reason: 'offline_on_start' });
-      return { started: true, status: SYNC_STATUS.OFFLINE };
-    }
-
-    await setRuntimeStatus(SYNC_STATUS.ONLINE, { licenseKey, reason });
-    await runEntityStartHooks({ licenseDetails, licenseKey, reason });
-
-    await this.pullIncremental('start');
-    await this.processOutbox('start');
-
-    const posTopic = buildPosRealtimeTopic(licenseDetails);
-    if (posTopic) {
-      runtime.realtimeChannel = startPosRealtimeListener({
-        posTopic,
-        callbacks: {
-          onPosChangeAvailable: () => {
-            this.pullIncremental('realtime').catch((error) => {
-              Logger.warn('[PosSync] Pull por realtime fallo:', error);
-            });
-          },
-          onStatusChange: ({ status, reason: statusReason }) => {
-            setRuntimeStatus(status, { licenseKey, reason: statusReason }).catch(() => {});
-          },
-          onConnectionRestored: () => {
-            this.pullIncremental('realtime_restored').catch((error) => {
-              Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error);
-            });
-          }
-        }
+      await setRuntimeStatus(SYNC_STATUS.DISABLED, {
+        licenseKey,
+        reason: 'cloud_pos_sync_off'
       });
-    } else {
-      await setRuntimeStatus(SYNC_STATUS.DEGRADED, { licenseKey, reason: 'missing_pos_topic' });
+
+      return {
+        started: false,
+        status: SYNC_STATUS.DISABLED
+      };
     }
 
-    return { started: true, status: runtime.status };
+    if (runtime.startInProgress) {
+      Logger.log(`[PosSync] Start ya en curso; se omite ${reason}.`);
+
+      return {
+        started: runtime.started,
+        status: runtime.status,
+        skipped: true,
+        reason: 'start_in_progress'
+      };
+    }
+
+    if (
+      runtime.started &&
+      runtime.licenseKey === licenseKey &&
+      runtime.realtimeChannel &&
+      runtime.realtimeTopic === posTopic
+    ) {
+      attachOnlineListener();
+
+      return {
+        started: true,
+        status: runtime.status,
+        skipped: true,
+        reason: 'already_started'
+      };
+    }
+
+    runtime.startInProgress = true;
+
+    try {
+      if (runtime.started && (runtime.licenseKey !== licenseKey || runtime.realtimeTopic !== posTopic)) {
+        await stopRealtimeChannel();
+      }
+
+      runtime.started = true;
+      runtime.licenseKey = licenseKey;
+
+      attachOnlineListener();
+      await syncOutboxService.resetStuckProcessing(SYNC_LIMITS.STUCK_PROCESSING_MS);
+
+      if (!isBrowserOnline()) {
+        await setRuntimeStatus(SYNC_STATUS.OFFLINE, {
+          licenseKey,
+          reason: 'offline_on_start'
+        });
+
+        return {
+          started: true,
+          status: SYNC_STATUS.OFFLINE
+        };
+      }
+
+      await setRuntimeStatus(SYNC_STATUS.ONLINE, { licenseKey, reason });
+      await runEntityStartHooks({ licenseDetails, licenseKey, reason });
+
+      await this.pullIncremental('start');
+      await this.processOutbox('start');
+
+      if (posTopic) {
+        if (!runtime.realtimeChannel || runtime.realtimeTopic !== posTopic) {
+          await stopRealtimeChannel();
+
+          runtime.realtimeChannel = startPosRealtimeListener({
+            posTopic,
+            callbacks: {
+              onPosChangeAvailable: () => {
+                this.pullIncremental('realtime').catch((error) => {
+                  Logger.warn('[PosSync] Pull por realtime fallo:', error);
+                });
+              },
+              onStatusChange: ({ status, reason: statusReason }) => {
+                setRuntimeStatus(status, {
+                  licenseKey,
+                  reason: statusReason
+                }).catch(() => {});
+              },
+              onConnectionRestored: () => {
+                this.pullIncremental('realtime_restored').catch((error) => {
+                  Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error);
+                });
+              }
+            }
+          });
+
+          runtime.realtimeTopic = posTopic;
+        }
+      } else {
+        await setRuntimeStatus(SYNC_STATUS.DEGRADED, {
+          licenseKey,
+          reason: 'missing_pos_topic'
+        });
+      }
+
+      return {
+        started: true,
+        status: runtime.status
+      };
+    } finally {
+      runtime.startInProgress = false;
+    }
   },
 
   async stop({ preserveStatus = false } = {}) {
-    await stopPosRealtimeListener(runtime.realtimeChannel);
-    runtime.realtimeChannel = null;
+    await stopRealtimeChannel();
+
     runtime.started = false;
+    runtime.startInProgress = false;
     detachOnlineListener();
 
     if (!preserveStatus) {
-      await setRuntimeStatus(SYNC_STATUS.DISABLED, { licenseKey: runtime.licenseKey, reason: 'stopped' });
+      await setRuntimeStatus(SYNC_STATUS.DISABLED, {
+        licenseKey: runtime.licenseKey,
+        reason: 'stopped'
+      });
     }
   },
 
   async pullIncremental(reason = 'manual') {
     if (!runtime.started || !runtime.licenseKey) return null;
 
-    if (!navigator.onLine) {
-      await setRuntimeStatus(SYNC_STATUS.OFFLINE, { licenseKey: runtime.licenseKey, reason: 'offline_pull_skip' });
+    if (!isBrowserOnline()) {
+      await setRuntimeStatus(SYNC_STATUS.OFFLINE, {
+        licenseKey: runtime.licenseKey,
+        reason: 'offline_pull_skip'
+      });
+
       return null;
     }
 
@@ -193,6 +281,7 @@ export const posSyncOrchestrator = {
 
     try {
       const sinceChangeSeq = await syncMetaService.getLastChangeSeq(runtime.licenseKey);
+
       const response = await posSyncClient.pullSyncEvents({
         licenseKey: runtime.licenseKey,
         sinceChangeSeq,
@@ -203,7 +292,12 @@ export const posSyncOrchestrator = {
         const nextStatus = response.code === 'CLOUD_POS_SYNC_DISABLED'
           ? SYNC_STATUS.DISABLED
           : SYNC_STATUS.DEGRADED;
-        await setRuntimeStatus(nextStatus, { licenseKey: runtime.licenseKey, reason: response.code || 'pull_not_success' });
+
+        await setRuntimeStatus(nextStatus, {
+          licenseKey: runtime.licenseKey,
+          reason: response.code || 'pull_not_success'
+        });
+
         return response;
       }
 
@@ -211,13 +305,22 @@ export const posSyncOrchestrator = {
       await syncMetaService.setLastChangeSeq(response.latestChangeSeq, runtime.licenseKey);
       await syncMetaService.setLastPullAt(runtime.licenseKey);
       await syncMetaService.setLastPullError(null, runtime.licenseKey);
-      await setRuntimeStatus(SYNC_STATUS.ONLINE, { licenseKey: runtime.licenseKey, reason: `pull_${reason}` });
+
+      await setRuntimeStatus(SYNC_STATUS.ONLINE, {
+        licenseKey: runtime.licenseKey,
+        reason: `pull_${reason}`
+      });
 
       return response;
     } catch (error) {
       Logger.warn('[PosSync] Pull incremental fallo:', error);
       await syncMetaService.setLastPullError(error, runtime.licenseKey);
-      await setRuntimeStatus(SYNC_STATUS.DEGRADED, { licenseKey: runtime.licenseKey, reason: 'pull_error' });
+
+      await setRuntimeStatus(SYNC_STATUS.DEGRADED, {
+        licenseKey: runtime.licenseKey,
+        reason: 'pull_error'
+      });
+
       return null;
     } finally {
       runtime.pullInProgress = false;
@@ -225,45 +328,66 @@ export const posSyncOrchestrator = {
   },
 
   async processOutbox(reason = 'manual') {
-    if (!runtime.started || !runtime.licenseKey || !navigator.onLine) return { processed: 0 };
-
-    const pending = await syncOutboxService.getPendingOperations({
-      licenseKey: runtime.licenseKey,
-      limit: SYNC_LIMITS.DEFAULT_OUTBOX_LIMIT
-    });
-
-    let processed = 0;
-
-    for (const operation of pending) {
-      const handler = entityHandlers.get(operation.entityType);
-
-      if (!handler?.pushOperation) {
-        // Fase 0: la cola queda lista, pero sin handlers funcionales aún.
-        continue;
-      }
-
-      try {
-        await syncOutboxService.markProcessing(operation.id);
-        const result = await handler.pushOperation(operation);
-
-        if (result?.conflict) {
-          await syncOutboxService.markConflict(operation.id, result.conflict);
-        } else {
-          await syncOutboxService.markSynced(operation.id, result || null);
-        }
-
-        processed += 1;
-      } catch (error) {
-        Logger.warn(`[PosSync] Outbox ${operation.entityType}/${operation.operation} fallo (${reason}):`, error);
-        await syncOutboxService.markFailed(operation.id, error, { retry: true });
-      }
+    if (!runtime.started || !runtime.licenseKey || !isBrowserOnline()) {
+      return { processed: 0 };
     }
 
-    return { processed };
+    if (runtime.outboxInProgress) {
+      Logger.log(`[PosSync] Outbox ya en curso; se omite ${reason}.`);
+
+      return {
+        processed: 0,
+        skipped: true,
+        reason: 'outbox_in_progress'
+      };
+    }
+
+    runtime.outboxInProgress = true;
+
+    try {
+      const pending = await syncOutboxService.getPendingOperations({
+        licenseKey: runtime.licenseKey,
+        limit: SYNC_LIMITS.DEFAULT_OUTBOX_LIMIT
+      });
+
+      let processed = 0;
+
+      for (const operation of pending) {
+        const handler = entityHandlers.get(operation.entityType);
+
+        if (!handler?.pushOperation) {
+          // Fase 0: la cola queda lista, pero sin handlers funcionales aun.
+          continue;
+        }
+
+        try {
+          await syncOutboxService.markProcessing(operation.id);
+          const result = await handler.pushOperation(operation);
+
+          if (result?.conflict) {
+            await syncOutboxService.markConflict(operation.id, result.conflict);
+          } else {
+            await syncOutboxService.markSynced(operation.id, result || null);
+          }
+
+          processed += 1;
+        } catch (error) {
+          Logger.warn(`[PosSync] Outbox ${operation.entityType}/${operation.operation} fallo (${reason}):`, error);
+          await syncOutboxService.markFailed(operation.id, error, { retry: true });
+        }
+      }
+
+      return { processed };
+    } finally {
+      runtime.outboxInProgress = false;
+    }
   },
 
   getStatus() {
-    return { ...runtime, handlers: Array.from(entityHandlers.keys()) };
+    return {
+      ...runtime,
+      handlers: Array.from(entityHandlers.keys())
+    };
   }
 };
 
