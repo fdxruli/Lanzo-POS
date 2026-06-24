@@ -1,14 +1,19 @@
 import { supabaseClient } from './supabase';
 import { buildPosSyncAuthContext } from './sync/posSyncClient';
 import { syncOutboxService } from './sync/syncOutboxService';
+import { syncMetaService } from './sync/syncMetaService';
+import { posSyncOrchestrator } from './sync/posSyncOrchestrator';
 import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, SYNC_ENTITY_TYPES, SYNC_LIMITS, SYNC_OPERATIONS } from './sync/syncConstants';
 import { createProductWithInitialInventorySafe, loadData, loadDataPaginated, saveBatchAndSyncProductSafe, saveImageToDB, softDeleteWithCascadeSafe, STORES, updateProductSafe } from './database';
 import { db } from './db/dexie';
 import { categoriesRepository } from './db/general';
 import { generateID } from './utils';
 import { useAppStore } from '../store/useAppStore';
+import Logger from './Logger';
 
 export const PRODUCT_SYNC_STATUS = Object.freeze({ PENDING: 'pending', SYNCED: 'synced', CONFLICT: 'conflict', ERROR: 'error', LOCAL: 'local' });
+const CATALOG_LAST_SEQ = 'products_catalog_last_change_seq';
+const CATALOG_ENTITY_TYPES = new Set([SYNC_ENTITY_TYPES.CATEGORY, SYNC_ENTITY_TYPES.PRODUCT, SYNC_ENTITY_TYPES.PRODUCT_BATCH]);
 const parse = (data) => (typeof data === 'string' ? JSON.parse(data) : (data || {}));
 const limitOf = (n) => Math.min(Math.max(Number(n) || SYNC_LIMITS.DEFAULT_PULL_LIMIT, 1), SYNC_LIMITS.MAX_PULL_LIMIT);
 const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -90,51 +95,49 @@ async function enqueue(licenseKey, entityType, operation, entityId, payload, ide
 export const productRepository = {
   listProductsPage: (options = {}) => loadDataPaginated(STORES.MENU, options),
   listCategories: () => categoriesRepository.getActiveCategories(),
-  async saveCategory(data) {
-    const { licenseKey, cloud } = runtime(); const category = { id: data.id || generateID('cat'), ...data, createdAt: data.createdAt || now(), updatedAt: now(), isActive: true };
-    if (!cloud) return categoriesRepository.saveCategory(category);
-    const idempotencyKey = idem('category.upsert', category.id), expectedVersion = category.serverVersion || null;
-    if (!online()) { const local = await categoriesRepository.saveCategory({ ...category, syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.CATEGORY, SYNC_OPERATIONS.UPSERT, category.id, { category: categoryToCloud(category), expectedVersion }, idempotencyKey); notify(); return { ...local, pending: true }; }
-    const r = await productCloudRepository.upsertCategory({ licenseKey, category: categoryToCloud(category), expectedVersion, idempotencyKey }); if (r?.success === false) throw asError(r, 'CATEGORY_SYNC_FAILED'); await apply(r); return r.category;
-  },
-  async deleteCategory(categoryId) {
-    const { licenseKey, cloud } = runtime(); if (!cloud) return softDeleteWithCascadeSafe(STORES.CATEGORIES, STORES.DELETED_CATEGORIES, categoryId, { reason: 'Eliminada desde Catálogo de Productos', cascade: { updates: [{ store: STORES.MENU, index: 'categoryId', value: categoryId, field: 'categoryId', setTo: '' }] } });
-    const category = await loadData(STORES.CATEGORIES, categoryId); const idempotencyKey = idem('category.delete', categoryId);
-    if (!online()) { await db.table(STORES.CATEGORIES).update(categoryId, { isActive: false, deletedAt: now(), syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await db.table(STORES.MENU).where('categoryId').equals(categoryId).modify({ categoryId: '', syncStatus: PRODUCT_SYNC_STATUS.PENDING }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.CATEGORY, SYNC_OPERATIONS.DELETE, categoryId, { categoryId, expectedVersion: category?.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; }
-    const r = await productCloudRepository.deleteCategory({ licenseKey, categoryId, expectedVersion: category?.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'CATEGORY_DELETE_FAILED'); await pullCatalogChanges(); return { success: true };
-  },
-  async saveProduct(productData, { existingProduct = null } = {}) {
-    const p = await prepareProduct(productData, existingProduct); const { licenseKey, cloud } = runtime(); if (!cloud) return localSave(p);
-    const idempotencyKey = idem('product.upsert', p.productId); const payload = { product: productToCloud(p.product), initialBatches: p.batches.map(batchToCloud), expectedVersion: p.editing ? existingProduct?.serverVersion || null : null };
-    if (!online()) { const result = await localSave(p, { syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT, SYNC_OPERATIONS.UPSERT, p.productId, payload, idempotencyKey); notify(); return { ...result, pending: true }; }
-    const r = await productCloudRepository.upsertProduct({ licenseKey, product: payload.product, initialBatches: payload.initialBatches, expectedVersion: payload.expectedVersion, idempotencyKey }); if (r?.success === false) throw asError(r, 'PRODUCT_SYNC_FAILED'); await apply(r); return { success: true, productId: p.productId, inventoryValue: p.inventoryValue };
-  },
-  async deleteProduct(product) {
-    const { licenseKey, cloud } = runtime(); if (!cloud) return softDeleteWithCascadeSafe(STORES.MENU, STORES.DELETED_MENU, product.id, { reason: 'Eliminado desde Catálogo de Productos' });
-    const idempotencyKey = idem('product.delete', product.id); if (!online()) { await db.table(STORES.MENU).update(product.id, { isActive: false, deletedAt: now(), syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT, SYNC_OPERATIONS.DELETE, product.id, { productId: product.id, expectedVersion: product.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; }
-    const r = await productCloudRepository.deleteProduct({ licenseKey, productId: product.id, expectedVersion: product.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'PRODUCT_DELETE_FAILED'); await apply(r); return { success: true };
-  },
-  async toggleProductStatus(product) {
-    const isActive = !(product.isActive !== false); const { licenseKey, cloud } = runtime(); if (!cloud) return updateProductSafe(product.id, { ...product, isActive, updatedAt: now() });
-    const idempotencyKey = idem('product.toggle_status', product.id); await db.table(STORES.MENU).update(product.id, { isActive, syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey });
-    if (!online()) { await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT, SYNC_OPERATIONS.TOGGLE_STATUS, product.id, { productId: product.id, isActive, expectedVersion: product.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; }
-    const r = await productCloudRepository.toggleProductStatus({ licenseKey, productId: product.id, isActive, expectedVersion: product.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'PRODUCT_TOGGLE_FAILED'); await apply(r); return { success: true };
-  },
-  async saveBatch(batchData, { existingBatch = null } = {}) {
-    const { licenseKey, cloud } = runtime(); if (!cloud) return saveBatchAndSyncProductSafe(batchData);
-    const idempotencyKey = idem('product_batch.upsert', batchData.id); const local = await saveBatchAndSyncProductSafe({ ...batchData, syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); if (!local?.success) return local;
-    const payload = { batch: batchToCloud(batchData), expectedVersion: existingBatch?.serverVersion || batchData.serverVersion || null };
-    if (!online()) { await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT_BATCH, SYNC_OPERATIONS.UPSERT, batchData.id, payload, idempotencyKey); notify(); return { ...local, pending: true }; }
-    const r = await productCloudRepository.upsertProductBatch({ licenseKey, batch: payload.batch, expectedVersion: payload.expectedVersion, idempotencyKey }); if (r?.success === false) throw asError(r, 'BATCH_SYNC_FAILED'); await apply(r); return local;
-  },
-  async deleteBatch(batch) {
-    const { licenseKey, cloud } = runtime(); if (!cloud) return saveBatchAndSyncProductSafe({ ...batch, stock: 0, isActive: false, status: 'archived', deletedAt: now() });
-    const idempotencyKey = idem('product_batch.delete', batch.id); await saveBatchAndSyncProductSafe({ ...batch, stock: 0, isActive: false, status: 'archived', deletedAt: now(), syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey });
-    if (!online()) { await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT_BATCH, SYNC_OPERATIONS.DELETE, batch.id, { batchId: batch.id, expectedVersion: batch.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; }
-    const r = await productCloudRepository.deleteProductBatch({ licenseKey, batchId: batch.id, expectedVersion: batch.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'BATCH_DELETE_FAILED'); await apply(r); return { success: true };
-  },
-  async pullFullSnapshot() { const { licenseKey } = runtime(); for (const entityType of ['category', 'product', 'product_batch']) { let offset = 0, more = true; while (more) { const r = await productCloudRepository.pullCatalogSnapshot({ licenseKey, entityType, offset, includeDeleted: true }); if (r?.success === false) throw asError(r, 'SNAPSHOT_FAILED'); await apply(r); const count = (r.categories?.length || 0) + (r.products?.length || 0) + (r.batches?.length || 0); offset += count; more = Boolean(r.has_more) && count > 0; } } return { success: true }; }
+  async saveCategory(data) { const { licenseKey, cloud } = runtime(); const category = { id: data.id || generateID('cat'), ...data, createdAt: data.createdAt || now(), updatedAt: now(), isActive: true }; if (!cloud) return categoriesRepository.saveCategory(category); const idempotencyKey = idem('category.upsert', category.id), expectedVersion = category.serverVersion || null; if (!online()) { const local = await categoriesRepository.saveCategory({ ...category, syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.CATEGORY, SYNC_OPERATIONS.UPSERT, category.id, { category: categoryToCloud(category), expectedVersion }, idempotencyKey); notify(); return { ...local, pending: true }; } const r = await productCloudRepository.upsertCategory({ licenseKey, category: categoryToCloud(category), expectedVersion, idempotencyKey }); if (r?.success === false) throw asError(r, 'CATEGORY_SYNC_FAILED'); await apply(r); return r.category; },
+  async deleteCategory(categoryId) { const { licenseKey, cloud } = runtime(); if (!cloud) return softDeleteWithCascadeSafe(STORES.CATEGORIES, STORES.DELETED_CATEGORIES, categoryId, { reason: 'Eliminada desde Catálogo de Productos', cascade: { updates: [{ store: STORES.MENU, index: 'categoryId', value: categoryId, field: 'categoryId', setTo: '' }] } }); const category = await loadData(STORES.CATEGORIES, categoryId); const idempotencyKey = idem('category.delete', categoryId); if (!online()) { await db.table(STORES.CATEGORIES).update(categoryId, { isActive: false, deletedAt: now(), syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await db.table(STORES.MENU).where('categoryId').equals(categoryId).modify({ categoryId: '', syncStatus: PRODUCT_SYNC_STATUS.PENDING }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.CATEGORY, SYNC_OPERATIONS.DELETE, categoryId, { categoryId, expectedVersion: category?.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; } const r = await productCloudRepository.deleteCategory({ licenseKey, categoryId, expectedVersion: category?.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'CATEGORY_DELETE_FAILED'); await productSyncHandler.onEvents([{ entity_type: SYNC_ENTITY_TYPES.CATEGORY }], { force: true }); return { success: true }; },
+  async saveProduct(productData, { existingProduct = null } = {}) { const p = await prepareProduct(productData, existingProduct); const { licenseKey, cloud } = runtime(); if (!cloud) return localSave(p); const idempotencyKey = idem('product.upsert', p.productId); const payload = { product: productToCloud(p.product), initialBatches: p.batches.map(batchToCloud), expectedVersion: p.editing ? existingProduct?.serverVersion || null : null }; if (!online()) { const result = await localSave(p, { syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT, SYNC_OPERATIONS.UPSERT, p.productId, payload, idempotencyKey); notify(); return { ...result, pending: true }; } const r = await productCloudRepository.upsertProduct({ licenseKey, product: payload.product, initialBatches: payload.initialBatches, expectedVersion: payload.expectedVersion, idempotencyKey }); if (r?.success === false) throw asError(r, 'PRODUCT_SYNC_FAILED'); await apply(r); return { success: true, productId: p.productId, inventoryValue: p.inventoryValue }; },
+  async deleteProduct(product) { const { licenseKey, cloud } = runtime(); if (!cloud) return softDeleteWithCascadeSafe(STORES.MENU, STORES.DELETED_MENU, product.id, { reason: 'Eliminado desde Catálogo de Productos' }); const idempotencyKey = idem('product.delete', product.id); if (!online()) { await db.table(STORES.MENU).update(product.id, { isActive: false, deletedAt: now(), syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT, SYNC_OPERATIONS.DELETE, product.id, { productId: product.id, expectedVersion: product.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; } const r = await productCloudRepository.deleteProduct({ licenseKey, productId: product.id, expectedVersion: product.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'PRODUCT_DELETE_FAILED'); await apply(r); return { success: true }; },
+  async toggleProductStatus(product) { const isActive = !(product.isActive !== false); const { licenseKey, cloud } = runtime(); if (!cloud) return updateProductSafe(product.id, { ...product, isActive, updatedAt: now() }); const idempotencyKey = idem('product.toggle_status', product.id); await db.table(STORES.MENU).update(product.id, { isActive, syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); if (!online()) { await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT, SYNC_OPERATIONS.TOGGLE_STATUS, product.id, { productId: product.id, isActive, expectedVersion: product.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; } const r = await productCloudRepository.toggleProductStatus({ licenseKey, productId: product.id, isActive, expectedVersion: product.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'PRODUCT_TOGGLE_FAILED'); await apply(r); return { success: true }; },
+  async saveBatch(batchData, { existingBatch = null } = {}) { const { licenseKey, cloud } = runtime(); if (!cloud) return saveBatchAndSyncProductSafe(batchData); const idempotencyKey = idem('product_batch.upsert', batchData.id); const local = await saveBatchAndSyncProductSafe({ ...batchData, syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); if (!local?.success) return local; const payload = { batch: batchToCloud(batchData), expectedVersion: existingBatch?.serverVersion || batchData.serverVersion || null }; if (!online()) { await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT_BATCH, SYNC_OPERATIONS.UPSERT, batchData.id, payload, idempotencyKey); notify(); return { ...local, pending: true }; } const r = await productCloudRepository.upsertProductBatch({ licenseKey, batch: payload.batch, expectedVersion: payload.expectedVersion, idempotencyKey }); if (r?.success === false) throw asError(r, 'BATCH_SYNC_FAILED'); await apply(r); return local; },
+  async deleteBatch(batch) { const { licenseKey, cloud } = runtime(); if (!cloud) return saveBatchAndSyncProductSafe({ ...batch, stock: 0, isActive: false, status: 'archived', deletedAt: now() }); const idempotencyKey = idem('product_batch.delete', batch.id); await saveBatchAndSyncProductSafe({ ...batch, stock: 0, isActive: false, status: 'archived', deletedAt: now(), syncStatus: PRODUCT_SYNC_STATUS.PENDING, pendingOperationId: idempotencyKey }); if (!online()) { await enqueue(licenseKey, SYNC_ENTITY_TYPES.PRODUCT_BATCH, SYNC_OPERATIONS.DELETE, batch.id, { batchId: batch.id, expectedVersion: batch.serverVersion || null }, idempotencyKey); notify(); return { success: true, pending: true }; } const r = await productCloudRepository.deleteProductBatch({ licenseKey, batchId: batch.id, expectedVersion: batch.serverVersion || null, idempotencyKey }); if (r?.success === false) throw asError(r, 'BATCH_DELETE_FAILED'); await apply(r); return { success: true }; },
+  async pullFullSnapshot() { const { licenseKey } = runtime(); return pullFullSnapshotForLicense(licenseKey); }
 };
 
-export async function pullCatalogChanges() { const { licenseKey } = runtime(); if (!licenseKey || !online()) return { skipped: true }; const r = await productCloudRepository.pullCatalogChanges({ licenseKey, sinceChangeSeq: 0 }); if (r?.success === false) throw asError(r, 'CHANGES_FAILED'); await apply(r); return r; }
+async function pullFullSnapshotForLicense(licenseKey) { if (!licenseKey) return { skipped: true }; for (const entityType of ['category', 'product', 'product_batch']) { let offset = 0, more = true; while (more) { const r = await productCloudRepository.pullCatalogSnapshot({ licenseKey, entityType, offset, includeDeleted: true }); if (r?.success === false) throw asError(r, 'SNAPSHOT_FAILED'); await apply(r); const count = (r.categories?.length || 0) + (r.products?.length || 0) + (r.batches?.length || 0); offset += count; more = Boolean(r.has_more) && count > 0; if (r.latest_change_seq !== undefined) await syncMetaService.setMeta(CATALOG_LAST_SEQ, Number(r.latest_change_seq || 0), { licenseKey }); } } return { success: true }; }
+export async function pullCatalogChanges(licenseKeyOverride = null) { const licenseKey = licenseKeyOverride || runtime().licenseKey; if (!licenseKey || !online()) return { skipped: true }; const sinceChangeSeq = Number(await syncMetaService.getMeta(CATALOG_LAST_SEQ, 0, { licenseKey })) || 0; const r = await productCloudRepository.pullCatalogChanges({ licenseKey, sinceChangeSeq }); if (r?.success === false) throw asError(r, 'CHANGES_FAILED'); await apply(r); if (r.latest_change_seq !== undefined) await syncMetaService.setMeta(CATALOG_LAST_SEQ, Number(r.latest_change_seq || sinceChangeSeq), { licenseKey }); return r; }
+
+export const productSyncHandler = {
+  async onStart({ licenseKey } = {}) { return pullFullSnapshotForLicense(licenseKey || runtime().licenseKey); },
+  async onEvents(events = [], options = {}) { if (!options.force && events.length && !events.some((event) => CATALOG_ENTITY_TYPES.has(event.entity_type || event.entityType))) return { skipped: true }; return pullCatalogChanges(options.licenseKey || runtime().licenseKey); },
+  async pushOperation(operation) {
+    const licenseKey = operation.licenseKey || runtime().licenseKey;
+    const payload = operation.payload || {};
+    const expectedVersion = payload.expectedVersion ?? null;
+    const idempotencyKey = operation.idempotencyKey || operation.id;
+    let r;
+    if (operation.entityType === SYNC_ENTITY_TYPES.CATEGORY) r = operation.operation === SYNC_OPERATIONS.DELETE ? await productCloudRepository.deleteCategory({ licenseKey, categoryId: payload.categoryId || operation.entityId, expectedVersion, idempotencyKey }) : await productCloudRepository.upsertCategory({ licenseKey, category: payload.category, expectedVersion, idempotencyKey });
+    else if (operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH) r = operation.operation === SYNC_OPERATIONS.DELETE ? await productCloudRepository.deleteProductBatch({ licenseKey, batchId: payload.batchId || operation.entityId, expectedVersion, idempotencyKey }) : await productCloudRepository.upsertProductBatch({ licenseKey, batch: payload.batch, expectedVersion, idempotencyKey });
+    else if (operation.operation === SYNC_OPERATIONS.DELETE) r = await productCloudRepository.deleteProduct({ licenseKey, productId: payload.productId || operation.entityId, expectedVersion, idempotencyKey });
+    else if (operation.operation === SYNC_OPERATIONS.TOGGLE_STATUS) r = await productCloudRepository.toggleProductStatus({ licenseKey, productId: payload.productId || operation.entityId, isActive: payload.isActive, expectedVersion, idempotencyKey });
+    else r = await productCloudRepository.upsertProduct({ licenseKey, product: payload.product, initialBatches: payload.initialBatches || [], expectedVersion, idempotencyKey });
+    if (r?.success === false) return { conflict: r, success: false };
+    await apply(r);
+    return r;
+  }
+};
+
+let registered = false;
+export const registerProductSyncHandler = () => {
+  if (registered) return false;
+  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.CATEGORY, productSyncHandler);
+  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT, productSyncHandler);
+  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT_BATCH, productSyncHandler);
+  registered = true;
+  Logger.log('[Products/Sync] Handler de catálogo registrado.');
+  return true;
+};
+
+registerProductSyncHandler();
 export default productCloudRepository;
