@@ -288,8 +288,6 @@ const getJsonCandidates = (rawText) => {
   return Array.from(candidates).filter(Boolean);
 };
 
-function parseRawResponse(rawResponse, depth = 0);
-
 const parseJsonCandidate = (candidate, depth = 0) => {
   if (!candidate || depth > 4) return null;
 
