@@ -1,16 +1,18 @@
 import { ClipboardCheck, ShieldCheck } from 'lucide-react';
 import CashOpeningForm from '../CashOpeningForm';
+import { getCashMode } from '../../../services/cash/cashActor';
 
-export default function CajaOpeningPanel({ aperturaPendiente, onOpen, cashActor = null, isCloudCash = false, isReadOnly = false }) {
-  const isStaff = cashActor?.isStaff;
-  const responsibleName = cashActor?.responsibleName || cashActor?.displayName || '';
+export default function CajaOpeningPanel({ aperturaPendiente, onOpen, cashActor = null, isCloudCash = null, isReadOnly = null }) {
+  const mode = getCashMode();
+  const actor = cashActor || mode.actor;
+  const cloudEnabled = isCloudCash ?? mode.cloudEnabled;
+  const readOnly = isReadOnly ?? mode.readOnly;
+  const responsibleName = actor?.responsibleName || actor?.displayName || '';
 
   return (
     <section className="caja-card caja-opening-panel" aria-labelledby="cash-opening-title">
       <div className="caja-opening-heading">
-        <span className="caja-opening-icon" aria-hidden="true">
-          <ClipboardCheck size={24} />
-        </span>
+        <span className="caja-opening-icon" aria-hidden="true"><ClipboardCheck size={24} /></span>
         <div>
           <p className="section-eyebrow">Apertura requerida</p>
           <h2 id="cash-opening-title">Confirma el inicio del turno</h2>
@@ -19,14 +21,10 @@ export default function CajaOpeningPanel({ aperturaPendiente, onOpen, cashActor 
 
       <div className="cash-opening-notice">
         <ShieldCheck size={19} aria-hidden="true" />
-        <p>
-          {isCloudCash
-            ? 'Caja PRO se abre en cloud por usuario/dispositivo para auditoría segura.'
-            : 'No se crearán movimientos ni ventas en efectivo hasta identificar al responsable y validar el conteo inicial.'}
-        </p>
+        <p>{cloudEnabled ? 'Caja PRO separada por usuario para auditoría.' : 'Valida el fondo inicial antes de operar efectivo.'}</p>
       </div>
 
-      {isStaff && responsibleName && (
+      {actor?.isStaff && responsibleName && (
         <div className="cash-opening-notice">
           <ShieldCheck size={19} aria-hidden="true" />
           <p>Responsable automático: <strong>{responsibleName}</strong></p>
@@ -39,8 +37,8 @@ export default function CajaOpeningPanel({ aperturaPendiente, onOpen, cashActor 
         submitLabel="Confirmar y abrir turno"
         origin="cash_page"
         responsibleName={responsibleName}
-        lockResponsible={Boolean(isStaff)}
-        readOnly={isReadOnly}
+        lockResponsible={Boolean(actor?.isStaff)}
+        readOnly={readOnly}
       />
     </section>
   );
