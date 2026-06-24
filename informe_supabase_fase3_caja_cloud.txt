@@ -1,0 +1,363 @@
+INFORME SUPABASE — FASE 3 CAJA CLOUD PRO
+Proyecto: odlrhijtfyavryeqivaa
+Repositorio: fdxruli/Lanzo-POS
+Fecha: 2026-06-23
+
+1. OBJETIVO
+Se implementó la base cloud de caja PRO con modelo online-first, fuente de verdad en Supabase, Dexie como caché local, realtime como aviso y pull incremental como mecanismo oficial de actualización.
+
+2. FEATURE FLAGS
+Se agregó cloud_cash_sync al JSON features de public.plans:
+- pro_monthly: cloud_cash_sync = true
+- free_trial: cloud_cash_sync = false
+- basic_monthly: cloud_cash_sync = false
+
+La caja cloud exige dos flags activos:
+- cloud_pos_sync = true
+- cloud_cash_sync = true
+
+3. TABLAS CREADAS
+
+3.1 public.pos_cash_sessions
+Representa caja/turno cloud.
+Columnas principales:
+- id text primary key
+- license_id uuid
+- device_id uuid
+- staff_user_id uuid nullable
+- device_role text
+- scope text
+- actor_key text
+- status text
+- opened_at timestamptz
+- closed_at timestamptz nullable
+- opening_amount numeric
+- opening_counted_amount numeric
+- opening_suggested_amount numeric
+- opening_difference numeric
+- opening_policy text
+- opening_origin text
+- is_auto_opening boolean
+- closing_counted_amount numeric
+- next_shift_fund numeric
+- cash_sales_total numeric
+- customer_payments_total numeric
+- cash_entries_total numeric
+- cash_exits_total numeric
+- expected_cash_total numeric
+- cash_difference numeric
+- responsible_name text
+- opened_by_device_id uuid
+- opened_by_staff_user_id uuid
+- closed_by_device_id uuid
+- closed_by_staff_user_id uuid
+- audit_comments text
+- close_detail jsonb
+- metadata jsonb
+- created_at timestamptz
+- updated_at timestamptz
+- server_version integer
+- last_idempotency_key text
+- deleted_at timestamptz
+
+Constraints:
+- status in open, closed, cancelled
+- device_role in admin, staff
+- scope in actor, device, staff
+- server_version >= 1
+- montos no negativos salvo campos de diferencia
+- actor_key requerido
+- responsible_name requerido
+
+Índices:
+- ux_pos_cash_sessions_open_actor: unique parcial por license_id + actor_key donde status=open y deleted_at is null
+- idx_pos_cash_sessions_license_opened
+- idx_pos_cash_sessions_license_staff_opened
+- idx_pos_cash_sessions_license_device_opened
+- idx_pos_cash_sessions_license_actor_opened
+- idx_pos_cash_sessions_license_status_opened
+
+3.2 public.pos_cash_movements
+Representa entradas, salidas y ajustes.
+Columnas principales:
+- id text primary key
+- license_id uuid
+- cash_session_id text
+- device_id uuid
+- staff_user_id uuid nullable
+- actor_key text
+- type text
+- amount numeric
+- concept text
+- source text
+- reference_type text
+- reference_id text
+- created_by_device_id uuid
+- created_by_staff_user_id uuid
+- actor_name text
+- created_at timestamptz
+- server_version integer
+- idempotency_key text
+- metadata jsonb
+- deleted_at timestamptz
+
+Tipos permitidos:
+- entrada
+- salida
+- ajuste_entrada
+- ajuste_salida
+- fondo_inicial_ajuste
+- venta_efectivo
+- abono_cliente
+- cancelacion
+
+Constraints:
+- amount > 0
+- concept requerido
+- actor_key requerido
+- actor_name requerido
+- server_version >= 1
+
+Índices:
+- idx_pos_cash_movements_license_session_created
+- idx_pos_cash_movements_license_staff_created
+- idx_pos_cash_movements_license_device_created
+- idx_pos_cash_movements_license_actor_created
+- idx_pos_cash_movements_license_type_created
+- idx_pos_cash_movements_reference
+- ux_pos_cash_movements_idempotency
+
+3.3 public.pos_cash_audit_events
+Tabla de auditoría fuerte.
+Columnas:
+- id uuid primary key default gen_random_uuid()
+- license_id uuid
+- cash_session_id text
+- event_type text
+- actor_device_id uuid
+- actor_staff_user_id uuid
+- actor_name text
+- payload jsonb
+- created_at timestamptz
+
+Eventos previstos:
+- OPENED
+- INITIAL_FUND_ADJUSTED
+- MOVEMENT_CREATED
+- CLOSED
+- FORCED_CLOSE
+- CONFLICT
+
+4. RLS
+RLS habilitado en:
+- public.pos_cash_sessions
+- public.pos_cash_movements
+- public.pos_cash_audit_events
+
+Se dejaron políticas cerradas para anon/authenticated. El cliente no debe leer/escribir directamente estas tablas; debe operar mediante RPC security definer.
+
+5. FUNCIONES PRIVADAS
+Creadas/actualizadas:
+- private.assert_cloud_cash_sync_enabled(context jsonb)
+- private.assert_cash_permission(context jsonb)
+- private.cash_audit_allowed(context jsonb)
+- private.resolve_cash_actor_key(context jsonb)
+- private.resolve_cash_actor_name(context jsonb)
+- private.pos_cash_session_to_jsonb(pos_cash_sessions)
+- private.pos_cash_movement_to_jsonb(pos_cash_movements)
+- private.recalculate_pos_cash_session_totals(license_id uuid, cash_session_id text, p_bump_version boolean)
+- private.record_pos_cash_event(...)
+
+6. MODELO DE ACTOR
+actor_key:
+- staff: staff:<staff_user_id>
+- admin: admin_device:<device_id>
+
+Esto evita dos cajas abiertas para el mismo actor y permite cajas simultáneas separadas:
+- admin en su dispositivo
+- staff A
+- staff B
+
+7. RPCs PÚBLICAS
+Todas las RPCs son security definer y validan licencia/dispositivo/staff.
+
+7.1 public.pos_get_current_cash_session
+Devuelve la caja abierta del actor actual, movimientos y resumen admin si aplica.
+
+7.2 public.pos_open_cash_session
+Abre caja cloud para el actor actual.
+Reglas:
+- staff requiere permiso cash_register/caja
+- staff ignora responsible_name enviado y usa display_name/username
+- admin default Administrador, con override permitido
+- idempotente
+- evita doble caja abierta por actor
+
+7.3 public.pos_register_cash_movement
+Registra entrada/salida/ajuste.
+Reglas:
+- caja debe existir y estar abierta
+- staff solo opera su propia caja
+- salida no puede dejar caja negativa
+- recalcula totales en servidor
+- registra auditoría y sync event
+
+7.4 public.pos_adjust_initial_cash_fund
+Ajusta fondo inicial con expected_version.
+Reglas:
+- caja abierta
+- staff solo su caja
+- version conflict devuelve VERSION_CONFLICT
+- no-op seguro si el monto es igual
+
+7.5 public.pos_close_cash_session
+Cierra caja con conteo físico.
+Reglas:
+- conteo físico >= 0
+- fondo siguiente turno >= 0
+- fondo siguiente turno <= conteo físico
+- recalcula totales oficiales dentro de transacción
+- calcula diferencia en servidor
+- marca caja cerrada
+
+7.6 public.pos_pull_cash_snapshot
+Devuelve snapshot de sesiones y movimientos.
+Scopes:
+- mine
+- open
+- all
+- staff
+Staff normal queda forzado a mine.
+
+7.7 public.pos_pull_cash_changes
+Devuelve cambios incrementales para cash_session y cash_movement.
+Staff solo recibe cambios propios.
+Admin recibe cambios de la licencia.
+
+7.8 public.pos_admin_list_cash_sessions
+Lista cajas para auditoría admin.
+Filtros:
+- status
+- staff_user_id
+- date_from
+- date_to
+- limit
+- offset
+
+7.9 public.pos_admin_get_cash_session_detail
+Devuelve detalle de una caja, movimientos y eventos de auditoría.
+
+8. SYNC EVENTS Y REALTIME
+Se usan public.pos_sync_events.
+Entity types:
+- cash_session
+- cash_movement
+
+Operations:
+- open
+- close
+- update
+- movement
+- adjust
+
+Broadcast usa private.broadcast_pos_event y solo envía payload seguro:
+- entity_type
+- entity_id
+- operation
+- change_seq
+- server_version
+- actor_device_id
+- actor_staff_user_id
+- created_at
+
+No se envían montos completos por broadcast.
+
+9. IDEMPOTENCIA
+Se usa public.pos_idempotency_keys mediante helpers existentes.
+Operation types:
+- cash.open
+- cash.close
+- cash.movement
+- cash.adjust_initial_fund
+
+Reglas:
+- misma key completada devuelve la misma respuesta
+- misma key en proceso devuelve respuesta segura
+- no duplica movimientos
+
+10. CONCURRENCIA
+- Dos aperturas simultáneas se resuelven con unique parcial por actor abierto.
+- Salidas se validan dentro del RPC con la caja bloqueada y totales recalculados.
+- Cierre y ajuste usan expected_version.
+- VERSION_CONFLICT obliga a refrescar.
+
+11. PERMISOS
+- Admin puede operar y auditar.
+- Staff requiere cash_register o legacy caja para operar caja.
+- Auditoría para staff solo si tiene reports, cash_audit o caja_auditoria.
+- Staff sin permiso no puede abrir ni mover caja por RPC.
+
+12. FRONTEND IMPLEMENTADO
+Se agregó capa modular:
+- src/services/cash/cashRepository.js
+- src/services/cash/cashLocalRepository.js
+- src/services/cash/cashCloudRepository.js
+- src/services/cash/cashMapper.js
+- src/services/cash/cashSyncHandler.js
+- src/services/cash/cashPermissions.js
+- src/services/cash/cashActor.js
+
+Se actualizó:
+- src/hooks/useCaja.js
+- src/services/sync/syncConstants.js
+- src/services/sync/posSyncAutoBootstrap.js
+- src/components/caja/CashOpeningForm.jsx
+- src/components/caja/sections/CajaOpeningPanel.jsx
+- src/components/caja/sections/CajaActionsCard.jsx
+- src/components/caja/sections/CajaStatusCard.jsx
+- src/components/caja/sections/CajaHistoryList.jsx
+- src/components/caja/sections/CajaMovementsList.jsx
+
+13. ONLINE-FIRST
+En PRO cloud no se encolan movimientos de dinero.
+Si no hay internet:
+- no abrir caja
+- no cerrar caja
+- no entrada
+- no salida
+- no ajuste
+- se muestra último estado cacheado cuando existe
+- se muestra mensaje claro de conexión
+
+14. QUÉ QUEDA PARA VENTAS CLOUD
+- Registrar venta_efectivo en pos_cash_movements dentro del mismo RPC transaccional de venta cloud.
+- Ligar sale_id/reference_id a cash_session_id.
+- Evitar ventas cash si caja cloud no está abierta.
+
+15. QUÉ QUEDA PARA ABONOS CLOUD
+- Crear RPC transaccional para abono_cliente que actualice deuda y caja en una misma operación.
+- No mezclar abonos locales con caja cloud.
+
+16. QUÉ QUEDA PARA REPORTES CLOUD
+- Reportes consolidados por licencia/staff/dispositivo/turno.
+- Dashboard admin cloud con filtros avanzados.
+- Exportación server-side opcional.
+
+17. VALIDACIONES REALIZADAS
+Supabase:
+- Tablas creadas: pos_cash_sessions, pos_cash_movements, pos_cash_audit_events.
+- RLS activo en las 3 tablas.
+- Índices clave creados, incluido unique open actor.
+- Feature flag cloud_cash_sync verificado por plan.
+- 9 RPCs públicas compiladas.
+- Broadcast seguro reutiliza payload pequeño.
+
+Frontend:
+- Se implementó arquitectura modular y hook compatible con API pública previa.
+- No se ejecutó npm run build desde este entorno porque no hay checkout local del repo con dependencias. Debe ejecutarse en desarrollo/Codex antes de desplegar.
+
+18. RIESGOS PENDIENTES
+- Probar en dispositivos reales admin + staff simultáneos.
+- Validar flujo de caja con PWA instalada móvil en red inestable.
+- Confirmar que la UI deseada de auditoría admin sea suficiente o moverla a una pestaña dedicada.
+- No implementar ventas/abonos cloud a medias: deben ir en fases separadas con RPC transaccional.
