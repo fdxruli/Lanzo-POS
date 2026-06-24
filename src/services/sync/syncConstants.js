@@ -32,6 +32,8 @@ export const SYNC_ENTITY_TYPES = Object.freeze({
   PRODUCT: 'product',
   PRODUCT_BATCH: 'product_batch',
   CASH: 'cash',
+  CASH_SESSION: 'cash_session',
+  CASH_MOVEMENT: 'cash_movement',
   REPORT: 'report',
   GENERIC: 'generic'
 });
@@ -43,6 +45,10 @@ export const SYNC_OPERATIONS = Object.freeze({
   RESTORE: 'restore',
   UPSERT: 'upsert',
   TOGGLE_STATUS: 'toggle_status',
+  OPEN: 'open',
+  CLOSE: 'close',
+  MOVEMENT: 'movement',
+  ADJUST: 'adjust',
   UNKNOWN: 'unknown'
 });
 
@@ -84,6 +90,11 @@ export const isCloudPosSyncEnabled = (licenseDetails = {}) => {
 export const isCloudProductsSyncEnabled = (licenseDetails = {}) => {
   const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
   return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_products_sync');
+};
+
+export const isCloudCashSyncEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_cash_sync');
 };
 
 export const getLicenseKeyFromDetails = (licenseDetails = {}) => (
