@@ -9,6 +9,7 @@ import { db } from './db/dexie';
 import { categoriesRepository } from './db/general';
 import { generateID } from './utils';
 import { useAppStore } from '../store/useAppStore';
+import { useProductStore } from '../store/useProductStore';
 import Logger from './Logger';
 
 export const PRODUCT_SYNC_STATUS = Object.freeze({ PENDING: 'pending', SYNCED: 'synced', CONFLICT: 'conflict', ERROR: 'error', LOCAL: 'local' });
@@ -25,7 +26,16 @@ const idem = (t, id) => `${t}:${id || 'new'}:${Date.now()}:${Math.random().toStr
 const normName = (v) => txt(v).toLowerCase().replace(/\s+/g, ' ');
 const normBarcode = (v) => txt(v).replace(/\s+/g, '');
 const normSku = (v) => txt(v).toLowerCase().replace(/\s+/g, '');
-const notify = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('lanzo:products-sync-updated')); };
+const notify = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('lanzo:products-sync-updated'));
+    try {
+      useProductStore.getState().invalidateAndReset();
+    } catch (error) {
+      Logger.warn('[Products/Sync] No se pudo invalidar product store:', error);
+    }
+  }
+};
 const runtime = () => { const details = useAppStore.getState()?.licenseDetails || {}; return { licenseKey: getLicenseKeyFromDetails(details), cloud: isCloudProductsSyncEnabled(details) }; };
 
 async function base(licenseKey) {
@@ -111,33 +121,11 @@ export async function pullCatalogChanges(licenseKeyOverride = null) { const lice
 export const productSyncHandler = {
   async onStart({ licenseKey } = {}) { return pullFullSnapshotForLicense(licenseKey || runtime().licenseKey); },
   async onEvents(events = [], options = {}) { if (!options.force && events.length && !events.some((event) => CATALOG_ENTITY_TYPES.has(event.entity_type || event.entityType))) return { skipped: true }; return pullCatalogChanges(options.licenseKey || runtime().licenseKey); },
-  async pushOperation(operation) {
-    const licenseKey = operation.licenseKey || runtime().licenseKey;
-    const payload = operation.payload || {};
-    const expectedVersion = payload.expectedVersion ?? null;
-    const idempotencyKey = operation.idempotencyKey || operation.id;
-    let r;
-    if (operation.entityType === SYNC_ENTITY_TYPES.CATEGORY) r = operation.operation === SYNC_OPERATIONS.DELETE ? await productCloudRepository.deleteCategory({ licenseKey, categoryId: payload.categoryId || operation.entityId, expectedVersion, idempotencyKey }) : await productCloudRepository.upsertCategory({ licenseKey, category: payload.category, expectedVersion, idempotencyKey });
-    else if (operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH) r = operation.operation === SYNC_OPERATIONS.DELETE ? await productCloudRepository.deleteProductBatch({ licenseKey, batchId: payload.batchId || operation.entityId, expectedVersion, idempotencyKey }) : await productCloudRepository.upsertProductBatch({ licenseKey, batch: payload.batch, expectedVersion, idempotencyKey });
-    else if (operation.operation === SYNC_OPERATIONS.DELETE) r = await productCloudRepository.deleteProduct({ licenseKey, productId: payload.productId || operation.entityId, expectedVersion, idempotencyKey });
-    else if (operation.operation === SYNC_OPERATIONS.TOGGLE_STATUS) r = await productCloudRepository.toggleProductStatus({ licenseKey, productId: payload.productId || operation.entityId, isActive: payload.isActive, expectedVersion, idempotencyKey });
-    else r = await productCloudRepository.upsertProduct({ licenseKey, product: payload.product, initialBatches: payload.initialBatches || [], expectedVersion, idempotencyKey });
-    if (r?.success === false) return { conflict: r, success: false };
-    await apply(r);
-    return r;
-  }
+  async pushOperation(operation) { const licenseKey = operation.licenseKey || runtime().licenseKey; const payload = operation.payload || {}; const expectedVersion = payload.expectedVersion ?? null; const idempotencyKey = operation.idempotencyKey || operation.id; let r; if (operation.entityType === SYNC_ENTITY_TYPES.CATEGORY) r = operation.operation === SYNC_OPERATIONS.DELETE ? await productCloudRepository.deleteCategory({ licenseKey, categoryId: payload.categoryId || operation.entityId, expectedVersion, idempotencyKey }) : await productCloudRepository.upsertCategory({ licenseKey, category: payload.category, expectedVersion, idempotencyKey }); else if (operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH) r = operation.operation === SYNC_OPERATIONS.DELETE ? await productCloudRepository.deleteProductBatch({ licenseKey, batchId: payload.batchId || operation.entityId, expectedVersion, idempotencyKey }) : await productCloudRepository.upsertProductBatch({ licenseKey, batch: payload.batch, expectedVersion, idempotencyKey }); else if (operation.operation === SYNC_OPERATIONS.DELETE) r = await productCloudRepository.deleteProduct({ licenseKey, productId: payload.productId || operation.entityId, expectedVersion, idempotencyKey }); else if (operation.operation === SYNC_OPERATIONS.TOGGLE_STATUS) r = await productCloudRepository.toggleProductStatus({ licenseKey, productId: payload.productId || operation.entityId, isActive: payload.isActive, expectedVersion, idempotencyKey }); else r = await productCloudRepository.upsertProduct({ licenseKey, product: payload.product, initialBatches: payload.initialBatches || [], expectedVersion, idempotencyKey }); if (r?.success === false) return { conflict: r, success: false }; await apply(r); return r; }
 };
 
 let registered = false;
-export const registerProductSyncHandler = () => {
-  if (registered) return false;
-  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.CATEGORY, productSyncHandler);
-  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT, productSyncHandler);
-  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT_BATCH, productSyncHandler);
-  registered = true;
-  Logger.log('[Products/Sync] Handler de catálogo registrado.');
-  return true;
-};
+export const registerProductSyncHandler = () => { if (registered) return false; posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.CATEGORY, productSyncHandler); posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT, productSyncHandler); posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT_BATCH, productSyncHandler); registered = true; Logger.log('[Products/Sync] Handler de catálogo registrado.'); return true; };
 
 registerProductSyncHandler();
 export default productCloudRepository;
