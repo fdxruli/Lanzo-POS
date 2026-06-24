@@ -68,6 +68,54 @@ const ACTION_TYPE_ALIASES = {
   manual: 'manual'
 };
 
+const WRAPPER_KEYS = [
+  'content',
+  'text',
+  'texto',
+  'message',
+  'mensaje',
+  'response',
+  'respuesta',
+  'result',
+  'resultado',
+  'output',
+  'analysis',
+  'analisis',
+  'análisis',
+  'data',
+  'answer',
+  'payload'
+];
+
+const STRUCTURED_KEYS = [
+  'findings',
+  'hallazgos',
+  'insights',
+  'diagnostics',
+  'diagnosticos',
+  'diagnósticos',
+  'issues',
+  'alertas',
+  'actions',
+  'acciones',
+  'recommendedActions',
+  'recommended_actions',
+  'recommendations',
+  'recomendaciones',
+  'nextSteps',
+  'next_steps',
+  'opportunities',
+  'oportunidades',
+  'growthOpportunities',
+  'growth_opportunities',
+  'executiveSummary',
+  'executive_summary',
+  'resumenEjecutivo',
+  'resumen_ejecutivo',
+  'summary',
+  'resumen'
+];
+
 const clampNumber = (value, min = 0, max = 1, fallback = 0.7) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
@@ -117,6 +165,10 @@ const firstPresent = (source, keys, fallback = undefined) => {
   return fallback;
 };
 
+const hasStructuredKeys = (payload) => asObject(payload) && STRUCTURED_KEYS.some(key => (
+  Object.prototype.hasOwnProperty.call(payload, key) && payload[key] !== undefined && payload[key] !== null
+));
+
 const normalizeSeverity = (value, fallback = 'info') => {
   const normalized = normalizeToken(value || fallback);
   const aliased = SEVERITY_ALIASES[normalized] || normalized;
@@ -136,88 +188,138 @@ const normalizeActionType = (value, fallback = 'manual') => {
 };
 
 const stripCodeFence = (rawText) => {
-  const text = asString(rawText).replace(/^\uFEFF/, '').trim();
+  const text = asString(rawText)
+    .replace(/^\uFEFF/, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim();
+
   if (!text) return '';
 
   const fencedMatch = text.match(/```(?:json|javascript|js)?\s*([\s\S]*?)```/i);
   if (fencedMatch?.[1]) return fencedMatch[1].trim();
 
-  return text;
+  return text.replace(/^json\s*[:\n]/i, '').trim();
 };
 
-const sanitizeJsonLike = (text) => text
+const sanitizeJsonLike = (text) => asString(text)
   .replace(/^\uFEFF/, '')
+  .replace(/[\u200B-\u200D\uFEFF]/g, '')
+  .replace(/[“”]/g, '"')
+  .replace(/[‘’]/g, "'")
   .replace(/,\s*([}\]])/g, '$1')
   .trim();
+
+const repairEscapedJsonText = (text) => {
+  const value = sanitizeJsonLike(text);
+  if (!value.includes('\\"') && !value.includes('\\n')) return value;
+
+  return value
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .trim();
+};
+
+const repairLooseJsonText = (text) => sanitizeJsonLike(text)
+  .replace(/([{,]\s*)'([^'\n\r]+)'\s*:/g, '$1"$2":')
+  .replace(/:\s*'([^'\n\r]*)'/g, ': "$1"')
+  .trim();
+
+const extractBalancedJson = (text, openChar, closeChar) => {
+  const start = text.indexOf(openChar);
+  if (start < 0) return '';
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === openChar) depth += 1;
+    if (char === closeChar) depth -= 1;
+
+    if (depth === 0) return text.slice(start, index + 1);
+  }
+
+  return '';
+};
 
 const getJsonCandidates = (rawText) => {
   const stripped = stripCodeFence(rawText);
   if (!stripped) return [];
 
-  const candidates = new Set([stripped]);
+  const candidates = new Set();
+  const pushCandidate = (candidate) => {
+    const value = sanitizeJsonLike(candidate);
+    if (value) candidates.add(value);
+  };
+
+  pushCandidate(stripped);
+  pushCandidate(repairEscapedJsonText(stripped));
+  pushCandidate(repairLooseJsonText(stripped));
+
   const sanitized = sanitizeJsonLike(stripped);
-  candidates.add(sanitized);
+  pushCandidate(extractBalancedJson(sanitized, '{', '}'));
+  pushCandidate(extractBalancedJson(sanitized, '[', ']'));
 
-  const firstObject = sanitized.indexOf('{');
-  const lastObject = sanitized.lastIndexOf('}');
-  if (firstObject >= 0 && lastObject > firstObject) {
-    candidates.add(sanitized.slice(firstObject, lastObject + 1));
-  }
-
-  const firstArray = sanitized.indexOf('[');
-  const lastArray = sanitized.lastIndexOf(']');
-  if (firstArray >= 0 && lastArray > firstArray) {
-    candidates.add(sanitized.slice(firstArray, lastArray + 1));
-  }
+  const escaped = repairEscapedJsonText(stripped);
+  pushCandidate(extractBalancedJson(escaped, '{', '}'));
+  pushCandidate(extractBalancedJson(escaped, '[', ']'));
 
   return Array.from(candidates).filter(Boolean);
 };
 
-const parseJsonCandidate = (candidate, depth = 0) => {
-  if (!candidate || depth > 3) return null;
+function parseRawResponse(rawResponse, depth = 0);
 
-  try {
-    const parsed = JSON.parse(candidate);
-    if (typeof parsed === 'string') return parseRawResponse(parsed, depth + 1);
-    return parsed;
-  } catch {
-    const sanitized = sanitizeJsonLike(candidate);
-    if (sanitized !== candidate) {
-      try {
-        return JSON.parse(sanitized);
-      } catch {
-        return null;
-      }
+const parseJsonCandidate = (candidate, depth = 0) => {
+  if (!candidate || depth > 4) return null;
+
+  const attempts = [
+    candidate,
+    sanitizeJsonLike(candidate),
+    repairEscapedJsonText(candidate),
+    repairLooseJsonText(candidate)
+  ];
+
+  for (const attempt of attempts) {
+    if (!attempt) continue;
+    try {
+      const parsed = JSON.parse(attempt);
+      if (typeof parsed === 'string') return parseRawResponse(parsed, depth + 1);
+      return parsed;
+    } catch {
+      // Try next candidate.
     }
-    return null;
   }
+
+  return null;
 };
 
-const WRAPPER_KEYS = [
-  'content',
-  'text',
-  'message',
-  'response',
-  'result',
-  'output',
-  'analysis',
-  'data',
-  'answer',
-  'payload'
-];
-
 function unwrapProviderPayload(payload, depth = 0) {
-  if (depth > 4) return payload;
+  if (depth > 5) return payload;
 
   if (Array.isArray(payload)) return payload;
-
   if (!asObject(payload)) return payload;
-
-  const hasNativeStructuredKeys = Boolean(
-    firstPresent(payload, ['findings', 'hallazgos', 'actions', 'acciones', 'opportunities', 'oportunidades', 'executiveSummary', 'executive_summary', 'summary', 'resumen'], null)
-  );
-
-  if (hasNativeStructuredKeys) return payload;
+  if (hasStructuredKeys(payload)) return payload;
 
   for (const key of WRAPPER_KEYS) {
     const wrapped = payload[key];
@@ -233,11 +335,21 @@ function unwrapProviderPayload(payload, depth = 0) {
     }
   }
 
+  const entries = Object.values(payload).filter(value => value !== null && value !== undefined);
+  if (entries.length === 1 && (asObject(entries[0]) || Array.isArray(entries[0]) || typeof entries[0] === 'string')) {
+    const onlyValue = entries[0];
+    if (typeof onlyValue === 'string') {
+      const parsed = parseRawResponse(onlyValue, depth + 1);
+      if (parsed) return parsed;
+    }
+    return unwrapProviderPayload(onlyValue, depth + 1);
+  }
+
   return payload;
 }
 
 function parseRawResponse(rawResponse, depth = 0) {
-  if (depth > 4) return null;
+  if (depth > 5) return null;
 
   if (asObject(rawResponse) || Array.isArray(rawResponse)) {
     return unwrapProviderPayload(rawResponse, depth);
@@ -376,7 +488,7 @@ const normalizeAgentResponse = (payload) => {
   return {
     isStructured: true,
     formatVersion: asString(firstPresent(normalizedPayload, ['formatVersion', 'format_version', 'version'], '1.0')),
-    executiveSummary: asString(firstPresent(normalizedPayload, ['executiveSummary', 'executive_summary', 'summary', 'resumen', 'resumenEjecutivo'], fallbackSummary)),
+    executiveSummary: asString(firstPresent(normalizedPayload, ['executiveSummary', 'executive_summary', 'summary', 'resumen', 'resumenEjecutivo', 'resumen_ejecutivo'], fallbackSummary)),
     severity: normalizeSeverity(firstPresent(normalizedPayload, ['severity', 'nivel', 'status', 'estado'], hasUsefulStructuredContent ? 'info' : 'warning'), hasUsefulStructuredContent ? 'info' : 'warning'),
     confidence: clampNumber(firstPresent(normalizedPayload, ['confidence', 'confianza'], 0.7), 0, 1, 0.7),
     findings: hasUsefulStructuredContent ? findings : [normalizeFinding({
