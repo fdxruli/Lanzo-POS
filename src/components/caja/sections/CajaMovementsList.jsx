@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 
-const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
+const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCash = false }) => {
   const [filtroTipo, setFiltroTipo] = useState(initialFilterType);
   const [busqueda, setBusqueda] = useState('');
 
@@ -62,6 +62,8 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
       else if (mov.tipo === 'venta' || mov.tipo === 'venta_efectivo') badge = 'Venta';
       else if (mov.tipo === 'abono' || mov.tipo === 'abono_cliente') badge = 'Abono';
       else if (mov.tipo === 'cancelacion') badge = 'Cancelación';
+      else if (mov.tipo === 'entrada') badge = 'Entrada';
+      else if (mov.tipo === 'salida') badge = 'Salida';
 
       return {
         id: mov.id,
@@ -69,13 +71,14 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
         monto: `${prefijo}$${Money.toNumber(mov.monto).toFixed(2)}`,
         hora: mov.fecha ? new Date(mov.fecha).toLocaleTimeString() : '',
         actor: mov.actor || mov.actorName || mov.audit?.actor || null,
-        origen: mov.origen || mov.source || mov.metadata?.source || null,
-        staff: mov.staffUserId ? String(mov.staffUserId).slice(0, 8) : null,
+        origen: mov.origen || mov.source || mov.metadata?.source || (mov.cloudCash || isCloudCash ? 'cloud' : 'local'),
+        staff: mov.staffUserId || mov.staff_user_id ? String(mov.staffUserId || mov.staff_user_id).slice(0, 8) : null,
+        actorKey: mov.actorKey || mov.actor_key || null,
         badge,
         tone
       };
     });
-  }, [movimientos, filtroTipo, busqueda]);
+  }, [movimientos, filtroTipo, busqueda, isCloudCash]);
 
   const handleLimpiarFiltros = () => {
     setFiltroTipo('todos');
@@ -157,6 +160,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
                   <small>{mov.hora}</small>
                   {mov.actor && <small>Actor: {mov.actor}</small>}
                   {mov.staff && <small>Staff: {mov.staff}</small>}
+                  {mov.actorKey && <small>Actor key: {mov.actorKey}</small>}
                   {mov.origen && <small>Origen: {mov.origen}</small>}
                   {mov.badge && <span className="movement-badge">{mov.badge}</span>}
                 </div>

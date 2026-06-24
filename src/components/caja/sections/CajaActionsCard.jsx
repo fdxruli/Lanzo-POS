@@ -4,12 +4,18 @@ import {
   Keyboard,
   LockKeyhole,
   Scale,
+  ShieldCheck,
+  UserRound,
   Wallet
 } from 'lucide-react';
 
 const CajaActionsCard = ({
+  cajaActual,
+  estadoCaja,
   isBackupLoading,
+  isCloudCash = false,
   isReadOnly = false,
+  cashActor = null,
   readOnlyMessage = '',
   onCorte,
   onEntrada,
@@ -17,6 +23,8 @@ const CajaActionsCard = ({
   onAjuste
 }) => {
   const disabled = isBackupLoading || isReadOnly;
+  const actorLabel = cashActor?.isStaff ? 'Caja de staff' : 'Caja admin';
+  const responsibleName = cajaActual?.responsable_apertura || cajaActual?.responsibleName || cashActor?.responsibleName || cashActor?.displayName;
 
   return (
     <section className="caja-card actions-card" aria-labelledby="cash-actions-title">
@@ -30,10 +38,29 @@ const CajaActionsCard = ({
         </div>
       </div>
 
+      <div className="cash-action-context">
+        <span>
+          <ShieldCheck size={15} aria-hidden="true" />
+          {isCloudCash ? 'Cloud PRO' : 'Caja local'}
+        </span>
+        <span>
+          <UserRound size={15} aria-hidden="true" />
+          {actorLabel}{responsibleName ? ` - ${responsibleName}` : ''}
+        </span>
+        {estadoCaja && <span>Estado: {estadoCaja}</span>}
+      </div>
+
       {isReadOnly && (
         <div className="cash-opening-notice cash-opening-notice--warning">
           <LockKeyhole size={18} aria-hidden="true" />
           <p>{readOnlyMessage || 'Caja cloud está en modo consulta. Revisa la conexión para registrar movimientos.'}</p>
+        </div>
+      )}
+
+      {isCloudCash && cashActor?.isStaff && !isReadOnly && (
+        <div className="cash-opening-notice">
+          <ShieldCheck size={18} aria-hidden="true" />
+          <p>Los movimientos se registran en la caja propia de este staff.</p>
         </div>
       )}
 

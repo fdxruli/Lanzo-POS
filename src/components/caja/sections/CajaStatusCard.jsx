@@ -26,6 +26,7 @@ const CajaStatusCard = ({
   isCloudCash = false,
   isReadOnly = false,
   cashActor = null,
+  cashMode = null,
   onEditarFondoInicial,
   onBackup,
   onReporte,
@@ -54,8 +55,12 @@ const CajaStatusCard = ({
       ? 'warning'
       : 'safe';
   const maxCashThreshold = CAJA_CONFIG?.MAX_CASH_THRESHOLD || 0;
-  const actorLabel = cajaActual?.deviceRole === 'staff' || cashActor?.isStaff ? 'Staff' : 'Admin';
+  const isStaffCash = cajaActual?.deviceRole === 'staff' || cashActor?.isStaff || cajaActual?.staffUserId || cajaActual?.staff_user_id;
+  const actorLabel = isStaffCash ? 'Staff' : 'Admin';
   const responsibleName = cajaActual?.responsable_apertura || cajaActual?.responsibleName || cashActor?.responsibleName;
+  const actorName = cashActor?.displayName || cashActor?.responsibleName || responsibleName;
+  const staffId = cajaActual?.staffUserId || cajaActual?.staff_user_id || cashActor?.staffUserId;
+  const isOfflineCloud = Boolean(isCloudCash && (isReadOnly || cashMode?.online === false));
 
   return (
     <section className="caja-card status-card" aria-labelledby="cash-total-title">
@@ -66,12 +71,20 @@ const CajaStatusCard = ({
               <span className="status-badge-dot" aria-hidden="true" />
               Turno activo
             </span>
-            {isCloudCash && (
-              <span className={`status-badge ${isReadOnly ? 'warning' : 'success'}`}>
+            <span className={`status-badge ${isCloudCash ? 'success' : 'neutral'}`}>
+              <ShieldCheck size={14} aria-hidden="true" />
+              {isCloudCash ? 'Cloud PRO' : 'Local'}
+            </span>
+            {isReadOnly && (
+              <span className="status-badge warning">
                 <ShieldCheck size={14} aria-hidden="true" />
-                {isReadOnly ? 'Cloud consulta' : 'Cloud PRO'}
+                Solo consulta
               </span>
             )}
+            <span className={`status-badge ${isStaffCash ? 'warning' : 'success'}`}>
+              <UserRound size={14} aria-hidden="true" />
+              {actorLabel}
+            </span>
             {excesoLiquidez && (
               <span
                 className="status-badge danger"
@@ -105,7 +118,17 @@ const CajaStatusCard = ({
             )}
             {isCloudCash && (
               <span>
-                Caja: {actorLabel}{cajaActual?.staffUserId ? ` · staff ${String(cajaActual.staffUserId).slice(0, 8)}` : ''}
+                Caja: {isStaffCash ? 'Caja de staff' : 'Caja admin'}{staffId ? ` - staff ${String(staffId).slice(0, 8)}` : ''}
+              </span>
+            )}
+            {actorName && (
+              <span>
+                Actor actual: {actorName}
+              </span>
+            )}
+            {isOfflineCloud && (
+              <span>
+                Cloud PRO offline: solo consulta
               </span>
             )}
             {lastSyncTime && (
@@ -216,7 +239,7 @@ const CajaStatusCard = ({
               onClick={onEditarFondoInicial}
               title="Corregir fondo inicial calculado"
               aria-label="Editar fondo inicial"
-              disabled={isReadOnly}
+              disabled={isReadOnly || isBackupLoading}
             >
               <Pencil size={15} aria-hidden="true" />
             </button>
