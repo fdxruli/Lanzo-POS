@@ -1,52 +1,25 @@
 // src/pages/ProductsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { saveDataSafe, saveBatchAndSyncProductSafe, STORES, saveImageToDB, softDeleteWithCascadeSafe, updateProductSafe, createProductWithInitialInventorySafe } from '../services/database';
-import { showMessageModal, generateID } from '../services/utils';
+import { showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
 import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
 import VariantInventoryView from '../components/products/VarianteInvetoryView';
-import { categoriesRepository } from '../services/db/general';
 import { useProductStore, broadcastDBChange } from '../store/useProductStore';
 import { useStatsStore } from '../store/useStatsStore';
-
 import BatchManager from '../components/products/BatchManager';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import DailyPriceModal from '../components/products/DailyPriceModal';
 import { useAppStore } from '../store/useAppStore';
+import { productRepository } from '../services/productCloudRepository';
 import './ProductsPage.css';
 import Logger from '../services/Logger';
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom';
 import { useNavigationGuard } from '../hooks/useNavigationGuard';
 
 const PRODUCT_FORM_EXIT_MESSAGE = 'Estás editando o creando un producto. Si sales ahora, los datos no guardados se perderán. ¿Seguro que quieres salir?';
-
-const normalizeInventoryForSave = (productData, existingProduct = null) => {
-    const tracksInventory = productData.trackStock !== false;
-
-    if (!tracksInventory) {
-        return {
-            trackStock: false,
-            stock: 0,
-            minStock: null,
-            batchManagement: {
-                ...(existingProduct?.batchManagement || {}),
-                ...(productData.batchManagement || {}),
-                enabled: false
-            }
-        };
-    }
-
-    return {
-        trackStock: true,
-        batchManagement:
-            productData.batchManagement ||
-            existingProduct?.batchManagement ||
-            { enabled: true, selectionStrategy: 'fifo' }
-    };
-};
 
 export default function ProductsPage() {
     const [showDailyPrice, setShowDailyPrice] = useState(false);
@@ -60,13 +33,13 @@ export default function ProductsPage() {
         return types === 'apparel';
     })();
 
-    // Corrección tipográfica: adjustInventoryValue
     const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
-
-    // --- CONEXIÓN AL NUEVO STORE DE PRODUCTOS ---
     const categories = useProductStore((state) => state.categories);
     const products = useProductStore((state) => state.menu);
     const filters = useProductStore((state) => state.filters);
+    const setFilters = useProductStore((state) => state.setFilters);
+    const refreshData = useProductStore((state) => state.loadInitialProducts);
+    const refreshCategories = useProductStore((state) => state.refreshCategories);
 
     const [editingProduct, setEditingProduct] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -74,9 +47,6 @@ export default function ProductsPage() {
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
     const [, setShowDataTransfer] = useState(false);
 
-    const setFilters = useProductStore((state) => state.setFilters);
-    const refreshData = useProductStore((state) => state.loadInitialProducts);
-    const refreshCategories = useProductStore((state) => state.refreshCategories);
     const isProductFormActive = activeTab === 'add-product';
     const { runWithoutBlocking } = useNavigationGuard({
         enabled: isProductFormActive,
@@ -88,26 +58,24 @@ export default function ProductsPage() {
     });
 
     useEffect(() => {
-        setFilters({ categoryId: null, outOfStockOnly: false })
+        setFilters({ categoryId: null, outOfStockOnly: false });
         refreshData();
     }, []);
 
     useEffect(() => {
         const currentTabParam = searchParams.get('tab');
-
         const paramToTabMap = {
-            'add': 'add-product',
-            'ingredients': 'ingredients',
-            'batches': 'batches',
-            'categories': 'categories',
-            'variants': 'variants-view',
-            'list': 'view-products'
+            add: 'add-product',
+            ingredients: 'ingredients',
+            batches: 'batches',
+            categories: 'categories',
+            variants: 'variants-view',
+            list: 'view-products'
         };
 
         if (currentTabParam && paramToTabMap[currentTabParam]) {
             setActiveTab(paramToTabMap[currentTabParam]);
         } else {
-            // Si no hay param o no coincide, volver a default
             setActiveTab('view-products');
         }
     }, [searchParams]);
@@ -118,29 +86,25 @@ export default function ProductsPage() {
         const urlMap = {
             'add-product': 'add',
             'view-products': 'list',
-            'batches': 'batches',
-            'ingredients': 'ingredients',
-            'categories': 'categories',
+            batches: 'batches',
+            ingredients: 'ingredients',
+            categories: 'categories',
             'variants-view': 'variants'
         };
 
         const paramValue = urlMap[tabKey];
-
-        if (paramValue === 'list') {
-            setSearchParams({});
-        } else {
-            setSearchParams({ tab: paramValue });
-        }
+        if (paramValue === 'list') setSearchParams({});
+        else setSearchParams({ tab: paramValue });
     };
 
-    // --- FILTROS PARA PESTAÑAS ---
     const productsForSale = products.filter(p => p.productType === 'sellable' || !p.productType);
     const ingredientsOnly = products.filter(p => p.productType === 'ingredient');
 
     const handleActionableError = (errorResult) => {
-        const { message, details } = errorResult.error;
+        const error = errorResult?.error || errorResult;
+        const message = error?.message || errorResult?.message || 'No se pudo completar la operación.';
+        const details = error?.details || {};
 
-        // Configurar opciones del modal según la acción sugerida
         let modalOptions = {};
         if (details.actionable === 'SUGGEST_BACKUP') {
             modalOptions = {
@@ -156,7 +120,6 @@ export default function ProductsPage() {
             };
         }
 
-        // Mostrar el modal con la configuración
         showMessageModal(message, details.actionable === 'SUGGEST_RELOAD' ? () => window.location.reload() : null, {
             type: 'error',
             ...modalOptions
@@ -166,87 +129,55 @@ export default function ProductsPage() {
     const handleSaveCategory = async (categoryData) => {
         try {
             const isEditing = Boolean(categoryData.id);
-            const savedCategory = await categoriesRepository.saveCategory(categoryData);
-
+            const savedCategory = await productRepository.saveCategory(categoryData);
             await refreshCategories();
+            await refreshData();
 
             broadcastDBChange({
                 action: isEditing ? 'category-updated' : 'category-created',
-                categoryId: savedCategory.id,
-                categoryName: savedCategory.name,
-                timestamp: Date.now(),
+                categoryId: savedCategory?.id || categoryData.id,
+                categoryName: savedCategory?.name || categoryData.name,
+                timestamp: Date.now()
             });
 
             return savedCategory;
         } catch (error) {
-            if (error.name === 'DatabaseError') {
-                handleActionableError({ error });
-            } else {
+            if (error.name === 'DatabaseError') handleActionableError({ error });
+            else {
                 Logger.error('Error guardando categoría:', error);
                 showMessageModal(`Error: ${error.message}`);
             }
-
             throw error;
         }
     };
 
     const handleDeleteCategory = async (categoryId) => {
-        if (!window.confirm('¿Eliminar esta categoría? Los productos asociados quedarán "Sin Categoría".')) {
-            return;
-        }
+        if (!window.confirm('¿Eliminar esta categoría? Los productos asociados quedarán "Sin Categoría".')) return;
 
         setIsLoading(true);
         try {
-            // PATRÓN UNIFICADO: softDeleteWithCascadeSafe con cascadeo a productos
-            const result = await softDeleteWithCascadeSafe(
-                STORES.CATEGORIES,
-                STORES.DELETED_CATEGORIES,
-                categoryId,
-                {
-                    reason: 'Eliminada desde Catálogo de Productos',
-                    cascade: {
-                        updates: [
-                            {
-                                store: STORES.MENU,
-                                index: 'categoryId',
-                                value: categoryId,
-                                field: 'categoryId',
-                                setTo: ''
-                            }
-                        ]
-                    }
-                }
-            );
-
-            if (!result.success) {
+            const result = await productRepository.deleteCategory(categoryId);
+            if (!result?.success) {
                 handleActionableError(result);
                 return;
             }
 
-            if (filters.categoryId === categoryId) {
-                setFilters({ categoryId: null });
-            }
-
+            if (filters.categoryId === categoryId) setFilters({ categoryId: null });
             await refreshCategories();
             await refreshData();
 
             broadcastDBChange({
                 action: 'category-deleted',
                 categoryId,
-                cascade: {
-                    store: STORES.MENU,
-                    field: 'categoryId',
-                    setTo: '',
-                },
-                timestamp: Date.now(),
+                cascade: { field: 'categoryId', setTo: '' },
+                timestamp: Date.now()
             });
 
-            showMessageModal('✅ Categoría eliminada.');
+            showMessageModal(result.pending ? 'Categoría eliminada localmente. Se sincronizará al volver internet.' : '✅ Categoría eliminada.');
         } catch (error) {
-            if (error.name === 'DatabaseError') {
-                handleActionableError({ error });
-            } else {
-                Logger.error("Error eliminando categoría:", error);
+            if (error.name === 'DatabaseError') handleActionableError({ error });
+            else {
+                Logger.error('Error eliminando categoría:', error);
                 showMessageModal(`Error: ${error.message}`);
             }
         } finally {
@@ -254,188 +185,43 @@ export default function ProductsPage() {
         }
     };
 
-    const handleSaveProduct = async (productData, editingProduct) => {
+    const handleSaveProduct = async (productData, productToEdit) => {
         setIsLoading(true);
         try {
-            let finalImage = productData.image;
+            const result = await productRepository.saveProduct(productData, { existingProduct: productToEdit });
 
-            // Lógica de imagen (se mantiene igual)
-            if (productData.image instanceof File) {
-                const imageId = `img-${Date.now()}`;
-                await saveImageToDB(imageId, productData.image);
-                finalImage = imageId;
-            } else if (!productData.image && editingProduct?.image) {
-                finalImage = editingProduct.image;
-            }
-
-            let valueDifference = 0;
-            let result;
-
-            const isEditingExistingProduct = Boolean(editingProduct?.id && !editingProduct?.isNew);
-
-            // ID que usaremos (si es nuevo, usamos el que trae el wizard o generamos uno)
-            const productId = isEditingExistingProduct ? editingProduct.id : (productData.id || generateID('prod'));
-
-            // --- 1. GUARDADO DEL PRODUCTO PADRE ---
-
-            // Preparamos el objeto limpio para guardar en MENU (sin datos temporales del wizard)
-            const baseProductData = {
-                ...productData,
-                id: productId,
-                image: finalImage,
-                updatedAt: new Date().toISOString()
-            };
-
-            // IMPORTANTE: Quitamos 'quickVariants' antes de guardar en la tabla MENU
-            // porque eso no es un campo de la base de datos, es solo un transporte.
-            delete baseProductData.quickVariants;
-
-            Object.assign(
-                baseProductData,
-                normalizeInventoryForSave(
-                    productData,
-                    isEditingExistingProduct ? editingProduct : null
-                )
-            );
-
-            const initialCost = parseFloat(productData.cost) || 0;
-            const initialPrice = parseFloat(productData.price) || 0;
-            const initialStock = parseFloat(productData.stock) || 0;
-            const hasVariants = productData.quickVariants && productData.quickVariants.length > 0;
-            const isRecipeProduct = productData.productType === 'sellable' && productData.recipe?.length > 0;
-
-            if (isEditingExistingProduct) {
-                // Modo Edición
-                const updatedProduct = { ...editingProduct, ...baseProductData };
-                result = await updateProductSafe(productId, updatedProduct);
-            } else {
-                // Modo Creación (Nuevo)
-                const newProduct = {
-                    ...baseProductData,
-                    stock: 0, // El stock real se sumará al crear los lotes abajo
-                    isActive: true,
-                    createdAt: new Date().toISOString(),
-                };
-                const initialBatches = [];
-
-                if (!isRecipeProduct && !hasVariants && initialStock > 0) {
-                    initialBatches.push({
-                        id: `batch-${productId}-initial`,
-                        productId,
-                        cost: initialCost,
-                        price: initialPrice,
-                        stock: initialStock,
-                        createdAt: new Date().toISOString(),
-                        trackStock: true,
-                        isActive: true,
-                        notes: "Stock Inicial",
-                        expiryDate: productData.expiryDate || null,
-                        alertTargetDate: productData.alertTargetDate || null,
-                        alertType: productData.alertType || null,
-                        manufacturerBatchId: productData.manufacturerBatchId || null,
-                        sku: null,
-                        attributes: null
-                    });
-                }
-
-                if (hasVariants) {
-                    for (const variant of productData.quickVariants) {
-                        if ((variant.talla || variant.color) && (parseFloat(variant.stock) > 0 || variant.sku)) {
-                            initialBatches.push({
-                                id: generateID('batch'),
-                                productId,
-                                stock: parseFloat(variant.stock) || 0,
-                                cost: parseFloat(variant.cost) || initialCost,
-                                price: parseFloat(variant.price) || initialPrice,
-                                sku: variant.sku || null,
-                                attributes: {
-                                    talla: variant.talla || '',
-                                    color: variant.color || ''
-                                },
-                                isActive: true,
-                                createdAt: new Date().toISOString(),
-                                notes: 'Ingreso rápido (Modo Asistido)',
-                                trackStock: true,
-                                expiryDate: variant.expiryDate || productData.expiryDate || null,
-                                alertTargetDate: variant.alertTargetDate || productData.alertTargetDate || null,
-                                alertType: variant.alertType || productData.alertType || null,
-                                manufacturerBatchId: variant.manufacturerBatchId || productData.manufacturerBatchId || null
-                            });
-                        }
-                    }
-                }
-
-                result = await createProductWithInitialInventorySafe(newProduct, initialBatches);
-                if (result.success) valueDifference = result.inventoryValue || 0;
-            }
-
-            // --- 2. PROCESAMIENTO DE STOCK Y VARIANTES EN EDICIÓN ---
-
-            if (result.success && isEditingExistingProduct) {
-                if (hasVariants) {
-                    for (const variant of productData.quickVariants) {
-                        // Validamos que la variante tenga sentido (talla/color y stock o SKU)
-                        if ((variant.talla || variant.color) && (parseFloat(variant.stock) > 0 || variant.sku)) {
-                            const batchData = {
-                                id: generateID('batch'),
-                                productId: productId,
-                                stock: parseFloat(variant.stock) || 0,
-                                // Si la variante no tiene costo/precio específico, hereda del padre
-                                cost: parseFloat(variant.cost) || initialCost,
-                                price: parseFloat(variant.price) || initialPrice,
-                                sku: variant.sku || null,
-                                attributes: {
-                                    talla: variant.talla || '',
-                                    color: variant.color || ''
-                                },
-                                isActive: true,
-                                createdAt: new Date().toISOString(),
-                                notes: 'Ingreso rápido (Modo Asistido)',
-                                trackStock: true
-                            };
-
-                            // Guardamos y sincronizamos cada variante
-                            const vResult = await saveBatchAndSyncProductSafe(batchData);
-                            if (vResult.success) {
-                                valueDifference += (batchData.cost * batchData.stock);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // --- 3. FINALIZACIÓN ---
-
-            if (result.success) {
+            if (result?.success) {
                 await refreshData();
+                await refreshCategories();
+
+                const valueDifference = Number(result.inventoryValue || 0);
                 if (valueDifference > 0) await adjustInventoryValue(valueDifference);
 
-                showMessageModal(editingProduct ? '¡Actualizado exitosamente!' : '¡Producto creado exitosamente!');
-                setEditingProduct(null);
+                showMessageModal(
+                    result.pending
+                        ? 'Producto guardado localmente. Se sincronizará al volver internet.'
+                        : (productToEdit ? '¡Actualizado exitosamente!' : '¡Producto creado exitosamente!')
+                );
 
-                // ─────────────────────────────────────────────────────────────
-                // REACTIVIDAD: Notificar a otras pestañas que la BD cambió
-                // ─────────────────────────────────────────────────────────────
+                setEditingProduct(null);
                 broadcastDBChange({
-                    action: editingProduct ? 'product-updated' : 'product-created',
-                    productId: productId,
-                    timestamp: Date.now(),
+                    action: productToEdit ? 'product-updated' : 'product-created',
+                    productId: result.productId || productData.id || productToEdit?.id,
+                    timestamp: Date.now()
                 });
 
-                // Volvemos a la vista principal
                 runWithoutBlocking(() => {
                     if (productData.productType === 'ingredient') handleTabChange('ingredients');
                     else handleTabChange('view-products');
                 });
 
                 return true;
-            } else {
-                handleActionableError(result);
-                return false;
             }
 
+            handleActionableError(result);
+            return false;
         } catch (error) {
-            Logger.error("Error crítico:", error);
+            Logger.error('Error crítico guardando producto:', error);
             showMessageModal(`Error inesperado: ${error.message}`);
             return false;
         } finally {
@@ -449,68 +235,50 @@ export default function ProductsPage() {
     };
 
     const handleCreateIngredient = () => {
-        setEditingProduct({
-            name: '',
-            productType: 'ingredient',
-        });
+        setEditingProduct({ name: '', productType: 'ingredient' });
         handleTabChange('add-product');
     };
 
     const handleDeleteProduct = async (product) => {
-        if (window.confirm(`¿Eliminar "${product.name}"?`)) {
-            try {
-                // PATRÓN UNIFICADO: softDeleteWithCascadeSafe reemplaza saveDataSafe + deleteDataSafe
-                const result = await softDeleteWithCascadeSafe(
-                    STORES.MENU,
-                    STORES.DELETED_MENU,
-                    product.id,
-                    { reason: 'Eliminado desde Catálogo de Productos' }
-                );
+        if (!window.confirm(`¿Eliminar "${product.name}"?`)) return;
 
-                if (!result.success) {
-                    handleActionableError(result);
-                    return;
-                }
-
-                await refreshData();
-                showMessageModal('Producto eliminado.');
-
-            } catch (error) {
-                Logger.error(error);
-                showMessageModal("Error al eliminar el producto.");
+        setIsLoading(true);
+        try {
+            const result = await productRepository.deleteProduct(product);
+            if (!result?.success) {
+                handleActionableError(result);
+                return;
             }
+
+            await refreshData();
+            broadcastDBChange({ action: 'product-deleted', productId: product.id, timestamp: Date.now() });
+            showMessageModal(result.pending ? 'Producto eliminado localmente. Se sincronizará al volver internet.' : 'Producto eliminado.');
+        } catch (error) {
+            Logger.error(error);
+            showMessageModal(error?.message || 'Error al eliminar el producto.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
     const handleToggleStatus = async (product) => {
         setIsLoading(true);
         try {
-            const updatedProduct = {
-                ...product,
-                isActive: !(product.isActive !== false),
-                updatedAt: new Date().toISOString()
-            };
-
-            // GUARDADO SEGURO CON LA NUEVA ARQUITECTURA
-            const result = await updateProductSafe(product.id, updatedProduct);
-
-            if (result.success) {
+            const result = await productRepository.toggleProductStatus(product);
+            if (result?.success) {
                 await refreshData();
-
-                // ─────────────────────────────────────────────────────────────
-                // REACTIVIDAD: Notificar a otras pestañas que la BD cambió
-                // ─────────────────────────────────────────────────────────────
                 broadcastDBChange({
                     action: 'product-status-changed',
                     productId: product.id,
-                    isActive: updatedProduct.isActive,
-                    timestamp: Date.now(),
+                    isActive: !(product.isActive !== false),
+                    timestamp: Date.now()
                 });
             } else {
                 handleActionableError(result);
             }
         } catch (error) {
-            showMessageModal("Error al cambiar estado");
+            Logger.error(error);
+            showMessageModal(error?.message || 'Error al cambiar estado');
         } finally {
             setIsLoading(false);
         }
@@ -581,67 +349,54 @@ export default function ProductsPage() {
                 </button>
             </div>
 
-            {/* CONTENIDO DE PESTAÑAS */}
+            {activeTab === 'add-product' && (
+                <ProductForm
+                    onSave={handleSaveProduct}
+                    onCancel={() => handleTabChange('view-products')}
+                    productToEdit={editingProduct}
+                    categories={categories}
+                    onOpenCategoryManager={() => setShowCategoryModal(true)}
+                />
+            )}
 
-            {
-                activeTab === 'add-product' && (
-                    <>
-                        <ProductForm
-                            onSave={handleSaveProduct}
-                            onCancel={() => handleTabChange('view-products')}
-                            productToEdit={editingProduct}
-                            categories={categories}
-                            onOpenCategoryManager={() => setShowCategoryModal(true)}
-                        />
-                    </>
-                )
-            }
+            {activeTab === 'view-products' && (
+                <ProductList
+                    products={productsForSale}
+                    categories={categories}
+                    isLoading={isLoading}
+                    onEdit={handleEditProduct}
+                    onDelete={handleDeleteProduct}
+                    onToggleStatus={handleToggleStatus}
+                    onManageBatches={handleManageBatches}
+                    onOpenDailyPrice={() => setShowDailyPrice(true)}
+                />
+            )}
 
-            {
-                activeTab === 'view-products' && (
-                    <ProductList
-                        products={productsForSale}
-                        categories={categories}
-                        isLoading={isLoading}
-                        onEdit={handleEditProduct}
-                        onDelete={handleDeleteProduct}
-                        onToggleStatus={handleToggleStatus}
-                        onManageBatches={handleManageBatches}
-                        onOpenDailyPrice={() => setShowDailyPrice(true)}
-                    />
-                )
-            }
+            {activeTab === 'ingredients' && features.hasRecipes && (
+                <IngredientManager
+                    ingredients={ingredientsOnly}
+                    onSave={handleSaveProduct}
+                    onDelete={handleDeleteProduct}
+                    onManageBatches={handleManageBatches}
+                    onCreateIngredient={handleCreateIngredient}
+                />
+            )}
 
-            {
-                activeTab === 'ingredients' && features.hasRecipes && (
-                    <IngredientManager
-                        ingredients={ingredientsOnly}
-                        onSave={handleSaveProduct}
-                        onDelete={handleDeleteProduct}
-                        onManageBatches={handleManageBatches}
-                    />
-                )
-            }
+            {activeTab === 'categories' && (
+                <CategoryManager
+                    categories={categories}
+                    onSave={handleSaveCategory}
+                    onRefresh={refreshCategories}
+                    onDelete={handleDeleteCategory}
+                />
+            )}
 
-            {
-                activeTab === 'categories' && (
-                    <CategoryManager
-                        categories={categories}
-                        onSave={handleSaveCategory}
-                        onRefresh={refreshCategories}
-                        onDelete={handleDeleteCategory}
-                    />
-                )
-            }
-
-            {
-                activeTab === 'batches' && (
-                    <BatchManager
-                        selectedProductId={selectedBatchProductId}
-                        onProductSelect={setSelectedBatchProductId}
-                    />
-                )
-            }
+            {activeTab === 'batches' && (
+                <BatchManager
+                    selectedProductId={selectedBatchProductId}
+                    onProductSelect={setSelectedBatchProductId}
+                />
+            )}
 
             {activeTab === 'variants-view' && features.hasVariants && isApparel && (
                 <VariantInventoryView />
