@@ -2,6 +2,7 @@ import { useAppStore } from '../../store/useAppStore';
 import Logger from '../Logger';
 import '../customers/customerSyncHandler';
 import '../products/productSyncHandler.js';
+import '../cash/cashSyncHandler.js';
 import { posSyncOrchestrator } from './posSyncOrchestrator';
 import { getLicenseKeyFromDetails, isCloudPosSyncEnabled } from './syncConstants';
 
@@ -49,7 +50,7 @@ export const startPosSyncAutoBootstrap = () => {
     reconcilePosSync(state, 'store_update');
   });
 
-  Logger.log('[PosSync] Auto bootstrap Fase 0 registrado. Handlers customer/product catalog listos.');
+  Logger.log('[PosSync] Auto bootstrap Fase 0 registrado. Handlers customer/product/cash listos.');
 };
 
 export const stopPosSyncAutoBootstrap = () => {
