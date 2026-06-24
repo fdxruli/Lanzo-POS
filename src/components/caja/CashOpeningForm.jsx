@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BadgeCheck, UserRound } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, Lock, UserRound } from 'lucide-react';
 import { Money } from '../../utils/moneyMath';
 
 export default function CashOpeningForm({
@@ -8,12 +8,15 @@ export default function CashOpeningForm({
   onCancel,
   submitLabel = 'Abrir caja',
   cancelLabel = 'Cancelar',
-  origin = 'manual'
+  origin = 'manual',
+  responsibleName = '',
+  lockResponsible = false,
+  readOnly = false
 }) {
   const normalizedSuggestion = Money.toExactString(Money.init(suggestedAmount || 0));
   const [montoInicial, setMontoInicial] = useState(normalizedSuggestion);
   const [montoContado, setMontoContado] = useState(normalizedSuggestion);
-  const [responsable, setResponsable] = useState('');
+  const [responsable, setResponsable] = useState(responsibleName || '');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -22,6 +25,12 @@ export default function CashOpeningForm({
     setMontoContado(normalizedSuggestion);
     setError('');
   }, [normalizedSuggestion]);
+
+  useEffect(() => {
+    if (responsibleName) {
+      setResponsable(responsibleName);
+    }
+  }, [responsibleName]);
 
   const amountsMatch = useMemo(() => {
     try {
@@ -42,6 +51,11 @@ export default function CashOpeningForm({
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
+
+    if (readOnly) {
+      setError('Caja cloud requiere conexión para abrir turno.');
+      return;
+    }
 
     if (!responsable.trim()) {
       setError('Escribe el nombre del empleado responsable.');
@@ -83,7 +97,7 @@ export default function CashOpeningForm({
         <label>
           <span>Empleado responsable</span>
           <div className="cash-opening-input">
-            <UserRound size={18} aria-hidden="true" />
+            {lockResponsible ? <Lock size={18} aria-hidden="true" /> : <UserRound size={18} aria-hidden="true" />}
             <input
               type="text"
               value={responsable}
@@ -91,11 +105,14 @@ export default function CashOpeningForm({
               placeholder="Nombre del operador"
               autoComplete="name"
               maxLength={100}
-              disabled={isSubmitting}
+              disabled={isSubmitting || lockResponsible || readOnly}
               required
-              autoFocus
+              autoFocus={!lockResponsible}
             />
           </div>
+          {lockResponsible && (
+            <small className="cash-opening-helper">Responsable asignado automáticamente por el usuario staff.</small>
+          )}
         </label>
 
         <label>
@@ -108,7 +125,7 @@ export default function CashOpeningForm({
               step="0.01"
               value={montoInicial}
               onChange={(event) => setMontoInicial(event.target.value)}
-              disabled={isSubmitting}
+              disabled={isSubmitting || readOnly}
               required
             />
           </div>
@@ -124,7 +141,7 @@ export default function CashOpeningForm({
               step="0.01"
               value={montoContado}
               onChange={(event) => setMontoContado(event.target.value)}
-              disabled={isSubmitting}
+              disabled={isSubmitting || readOnly}
               required
             />
           </div>
@@ -148,6 +165,13 @@ export default function CashOpeningForm({
         </div>
       )}
 
+      {readOnly && (
+        <div className="cash-opening-notice cash-opening-notice--warning">
+          <AlertTriangle size={18} aria-hidden="true" />
+          <p>Caja cloud requiere internet para abrir turno. Puedes consultar el último estado cacheado.</p>
+        </div>
+      )}
+
       {error && <p className="cash-opening-error" role="alert">{error}</p>}
 
       <div className="cash-opening-actions">
@@ -164,7 +188,7 @@ export default function CashOpeningForm({
         <button
           type="submit"
           className="btn caja-modal__button caja-modal__button--positive"
-          disabled={isSubmitting || !amountsMatch}
+          disabled={isSubmitting || !amountsMatch || readOnly}
         >
           {isSubmitting ? 'Abriendo...' : submitLabel}
         </button>
