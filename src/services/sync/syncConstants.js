@@ -28,7 +28,9 @@ export const CONFLICT_STATUS = Object.freeze({
 
 export const SYNC_ENTITY_TYPES = Object.freeze({
   CUSTOMER: 'customer',
+  CATEGORY: 'category',
   PRODUCT: 'product',
+  PRODUCT_BATCH: 'product_batch',
   CASH: 'cash',
   REPORT: 'report',
   GENERIC: 'generic'
@@ -40,6 +42,7 @@ export const SYNC_OPERATIONS = Object.freeze({
   DELETE: 'delete',
   RESTORE: 'restore',
   UPSERT: 'upsert',
+  TOGGLE_STATUS: 'toggle_status',
   UNKNOWN: 'unknown'
 });
 
@@ -69,9 +72,18 @@ export const isFeatureEnabled = (features = {}, featureName) => (
   features?.[featureName] === true || features?.[featureName] === 'true'
 );
 
+export const getPlanFeaturesFromLicenseDetails = (licenseDetails = {}) => (
+  licenseDetails?.features || licenseDetails?.details?.features || {}
+);
+
 export const isCloudPosSyncEnabled = (licenseDetails = {}) => {
-  const features = licenseDetails?.features || licenseDetails?.details?.features || {};
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
   return isFeatureEnabled(features, 'cloud_pos_sync');
+};
+
+export const isCloudProductsSyncEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_products_sync');
 };
 
 export const getLicenseKeyFromDetails = (licenseDetails = {}) => (
