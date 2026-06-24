@@ -1,7 +1,7 @@
 import { useAppStore } from '../../store/useAppStore';
 import Logger from '../Logger';
 import '../customers/customerSyncHandler';
-import '../productCloudRepository.js';
+import '../products/productSyncHandler.js';
 import { posSyncOrchestrator } from './posSyncOrchestrator';
 import { getLicenseKeyFromDetails, isCloudPosSyncEnabled } from './syncConstants';
 
