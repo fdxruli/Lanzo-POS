@@ -11,7 +11,7 @@ const MIGRATED_KEY = 'customers_cloud_migrated';
 const MIGRATED_AT_KEY = 'customers_cloud_migrated_at';
 const LAST_SNAPSHOT_AT_KEY = 'customers_last_snapshot_at';
 const MIGRATION_WARNING_KEY = 'customers_cloud_migration_warning';
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 10;
 
 const nowIso = () => new Date().toISOString();
 
