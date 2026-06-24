@@ -7,6 +7,8 @@ import {
   Pencil,
   Printer,
   Save,
+  ShieldCheck,
+  UserRound,
   WalletCards
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
@@ -21,6 +23,9 @@ const CajaStatusCard = ({
   isActive,
   CAJA_CONFIG,
   isBackupLoading,
+  isCloudCash = false,
+  isReadOnly = false,
+  cashActor = null,
   onEditarFondoInicial,
   onBackup,
   onReporte,
@@ -49,6 +54,8 @@ const CajaStatusCard = ({
       ? 'warning'
       : 'safe';
   const maxCashThreshold = CAJA_CONFIG?.MAX_CASH_THRESHOLD || 0;
+  const actorLabel = cajaActual?.deviceRole === 'staff' || cashActor?.isStaff ? 'Staff' : 'Admin';
+  const responsibleName = cajaActual?.responsable_apertura || cajaActual?.responsibleName || cashActor?.responsibleName;
 
   return (
     <section className="caja-card status-card" aria-labelledby="cash-total-title">
@@ -59,6 +66,12 @@ const CajaStatusCard = ({
               <span className="status-badge-dot" aria-hidden="true" />
               Turno activo
             </span>
+            {isCloudCash && (
+              <span className={`status-badge ${isReadOnly ? 'warning' : 'success'}`}>
+                <ShieldCheck size={14} aria-hidden="true" />
+                {isReadOnly ? 'Cloud consulta' : 'Cloud PRO'}
+              </span>
+            )}
             {excesoLiquidez && (
               <span
                 className="status-badge danger"
@@ -84,9 +97,15 @@ const CajaStatusCard = ({
               <Clock3 size={14} aria-hidden="true" />
               Inicio: {cajaActual?.fecha_apertura ? new Date(cajaActual.fecha_apertura).toLocaleString() : '...'}
             </span>
-            {cajaActual?.responsable_apertura && (
+            {responsibleName && (
               <span>
-                Responsable: {cajaActual.responsable_apertura}
+                <UserRound size={14} aria-hidden="true" />
+                Responsable: {responsibleName}
+              </span>
+            )}
+            {isCloudCash && (
+              <span>
+                Caja: {actorLabel}{cajaActual?.staffUserId ? ` · staff ${String(cajaActual.staffUserId).slice(0, 8)}` : ''}
               </span>
             )}
             {lastSyncTime && (
@@ -197,6 +216,7 @@ const CajaStatusCard = ({
               onClick={onEditarFondoInicial}
               title="Corregir fondo inicial calculado"
               aria-label="Editar fondo inicial"
+              disabled={isReadOnly}
             >
               <Pencil size={15} aria-hidden="true" />
             </button>
