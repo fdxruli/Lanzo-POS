@@ -9,11 +9,15 @@ import {
 
 const CajaActionsCard = ({
   isBackupLoading,
+  isReadOnly = false,
+  readOnlyMessage = '',
   onCorte,
   onEntrada,
   onSalida,
   onAjuste
 }) => {
+  const disabled = isBackupLoading || isReadOnly;
+
   return (
     <section className="caja-card actions-card" aria-labelledby="cash-actions-title">
       <div className="actions-heading">
@@ -26,8 +30,15 @@ const CajaActionsCard = ({
         </div>
       </div>
 
+      {isReadOnly && (
+        <div className="cash-opening-notice cash-opening-notice--warning">
+          <LockKeyhole size={18} aria-hidden="true" />
+          <p>{readOnlyMessage || 'Caja cloud está en modo consulta. Revisa la conexión para registrar movimientos.'}</p>
+        </div>
+      )}
+
       <div className="actions-grid">
-        <button className="btn btn-audit" onClick={onCorte}>
+        <button className="btn btn-audit" onClick={onCorte} disabled={disabled}>
           <span className="action-button-icon" aria-hidden="true">
             <LockKeyhole size={21} />
           </span>
@@ -38,19 +49,11 @@ const CajaActionsCard = ({
         </button>
 
         <div className="actions-row">
-          <button
-            className="btn btn-entry"
-            onClick={onEntrada}
-            disabled={isBackupLoading}
-          >
+          <button className="btn btn-entry" onClick={onEntrada} disabled={disabled}>
             <ArrowDownToLine size={20} aria-hidden="true" />
             <span>Entrada</span>
           </button>
-          <button
-            className="btn btn-exit"
-            onClick={onSalida}
-            disabled={isBackupLoading}
-          >
+          <button className="btn btn-exit" onClick={onSalida} disabled={disabled}>
             <ArrowUpFromLine size={20} aria-hidden="true" />
             <span>Salida</span>
           </button>
@@ -59,7 +62,7 @@ const CajaActionsCard = ({
         <button
           className="btn btn-adjust"
           onClick={onAjuste}
-          disabled={isBackupLoading}
+          disabled={disabled}
           title="Registrar ajuste auditable por diferencia física"
         >
           <Scale size={19} aria-hidden="true" />
