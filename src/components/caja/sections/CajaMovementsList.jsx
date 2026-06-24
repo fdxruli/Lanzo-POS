@@ -20,37 +20,27 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
 
     if (filtroTipo !== 'todos') {
       if (filtroTipo === 'entrada') {
-        filtrados = filtrados.filter(m =>
-          ['entrada', 'ajuste_entrada', 'venta', 'abono', 'venta_tarjeta'].includes(m.tipo)
-        );
+        filtrados = filtrados.filter(m => ['entrada', 'ajuste_entrada', 'venta', 'abono', 'venta_tarjeta', 'venta_efectivo', 'abono_cliente'].includes(m.tipo));
       } else if (filtroTipo === 'salida') {
-        filtrados = filtrados.filter(m =>
-          ['salida', 'ajuste_salida', 'venta_eliminada', 'merma'].includes(m.tipo)
-        );
+        filtrados = filtrados.filter(m => ['salida', 'ajuste_salida', 'venta_eliminada', 'merma', 'cancelacion'].includes(m.tipo));
       } else if (filtroTipo === 'ajuste') {
-        filtrados = filtrados.filter(m =>
-          m.tipo === 'ajuste_entrada' ||
-          m.tipo === 'ajuste_salida' ||
-          m.tipo === 'fondo_inicial_ajuste'
-        );
+        filtrados = filtrados.filter(m => ['ajuste_entrada', 'ajuste_salida', 'fondo_inicial_ajuste'].includes(m.tipo));
       }
     }
 
     if (busqueda.trim()) {
       const busquedaLower = busqueda.toLowerCase().trim();
-      filtrados = filtrados.filter(m =>
-        m.concepto.toLowerCase().includes(busquedaLower)
-      );
+      filtrados = filtrados.filter(m => String(m.concepto || '').toLowerCase().includes(busquedaLower));
     }
 
     return filtrados.map(mov => {
-      const esEntrada = ['entrada', 'ajuste_entrada', 'venta', 'abono'].includes(mov.tipo);
+      const esEntrada = ['entrada', 'ajuste_entrada', 'venta', 'abono', 'venta_efectivo', 'abono_cliente'].includes(mov.tipo);
       const esSalida = ['salida', 'ajuste_salida'].includes(mov.tipo);
       const esAjuste = ['ajuste_entrada', 'ajuste_salida'].includes(mov.tipo);
       const esAjusteFondoInicial = mov.tipo === 'fondo_inicial_ajuste';
       const esVentaTarjeta = mov.tipo === 'venta_tarjeta';
-      const esEliminacion = ['venta_eliminada', 'merma'].includes(mov.tipo);
-      const deltaSafe = esAjusteFondoInicial ? Money.init(mov.audit?.delta || 0) : Money.init(0);
+      const esEliminacion = ['venta_eliminada', 'merma', 'cancelacion'].includes(mov.tipo);
+      const deltaSafe = esAjusteFondoInicial ? Money.init(mov.audit?.delta || mov.metadata?.delta || 0) : Money.init(0);
 
       let prefijo = '';
       let tone = 'neutral';
@@ -69,15 +59,18 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
       else if (esVentaTarjeta) badge = 'Tarjeta/Transf.';
       else if (mov.tipo === 'venta_eliminada') badge = 'Venta eliminada';
       else if (mov.tipo === 'merma') badge = 'Merma';
-      else if (mov.tipo === 'venta') badge = 'Venta';
-      else if (mov.tipo === 'abono') badge = 'Abono';
+      else if (mov.tipo === 'venta' || mov.tipo === 'venta_efectivo') badge = 'Venta';
+      else if (mov.tipo === 'abono' || mov.tipo === 'abono_cliente') badge = 'Abono';
+      else if (mov.tipo === 'cancelacion') badge = 'Cancelación';
 
       return {
         id: mov.id,
         concepto: esAjuste || esAjusteFondoInicial ? `[Ajuste] ${mov.concepto}` : mov.concepto,
         monto: `${prefijo}$${Money.toNumber(mov.monto).toFixed(2)}`,
-        hora: new Date(mov.fecha).toLocaleTimeString(),
-        actor: mov.actor || mov.audit?.actor || null,
+        hora: mov.fecha ? new Date(mov.fecha).toLocaleTimeString() : '',
+        actor: mov.actor || mov.actorName || mov.audit?.actor || null,
+        origen: mov.origen || mov.source || mov.metadata?.source || null,
+        staff: mov.staffUserId ? String(mov.staffUserId).slice(0, 8) : null,
         badge,
         tone
       };
@@ -103,20 +96,13 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
             <h3 id="movements-title" className="section-title">Movimientos del turno</h3>
           </div>
         </div>
-        <span className="items-count">
-          {movimientosRender.length} de {movimientos.length}
-        </span>
+        <span className="items-count">{movimientosRender.length} de {movimientos.length}</span>
       </div>
 
       <div className="filters-bar">
         <label className="filter-control">
           <ListFilter size={17} aria-hidden="true" />
-          <select
-            value={filtroTipo}
-            onChange={(e) => setFiltroTipo(e.target.value)}
-            className="filter-select"
-            aria-label="Filtrar por tipo de movimiento"
-          >
+          <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="filter-select" aria-label="Filtrar por tipo de movimiento">
             <option value="todos">Todos</option>
             <option value="entrada">Entradas</option>
             <option value="salida">Salidas</option>
@@ -148,11 +134,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
         {movimientosRender.length === 0 ? (
           <div className="empty-state">
             <ReceiptText className="empty-state-icon" size={30} aria-hidden="true" />
-            <p>
-              {movimientos.length === 0
-                ? 'No hay movimientos registrados.'
-                : 'No se encontraron movimientos con los filtros actuales.'}
-            </p>
+            <p>{movimientos.length === 0 ? 'No hay movimientos registrados.' : 'No se encontraron movimientos con los filtros actuales.'}</p>
           </div>
         ) : (
           movimientosRender.map(mov => (
@@ -173,7 +155,9 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
                 <span className="movement-amount">{mov.monto}</span>
                 <div className="movement-details">
                   <small>{mov.hora}</small>
-                  {mov.actor && <small>Responsable: {mov.actor}</small>}
+                  {mov.actor && <small>Actor: {mov.actor}</small>}
+                  {mov.staff && <small>Staff: {mov.staff}</small>}
+                  {mov.origen && <small>Origen: {mov.origen}</small>}
                   {mov.badge && <span className="movement-badge">{mov.badge}</span>}
                 </div>
               </div>
