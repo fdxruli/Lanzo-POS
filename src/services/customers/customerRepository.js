@@ -53,9 +53,9 @@ const isRetryableCloudError = (error) => {
   const message = stringifyCloudError(error);
 
   return (
-    code === '57014' || // PostgreSQL query_canceled / statement_timeout
-    code.startsWith('08') || // connection_exception family
-    code.startsWith('53') || // insufficient resources / temporary pressure
+    code === '57014' ||
+    code.startsWith('08') ||
+    code.startsWith('53') ||
     message.includes('failed to fetch') ||
     message.includes('networkerror') ||
     message.includes('network request failed') ||
@@ -64,8 +64,6 @@ const isRetryableCloudError = (error) => {
     message.includes('query timeout') ||
     message.includes('timeout') ||
     message.includes('temporarily unavailable') ||
-    message.includes('connection terminated') ||
-    message.includes('connection reset') ||
     message.includes('502') ||
     message.includes('503') ||
     message.includes('504')
@@ -253,8 +251,6 @@ export const customerRepository = {
           expectedVersion
         });
 
-        posSyncOrchestrator.processOutbox('customer_retryable_upsert').catch(() => {});
-
         return {
           success: true,
           pending: true,
@@ -348,8 +344,6 @@ export const customerRepository = {
           idempotencyKey,
           expectedVersion
         });
-
-        posSyncOrchestrator.processOutbox('customer_retryable_delete').catch(() => {});
 
         return {
           success: true,
