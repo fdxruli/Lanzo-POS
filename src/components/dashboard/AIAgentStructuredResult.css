@@ -308,9 +308,8 @@ body:has(.ai-agent-dashboard .analysis-state) {
 .ai-agent-dashboard .connection-indicator.online span,
 .ai-agent-dashboard .connection-indicator.warning span {
   display: inline-block;
-  width: 0;
-  max-width: 0;
-  overflow: hidden;
+  font-size: 0;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -318,10 +317,12 @@ body:has(.ai-agent-dashboard .analysis-state) {
 .ai-agent-dashboard .connection-indicator.online span::after,
 .ai-agent-dashboard .connection-indicator.warning span::after {
   display: inline-block;
-  width: max-content;
   max-width: 72vw;
   overflow: visible;
   white-space: nowrap;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  vertical-align: middle;
 }
 
 .ai-agent-dashboard .connection-indicator .spin-icon + span::after {
@@ -342,19 +343,20 @@ html[data-lanzo-ai-usage-exhausted="true"] .ai-agent-dashboard .connection-indic
 
 .ai-agent-dashboard .analyze-button:disabled span {
   display: inline-block;
-  width: 0;
-  max-width: 0;
-  overflow: hidden;
+  font-size: 0;
+  line-height: 1;
   white-space: nowrap;
 }
 
 .ai-agent-dashboard .analyze-button:disabled span::after {
   content: 'No disponible por ahora';
   display: inline-block;
-  width: max-content;
   max-width: 76vw;
   overflow: visible;
   white-space: nowrap;
+  font-size: 1rem;
+  line-height: 1.2;
+  vertical-align: middle;
 }
 
 html[data-lanzo-ai-usage-exhausted="true"] .ai-agent-dashboard .analyze-button:disabled span::after {
