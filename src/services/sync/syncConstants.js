@@ -28,6 +28,9 @@ export const CONFLICT_STATUS = Object.freeze({
 
 export const SYNC_ENTITY_TYPES = Object.freeze({
   CUSTOMER: 'customer',
+  CUSTOMER_LEDGER: 'customer_ledger',
+  CUSTOMER_CREDIT: 'customer_credit',
+  CUSTOMER_PAYMENT: 'customer_payment',
   CATEGORY: 'category',
   PRODUCT: 'product',
   PRODUCT_BATCH: 'product_batch',
@@ -95,6 +98,13 @@ export const isCloudProductsSyncEnabled = (licenseDetails = {}) => {
 export const isCloudCashSyncEnabled = (licenseDetails = {}) => {
   const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
   return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_cash_sync');
+};
+
+export const isCloudCustomerCreditSyncEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'cloud_pos_sync')
+    && isFeatureEnabled(features, 'cloud_cash_sync')
+    && isFeatureEnabled(features, 'cloud_customer_credit_sync');
 };
 
 export const getLicenseKeyFromDetails = (licenseDetails = {}) => (
