@@ -1,0 +1,281 @@
+INFORME SUPABASE FASE 6B — VENTAS CLOUD CON CAJA Y FOLIO
+Proyecto Supabase: odlrhijtfyavryeqivaa
+Repositorio: fdxruli/Lanzo-POS
+Rama de trabajo: fase6b-cloud-sales
+Fecha: 2026-06-25
+
+1. OBJETIVO
+Implementar la base transaccional de ventas cloud efectivas para licencias PRO, limitada a ventas pagadas/no fiadas, con folio cloud, payments, items snapshot, vínculo con caja cloud cuando aplica efectivo, auditoría e idempotencia.
+
+2. ALCANCE DE FASE 6B
+Sí hace:
+- Crea venta cloud efectiva con source_mode = cloud_committed.
+- Asigna folio cloud por licencia en formato V-000001.
+- Crea items snapshot.
+- Crea payments.
+- Valida permiso POS.
+- Valida caja cloud abierta cuando hay efectivo.
+- Crea movimiento de caja type = venta, source = sale, solo para componente efectivo.
+- Actualiza totales de caja en la misma transacción.
+- Registra auditoría de venta y caja.
+- Registra eventos en pos_sync_events para venta, items, payments, cash_movement, cash_session y report.
+- Mantiene idempotencia por licencia + key.
+- Expone repositorio/mapper/servicio frontend para pruebas controladas.
+
+No hace:
+- No descuenta pos_products.stock.
+- No descuenta pos_product_batches.stock.
+- No crea pos_customer_ledger.
+- No modifica deuda de clientes.
+- No implementa venta fiada cloud.
+- No implementa cancelaciones/devoluciones cloud.
+- No sustituye FREE/local.
+- No activa automáticamente UI sin VITE_ENABLE_CLOUD_CASHIER_SALES=true.
+
+3. TABLAS/COLUMNAS MODIFICADAS
+public.pos_sales:
+- cloud_folio text
+- folio_sequence bigint
+- cash_effect_status text
+- inventory_effect_status text default 'not_applied'
+- credit_effect_status text default 'not_applied'
+- committed_at timestamptz
+
+public.pos_cash_sessions:
+- sales_total numeric default 0
+- non_cash_sales_total numeric default 0
+- sales_count integer default 0
+- cash_sales_total ya existía y se conserva
+- expected_cash_total se conserva
+- customer_payments_total, cash_entries_total y cash_exits_total no se alteran para ventas 6B
+
+public.pos_cash_movements:
+- sale_id text null
+- type ahora permite venta
+
+public.pos_folio_sequences:
+- Nueva tabla para folios por licencia.
+- PK: (license_id, sequence_name)
+- current_value, prefix, padding, updated_at
+
+4. ÍNDICES AGREGADOS
+- idx_pos_cash_movements_license_sale_id
+- idx_pos_cash_movements_license_source_created
+- ux_pos_sales_license_cloud_folio
+- idx_pos_sales_license_source_effects_sold
+
+5. FEATURE FLAG
+Se agregó cloud_sales_cashier a public.plans.features:
+- pro_monthly: true
+- free_trial: false
+- basic_monthly: false
+
+La validación backend exige:
+- cloud_pos_sync = true
+- cloud_sales_sync_base = true
+- cloud_cash_sync = true
+- cloud_sales_cashier = true
+
+No exige todavía:
+- cloud_products_sync para inventario en venta
+- cloud_customer_credit_sync para venta fiada
+
+6. RPC CREADA
+public.pos_create_cloud_sale_cashier(
+  p_license_key text,
+  p_device_fingerprint text,
+  p_security_token text default null,
+  p_staff_session_token text default null,
+  p_sale jsonb default '{}'::jsonb,
+  p_items jsonb default '[]'::jsonb,
+  p_payments jsonb default '[]'::jsonb,
+  p_cash_session_id text default null,
+  p_idempotency_key text default null
+)
+
+Estado:
+- SECURITY DEFINER: sí.
+- Transacción lógica única: sí, al ejecutarse dentro de la función PostgreSQL.
+- Reintento idempotente: sí, devuelve response_payload si ya se completó.
+- Si está processing devuelve IDEMPOTENCY_PROCESSING.
+
+7. HELPERS PRIVADOS
+- private.assert_cloud_sales_cashier_enabled(p_context)
+- private.normalize_pos_sale_payment_method(p_method)
+- private.next_pos_sale_folio(p_license_id)
+
+next_pos_sale_folio usa pg_advisory_xact_lock por licencia + nombre de secuencia para evitar folios duplicados concurrentes.
+
+8. FLUJO DE CAJA
+Venta con efectivo:
+- Requiere caja cloud abierta del actor.
+- Staff solo usa su caja actor_key staff:<staff_user_id>.
+- Admin usa actor_key admin_device:<device_id>.
+- Inserta pos_cash_movements con:
+  type = venta
+  source = sale
+  amount = componente efectivo neto
+  sale_id = pos_sales.id
+- Actualiza pos_cash_sessions:
+  sales_total += sale.total
+  sales_count += 1
+  cash_sales_total += cash_component
+  non_cash_sales_total += non_cash_component
+  expected_cash_total += cash_component
+
+Venta tarjeta/transferencia:
+- Crea venta/items/payments.
+- No crea movimiento efectivo.
+- No incrementa expected_cash_total.
+- Si hay caja abierta del actor, puede vincular cash_session_id como contexto, pero no mueve efectivo.
+
+9. FLUJO DE FOLIO
+- Tabla: pos_folio_sequences.
+- Secuencia por license_id y sequence_name = sale.
+- Formato mínimo: V-000001, V-000002.
+- El folio se asigna una sola vez dentro de la misma transacción de commit cloud.
+
+10. IDEMPOTENCIA
+Key sugerida:
+- p_idempotency_key desde frontend, o
+- sales.cloud_commit:<local_sale_id>:<device_id>
+
+Garantías backend:
+- No duplica pos_sales por la misma key.
+- No duplica items/payments/movimiento si la key ya completó.
+- Reintento devuelve la misma respuesta guardada.
+- Movimiento de caja usa idempotency_key derivada con sufijo :cash.
+
+11. AUDITORÍA
+Se registran eventos en pos_sale_audit_events:
+- sale.cloud_committed
+- sale.cash_movement_created
+- sale.cash_session_totals_updated
+
+Payload incluye:
+- sale_id
+- folio
+- cash_session_id
+- cash_movement_id
+- actor_key/actor_name/device/staff
+- payment_summary
+- idempotency_key
+
+12. PULL/REALTIME
+Se reutilizan:
+- pos_pull_sales_snapshot
+- pos_pull_sales_changes
+- pos_get_sale
+
+Las ventas cloud_committed viajan por los mismos pull de ventas.
+Se registran eventos en pos_sync_events para:
+- sale cloud_commit
+- sale_item create
+- sale_payment create
+- cash_movement movement
+- cash_session update
+- report overview update
+
+Realtime sigue como aviso; pull incremental sigue siendo fuente oficial.
+
+13. REPORTES
+public.pos_get_reports_overview ahora incluye métricas experimentales:
+- cloud_sales_total
+- cloud_sales_count
+- cloud_cash_sales_total
+- cloud_non_cash_sales_total
+
+Advertencia agregada:
+- Ventas cloud caja 6B es experimental: no incluye utilidad final, inventario cloud ni credito cloud.
+
+No se convierte todavía utilidad real a cloud.
+
+14. INTEGRACIÓN FRONTEND
+Archivos agregados/modificados en rama fase6b-cloud-sales:
+- src/services/sync/syncConstants.js
+  - Agrega isCloudSalesCashierEnabled.
+  - Agrega operación CLOUD_COMMIT.
+
+- src/services/salesCloud/salesCloudRepository.js
+  - Agrega createCloudCashierSale(...).
+  - Agrega guard isCloudSalesCashierEnabled(...).
+
+- src/services/salesCloud/salesCloudCashierMapper.js
+  - Mapea checkout local a payload cloud cashier.
+  - Normaliza métodos cash/card/transfer/mixed.
+  - Rechaza métodos credit-like por compatibilidad.
+
+- src/services/salesCloud/salesCloudCashierService.js
+  - Decide si se puede usar cloud cashier.
+  - Requiere VITE_ENABLE_CLOUD_CASHIER_SALES=true.
+  - Requiere feature cloud_sales_cashier.
+  - Requiere conexión.
+  - Envía venta a pos_create_cloud_sale_cashier.
+  - Cachea snapshot local cloud_committed.
+  - Mapea errores técnicos a mensajes entendibles.
+
+- src/services/salesCloud/salesCloudLocalRepository.js
+  - Cachea ventas cloud_committed.
+  - Evita reintentar shadow en ventas cloud_committed.
+  - Guarda snapshot local para Dexie.
+
+- src/services/salesCloud/index.js
+  - Exporta servicios/mapper 6B.
+
+Pendiente frontend deliberado:
+- No se dejó conectado automáticamente processSaleCore.js porque el conector bloqueó la edición directa del archivo durante esta sesión.
+- La arquitectura queda lista para cablear el hook mínimo antes de executeSaleTransactionSafe:
+  1) shouldUseCloudCashierSale(...)
+  2) si true, processCloudCashierSale(...)
+  3) retornar sin llamar shadow/local para evitar doble venta.
+- Mientras ese hook no se aplique, FREE/local y PRO shadow 6A siguen igual.
+
+15. PRUEBAS REALIZADAS
+Supabase:
+- Migración aplicada correctamente.
+- pos_create_cloud_sale_cashier existe.
+- pos_create_cloud_sale_cashier es SECURITY DEFINER.
+- pos_get_reports_overview es SECURITY DEFINER.
+- private.next_pos_sale_folio existe y es SECURITY DEFINER.
+- cloud_sales_cashier quedó true solo en pro_monthly.
+- Columnas 6B existen en pos_sales, pos_cash_sessions, pos_cash_movements y pos_folio_sequences.
+
+Pendiente por ejecutar en ambiente con sesión real:
+- Venta efectivo con caja abierta.
+- Reintento misma idempotency key.
+- Venta tarjeta/transferencia.
+- Venta fiada rechazada.
+- Venta efectivo sin caja rechazada.
+- Staff intentando caja de otro staff.
+- npm run build.
+
+16. RIESGOS PENDIENTES
+- El checkout UI todavía no llama automáticamente el servicio 6B.
+- Producto/stock cloud no se descuenta hasta 6C.
+- Crédito/ledger cloud no se toca hasta 6D.
+- Si se activa VITE_ENABLE_CLOUD_CASHIER_SALES sin completar el hook de processSaleCore, no habrá cambio visible en UI.
+- La cache Dexie de venta cloud committed está preparada, pero la proyección local de inventario no debe considerarse definitiva en 6B.
+
+17. PRÓXIMOS PASOS
+6B inmediato:
+- Aplicar hook mínimo en processSaleCore.js antes de executeSaleTransactionSafe.
+- Ejecutar npm run build.
+- Probar venta efectivo/tarjeta/transferencia con una licencia PRO real.
+
+6C:
+- Inventario/lotes cloud en venta.
+- Descuento transaccional de pos_products y pos_product_batches.
+- Reservas/committed stock cloud.
+
+6D:
+- Venta fiada cloud.
+- Cargo en pos_customer_ledger.
+- Actualización de deuda cliente.
+
+6E:
+- Cancelaciones/devoluciones cloud.
+- Reversión caja/inventario/crédito.
+
+6F:
+- Migración/reportes finales.
+- Consolidación de utilidad cloud definitiva.
