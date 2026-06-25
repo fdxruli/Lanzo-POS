@@ -12,6 +12,7 @@ import {
   WalletCards
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import { resolveCashSessionAmounts } from '../../../services/cajaProjection';
 
 const CajaStatusCard = ({
   cajaActual,
@@ -33,21 +34,16 @@ const CajaStatusCard = ({
   onResumen,
   onImprimir
 }) => {
-  let totalEnCajaSafe = Money.init(0);
-  let entradasTotalesSafe = Money.init(0);
+  const cashAmounts = cajaActual
+    ? resolveCashSessionAmounts(cajaActual, totalesTurno, { isCloudCash })
+    : null;
 
-  if (cajaActual) {
-    const inicial = Money.init(cajaActual.monto_inicial || 0);
-    const ventas = Money.init(totalesTurno.ventasContado || 0);
-    const abonos = Money.init(totalesTurno.abonosFiado || 0);
-    entradasTotalesSafe = Money.init(cajaActual.entradas_efectivo || 0);
-    const salidas = Money.init(cajaActual.salidas_efectivo || 0);
-
-    const subtotalIngresos = Money.add(inicial, ventas);
-    const subtotalExtras = Money.add(abonos, entradasTotalesSafe);
-    const ingresosTotales = Money.add(subtotalIngresos, subtotalExtras);
-    totalEnCajaSafe = Money.subtract(ingresosTotales, salidas);
-  }
+  // En cloud, Supabase es la fuente oficial de totales de caja.
+  const totalEnCajaSafe = Money.init(cashAmounts?.totalTeorico || 0);
+  const entradasTotalesSafe = Money.init(cashAmounts?.entradasEfectivo || 0);
+  const ventasTurnoSafe = Money.init(cashAmounts?.ventasContado || 0);
+  const abonosTurnoSafe = Money.init(cashAmounts?.abonosFiado || 0);
+  const salidasTotalesSafe = Money.init(cashAmounts?.salidasEfectivo || 0);
 
   const liquidityLevel = porcentajeLiquidez >= 100
     ? 'danger'
@@ -245,22 +241,22 @@ const CajaStatusCard = ({
             </button>
           </div>
           <strong className="amount neutral">
-            ${Money.toNumber(cajaActual?.monto_inicial || 0).toFixed(2)}
+            ${Money.toNumber(cashAmounts?.fondoInicial || 0).toFixed(2)}
           </strong>
         </div>
 
         <div className="cash-metric">
           <span className="cash-metric-label">Ventas en efectivo</span>
           <strong className="amount positive">
-            + ${Money.toNumber(totalesTurno.ventasContado || 0).toFixed(2)}
+            + ${Money.toNumber(ventasTurnoSafe).toFixed(2)}
           </strong>
         </div>
 
-        {Money.init(totalesTurno.abonosFiado || 0).gt(0) && (
+        {abonosTurnoSafe.gt(0) && (
           <div className="cash-metric">
             <span className="cash-metric-label">Abonos</span>
             <strong className="amount warning">
-              + ${Money.toNumber(totalesTurno.abonosFiado || 0).toFixed(2)}
+              + ${Money.toNumber(abonosTurnoSafe).toFixed(2)}
             </strong>
           </div>
         )}
@@ -275,7 +271,7 @@ const CajaStatusCard = ({
         <div className="cash-metric">
           <span className="cash-metric-label">Salidas</span>
           <strong className="amount negative">
-            - ${Money.toNumber(cajaActual?.salidas_efectivo || 0).toFixed(2)}
+            - ${Money.toNumber(salidasTotalesSafe).toFixed(2)}
           </strong>
         </div>
       </div>
