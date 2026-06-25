@@ -2,6 +2,7 @@ import { db } from '../db/dexie';
 import Logger from '../Logger';
 import { POS_SYNC_STORES } from './syncConstants';
 
+const POS_SYNC_DEXIE_VERSION = 24;
 let posSyncSchemaRegistered = false;
 
 const hasTable = (tableName) => db.tables.some((table) => table.name === tableName);
@@ -26,7 +27,7 @@ export const ensurePosSyncDexieSchema = () => {
     return false;
   }
 
-  db.version(23).stores({
+  db.version(POS_SYNC_DEXIE_VERSION).stores({
     [POS_SYNC_STORES.OUTBOX]: 'id, status, entityType, createdAt, [status+createdAt], idempotencyKey',
     [POS_SYNC_STORES.META]: 'key',
     [POS_SYNC_STORES.CONFLICTS]: 'id, entityType, entityId, status, createdAt'
