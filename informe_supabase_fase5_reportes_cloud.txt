@@ -1,0 +1,80 @@
+INFORME SUPABASE - FASE 5 REPORTES CLOUD PRO
+Fecha: 2026-06-24
+Proyecto: odlrhijtfyavryeqivaa
+
+Objetivo
+Se implemento la base de reportes cloud PRO para clientes, productos/catalogo, caja, movimientos de caja, credito/abonos y customer ledger.
+
+Regla critica
+No se creo pos_sales. No se implementaron ventas cloud. Ventas, historial, utilidad real y mermas siguen siendo locales/cache del dispositivo hasta una fase futura.
+
+Feature flags
+public.plans.features:
+- pro_monthly: cloud_reports_sync = true
+- free_trial: cloud_reports_sync = false
+- basic_monthly: cloud_reports_sync = false
+
+RPCs creadas
+- public.pos_get_reports_overview
+- public.pos_get_cash_report
+- public.pos_get_customer_credit_report
+- public.pos_get_product_catalog_report
+- public.pos_get_report_timeseries
+- public.pos_export_report_data
+
+Helpers privados creados
+- private.assert_cloud_reports_sync_enabled
+- private.reports_date_range
+- private.reports_scope_allowed
+- private.reports_staff_filter
+- private.safe_numeric
+- private.reports_is_admin
+- private.reports_has_permission
+- private.reports_allowed
+- private.reports_audit_allowed
+- private.reports_source_metadata
+
+Fuentes oficiales cloud
+- cash
+- customer_credit
+- customers
+- products
+
+Fuentes locales/cache
+- sales
+- waste
+
+Permisos
+- Admin ve reportes globales.
+- Staff requiere permiso reportes o reports.
+- Staff normal queda limitado a sus propios datos.
+- Auditor global requiere caja_auditoria, cash_audit, reportes_globales o reports_global.
+
+RLS
+Se valido RLS activo en:
+- pos_customers
+- pos_categories
+- pos_products
+- pos_product_batches
+- pos_cash_sessions
+- pos_cash_movements
+- pos_customer_ledger
+- pos_sync_events
+
+Pruebas realizadas
+- La migracion aplico correctamente.
+- cloud_reports_sync quedo true solo en pro_monthly.
+- Las RPCs existen.
+- Las RPCs publicas nuevas son SECURITY DEFINER.
+- public.pos_sales no existe.
+- RLS activo en tablas principales.
+
+Frontend
+Se agrego src/services/reports y DashboardPage usa reportsRepository. El dashboard muestra modo mixto/cache/local y mantiene ventas locales etiquetadas.
+
+Pendientes
+- Ejecutar npm run build en desarrollo o CI.
+- Probar admin PRO online.
+- Probar staff con/sin permiso reportes.
+- Probar PRO offline con snapshot cacheado.
+- Implementar una fase futura de ventas cloud antes de utilidad real cloud.
