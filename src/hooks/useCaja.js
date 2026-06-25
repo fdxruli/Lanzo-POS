@@ -5,6 +5,7 @@ import { Money } from '../utils/moneyMath';
 import { MOVIMIENTO_TIPOS, CAJA_CONFIG } from '../services/cajaService';
 import { cashRepository } from '../services/cash/cashRepository';
 import { CASH_CLOUD_OFFLINE_MESSAGE } from '../services/cash/cashActor';
+import { resolveCashSessionAmounts } from '../services/cajaProjection';
 import {
   CASH_OPENING_POLICY,
   CASH_OPENING_POLICY_EVENT,
@@ -151,7 +152,15 @@ export function useCaja() {
     if (!cajaActual) return '0';
 
     const now = Date.now();
-    const totalsKey = `${totalesTurno.ventasContado}_${totalesTurno.abonosFiado}_${cajaActual.entradas_efectivo}_${cajaActual.salidas_efectivo}`;
+    const totalsKey = [
+      totalesTurno.ventasContado,
+      totalesTurno.abonosFiado,
+      cajaActual.ventas_efectivo,
+      cajaActual.abonos_fiado,
+      cajaActual.entradas_efectivo,
+      cajaActual.salidas_efectivo,
+      cajaActual.total_teorico_cloud
+    ].join('_');
 
     if (!forceRefresh
       && totalesCacheRef.current.teoricoData
@@ -161,17 +170,8 @@ export function useCaja() {
       return totalesCacheRef.current.teoricoData;
     }
 
-    const inicialSafe = Money.init(cajaActual.monto_inicial || 0);
-    const ventasSafe = Money.init(totalesTurno.ventasContado || 0);
-    const abonosSafe = Money.init(totalesTurno.abonosFiado || 0);
-    const entradasSafe = Money.init(cajaActual.entradas_efectivo || 0);
-    const salidasSafe = Money.init(cajaActual.salidas_efectivo || 0);
-
-    const totalSafe = Money.subtract(
-      Money.add(Money.add(inicialSafe, ventasSafe), Money.add(abonosSafe, entradasSafe)),
-      salidasSafe
-    );
-    const result = Money.toExactString(totalSafe);
+    // En cloud, Supabase es la fuente oficial de totales de caja.
+    const result = resolveCashSessionAmounts(cajaActual, totalesTurno, { isCloudCash }).totalTeorico;
 
     totalesCacheRef.current = {
       teoricoTimestamp: now,
@@ -181,7 +181,7 @@ export function useCaja() {
     };
 
     return result;
-  }, [cajaActual, totalesTurno]);
+  }, [cajaActual, isCloudCash, totalesTurno]);
 
   const abrirCaja = useCallback(async (openingInput = {}) => {
     if (!ensureMutableCloudCash()) return false;
@@ -429,17 +429,18 @@ export function useCaja() {
   const obtenerResumenEstadistico = useCallback(async () => {
     if (!cajaActual) return null;
 
-    const totalTeorico = Money.init(await calcularTotalTeorico());
+    const amounts = resolveCashSessionAmounts(cajaActual, totalesTurno, { isCloudCash });
+    const totalTeorico = Money.init(amounts.totalTeorico);
     const elapsedMs = Date.now() - new Date(cajaActual.fecha_apertura).getTime();
     const elapsedHours = Math.max(elapsedMs / (1000 * 60 * 60), 0.01);
     const totalIngresos = Money.add(
-      Money.init(cajaActual.monto_inicial || 0),
+      Money.init(amounts.fondoInicial),
       Money.add(
-        Money.init(totalesTurno.ventasContado || 0),
-        Money.add(Money.init(totalesTurno.abonosFiado || 0), Money.init(cajaActual.entradas_efectivo || 0))
+        Money.init(amounts.ventasContado),
+        Money.add(Money.init(amounts.abonosFiado), Money.init(amounts.entradasEfectivo))
       )
     );
-    const totalSalidas = Money.init(cajaActual.salidas_efectivo || 0);
+    const totalSalidas = Money.init(amounts.salidasEfectivo);
 
     return {
       fechaApertura: cajaActual.fecha_apertura,
@@ -452,21 +453,21 @@ export function useCaja() {
       totalIngresos: Money.toExactString(totalIngresos),
       totalSalidas: Money.toExactString(totalSalidas),
       flujoNeto: Money.toExactString(Money.subtract(totalIngresos, totalSalidas)),
-      fondoInicial: cajaActual.monto_inicial || '0',
-      ventasContado: totalesTurno.ventasContado || '0',
-      abonosFiado: totalesTurno.abonosFiado || '0',
-      entradasExtras: cajaActual.entradas_efectivo || '0',
-      ventasPorHora: Money.toExactString(Money.divide(Money.init(totalesTurno.ventasContado || 0), elapsedHours)),
-      ticketPromedioEstimado: Money.toExactString(Money.divide(Money.init(totalesTurno.ventasContado || 0), Math.max(movimientosCaja.length, 1))),
+      fondoInicial: amounts.fondoInicial,
+      ventasContado: amounts.ventasContado,
+      abonosFiado: amounts.abonosFiado,
+      entradasExtras: amounts.entradasEfectivo,
+      ventasPorHora: Money.toExactString(Money.divide(Money.init(amounts.ventasContado), elapsedHours)),
+      ticketPromedioEstimado: Money.toExactString(Money.divide(Money.init(amounts.ventasContado), Math.max(movimientosCaja.length, 1))),
       totalMovimientos: movimientosCaja.length,
       movimientosEntrada: movimientosCaja.filter((m) => ['entrada', 'ajuste_entrada'].includes(m.tipo)).length,
       movimientosSalida: movimientosCaja.filter((m) => ['salida', 'ajuste_salida'].includes(m.tipo)).length,
       alertas: {
         excesoLiquidez: totalTeorico.gt(CAJA_CONFIG.MAX_CASH_THRESHOLD),
-        salidasSignificativas: Money.init(cajaActual.salidas_efectivo || 0).gt(Money.multiply(totalIngresos, 0.3))
+        salidasSignificativas: Money.init(amounts.salidasEfectivo).gt(Money.multiply(totalIngresos, 0.3))
       }
     };
-  }, [cajaActual, calcularTotalTeorico, movimientosCaja, totalesTurno]);
+  }, [cajaActual, isCloudCash, movimientosCaja, totalesTurno]);
 
   const exportarReporteCajaCSV = useCallback(async () => {
     if (!cajaActual) return { success: false, error: 'No hay caja activa para exportar' };
