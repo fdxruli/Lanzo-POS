@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
 import { customerCreditRepository, CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE } from '../services/customerCredit/customerCreditRepository';
+import { cashRepository } from '../services/cash/cashRepository';
 import { db } from '../services/db/dexie';
 import { loadData, STORES, DB_ERROR_CODES } from '../services/database';
 import { customerRepository } from '../services/customers/customerRepository';
@@ -47,6 +48,7 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
+  const [abonoCashSession, setAbonoCashSession] = useState(null);
   const [whatsAppLoading, setWhatsAppLoading] = useState(null);
   const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
   const requestVersionRef = useRef(0);
@@ -84,7 +86,7 @@ export default function CustomersPage() {
 
   const resolveOpenCaja = useCallback(async () => {
     if (isCloudCash) {
-      if (isCloudCashReadOnly || cashMode?.online === false) {
+      if (cashMode?.online === false) {
         const offlineError = new Error(CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE);
         offlineError.code = 'CUSTOMER_CREDIT_CLOUD_OFFLINE';
         throw offlineError;
@@ -94,6 +96,18 @@ export default function CustomersPage() {
         return cajaActual;
       }
 
+      // Evita falsos negativos cuando Clientes se renderiza antes de que useCaja hidrate cajaActual.
+      const freshState = await cashRepository.getCurrentCashSession();
+      if (freshState?.success === false) {
+        throw new Error(freshState.message || 'No se pudo verificar la caja actual.');
+      }
+
+      const freshCaja = freshState?.cashSession || freshState?.cash_session || null;
+      if (freshCaja?.estado === 'abierta') {
+        return freshCaja;
+      }
+
+      await sincronizarEstadoCaja();
       return null;
     }
 
@@ -118,7 +132,7 @@ export default function CustomersPage() {
 
       return aperturaActual > aperturaMasReciente ? caja : masReciente;
     }, null);
-  }, [cashMode?.online, cajaActual, isCloudCash, isCloudCashReadOnly]);
+  }, [cashMode?.online, cajaActual, isCloudCash, sincronizarEstadoCaja]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -365,6 +379,7 @@ export default function CustomersPage() {
       return;
     }
 
+    setAbonoCashSession(cajaVigente);
     if (!cajaActual || cajaActual.id !== cajaVigente.id || cajaActual.estado !== 'abierta') {
       await sincronizarEstadoCaja();
     }
@@ -380,6 +395,7 @@ export default function CustomersPage() {
 
   const handleCloseModals = () => {
     setSelectedCustomer(null);
+    setAbonoCashSession(null);
     setIsHistoryModalOpen(false);
     setIsAbonoModalOpen(false);
     setIsLayawayModalOpen(false);
@@ -391,6 +407,7 @@ export default function CustomersPage() {
 
       try {
         cajaVigente = await resolveOpenCaja();
+        setAbonoCashSession(cajaVigente);
       } catch (error) {
         showMessageModal(error.message || CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE, null, { type: 'error' });
         handleCloseModals();
@@ -546,6 +563,12 @@ ${itemsString}
     }
   };
 
+  const effectiveAbonoCashSession = abonoCashSession || cajaActual;
+  const isAbonoBlocked = Boolean(isCloudCash && (cashMode?.online === false || !effectiveAbonoCashSession));
+  const abonoBlockedReason = cashMode?.online === false
+    ? CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE
+    : (isCloudCash && !effectiveAbonoCashSession ? 'Debes abrir tu caja antes de registrar abonos.' : '');
+
   return (
     <>
       <main className="customers-page">
@@ -640,13 +663,9 @@ ${itemsString}
         onConfirmAbono={handleConfirmAbono}
         customer={selectedCustomer}
         isCloudCredit={customerCreditRepository.getMode().cloudEnabled}
-        isBlocked={Boolean(isCloudCash && (isCloudCashReadOnly || !cajaActual))}
-        blockedReason={
-          isCloudCashReadOnly
-            ? CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE
-            : (isCloudCash && !cajaActual ? 'Debes abrir tu caja antes de registrar abonos.' : '')
-        }
-        cashSession={cajaActual}
+        isBlocked={isAbonoBlocked}
+        blockedReason={abonoBlockedReason}
+        cashSession={effectiveAbonoCashSession}
         cashActor={cashActor}
       />
 
