@@ -1,0 +1,136 @@
+INFORME FASE 4 - Clientes / credito / abonos cloud
+====================================================
+
+Fecha: 2026-06-24
+Repositorio: fdxruli/Lanzo-POS
+
+Resumen ejecutivo
+-----------------
+La Fase 4 usa Supabase como fuente oficial para credito/abonos en licencias PRO, pero la migracion inicial NO migra el historial completo local de customer_ledger, ventas fiadas historicas, asignaciones antiguas ni movimientos de caja antiguos.
+
+La estrategia segura de esta fase es iniciar el historial cloud con un saldo inicial migrado por cliente cuando existe deuda local pendiente. A partir de ese punto, los nuevos abonos PRO se registran en cloud mediante RPC y se reflejan en Dexie como cache local.
+
+Que migra esta fase
+-------------------
+1. Clientes locales con deuda pendiente mayor a cero.
+2. Un movimiento cloud de tipo INITIAL_BALANCE por cliente elegible.
+3. La proyeccion de deuda actual hacia cloud para que pos_customers.debt quede como saldo oficial inicial.
+4. Metadata local de sync que marca la migracion inicial como realizada.
+5. Metadata de conflictos locales cuando existe ledger cloud previo y la deuda local no coincide con la deuda cloud.
+
+Que NO migra esta fase
+----------------------
+1. Historial local completo de customer_ledger.
+2. Abonos locales antiguos como movimientos cloud historicos.
+3. Ventas fiadas historicas completas.
+4. Asignaciones antiguas de abonos a ventas.
+5. Movimientos de caja locales antiguos asociados a abonos.
+6. Cajas historicas locales.
+
+Motivo de la decision
+---------------------
+Migrar todo el historial sin migrar de forma perfectamente consistente ventas, caja, cortes, movimientos de efectivo y asignaciones antiguas puede duplicar deuda, generar descuadres de caja o crear una narrativa contable falsa.
+
+Por eso, la Fase 4 toma la opcion mas segura: cloud arranca con un saldo inicial oficial y los nuevos movimientos ya se registran de forma cloud-first.
+
+Idempotencia y no duplicacion
+-----------------------------
+La migracion usa una marca local por licencia en sync_meta:
+
+- customer_credit_migrated_at
+
+Si esta metadata existe, la migracion no se vuelve a ejecutar automaticamente.
+
+Ademas, antes de crear un saldo inicial, el frontend consulta el resumen cloud por cliente. Si detecta que el cliente ya tiene ledger cloud, no crea otro INITIAL_BALANCE.
+
+La migracion tambien envia metadata estable por cliente:
+
+- customer_credit.initial_balance:<licenseKey>:<customerId>
+
+Y usa un batch estable por licencia:
+
+- customer_credit.initial_balance:<licenseKey>
+
+Esto reduce el riesgo de duplicacion si la RPC usa batch/idempotency para deduplicar.
+
+Conflictos
+----------
+Si un cliente local tiene deuda y cloud ya tiene ledger, la migracion NO crea saldo inicial adicional.
+
+Si ademas la deuda local y la deuda cloud no coinciden, se registra un conflicto local en sync_meta bajo:
+
+- customer_credit_migration_conflicts
+
+Tipo de conflicto:
+
+- CUSTOMER_CREDIT_MIGRATION_CONFLICT
+
+Payload recomendado/guardado:
+
+- customerId
+- customerName
+- localDebt
+- cloudDebt
+- cloudLedgerExists
+- createdAt
+- reason
+- recommendation
+
+La recomendacion es resolver manualmente antes de implementar una migracion historica avanzada. La migracion no pisa automaticamente la deuda cloud.
+
+Historial local
+---------------
+La migracion NO borra ni limpia:
+
+- customer_ledger local
+- ventas locales
+- movimientos de caja locales
+- historial de cliente
+
+Dexie conserva el historial local como referencia historica. En cloud, el historial arranca desde INITIAL_BALANCE y luego continua con los nuevos PAYMENT cloud.
+
+UX / interpretacion para admin
+------------------------------
+Cuando se vea un INITIAL_BALANCE migrado, debe interpretarse como:
+
+"Este cliente inicio su historial cloud con un saldo inicial migrado. Los movimientos anteriores pueden venir del historial local."
+
+Esto evita confundir al admin: el saldo cloud es oficial desde la migracion, pero el detalle historico anterior permanece local.
+
+Pendiente para futura fase avanzada
+-----------------------------------
+Una migracion historica completa deberia hacerse solo si tambien se define una estrategia profesional para:
+
+1. Migrar ventas fiadas historicas.
+2. Migrar asignaciones de abonos a ventas.
+3. Migrar movimientos de caja historicos relacionados.
+4. Reconciliar cajas y cortes antiguos.
+5. Resolver duplicados e inconsistencias por dispositivo/staff.
+6. Generar reportes de conciliacion antes/despues.
+7. Permitir revision manual de conflictos antes de aplicar.
+
+Mientras eso no exista, NO se debe migrar todo el ledger historico local a cloud.
+
+Archivos frontend relacionados
+------------------------------
+- src/services/customerCredit/customerCreditMigrationService.js
+- src/services/customerCredit/customerCreditCloudRepository.js
+- src/services/customerCredit/customerCreditMapper.js
+- src/services/customerCredit/customerCreditSyncHandler.js
+- src/services/customerCredit/customerCreditRepository.js
+- src/services/db/customerCreditRepository.js
+- src/services/db/dexie.js
+- src/components/customers/PurchaseHistoryModal.jsx
+
+Supabase
+--------
+En esta revision no se modificaron RPCs ni migraciones Supabase.
+
+La expectativa del backend/RPC pos_migrate_local_customer_credit es:
+
+1. Crear INITIAL_BALANCE solo para clientes elegibles.
+2. Actualizar pos_customers.debt.
+3. Registrar evento sync.
+4. Respetar idempotencia por batch/cliente o metadata equivalente.
+
+Si en una revision futura se detecta que la RPC no deduplica correctamente, debe corregirse en Supabase antes de habilitar migraciones masivas.
