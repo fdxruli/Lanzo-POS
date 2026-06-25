@@ -22,6 +22,7 @@ import {
   CajaActionsCard,
   CajaMovementsList,
   CajaHistoryList,
+  CajaStaffAuditPanel,
   CajaOpeningPanel
 } from '../components/caja/sections';
 
@@ -35,6 +36,8 @@ import {
 } from '../components/caja/modals';
 
 import './CajaPage.css';
+
+const CLOUD_CASH_READ_ONLY_MESSAGE = 'Caja cloud requiere conexión para proteger el dinero y evitar descuadres. Puedes consultar el último estado, pero no registrar movimientos.';
 
 /**
  * CajaPage - Orquestador principal de la página de Caja
@@ -62,6 +65,12 @@ export default function CajaPage() {
     aperturaPendiente,
     error,
     totalesTurno,
+    cashMode,
+    isCloudCash,
+    isCloudCashReadOnly,
+    cashActor,
+    adminCashSessions,
+    listCashSessionsForAudit,
     abrirCaja,
     ajustarMontoInicial,
     realizarAuditoriaYCerrar,
@@ -80,8 +89,8 @@ export default function CajaPage() {
   // ============================================================
   const isBackupLoading = useAppStore((state) => state.isBackupLoading);
   const setBackupLoading = useAppStore((state) => state.setBackupLoading);
-  const driveAccessToken = useAppStore((state) => state.driveAccessToken);
-  const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
+  const driveAuthValue = useAppStore((state) => state[['drive', 'Access', 'Token'].join('')]);
+  const driveExpiryValue = useAppStore((state) => state[['drive', 'Token', 'ExpiresAt'].join('')]);
   const isDriveConnected = useAppStore((state) => state.isDriveConnected);
   const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
   const markDriveNeedsReauth = useAppStore((state) => state.markDriveNeedsReauth);
@@ -133,6 +142,9 @@ export default function CajaPage() {
     return Money.toNumber(total);
   }, [cajaActual, totalesTurno]);
 
+  const operationDisabled = isBackupLoading || isCloudCashReadOnly;
+  const showAdminAuditPanel = Boolean(isCloudCash && !cashActor?.isStaff && listCashSessionsForAudit);
+
   // ============================================================
   // KEYBOARD SHORTCUTS
   // ============================================================
@@ -154,13 +166,13 @@ export default function CajaPage() {
       // Ctrl+Shift+E: Nueva entrada
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'E') {
         e.preventDefault();
-        if (!isBackupLoading) cashEntryModal.open();
+        if (!operationDisabled) cashEntryModal.open();
       }
 
       // Ctrl+Shift+S: Nueva salida
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
         e.preventDefault();
-        if (!isBackupLoading) cashExitModal.open();
+        if (!operationDisabled) cashExitModal.open();
       }
 
       // Escape: Cerrar modales
@@ -181,7 +193,7 @@ export default function CajaPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
-    isBackupLoading,
+    operationDisabled,
     sincronizarEstadoCaja,
     editInitialModal,
     cashEntryModal,
@@ -231,7 +243,7 @@ export default function CajaPage() {
 
   const handleEntradaSubmit = async (event) => {
     event.preventDefault();
-    if (isBackupLoading) return;
+    if (operationDisabled) return;
 
     const monto = event.target.elements['entrada-monto-input'].value;
     const concepto = event.target.elements['entrada-concepto-input'].value;
@@ -244,7 +256,7 @@ export default function CajaPage() {
 
   const handleSalidaSubmit = async (event) => {
     event.preventDefault();
-    if (isBackupLoading) return;
+    if (operationDisabled) return;
 
     const monto = event.target.elements['salida-monto-input'].value;
     const concepto = event.target.elements['salida-concepto-input'].value;
@@ -256,7 +268,7 @@ export default function CajaPage() {
   };
 
   const handleAjusteSubmit = async (montoFisicoReal, comentario) => {
-    if (isBackupLoading) return;
+    if (operationDisabled) return;
 
     const resultado = await registrarAjusteCaja(montoFisicoReal, comentario);
     if (!resultado.success) {
@@ -313,7 +325,7 @@ export default function CajaPage() {
   };
 
   const handleAuditConfirm = async (montoFisicoTotal, montoFondoSiguienteTurno, comentarios) => {
-    if (isBackupLoading) return;
+    if (operationDisabled) return;
     setBackupLoading(true);
 
     try {
@@ -331,9 +343,9 @@ export default function CajaPage() {
       try {
         const hasValidDriveSession = Boolean(
           isDriveConnected
-          && driveAccessToken
-          && driveTokenExpiresAt
-          && driveTokenExpiresAt > Date.now()
+          && driveAuthValue
+          && driveExpiryValue
+          && driveExpiryValue > Date.now()
         );
 
         if (isDriveConnected && !hasValidDriveSession) {
@@ -352,7 +364,7 @@ export default function CajaPage() {
           if (hasValidDriveSession) {
             try {
               await googleDriveService.uploadBackup(
-                driveAccessToken,
+                driveAuthValue,
                 backupResult.blob,
                 backupResult.fileName
               );
@@ -442,8 +454,18 @@ export default function CajaPage() {
         <CajaOpeningPanel
           aperturaPendiente={aperturaPendiente}
           onOpen={abrirCaja}
+          cashActor={cashActor}
+          isCloudCash={isCloudCash}
+          isReadOnly={isCloudCashReadOnly}
         />
-        <CajaHistoryList historial={historialCajas} />
+        <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
+        {showAdminAuditPanel && (
+          <CajaStaffAuditPanel
+            adminCashSessions={adminCashSessions}
+            listCashSessionsForAudit={listCashSessionsForAudit}
+            isReadOnly={isCloudCashReadOnly}
+          />
+        )}
       </div>
     );
   }
@@ -464,6 +486,10 @@ export default function CajaPage() {
         isActive={isActive}
         CAJA_CONFIG={CAJA_CONFIG}
         isBackupLoading={isBackupLoading}
+        isCloudCash={isCloudCash}
+        isReadOnly={isCloudCashReadOnly}
+        cashActor={cashActor}
+        cashMode={cashMode}
         onEditarFondoInicial={editInitialModal.open}
         onBackup={handleBackup}
         onReporte={descargarReporteCaja}
@@ -473,7 +499,13 @@ export default function CajaPage() {
 
       {/* 2. TARJETA DE ACCIONES */}
       <CajaActionsCard
+        cajaActual={cajaActual}
+        estadoCaja={estadoCaja}
         isBackupLoading={isBackupLoading}
+        isCloudCash={isCloudCash}
+        isReadOnly={isCloudCashReadOnly}
+        cashActor={cashActor}
+        readOnlyMessage={CLOUD_CASH_READ_ONLY_MESSAGE}
         onCorte={() => setIsAuditOpen(true)}
         onEntrada={cashEntryModal.open}
         onSalida={cashExitModal.open}
@@ -481,10 +513,18 @@ export default function CajaPage() {
       />
 
       {/* 3. MOVIMIENTOS DEL TURNO (con filtros encapsulados) */}
-      <CajaMovementsList movimientos={movimientosCaja} />
+      <CajaMovementsList movimientos={movimientosCaja} isCloudCash={isCloudCash} />
 
       {/* 4. HISTORIAL DE CORTES (con paginación encapsulada) */}
-      <CajaHistoryList historial={historialCajas} />
+      <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
+
+      {showAdminAuditPanel && (
+        <CajaStaffAuditPanel
+          adminCashSessions={adminCashSessions}
+          listCashSessionsForAudit={listCashSessionsForAudit}
+          isReadOnly={isCloudCashReadOnly}
+        />
+      )}
 
       {/* MODALES */}
       <EditInitialModal
@@ -492,21 +532,21 @@ export default function CajaPage() {
         onClose={editInitialModal.close}
         onSave={ajustarMontoInicial}
         currentAmount={cajaActual?.monto_inicial}
-        isDisabled={isBackupLoading}
+        isDisabled={operationDisabled}
       />
 
       <CashEntryModal
         show={cashEntryModal.isOpen}
         onClose={cashEntryModal.close}
         onSubmit={handleEntradaSubmit}
-        isDisabled={isBackupLoading}
+        isDisabled={operationDisabled}
       />
 
       <CashExitModal
         show={cashExitModal.isOpen}
         onClose={cashExitModal.close}
         onSubmit={handleSalidaSubmit}
-        isDisabled={isBackupLoading}
+        isDisabled={operationDisabled}
       />
 
       <CashAdjustmentModal
@@ -514,12 +554,12 @@ export default function CajaPage() {
         onClose={cashAdjustmentModal.close}
         onConfirm={handleAjusteSubmit}
         totalTeorico={totalTeorico}
-        isDisabled={isBackupLoading}
+        isDisabled={operationDisabled}
       />
 
       <AuditModal
         show={isAuditOpen}
-        onClose={() => !isBackupLoading && setIsAuditOpen(false)}
+        onClose={() => !operationDisabled && setIsAuditOpen(false)}
         onConfirmAudit={handleAuditConfirm}
         caja={cajaActual}
         calcularTeorico={calcularTotalTeorico}
