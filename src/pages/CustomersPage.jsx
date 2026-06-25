@@ -12,7 +12,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useNavigate } from 'react-router-dom';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
-import { customerCreditRepository } from '../services/db/customerCreditRepository';
+import { customerCreditRepository, CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE } from '../services/customerCredit/customerCreditRepository';
 import { db } from '../services/db/dexie';
 import { loadData, STORES, DB_ERROR_CODES } from '../services/database';
 import { customerRepository } from '../services/customers/customerRepository';
@@ -52,7 +52,14 @@ export default function CustomersPage() {
   const requestVersionRef = useRef(0);
   const requestInFlightRef = useRef(false);
 
-  const { cajaActual, sincronizarEstadoCaja } = useCaja();
+  const {
+    cajaActual,
+    sincronizarEstadoCaja,
+    isCloudCash,
+    isCloudCashReadOnly,
+    cashActor,
+    cashMode
+  } = useCaja();
   const companyProfile = useAppStore((state) => state.companyProfile);
   const companyName = companyProfile?.name || 'Tu Negocio';
   const globalCreditLimit = Number(companyProfile?.settings_default_credit_limit) || 0;
@@ -76,6 +83,20 @@ export default function CustomersPage() {
   }, [customers, globalCreditLimit]);
 
   const resolveOpenCaja = useCallback(async () => {
+    if (isCloudCash) {
+      if (isCloudCashReadOnly || cashMode?.online === false) {
+        const offlineError = new Error(CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE);
+        offlineError.code = 'CUSTOMER_CREDIT_CLOUD_OFFLINE';
+        throw offlineError;
+      }
+
+      if (cajaActual?.estado === 'abierta') {
+        return cajaActual;
+      }
+
+      return null;
+    }
+
     if (cajaActual?.estado === 'abierta') {
       return cajaActual;
     }
@@ -97,7 +118,7 @@ export default function CustomersPage() {
 
       return aperturaActual > aperturaMasReciente ? caja : masReciente;
     }, null);
-  }, [cajaActual]);
+  }, [cashMode?.online, cajaActual, isCloudCash, isCloudCashReadOnly]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -326,10 +347,21 @@ export default function CustomersPage() {
   };
 
   const handleOpenAbono = async (customer) => {
-    const cajaVigente = await resolveOpenCaja();
+    let cajaVigente = null;
+
+    try {
+      cajaVigente = await resolveOpenCaja();
+    } catch (error) {
+      showMessageModal(error.message || CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE, null, { type: 'error' });
+      return;
+    }
 
     if (!cajaVigente) {
-      showMessageModal('Debes tener una caja abierta para registrar un abono.', null, { type: 'error' });
+      showMessageModal(
+        isCloudCash ? 'Debes abrir tu caja antes de registrar abonos.' : 'Debes tener una caja abierta para registrar un abono.',
+        null,
+        { type: 'error' }
+      );
       return;
     }
 
@@ -337,7 +369,6 @@ export default function CustomersPage() {
       await sincronizarEstadoCaja();
     }
 
-    customerRepository.showAbonosCloudNoticeIfNeeded();
     setSelectedCustomer(customer);
     setIsAbonoModalOpen(true);
   };
@@ -356,10 +387,22 @@ export default function CustomersPage() {
 
   const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null) => {
     try {
-      const cajaVigente = await resolveOpenCaja();
+      let cajaVigente = null;
+
+      try {
+        cajaVigente = await resolveOpenCaja();
+      } catch (error) {
+        showMessageModal(error.message || CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE, null, { type: 'error' });
+        handleCloseModals();
+        return;
+      }
 
       if (!cajaVigente) {
-        showMessageModal('Debes tener una caja abierta para registrar un abono.', null, { type: 'error' });
+        showMessageModal(
+          isCloudCash ? 'Debes abrir tu caja antes de registrar abonos.' : 'Debes tener una caja abierta para registrar un abono.',
+          null,
+          { type: 'error' }
+        );
         handleCloseModals();
         return;
       }
@@ -395,6 +438,8 @@ export default function CustomersPage() {
 
           sendWhatsAppMessage(customer.phone, message);
         }
+      } else if (result?.success === false) {
+        showMessageModal(result.message || 'No se pudo registrar el abono.', null, { type: 'error' });
       }
     } catch (error) {
       Logger.error('Error crítico en abono:', error);
@@ -586,6 +631,7 @@ ${itemsString}
         show={isHistoryModalOpen}
         onClose={handleCloseModals}
         customer={selectedCustomer}
+        isCloudCredit={customerCreditRepository.getMode().cloudEnabled}
       />
 
       <AbonoModal
@@ -593,6 +639,15 @@ ${itemsString}
         onClose={handleCloseModals}
         onConfirmAbono={handleConfirmAbono}
         customer={selectedCustomer}
+        isCloudCredit={customerCreditRepository.getMode().cloudEnabled}
+        isBlocked={Boolean(isCloudCash && (isCloudCashReadOnly || !cajaActual))}
+        blockedReason={
+          isCloudCashReadOnly
+            ? CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE
+            : (isCloudCash && !cajaActual ? 'Debes abrir tu caja antes de registrar abonos.' : '')
+        }
+        cashSession={cajaActual}
+        cashActor={cashActor}
       />
 
       <LayawayModal
