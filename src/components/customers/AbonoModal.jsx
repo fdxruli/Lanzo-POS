@@ -193,7 +193,10 @@ export default function AbonoModal({
       await onConfirmAbono(customer, montoAbono, sendReceipt, finalAllocations);
     } catch (submitError) {
       console.error('Error al confirmar abono:', submitError);
-      setError(submitError?.message || 'No se pudo registrar el abono. Intenta de nuevo.');
+
+      if (isMountedRef.current && isModalOpenRef.current) {
+        setError(submitError?.message || 'No se pudo registrar el abono. Intenta de nuevo.');
+      }
     } finally {
       isSubmittingRef.current = false;
 
