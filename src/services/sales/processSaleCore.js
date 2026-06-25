@@ -10,6 +10,7 @@ import { generateID } from '../utils';
 import { SALE_STATUS } from './financialStats';
 import { evaluator } from '../BackupRiskEvaluator';
 import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
+import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 
 const requiresPrescriptionControl = (product = {}) => (
     product?.requiresPrescription === true ||
@@ -265,6 +266,17 @@ export const processSaleCore = async ({
                 { saleId: sale.id, itemsAffected: processedItems.length }
             );
         }
+
+        // FASE 6A: shadow/auditoria cloud. No bloquea venta local ni aplica caja/inventario/credito cloud.
+        salesCloudShadowService.syncSaleShadowAfterLocalCommit(sale, {
+            processedItems,
+            paymentData,
+            postEffectsFailed,
+            postEffectsError
+        }).catch((cloudSyncError) => {
+            Logger.warn('Sales Cloud Shadow Sync Failed (Non-Blocking):', cloudSyncError);
+        });
+
         // ✅ Llamada silenciosa al evaluador de riesgo para prevenir Falacia del Estado Volátil (Volumen en memoria sin recarga)
         evaluator.ping();
 

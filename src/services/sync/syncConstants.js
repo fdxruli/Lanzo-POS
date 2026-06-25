@@ -37,6 +37,9 @@ export const SYNC_ENTITY_TYPES = Object.freeze({
   CASH: 'cash',
   CASH_SESSION: 'cash_session',
   CASH_MOVEMENT: 'cash_movement',
+  SALE: 'sale',
+  SALE_ITEM: 'sale_item',
+  SALE_PAYMENT: 'sale_payment',
   REPORT: 'report',
   GENERIC: 'generic'
 });
@@ -47,6 +50,9 @@ export const SYNC_OPERATIONS = Object.freeze({
   DELETE: 'delete',
   RESTORE: 'restore',
   UPSERT: 'upsert',
+  UPSERT_SHADOW: 'upsert_shadow',
+  PULL_SNAPSHOT: 'pull_snapshot',
+  PULL_CHANGES: 'pull_changes',
   TOGGLE_STATUS: 'toggle_status',
   OPEN: 'open',
   CLOSE: 'close',
@@ -105,6 +111,11 @@ export const isCloudCustomerCreditSyncEnabled = (licenseDetails = {}) => {
   return isFeatureEnabled(features, 'cloud_pos_sync')
     && isFeatureEnabled(features, 'cloud_cash_sync')
     && isFeatureEnabled(features, 'cloud_customer_credit_sync');
+};
+
+export const isCloudSalesBaseSyncEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_sales_sync_base');
 };
 
 export const getLicenseKeyFromDetails = (licenseDetails = {}) => (

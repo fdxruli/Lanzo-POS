@@ -1,0 +1,86 @@
+INFORME FASE 6A - VENTAS CLOUD BASE
+Proyecto Supabase: odlrhijtfyavryeqivaa
+Rama GitHub: fase6a-ventas-cloud-base
+Fecha: 2026-06-25
+
+OBJETIVO
+Se implemento la base cloud de ventas para PRO como read model / snapshot de auditoria. El cobro real sigue siendo local.
+
+LIMITES DE FASE
+FREE no cambia. PRO sigue vendiendo local. La venta cloud 6A no descuenta stock, no mueve caja, no crea deuda, no crea abonos, no cancela ventas reales y no sustituye processSaleCore.
+
+SUPABASE
+Feature flag agregado en public.plans.features:
+- pro_monthly: cloud_sales_sync_base=true
+- free_trial/basic_monthly: cloud_sales_sync_base=false
+
+Tablas creadas:
+- public.pos_sales
+- public.pos_sale_items
+- public.pos_sale_payments
+- public.pos_sale_audit_events
+
+Estados esperados para venta local sincronizada:
+origin=local_device
+source_mode=shadow
+effects_status=local_applied
+status=closed
+
+RPCs creadas:
+- public.pos_upsert_sale_shadow
+- public.pos_get_sale
+- public.pos_pull_sales_snapshot
+- public.pos_pull_sales_changes
+- public.pos_export_sales_shadow
+
+Helpers privados creados:
+- private.assert_cloud_sales_sync_base_enabled
+- private.normalize_pos_sale_status
+- private.validate_pos_sale_shadow_payload
+- private.pos_sale_to_jsonb
+- private.pos_sale_item_to_jsonb
+- private.pos_sale_payment_to_jsonb
+- private.record_pos_sale_audit_event
+- private.pos_sale_jsonb_text
+- private.pos_sale_jsonb_numeric
+
+SEGURIDAD
+RLS quedo activo en las 4 tablas. Se revoco acceso directo anon/authenticated. Las RPCs validan licencia, dispositivo y staff con private.validate_pos_sync_context. Staff requiere permiso pos para subir shadow. Staff sin reports solo consulta sus ventas o las de su dispositivo.
+
+EVENTOS SYNC
+Se agregan eventos en pos_sync_events para sale, sale_item y sale_payment con operation=upsert_shadow. Realtime solo avisa; pull incremental sigue siendo la verdad.
+
+FRONTEND
+Modulo creado: src/services/salesCloud/
+- salesCloudRepository.js
+- salesCloudMapper.js
+- salesCloudLocalRepository.js
+- salesCloudShadowService.js
+- salesCloudSyncHandler.js
+- index.js
+
+Archivos actualizados:
+- src/services/sync/syncConstants.js
+- src/services/sync/posSyncAutoBootstrap.js
+- src/services/sync/syncDexieBootstrap.js
+- src/services/sales/processSaleCore.js
+
+INTEGRACION LOCAL
+processSaleCore primero confirma executeSaleTransactionSafe. Solo despues del commit local exitoso dispara salesCloudShadowService.syncSaleShadowAfterLocalCommit como fire-and-forget. Si cloud falla, no se revierte la venta. Si el dispositivo esta offline, se marca pendiente y se encola UPSERT_SHADOW.
+
+DEXIE / CACHE
+syncDexieBootstrap sube schema a v24 y agrega indices de ventas shadow: cloudSaleId, cloudSalesSyncStatus, cloudSalesLastSyncAt, sourceMode, [sourceMode+timestamp], [cloudSalesSyncStatus+timestamp].
+Los snapshots cloud se guardan en sync_cache con prefijo cloud_sale_shadow. Si el snapshot coincide con una venta local, solo se actualizan campos de estado cloud.
+
+QUE NO HACE 6A
+No toca pos_products, pos_product_batches, pos_cash_sessions, pos_cash_movements ni pos_customer_ledger. No hay folio cloud definitivo, venta fiada cloud real, devoluciones cloud ni reportes de utilidad definitivos por cloud.
+
+RIESGOS PENDIENTES
+Ejecutar npm run build antes de merge. Probar en PWA movil con internet inestable. Confirmar migracion Dexie v24 cerrando otras pestanas antes de recargar. Definir UI final del badge cloud si se desea mostrar al usuario.
+
+PROXIMAS FASES
+6B: venta efectiva cloud con caja/folio.
+6C: inventario/lotes cloud en venta.
+6D: venta fiada cloud con credito/ledger.
+6E: cancelaciones/devoluciones cloud.
+6F: migracion/reportes finales.
