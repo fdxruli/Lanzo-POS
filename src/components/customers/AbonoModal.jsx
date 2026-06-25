@@ -1,5 +1,5 @@
 // src/components/customers/AbonoModal.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Wallet, X, CheckCircle, MessageCircle, AlertTriangle, List } from 'lucide-react';
 import { db } from '../../services/db/dexie';
 import { Money } from '../../utils/moneyMath';
@@ -20,16 +20,33 @@ export default function AbonoModal({
   const [monto, setMonto] = useState('');
   const [error, setError] = useState('');
   const [sendReceipt, setSendReceipt] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Nuevos estados para asignación manual
   const [advancedMode, setAdvancedMode] = useState(false);
   const [pendingSales, setPendingSales] = useState([]);
   const [allocations, setAllocations] = useState({});
 
+  const isSubmittingRef = useRef(false);
+  const isMountedRef = useRef(false);
+  const isModalOpenRef = useRef(false);
+
   const deudaActual = getSafeCustomerDebt(customer?.debt);
 
   useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    isModalOpenRef.current = Boolean(show);
+
     if (!show) {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       setMonto('');
       setError('');
       setAdvancedMode(false);
@@ -81,7 +98,7 @@ export default function AbonoModal({
   }, [allocations, advancedMode, deudaActual]);
 
   const handleMontoChange = (e) => {
-    if (advancedMode) return; // Bloquear edición manual en modo avanzado
+    if (advancedMode || isSubmitting) return; // Bloquear edición manual en modo avanzado o durante envío
     const value = e.target.value;
     setError('');
     if (parseFloat(value) > deudaActual) {
@@ -91,12 +108,14 @@ export default function AbonoModal({
   };
 
   const handleSaldarCuenta = () => {
-    if (advancedMode) return;
+    if (advancedMode || isSubmitting) return;
     setMonto(deudaActual.toFixed(2));
     setError('');
   };
 
   const handleAllocationChange = (saleId, value, maxSaldo) => {
+    if (isSubmitting) return;
+
     let valStr = value;
     const numVal = parseFloat(value);
 
@@ -113,6 +132,8 @@ export default function AbonoModal({
   };
 
   const handleToggleFullAllocation = (sale) => {
+    if (isSubmitting) return;
+
     const currentAlloc = parseFloat(allocations[sale.id]) || 0;
     const isFullyAllocated = currentAlloc === sale.saldoPendiente;
 
@@ -122,8 +143,16 @@ export default function AbonoModal({
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleClose = () => {
+    if (isSubmitting) return;
+    onClose();
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (isSubmittingRef.current || isSubmitting) return;
+
     if (isBlocked) {
       setError(blockedReason || 'No se puede registrar el abono en este momento.');
       return;
@@ -155,8 +184,24 @@ export default function AbonoModal({
       }
     }
 
-    // El Modal pasa la información al componente PADRE.
-    onConfirmAbono(customer, montoAbono, sendReceipt, finalAllocations);
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      // El Modal pasa la información al componente PADRE y espera a que termine.
+      await onConfirmAbono(customer, montoAbono, sendReceipt, finalAllocations);
+    } catch (submitError) {
+      console.error('Error al confirmar abono:', submitError);
+      setError(submitError?.message || 'No se pudo registrar el abono. Intenta de nuevo.');
+    } finally {
+      isSubmittingRef.current = false;
+
+      // Si el padre cerró el modal por éxito, no forzamos estado visual sobre un modal cerrado.
+      if (isMountedRef.current && isModalOpenRef.current) {
+        setIsSubmitting(false);
+      }
+    }
   };
 
   if (!show || !customer) return null;
@@ -169,12 +214,12 @@ export default function AbonoModal({
             <Wallet size={24} className="text-primary" />
             Abonar a Deuda
           </h2>
-          <button className="btn-icon-close" onClick={onClose} aria-label="Cerrar">
+          <button className="btn-icon-close" onClick={handleClose} aria-label="Cerrar" disabled={isSubmitting}>
             <X size={24} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="abono-form" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <form onSubmit={handleSubmit} className="abono-form" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }} aria-busy={isSubmitting}>
           <div className="abono-desktop-split" style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'flex-start' }}>
 
             {/* COLUMNA IZQUIERDA */}
@@ -207,11 +252,11 @@ export default function AbonoModal({
               )}
 
               <div className="abono-mode-toggle" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                   <input
                     type="checkbox"
                     checked={advancedMode}
-                    disabled={isBlocked}
+                    disabled={isBlocked || isSubmitting}
                     onChange={(e) => {
                       setAdvancedMode(e.target.checked);
                       if (!e.target.checked) setAllocations({});
@@ -231,6 +276,7 @@ export default function AbonoModal({
                       className="btn-saldar-quick"
                       onClick={handleSaldarCuenta}
                       title="Liquidar toda la deuda"
+                      disabled={isBlocked || isSubmitting}
                     >
                       Saldar $ {deudaActual.toFixed(2)}
                     </button>
@@ -252,7 +298,7 @@ export default function AbonoModal({
                     required
                     autoFocus
                     readOnly={advancedMode}
-                    disabled={isBlocked}
+                    disabled={isBlocked || isSubmitting}
                     style={advancedMode ? { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' } : {}}
                   />
                 </div>
@@ -295,7 +341,7 @@ export default function AbonoModal({
                               max={sale.saldoPendiente}
                               value={allocations[sale.id] || ''}
                               onChange={(e) => handleAllocationChange(sale.id, e.target.value, sale.saldoPendiente)}
-                              disabled={isBlocked}
+                              disabled={isBlocked || isSubmitting}
                             />
                           </div>
                           <button
@@ -304,7 +350,7 @@ export default function AbonoModal({
                             className="btn btn-icon"
                             style={{ height: '32px', padding: '0 8px', fontSize: '0.8rem' }}
                             title="Asignar total de esta nota"
-                            disabled={isBlocked}
+                            disabled={isBlocked || isSubmitting}
                           >
                             <CheckCircle size={16} color={(parseFloat(allocations[sale.id]) === sale.saldoPendiente) ? 'var(--primary-color)' : 'var(--text-secondary)'} />
                           </button>
@@ -319,7 +365,7 @@ export default function AbonoModal({
 
           {/* FOOTER */}
           <div className="abono-footer" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <label className="abono-whatsapp-toggle" style={{ margin: 0 }}>
+            <label className="abono-whatsapp-toggle" style={{ margin: 0, cursor: isSubmitting ? 'not-allowed' : undefined }}>
               <div className="toggle-info">
                 <MessageCircle size={20} className="icon-whatsapp" />
                 <span>Enviar recibo por WhatsApp</span>
@@ -329,16 +375,22 @@ export default function AbonoModal({
                 type="checkbox"
                 checked={sendReceipt}
                 onChange={(e) => setSendReceipt(e.target.checked)}
-                disabled={isBlocked}
+                disabled={isBlocked || isSubmitting}
               />
             </label>
 
+            {isSubmitting && (
+              <p className="form-help-text" style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                Registrando abono, por favor espera...
+              </p>
+            )}
+
             <div className="abono-actions" style={{ margin: 0 }}>
-              <button type="submit" className="btn btn-save" disabled={isBlocked || !!error || !monto}>
+              <button type="submit" className="btn btn-save" disabled={isBlocked || isSubmitting || !!error || !monto}>
                 <CheckCircle size={18} />
-                Confirmar Abono
+                {isSubmitting ? 'Registrando abono...' : 'Confirmar Abono'}
               </button>
-              <button type="button" className="btn btn-cancel" onClick={onClose}>
+              <button type="button" className="btn btn-cancel" onClick={handleClose} disabled={isSubmitting}>
                 Cancelar
               </button>
             </div>
