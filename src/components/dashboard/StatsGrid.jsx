@@ -21,7 +21,7 @@ import { AreaTrendChart, BarWeekdayChart } from './TrendChart';
 import { reportingService } from '../../services/db/reporting';
 import { normalizeFinancialNumber, summarizeFinancialSales } from '../../services/sales/financialPolicy';
 import { useStatsStore } from '../../store/useStatsStore';
-
+import { REPORT_SOURCE_MODES } from '../../services/reports/reportSourceBadges';
 
 // Periodos disponibles
 const TIME_PERIODS = {
@@ -71,7 +71,7 @@ const buildPeriodRanges = (timeRange) => {
 const currencyFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
 const numberFormatter = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 });
 
-const formatCurrency = (val) => currencyFormatter.format(val);
+const formatCurrency = (val) => currencyFormatter.format(Number(val || 0));
 
 const formatCompactCurrency = (val) => {
   const value = Number(val || 0);
@@ -122,6 +122,73 @@ const METRIC_OPTIONS = {
   }
 };
 
+const CLOUD_METRIC_KEYS = {
+  customersTotal: [
+    'customersTotal', 'customers_total', 'totalCustomers', 'total_customers',
+    'customerCount', 'customer_count', 'customersCount', 'customers_count'
+  ],
+  customersWithDebt: [
+    'customersWithDebt', 'customers_with_debt', 'debtorsCount', 'debtors_count',
+    'customersDebtCount', 'customers_debt_count', 'customers_with_balance', 'customersWithBalance'
+  ],
+  debtTotal: [
+    'debtTotal', 'debt_total', 'totalDebt', 'total_debt',
+    'outstandingDebtTotal', 'outstanding_debt_total', 'customerDebtTotal', 'customer_debt_total'
+  ],
+  customerPaymentsTotal: [
+    'customerPaymentsTotal', 'customer_payments_total', 'paymentsTotal', 'payments_total',
+    'abonosTotal', 'abonos_total', 'creditPaymentsTotal', 'credit_payments_total',
+    'customer_payment_total', 'customerPaymentTotal'
+  ],
+  cashSessionsOpen: [
+    'cashSessionsOpen', 'cash_sessions_open', 'openCashSessions', 'open_cash_sessions',
+    'openSessions', 'open_sessions', 'cashOpenSessions', 'cash_open_sessions', 'sessionsOpen', 'sessions_open'
+  ],
+  cashSessionsClosed: [
+    'cashSessionsClosed', 'cash_sessions_closed', 'closedCashSessions', 'closed_cash_sessions',
+    'closedSessions', 'closed_sessions', 'cashClosedSessions', 'cash_closed_sessions', 'sessionsClosed', 'sessions_closed'
+  ],
+  cashEntriesTotal: [
+    'cashEntriesTotal', 'cash_entries_total', 'entriesTotal', 'entries_total',
+    'cashInTotal', 'cash_in_total', 'incomeTotal', 'income_total', 'entradaTotal', 'entrada_total'
+  ],
+  cashExitsTotal: [
+    'cashExitsTotal', 'cash_exits_total', 'exitsTotal', 'exits_total',
+    'cashOutTotal', 'cash_out_total', 'expenseTotal', 'expense_total', 'salidaTotal', 'salida_total'
+  ],
+  cashPaymentsTotal: [
+    'cashPaymentsTotal', 'cash_payments_total', 'cashCustomerPaymentsTotal', 'cash_customer_payments_total',
+    'customerPaymentsCashTotal', 'customer_payments_cash_total', 'abonosCashTotal', 'abonos_cash_total'
+  ],
+  cashDifferenceTotal: [
+    'cashDifferenceTotal', 'cash_difference_total', 'differenceTotal', 'difference_total',
+    'closingDifferenceTotal', 'closing_difference_total', 'cashClosingDifferenceTotal', 'cash_closing_difference_total'
+  ],
+  productsActive: [
+    'productsActive', 'products_active', 'activeProducts', 'active_products',
+    'activeProductCount', 'active_product_count'
+  ],
+  productsOutOfStock: [
+    'productsOutOfStock', 'products_out_of_stock', 'productsWithoutStock', 'products_without_stock',
+    'outOfStock', 'out_of_stock', 'outOfStockProducts', 'out_of_stock_products'
+  ],
+  productsLowStock: [
+    'productsLowStock', 'products_low_stock', 'lowStockProducts', 'low_stock_products',
+    'productsWithLowStock', 'products_with_low_stock'
+  ],
+  inventoryValueApprox: [
+    'inventoryValueApprox', 'inventory_value_approx', 'inventoryValue', 'inventory_value',
+    'stockValueApprox', 'stock_value_approx', 'inventoryTotalValue', 'inventory_total_value'
+  ]
+};
+
+const SOURCE_LABELS = {
+  [REPORT_SOURCE_MODES.CLOUD]: 'Cloud oficial',
+  [REPORT_SOURCE_MODES.MIXED]: 'Mixto',
+  [REPORT_SOURCE_MODES.CACHE]: 'Último snapshot',
+  [REPORT_SOURCE_MODES.LOCAL]: 'Local'
+};
+
 const getDateKey = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -167,6 +234,114 @@ const getTrendPercent = (current, previous) => {
   if (previous > 0) return ((current - previous) / previous) * 100;
   if (current > 0) return 100;
   return 0;
+};
+
+const readPath = (obj, path) => {
+  if (!obj || !path) return undefined;
+  return String(path).split('.').reduce((current, key) => (
+    current && Object.prototype.hasOwnProperty.call(current, key) ? current[key] : undefined
+  ), obj);
+};
+
+const toNumberOrNull = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const uniqueObjects = (items = []) => Array.from(new Set(items.filter(Boolean)));
+
+const getMetricFromRoots = (roots = [], keys = []) => {
+  for (const root of roots) {
+    if (!root || typeof root !== 'object') continue;
+
+    for (const key of keys) {
+      const rawValue = key.includes('.') ? readPath(root, key) : root[key];
+      const value = toNumberOrNull(rawValue);
+      if (value !== null) return { value, has: true };
+    }
+  }
+
+  return { value: null, has: false };
+};
+
+const normalizeStatsGridReportData = ({ reportData, reportSource, isCloudReport, isMixedReport, isStale }) => {
+  const source = reportSource || reportData?.source || reportData?.raw?.source || {};
+  const mode = source.mode || (isCloudReport ? REPORT_SOURCE_MODES.CLOUD : (isMixedReport ? REPORT_SOURCE_MODES.MIXED : REPORT_SOURCE_MODES.LOCAL));
+  const stale = Boolean(isStale || source.stale || mode === REPORT_SOURCE_MODES.CACHE);
+  const isProReport = Boolean(
+    isCloudReport ||
+    isMixedReport ||
+    stale ||
+    mode === REPORT_SOURCE_MODES.CLOUD ||
+    mode === REPORT_SOURCE_MODES.MIXED ||
+    mode === REPORT_SOURCE_MODES.CACHE
+  );
+
+  const roots = uniqueObjects([
+    reportData?.overview,
+    reportData?.summary,
+    reportData?.raw?.overview,
+    reportData?.raw?.summary,
+    reportData?.cash,
+    reportData?.cash?.summary,
+    reportData?.raw?.cash,
+    reportData?.raw?.cash?.summary,
+    reportData?.customerCredit,
+    reportData?.customerCredit?.summary,
+    reportData?.raw?.customer_credit,
+    reportData?.raw?.customer_credit?.summary,
+    reportData?.raw?.customerCredit,
+    reportData?.raw?.customerCredit?.summary,
+    reportData?.products,
+    reportData?.products?.summary,
+    reportData?.raw?.products,
+    reportData?.raw?.products?.summary,
+    reportData
+  ]);
+
+  const metrics = Object.fromEntries(
+    Object.entries(CLOUD_METRIC_KEYS).map(([metricKey, aliases]) => [
+      metricKey,
+      getMetricFromRoots(roots, aliases)
+    ])
+  );
+
+  const cloudMetricBadges = stale
+    ? [
+      { label: 'Último snapshot', variant: 'cache' },
+      { label: 'Desactualizado', variant: 'stale' }
+    ]
+    : [{ label: 'Cloud oficial', variant: 'cloud' }];
+
+  const localMetricBadges = isProReport
+    ? [{ label: 'Local / este dispositivo', variant: 'local' }]
+    : [];
+
+  const salesBadges = isProReport
+    ? [{ label: 'Ventas locales', variant: 'local' }]
+    : [];
+
+  const summaryBadges = isProReport
+    ? [
+      { label: SOURCE_LABELS[mode] || 'Mixto', variant: mode || 'mixed' },
+      ...(stale ? [{ label: 'Desactualizado', variant: 'stale' }] : [])
+    ]
+    : [];
+
+  return {
+    mode,
+    stale,
+    isProReport,
+    sourceLabel: SOURCE_LABELS[mode] || SOURCE_LABELS[REPORT_SOURCE_MODES.LOCAL],
+    metrics,
+    cloudMetricBadges,
+    localMetricBadges,
+    salesBadges,
+    summaryBadges,
+    hasReportData: Boolean(reportData),
+    shouldShowCloudCards: Boolean(isProReport && reportData)
+  };
 };
 
 const buildDailyMetricData = ({ sales = [], wasteLogs = [], period, now, metricKey }) => {
@@ -231,7 +406,17 @@ const buildDailyMetricData = ({ sales = [], wasteLogs = [], period, now, metricK
     });
 };
 
-export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0, activeRubros = [] }) {
+export default function StatsGrid({
+  stats = {},
+  customers = [],
+  reportRefreshKey = 0,
+  activeRubros = [],
+  reportData = null,
+  reportSource = null,
+  isCloudReport = false,
+  isMixedReport = false,
+  isStale = false
+}) {
   const [timeRange, setTimeRange] = useState('today');
   const [selectedMetric, setSelectedMetric] = useState('revenue');
   const [filteredSales, setFilteredSales] = useState([]);
@@ -241,6 +426,40 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const forceRecalculate = useStatsStore((state) => state.forceRecalculate);
+
+  const reportContext = useMemo(() => normalizeStatsGridReportData({
+    reportData,
+    reportSource,
+    isCloudReport,
+    isMixedReport,
+    isStale
+  }), [reportData, reportSource, isCloudReport, isMixedReport, isStale]);
+
+  const renderSourceBadges = (badges = []) => {
+    if (!badges.length) return null;
+
+    return (
+      <div className="card-mini-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+        {badges.map((badge) => (
+          <span key={`${badge.variant}-${badge.label}`} className="mini-stat-pill" title={badge.title || badge.label}>
+            {badge.label}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  const renderCloudMetricCard = ({ key, label, metric, formatter = formatNumber, note, badges = reportContext.cloudMetricBadges }) => (
+    <div key={key} className="stat-card-modern small-card">
+      <div className="card-header-small">
+        <span className="card-label">{label}</span>
+        <Activity size={18} className="icon-muted" />
+      </div>
+      <div className="card-value-small">{metric?.has ? formatter(metric.value) : 'Sin dato'}</div>
+      <small className="text-muted">{note}</small>
+      {renderSourceBadges(badges)}
+    </div>
+  );
 
   const handleRecalculateReports = async () => {
     setIsRecalculating(true);
@@ -283,7 +502,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
         setPrevPeriodWasteLogs(previousReport.wasteLogs || []);
 
       } catch (err) {
-        console.error("Error loading period sales", err);
+        console.error('Error loading period sales', err);
       }
     }
     loadPeriodSales();
@@ -342,6 +561,10 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
       metricKey: selectedMetric
     });
 
+    const cloudInventoryMetric = reportContext.metrics.inventoryValueApprox;
+    const useCloudInventory = Boolean(reportContext.isProReport && cloudInventoryMetric?.has);
+    const localInventoryValue = stats?.inventoryValue ?? 0;
+
     return {
       revenue,
       profitConfirmed,
@@ -357,7 +580,9 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
       qualityStatus: financialSummary.qualityStatus,
       shouldWarnFinancialQuality: financialSummary.shouldWarn,
       shouldBlockProfitAnalysis: financialSummary.shouldBlockProfitAnalysis,
-      inventory: stats.inventoryValue,
+      inventory: useCloudInventory ? cloudInventoryMetric.value : localInventoryValue,
+      inventorySource: useCloudInventory ? 'cloud' : 'local',
+      inventoryBadges: useCloudInventory ? reportContext.cloudMetricBadges : reportContext.localMetricBadges,
       hasMissingCosts,
       revenueTrend,
       metricTrend,
@@ -372,7 +597,21 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
       unconfirmedRevenue,
       filteredSales
     };
-  }, [filteredSales, filteredWasteLogs, prevPeriodSales, prevPeriodWasteLogs, selectedMetric, stats, timeRange]);
+  }, [filteredSales, filteredWasteLogs, prevPeriodSales, prevPeriodWasteLogs, selectedMetric, stats, timeRange, reportContext]);
+
+  const cloudMetrics = reportContext.metrics;
+  const cashSessionsMetric = {
+    has: Boolean(cloudMetrics.cashSessionsOpen?.has || cloudMetrics.cashSessionsClosed?.has),
+    value: `${formatNumber(cloudMetrics.cashSessionsOpen?.value || 0)} / ${formatNumber(cloudMetrics.cashSessionsClosed?.value || 0)}`
+  };
+  const cashFlowMetric = {
+    has: Boolean(cloudMetrics.cashEntriesTotal?.has || cloudMetrics.cashExitsTotal?.has),
+    value: `${formatCompactCurrency(cloudMetrics.cashEntriesTotal?.value || 0)} / ${formatCompactCurrency(cloudMetrics.cashExitsTotal?.value || 0)}`
+  };
+  const stockAlertMetric = {
+    has: Boolean(cloudMetrics.productsOutOfStock?.has || cloudMetrics.productsLowStock?.has),
+    value: `${formatNumber(cloudMetrics.productsOutOfStock?.value || 0)} / ${formatNumber(cloudMetrics.productsLowStock?.value || 0)}`
+  };
 
   return (
     <div className="stats-container-wrapper">
@@ -386,6 +625,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
               ? ' Mostrando solo las ventas de HOY.'
               : ` Mostrando últimos ${TIME_PERIODS[timeRange].label}.`}
           </p>
+          {renderSourceBadges(reportContext.summaryBadges)}
         </div>
 
         <div className="stats-controls-stack">
@@ -457,6 +697,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
             color={metrics.selectedMetricColor}
             valueFormatter={metrics.selectedMetricFormatter}
           />
+          {renderSourceBadges(reportContext.salesBadges)}
         </div>
       )}
 
@@ -476,6 +717,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
                 <span>{`${metrics.revenueTrend >= 0 ? '+' : ''}${metrics.revenueTrend.toFixed(1)}% vs periodo anterior`}</span>
               </div>
             )}
+            {renderSourceBadges(reportContext.salesBadges)}
           </div>
         </div>
 
@@ -507,6 +749,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
             <small className="financial-quality-text">
               {`Calidad del reporte financiero: ${metrics.coveragePercent.toFixed(1)}% confiable`}
             </small>
+            {renderSourceBadges(reportContext.salesBadges)}
           </div>
         </div>
 
@@ -520,6 +763,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
           <small className="text-muted">
             {`${metrics.missingCostRevenuePct.toFixed(1)}% de ventas sin costo`}
           </small>
+          {renderSourceBadges(reportContext.salesBadges)}
         </div>
 
         {/* TARJETA 4: CONFIABILIDAD */}
@@ -540,6 +784,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
               ? `${formatCurrency(metrics.unconfirmedRevenue)} sin costo`
               : 'Costos completos en el periodo'}
           </small>
+          {renderSourceBadges(reportContext.salesBadges)}
         </div>
 
         {/* TARJETA 5: PEDIDOS */}
@@ -550,6 +795,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
           </div>
           <div className="card-value-small">{metrics.orders || 0}</div>
           <small className="text-muted">Tickets cobrados</small>
+          {renderSourceBadges(reportContext.salesBadges)}
         </div>
 
         {/* TARJETA 6: TICKET PROMEDIO */}
@@ -560,9 +806,10 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
           </div>
           <div className="card-value-small">{formatCurrency(metrics.avgTicket)}</div>
           <small className="text-muted">Gasto por cliente</small>
+          {renderSourceBadges(reportContext.salesBadges)}
         </div>
 
-        {/* TARJETA 7: PRODUCTOS */}
+        {/* TARJETA 7: PRODUCTOS VENDIDOS */}
         <div className="stat-card-modern small-card">
           <div className="card-header-small">
             <span className="card-label">Prod. Vendidos</span>
@@ -570,6 +817,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
           </div>
           <div className="card-value-small">{metrics.items || 0}</div>
           <small className="text-muted">Unidades entregadas</small>
+          {renderSourceBadges(reportContext.salesBadges)}
         </div>
 
         {/* TARJETA 8: INVENTARIO */}
@@ -589,7 +837,7 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
               )}
             </div>
             <div className="inventory-icon">
-              <Package size={32} strokeWidth={1.5} className={metrics.inventory === null ? "icon-error" : "icon-primary"} />
+              <Package size={32} strokeWidth={1.5} className={metrics.inventory === null ? 'icon-error' : 'icon-primary'} />
             </div>
           </div>
           {metrics.inventory !== null && (
@@ -597,10 +845,87 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
               <div className="inventory-bar" style={{ width: '100%' }}></div>
             </div>
           )}
-          <small className={`inventory-footer-text ${metrics.inventory === null ? "error-text-light" : "text-muted"}`}>
-            {metrics.inventory === null ? "Cálculo abortado para prevenir daños." : "Valor actual de tu stock"}
+          <small className={`inventory-footer-text ${metrics.inventory === null ? 'error-text-light' : 'text-muted'}`}>
+            {metrics.inventory === null
+              ? 'Cálculo abortado para prevenir daños.'
+              : metrics.inventorySource === 'cloud'
+                ? 'Valor aproximado de stock cloud'
+                : 'Valor actual de tu stock'}
           </small>
+          {renderSourceBadges(metrics.inventoryBadges)}
         </div>
+
+        {reportContext.shouldShowCloudCards && (
+          <>
+            {renderCloudMetricCard({
+              key: 'customers-total',
+              label: 'Clientes totales',
+              metric: cloudMetrics.customersTotal,
+              note: 'Directorio de clientes'
+            })}
+            {renderCloudMetricCard({
+              key: 'customers-debt',
+              label: 'Clientes con deuda',
+              metric: cloudMetrics.customersWithDebt,
+              note: 'Crédito / abonos'
+            })}
+            {renderCloudMetricCard({
+              key: 'debt-total',
+              label: 'Deuda total',
+              metric: cloudMetrics.debtTotal,
+              formatter: formatCurrency,
+              note: 'Saldo pendiente oficial'
+            })}
+            {renderCloudMetricCard({
+              key: 'payments-total',
+              label: 'Abonos periodo',
+              metric: cloudMetrics.customerPaymentsTotal,
+              formatter: formatCurrency,
+              note: 'Pagos registrados'
+            })}
+            {renderCloudMetricCard({
+              key: 'cash-sessions',
+              label: 'Cajas',
+              metric: cashSessionsMetric,
+              formatter: (value) => value,
+              note: 'Abiertas / cerradas'
+            })}
+            {renderCloudMetricCard({
+              key: 'cash-flow',
+              label: 'Caja entradas/salidas',
+              metric: cashFlowMetric,
+              formatter: (value) => value,
+              note: 'Entradas / salidas'
+            })}
+            {renderCloudMetricCard({
+              key: 'cash-payments',
+              label: 'Abonos en caja',
+              metric: cloudMetrics.cashPaymentsTotal,
+              formatter: formatCurrency,
+              note: 'Abonos reflejados en caja'
+            })}
+            {renderCloudMetricCard({
+              key: 'cash-difference',
+              label: 'Diferencias cierre',
+              metric: cloudMetrics.cashDifferenceTotal,
+              formatter: formatCurrency,
+              note: 'Diferencia acumulada'
+            })}
+            {renderCloudMetricCard({
+              key: 'products-active',
+              label: 'Productos activos',
+              metric: cloudMetrics.productsActive,
+              note: 'Catálogo cloud'
+            })}
+            {renderCloudMetricCard({
+              key: 'stock-alerts',
+              label: 'Alertas de stock',
+              metric: stockAlertMetric,
+              formatter: (value) => value,
+              note: 'Sin stock / stock bajo'
+            })}
+          </>
+        )}
       </div>
 
       {/* Sección de gráficas y datos adicionales */}
@@ -619,17 +944,20 @@ export default function StatsGrid({ stats, customers = [], reportRefreshKey = 0,
                 valueFormatter={metrics.selectedMetricFormatter}
               />
             </div>
+            {renderSourceBadges(reportContext.salesBadges)}
           </div>
         )}
 
         {/* Productos más vendidos — filteredSales respeta el periodo y excluye abiertas/canceladas */}
         <div className="stats-insight-card" style={{ width: '100%' }}>
           <TopProducts sales={metrics.filteredSales} limit={5} />
+          {renderSourceBadges(reportContext.salesBadges)}
         </div>
 
         {/* Clientes frecuentes — filteredSales respeta el periodo y excluye abiertas/canceladas */}
         <div className="stats-insight-card" style={{ width: '100%' }}>
           <TopCustomers sales={metrics.filteredSales} customers={customers} limit={5} />
+          {renderSourceBadges(reportContext.salesBadges)}
         </div>
       </div>
     </div>
