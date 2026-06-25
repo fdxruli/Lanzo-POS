@@ -6,11 +6,11 @@ import { getLegacyFinancialSaleStatus } from '../sales/financialStats';
 import Logger from '../Logger';
 import { getLowStockAlertStatus } from './utils';
 import { buildProductSearchFields } from './productSearchIndex';
-// Nota: Dexie maneja el versionado de forma interna y más limpia, 
+// Nota: Dexie maneja el versionado de forma interna y más limpia,
 // pero importamos DB_NAME para mantener consistencia.
 
 /**
- * Mapeo de nombres de Tablas (Stores) para mantener consistencia 
+ * Mapeo de nombres de Tablas (Stores) para mantener consistencia
  * con el resto de la aplicación que usa la constante STORES.
  */
 export const STORES = {
@@ -88,7 +88,7 @@ class LanzoDatabase extends Dexie {
       [STORES.SYNC_CACHE]: 'key', // Tu código usaba 'key' como primary key
       [STORES.IMAGES]: 'id',       // Almacenamiento de Blobs
 
-      // Esquema de apartados 
+      // Esquema de apartados
       [STORES.LAYAWAYS]: 'id, customerId, status, deadline, [customerId+status]'
     });
 
@@ -127,7 +127,7 @@ class LanzoDatabase extends Dexie {
         });
       };
 
-      // Dexie .modify() maneja el procesamiento por lotes internamente, 
+      // Dexie .modify() maneja el procesamiento por lotes internamente,
       // evitando bloqueos severos de memoria.
       await injectCreatedAt(STORES.CUSTOMERS);
       await injectCreatedAt(STORES.MENU);
@@ -451,7 +451,7 @@ class LanzoDatabase extends Dexie {
       await tx.table(STORES.PRODUCT_BATCHES).toCollection().modify(record => {
         const hasStock = Number(record.stock) > 0;
         record.activeStockStatus = (record.isActive === true && hasStock) ? 1 : 0;
-          
+
         // Normalizar campo status para índice (evita undefined)
         if (record.status === undefined || record.status === null) {
           record.status = record.isActive === false ? 'inactive' : 'active';
@@ -537,6 +537,10 @@ class LanzoDatabase extends Dexie {
             record.cash_session_id = findCashSessionId(record.timestamp || record.deletedAt);
           }
         });
+      });
+
+      this.version(23).stores({
+        [STORES.CUSTOMER_LEDGER]: 'id, customerId, type, timestamp, cashSessionId, cashMovementId, staffUserId, deviceId, syncStatus, serverVersion, cloudUpdatedAt, lastSyncedAt, [customerId+timestamp], [cashSessionId+timestamp], [staffUserId+timestamp], [deviceId+timestamp], [syncStatus+timestamp]'
       });
     }
   }
@@ -628,7 +632,7 @@ db.table(STORES.PRODUCT_BATCHES).hook('creating', function (primKey, obj, transa
   const isActive = obj.isActive !== false;
   const hasStock = Number(obj.stock) > 0;
   obj.activeStockStatus = (isActive && hasStock) ? 1 : 0;
-  
+
   // Normalizar campo status para índices (evita booleanos en índices compuestos)
   if (obj.status === undefined || obj.status === null) {
     obj.status = isActive ? 'active' : 'inactive';
@@ -702,11 +706,11 @@ db.on('blocked', () => {
   };
 
   // PUNTO CIEGO: Manejo de ciclo de vida fuera de React
-  // Si la migración se bloquea inmediatamente al parsear el bundle, el árbol de React 
-  // (y el componente Modal que escucha el store) no existirá en el DOM. 
+  // Si la migración se bloquea inmediatamente al parsear el bundle, el árbol de React
+  // (y el componente Modal que escucha el store) no existirá en el DOM.
   // Modificar el store prematuramente causaría la pérdida silenciosa del evento.
   if (document.readyState === 'loading') {
-    // El DOM aún se está construyendo. Esperamos a que termine y damos margen 
+    // El DOM aún se está construyendo. Esperamos a que termine y damos margen
     // a la hidratación/montaje de React.
     document.addEventListener('DOMContentLoaded', () => {
       setTimeout(dispatchUIModal, 1500);
