@@ -106,20 +106,40 @@ export const customerCreditMigrationService = {
       }
 
       let summary = null;
+      let summaryError = null;
       try {
         summary = await customerCreditCloudRepository.getCustomerCreditSummary({
           licenseKey,
           customerId: customer.id
         });
-      } catch (summaryError) {
-        Logger.warn('[CustomerCredit/Migration] No se pudo leer resumen cloud de cliente; se usara snapshot si existe:', {
+
+        if (summary?.success === false) {
+          throw new Error(summary.message || summary.code || 'CUSTOMER_CREDIT_SUMMARY_FAILED');
+        }
+      } catch (error) {
+        summaryError = error;
+        Logger.warn('[CustomerCredit/Migration] No se pudo leer resumen cloud de cliente; se omite para evitar duplicar saldo inicial:', {
           customerId: customer.id,
-          error: summaryError
+          error
         });
       }
 
       const summaryLedgers = getLedgerEntriesFromSummary(summary);
       const cloudLedgerExists = summaryLedgers.length > 0 || snapshotLedgerCustomerIds.has(customer.id);
+
+      if (summaryError) {
+        skippedExistingCloudLedger += cloudLedgerExists ? 1 : 0;
+        conflicts.push(buildMigrationConflict({
+          customer,
+          localDebt,
+          cloudDebt: getCustomerDebtFromSummary(summary),
+          cloudLedgerExists,
+          reason: cloudLedgerExists
+            ? 'cloud_ledger_exists_but_summary_unavailable'
+            : 'cloud_summary_unavailable_initial_balance_skipped'
+        }));
+        continue;
+      }
 
       if (cloudLedgerExists) {
         skippedExistingCloudLedger += 1;
