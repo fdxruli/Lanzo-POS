@@ -1,10 +1,11 @@
 import { useAppStore } from '../../store/useAppStore';
 import {
   getLicenseKeyFromDetails,
+  getPlanFeaturesFromLicenseDetails,
   isCloudCashSyncEnabled,
   isCloudCustomerCreditSyncEnabled,
   isCloudProductsSyncEnabled,
-  isCloudReportsSyncEnabled
+  isFeatureEnabled
 } from '../sync/syncConstants';
 import { reportsCloudRepository } from './reportsCloudRepository';
 import { reportsLocalRepository } from './reportsLocalRepository';
@@ -15,6 +16,11 @@ import { REPORT_SOURCE_MODES } from './reportSourceBadges';
 export const REPORT_SYNC_UPDATED_EVENT = 'lanzo:reports-sync-updated';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+
+const isCloudReportsSyncEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_reports_sync');
+};
 
 const getMode = () => {
   const state = useAppStore.getState();
