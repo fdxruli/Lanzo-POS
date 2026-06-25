@@ -2,6 +2,10 @@ import { Money } from '../utils/moneyMath';
 import { isFinanciallyClosedSale } from './sales/financialStats';
 import { STORES } from './db/dexie';
 
+const zeroTotals = { ventasContado: '0', abonosFiado: '0' };
+
+const hasAmountValue = (value) => value !== null && value !== undefined && value !== '';
+
 const sessionEnd = (cashSession, endOverride) => (
   endOverride || cashSession.fecha_cierre || new Date().toISOString()
 );
@@ -23,6 +27,87 @@ const loadSessionSales = async (database, cashSession, endOverride) => {
   ]);
 
   return [...taggedSales, ...legacySales];
+};
+
+const sumCloudCustomerPaymentMovements = (movements = []) => {
+  let total = Money.init(0);
+
+  for (const movement of movements) {
+    const type = String(movement.tipo || movement.type || '').toLowerCase();
+    const source = String(movement.origen || movement.source || '').toLowerCase();
+    const isCustomerPayment = type === 'abono_cliente' || source === 'customer_payment';
+
+    if (isCustomerPayment) {
+      total = Money.add(total, movement.monto ?? movement.amount ?? 0);
+    }
+  }
+
+  return Money.toExactString(total);
+};
+
+export const isCloudCashSession = (cashSession = {}, { isCloudCash = false } = {}) => Boolean(
+  isCloudCash ||
+  cashSession?.cloudCash ||
+  hasAmountValue(cashSession?.total_teorico_cloud) ||
+  hasAmountValue(cashSession?.ventas_efectivo) ||
+  hasAmountValue(cashSession?.abonos_fiado)
+);
+
+export const buildCashSessionTotals = (cashSession = {}, salesTotals = zeroTotals, cashMovements = [], options = {}) => {
+  const isCloud = isCloudCashSession(cashSession, options);
+  const hasCloudSales = hasAmountValue(cashSession?.ventas_efectivo);
+  const hasCloudCustomerPayments = hasAmountValue(cashSession?.abonos_fiado);
+
+  // En cloud, Supabase es la fuente oficial de totales de caja.
+  // Los movimientos se muestran para auditoria; los agregados cloud evitan doble conteo.
+  return {
+    ventasContado: isCloud && hasCloudSales
+      ? String(cashSession.ventas_efectivo)
+      : String(salesTotals?.ventasContado || '0'),
+    abonosFiado: isCloud && hasCloudCustomerPayments
+      ? String(cashSession.abonos_fiado)
+      : (isCloud ? sumCloudCustomerPaymentMovements(cashMovements) : String(salesTotals?.abonosFiado || '0'))
+  };
+};
+
+export const resolveCashSessionAmounts = (cashSession = {}, totals = zeroTotals, options = {}) => {
+  const isCloud = isCloudCashSession(cashSession, options);
+  const ventasContado = isCloud && hasAmountValue(cashSession?.ventas_efectivo)
+    ? String(cashSession.ventas_efectivo)
+    : String(totals?.ventasContado || '0');
+  const abonosFiado = isCloud && hasAmountValue(cashSession?.abonos_fiado)
+    ? String(cashSession.abonos_fiado)
+    : String(totals?.abonosFiado || '0');
+  const entradasEfectivo = String(cashSession?.entradas_efectivo || '0');
+  const salidasEfectivo = String(cashSession?.salidas_efectivo || '0');
+  const fondoInicial = String(cashSession?.monto_inicial || '0');
+
+  if (isCloud && hasAmountValue(cashSession?.total_teorico_cloud)) {
+    return {
+      fondoInicial,
+      ventasContado,
+      abonosFiado,
+      entradasEfectivo,
+      salidasEfectivo,
+      totalTeorico: String(cashSession.total_teorico_cloud),
+      source: 'cloud_aggregate'
+    };
+  }
+
+  const ingresos = Money.add(
+    Money.add(Money.init(fondoInicial), Money.init(ventasContado)),
+    Money.add(Money.init(abonosFiado), Money.init(entradasEfectivo))
+  );
+
+  return {
+    fondoInicial,
+    ventasContado,
+    abonosFiado,
+    entradasEfectivo,
+    salidasEfectivo,
+    totalTeorico: Money.toExactString(Money.subtract(ingresos, Money.init(salidasEfectivo))),
+    source: isCloud ? 'cloud_fallback' : 'local_projection'
+  };
 };
 
 export const calculateSessionTotals = (sales) => {
@@ -52,7 +137,7 @@ export const calculateSessionTotals = (sales) => {
 
 export async function loadCashSessionTotals(database, cashSession, endOverride) {
   const sales = await loadSessionSales(database, cashSession, endOverride);
-  return calculateSessionTotals(sales);
+  return buildCashSessionTotals(cashSession, calculateSessionTotals(sales));
 }
 
 const normalizeSaleMovements = (sales) => {
@@ -104,7 +189,7 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
     return {
       sales: [],
       movements: [],
-      totals: { ventasContado: '0', abonosFiado: '0' }
+      totals: zeroTotals
     };
   }
 
@@ -124,6 +209,9 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
       .between(cashSession.fecha_apertura, end, true, true)
       .toArray()
   ]);
+
+  const salesTotals = calculateSessionTotals(sales);
+  const totals = buildCashSessionTotals(cashSession, salesTotals, cashMovements);
 
   const movements = [
     ...cashMovements,
@@ -147,6 +235,6 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
   return {
     sales,
     movements,
-    totals: calculateSessionTotals(sales)
+    totals
   };
 }
