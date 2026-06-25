@@ -23,6 +23,8 @@ import SaleCancellationModal from '../components/dashboard/SaleCancellationModal
 
 import { loadData, STORES } from '../services/database';
 import { reportingService } from '../services/db/reporting';
+import { reportsRepository, REPORT_SYNC_UPDATED_EVENT } from '../services/reports/reportsRepository';
+import { getReportSourceLabel, REPORT_SOURCE_MODES } from '../services/reports/reportSourceBadges';
 import { showMessageModal } from '../services/utils';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
@@ -62,12 +64,43 @@ const buildWarningsMessage = (warnings = []) => {
   return `\n\nAdvertencias:\n${preview}${tail}`;
 };
 
+const ReportSourceBanner = ({ source }) => {
+  if (!source) return null;
+
+  const isMixed = source.mode === REPORT_SOURCE_MODES.MIXED;
+  const isCache = source.mode === REPORT_SOURCE_MODES.CACHE || source.stale;
+  const warnings = Array.isArray(source.warnings) ? source.warnings : [];
+
+  return (
+    <div className={`data-warning-banner report-source-banner report-source-banner--${source.mode || 'local'}`}>
+      <span className="data-warning-icon">
+        <Save size={22} strokeWidth={1.5} />
+      </span>
+      <div>
+        <strong>{getReportSourceLabel(source)}</strong>
+        <p>
+          {isMixed
+            ? 'Modo PRO cloud: caja, abonos, clientes y productos usan datos cloud oficiales. Ventas, utilidad real, historial y mermas siguen usando datos locales de este dispositivo hasta activar ventas cloud.'
+            : isCache
+              ? 'Sin conexion o servicio no disponible: se muestra el ultimo snapshot cloud guardado. Puede estar desactualizado.'
+              : 'Reporte local de este dispositivo.'}
+        </p>
+        {warnings.length > 0 && (
+          <small>{warnings.slice(0, 2).join(' ')}</small>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function DashboardPage() {
   const [customers, setCustomers] = useState([]);
   const [reportingData, setReportingData] = useState({
     sales: [],
     wasteLogs: [],
     menu: [],
+    overviewReport: null,
+    reportSource: null,
     isLoading: true,
     refreshKey: 0
   });
@@ -79,7 +112,7 @@ export default function DashboardPage() {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
 
-  // 1. ESTADÍSTICAS
+  // 1. ESTADISTICAS
   const stats = useStatsStore((state) => state.stats);
   const loadStats = useStatsStore((state) => state.loadStats);
   const isStatsLoading = useStatsStore((state) => state.isLoading);
@@ -113,32 +146,54 @@ export default function DashboardPage() {
   // 4. PAPELERA
   const loadRecycleBin = useRecycleBinStore(state => state.loadRecycleBin);
 
-  const loadCustomers = async () => {
+  const loadCustomers = useCallback(async () => {
     try {
       const customersData = await loadData(STORES.CUSTOMERS);
       setCustomers(customersData || []);
     } catch (error) {
-      Logger.error("Error cargando clientes:", error);
+      Logger.error('Error cargando clientes:', error);
       setCustomers([]);
     }
-  };
+  }, []);
 
   const loadDashboardReporting = useCallback(async () => {
     setReportingData((current) => ({ ...current, isLoading: true }));
 
     try {
-      const report = await reportingService.getDashboardReport({
-        rangoFechas: null,
-        rubros: features.activeRubros,
-        incluirCanceladas: false,
-        incluirMermas: true,
-        incluirProductos: true
-      });
+      const [localReportResult, cloudOverviewResult] = await Promise.allSettled([
+        reportingService.getDashboardReport({
+          rangoFechas: null,
+          rubros: features.activeRubros,
+          incluirCanceladas: false,
+          incluirMermas: true,
+          incluirProductos: true
+        }),
+        reportsRepository.getOverviewReport({
+          rubros: features.activeRubros,
+          scope: 'mine'
+        })
+      ]);
+
+      const localReport = localReportResult.status === 'fulfilled'
+        ? localReportResult.value
+        : { sales: [], wasteLogs: [], menu: [] };
+      const overviewReport = cloudOverviewResult.status === 'fulfilled'
+        ? cloudOverviewResult.value
+        : null;
+
+      if (localReportResult.status === 'rejected') {
+        Logger.error('Error cargando datos locales del dashboard:', localReportResult.reason);
+      }
+      if (cloudOverviewResult.status === 'rejected') {
+        Logger.warn('No se pudo cargar reporte cloud/hibrido:', cloudOverviewResult.reason);
+      }
 
       setReportingData({
-        sales: report.sales || [],
-        wasteLogs: report.wasteLogs || [],
-        menu: report.menu || [],
+        sales: localReport.sales || [],
+        wasteLogs: localReport.wasteLogs || [],
+        menu: localReport.menu || [],
+        overviewReport,
+        reportSource: overviewReport?.source || null,
         isLoading: false,
         refreshKey: Date.now()
       });
@@ -153,22 +208,41 @@ export default function DashboardPage() {
   }, [features.activeRubros]);
 
   useEffect(() => {
-    Logger.log("🔄 Actualizando Dashboard...");
+    Logger.log('Actualizando Dashboard...');
     loadStats();
     loadRecentSales();
     loadDashboardReporting();
     loadCustomers();
-  }, [loadDashboardReporting, loadRecentSales, loadStats]);
+  }, [loadDashboardReporting, loadRecentSales, loadStats, loadCustomers]);
+
+  useEffect(() => {
+    const refreshReportSources = () => {
+      loadDashboardReporting();
+      loadCustomers();
+      loadStats();
+    };
+
+    const events = [
+      REPORT_SYNC_UPDATED_EVENT,
+      'lanzo:customers-sync-updated',
+      'lanzo:customer-credit-sync-updated',
+      'lanzo:cash-sync-updated',
+      'lanzo:products-sync-updated'
+    ];
+
+    events.forEach((eventName) => window.addEventListener(eventName, refreshReportSources));
+    return () => events.forEach((eventName) => window.removeEventListener(eventName, refreshReportSources));
+  }, [loadDashboardReporting, loadCustomers, loadStats]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
     const tabMap = {
-      'stats': 'stats',
-      'tips': 'tips',
-      'restock': 'restock',
-      'history': 'history',
-      'expiration': 'expiration',
-      'waste': 'waste'
+      stats: 'stats',
+      tips: 'tips',
+      restock: 'restock',
+      history: 'history',
+      expiration: 'expiration',
+      waste: 'waste'
     };
 
     if (tabParam && tabMap[tabParam]) {
@@ -191,7 +265,7 @@ export default function DashboardPage() {
   };
 
   const handleArchiveCancelledSale = async (sale) => {
-    if (!window.confirm('¿Mover esta venta cancelada a la papelera?')) return;
+    if (!window.confirm('Mover esta venta cancelada a la papelera?')) return;
     const result = await archiveCancelledSale(sale.id);
     if (!result.success) {
       showMessageModal(result.message || 'No se pudo mover la venta a papelera.', null, { type: 'error' });
@@ -270,98 +344,53 @@ export default function DashboardPage() {
 
   return (
     <>
-      {/* --- PESTAÑAS DE NAVEGACIÓN --- */}
       <div className="tabs-container" id="sales-tabs">
-        <button
-          className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
-          onClick={() => handleTabChange('stats')}
-        >
-          Estadísticas Clave
-        </button>
-
-        <button
-          className={`tab-btn ${activeTab === 'tips' ? 'active' : ''}`}
-          onClick={() => handleTabChange('tips')}
-        >
-          Consejos Lan
-        </button>
-
-        <button
-          className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`}
-          onClick={() => handleTabChange('restock')}
-        >
-          Reabastecimiento
-        </button>
-
-        <button
-          className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
-          onClick={() => handleTabChange('history')}
-        >
-          Historial y Papelera
-        </button>
-
-        <button
-          className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`}
-          onClick={() => handleTabChange('expiration')}
-        >
-          Caducidad
-        </button>
-
+        <button className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`} onClick={() => handleTabChange('stats')}>Estadisticas Clave</button>
+        <button className={`tab-btn ${activeTab === 'tips' ? 'active' : ''}`} onClick={() => handleTabChange('tips')}>Consejos Lan</button>
+        <button className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`} onClick={() => handleTabChange('restock')}>Reabastecimiento</button>
+        <button className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => handleTabChange('history')}>Historial y Papelera</button>
+        <button className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`} onClick={() => handleTabChange('expiration')}>Caducidad</button>
         {features.hasWaste && (
-          <button
-            className={`tab-btn ${activeTab === 'waste' ? 'active' : ''}`}
-            onClick={() => handleTabChange('waste')}
-            style={{ color: activeTab === 'waste' ? 'var(--error-color)' : '' }}
-          >
-            Mermas
-          </button>
+          <button className={`tab-btn ${activeTab === 'waste' ? 'active' : ''}`} onClick={() => handleTabChange('waste')} style={{ color: activeTab === 'waste' ? 'var(--error-color)' : '' }}>Mermas</button>
         )}
       </div>
 
-      {/* --- CONTENIDO DE LAS PESTAÑAS --- */}
+      <ReportSourceBanner source={reportingData.reportSource} />
 
-      {/* 1. ESTADÍSTICAS */}
       {activeTab === 'stats' && (
         <StatsGrid
           stats={stats}
           customers={customers}
           reportRefreshKey={reportingData.refreshKey}
           activeRubros={features.activeRubros}
+          reportData={reportingData.overviewReport}
+          reportSource={reportingData.reportSource}
+          isCloudReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.CLOUD}
+          isMixedReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.MIXED}
+          isStale={Boolean(reportingData.reportSource?.stale)}
         />
       )}
 
-      {/* 2. REABASTECIMIENTO */}
       {activeTab === 'restock' && (
-        <RestockSuggestions />
+        <RestockSuggestions reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
       )}
 
-      {/* 3. HISTORIAL Y PAPELERA (MEJORADO) */}
       {activeTab === 'history' && (
         <div className="tab-content fade-in">
-          {/* Banner de Advertencia */}
           <div className="data-warning-banner">
-            <span className="data-warning-icon">
-              <Save size={24} strokeWidth={1.5} />
-            </span>
+            <span className="data-warning-icon"><Save size={24} strokeWidth={1.5} /></span>
             <div>
-              <strong>Importante: Tus datos viven en este dispositivo.</strong>
+              <strong>Importante: historial de ventas local.</strong>
               <p>
-                Te recomendamos hacer una <strong>Copia de Seguridad</strong> semanalmente.
-                <button
-                  onClick={() => navigate('/settings')}
-                  className="link-button"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                >
+                Las ventas e historial se leen desde este dispositivo. Caja, abonos y credito pueden venir de cloud en PRO.
+                <button onClick={() => navigate('/settings')} className="link-button" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                   Ir a Respaldar ahora <ArrowRight size={16} />
                 </button>
               </p>
             </div>
           </div>
 
-          {/* Grid Principal: Historial (Izquierda) + Papelera (Derecha) */}
           <div className="history-layout-grid">
-
-            {/* Sección Principal: Historial */}
             <section className="dashboard-panel history-panel">
               <div className="panel-header">
                 <h3><BarChart3 size={20} /> Historial de Movimientos</h3>
@@ -377,52 +406,32 @@ export default function DashboardPage() {
                   hasMore={hasMoreSales}
                   currentPageIndex={currentSalesPageIndex}
                   isLoading={isSalesLoading}
+                  reportSource={reportingData.reportSource}
                 />
               </div>
             </section>
 
-            {/* Sección Lateral: Papelera */}
             <section className="dashboard-panel recycle-panel">
               <div className="panel-header danger-theme">
                 <h3><Trash2 size={20} /> Papelera</h3>
                 <span className="panel-subtitle">Elementos eliminados</span>
               </div>
-              <div className="panel-body">
-                <RecycleBin />
-              </div>
+              <div className="panel-body"><RecycleBin /></div>
             </section>
-
           </div>
         </div>
       )}
 
-      {/* 4. CONSEJOS */}
       {activeTab === 'tips' && (
         canUseAIAgents ? (
-          <OperationalDiagnostics
-            sales={analyticsSales}
-            menu={analyticsMenu}
-            customers={customers}
-            wasteLogs={analyticsWasteLogs}
-          />
+          <OperationalDiagnostics sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
         ) : (
-          <BusinessTips
-            sales={analyticsSales}
-            menu={analyticsMenu}
-            customers={customers}
-            wasteLogs={analyticsWasteLogs}
-            activeRubros={features.activeRubros}
-            onNavigate={(route) => navigate(route)}
-          />
+          <BusinessTips sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} activeRubros={features.activeRubros} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} onNavigate={(route) => navigate(route)} />
         )
       )}
 
-      {/* 5. CADUCIDAD */}
-      {activeTab === 'expiration' && (
-        <ExpirationAlert />
-      )}
+      {activeTab === 'expiration' && <ExpirationAlert reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />}
 
-      {/* 6. MERMAS */}
       {activeTab === 'waste' && features.hasWaste && (
         <WasteHistory
           logs={wasteLogs}
@@ -434,6 +443,7 @@ export default function DashboardPage() {
           currentWastePageIndex={currentWastePageIndex}
           isWasteLoading={isWasteLoading}
           activeRubros={features.activeRubros}
+          reportSource={reportingData.reportSource}
         />
       )}
 
