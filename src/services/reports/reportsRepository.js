@@ -33,7 +33,8 @@ const CLOUD_TIMESERIES_METRICS = new Set([
 
 const DEFAULT_CACHE_WARNING = 'Sin conexion o servicio no disponible. Mostrando el ultimo reporte cloud guardado en este dispositivo.';
 const DEFAULT_OFFLINE_LOCAL_WARNING = 'Sin conexion y sin snapshot cloud previo. Se muestran datos locales de este dispositivo.';
-const DEFAULT_CLOUD_ERROR_LOCAL_WARNING = 'No se pudo cargar el reporte cloud. Se muestran datos locales de este dispositivo.';
+const DEFAULT_CLOUD_ERROR_CACHE_WARNING = 'No se pudo cargar el reporte cloud. Mostrando el ultimo snapshot guardado.';
+const DEFAULT_CLOUD_ERROR_LOCAL_WARNING = 'No se pudo cargar el reporte cloud y no hay snapshot previo. Se muestran datos locales de este dispositivo.';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
@@ -97,7 +98,8 @@ const withCacheFallback = async ({
   localFallback,
   offlineWarning = DEFAULT_OFFLINE_LOCAL_WARNING,
   cacheWarning = DEFAULT_CACHE_WARNING,
-  cloudErrorWarning = DEFAULT_CLOUD_ERROR_LOCAL_WARNING
+  cloudErrorCacheWarning = DEFAULT_CLOUD_ERROR_CACHE_WARNING,
+  cloudErrorLocalWarning = DEFAULT_CLOUD_ERROR_LOCAL_WARNING
 }) => {
   if (!reportMode?.online) {
     const cached = await reportsCacheService.getSnapshot(reportType, filters);
@@ -124,7 +126,7 @@ const withCacheFallback = async ({
       return normalizeCachedPayload({
         cached,
         mapper,
-        cacheWarning: cloudErrorWarning || cacheWarning
+        cacheWarning: cloudErrorCacheWarning || cacheWarning
       });
     }
 
@@ -132,7 +134,7 @@ const withCacheFallback = async ({
     return applySourceState(local, {
       sourceMode: REPORT_SOURCE_MODES.MIXED,
       stale: false,
-      warnings: [cloudErrorWarning, error?.message || 'Error desconocido']
+      warnings: [cloudErrorLocalWarning, error?.message || 'Error desconocido']
     });
   }
 };
@@ -221,7 +223,8 @@ export const reportsRepository = {
       localFallback: () => reportsLocalRepository.getOverviewReport(filters),
       offlineWarning: DEFAULT_OFFLINE_LOCAL_WARNING,
       cacheWarning: DEFAULT_CACHE_WARNING,
-      cloudErrorWarning: 'No se pudo cargar el reporte cloud. Mostrando el ultimo snapshot guardado.'
+      cloudErrorCacheWarning: DEFAULT_CLOUD_ERROR_CACHE_WARNING,
+      cloudErrorLocalWarning: 'No se pudo cargar el reporte cloud y no hay snapshot previo. Se mantienen ventas y datos locales de este dispositivo.'
     });
   },
 
@@ -240,7 +243,8 @@ export const reportsRepository = {
       localFallback: () => reportsLocalRepository.getCashReport(filters),
       offlineWarning: 'Sin conexion y sin snapshot cloud de caja previo. Se muestra caja local de este dispositivo.',
       cacheWarning: 'Mostrando el ultimo snapshot cloud guardado de caja. Puede estar desactualizado.',
-      cloudErrorWarning: 'No se pudo cargar caja cloud. Mostrando el ultimo snapshot guardado.'
+      cloudErrorCacheWarning: 'No se pudo cargar caja cloud. Mostrando el ultimo snapshot guardado.',
+      cloudErrorLocalWarning: 'No se pudo cargar caja cloud y no hay snapshot previo. Se muestra caja local de este dispositivo.'
     });
   },
 
@@ -259,7 +263,8 @@ export const reportsRepository = {
       localFallback: () => reportsLocalRepository.getCustomerCreditReport(filters),
       offlineWarning: 'Sin conexion y sin snapshot cloud de credito previo. Se muestra credito local de este dispositivo.',
       cacheWarning: 'Mostrando el ultimo snapshot cloud guardado de credito/abonos. Puede estar desactualizado.',
-      cloudErrorWarning: 'No se pudo cargar credito/abonos cloud. Mostrando el ultimo snapshot guardado.'
+      cloudErrorCacheWarning: 'No se pudo cargar credito/abonos cloud. Mostrando el ultimo snapshot guardado.',
+      cloudErrorLocalWarning: 'No se pudo cargar credito/abonos cloud y no hay snapshot previo. Se muestra credito local de este dispositivo.'
     });
   },
 
@@ -278,7 +283,8 @@ export const reportsRepository = {
       localFallback: () => reportsLocalRepository.getProductCatalogReport(filters),
       offlineWarning: 'Sin conexion y sin snapshot cloud de catalogo previo. Se muestra catalogo local de este dispositivo.',
       cacheWarning: 'Mostrando el ultimo snapshot cloud guardado de catalogo. Puede estar desactualizado.',
-      cloudErrorWarning: 'No se pudo cargar catalogo cloud. Mostrando el ultimo snapshot guardado.'
+      cloudErrorCacheWarning: 'No se pudo cargar catalogo cloud. Mostrando el ultimo snapshot guardado.',
+      cloudErrorLocalWarning: 'No se pudo cargar catalogo cloud y no hay snapshot previo. Se muestra catalogo local de este dispositivo.'
     });
   },
 
@@ -310,7 +316,8 @@ export const reportsRepository = {
       localFallback: () => reportsLocalRepository.getTimeseriesReport(filters),
       offlineWarning: 'Sin conexion y sin snapshot cloud de series previo. Se muestran series locales disponibles de este dispositivo.',
       cacheWarning: 'Mostrando el ultimo snapshot cloud guardado de series. Puede estar desactualizado.',
-      cloudErrorWarning: 'No se pudo cargar series cloud. Mostrando el ultimo snapshot guardado.'
+      cloudErrorCacheWarning: 'No se pudo cargar series cloud. Mostrando el ultimo snapshot guardado.',
+      cloudErrorLocalWarning: 'No se pudo cargar series cloud y no hay snapshot previo. Se muestran series locales disponibles de este dispositivo.'
     });
   },
 
