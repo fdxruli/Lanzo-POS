@@ -48,9 +48,7 @@ const sumCloudCustomerPaymentMovements = (movements = []) => {
 export const isCloudCashSession = (cashSession = {}, { isCloudCash = false } = {}) => Boolean(
   isCloudCash ||
   cashSession?.cloudCash ||
-  hasAmountValue(cashSession?.total_teorico_cloud) ||
-  hasAmountValue(cashSession?.ventas_efectivo) ||
-  hasAmountValue(cashSession?.abonos_fiado)
+  hasAmountValue(cashSession?.total_teorico_cloud)
 );
 
 export const buildCashSessionTotals = (cashSession = {}, salesTotals = zeroTotals, cashMovements = [], options = {}) => {
