@@ -121,6 +121,32 @@ describe('loadCashSessionProjection', () => {
     expect(wasteWhere).toHaveBeenCalledWith('timestamp');
   });
 
+  it('mantiene calculo local desde ventas aunque la caja local tenga campos agregados locales', async () => {
+    const localSession = {
+      ...cashSession,
+      id: 'local-cash-with-fields',
+      ventas_efectivo: '0',
+      entradas_efectivo: '0',
+      salidas_efectivo: '0'
+    };
+
+    await testDb.table('sales').add({
+      id: 'local-sale-current',
+      cash_session_id: localSession.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'closed',
+      paymentMethod: 'efectivo',
+      total: '100'
+    });
+
+    const result = await loadCashSessionProjection(testDb, localSession);
+
+    expect(result.totals).toEqual({
+      ventasContado: '100',
+      abonosFiado: '0'
+    });
+  });
+
   it('usa agregados cloud para abonos y total teorico sin duplicar movimientos customer_payment', async () => {
     const cloudSession = {
       ...cashSession,
