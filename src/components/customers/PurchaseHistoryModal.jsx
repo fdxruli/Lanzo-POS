@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { queryByIndex, STORES } from '../../services/database';
 import './PurchaseHistoryModal.css';
 import Logger from '../../services/Logger';
 import { getSafeCustomerDebt, formatCustomerDebt } from '../../utils/customerUtils';
+import { customerCreditRepository } from '../../services/customerCredit/customerCreditRepository';
 
 // Iconos simples (puedes reemplazarlos por lucide-react o fontawesome si usas)
 const ChevronIcon = ({ expanded }) => (
@@ -11,13 +12,34 @@ const ChevronIcon = ({ expanded }) => (
   </span>
 );
 
-export default function PurchaseHistoryModal({ show, onClose, customer }) {
+export default function PurchaseHistoryModal({ show, onClose, customer, isCloudCredit = false }) {
   const [sales, setSales] = useState([]);
+  const [ledgerEntries, setLedgerEntries] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // Novedades: Filtros y Acordeón
   const [filterType, setFilterType] = useState('all'); // 'all', 'fiado', 'paid'
   const [expandedSaleId, setExpandedSaleId] = useState(null);
+
+  const loadHistory = useCallback(async () => {
+    if (!customer?.id) return;
+
+    setLoading(true);
+    try {
+      const customerSales = await queryByIndex(STORES.SALES, 'customerId', customer.id);
+      // Orden descendente (más reciente primero)
+      const sortedSales = customerSales.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      setSales(sortedSales);
+
+      const summary = await customerCreditRepository.getCustomerCreditSummary(customer.id);
+      const entries = summary?.ledger_entries || summary?.ledgerEntries || [];
+      setLedgerEntries(Array.isArray(entries) ? entries : []);
+    } catch (error) {
+      Logger.error("Error cargando historial:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [customer?.id]);
 
   useEffect(() => {
     if (show && customer) {
@@ -28,21 +50,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
       setExpandedSaleId(null);
       setFilterType('all');
     };
-  }, [show, customer]);
-
-  const loadHistory = async () => {
-    setLoading(true);
-    try {
-      const customerSales = await queryByIndex(STORES.SALES, 'customerId', customer.id);
-      // Orden descendente (más reciente primero)
-      const sortedSales = customerSales.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-      setSales(sortedSales);
-    } catch (error) {
-      Logger.error("Error cargando historial:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [show, customer, loadHistory]);
 
   const toggleDetails = (saleId) => {
     setExpandedSaleId(prev => prev === saleId ? null : saleId);
@@ -121,6 +129,47 @@ export default function PurchaseHistoryModal({ show, onClose, customer }) {
             </button>
           </div>
         </div>
+
+        {(isCloudCredit || ledgerEntries.length > 0) && (
+          <div className="history-toolbar" style={{ alignItems: 'stretch' }}>
+            <div style={{ width: '100%' }}>
+              <strong style={{ display: 'block', marginBottom: '0.5rem' }}>
+                Ledger de credito{isCloudCredit ? ' cloud' : ''}
+              </strong>
+              {ledgerEntries.length === 0 ? (
+                <p style={{ color: 'var(--text-secondary)', margin: 0 }}>Sin movimientos de ledger registrados.</p>
+              ) : (
+                <div style={{ display: 'grid', gap: '0.5rem' }}>
+                  {ledgerEntries.slice(0, 8).map((entry) => {
+                    const amount = Number(entry.amount || 0);
+                    const createdAt = entry.created_at || entry.createdAt || entry.timestamp;
+                    return (
+                      <div key={entry.id} className="history-item-header" style={{ padding: '0.5rem 0' }}>
+                        <div className="info-col">
+                          <div className="info-top">
+                            <span className="sale-id">#{String(entry.id).slice(-6)}</span>
+                            <span className={`badge ${amount < 0 ? 'badge-paid' : 'badge-fiado'}`}>
+                              {entry.type || 'LEDGER'}
+                            </span>
+                          </div>
+                          <div className="info-sub">
+                            {createdAt ? new Date(createdAt).toLocaleString('es-MX') : 'Fecha no disponible'}
+                            {entry.actor_name || entry.actorName ? ` - ${entry.actor_name || entry.actorName}` : ''}
+                          </div>
+                        </div>
+                        <div className="amount-col">
+                          <span className="amount">
+                            {amount < 0 ? '-' : '+'}${Math.abs(amount).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* LISTA DE COMPRAS */}
         <div className="history-list-container">

@@ -3,11 +3,20 @@ import React, { useState, useEffect } from 'react';
 import { Wallet, X, CheckCircle, MessageCircle, AlertTriangle, List } from 'lucide-react';
 import { db } from '../../services/db/dexie';
 import { Money } from '../../utils/moneyMath';
-import { customerCreditRepository } from '../../services/db/customerCreditRepository';
 import { getSafeCustomerDebt } from '../../utils/customerUtils';
 import './AbonoModal.css';
 
-export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) {
+export default function AbonoModal({
+  show,
+  onClose,
+  onConfirmAbono,
+  customer,
+  isCloudCredit = false,
+  isBlocked = false,
+  blockedReason = '',
+  cashSession = null,
+  cashActor = null
+}) {
   const [monto, setMonto] = useState('');
   const [error, setError] = useState('');
   const [sendReceipt, setSendReceipt] = useState(true);
@@ -115,6 +124,11 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (isBlocked) {
+      setError(blockedReason || 'No se puede registrar el abono en este momento.');
+      return;
+    }
+
     const montoAbono = parseFloat(monto);
 
     if (isNaN(montoAbono) || montoAbono <= 0) {
@@ -174,13 +188,30 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
                   <span className="deuda-label">Deuda Actual:</span>
                   <span className="deuda-total">${deudaActual.toFixed(2)}</span>
                 </div>
+                {isCloudCredit && (
+                  <div className="deuda-row">
+                    <span className="deuda-label">Caja PRO:</span>
+                    <span className="cliente-name">
+                      {cashSession?.id
+                        ? (cashActor?.displayName || cashActor?.responsibleName || cashSession.responsable_apertura || 'Responsable')
+                        : 'Sin caja abierta'}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {isCloudCredit && isBlocked && (
+                <p className="form-help-text validation-message error">
+                  <AlertTriangle size={14} /> {blockedReason || 'Abonos cloud requieren caja abierta y conexion.'}
+                </p>
+              )}
 
               <div className="abono-mode-toggle" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                   <input
                     type="checkbox"
                     checked={advancedMode}
+                    disabled={isBlocked}
                     onChange={(e) => {
                       setAdvancedMode(e.target.checked);
                       if (!e.target.checked) setAllocations({});
@@ -221,6 +252,7 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
                     required
                     autoFocus
                     readOnly={advancedMode}
+                    disabled={isBlocked}
                     style={advancedMode ? { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' } : {}}
                   />
                 </div>
@@ -263,6 +295,7 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
                               max={sale.saldoPendiente}
                               value={allocations[sale.id] || ''}
                               onChange={(e) => handleAllocationChange(sale.id, e.target.value, sale.saldoPendiente)}
+                              disabled={isBlocked}
                             />
                           </div>
                           <button
@@ -271,6 +304,7 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
                             className="btn btn-icon"
                             style={{ height: '32px', padding: '0 8px', fontSize: '0.8rem' }}
                             title="Asignar total de esta nota"
+                            disabled={isBlocked}
                           >
                             <CheckCircle size={16} color={(parseFloat(allocations[sale.id]) === sale.saldoPendiente) ? 'var(--primary-color)' : 'var(--text-secondary)'} />
                           </button>
@@ -295,11 +329,12 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
                 type="checkbox"
                 checked={sendReceipt}
                 onChange={(e) => setSendReceipt(e.target.checked)}
+                disabled={isBlocked}
               />
             </label>
 
             <div className="abono-actions" style={{ margin: 0 }}>
-              <button type="submit" className="btn btn-save" disabled={!!error || !monto}>
+              <button type="submit" className="btn btn-save" disabled={isBlocked || !!error || !monto}>
                 <CheckCircle size={18} />
                 Confirmar Abono
               </button>
