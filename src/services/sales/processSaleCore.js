@@ -67,19 +67,39 @@ export const processSaleCore = async ({
             }
         }
 
-        const stockValidation = await validateStockBeforeSale({
-            itemsToProcess,
-            productMap,
-            features,
-            ignoreStock,
-            loadData,
-            loadMultipleData,
-            queryBatchesByProductIdAndActive,
-            STORES
+        // FASE 6C — primero decidimos si la venta será cloud inventory.
+        // En ese modo Supabase es la fuente oficial de stock/lotes; Dexie es solo caché.
+        // Por eso la validación local dura no debe bloquear antes de llegar a la RPC transaccional.
+        const cloudCashierDecision = await salesCloudCashierService.shouldUseCloudCashierSale({
+            paymentData,
+            cart: itemsToProcess
+        }).catch((decisionError) => {
+            Logger.warn('Cloud cashier decision failed; usando flujo local + shadow:', decisionError);
+            return { useCloud: false, reason: 'decision_error' };
         });
 
-        if (!stockValidation.ok) {
-            return stockValidation.response;
+        const isCloudInventorySale = (
+            cloudCashierDecision?.useCloud === true &&
+            cloudCashierDecision?.mode === 'cloud_cashier_inventory'
+        );
+
+        if (!isCloudInventorySale) {
+            const stockValidation = await validateStockBeforeSale({
+                itemsToProcess,
+                productMap,
+                features,
+                ignoreStock,
+                loadData,
+                loadMultipleData,
+                queryBatchesByProductIdAndActive,
+                STORES
+            });
+
+            if (!stockValidation.ok) {
+                return stockValidation.response;
+            }
+        } else {
+            Logger.info('Cloud inventory sale detected: skipping blocking local stock validation; Supabase will validate stock transactionally.');
         }
 
         await normalizeAndValidatePricing({
@@ -184,14 +204,7 @@ export const processSaleCore = async ({
         // FASE 6B/6C — Venta efectiva cloud con caja/folio y, si aplica, inventario cloud.
         // Este bloque debe ir ANTES de executeSaleTransactionSafe para evitar doble venta.
         // Si cloud cashier confirma la venta, NO se ejecuta la venta local ni shadow 6A.
-        const cloudCashierDecision = await salesCloudCashierService.shouldUseCloudCashierSale({
-            paymentData,
-            cart: processedItems
-        }).catch((decisionError) => {
-            Logger.warn('Cloud cashier decision failed; usando flujo local + shadow:', decisionError);
-            return { useCloud: false, reason: 'decision_error' };
-        });
-
+        // La decisión se resolvió antes del stock local para evitar falsos bloqueos con Dexie desactualizado.
         if (cloudCashierDecision?.useCloud) {
             let cloudResult;
 
