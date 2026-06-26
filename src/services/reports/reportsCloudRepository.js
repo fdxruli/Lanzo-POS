@@ -31,18 +31,49 @@ const buildBaseRpcArgs = async (licenseKey) => {
   };
 };
 
+const mergeCreditOverview = (basePayload = {}, creditPayload = null) => {
+  if (!creditPayload?.success || !creditPayload?.overview) return basePayload;
+
+  return {
+    ...basePayload,
+    overview: {
+      ...(basePayload.overview || {}),
+      ...(creditPayload.overview || {})
+    },
+    data_sources: {
+      ...(basePayload.data_sources || basePayload.source || {}),
+      credit_6d: creditPayload.source || 'cloud_credit_6d'
+    },
+    warnings: [
+      ...((Array.isArray(basePayload.warnings) ? basePayload.warnings : [])),
+      'Venta fiada cloud incluida desde Fase 6D. Reversiones cloud quedan para Fase 6E.'
+    ]
+  };
+};
+
 export const reportsCloudRepository = {
   async getOverviewReport({ licenseKey, dateFrom = null, dateTo = null, scope = 'mine' } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_get_reports_overview', {
+    const rpcArgs = {
       ...baseArgs,
       p_date_from: dateFrom,
       p_date_to: dateTo,
       p_scope: scope || 'mine'
-    });
+    };
+
+    const { data, error } = await supabaseClient.rpc('pos_get_reports_overview', rpcArgs);
     if (error) throw error;
-    return parseRpcPayload(data);
+
+    const overviewPayload = parseRpcPayload(data);
+
+    try {
+      const { data: creditData, error: creditError } = await supabaseClient.rpc('pos_get_reports_credit_overview', rpcArgs);
+      if (creditError) return overviewPayload;
+      return mergeCreditOverview(overviewPayload, parseRpcPayload(creditData));
+    } catch {
+      return overviewPayload;
+    }
   },
 
   async getCashReport({ licenseKey, dateFrom = null, dateTo = null, staffUserId = null, status = null, limit = 100, offset = 0 } = {}) {
