@@ -1,6 +1,11 @@
 import { supabaseClient } from '../supabase';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
-import { isCloudSalesBaseSyncEnabled, isCloudSalesCashierEnabled, SYNC_LIMITS } from '../sync/syncConstants';
+import {
+  isCloudSalesBaseSyncEnabled,
+  isCloudSalesCashierEnabled,
+  isCloudSalesInventoryEnabled,
+  SYNC_LIMITS
+} from '../sync/syncConstants';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -33,6 +38,15 @@ const buildBaseRpcArgs = async (licenseKey) => {
   };
 };
 
+const buildCloudCashierArgs = ({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }) => ({
+  ...baseArgs,
+  p_sale: sale || {},
+  p_items: Array.isArray(items) ? items : [],
+  p_payments: Array.isArray(payments) ? payments : [],
+  p_cash_session_id: cashSessionId || null,
+  p_idempotency_key: idempotencyKey || null
+});
+
 export const salesCloudRepository = {
   isCloudSalesBaseEnabled(licenseDetails = {}) {
     return isCloudSalesBaseSyncEnabled(licenseDetails);
@@ -40,6 +54,10 @@ export const salesCloudRepository = {
 
   isCloudSalesCashierEnabled(licenseDetails = {}) {
     return isCloudSalesCashierEnabled(licenseDetails);
+  },
+
+  isCloudSalesInventoryEnabled(licenseDetails = {}) {
+    return isCloudSalesInventoryEnabled(licenseDetails);
   },
 
   async upsertSaleShadow({ licenseKey, sale, items = [], payments = [], idempotencyKey }) {
@@ -69,14 +87,38 @@ export const salesCloudRepository = {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
 
-    const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_cashier', {
-      ...baseArgs,
-      p_sale: sale || {},
-      p_items: Array.isArray(items) ? items : [],
-      p_payments: Array.isArray(payments) ? payments : [],
-      p_cash_session_id: cashSessionId || null,
-      p_idempotency_key: idempotencyKey || null
-    });
+    const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_cashier', buildCloudCashierArgs({
+      baseArgs,
+      sale,
+      items,
+      payments,
+      cashSessionId,
+      idempotencyKey
+    }));
+
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async createCloudCashierInventorySale({
+    licenseKey,
+    sale,
+    items = [],
+    payments = [],
+    cashSessionId = null,
+    idempotencyKey = null
+  }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+
+    const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_cashier_inventory', buildCloudCashierArgs({
+      baseArgs,
+      sale,
+      items,
+      payments,
+      cashSessionId,
+      idempotencyKey
+    }));
 
     if (error) throw error;
     return parseRpcPayload(data);

@@ -14,7 +14,8 @@ export const runPostSaleEffects = async ({
     useStatsStore,
     roundCurrency,
     sendReceiptWhatsApp,
-    Logger
+    Logger,
+    skipLocalInventoryEffects = false
 }) => {
     // 🛡️ 1. Guardabarrera de Idempotencia: Si ya se hizo, abortamos.
     if (sale.postEffectsCompleted) {
@@ -35,6 +36,14 @@ export const runPostSaleEffects = async ({
         useSalesStore.getState().loadRecentSales().catch(
             e => Logger?.error('Error actualizando ventas recientes post-venta', e)
         );
+
+        // FASE 6C:
+        // Este módulo no debe descontar inventario por sí mismo. El parámetro
+        // skipLocalInventoryEffects deja explícito que una venta cloud committed
+        // ya aplicó inventario en Supabase y Dexie debe quedar solo como cache.
+        if (skipLocalInventoryEffects) {
+            Logger?.info?.('PostSaleEffects cloud-safe: inventario local omitido; Supabase es la fuente oficial.');
+        }
 
         // 4. Enviar WhatsApp (En segundo plano)
         if (paymentData.sendReceipt && paymentData.customerId) {
@@ -57,3 +66,8 @@ export const runPostSaleEffects = async ({
         Logger?.error('Error crítico en PostSaleEffects:', error);
     }
 };
+
+export const runPostSaleEffectsForCloudCommittedSale = async (args = {}) => runPostSaleEffects({
+    ...args,
+    skipLocalInventoryEffects: true
+});

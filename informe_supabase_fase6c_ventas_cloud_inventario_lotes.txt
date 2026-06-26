@@ -1,0 +1,368 @@
+INFORME SUPABASE / GITHUB — FASE 6C
+VENTAS CLOUD PRO CON INVENTARIO Y LOTES
+
+Proyecto Supabase: odlrhijtfyavryeqivaa
+Repositorio: fdxruli/Lanzo-POS
+Rama: fase6c-inventario-lotes-cloud
+Fecha: 2026-06-25
+
+1. OBJETIVO
+
+Implementar la FASE 6C para que las ventas PRO confirmadas en cloud puedan descontar inventario real en Supabase de forma transaccional, idempotente y auditable.
+
+La prioridad aplicada fue:
+
+1) No vender sin stock cloud suficiente.
+2) No descontar inventario dos veces.
+3) No mover caja si inventario falla.
+4) No tocar credito/ledger en esta fase.
+5) Mantener FREE/local estable.
+
+2. ALCANCE
+
+Esta fase agrega inventario cloud a la venta efectiva cloud de Fase 6B.
+
+La ruta 6B existente se conserva mediante public.pos_create_cloud_sale_cashier.
+La ruta 6C usa una RPC nueva: public.pos_create_cloud_sale_cashier_inventory.
+
+Esto reduce riesgo porque permite mantener estable la venta cloud con caja/folio sin inventario, y activar inventario solo cuando el feature flag cloud_sales_inventory este encendido.
+
+3. QUE SI HACE 6C
+
+- Valida stock cloud antes de confirmar una venta cloud con inventario.
+- Descuenta stock en public.pos_products para productos sin lotes.
+- Descuenta stock en public.pos_product_batches para productos con lotes.
+- Resuelve lotes en este orden:
+  1. batch_id explicito.
+  2. batches_used / batchesUsed.
+  3. FEFO por expiry_date mas proxima y luego created_at.
+- Bloquea filas con FOR UPDATE durante validacion/aplicacion.
+- Registra movimientos en public.pos_inventory_movements.
+- Marca pos_sales.inventory_effect_status como applied o not_required.
+- Marca pos_sale_items.inventory_effect_status y datos before/after.
+- Emite eventos sync para sale, sale_item, product, product_batch, inventory_movement y report.
+- Registra auditoria en pos_sale_audit_events.
+- Mantiene idempotencia por venta y por movimiento de inventario.
+- Refresca catalogo local por pull incremental despues de una venta 6C.
+- Mantiene Dexie como cache, no como fuente oficial.
+
+4. QUE NO HACE 6C
+
+- No crea pos_customer_ledger.
+- No modifica deuda de cliente.
+- No permite venta fiada cloud.
+- No implementa cancelaciones cloud.
+- No implementa devoluciones cloud.
+- No devuelve stock por cancelacion.
+- No toca FREE/local.
+- No usa stock local como fuente oficial para confirmar venta cloud inventory.
+
+Pendiente:
+
+- 6D: venta fiada cloud con credito/ledger.
+- 6E: cancelaciones/devoluciones cloud.
+- 6F: migracion/reportes finales y utilidad definitiva.
+
+5. FEATURE FLAG
+
+Se agrego el flag:
+
+cloud_sales_inventory
+
+Valores aplicados en public.plans.features:
+
+- pro_monthly: true
+- free_trial: false
+- basic_monthly: false
+
+La validacion backend exige:
+
+- cloud_pos_sync = true
+- cloud_products_sync = true
+- cloud_sales_sync_base = true
+- cloud_cash_sync = true
+- cloud_sales_cashier = true
+- cloud_sales_inventory = true
+
+No exige cloud_customer_credit_sync para la venta 6C, porque credito queda para Fase 6D.
+
+6. TABLAS / COLUMNAS CREADAS
+
+Nueva tabla:
+
+public.pos_inventory_movements
+
+Columnas principales:
+
+- id
+- license_id
+- product_id
+- batch_id
+- sale_id
+- sale_item_id
+- movement_type
+- quantity
+- previous_stock
+- new_stock
+- previous_batch_stock
+- new_batch_stock
+- unit_cost
+- total_cost
+- reason
+- source
+- actor_device_id
+- actor_staff_user_id
+- actor_key
+- actor_name
+- idempotency_key
+- metadata
+- created_at
+- server_version
+
+Restricciones:
+
+- movement_type in ('sale_out','adjustment','return_in','manual_out','manual_in')
+- quantity > 0
+- source in ('sale','adjustment','migration','manual')
+- costos no negativos cuando existen
+
+Indices:
+
+- (license_id, product_id, created_at desc)
+- (license_id, batch_id, created_at desc)
+- (license_id, sale_id)
+- (license_id, source, created_at desc)
+- (license_id, idempotency_key)
+- unique parcial (license_id, idempotency_key) where idempotency_key is not null
+
+Seguridad:
+
+- RLS activo.
+- Acceso directo revocado para anon/authenticated.
+- Escritura controlada por RPC SECURITY DEFINER.
+
+Columnas agregadas a public.pos_sale_items:
+
+- inventory_effect_status text default 'not_applied'
+- inventory_movement_id text
+- stock_source text
+- stock_before numeric
+- stock_after numeric
+- batch_stock_before numeric
+- batch_stock_after numeric
+
+public.pos_sales ya tenia inventory_effect_status; se confirmo/aseguro default not_applied.
+
+7. RPCS / HELPERS
+
+Nueva RPC publica:
+
+public.pos_create_cloud_sale_cashier_inventory(...)
+
+Esta RPC:
+
+1. Valida licencia/dispositivo/staff.
+2. Valida feature flags 6C.
+3. Valida permiso POS.
+4. Inserta idempotencia principal.
+5. Prevalida inventario con bloqueos FOR UPDATE.
+6. Si inventario falla, responde success=false y no crea venta/caja/folio.
+7. Si inventario pasa, llama public.pos_create_cloud_sale_cashier con idempotency key interna.
+8. Aplica inventario en la misma transaccion.
+9. Registra movimientos/auditoria/eventos.
+10. Devuelve response final con venta, items, pagos, caja e inventario.
+
+Helpers privados creados:
+
+- private.assert_cloud_sales_inventory_enabled(context jsonb)
+- private.product_uses_batches(product)
+- private.normalize_sale_inventory_item(...)
+- private.resolve_sale_inventory_allocations(...)
+- private.apply_sale_inventory_effects(...)
+- private.record_pos_inventory_movement(...)
+- private.pos_inventory_movement_to_jsonb(...)
+
+8. LOGICA PRODUCTO SIN LOTE
+
+Para productos con track_stock=true y sin manejo de lotes:
+
+1. Bloquea public.pos_products con FOR UPDATE.
+2. Valida licencia, existencia, activo y no eliminado.
+3. Calcula disponible = stock - committed_stock.
+4. Si disponible < quantity, devuelve INSUFFICIENT_CLOUD_STOCK.
+5. Si hay stock, descuenta stock.
+6. Actualiza updated_at/server_version.
+7. Registra pos_inventory_movements con movement_type=sale_out/source=sale.
+8. Emite evento sync product.
+9. Actualiza pos_sale_items con stock_before/stock_after.
+
+9. LOGICA PRODUCTOS CON LOTES
+
+Para productos con batch_management o item con batch_id/batches_used:
+
+1. Bloquea producto con FOR UPDATE.
+2. Resuelve lote explicito, asignaciones o FEFO.
+3. Bloquea lotes con FOR UPDATE.
+4. Valida licencia/producto/lote activo/no eliminado.
+5. Valida stock suficiente en lote(s).
+6. Descuenta public.pos_product_batches.stock.
+7. Recalcula stock agregado de public.pos_products desde lotes activos.
+8. Actualiza server_version de lote y producto.
+9. Registra un movimiento de inventario por lote usado.
+10. Emite eventos sync product_batch/product/inventory_movement.
+
+10. FEFO
+
+Si el item no trae batch_id ni batches_used, y el producto usa lotes, el backend aplica FEFO:
+
+1. Lotes activos.
+2. Lotes no eliminados.
+3. Lotes con stock disponible.
+4. Orden por expiry_date asc nulls last.
+5. Luego created_at asc.
+6. Luego id asc.
+
+11. IDEMPOTENCIA
+
+La RPC 6C usa idempotencia de dos niveles:
+
+- Key externa: sales.cloud_commit.inventory:<saleId>:<deviceId>
+- Key interna 6B core: <key externa>:cashier_core
+
+Los movimientos de inventario usan keys derivadas:
+
+<idempotency_key>:inventory:<sale_item_id>:<product_id>:<batch_id>:<ordinal>
+
+Esto protege contra:
+
+- doble click;
+- retry de red;
+- reenvio de la misma venta;
+- doble descuento de inventario;
+- doble movimiento de caja.
+
+12. EVENTOS SYNC
+
+Se registran eventos para:
+
+- sale
+- sale_item
+- sale_payment
+- cash_session
+- cash_movement
+- product
+- product_batch
+- inventory_movement
+- report
+
+Frontend agrega INVENTORY_MOVEMENT a SYNC_ENTITY_TYPES.
+Producto/catalogo escucha inventory_movement para disparar pull de catalogo.
+Ventas cloud tambien escucha inventory_movement como señal complementaria.
+
+Realtime sigue siendo aviso; pull incremental sigue siendo fuente oficial.
+
+13. INTEGRACION FRONTEND
+
+Archivos modificados:
+
+- src/services/sync/syncConstants.js
+- src/services/products/productConstants.js
+- src/services/salesCloud/salesCloudRepository.js
+- src/services/salesCloud/salesCloudCashierMapper.js
+- src/services/salesCloud/salesCloudCashierService.js
+- src/services/salesCloud/salesCloudSyncHandler.js
+- src/services/sales/processSaleCore.js
+- src/services/sales/postSaleEffects.js
+
+Cambios principales:
+
+- Se agrego isCloudSalesInventoryEnabled.
+- Se agrego INVENTORY_MOVEMENT.
+- salesCloudRepository ahora puede llamar pos_create_cloud_sale_cashier_inventory.
+- salesCloudCashierMapper envia track_stock, stock_source y batches_used.
+- salesCloudCashierService decide entre 6B y 6C segun flag.
+- Si hay error de stock cloud, no cae automaticamente a local.
+- processSaleCore usa efectos post-venta cloud-safe para evitar efectos locales peligrosos.
+- Tras venta 6C, se dispara pullCatalogChanges para refrescar productos/lotes en Dexie.
+
+14. REPORTES
+
+Se actualizo public.pos_get_reports_overview para incluir:
+
+- cloud_inventory_movements_count
+- cloud_inventory_sale_out_total_cost
+- cloud_cogs_estimated
+- cloud_gross_profit_estimated
+- products_without_stock
+- inventory_value_approx ya basado en stock actual
+
+Advertencia integrada:
+
+Utilidad cloud estimada: no definitiva hasta consolidacion 6F.
+
+15. PRUEBAS REALIZADAS
+
+Supabase:
+
+- Migracion aplicada correctamente.
+- cloud_sales_inventory verificado true solo en pro_monthly.
+- cloud_sales_inventory verificado false en free_trial y basic_monthly.
+- pos_inventory_movements creada.
+- RLS activo en pos_inventory_movements.
+- RPC pos_create_cloud_sale_cashier_inventory compila/existe.
+- Helpers privados compilan/existen.
+- Columnas nuevas de pos_sale_items existen.
+- pos_get_reports_overview fue reemplazada correctamente con campos 6C.
+
+No se ejecuto venta real de prueba desde SQL para no tocar inventario/caja productivos sin un escenario controlado.
+
+Frontend:
+
+- Se preparo rama con cambios.
+- No se ejecuto npm run build desde este entorno, debe ejecutarse antes de merge.
+
+16. RIESGOS PENDIENTES
+
+- Validar en campo producto con batch_management real, porque el schema usa jsonb flexible y puede haber variaciones de metadata.
+- Confirmar que los items del carrito siempre llevan parentId/product_id correcto en todos los rubros.
+- Confirmar que batchesUsed local coincide con batch IDs cloud tras migracion.
+- Revisar si algun producto tipo servicio llega con trackStock omitido; backend tratara product_id null como no requerido, pero product_id con track_stock=true requerira stock.
+- Validar npm run build.
+- Validar venta real en licencia PRO con inventario controlado y caja abierta.
+
+17. PROXIMOS PASOS
+
+FASE 6D:
+
+- Venta fiada cloud.
+- Crear customer ledger cloud desde venta fiada.
+- Integrar deuda/saldo cliente transaccionalmente.
+- Asegurar caja solo para abonos/pagos reales.
+
+FASE 6E:
+
+- Cancelaciones/devoluciones cloud.
+- Reversa de inventario.
+- Reversa o compensacion de caja.
+- Auditoria de cancelacion.
+
+FASE 6F:
+
+- Migracion final y reportes consolidados.
+- Utilidad definitiva.
+- COGS robusto.
+- Exportaciones finales.
+
+18. ESTADO FINAL ESPERADO
+
+Con la fase 6C activa en PRO:
+
+- Venta cloud confirma caja/folio/inventario.
+- Venta en efectivo mueve caja e inventario.
+- Venta tarjeta/transferencia descuenta inventario sin mover efectivo.
+- Producto sin lote descuenta pos_products.stock.
+- Producto con lote descuenta pos_product_batches.stock.
+- Stock insuficiente rechaza la venta completa.
+- No se toca credito/ledger.
+- No se implementan cancelaciones/devoluciones.
+- FREE/local sigue intacto.

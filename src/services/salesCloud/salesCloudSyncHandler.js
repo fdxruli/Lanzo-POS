@@ -33,7 +33,8 @@ const hasSalesEvents = (events = []) => events.some((event) => {
   const entityType = event.entity_type || event.entityType;
   return entityType === SYNC_ENTITY_TYPES.SALE
     || entityType === SYNC_ENTITY_TYPES.SALE_ITEM
-    || entityType === SYNC_ENTITY_TYPES.SALE_PAYMENT;
+    || entityType === SYNC_ENTITY_TYPES.SALE_PAYMENT
+    || entityType === SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT;
 });
 
 const applySalesPayload = async (response = {}) => {
@@ -154,8 +155,9 @@ export const registerSalesCloudSyncHandler = () => {
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE, salesCloudSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE_ITEM, salesCloudSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE_PAYMENT, salesCloudSyncHandler);
+  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT, salesCloudSyncHandler);
   registered = true;
-  Logger.log('[SalesCloud/Sync] Handler Fase 6A registrado. Solo shadow/auditoria, sin efectos financieros cloud.');
+  Logger.log('[SalesCloud/Sync] Handler Fase 6C registrado. Ventas cloud con inventario usan Supabase como fuente oficial.');
   return true;
 };
 
