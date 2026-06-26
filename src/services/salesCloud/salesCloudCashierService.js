@@ -1,7 +1,12 @@
 import Logger from '../Logger';
 import { getStableDeviceId } from '../supabase';
 import { useAppStore } from '../../store/useAppStore';
-import { getLicenseKeyFromDetails, isCloudSalesCashierEnabled } from '../sync/syncConstants';
+import {
+  getLicenseKeyFromDetails,
+  isCloudSalesCashierEnabled,
+  isCloudSalesInventoryEnabled
+} from '../sync/syncConstants';
+import { pullCatalogChanges } from '../products/productSyncHandler';
 import { salesCloudRepository } from './salesCloudRepository';
 import { salesCloudLocalRepository } from './salesCloudLocalRepository';
 import {
@@ -32,6 +37,7 @@ const getRuntimeContext = async () => {
     deviceId,
     online: isOnline(),
     featureEnabled: Boolean(licenseKey && isCloudSalesCashierEnabled(licenseDetails)),
+    inventoryFeatureEnabled: Boolean(licenseKey && isCloudSalesInventoryEnabled(licenseDetails)),
     experimentalEnabled: isExperimentalFlagEnabled()
   };
 };
@@ -48,7 +54,14 @@ const friendlyCloudCashierError = (error) => {
     SALE_PAYMENT_TOTAL_MISMATCH: 'Los pagos no cuadran con el total de la venta. Revisa el cobro antes de intentarlo de nuevo.',
     IDEMPOTENCY_PROCESSING: 'La venta ya está en proceso. Evita presionar cobrar otra vez.',
     CLOUD_SALES_CASHIER_DISABLED: 'Venta cloud con caja aún no está activa para esta licencia.',
-    POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar la licencia de este dispositivo. Revisa conexión y licencia.'
+    CLOUD_SALES_INVENTORY_DISABLED: 'Venta cloud con inventario aún no está activa para esta licencia.',
+    POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar la licencia de este dispositivo. Revisa conexión y licencia.',
+    OFFLINE: 'No hay conexión. La venta cloud con inventario necesita internet para proteger el stock.',
+    INSUFFICIENT_CLOUD_STOCK: 'No hay suficiente stock en la nube para completar esta venta. Actualiza inventario o reduce la cantidad.',
+    PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE: 'Este producto aún no está listo para venta cloud. Sincroniza el catálogo o usa modo local.',
+    CLOUD_PRODUCT_NOT_AVAILABLE: 'Este producto no está activo en la nube. Revisa el catálogo antes de venderlo.',
+    CLOUD_BATCH_NOT_AVAILABLE: 'El lote seleccionado no está disponible en la nube. Actualiza lotes e intenta de nuevo.',
+    CLOUD_BATCH_ALLOCATION_MISMATCH: 'Las cantidades por lote no cuadran con la cantidad vendida. Revisa el producto e intenta de nuevo.'
   };
 
   const friendly = messages[code] || messages[raw] || raw || 'No se pudo confirmar la venta cloud.';
@@ -81,23 +94,33 @@ export const salesCloudCashierService = {
     if (isCreditLikePaymentMethod(paymentData.paymentMethod)) return { useCloud: false, reason: 'credit_deferred_to_6d' };
     if (!isCloudCashierCompatiblePayment(paymentData)) return { useCloud: false, reason: 'payment_not_compatible' };
 
-    return { useCloud: true, reason: 'cloud_cashier_enabled', context };
+    return {
+      useCloud: true,
+      reason: context.inventoryFeatureEnabled ? 'cloud_cashier_inventory_enabled' : 'cloud_cashier_enabled',
+      mode: context.inventoryFeatureEnabled ? 'cloud_cashier_inventory' : 'cloud_cashier',
+      context
+    };
   },
 
   async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null } = {}) {
     const context = await getRuntimeContext();
     const details = licenseDetails || context.licenseDetails;
+    const inventoryEnabled = isCloudSalesInventoryEnabled(details);
 
     if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
     if (!context.experimentalEnabled || !context.licenseKey || !isCloudSalesCashierEnabled(details)) {
       throw friendlyCloudCashierError(new Error('CLOUD_SALES_CASHIER_DISABLED'));
     }
 
-    const payload = mapLocalCheckoutToCloudSale({ sale, processedItems, paymentData, total });
+    const payload = mapLocalCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled });
     const idempotencyKey = `${payload.idempotencyKey}:${context.deviceId}`;
 
     try {
-      const response = await salesCloudRepository.createCloudCashierSale({
+      const createSale = inventoryEnabled
+        ? salesCloudRepository.createCloudCashierInventorySale
+        : salesCloudRepository.createCloudCashierSale;
+
+      const response = await createSale.call(salesCloudRepository, {
         licenseKey: context.licenseKey,
         ...payload,
         cashSessionId: paymentData.cashSessionId || paymentData.cash_session_id || null,
@@ -107,6 +130,7 @@ export const salesCloudCashierService = {
       if (response?.success === false) {
         const error = new Error(response.message || response.code || 'CLOUD_CASHIER_SALE_FAILED');
         error.code = response.code;
+        error.response = response;
         throw error;
       }
 
@@ -117,13 +141,22 @@ export const salesCloudCashierService = {
           syncStatus: 'SYNCED',
           cloudSalesSyncStatus: 'synced',
           sourceMode: 'cloud_committed',
-          effectsStatus: response.sale?.effects_status || 'payment_recorded'
+          effectsStatus: response.sale?.effects_status || 'payment_recorded',
+          inventoryEffectStatus: response.sale?.inventory_effect_status || (inventoryEnabled ? 'applied' : 'not_applied'),
+          creditEffectStatus: response.sale?.credit_effect_status || 'not_applied'
         },
         response
       });
 
       await salesCloudLocalRepository.applyCloudSalesPayload(response);
-      return { success: true, response, localSale, payload, idempotencyKey };
+
+      if (inventoryEnabled && ['applied', 'not_required'].includes(response.sale?.inventory_effect_status)) {
+        pullCatalogChanges(context.licenseKey).catch((pullError) => {
+          Logger.warn('[SalesCloud/Cashier] No se pudo refrescar catalogo tras venta cloud inventory:', pullError);
+        });
+      }
+
+      return { success: true, response, localSale, payload, idempotencyKey, inventoryEnabled };
     } catch (error) {
       Logger.error('[SalesCloud/Cashier] Venta cloud no confirmada:', error);
       throw friendlyCloudCashierError(error);
