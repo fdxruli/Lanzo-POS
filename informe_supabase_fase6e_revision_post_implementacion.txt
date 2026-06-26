@@ -1,0 +1,38 @@
+INFORME POST-IMPLEMENTACION - FASE 6E CANCELACIONES CLOUD PRO
+
+Fecha: 2026-06-26
+
+Resumen
+La FASE 6E ya esta implementada en Supabase y frontend. Se verifico que existen la tabla de auditoria, columnas de cancelacion, RPC principal, feature flag, eventos sync y flujo frontend para enrutar ventas cloud_committed a cancelacion cloud.
+
+Verificaciones Supabase
+- public.pos_sale_cancellations existe.
+- public.pos_cancel_cloud_sale existe y es SECURITY DEFINER.
+- public.pos_get_reports_overview existe y contempla cancelaciones cloud.
+- pos_sales tiene columnas cancellation_id, cancellation_status, reversal_status, cash_reversal_status, inventory_reversal_status y credit_reversal_status.
+- cloud_sales_cancellations esta true en pro_monthly y false en free_trial/basic_monthly.
+- pos_customer_ledger permite CANCEL_CHARGE y CANCEL_PAYMENT.
+- pos_inventory_movements permite return_in con source sale_cancellation.
+- pos_cash_movements permite cancelacion_venta y cancelacion_abono_inicial.
+- pos_sync_events permite operation cancel.
+
+Correccion aplicada en Supabase
+Se endurecio el acceso directo a public.pos_sale_cancellations. La tabla queda para auditoria y las mutaciones deben pasar por public.pos_cancel_cloud_sale. Tambien se dejo el EXECUTE de la RPC otorgado de forma explicita a los roles esperados de Supabase.
+
+Verificaciones frontend
+- salesCloudRepository.js tiene cancelCloudSale(...).
+- salesCloudCancellationService.js exige conexion, motivo e idempotencia.
+- salesCloudCancellationMapper.js detecta cloud_committed, genera preview, idempotency key y patch local.
+- salesService.js enruta ventas cloud_committed al flujo cloud y mantiene FREE/local con cancelSaleCore.
+- salesCloudLocalRepository.js ya aplica payload cancelled recibido por pull/snapshot aunque la venta ya exista como cloud_committed.
+- SaleCancellationModal.jsx muestra resumen cloud antes de confirmar.
+- salesCloudSyncHandler.js registra SALE_CANCELLATION.
+- syncConstants.js incluye SALE_CANCELLATION y CANCEL.
+
+Correccion aplicada en GitHub
+- src/services/salesCloud/index.js ahora exporta salesCloudCancellationService y helpers de salesCloudCancellationMapper.
+
+Pendientes reales
+- Ejecutar npm run build localmente o en Vercel.
+- Probar una cancelacion real de venta contado, tarjeta, inventario, fiada sin abono y fiada con abono.
+- FASE 6F queda para migracion/reportes finales y utilidad definitiva.
