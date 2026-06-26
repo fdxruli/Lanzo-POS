@@ -4,7 +4,7 @@ import {
     loadRelevantBatches,
     buildProcessedItemsAndDeductions
 } from './inventoryFlow';
-import { runPostSaleEffects } from './postSaleEffects';
+import { runPostSaleEffects, runPostSaleEffectsForCloudCommittedSale } from './postSaleEffects';
 import { Money } from '../../utils/moneyMath';
 import { generateID } from '../utils';
 import { SALE_STATUS } from './financialStats';
@@ -181,7 +181,7 @@ export const processSaleCore = async ({
             syncStatus: 'PENDING'
         };
 
-        // FASE 6B — Venta efectiva cloud con caja y folio.
+        // FASE 6B/6C — Venta efectiva cloud con caja/folio y, si aplica, inventario cloud.
         // Este bloque debe ir ANTES de executeSaleTransactionSafe para evitar doble venta.
         // Si cloud cashier confirma la venta, NO se ejecuta la venta local ni shadow 6A.
         const cloudCashierDecision = await salesCloudCashierService.shouldUseCloudCashierSale({
@@ -218,7 +218,7 @@ export const processSaleCore = async ({
             let postEffectsError = null;
 
             try {
-                await runPostSaleEffects({
+                await runPostSaleEffectsForCloudCommittedSale({
                     sale: cloudSale,
                     processedItems,
                     paymentData,
@@ -254,6 +254,8 @@ export const processSaleCore = async ({
                 folio: cloudSale.folio,
                 sourceMode: 'cloud_committed',
                 effectsStatus: cloudSale.effectsStatus || cloudResult.response?.sale?.effects_status || 'payment_recorded',
+                inventoryEffectStatus: cloudSale.inventoryEffectStatus || cloudResult.response?.sale?.inventory_effect_status || 'not_applied',
+                creditEffectStatus: cloudSale.creditEffectStatus || cloudResult.response?.sale?.credit_effect_status || 'not_applied',
                 cloudCommitted: true,
                 postEffectsFailed,
                 postEffectsError: postEffectsFailed ? postEffectsError : null,
