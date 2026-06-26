@@ -3,6 +3,7 @@ import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import {
   isCloudSalesBaseSyncEnabled,
   isCloudSalesCashierEnabled,
+  isCloudSalesCreditEnabled,
   isCloudSalesInventoryEnabled,
   SYNC_LIMITS
 } from '../sync/syncConstants';
@@ -47,6 +48,11 @@ const buildCloudCashierArgs = ({ baseArgs, sale, items, payments, cashSessionId,
   p_idempotency_key: idempotencyKey || null
 });
 
+const buildCloudCreditArgs = ({ baseArgs, sale, items, payments, cashSessionId, customerId, idempotencyKey }) => ({
+  ...buildCloudCashierArgs({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }),
+  p_customer_id: customerId || sale?.customer_id || sale?.customerId || null
+});
+
 export const salesCloudRepository = {
   isCloudSalesBaseEnabled(licenseDetails = {}) {
     return isCloudSalesBaseSyncEnabled(licenseDetails);
@@ -54,6 +60,10 @@ export const salesCloudRepository = {
 
   isCloudSalesCashierEnabled(licenseDetails = {}) {
     return isCloudSalesCashierEnabled(licenseDetails);
+  },
+
+  isCloudSalesCreditEnabled(licenseDetails = {}) {
+    return isCloudSalesCreditEnabled(licenseDetails);
   },
 
   isCloudSalesInventoryEnabled(licenseDetails = {}) {
@@ -117,6 +127,32 @@ export const salesCloudRepository = {
       items,
       payments,
       cashSessionId,
+      idempotencyKey
+    }));
+
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async createCloudCreditSale({
+    licenseKey,
+    sale,
+    items = [],
+    payments = [],
+    cashSessionId = null,
+    customerId = null,
+    idempotencyKey = null
+  }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+
+    const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_credit', buildCloudCreditArgs({
+      baseArgs,
+      sale,
+      items,
+      payments,
+      cashSessionId,
+      customerId,
       idempotencyKey
     }));
 
