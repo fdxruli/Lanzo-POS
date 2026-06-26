@@ -18,6 +18,11 @@ const requiresPrescriptionControl = (product = {}) => (
     Boolean(product?.prescriptionType && product.prescriptionType !== 'otc')
 );
 
+const CLOUD_INVENTORY_AUTHORITATIVE_MODES = new Set([
+    'cloud_cashier_inventory',
+    'cloud_credit_inventory'
+]);
+
 export const processSaleCore = async ({
     order,
     paymentData,
@@ -80,7 +85,7 @@ export const processSaleCore = async ({
 
         const isCloudInventorySale = (
             cloudCashierDecision?.useCloud === true &&
-            cloudCashierDecision?.mode === 'cloud_cashier_inventory'
+            CLOUD_INVENTORY_AUTHORITATIVE_MODES.has(cloudCashierDecision?.mode)
         );
 
         if (!isCloudInventorySale) {
@@ -99,7 +104,10 @@ export const processSaleCore = async ({
                 return stockValidation.response;
             }
         } else {
-            Logger.info('Cloud inventory sale detected: skipping blocking local stock validation; Supabase will validate stock transactionally.');
+            Logger.info(
+                'Cloud inventory sale detected: skipping blocking local stock validation; Supabase will validate stock transactionally.',
+                { mode: cloudCashierDecision?.mode }
+            );
         }
 
         await normalizeAndValidatePricing({
