@@ -1,0 +1,3 @@
+FASE 6D — Ventas cloud credito/ledger
+
+Backend y frontend conectados parcialmente. Ver conversacion de implementacion para detalles.
