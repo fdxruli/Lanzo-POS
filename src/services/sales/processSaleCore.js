@@ -11,6 +11,7 @@ import { SALE_STATUS } from './financialStats';
 import { evaluator } from '../BackupRiskEvaluator';
 import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
+import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 
 const requiresPrescriptionControl = (product = {}) => (
     product?.requiresPrescription === true ||
@@ -179,6 +180,87 @@ export const processSaleCore = async ({
             postEffectsCompleted: false,
             syncStatus: 'PENDING'
         };
+
+        // FASE 6B — Venta efectiva cloud con caja y folio.
+        // Este bloque debe ir ANTES de executeSaleTransactionSafe para evitar doble venta.
+        // Si cloud cashier confirma la venta, NO se ejecuta la venta local ni shadow 6A.
+        const cloudCashierDecision = await salesCloudCashierService.shouldUseCloudCashierSale({
+            paymentData,
+            cart: processedItems
+        }).catch((decisionError) => {
+            Logger.warn('Cloud cashier decision failed; usando flujo local + shadow:', decisionError);
+            return { useCloud: false, reason: 'decision_error' };
+        });
+
+        if (cloudCashierDecision?.useCloud) {
+            let cloudResult;
+
+            try {
+                cloudResult = await salesCloudCashierService.processCloudCashierSale({
+                    sale,
+                    processedItems,
+                    paymentData,
+                    total: Money.toExactString(totalNum)
+                });
+            } catch (cloudCashierError) {
+                Logger.warn('Cloud cashier failed before local commit:', cloudCashierError);
+
+                return {
+                    success: false,
+                    errorType: 'CLOUD_CASHIER_FAILED',
+                    message: cloudCashierError.message || 'No se pudo confirmar la venta cloud. No se cobró localmente para evitar duplicados.'
+                };
+            }
+
+            const cloudSale = cloudResult.localSale || sale;
+
+            let postEffectsFailed = false;
+            let postEffectsError = null;
+
+            try {
+                await runPostSaleEffects({
+                    sale: cloudSale,
+                    processedItems,
+                    paymentData,
+                    total,
+                    companyName,
+                    features,
+                    loadData,
+                    saveData,
+                    STORES,
+                    useStatsStore,
+                    roundCurrency,
+                    sendReceiptWhatsApp,
+                    Logger
+                });
+            } catch (postError) {
+                postEffectsFailed = true;
+                postEffectsError = {
+                    message: postError.message || 'Error desconocido en efectos posteriores',
+                    stack: postError.stack || null,
+                    timestamp: new Date().toISOString()
+                };
+
+                Logger.warn('Post-Sale Effects Failed after cloud cashier commit:', postEffectsError);
+            }
+
+            evaluator.ping();
+
+            return {
+                success: true,
+                saleId: cloudSale.id,
+                cloudSaleId: cloudResult.response?.sale?.id || null,
+                timestamp: cloudSale.timestamp,
+                folio: cloudSale.folio,
+                sourceMode: 'cloud_committed',
+                effectsStatus: cloudSale.effectsStatus || cloudResult.response?.sale?.effects_status || 'payment_recorded',
+                cloudCommitted: true,
+                postEffectsFailed,
+                postEffectsError: postEffectsFailed ? postEffectsError : null,
+                pendingSyncRequired: false,
+                inventoryChangesTracked: null
+            };
+        }
 
         const transactionResult = await executeSaleTransactionSafe(sale, batchesToDeduct);
 

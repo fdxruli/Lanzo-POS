@@ -1,5 +1,4 @@
 import { db, STORES } from '../db/dexie';
-import { generateID } from '../utils';
 import { cloudSaleToLocalSyncPatch } from './salesCloudMapper';
 
 const CLOUD_SALE_CACHE_PREFIX = 'cloud_sale:';
@@ -115,27 +114,57 @@ export const salesCloudLocalRepository = {
 
   async saveCloudCommittedSaleSnapshot({ localSale = {}, response = {} } = {}) {
     await ensureOpen();
+
     const cloudSale = response.sale || {};
     const saleId = localSale.id || cloudSale.local_sale_id || cloudSale.id;
+
     if (!saleId || !cloudSale.id) return null;
 
     const items = Array.isArray(response.items) ? response.items : [];
-    const localSnapshot = buildLocalCloudCommittedSale({ localSale, cloudSale, items, response });
-
-    await db.transaction('rw', [db.table(STORES.SALES), db.table(STORES.TRANSACTION_LOG)], async () => {
-      await db.table(STORES.SALES).put(localSnapshot);
-      await db.table(STORES.TRANSACTION_LOG).put({
-        id: generateID('txn'),
-        type: 'CLOUD_SALE',
-        status: 'COMPLETED',
-        timestamp: nowIso(),
-        amount: localSnapshot.total,
-        saleId,
-        cloudSaleId: cloudSale.id,
-        folio: localSnapshot.folio,
-        sourceMode: 'cloud_committed'
-      });
+    const localSnapshot = buildLocalCloudCommittedSale({
+      localSale,
+      cloudSale,
+      items,
+      response
     });
+
+    const now = nowIso();
+    const deterministicLogId = `txn_cloud_sale_${saleId}`;
+
+    await db.transaction(
+      'rw',
+      [db.table(STORES.SALES), db.table(STORES.TRANSACTION_LOG)],
+      async () => {
+        await db.table(STORES.SALES).put(localSnapshot);
+
+        // FASE 6B:
+        // Evitar duplicar logs locales si la misma venta cloud committed
+        // se guarda otra vez por retry, pull incremental o respuesta repetida.
+        const existingLog = await db.table(STORES.TRANSACTION_LOG)
+          .filter((log) => (
+            log?.type === 'CLOUD_SALE' &&
+            (
+              log?.saleId === saleId ||
+              log?.cloudSaleId === cloudSale.id ||
+              log?.id === deterministicLogId
+            )
+          ))
+          .first();
+
+        await db.table(STORES.TRANSACTION_LOG).put({
+          id: existingLog?.id || deterministicLogId,
+          type: 'CLOUD_SALE',
+          status: 'COMPLETED',
+          timestamp: existingLog?.timestamp || now,
+          updatedAt: now,
+          amount: localSnapshot.total,
+          saleId,
+          cloudSaleId: cloudSale.id,
+          folio: localSnapshot.folio,
+          sourceMode: 'cloud_committed'
+        });
+      }
+    );
 
     return localSnapshot;
   },
