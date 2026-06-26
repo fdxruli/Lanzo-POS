@@ -14,6 +14,7 @@ const stringifyError = (error) => (
 
 const getLocalSaleId = (cloudSale = {}) => cloudSale.local_sale_id || cloudSale.localSaleId || cloudSale.id || null;
 const isCloudCommitted = (sale = {}) => (sale.source_mode || sale.sourceMode) === 'cloud_committed';
+const isCreditApplied = (sale = {}) => (sale.credit_effect_status || sale.creditEffectStatus) === 'applied';
 
 const upsertCloudSaleCache = async ({ sale, items = [], payments = [] }) => {
   if (!sale?.id) return null;
@@ -25,7 +26,9 @@ const upsertCloudSaleCache = async ({ sale, items = [], payments = [] }) => {
       items,
       payments,
       cachedAt: nowIso(),
-      phase: isCloudCommitted(sale) ? 'fase6b_cloud_cashier_sales' : 'fase6a_sales_cloud_base'
+      phase: isCreditApplied(sale)
+        ? 'fase6d_cloud_sales_credit_ledger'
+        : (isCloudCommitted(sale) ? 'fase6b_cloud_cashier_sales' : 'fase6a_sales_cloud_base')
     },
     updatedAt: nowIso()
   };
@@ -42,6 +45,7 @@ const buildLocalCloudCommittedSale = ({ localSale = {}, cloudSale = {}, items = 
   items: Array.isArray(localSale.items) && localSale.items.length > 0 ? localSale.items : items,
   total: String(cloudSale.total ?? localSale.total ?? 0),
   paymentMethod: cloudSale.payment_method || localSale.paymentMethod,
+  paymentStatus: cloudSale.payment_status || localSale.paymentStatus || null,
   abono: String(cloudSale.amount_paid ?? localSale.abono ?? cloudSale.total ?? 0),
   saldoPendiente: String(cloudSale.balance_due ?? 0),
   status: cloudSale.status || localSale.status || 'closed',
@@ -54,11 +58,16 @@ const buildLocalCloudCommittedSale = ({ localSale = {}, cloudSale = {}, items = 
   cloudServerVersion: Number(cloudSale.server_version || response.server_version || 0) || null,
   sourceMode: cloudSale.source_mode || 'cloud_committed',
   effectsStatus: cloudSale.effects_status || 'payment_recorded',
-  cashSessionId: cloudSale.cash_session_id || null,
-  cashMovementId: cloudSale.cash_movement_id || null,
+  cashSessionId: cloudSale.cash_session_id || response.cash_session?.id || null,
+  cashMovementId: cloudSale.cash_movement_id || response.cash_movement?.id || null,
   cashEffectStatus: cloudSale.cash_effect_status || null,
   inventoryEffectStatus: cloudSale.inventory_effect_status || 'not_applied',
   creditEffectStatus: cloudSale.credit_effect_status || 'not_applied',
+  customerLedgerId: cloudSale.customer_ledger_id || response.ledger_charge?.id || localSale.customerLedgerId || null,
+  creditLedgerChargeId: cloudSale.credit_ledger_charge_id || response.ledger_charge?.id || localSale.creditLedgerChargeId || null,
+  creditLedgerPaymentId: cloudSale.credit_ledger_payment_id || response.ledger_payment?.id || localSale.creditLedgerPaymentId || null,
+  creditCustomerDebtBefore: cloudSale.credit_customer_debt_before ?? response.sale?.credit_customer_debt_before ?? localSale.creditCustomerDebtBefore ?? null,
+  creditCustomerDebtAfter: cloudSale.credit_customer_debt_after ?? response.sale?.credit_customer_debt_after ?? localSale.creditCustomerDebtAfter ?? null,
   committedAt: cloudSale.committed_at || null,
   postEffectsCompleted: false,
   syncStatus: 'SYNCED'
@@ -137,9 +146,6 @@ export const salesCloudLocalRepository = {
       async () => {
         await db.table(STORES.SALES).put(localSnapshot);
 
-        // FASE 6B:
-        // Evitar duplicar logs locales si la misma venta cloud committed
-        // se guarda otra vez por retry, pull incremental o respuesta repetida.
         const existingLog = await db.table(STORES.TRANSACTION_LOG)
           .filter((log) => (
             log?.type === 'CLOUD_SALE' &&
@@ -161,7 +167,10 @@ export const salesCloudLocalRepository = {
           saleId,
           cloudSaleId: cloudSale.id,
           folio: localSnapshot.folio,
-          sourceMode: 'cloud_committed'
+          sourceMode: 'cloud_committed',
+          creditEffectStatus: localSnapshot.creditEffectStatus,
+          creditLedgerChargeId: localSnapshot.creditLedgerChargeId || null,
+          creditLedgerPaymentId: localSnapshot.creditLedgerPaymentId || null
         });
       }
     );
