@@ -16,6 +16,30 @@ const getLocalSaleId = (cloudSale = {}) => cloudSale.local_sale_id || cloudSale.
 const isCloudCommitted = (sale = {}) => (sale.source_mode || sale.sourceMode) === 'cloud_committed';
 const isCreditApplied = (sale = {}) => (sale.credit_effect_status || sale.creditEffectStatus) === 'applied';
 
+const isCancelledCloudSale = (sale = {}) => (
+  sale?.status === 'cancelled' ||
+  Boolean(sale?.cancelled_at || sale?.cancelledAt || sale?.cancellation_id || sale?.cancellationId)
+);
+
+const cloudCancellationToLocalPatch = (cloudSale = {}, response = {}) => ({
+  status: cloudSale.status || 'cancelled',
+  fulfillmentStatus: cloudSale.fulfillment_status || 'cancelled',
+  cancelledAt: cloudSale.cancelled_at || cloudSale.cancelledAt || response.cancellation?.created_at || new Date().toISOString(),
+  cancelReason: cloudSale.cancel_reason || cloudSale.cancelReason || response.cancellation?.reason || 'cancelacion_cloud',
+  cancellationId: cloudSale.cancellation_id || cloudSale.cancellationId || response.cancellation?.id || null,
+  cancellationStatus: cloudSale.cancellation_status || cloudSale.cancellationStatus || response.cancellation?.status || 'completed',
+  reversalStatus: cloudSale.reversal_status || cloudSale.reversalStatus || 'applied',
+  cashReversalStatus: cloudSale.cash_reversal_status || cloudSale.cashReversalStatus || response.cancellation?.cash_reversal_status || 'not_required',
+  inventoryReversalStatus: cloudSale.inventory_reversal_status || cloudSale.inventoryReversalStatus || response.cancellation?.inventory_reversal_status || 'not_required',
+  creditReversalStatus: cloudSale.credit_reversal_status || cloudSale.creditReversalStatus || response.cancellation?.credit_reversal_status || 'not_required',
+  cloudSalesSyncStatus: 'synced',
+  cloudSalesLastSyncAt: new Date().toISOString(),
+  cloudSalesSyncError: null,
+  cloudServerVersion: Number(cloudSale.server_version || response.server_version || 0) || null,
+  sourceMode: cloudSale.source_mode || 'cloud_committed',
+  syncStatus: 'SYNCED'
+});
+
 const upsertCloudSaleCache = async ({ sale, items = [], payments = [] }) => {
   if (!sale?.id) return null;
 
@@ -26,9 +50,11 @@ const upsertCloudSaleCache = async ({ sale, items = [], payments = [] }) => {
       items,
       payments,
       cachedAt: nowIso(),
-      phase: isCreditApplied(sale)
-        ? 'fase6d_cloud_sales_credit_ledger'
-        : (isCloudCommitted(sale) ? 'fase6b_cloud_cashier_sales' : 'fase6a_sales_cloud_base')
+      phase: isCancelledCloudSale(sale)
+        ? 'fase6e_cloud_sale_cancellations'
+        : isCreditApplied(sale)
+          ? 'fase6d_cloud_sales_credit_ledger'
+          : (isCloudCommitted(sale) ? 'fase6b_cloud_cashier_sales' : 'fase6a_sales_cloud_base')
     },
     updatedAt: nowIso()
   };
@@ -70,7 +96,15 @@ const buildLocalCloudCommittedSale = ({ localSale = {}, cloudSale = {}, items = 
   creditCustomerDebtAfter: cloudSale.credit_customer_debt_after ?? response.sale?.credit_customer_debt_after ?? localSale.creditCustomerDebtAfter ?? null,
   committedAt: cloudSale.committed_at || null,
   postEffectsCompleted: false,
-  syncStatus: 'SYNCED'
+  syncStatus: 'SYNCED',
+  cancelledAt: cloudSale.cancelled_at || localSale.cancelledAt || null,
+  cancelReason: cloudSale.cancel_reason || localSale.cancelReason || null,
+  cancellationId: cloudSale.cancellation_id || localSale.cancellationId || null,
+  cancellationStatus: cloudSale.cancellation_status || localSale.cancellationStatus || null,
+  reversalStatus: cloudSale.reversal_status || localSale.reversalStatus || null,
+  cashReversalStatus: cloudSale.cash_reversal_status || localSale.cashReversalStatus || 'not_required',
+  inventoryReversalStatus: cloudSale.inventory_reversal_status || localSale.inventoryReversalStatus || 'not_required',
+  creditReversalStatus: cloudSale.credit_reversal_status || localSale.creditReversalStatus || 'not_required',
 });
 
 export const salesCloudLocalRepository = {
@@ -222,9 +256,20 @@ export const salesCloudLocalRepository = {
 
       const localSale = await db.table(STORES.SALES).get(localSaleId);
       if (!localSale) continue;
-      if (localSale.sourceMode === 'cloud_committed' && isCloudCommitted(sale)) continue;
 
-      await db.table(STORES.SALES).update(localSaleId, cloudSaleToLocalSyncPatch(sale, response));
+      const saleIsCancelled = isCancelledCloudSale(sale);
+
+      // Si ya era cloud_committed y el payload NO trae cancelación,
+      // no lo reescribimos para evitar parpadeos o sobreescrituras innecesarias.
+      if (localSale.sourceMode === 'cloud_committed' && isCloudCommitted(sale) && !saleIsCancelled) {
+        continue;
+      }
+
+      const patch = saleIsCancelled
+        ? cloudCancellationToLocalPatch(sale, response)
+        : cloudSaleToLocalSyncPatch(sale, response);
+
+      await db.table(STORES.SALES).update(localSaleId, patch);
       patchedLocal += 1;
     }
 
