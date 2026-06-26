@@ -128,6 +128,16 @@ export const isCloudSalesCashierEnabled = (licenseDetails = {}) => {
     && isFeatureEnabled(features, 'cloud_sales_cashier');
 };
 
+export const isCloudSalesCreditEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'cloud_pos_sync')
+    && isFeatureEnabled(features, 'cloud_sales_sync_base')
+    && isFeatureEnabled(features, 'cloud_cash_sync')
+    && isFeatureEnabled(features, 'cloud_sales_cashier')
+    && isFeatureEnabled(features, 'cloud_customer_credit_sync')
+    && isFeatureEnabled(features, 'cloud_sales_credit');
+};
+
 export const isCloudSalesInventoryEnabled = (licenseDetails = {}) => {
   const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
   return isFeatureEnabled(features, 'cloud_pos_sync')
