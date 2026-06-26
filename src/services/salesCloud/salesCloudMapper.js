@@ -189,7 +189,23 @@ export const cloudSaleToLocalSyncPatch = (cloudSale = {}, response = {}) => ({
   cloudSalesSyncError: null,
   cloudServerVersion: Number(cloudSale.server_version || response.server_version || 0) || null,
   sourceMode: cloudSale.source_mode || 'shadow',
-  effectsStatus: cloudSale.effects_status || 'local_applied'
+  effectsStatus: cloudSale.effects_status || 'local_applied',
+  paymentMethod: cloudSale.payment_method || undefined,
+  paymentStatus: cloudSale.payment_status || undefined,
+  folio: cloudSale.cloud_folio || cloudSale.folio || undefined,
+  cloudFolio: cloudSale.cloud_folio || undefined,
+  abono: cloudSale.amount_paid === undefined ? undefined : String(cloudSale.amount_paid),
+  saldoPendiente: cloudSale.balance_due === undefined ? undefined : String(cloudSale.balance_due),
+  cashSessionId: cloudSale.cash_session_id || response.cash_session?.id || undefined,
+  cashMovementId: cloudSale.cash_movement_id || response.cash_movement?.id || undefined,
+  cashEffectStatus: cloudSale.cash_effect_status || undefined,
+  inventoryEffectStatus: cloudSale.inventory_effect_status || undefined,
+  creditEffectStatus: cloudSale.credit_effect_status || undefined,
+  customerLedgerId: cloudSale.customer_ledger_id || response.ledger_charge?.id || undefined,
+  creditLedgerChargeId: cloudSale.credit_ledger_charge_id || response.ledger_charge?.id || undefined,
+  creditLedgerPaymentId: cloudSale.credit_ledger_payment_id || response.ledger_payment?.id || undefined,
+  creditCustomerDebtBefore: cloudSale.credit_customer_debt_before ?? undefined,
+  creditCustomerDebtAfter: cloudSale.credit_customer_debt_after ?? undefined
 });
 
 export default {
