@@ -6,6 +6,47 @@ import { showMessageModal } from '../../services/utils';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
 
+const normalizePaymentMethod = (method) => {
+    const raw = String(method || '').trim().toLowerCase();
+
+    if (['cash', 'efectivo'].includes(raw)) return 'cash';
+
+    if ([
+        'card',
+        'tarjeta',
+        'tarjeta_credito',
+        'tarjeta_debito',
+        'debit',
+        'credit_card',
+        'debit_card'
+    ].includes(raw)) {
+        return 'card';
+    }
+
+    if ([
+        'transfer',
+        'transferencia',
+        'spei',
+        'bank_transfer'
+    ].includes(raw)) {
+        return 'transfer';
+    }
+
+    if ([
+        'fiado',
+        'credit',
+        'credito',
+        'crédito',
+        'customer_credit',
+        'mixed_credit',
+        'partial_credit'
+    ].includes(raw)) {
+        return 'credit';
+    }
+
+    return raw;
+};
+
 /**
  * Hook para manejar el flujo completo de checkout del POS.
  * Encapsula la lógica de inicio de pago, procesamiento de orden y caja rápida.
@@ -266,11 +307,26 @@ export function usePosCheckout({
         // El snapshot NO se destruye aquí. El flujo esperado es:
         //   closeModal('payment') → openModal('quickCaja') → handleQuickCajaSubmit
         //   → openModal('payment') [snapshot aún vivo] → handleProcessOrder [snapshot válido]
+        const paymentMethod = normalizePaymentMethod(paymentData.paymentMethod);
+
+        const initialPaymentMethod = normalizePaymentMethod(
+            paymentData.initialPaymentMethod ||
+            paymentData.abonoPaymentMethod ||
+            paymentData.creditPaymentMethod ||
+            paymentData.partialPaymentMethod ||
+            'efectivo'
+        );
+
+        const hasInitialCreditPayment = (
+            paymentMethod === 'credit' &&
+            Money.init(paymentData.amountPaid || 0).gt(0)
+        );
+
         const hasCashComponent =
-            paymentData.paymentMethod === 'efectivo' ||
+            paymentMethod === 'cash' ||
             (
-                paymentData.paymentMethod === 'fiado' &&
-                Money.init(paymentData.amountPaid || 0).gt(0)
+                hasInitialCreditPayment &&
+                initialPaymentMethod === 'cash'
             );
 
         if (hasCashComponent && (!pos.cajaActual || pos.cajaActual.estado !== 'abierta')) {
@@ -366,7 +422,7 @@ export function usePosCheckout({
                 await useActiveOrders.getState().unlockOrder(snapshot.orderId).catch((err) => {
                     console.error('[usePosCheckout] Error en rollback en finally:', err);
                 });
-                
+
                 // Destruir el snapshot del ref solo si no fue un stock warning
                 // (el stock warning lo necesita para el posible forceSale).
                 if (!isStockWarning) {
