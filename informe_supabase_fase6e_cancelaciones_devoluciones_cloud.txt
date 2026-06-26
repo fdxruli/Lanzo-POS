@@ -1,0 +1,140 @@
+INFORME SUPABASE - FASE 6E CANCELACIONES/DEVOLUCIONES CLOUD PRO
+
+Objetivo
+Implementar cancelacion cloud segura para ventas PRO confirmadas como source_mode = cloud_committed, revirtiendo efectos reales de caja, inventario/lotes, credito/ledger, eventos sync y reportes sin borrar historial.
+
+Alcance 6E
+- Cancelar ventas cloud completas.
+- Marcar la venta como cancelled.
+- Registrar motivo, actor, staff, dispositivo e idempotency key.
+- Revertir caja con movimientos compensatorios.
+- Revertir inventario/lotes con movimientos return_in.
+- Revertir credito/ledger con movimientos de reversa.
+- Recalcular deuda del cliente.
+- Emitir eventos sync para venta, cancelacion, caja, inventario, cliente/ledger y reportes.
+- Mantener FREE/local intacto.
+
+Fuera de alcance 6E
+- No se implementa devolucion parcial.
+- No se borra venta ni historial original.
+- No se borra ledger original.
+- No se borra movimiento de caja original.
+- No se borra movimiento de inventario original.
+- No se hace migracion/reportes finales de utilidad historica definitiva; queda para Fase 6F.
+
+Cambios Supabase
+1. Feature flag cloud_sales_cancellations:
+   - pro_monthly: true
+   - free_trial/basic_monthly: false
+
+2. Columnas agregadas en pos_sales:
+   - cancelled_by_device_id
+   - cancelled_by_staff_user_id
+   - cancellation_id
+   - cancellation_status
+   - reversal_status
+   - cash_reversal_status
+   - inventory_reversal_status
+   - credit_reversal_status
+
+3. Columnas auxiliares:
+   - pos_sale_items.inventory_reversal_status
+   - pos_sale_payments.reversal_status
+
+4. Tabla nueva:
+   public.pos_sale_cancellations
+   Guarda una fila auditable por cancelacion con importes, estados de reversa, actor, idempotencia, metadata y server_version.
+
+5. Constraints extendidos:
+   - pos_cash_movements.type ahora permite cancelacion_venta y cancelacion_abono_inicial.
+   - pos_inventory_movements.source ahora permite sale_cancellation.
+   - pos_customer_ledger.type ahora permite CANCEL_CHARGE.
+   - pos_sync_events.operation ahora permite cancel.
+
+6. Helper privado:
+   private.assert_cloud_sales_cancellations_enabled(context)
+   Requiere cloud POS, ventas base, caja/cajero y cloud_sales_cancellations.
+
+RPC creada
+public.pos_cancel_cloud_sale(...)
+- SECURITY DEFINER confirmado.
+- Valida licencia, dispositivo y staff.
+- Valida feature flag.
+- Valida permiso POS y permiso especifico si existe en staff_permissions.
+- Bloquea la venta FOR UPDATE.
+- Solo permite source_mode = cloud_committed y status = closed.
+- Usa idempotencia sales.cloud_cancel:<sale_id>:<device_id>.
+- Si la venta ya fue cancelada devuelve SALE_ALREADY_CANCELLED.
+- Si la venta no existe devuelve SALE_NOT_FOUND.
+- Si la venta no es cloud_committed devuelve SALE_NOT_CLOUD_COMMITTED.
+
+Reversa de caja
+- No borra movimientos originales.
+- Como pos_cash_movements.amount exige amount > 0, se registran movimientos compensatorios positivos:
+  - cancelacion_venta
+  - cancelacion_abono_inicial
+- Los totales oficiales del turno se decrementan dentro de la misma transaccion.
+- Se recalcula expected_cash_total con private.recalculate_pos_cash_session_totals.
+- Permite reversa auditada sobre la caja original aunque el turno haya cerrado.
+
+Reversa de inventario/lotes
+- Busca movimientos sale_out de la venta.
+- Crea movimientos return_in con source = sale_cancellation.
+- Para producto sin lote aumenta stock del producto.
+- Para producto con lote aumenta stock del lote y recalcula stock del producto desde lotes activos.
+- Registra eventos product, product_batch, inventory_movement y sale_item.
+
+Reversa de credito/ledger
+- No borra ledger original.
+- Si hubo abono inicial, inserta primero CANCEL_PAYMENT positivo para mantener balance_after no negativo.
+- Inserta CANCEL_CHARGE negativo para revertir el cargo original.
+- Recalcula deuda con private.recalculate_pos_customer_debt.
+- Si la deuda quedaria negativa, falla toda la transaccion y no marca venta cancelada.
+
+Reportes
+- pos_get_reports_overview fue actualizado para excluir ventas canceladas de ventas cloud netas y COGS cloud.
+- Agrega metricas:
+  - cloud_cancelled_sales_count
+  - cloud_cancelled_sales_total
+  - cloud_cash_reversal_total
+  - cloud_credit_reversal_total
+  - cloud_inventory_return_quantity / cloud_inventory_return_quantity_cancelled
+- Mantiene advertencia de que utilidad historica definitiva queda para 6F.
+
+Frontend aplicado
+- syncConstants.js reconoce:
+  - SYNC_ENTITY_TYPES.SALE_CANCELLATION
+  - SYNC_OPERATIONS.CANCEL
+  - isCloudSalesCancellationEnabled(...)
+- salesCloudRepository.js agrega cancelCloudSale(...), que llama pos_cancel_cloud_sale.
+- salesCloudCancellationMapper.js agrega helpers para detectar venta cloud, construir idempotency key y mapear respuesta a patch local.
+- salesCloudCancellationService.js agrega flujo de cancelacion cloud con conexion obligatoria, motivo obligatorio, mensajes amigables, idempotencia y patch local inmediato.
+- salesService.js ahora enruta ventas cloud_committed al servicio cloud y mantiene FREE/local en cancelSaleCore.
+- salesCloudSyncHandler.js registra SALE_CANCELLATION y dispara evento lanzo:sales-sync-updated.
+
+Puntos pendientes por bloqueo de herramienta GitHub
+- El intento de actualizar SaleCancellationModal.jsx para mostrar un resumen visual cloud mas completo fue bloqueado por la herramienta. Aun asi, la cancelacion cloud queda protegida porque el servicio exige motivo y conexion.
+- El intento de ajustar salesCloudLocalRepository.js para que otros dispositivos apliquen cancelaciones recibidas por pull aunque ya tengan una venta cloud_committed en cache fue bloqueado. En el dispositivo que cancela, el patch local inmediato si se guarda. Recomendacion: aplicar despues una mejora minima para que applyCloudSalesPayload no ignore ventas cloud_committed cuando el payload venga con status = cancelled.
+- El intento de exportar los nuevos helpers desde salesCloud/index.js fue bloqueado. No afecta al flujo actual porque salesService importa los modulos directamente.
+
+Validaciones realizadas
+- public.pos_cancel_cloud_sale existe y es SECURITY DEFINER.
+- public.pos_get_reports_overview existe y es SECURITY DEFINER.
+- public.pos_sale_cancellations existe.
+- Las columnas de reversa en pos_sales existen.
+- Las migraciones Supabase aplicaron correctamente.
+
+Pruebas no ejecutadas aqui
+- No se ejecuto npm run build desde este entorno porque el conector GitHub no ejecuta comandos del proyecto.
+- No se ejecuto una cancelacion real porque no se usaron credenciales reales de licencia/dispositivo/staff en la RPC.
+
+Riesgos pendientes
+- Si una venta fiada ya tuvo abonos posteriores independientes, la RPC puede bloquear la cancelacion con CUSTOMER_DEBT_NEGATIVE_AFTER_CANCEL para evitar deuda negativa. Esto es seguro, pero requiere flujo operativo de revision/manual o una fase futura de asignacion de abonos por venta.
+- El cache de otros dispositivos debe recibir una mejora puntual en salesCloudLocalRepository.js para aplicar payload cancelled en pull incremental.
+
+Proximos pasos 6F
+- Migracion/reportes finales.
+- Utilidad definitiva cloud historica.
+- Ventas brutas/netas/canceladas separadas en UI.
+- Mejor manejo de devoluciones parciales si se decide implementarlo.
+- Reportes auditables por staff/dispositivo/turno con cancelaciones.
