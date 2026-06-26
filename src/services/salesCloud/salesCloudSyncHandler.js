@@ -22,6 +22,7 @@ const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(useAppStore.getState
 const notifySalesCloudChanged = () => {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('lanzo:sales-cloud-sync-updated'));
+  window.dispatchEvent(new CustomEvent('lanzo:sales-sync-updated'));
 };
 
 const normalizeChangeSeq = (response, fallback = 0) => {
@@ -34,6 +35,7 @@ const hasSalesEvents = (events = []) => events.some((event) => {
   return entityType === SYNC_ENTITY_TYPES.SALE
     || entityType === SYNC_ENTITY_TYPES.SALE_ITEM
     || entityType === SYNC_ENTITY_TYPES.SALE_PAYMENT
+    || entityType === SYNC_ENTITY_TYPES.SALE_CANCELLATION
     || entityType === SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT;
 });
 
@@ -155,9 +157,10 @@ export const registerSalesCloudSyncHandler = () => {
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE, salesCloudSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE_ITEM, salesCloudSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE_PAYMENT, salesCloudSyncHandler);
+  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE_CANCELLATION, salesCloudSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT, salesCloudSyncHandler);
   registered = true;
-  Logger.log('[SalesCloud/Sync] Handler Fase 6C registrado. Ventas cloud con inventario usan Supabase como fuente oficial.');
+  Logger.log('[SalesCloud/Sync] Handler Fase 6E registrado. Ventas cloud y cancelaciones usan Supabase como fuente oficial.');
   return true;
 };
 
