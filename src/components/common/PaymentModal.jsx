@@ -16,6 +16,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
   // --- NUEVOS ESTADOS ---
   const [paymentMethod, setPaymentMethod] = useState('efectivo'); // 'efectivo' o 'fiado'
+  const [initialPaymentMethod, setInitialPaymentMethod] = useState('efectivo');
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
   const [filteredCustomers, setFilteredCustomers] = useState([]);
@@ -50,6 +51,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       setCustomerSearch('');
       setFilteredCustomers([]);
       setPaymentMethod('efectivo');
+      setInitialPaymentMethod('efectivo');
       setSendReceipt(true);
       setIsSubmitting(false);
       setDueDate('');
@@ -65,16 +67,16 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
           const customerSales = await db.table(STORES.SALES)
             .where('customerId').equals(selectedCustomerId)
             .toArray();
-            
+
           const todayStr = new Date().toISOString().split('T')[0];
-          
-          const hasOverdue = customerSales.some(s => 
-            s.paymentMethod === 'fiado' && 
+
+          const hasOverdue = customerSales.some(s =>
+            s.paymentMethod === 'fiado' &&
             s.creditStatus === 'VIGENTE' &&
-            s.dueDate && 
+            s.dueDate &&
             s.dueDate.split('T')[0] < todayStr
           );
-          
+
           setHasOverdueCredit(hasOverdue);
         } catch (error) {
           Logger.error("Error al verificar morosidad:", error);
@@ -100,6 +102,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   // Lógica condicional
   const isEfectivo = paymentMethod === 'efectivo';
   const isFiado = paymentMethod === 'fiado';
+  const hasInitialCreditPayment = isFiado && safePaid.gt(0);
 
   // 3. Cálculos estrictos usando la API de Money (devuelven instancias Big)
   const change = isEfectivo ? Money.subtract(safePaid, safeTotal) : Money.init("0");
@@ -159,10 +162,10 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
     try {
       await onConfirm({
-        // 5. OBLIGATORIO: Enviar los datos puros (strings exactos) para evitar corromper al padre
         amountPaid: Money.toExactString(safePaid),
         customerId: selectedCustomerId,
         paymentMethod: paymentMethod,
+        initialPaymentMethod: hasInitialCreditPayment ? initialPaymentMethod : null,
         saldoPendiente: Money.toExactString(saldoPendiente),
         sendReceipt: sendReceipt,
         dueDate: isFiado && dueDate ? new Date(dueDate).toISOString() : null
@@ -205,6 +208,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method);
+    setInitialPaymentMethod('efectivo');
     if (method === 'efectivo') {
       setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString());
       setDueDate('');
@@ -363,6 +367,29 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                     required={isEfectivo}
                     autoFocus={isEfectivo}
                   />
+
+                  {hasInitialCreditPayment && (
+                    <div className="form-group" style={{ marginTop: '12px' }}>
+                      <label className="form-label" htmlFor="initial-payment-method">
+                        Método del abono inicial:
+                      </label>
+
+                      <select
+                        id="initial-payment-method"
+                        className="form-input"
+                        value={initialPaymentMethod}
+                        onChange={(e) => setInitialPaymentMethod(e.target.value)}
+                      >
+                        <option value="efectivo">Efectivo</option>
+                        <option value="tarjeta">Tarjeta</option>
+                        <option value="transferencia">Transferencia</option>
+                      </select>
+
+                      <p style={{ fontSize: '0.78rem', opacity: 0.75, marginTop: '6px' }}>
+                        Solo efectivo se reflejará en caja. Tarjeta y transferencia quedarán como pago sin aumentar efectivo esperado.
+                      </p>
+                    </div>
+                  )}
 
                   {isEfectivo && (
                     <div className="quick-cash-options">
