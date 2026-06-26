@@ -19,6 +19,8 @@ import { splitOpenTableOrderCore } from './sales/splitOrderService';
 import { sendReceiptWhatsApp as sendReceiptWhatsAppBase } from './sales/receiptWhatsApp';
 import { cancelSaleCore } from './sales/cancelSaleCore';
 import { restoreDeletedSaleCore } from './sales/restoreDeletedSaleCore';
+import { salesCloudCancellationService } from './salesCloud/salesCloudCancellationService';
+import { isCloudCommittedSale } from './salesCloud/salesCloudCancellationMapper';
 
 export { updateDailyStats, getFastDashboardStats } from './sales/statsService';
 
@@ -131,7 +133,25 @@ export const splitOpenTableOrder = async (params, maxRetries = 3) => {
     };
 };
 
+const findSaleForCancellation = async ({ saleId, timestamp, currentSales = [] }) => {
+    const fromMemory = currentSales.find((sale) => (
+        (saleId && (sale.id === saleId || sale.cloudSaleId === saleId || sale.cloud_sale_id === saleId)) ||
+        (timestamp && sale.timestamp === timestamp)
+    ));
+
+    if (fromMemory) return fromMemory;
+    if (!saleId) return null;
+
+    try {
+        return await db.table(STORES.SALES).get(saleId);
+    } catch (error) {
+        Logger.warn('No se pudo leer la venta local para decidir flujo de cancelacion:', error);
+        return null;
+    }
+};
+
 export const cancelSale = async ({
+    saleId = null,
     timestamp,
     restoreStock = false,
     currentSales = [],
@@ -140,8 +160,39 @@ export const cancelSale = async ({
     cancelledBy = 'local-user',
     allowWaste = false
 }) => {
+    const saleForCancellation = await findSaleForCancellation({ saleId, timestamp, currentSales });
+
+    if (saleForCancellation && isCloudCommittedSale(saleForCancellation)) {
+        try {
+            const result = await salesCloudCancellationService.cancelCloudSale({
+                sale: saleForCancellation,
+                saleId: saleForCancellation.cloudSaleId || saleForCancellation.cloud_sale_id || saleForCancellation.id,
+                reason
+            });
+
+            if (result.success) {
+                try {
+                    await useStatsStore.getState().rebuildFinancialStats();
+                } catch (error) {
+                    Logger.warn('La venta cloud se cancelo, pero no se pudieron reconstruir las metricas locales.', error);
+                }
+            }
+
+            return result;
+        } catch (error) {
+            return {
+                success: false,
+                code: error?.code || 'CLOUD_CANCEL_FAILED',
+                message: error?.message || 'No se pudo cancelar la venta cloud. No se aplico ningun cambio para evitar descuadres.',
+                restoreStock: false,
+                warnings: []
+            };
+        }
+    }
+
     const result = await cancelSaleCore(
         {
+            saleId,
             saleTimestamp: timestamp,
             restoreStock,
             currentSales,
