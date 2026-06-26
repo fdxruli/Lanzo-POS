@@ -1,3 +1,33 @@
 FASE 6D — Ventas cloud credito/ledger
 
-Backend y frontend conectados parcialmente. Ver conversacion de implementacion para detalles.
+Objetivo: habilitar venta fiada cloud PRO con ledger, deuda de cliente, caja para abono en efectivo e inventario 6C cuando aplica.
+
+Supabase:
+- Nuevo flag cloud_sales_credit: true solo en pro_monthly.
+- Nueva RPC public.pos_create_cloud_sale_credit.
+- Nueva RPC public.pos_get_reports_credit_overview.
+- Nuevas columnas en pos_sales: credit_ledger_charge_id, credit_ledger_payment_id, credit_customer_debt_before, credit_customer_debt_after.
+- Nuevas columnas auxiliares: pos_customer_ledger.sale_folio, pos_customer_ledger.actor_key, pos_cash_movements.customer_ledger_id.
+
+Flujo:
+- Sin abono: crea venta cloud, item(s), ledger CHARGE y actualiza deuda; caja no se mueve.
+- Con abono: crea CHARGE y PAYMENT; si el abono es efectivo se registra movimiento de caja type=abono_cliente/source=sale_credit_payment; tarjeta/transferencia no aumenta efectivo esperado.
+- Si inventario cloud esta activo, se usan helpers 6C para validar y aplicar stock/lotes.
+
+Frontend:
+- syncConstants.js agrega isCloudSalesCreditEnabled.
+- salesCloudRepository.js llama pos_create_cloud_sale_credit.
+- salesCloudCashierMapper.js prepara payload credit/mixed_credit.
+- salesCloudCashierService.js enruta fiado/credito a 6D.
+- salesCloudLocalRepository.js guarda referencias de ledger/caja/deuda.
+- reportsCloudRepository.js fusiona metricas 6D.
+
+No incluido:
+- Cancelaciones/devoluciones cloud.
+- Reversion de inventario, caja o ledger.
+- Cambios al flujo FREE/local.
+
+Pendientes:
+- Ejecutar npm run build en local/CI.
+- Agregar selector visual de metodo de abono inicial en PaymentModal si se quiere distinguir tarjeta/transferencia desde UI.
+- 6E debe implementar reversas atomicas.
