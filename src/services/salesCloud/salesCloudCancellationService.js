@@ -1,9 +1,9 @@
 import Logger from '../Logger';
 import { getStableDeviceId } from '../supabase';
+import { db, STORES } from '../db/dexie';
 import { useAppStore } from '../../store/useAppStore';
 import { getLicenseKeyFromDetails, isCloudSalesCancellationEnabled } from '../sync/syncConstants';
 import { salesCloudRepository } from './salesCloudRepository';
-import { salesCloudLocalRepository } from './salesCloudLocalRepository';
 import {
   buildCancellationIdempotencyKey,
   getCloudSaleId,
@@ -23,6 +23,49 @@ const dispatchCancellationEvents = () => {
     'lanzo:customer-credit-sync-updated',
     'lanzo:reports-sync-updated'
   ].forEach((eventName) => window.dispatchEvent(new CustomEvent(eventName)));
+};
+
+const ensureOpen = async () => {
+  if (!db.isOpen()) await db.open();
+};
+
+const saveCancellationPatch = async ({ localSale = {}, response = {}, patch = {} }) => {
+  await ensureOpen();
+  const cloudSale = response.sale || {};
+  const localSaleId = localSale.id || cloudSale.local_sale_id || cloudSale.id || localSale.cloudSaleId;
+  if (!localSaleId) return { ...localSale, ...patch };
+
+  const now = new Date().toISOString();
+  const deterministicLogId = `txn_cloud_sale_cancel_${localSaleId}`;
+  let patchedSale = { ...localSale, ...patch };
+
+  await db.transaction('rw', [db.table(STORES.SALES), db.table(STORES.TRANSACTION_LOG)], async () => {
+    const existing = await db.table(STORES.SALES).get(localSaleId);
+    patchedSale = {
+      ...(existing || localSale),
+      ...patch,
+      id: localSaleId,
+      updatedAt: now
+    };
+
+    await db.table(STORES.SALES).put(patchedSale);
+    await db.table(STORES.TRANSACTION_LOG).put({
+      id: deterministicLogId,
+      type: 'CLOUD_SALE_CANCELLED',
+      status: 'COMPLETED',
+      timestamp: patch.cancelledAt || now,
+      updatedAt: now,
+      saleId: localSaleId,
+      cloudSaleId: cloudSale.id || localSale.cloudSaleId || null,
+      cancellationId: patch.cancellationId || response.cancellation?.id || null,
+      folio: patchedSale.folio || patchedSale.cloudFolio || cloudSale.cloud_folio || null,
+      cashReversalStatus: patch.cashReversalStatus || null,
+      inventoryReversalStatus: patch.inventoryReversalStatus || null,
+      creditReversalStatus: patch.creditReversalStatus || null
+    });
+  });
+
+  return patchedSale;
 };
 
 const getRuntimeContext = async () => {
@@ -104,7 +147,7 @@ export const salesCloudCancellationService = {
       }
 
       const patch = mapCancellationResponseToLocalPatch(response);
-      const localSale = await salesCloudLocalRepository.applyCloudCancellationPayload({ localSale: sale, response, patch });
+      const localSale = await saveCancellationPatch({ localSale: sale, response, patch });
       dispatchCancellationEvents();
       return { success: true, code: 'CLOUD_CANCELLED', sale: localSale || { ...sale, ...patch }, response, idempotencyKey };
     } catch (error) {
