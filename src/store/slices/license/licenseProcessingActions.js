@@ -20,13 +20,20 @@ import {
     deriveGracePeriodEnd
 } from './licenseGuards';
 
+const shouldLoadProfileForLicense = (state = {}, licenseKey, refreshProfile = false) => (
+    refreshProfile ||
+    !state.companyProfile ||
+    state.companyProfile?.license_key !== licenseKey
+);
+
 export const createLicenseProcessingActions = ({
     set,
     get,
     clearLocalLicenseSession,
     hasStaffValidationContext
 }) => ({
-    _processServerValidation: async (serverValidation, localLicense) => {
+    _processServerValidation: async (serverValidation, localLicense, options = {}) => {
+        const { refreshProfile = false, reason = 'server_validation' } = options || {};
         const now = new Date();
         const derivedGracePeriodEnd = deriveGracePeriodEnd(serverValidation, localLicense);
         const graceEnd = derivedGracePeriodEnd ? new Date(derivedGracePeriodEnd) : null;
@@ -74,7 +81,10 @@ export const createLicenseProcessingActions = ({
             if (RENEWAL_REASONS.includes(serverValidation.reason)) {
                 Logger.warn('[AppStore] Licencia expirada. Bloqueando pantalla...');
 
-                await get()._loadProfile(localLicense.license_key);
+                await get()._loadProfile(localLicense.license_key, {
+                    refreshProfile: false,
+                    reason: `renewal_${reason}`
+                });
 
                 set({
                     appStatus: 'locked_renewal',
@@ -93,7 +103,10 @@ export const createLicenseProcessingActions = ({
                 '[AppStore] Validación fallida (posible error post-update). Manteniendo sesión local.'
             );
 
-            await get()._processOfflineMode(localLicense);
+            await get()._processOfflineMode(localLicense, {
+                refreshProfile,
+                reason: `server_validation_fallback_${reason}`
+            });
             return;
         }
 
@@ -136,11 +149,18 @@ export const createLicenseProcessingActions = ({
                 : null
         });
 
-        await get()._loadProfile(finalLicenseData.license_key);
+        if (shouldLoadProfileForLicense(get(), finalLicenseData.license_key, refreshProfile)) {
+            await get()._loadProfile(finalLicenseData.license_key, {
+                refreshProfile,
+                reason
+            });
+        }
+
         await get().refreshLicenseSyncMode('server_validation');
     },
 
-    _processOfflineMode: async (localLicense) => {
+    _processOfflineMode: async (localLicense, options = {}) => {
+        const { refreshProfile = false, reason = 'offline_mode' } = options || {};
         const now = new Date();
 
         if (!localLicense.localExpiry) {
@@ -149,7 +169,6 @@ export const createLicenseProcessingActions = ({
             const baseDate = localLicense.activated_at
                 ? new Date(localLicense.activated_at)
                 : now;
-
             const expiryDate = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000);
             localLicense.localExpiry = expiryDate.toISOString();
 
@@ -222,6 +241,11 @@ export const createLicenseProcessingActions = ({
                 : null
         });
 
-        await get()._loadProfile(updatedLocalLicense.license_key);
+        if (shouldLoadProfileForLicense(get(), updatedLocalLicense.license_key, refreshProfile)) {
+            await get()._loadProfile(updatedLocalLicense.license_key, {
+                refreshProfile,
+                reason
+            });
+        }
     }
 });
