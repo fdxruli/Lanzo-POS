@@ -3,7 +3,10 @@ import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
 import { isCloudSalesInventoryEnabled } from '../../services/sync/syncConstants';
-import { isProductReadyForCloudSale } from '../../services/products/productConstants';
+import {
+  isProductReadyForCloudSale,
+  resolveProductCloudSyncBadge
+} from '../../services/products/productConstants';
 import ProductCard from './ProductCard';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -92,6 +95,11 @@ export default function ProductMenu({
     () => isCloudSalesInventoryEnabled(licenseDetails),
     [licenseDetails]
   );
+
+  const buildProductSyncBadge = useCallback((product) => {
+    if (!cloudSalesInventoryEnabled) return null;
+    return resolveProductCloudSyncBadge(product);
+  }, [cloudSalesInventoryEnabled]);
 
   const guardCloudSyncedProduct = useCallback((product) => {
     if (!cloudSalesInventoryEnabled || isProductReadyForCloudSale(product)) return true;
@@ -399,17 +407,29 @@ export default function ProductMenu({
               </div>
             )
           ) : (
-            visibleProducts.map((item) => (
-              <ProductCard
-                key={item.id}
-                product={item}
-                features={features}
-                onCardClick={handleCardClick}
-                isLoadingVariant={loadingVariantId === item.id}
-                hasAvailableVariants={variantStatusByProductId[item.id] === true}
-                showCloudSyncBadge={cloudSalesInventoryEnabled}
-              />
-            ))
+            visibleProducts.map((item) => {
+              const syncBadge = buildProductSyncBadge(item);
+              return (
+                <div className="pos-product-card-shell" key={item.id}>
+                  {syncBadge && (
+                    <span
+                      className={`pos-product-sync-badge pos-product-sync-badge--${syncBadge.status}`}
+                      title={syncBadge.title}
+                      aria-label={syncBadge.title}
+                    >
+                      {syncBadge.label}
+                    </span>
+                  )}
+                  <ProductCard
+                    product={item}
+                    features={features}
+                    onCardClick={handleCardClick}
+                    isLoadingVariant={loadingVariantId === item.id}
+                    hasAvailableVariants={variantStatusByProductId[item.id] === true}
+                  />
+                </div>
+              );
+            })
           )}
 
           {visibleProducts.length < products.length && visibleProducts.length > 0 && (
