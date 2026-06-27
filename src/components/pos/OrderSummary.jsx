@@ -15,6 +15,7 @@ import { useState, useEffect } from 'react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { db, STORES } from '../../services/db/dexie';
+import { showMessageModal } from '../../services/utils';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
 import './OrderSummary.css';
@@ -120,14 +121,23 @@ export default function OrderSummary({
     onOpenTables?.();
   };
 
-  const handleCancelOrder = () => {
+  const handleCancelOrder = async () => {
     const confirmMessage = (isEditMode && showRestaurantActions)
       ? '¿Descartar los cambios no guardados y salir de la mesa?'
       : '¿Vaciar carrito?';
 
-    if (window.confirm(confirmMessage)) {
-      useActiveOrders.getState().cancelCurrentOrder();
+    if (!window.confirm(confirmMessage)) return;
+
+    try {
+      await useActiveOrders.getState().cancelCurrentOrder();
       if (isMobileModal) onClose?.();
+    } catch (error) {
+      console.error('Error cancelando orden:', error);
+      showMessageModal(
+        error?.message || 'No se pudo cancelar la orden. Intenta cerrar el cobro activo y vuelve a intentar.',
+        null,
+        { type: 'warning' }
+      );
     }
   };
 
