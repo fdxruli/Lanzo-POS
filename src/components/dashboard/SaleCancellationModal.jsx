@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Ban, PackagePlus, Trash2, X } from 'lucide-react';
 import { CANCELLATION_ACTIONS } from '../../services/sales/cancelSaleCore';
+import { salesCloudCancellationService } from '../../services/salesCloud/salesCloudCancellationService';
 import {
   buildCancellationPreview,
-  isCloudCommittedSale
+  isCloudCommittedSale,
+  normalizeCloudCancellationPreview
 } from '../../services/salesCloud/salesCloudCancellationMapper';
 import './SaleCancellationModal.css';
 
@@ -14,6 +16,11 @@ const formatCurrency = (value) => Number(value || 0).toLocaleString('es-MX', {
   style: 'currency',
   currency: 'MXN'
 });
+
+const getPreviewBlockMessage = (preview) => {
+  const reasons = Array.isArray(preview?.blockReasons) ? preview.blockReasons : [];
+  return reasons[0]?.message || preview?.message || 'La venta no puede cancelarse automaticamente.';
+};
 
 export default function SaleCancellationModal({
   show,
@@ -26,14 +33,26 @@ export default function SaleCancellationModal({
   const [actions, setActions] = useState({});
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
+  const [serverPreview, setServerPreview] = useState(null);
+  const [previewStatus, setPreviewStatus] = useState('idle');
 
   const items = useMemo(() => sale?.items || [], [sale]);
   const isCloudSale = useMemo(() => isCloudCommittedSale(sale || {}), [sale]);
-  const cloudPreview = useMemo(() => buildCancellationPreview(sale || {}), [sale]);
+  const localCloudPreview = useMemo(() => buildCancellationPreview(sale || {}), [sale]);
+  const cloudPreview = useMemo(() => (
+    serverPreview
+      ? normalizeCloudCancellationPreview(serverPreview, sale || {})
+      : localCloudPreview
+  ), [serverPreview, sale, localCloudPreview]);
 
   const offlineCloud = isCloudSale
     && typeof navigator !== 'undefined'
     && navigator.onLine === false;
+
+  const cloudPreviewLoading = isCloudSale && previewStatus === 'loading';
+  const cloudPreviewFailed = isCloudSale && previewStatus === 'error';
+  const cloudPreviewBlocked = isCloudSale && serverPreview && serverPreview.can_cancel === false;
+  const cloudRuntimeDisabled = isCloudSale && serverPreview?.runtimeCancellationEnabled === false;
 
   useEffect(() => {
     if (!show || !sale) return;
@@ -46,7 +65,35 @@ export default function SaleCancellationModal({
     setActions(initialActions);
     setReason('');
     setError('');
+    setServerPreview(null);
+    setPreviewStatus('idle');
   }, [show, sale]);
+
+  useEffect(() => {
+    if (!show || !sale || !isCloudSale || offlineCloud) return undefined;
+
+    let cancelled = false;
+
+    const loadPreview = async () => {
+      setPreviewStatus('loading');
+      try {
+        const preview = await salesCloudCancellationService.previewCloudSaleCancellation({ sale });
+        if (cancelled) return;
+        setServerPreview(preview);
+        setPreviewStatus(preview?.can_cancel === false ? 'blocked' : 'ready');
+      } catch (previewError) {
+        if (cancelled) return;
+        setPreviewStatus('error');
+        setError(previewError?.message || 'No se pudo validar la cancelacion cloud. No se modificara nada.');
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [show, sale, isCloudSale, offlineCloud]);
 
   if (!show || !sale) return null;
 
@@ -54,7 +101,7 @@ export default function SaleCancellationModal({
     setActions((current) => ({ ...current, [lineId]: action }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     const trimmedReason = reason.trim();
@@ -67,6 +114,36 @@ export default function SaleCancellationModal({
     if (isCloudSale && !trimmedReason) {
       setError('Indica el motivo de cancelación para dejar auditoría.');
       return;
+    }
+
+    if (isCloudSale) {
+      setPreviewStatus('loading');
+      try {
+        const preview = await salesCloudCancellationService.previewCloudSaleCancellation({
+          sale,
+          reason: trimmedReason
+        });
+        const normalizedPreview = normalizeCloudCancellationPreview(preview, sale || {});
+        setServerPreview(preview);
+
+        if (preview?.runtimeCancellationEnabled === false) {
+          setPreviewStatus('blocked');
+          setError('Las cancelaciones cloud estan apagadas temporalmente. Puedes revisar el preview, pero no se aplicara la cancelacion.');
+          return;
+        }
+
+        if (preview?.success === false || preview?.can_cancel === false) {
+          setPreviewStatus('blocked');
+          setError(getPreviewBlockMessage(normalizedPreview));
+          return;
+        }
+
+        setPreviewStatus('ready');
+      } catch (previewError) {
+        setPreviewStatus('error');
+        setError(previewError?.message || 'No se pudo validar la cancelacion cloud. No se modifico nada.');
+        return;
+      }
     }
 
     const dispositionPlan = isCloudSale
@@ -88,6 +165,14 @@ export default function SaleCancellationModal({
       reason: trimmedReason
     });
   };
+
+  const submitDisabled = isSubmitting
+    || (!isCloudSale && items.length === 0)
+    || offlineCloud
+    || cloudPreviewLoading
+    || cloudPreviewFailed
+    || cloudPreviewBlocked
+    || cloudRuntimeDisabled;
 
   return (
     <div className="sale-cancellation-overlay" role="presentation">
@@ -119,15 +204,26 @@ export default function SaleCancellationModal({
             <div className="sale-cancellation-notice cloud-notice">
               <strong>Cancelación cloud PRO.</strong>
               <p>
-                Esta venta fue registrada en la nube. La cancelación revertirá caja,
-                inventario/lotes y deuda relacionados con esta venta, según corresponda.
-                No se borrará el historial original.
+                Esta venta fue registrada en la nube. Antes de aplicar cambios se ejecuta un
+                preview seguro que valida caja, inventario/lotes y deuda. No se borrará el historial original.
               </p>
             </div>
 
             {offlineCloud && (
               <div className="sale-cancellation-notice danger-notice">
                 Esta venta fue registrada en la nube. Para cancelarla se necesita conexión.
+              </div>
+            )}
+
+            {cloudPreviewLoading && (
+              <div className="sale-cancellation-notice cloud-status-notice">
+                Validando la cancelación en la nube antes de modificar datos...
+              </div>
+            )}
+
+            {cloudRuntimeDisabled && (
+              <div className="sale-cancellation-notice danger-notice">
+                Las cancelaciones cloud están apagadas temporalmente por configuración. Solo se permite ver el preview.
               </div>
             )}
 
@@ -141,27 +237,34 @@ export default function SaleCancellationModal({
                 <span>Caja</span>
                 <strong>
                   {cloudPreview.cashReversalRequired
-                    ? 'Reversa requerida'
+                    ? `${formatCurrency(cloudPreview.cashAmount)} a revertir`
                     : 'No requerida'}
                 </strong>
+                {cloudPreview.cashMovementCount > 0 && <small>{cloudPreview.cashMovementCount} movimiento(s)</small>}
               </section>
 
               <section>
                 <span>Inventario</span>
                 <strong>
                   {cloudPreview.inventoryReversalRequired
-                    ? 'Devuelve stock/lotes'
+                    ? `${cloudPreview.inventoryQuantity || 0} unidad(es)`
                     : 'No requerido'}
                 </strong>
+                {cloudPreview.inventoryMovementCount > 0 && <small>{cloudPreview.inventoryMovementCount} salida(s)</small>}
               </section>
 
               <section>
                 <span>Crédito</span>
                 <strong>
                   {cloudPreview.creditReversalRequired
-                    ? 'Revierte deuda/ledger'
+                    ? `${formatCurrency(cloudPreview.creditReversalAmount)} a revertir`
                     : 'No requerido'}
                 </strong>
+                {cloudPreview.creditReversalRequired && (
+                  <small>
+                    Deuda: {formatCurrency(cloudPreview.debtBefore)} → {formatCurrency(cloudPreview.debtAfterPreview)}
+                  </small>
+                )}
               </section>
 
               {cloudPreview.customerName && (
@@ -171,6 +274,19 @@ export default function SaleCancellationModal({
                 </section>
               )}
             </div>
+
+            {Array.isArray(cloudPreview.blockReasons) && cloudPreview.blockReasons.length > 0 && (
+              <div className="sale-cancellation-blocked-list">
+                <strong>No se puede cancelar automáticamente:</strong>
+                <ul>
+                  {cloudPreview.blockReasons.map((blockReason, index) => (
+                    <li key={`${blockReason.code || 'block'}:${index}`}>
+                      {blockReason.message || blockReason.code || 'Bloqueo de seguridad'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -270,10 +386,10 @@ export default function SaleCancellationModal({
           <button
             type="submit"
             className="btn btn-confirm"
-            disabled={isSubmitting || (!isCloudSale && items.length === 0) || offlineCloud}
+            disabled={submitDisabled}
           >
-            {isSubmitting
-              ? 'Cancelando...'
+            {isSubmitting || cloudPreviewLoading
+              ? 'Validando...'
               : isCloudSale
                 ? 'Confirmar cancelación cloud'
                 : 'Confirmar cancelación'}
