@@ -5,6 +5,7 @@ import {
   isCloudCashSyncEnabled,
   isCloudCustomerCreditSyncEnabled,
   isCloudProductsSyncEnabled,
+  isCloudSalesReportsFinalEnabled,
   isFeatureEnabled
 } from '../sync/syncConstants';
 import { reportsCloudRepository } from './reportsCloudRepository';
@@ -17,6 +18,7 @@ export const REPORT_SYNC_UPDATED_EVENT = 'lanzo:reports-sync-updated';
 
 const REPORT_TYPES = Object.freeze({
   OVERVIEW: 'overview',
+  SALES_FINAL_OVERVIEW: 'sales_final_overview',
   CASH: 'cash',
   CUSTOMER_CREDIT: 'customer_credit',
   PRODUCT_CATALOG: 'product_catalog',
@@ -28,7 +30,25 @@ const CLOUD_TIMESERIES_METRICS = new Set([
   'cash_exits',
   'customer_payments',
   'customer_debt',
-  'cash_difference'
+  'cash_difference',
+  'gross_sales',
+  'cancelled_sales',
+  'net_sales',
+  'cogs',
+  'gross_profit',
+  'items_sold'
+]);
+
+const FINAL_SALES_EXPORT_TYPES = new Set([
+  'sales',
+  'sale_items',
+  'sale_payments',
+  'sale_cancellations',
+  'cash_movements',
+  'inventory_movements',
+  'customer_ledger',
+  'profit',
+  'audit'
 ]);
 
 const DEFAULT_CACHE_WARNING = 'Sin conexion o servicio no disponible. Mostrando el ultimo reporte cloud guardado en este dispositivo.';
@@ -55,6 +75,7 @@ const getMode = () => {
     cloudCash: Boolean(licenseKey && isCloudCashSyncEnabled(licenseDetails)),
     cloudCredit: Boolean(licenseKey && isCloudCustomerCreditSyncEnabled(licenseDetails)),
     cloudProducts: Boolean(licenseKey && isCloudProductsSyncEnabled(licenseDetails)),
+    cloudSalesFinal: Boolean(licenseKey && isCloudSalesReportsFinalEnabled(licenseDetails)),
     online: isOnline()
   };
 };
@@ -142,7 +163,13 @@ const withCacheFallback = async ({
 const normalizeOverviewFilters = (filters = {}) => ({
   dateFrom: filters.dateFrom || null,
   dateTo: filters.dateTo || null,
-  scope: filters.scope || 'mine'
+  scope: filters.scope || 'mine',
+  staffUserId: filters.staffUserId || filters.staff_user_id || null,
+  deviceId: filters.deviceId || filters.device_id || null,
+  cashSessionId: filters.cashSessionId || filters.cash_session_id || null,
+  customerId: filters.customerId || filters.customer_id || null,
+  productId: filters.productId || filters.product_id || null,
+  categoryId: filters.categoryId || filters.category_id || null
 });
 
 const normalizeCashFilters = (filters = {}) => ({
@@ -185,6 +212,11 @@ const mapCloudReport = (payload, options = {}) => reportsMapper.normalizeReportP
   stale: Boolean(options.stale)
 });
 
+const mapCloudFinalReport = (payload, options = {}) => reportsMapper.normalizeReportPayload(payload, {
+  mode: options.stale ? REPORT_SOURCE_MODES.CACHE : REPORT_SOURCE_MODES.CLOUD_FINAL,
+  stale: Boolean(options.stale)
+});
+
 const rowsToCsv = (rows = []) => {
   const list = Array.isArray(rows) ? rows : [];
   const columns = Array.from(list.reduce((set, row) => {
@@ -203,16 +235,32 @@ export const reportsRepository = {
     const mode = getMode();
     if (!mode.cloudReports) return { mode: REPORT_SOURCE_MODES.LOCAL, ...mode };
     if (!mode.online) return { mode: REPORT_SOURCE_MODES.CACHE, ...mode };
+    if (mode.cloudSalesFinal) return { mode: REPORT_SOURCE_MODES.CLOUD_FINAL, ...mode };
     return { mode: REPORT_SOURCE_MODES.MIXED, ...mode };
   },
 
   async getOverviewReport(filters = {}) {
     const mode = getMode();
+    const cloudFilters = normalizeOverviewFilters(filters);
+
+    if (mode.cloudSalesFinal) {
+      return withCacheFallback({
+        reportType: REPORT_TYPES.SALES_FINAL_OVERVIEW,
+        filters: cloudFilters,
+        reportMode: mode,
+        loader: () => reportsCloudRepository.getSalesFinalOverview({ licenseKey: mode.licenseKey, ...cloudFilters }),
+        mapper: mapCloudFinalReport,
+        localFallback: () => reportsLocalRepository.getOverviewReport(filters),
+        offlineWarning: 'Sin conexion y sin snapshot cloud final previo. Se muestran datos locales no oficiales de este dispositivo.',
+        cacheWarning: 'Mostrando el ultimo reporte cloud final guardado. Puede estar desactualizado.',
+        cloudErrorCacheWarning: 'No se pudo cargar el reporte cloud final. Mostrando el ultimo snapshot guardado.',
+        cloudErrorLocalWarning: 'No se pudo cargar el reporte cloud final y no hay snapshot previo. Se muestran datos locales no oficiales.'
+      });
+    }
+
     if (!mode.cloudReports || !mode.cloudCash || !mode.cloudCredit || !mode.cloudProducts) {
       return reportsLocalRepository.getOverviewReport(filters);
     }
-
-    const cloudFilters = normalizeOverviewFilters(filters);
 
     return withCacheFallback({
       reportType: REPORT_TYPES.OVERVIEW,
@@ -295,6 +343,19 @@ export const reportsRepository = {
 
     if (!mode.cloudReports) return reportsLocalRepository.getTimeseriesReport(filters);
 
+    if (mode.cloudSalesFinal && ['gross_sales', 'cancelled_sales', 'net_sales', 'cogs', 'gross_profit', 'items_sold'].includes(metric)) {
+      return withCacheFallback({
+        reportType: REPORT_TYPES.TIMESERIES,
+        filters: cloudFilters,
+        reportMode: mode,
+        loader: () => reportsCloudRepository.getSalesFinalTimeseries({ licenseKey: mode.licenseKey, ...cloudFilters }),
+        mapper: mapCloudFinalReport,
+        localFallback: () => reportsLocalRepository.getTimeseriesReport(filters),
+        offlineWarning: 'Sin conexion y sin snapshot cloud final de series previo. Se muestran series locales no oficiales.',
+        cacheWarning: 'Mostrando el ultimo snapshot cloud final guardado de series. Puede estar desactualizado.'
+      });
+    }
+
     if (!CLOUD_TIMESERIES_METRICS.has(metric)) {
       const local = await reportsLocalRepository.getTimeseriesReport(filters);
       return applySourceState(local, {
@@ -302,7 +363,7 @@ export const reportsRepository = {
         stale: false,
         warnings: [
           `La metrica "${cloudFilters.metric}" todavia no tiene fuente cloud. Se usa reporte local de este dispositivo.`,
-          'No se implementaron ventas cloud en esta fase.'
+          'No se mezclan ventas locales con ventas cloud oficiales.'
         ]
       });
     }
@@ -325,7 +386,9 @@ export const reportsRepository = {
     const mode = getMode();
     let payload;
 
-    if (mode.cloudReports && mode.online) {
+    if (mode.cloudSalesFinal && mode.online && FINAL_SALES_EXPORT_TYPES.has(reportType)) {
+      payload = await reportsCloudRepository.exportSalesFinal({ licenseKey: mode.licenseKey, dataset: reportType, ...filters });
+    } else if (mode.cloudReports && mode.online) {
       payload = await reportsCloudRepository.exportReportData({ licenseKey: mode.licenseKey, reportType, ...filters });
     } else if (reportType === 'product_inventory') {
       payload = await reportsLocalRepository.getProductCatalogReport(filters);
