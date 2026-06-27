@@ -21,6 +21,7 @@ import {
 const waitForRealtimeCleanup = () => new Promise((resolve) => setTimeout(resolve, 200));
 
 let lastRealtimeRecoveryAt = 0;
+let lastRealtimeLongValidationAt = 0;
 
 const normalizeRealtimeReason = (reason = 'manual') => String(reason || 'manual')
   .trim()
@@ -142,6 +143,18 @@ export const createLicenseRealtimeActions = ({
             get().clearServerStatus?.();
 
             if (metadata.wasLongDisconnect) {
+              const now = Date.now();
+              const recentlyValidatedLongOffline =
+                now - lastRealtimeLongValidationAt < REALTIME_RECOVERY_MIN_INTERVAL_MS;
+
+              if (recentlyValidatedLongOffline) {
+                Logger.log('[Realtime] Reconexión larga; validación omitida por cooldown.');
+                return;
+              }
+
+              lastRealtimeRecoveryAt = now;
+              lastRealtimeLongValidationAt = now;
+
               Logger.log('[Realtime] Reconexión larga; se fuerza validación.');
               await get().runLicenseSyncCheck('realtime_reconnected_long');
               return;
@@ -202,39 +215,72 @@ export const createLicenseRealtimeActions = ({
     const hasActiveChannel = Boolean(state.realtimeSubscription && connectionStatus.isActive);
     const recentlyRecovered = now - lastRealtimeRecoveryAt < REALTIME_RECOVERY_MIN_INTERVAL_MS;
 
-    if (connectionStatus.isReconnecting || connectionStatus.isConnecting) {
+    const recentlyValidatedLongOffline =
+      now - lastRealtimeLongValidationAt < REALTIME_RECOVERY_MIN_INTERVAL_MS;
+
+    if (connectionStatus.isReconnecting || connectionStatus.isConnecting || state._isInitializingSecurity) {
       if (wasLongOffline) {
+        if (recentlyValidatedLongOffline) {
+          Logger.log(
+            `[Realtime] Canal reconectando tras pausa larga; validación omitida por cooldown (${safeReason}).`
+          );
+          return state.realtimeSubscription;
+        }
+
+        lastRealtimeRecoveryAt = now;
+        lastRealtimeLongValidationAt = now;
+
         Logger.log('[Realtime] Canal reconectando tras pausa larga; se fuerza validación.');
         await get().runLicenseSyncCheck('realtime_reconnected_long');
       } else {
         Logger.log(`[Realtime] Canal reconectando; se evita recuperación duplicada (${safeReason}).`);
       }
+
       return state.realtimeSubscription;
     }
 
     if (hasActiveChannel) {
-      if (recentlyRecovered && !wasLongOffline) {
-        Logger.log(`[Realtime] Canal activo; recuperación omitida por cooldown (${safeReason}).`);
-        return state.realtimeSubscription;
-      }
-
-      lastRealtimeRecoveryAt = now;
-
       if (wasLongOffline) {
+        if (recentlyValidatedLongOffline) {
+          Logger.log(
+            `[Realtime] Canal activo tras pausa larga; validación omitida por cooldown (${safeReason}).`
+          );
+          return state.realtimeSubscription;
+        }
+
+        lastRealtimeRecoveryAt = now;
+        lastRealtimeLongValidationAt = now;
+
         Logger.log('[Realtime] Canal activo tras pausa larga; se fuerza validación.');
         await get().runLicenseSyncCheck('realtime_reconnected_long');
         return state.realtimeSubscription;
       }
+
+      if (recentlyRecovered) {
+        Logger.log(`[Realtime] Canal activo; probe omitido por cooldown (${safeReason}).`);
+        return state.realtimeSubscription;
+      }
+
+      lastRealtimeRecoveryAt = now;
 
       Logger.log('[Realtime] Canal activo; probe no crítico.');
       await get().runLicenseSyncCheck(`realtime_probe_${safeReason}`);
       return state.realtimeSubscription;
     }
 
+    if (recentlyRecovered && !wasLongOffline) {
+      Logger.log(`[Realtime] Canal caído; recuperación omitida por cooldown (${safeReason}).`);
+      return state.realtimeSubscription;
+    }
+
     set({ _isRecoveringRealtime: true });
 
     try {
+
       lastRealtimeRecoveryAt = now;
+      if (wasLongOffline) {
+        lastRealtimeLongValidationAt = now;
+      }
       Logger.log('[Realtime] Canal caído; recuperando y validando.');
 
       await get().stopRealtimeSecurity();
