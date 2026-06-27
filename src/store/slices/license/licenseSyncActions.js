@@ -3,69 +3,16 @@
 import Logger from '../../../services/Logger';
 
 import {
-  getLicenseSyncIntervalMs
-} from './licenseGuards';
-
-import {
-  getLicenseSyncMode
+  getLicenseSyncIntervalMs,
+  getLicenseSyncMode,
+  isCriticalLicenseValidationReason,
+  markLastLicenseValidation,
+  shouldSkipRemoteValidationForPlan
 } from './licenseGuards';
 
 let licenseSyncTimer = null;
 let licenseSyncOnlineListener = null;
 let isLicenseSyncCheckRunning = false;
-
-const LAST_VALIDATION_STORAGE_KEY = 'Lanzo_last_validation_persistent';
-
-const CRITICAL_SYNC_REASONS = [
-  'realtime_event',
-  'realtime_reconnected',
-  'realtime_recover',
-  'license_changed',
-  'plan_changed',
-  'device_changed',
-  'staff_changed',
-  'permission_changed',
-  'staff_invalidated',
-  'force',
-  'activation',
-  'staff_login',
-  'renewal'
-];
-
-const isCriticalSyncReason = (reason = '') => {
-  const normalized = String(reason || '').toLowerCase();
-  return CRITICAL_SYNC_REASONS.some((item) => normalized.includes(item));
-};
-
-const readLastValidationMs = () => {
-  try {
-    const localValue = Number(localStorage.getItem(LAST_VALIDATION_STORAGE_KEY) || 0);
-    const sessionValue = Number(sessionStorage.getItem('Lanzo_last_validation') || 0);
-    const candidate = Math.max(localValue || 0, sessionValue || 0);
-    return Number.isFinite(candidate) ? candidate : 0;
-  } catch {
-    return 0;
-  }
-};
-
-const markLastValidation = () => {
-  const now = Date.now().toString();
-  try {
-    localStorage.setItem(LAST_VALIDATION_STORAGE_KEY, now);
-    sessionStorage.setItem('Lanzo_last_validation', now);
-  } catch {
-    // Best effort.
-  }
-};
-
-const shouldSkipRemoteSyncByPlan = ({ licenseDetails, mode, reason }) => {
-  if (isCriticalSyncReason(reason)) return false;
-
-  const intervalMs = getLicenseSyncIntervalMs(licenseDetails, mode);
-  const lastValidationMs = readLastValidationMs();
-
-  return lastValidationMs > 0 && Date.now() - lastValidationMs < intervalMs;
-};
 
 const restartLicenseSyncTimer = (get, mode) => {
   if (licenseSyncTimer) {
@@ -104,9 +51,9 @@ export const createLicenseSyncActions = ({
       return false;
     }
 
-    if (shouldSkipRemoteSyncByPlan({
+    if (shouldSkipRemoteValidationForPlan({
       licenseDetails: state.licenseDetails,
-      mode: state.licenseSyncMode,
+      mode: state.licenseSyncMode || getLicenseSyncMode(state.licenseDetails),
       reason
     })) {
       Logger.log(`[LicenseSync] Revalidación remota omitida por TTL de plan (${reason}).`);
@@ -126,13 +73,13 @@ export const createLicenseSyncActions = ({
 
       const isValid = await state.verifySessionIntegrity({
         reason,
-        forceRemote: isCriticalSyncReason(reason),
+        forceRemote: isCriticalLicenseValidationReason(reason),
         refreshProfile: false,
         transactionMode: false,
         allowLocalOnly: true
       });
 
-      markLastValidation();
+      markLastLicenseValidation(state.licenseDetails.license_key);
 
       if (get().appStatus === 'staff_login_required') {
         return false;
