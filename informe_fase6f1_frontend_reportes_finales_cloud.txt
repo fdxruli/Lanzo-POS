@@ -1,0 +1,268 @@
+INFORME FASE 6F.1 — FRONTEND REPORTES FINALES CLOUD
+=====================================================
+
+Fecha: 2026-06-26
+Repositorio: fdxruli/Lanzo-POS
+Rama: main
+
+Objetivo
+--------
+Cerrar los pendientes visuales/frontend de FASE 6F para que, cuando la licencia PRO tenga activo
+cloud_sales_reports_final, el dashboard use métricas finales cloud e historial final cloud sin mezclar ventas
+locales/Dexie con ventas oficiales Supabase.
+
+Resumen de correcciones
+-----------------------
+1. Se agregó un renderer dedicado para métricas finales cloud:
+   - src/components/dashboard/CloudFinalStatsGrid.jsx
+
+   Este componente se usa solo cuando la fuente del reporte es cloud_final o source.final=true.
+   Lee explícitamente estas métricas del overview final cloud:
+   - net_sales_total / netSalesTotal
+   - cancelled_sales_total / cancelledSalesTotal
+   - gross_sales_total / grossSalesTotal
+   - cogs_total / cogsTotal
+   - gross_profit_total / grossProfitTotal
+   - gross_margin_percent / grossMarginPercent
+   - net_sales_count / netSalesCount
+   - average_ticket / averageTicket
+   - profit_status / profitStatus
+
+   Tarjetas principales implementadas:
+   - Ventas netas: usa net_sales_total y muestra nota "Excluye canceladas".
+   - Utilidad: usa gross_profit_total y muestra estado según profit_status.
+   - Ventas: usa net_sales_count y muestra "Ventas cerradas".
+   - Ticket promedio: usa average_ticket.
+
+   Detalles secundarios implementados:
+   - Ventas brutas.
+   - Ventas canceladas.
+   - COGS.
+   - Margen.
+
+   Si falta una métrica final, el componente no rompe la UI: muestra 0 y un warning suave.
+
+2. DashboardPage ahora detecta modo cloud final y elige renderer correcto:
+   - En modo cloud_final renderiza CloudFinalStatsGrid.
+   - En FREE/local y mixed mantiene StatsGrid.jsx intacto.
+
+   Esto evita tocar el flujo histórico local/mixed que ya funcionaba, y separa claramente ventas cloud oficiales de ventas Dexie/locales.
+
+3. reportsRepository ahora expone:
+   - getSalesFinalHistory(filters = {})
+
+   Comportamiento:
+   - PRO final online:
+     llama a reportsCloudRepository.getSalesFinalHistory, que usa la RPC pos_get_sales_final_history.
+   - PRO final offline:
+     usa snapshot cache sales_final_history si existe.
+   - PRO final offline sin snapshot:
+     usa fallback local con warning claro:
+     "Sin conexión y sin snapshot cloud final previo. Se muestra historial local no oficial de este dispositivo."
+   - FREE/local:
+     mantiene historial local.
+
+   Filtros normalizados:
+   - dateFrom
+   - dateTo
+   - scope
+   - staffUserId
+   - deviceId
+   - cashSessionId
+   - customerId
+   - productId
+   - categoryId
+   - status
+   - paymentMethod
+   - search
+   - limit
+   - offset
+
+   Cache agregado:
+   - reportType: sales_final_history
+
+4. reportsMapper ahora normaliza historial final cloud.
+
+   Se agregó normalizeSalesFinalHistoryPayload, que convierte filas de pos_get_sales_final_history al shape esperado por SalesHistory:
+   - id
+   - cloudSaleId
+   - folio
+   - cloudFolio
+   - timestamp
+   - soldAt
+   - sourceMode
+   - status
+   - customerName
+   - paymentMethod
+   - paymentStatus
+   - total
+   - amountPaid
+   - balanceDue
+   - actorName
+   - staffUserId
+   - deviceId
+   - cashSessionId
+   - cashEffectStatus
+   - inventoryEffectStatus
+   - creditEffectStatus
+   - cashReversalStatus
+   - inventoryReversalStatus
+   - creditReversalStatus
+   - cancellationId
+   - cancelledAt
+   - cancelReason
+   - itemsCount
+   - itemsQuantity
+   - payments
+   - effects
+   - badges
+
+   También se preserva source.final=true para reportes cloud_final y snapshots cache cloud final.
+
+5. SalesHistory ahora soporta fuente cloud final.
+
+   Cambios principales:
+   - acepta props source, reportSource e isCloudFinal;
+   - muestra badge Cloud oficial final;
+   - muestra snapshot cloud final cuando source.mode=cache;
+   - muestra warnings de fuente;
+   - diferencia ventas Cerrada / Cancelada / Shadow / Histórico local importado;
+   - muestra badges de efectos:
+     - Caja aplicada
+     - Inventario aplicado
+     - Crédito aplicado
+     - Reversas aplicadas
+   - evita cancelar ventas canceladas;
+   - evita usar cancelación cloud real para shadow o legacy_imported;
+   - permite cancelar solo ventas cloud final cerradas con sourceMode=cloud_committed.
+
+6. DashboardPage ahora carga historial final cloud en PRO final.
+
+   Cuando dashboardReportMode.cloudSalesFinal=true:
+   - carga reportsRepository.getSalesFinalHistory con scope mine, limit 50 y offset según página;
+   - pasa las filas normalizadas a SalesHistory;
+   - pasa source/isCloudFinal para que la UI muestre badges y reglas correctas;
+   - mantiene paginación separada del historial local;
+   - refresca historial al recibir lanzo:sales-sync-updated.
+
+7. useSalesStore ahora acepta saleOverride al cancelar.
+
+   Esto permite que una venta obtenida desde pos_get_sales_final_history, aunque no exista en la página local Dexie actual,
+   pueda pasar por el flujo seguro de cancelación cloud 6E. Sin saleOverride, el store solo buscaba en get().sales,
+   que en PRO final podía contener únicamente ventas locales paginadas.
+
+Archivos modificados/agregados
+------------------------------
+- src/components/dashboard/CloudFinalStatsGrid.jsx        [nuevo]
+- src/components/dashboard/SalesHistory.jsx               [modificado]
+- src/pages/DashboardPage.jsx                             [modificado]
+- src/services/reports/reportsRepository.js               [modificado]
+- src/services/reports/reportsMapper.js                   [modificado]
+- src/store/useSalesStore.js                              [modificado]
+- informe_fase6f1_frontend_reportes_finales_cloud.txt     [nuevo]
+
+Archivos revisados sin cambios
+------------------------------
+- src/services/reports/reportsCloudRepository.js
+
+Motivo:
+El wrapper getSalesFinalHistory ya existía y ya llama a pos_get_sales_final_history con filtros status,
+paymentMethod, search, limit, offset y filtros base finales.
+
+Detección de modo cloud final
+-----------------------------
+- reportsRepository.getReportMode() usa cloudSalesFinal desde isCloudSalesReportsFinalEnabled(licenseDetails).
+- reportSourceBadges.isCloudFinalReportSource detecta:
+  - source.mode === 'cloud_final'
+  - source.final === true
+- reportsMapper conserva source.final=true en reportes finales y snapshots cache finales.
+- DashboardPage usa isCloudFinalReportSource para decidir si renderizar CloudFinalStatsGrid y para marcar SalesHistory como final.
+
+Cache y fallback offline
+------------------------
+Overview final:
+- reportType: sales_final_overview
+- si online falla, usa snapshot;
+- si no hay snapshot, fallback local con warning de datos no oficiales.
+
+Historial final:
+- reportType: sales_final_history
+- si online falla, usa snapshot;
+- si no hay snapshot, fallback local con warning:
+  "Sin conexión y sin snapshot cloud final previo. Se muestra historial local no oficial de este dispositivo."
+
+Reglas preservadas
+------------------
+- FREE/local sigue usando StatsGrid.jsx y SalesHistory local.
+- Mixed de Fase 5 sigue usando StatsGrid.jsx y ventas locales con badges existentes.
+- PRO cloud_final no recalcula ventas netas desde Dexie para las tarjetas principales.
+- PRO cloud_final no mezcla ventas locales con historial oficial cuando hay respuesta/snapshot cloud final.
+- Cancelación local sigue usando flujo local.
+- Cancelación cloud sigue usando flujo 6E para ventas cloud_committed cerradas.
+
+Pruebas realizadas
+------------------
+Revisión estática mediante GitHub connector:
+- Se revisaron los archivos originales de DashboardPage, StatsGrid, SalesHistory, reportsRepository,
+  reportsCloudRepository, reportsMapper y reportsCacheService.
+- Se confirmó que reportsCloudRepository ya contenía wrapper getSalesFinalHistory hacia pos_get_sales_final_history.
+- Se aplicaron cambios en main mediante commits directos.
+
+Resultado de npm run build
+--------------------------
+No ejecutado desde este entorno.
+
+Motivo:
+El trabajo se realizó mediante el conector de GitHub, que permite leer/escribir archivos del repositorio, pero no proporciona
+un workspace local ejecutable con dependencias instaladas para correr npm run build.
+
+Validación pendiente obligatoria en entorno local/CI:
+- npm run build
+
+Pruebas manuales pendientes
+---------------------------
+1. FREE/local:
+   - Dashboard carga.
+   - StatsGrid muestra ventas locales.
+   - SalesHistory muestra historial local.
+   - Cancelación local funciona.
+
+2. PRO final online:
+   - Dashboard muestra Cloud oficial final.
+   - CloudFinalStatsGrid muestra ventas netas, utilidad, ticket promedio y detalles secundarios.
+   - Ventas canceladas no inflan ventas netas.
+   - SalesHistory carga desde pos_get_sales_final_history.
+   - Venta cancelada aparece como cancelada.
+   - Venta fiada muestra saldo/deuda.
+   - Venta con inventario muestra inventario aplicado.
+
+3. PRO final offline:
+   - Si hay snapshot, muestra último snapshot cloud final.
+   - Si no hay snapshot, muestra fallback local no oficial con warning.
+
+4. Cancelaciones:
+   - Venta cloud cerrada permite cancelar.
+   - Venta cloud cancelada no permite cancelar otra vez.
+   - Venta shadow/legacy_imported queda como solo consulta.
+   - Venta local usa cancelación local.
+
+5. Export:
+   - sales
+   - sale_items
+   - sale_payments
+   - sale_cancellations
+   - profit
+   - audit
+
+Notas técnicas
+--------------
+- Para reducir riesgo, no se reescribió StatsGrid.jsx completo. En su lugar se agregó CloudFinalStatsGrid.jsx y DashboardPage
+  decide el componente según source cloud_final. Esto mantiene FREE/local y mixed intactos.
+- Si se desea estrictamente que toda la lógica viva dentro de StatsGrid.jsx, se puede fusionar CloudFinalStatsGrid en una
+  subrama posterior, pero funcionalmente el resultado esperado queda cubierto: en cloud_final las tarjetas principales ya
+  no dependen de cálculos locales.
+
+Estado final
+------------
+FASE 6F.1 queda implementada a nivel frontend/reportes con revisión estática.
+Pendiente ejecutar npm run build y pruebas manuales/CI en un entorno con dependencias instaladas.
