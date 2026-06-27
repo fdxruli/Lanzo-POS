@@ -16,7 +16,41 @@ import {
 
 let licenseSyncTimer = null;
 let licenseSyncOnlineListener = null;
+let licenseSyncOfflineListener = null;
+let licenseSyncLastOfflineAt = 0;
 let isLicenseSyncCheckRunning = false;
+
+const LAST_OFFLINE_STORAGE_KEY = 'lanzo_last_offline';
+
+const readStoredTimestamp = (key) => {
+  try {
+    const rawValue = sessionStorage.getItem(key);
+    const parsedValue = rawValue ? parseInt(rawValue, 10) : 0;
+    return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const writeStoredTimestamp = (key, value) => {
+  try {
+    sessionStorage.setItem(key, String(value));
+  } catch {
+    // Best effort persistence.
+  }
+};
+
+const removeStoredTimestamp = (key) => {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Best effort cleanup.
+  }
+};
+
+const getElapsedSince = (timestamp, now = Date.now()) => (
+  timestamp > 0 ? Math.max(0, now - timestamp) : 0
+);
 
 const restartLicenseSyncTimer = (get, mode) => {
   if (licenseSyncTimer) {
@@ -163,12 +197,37 @@ export const createLicenseSyncActions = ({
 
     restartLicenseSyncTimer(get, nextMode);
 
-    licenseSyncOnlineListener = () => {
-      Logger.log('[LicenseSync] Red recuperada. Evaluando revalidación.');
-      get().runLicenseSyncCheck('online');
-      get().recoverRealtimeSecurity?.('online');
+    licenseSyncOfflineListener = () => {
+      licenseSyncLastOfflineAt = Date.now();
+      writeStoredTimestamp(LAST_OFFLINE_STORAGE_KEY, licenseSyncLastOfflineAt);
+      Logger.log('[LicenseSync] Red perdida. Se medirá duración offline para el próximo online.');
     };
 
+    licenseSyncOnlineListener = () => {
+      const now = Date.now();
+      const storedOfflineAt = readStoredTimestamp(LAST_OFFLINE_STORAGE_KEY);
+      const offlineStartedAt = licenseSyncLastOfflineAt || storedOfflineAt;
+      const offlineDurationMs = getElapsedSince(offlineStartedAt, now);
+      const currentState = get();
+      const currentMode = currentState.licenseSyncMode || getLicenseSyncMode(currentState.licenseDetails);
+
+      licenseSyncLastOfflineAt = 0;
+      removeStoredTimestamp(LAST_OFFLINE_STORAGE_KEY);
+
+      Logger.log('[LicenseSync] Red recuperada. Evaluando revalidación.');
+
+      if (currentMode === 'hybrid_realtime') {
+        get().recoverRealtimeSecurity?.('online', {
+          source: 'license_sync_online',
+          offlineDurationMs
+        });
+        return;
+      }
+
+      get().runLicenseSyncCheck('online');
+    };
+
+    window.addEventListener('offline', licenseSyncOfflineListener);
     window.addEventListener('online', licenseSyncOnlineListener);
 
     if (nextMode === 'hybrid_realtime') {
@@ -224,6 +283,13 @@ export const createLicenseSyncActions = ({
       window.removeEventListener('online', licenseSyncOnlineListener);
       licenseSyncOnlineListener = null;
     }
+
+    if (licenseSyncOfflineListener) {
+      window.removeEventListener('offline', licenseSyncOfflineListener);
+      licenseSyncOfflineListener = null;
+    }
+
+    licenseSyncLastOfflineAt = 0;
 
     await get().stopRealtimeSecurity();
 
