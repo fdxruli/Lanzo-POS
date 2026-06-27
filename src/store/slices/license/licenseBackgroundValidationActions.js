@@ -13,7 +13,10 @@ import {
 } from '../../../services/licenseStorage';
 
 import {
+  getLicenseSyncMode,
+  markLastLicenseValidation,
   normalizeValidationCode,
+  shouldSkipRemoteValidationForPlan,
   isFatalValidationFailure,
   isStaffDeviceAuthorizationFailure,
   isLicensePlanBlockFailure
@@ -29,15 +32,35 @@ export const createLicenseBackgroundValidationActions = ({
     const { refreshProfile = false, reason = 'background' } = options || {};
 
     try {
-      if (get().appStatus === 'staff_login_required') {
+      const initialState = get();
+
+      if (initialState.appStatus === 'staff_login_required') {
         Logger.log('[Background] Login staff requerido; se conserva la pantalla actual.');
+        return;
+      }
+
+      const localLicenseBeforeValidation = await getLicenseFromStorage();
+      const licenseDetails = initialState.licenseDetails || localLicenseBeforeValidation || {
+        license_key: licenseKey
+      };
+      const mode = initialState.licenseSyncMode || getLicenseSyncMode(licenseDetails);
+
+      if (shouldSkipRemoteValidationForPlan({ licenseDetails, mode, reason })) {
+        Logger.log(`[Background] Validación remota omitida por TTL de plan (${reason}).`);
+
+        if (!get().companyProfile) {
+          await get()._loadProfile(licenseKey, {
+            refreshProfile: false,
+            reason: `background_cached_${reason}`
+          });
+        }
+
         return;
       }
 
       Logger.log(`[Background] Iniciando validación silenciosa (${reason})...`);
 
       const BACKGROUND_TIMEOUT = 8000;
-
       const validationPromise = revalidateLicense(licenseKey);
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('BACKGROUND_TIMEOUT')), BACKGROUND_TIMEOUT)
@@ -48,12 +71,14 @@ export const createLicenseBackgroundValidationActions = ({
         timeoutPromise
       ]);
 
+      markLastLicenseValidation(licenseKey);
+
       if (!serverValidation?.valid && serverValidation?.valid !== false) {
         Logger.warn('[Background] Respuesta inválida del servidor, ignorando.');
         return;
       }
 
-      const localLicense = await getLicenseFromStorage();
+      const localLicense = localLicenseBeforeValidation || await getLicenseFromStorage();
       const sourceLicense = localLicense || get().licenseDetails || {
         license_key: licenseKey
       };
@@ -206,7 +231,7 @@ export const createLicenseBackgroundValidationActions = ({
       }
 
       sessionStorage.setItem('Lanzo_app_loaded', Date.now().toString());
-      sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
+      markLastLicenseValidation(licenseKey);
 
       get().clearServerStatus?.();
     } catch (error) {
@@ -250,7 +275,7 @@ export const createLicenseBackgroundValidationActions = ({
         Logger.warn('[Background] Validación falló:', error.message);
       }
 
-      sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
+      markLastLicenseValidation(licenseKey);
     }
   }
 });
