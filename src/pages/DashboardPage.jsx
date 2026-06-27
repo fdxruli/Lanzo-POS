@@ -12,6 +12,7 @@ import { useAppStore } from '../store/useAppStore';
 
 // --- COMPONENTES ---
 import StatsGrid from '../components/dashboard/StatsGrid';
+import CloudFinalStatsGrid from '../components/dashboard/CloudFinalStatsGrid';
 import SalesHistory from '../components/dashboard/SalesHistory';
 import RecycleBin from '../components/dashboard/RecycleBin';
 import BusinessTips from '../components/dashboard/BusinessTips';
@@ -24,12 +25,18 @@ import SaleCancellationModal from '../components/dashboard/SaleCancellationModal
 import { loadData, STORES } from '../services/database';
 import { reportingService } from '../services/db/reporting';
 import { reportsRepository, REPORT_SYNC_UPDATED_EVENT } from '../services/reports/reportsRepository';
-import { getReportSourceLabel, REPORT_SOURCE_MODES } from '../services/reports/reportSourceBadges';
+import {
+  getReportSourceLabel,
+  isCloudFinalReportSource,
+  REPORT_SOURCE_MODES
+} from '../services/reports/reportSourceBadges';
 import { showMessageModal } from '../services/utils';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
 import { Save, BarChart3, Trash2, ArrowRight } from 'lucide-react';
 import { CANCELLATION_ACTIONS } from '../services/sales/cancelSaleCore';
+
+const SALES_HISTORY_PAGE_SIZE = 50;
 
 const hasAIAgentsEntitlement = (licenseDetails) => {
   if (!licenseDetails?.valid) return false;
@@ -69,6 +76,7 @@ const ReportSourceBanner = ({ source }) => {
 
   const isMixed = source.mode === REPORT_SOURCE_MODES.MIXED;
   const isCache = source.mode === REPORT_SOURCE_MODES.CACHE || source.stale;
+  const isCloudFinal = isCloudFinalReportSource(source);
   const warnings = Array.isArray(source.warnings) ? source.warnings : [];
 
   return (
@@ -79,11 +87,15 @@ const ReportSourceBanner = ({ source }) => {
       <div>
         <strong>{getReportSourceLabel(source)}</strong>
         <p>
-          {isMixed
-            ? 'Modo PRO cloud: caja, abonos, clientes y productos usan datos cloud oficiales. Ventas, utilidad real, historial y mermas siguen usando datos locales de este dispositivo hasta activar ventas cloud.'
-            : isCache
-              ? 'Sin conexion o servicio no disponible: se muestra el ultimo snapshot cloud guardado. Puede estar desactualizado.'
-              : 'Reporte local de este dispositivo.'}
+          {isCloudFinal && isCache
+            ? 'Sin conexion o servicio no disponible: se muestra el ultimo snapshot cloud final guardado. Ventas netas, utilidad e historial siguen separados de ventas locales.'
+            : isCloudFinal
+              ? 'Modo PRO cloud final: ventas, caja, inventario, credito, cancelaciones y utilidad vienen de Supabase como fuente oficial.'
+              : isMixed
+                ? 'Modo PRO cloud: caja, abonos, clientes y productos usan datos cloud oficiales. Ventas, utilidad real, historial y mermas siguen usando datos locales de este dispositivo hasta activar ventas cloud.'
+                : isCache
+                  ? 'Sin conexion o servicio no disponible: se muestra el ultimo snapshot cloud guardado. Puede estar desactualizado.'
+                  : 'Reporte local de este dispositivo.'}
         </p>
         {warnings.length > 0 && (
           <small>{warnings.slice(0, 2).join(' ')}</small>
@@ -101,15 +113,22 @@ export default function DashboardPage() {
     menu: [],
     overviewReport: null,
     reportSource: null,
+    salesHistory: [],
+    salesHistorySource: null,
+    salesHistoryHasMore: false,
+    salesHistoryTotalCount: 0,
+    usesRepositorySalesHistory: false,
     isLoading: true,
     refreshKey: 0
   });
   const [activeTab, setActiveTab] = useState('stats');
   const [saleToCancel, setSaleToCancel] = useState(null);
+  const [salesFinalHistoryPageIndex, setSalesFinalHistoryPageIndex] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const features = useFeatureConfig();
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(), [licenseDetails]);
   const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
 
   // 1. ESTADISTICAS
@@ -160,7 +179,17 @@ export default function DashboardPage() {
     setReportingData((current) => ({ ...current, isLoading: true }));
 
     try {
-      const [localReportResult, cloudOverviewResult] = await Promise.allSettled([
+      const shouldLoadFinalHistory = Boolean(dashboardReportMode.cloudSalesFinal);
+      const historyOffset = salesFinalHistoryPageIndex * SALES_HISTORY_PAGE_SIZE;
+      const salesFinalHistoryPromise = shouldLoadFinalHistory
+        ? reportsRepository.getSalesFinalHistory({
+          scope: 'mine',
+          limit: SALES_HISTORY_PAGE_SIZE,
+          offset: historyOffset
+        })
+        : Promise.resolve(null);
+
+      const [localReportResult, cloudOverviewResult, salesFinalHistoryResult] = await Promise.allSettled([
         reportingService.getDashboardReport({
           rangoFechas: null,
           rubros: features.activeRubros,
@@ -171,7 +200,8 @@ export default function DashboardPage() {
         reportsRepository.getOverviewReport({
           rubros: features.activeRubros,
           scope: 'mine'
-        })
+        }),
+        salesFinalHistoryPromise
       ]);
 
       const localReport = localReportResult.status === 'fulfilled'
@@ -180,6 +210,9 @@ export default function DashboardPage() {
       const overviewReport = cloudOverviewResult.status === 'fulfilled'
         ? cloudOverviewResult.value
         : null;
+      const salesHistoryReport = salesFinalHistoryResult.status === 'fulfilled'
+        ? salesFinalHistoryResult.value
+        : null;
 
       if (localReportResult.status === 'rejected') {
         Logger.error('Error cargando datos locales del dashboard:', localReportResult.reason);
@@ -187,6 +220,15 @@ export default function DashboardPage() {
       if (cloudOverviewResult.status === 'rejected') {
         Logger.warn('No se pudo cargar reporte cloud/hibrido:', cloudOverviewResult.reason);
       }
+      if (salesFinalHistoryResult.status === 'rejected') {
+        Logger.warn('No se pudo cargar historial final cloud:', salesFinalHistoryResult.reason);
+      }
+
+      const repositoryHistoryRows = salesHistoryReport?.sales || salesHistoryReport?.rows || [];
+      const usesRepositorySalesHistory = Boolean(shouldLoadFinalHistory && salesHistoryReport);
+      const effectiveSalesHistory = usesRepositorySalesHistory
+        ? repositoryHistoryRows
+        : (localReport.sales || []);
 
       setReportingData({
         sales: localReport.sales || [],
@@ -194,6 +236,11 @@ export default function DashboardPage() {
         menu: localReport.menu || [],
         overviewReport,
         reportSource: overviewReport?.source || null,
+        salesHistory: effectiveSalesHistory,
+        salesHistorySource: salesHistoryReport?.source || overviewReport?.source || null,
+        salesHistoryHasMore: Boolean(salesHistoryReport?.hasMore || salesHistoryReport?.has_more),
+        salesHistoryTotalCount: Number(salesHistoryReport?.totalCount || salesHistoryReport?.total_count || effectiveSalesHistory.length || 0),
+        usesRepositorySalesHistory,
         isLoading: false,
         refreshKey: Date.now()
       });
@@ -205,7 +252,7 @@ export default function DashboardPage() {
         refreshKey: Date.now()
       }));
     }
-  }, [features.activeRubros]);
+  }, [dashboardReportMode, features.activeRubros, salesFinalHistoryPageIndex]);
 
   useEffect(() => {
     Logger.log('Actualizando Dashboard...');
@@ -217,6 +264,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const refreshReportSources = () => {
+      if (dashboardReportMode.cloudSalesFinal) setSalesFinalHistoryPageIndex(0);
       loadDashboardReporting();
       loadCustomers();
       loadStats();
@@ -227,12 +275,13 @@ export default function DashboardPage() {
       'lanzo:customers-sync-updated',
       'lanzo:customer-credit-sync-updated',
       'lanzo:cash-sync-updated',
-      'lanzo:products-sync-updated'
+      'lanzo:products-sync-updated',
+      'lanzo:sales-sync-updated'
     ];
 
     events.forEach((eventName) => window.addEventListener(eventName, refreshReportSources));
     return () => events.forEach((eventName) => window.removeEventListener(eventName, refreshReportSources));
-  }, [loadDashboardReporting, loadCustomers, loadStats]);
+  }, [dashboardReportMode.cloudSalesFinal, loadDashboardReporting, loadCustomers, loadStats]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -284,11 +333,12 @@ export default function DashboardPage() {
     const restoreStock = dispositionPlan.some(
       (entry) => entry.action === CANCELLATION_ACTIONS.RESTOCK
     );
-    const result = await deleteSale(saleToCancel.id || saleToCancel.timestamp, {
+    const result = await deleteSale(saleToCancel.id || saleToCancel.cloudSaleId || saleToCancel.timestamp, {
       restoreStock,
       dispositionPlan,
       reason,
-      allowWaste: features.hasWaste
+      allowWaste: features.hasWaste,
+      saleOverride: saleToCancel
     });
 
     if (result.success) {
@@ -329,6 +379,25 @@ export default function DashboardPage() {
     );
   };
 
+  const handleSalesHistoryNext = () => {
+    if (reportingData.usesRepositorySalesHistory) {
+      if (!reportingData.salesHistoryHasMore) return;
+      setSalesFinalHistoryPageIndex((current) => current + 1);
+      return;
+    }
+
+    fetchSalesPage('next');
+  };
+
+  const handleSalesHistoryPrev = () => {
+    if (reportingData.usesRepositorySalesHistory) {
+      setSalesFinalHistoryPageIndex((current) => Math.max(0, current - 1));
+      return;
+    }
+
+    fetchSalesPage('prev');
+  };
+
   useEffect(() => {
     if (activeTab === 'history') loadRecycleBin();
   }, [activeTab, loadRecycleBin]);
@@ -341,6 +410,15 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  const statsSource = reportingData.reportSource;
+  const statsIsCloudFinal = isCloudFinalReportSource(statsSource);
+  const historySource = reportingData.salesHistorySource || reportingData.reportSource;
+  const historyIsCloudFinal = isCloudFinalReportSource(historySource);
+  const historyRows = reportingData.usesRepositorySalesHistory ? reportingData.salesHistory : sales;
+  const historyHasMore = reportingData.usesRepositorySalesHistory ? reportingData.salesHistoryHasMore : hasMoreSales;
+  const historyPageIndex = reportingData.usesRepositorySalesHistory ? salesFinalHistoryPageIndex : currentSalesPageIndex;
+  const historyIsLoading = reportingData.usesRepositorySalesHistory ? reportingData.isLoading : isSalesLoading;
 
   return (
     <>
@@ -358,17 +436,24 @@ export default function DashboardPage() {
       <ReportSourceBanner source={reportingData.reportSource} />
 
       {activeTab === 'stats' && (
-        <StatsGrid
-          stats={stats}
-          customers={customers}
-          reportRefreshKey={reportingData.refreshKey}
-          activeRubros={features.activeRubros}
-          reportData={reportingData.overviewReport}
-          reportSource={reportingData.reportSource}
-          isCloudReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.CLOUD}
-          isMixedReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.MIXED}
-          isStale={Boolean(reportingData.reportSource?.stale)}
-        />
+        statsIsCloudFinal ? (
+          <CloudFinalStatsGrid
+            reportData={reportingData.overviewReport}
+            reportSource={reportingData.reportSource}
+          />
+        ) : (
+          <StatsGrid
+            stats={stats}
+            customers={customers}
+            reportRefreshKey={reportingData.refreshKey}
+            activeRubros={features.activeRubros}
+            reportData={reportingData.overviewReport}
+            reportSource={reportingData.reportSource}
+            isCloudReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.CLOUD}
+            isMixedReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.MIXED}
+            isStale={Boolean(reportingData.reportSource?.stale)}
+          />
+        )
       )}
 
       {activeTab === 'restock' && (
@@ -380,12 +465,24 @@ export default function DashboardPage() {
           <div className="data-warning-banner">
             <span className="data-warning-icon"><Save size={24} strokeWidth={1.5} /></span>
             <div>
-              <strong>Importante: historial de ventas local.</strong>
+              <strong>
+                {historyIsCloudFinal
+                  ? 'Historial cloud final oficial.'
+                  : reportingData.usesRepositorySalesHistory
+                    ? 'Historial local no oficial de este dispositivo.'
+                    : 'Importante: historial de ventas local.'}
+              </strong>
               <p>
-                Las ventas e historial se leen desde este dispositivo. Caja, abonos y credito pueden venir de cloud en PRO.
-                <button onClick={() => navigate('/settings')} className="link-button" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  Ir a Respaldar ahora <ArrowRight size={16} />
-                </button>
+                {historyIsCloudFinal
+                  ? 'Las ventas se leen desde Supabase usando pos_get_sales_final_history. No se mezclan con ventas locales/Dexie.'
+                  : reportingData.usesRepositorySalesHistory
+                    ? 'Sin snapshot cloud final disponible o sin conexión: se muestra historial local no oficial de este dispositivo.'
+                    : 'Las ventas e historial se leen desde este dispositivo. Caja, abonos y credito pueden venir de cloud en PRO.'}
+                {!historyIsCloudFinal && (
+                  <button onClick={() => navigate('/settings')} className="link-button" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    Ir a Respaldar ahora <ArrowRight size={16} />
+                  </button>
+                )}
               </p>
             </div>
           </div>
@@ -394,19 +491,25 @@ export default function DashboardPage() {
             <section className="dashboard-panel history-panel">
               <div className="panel-header">
                 <h3><BarChart3 size={20} /> Historial de Movimientos</h3>
-                <span className="panel-subtitle">Registro de ventas recientes</span>
+                <span className="panel-subtitle">
+                  {historyIsCloudFinal
+                    ? `Ventas finales cloud${reportingData.salesHistoryTotalCount ? ` (${reportingData.salesHistoryTotalCount})` : ''}`
+                    : 'Registro de ventas recientes'}
+                </span>
               </div>
               <div className="panel-body">
                 <SalesHistory
-                  sales={sales}
+                  sales={historyRows}
                   onDeleteSale={handleDeleteSale}
                   onArchiveSale={handleArchiveCancelledSale}
-                  onNext={() => fetchSalesPage('next')}
-                  onPrev={() => fetchSalesPage('prev')}
-                  hasMore={hasMoreSales}
-                  currentPageIndex={currentSalesPageIndex}
-                  isLoading={isSalesLoading}
-                  reportSource={reportingData.reportSource}
+                  onNext={handleSalesHistoryNext}
+                  onPrev={handleSalesHistoryPrev}
+                  hasMore={historyHasMore}
+                  currentPageIndex={historyPageIndex}
+                  isLoading={historyIsLoading}
+                  source={historySource}
+                  reportSource={historySource}
+                  isCloudFinal={historyIsCloudFinal}
                 />
               </div>
             </section>
