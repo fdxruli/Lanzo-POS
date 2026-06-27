@@ -162,6 +162,16 @@ export const isCloudSalesCancellationEnabled = (licenseDetails = {}) => {
     && isFeatureEnabled(features, 'cloud_sales_cancellations');
 };
 
+export const isCloudSalesReportsFinalEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'cloud_pos_sync')
+    && isFeatureEnabled(features, 'cloud_reports_sync')
+    && isFeatureEnabled(features, 'cloud_sales_sync_base')
+    && isFeatureEnabled(features, 'cloud_cash_sync')
+    && isFeatureEnabled(features, 'cloud_sales_cashier')
+    && isFeatureEnabled(features, 'cloud_sales_reports_final');
+};
+
 export const getLicenseKeyFromDetails = (licenseDetails = {}) => (
   licenseDetails?.license_key ||
   licenseDetails?.licenseKey ||
