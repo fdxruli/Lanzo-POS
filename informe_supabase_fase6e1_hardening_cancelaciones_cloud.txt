@@ -1,0 +1,333 @@
+INFORME SUPABASE / FRONTEND — FASE 6E.1
+Hardening de cancelaciones cloud PRO
+Fecha local: 2026-06-26
+Repositorio: fdxruli/Lanzo-POS
+Proyecto Supabase: odlrhijtfyavryeqivaa
+
+============================================================
+1. OBJETIVO
+============================================================
+
+Se implemento una fase corta de endurecimiento sobre FASE 6E — Cancelaciones/devoluciones cloud PRO.
+
+Objetivo principal:
+- validar preventivamente una cancelacion cloud antes de tocar datos reales;
+- mostrar un preview/dry-run de reversas;
+- bloquear escenarios riesgosos;
+- auditar bloqueos;
+- diagnosticar integridad despues de cancelar;
+- no romper FREE/local;
+- preservar idempotencia y la logica transaccional ya existente de FASE 6E.
+
+============================================================
+2. CAMBIOS EN SUPABASE
+============================================================
+
+Migracion aplicada:
+- fase6e1_hardening_cancelaciones_cloud
+
+Funciones publicas verificadas despues de migrar:
+- public.pos_preview_cloud_sale_cancellation(...)
+- public.pos_cancel_cloud_sale(...)
+- public.pos_cancel_cloud_sale_apply_fase6e(...)
+- public.pos_validate_cloud_sale_integrity(...)
+
+2.1 RPC public.pos_preview_cloud_sale_cancellation
+
+Nueva RPC de preview/dry-run.
+
+Firma:
+public.pos_preview_cloud_sale_cancellation(
+  p_license_key text,
+  p_device_fingerprint text,
+  p_security_token text default null,
+  p_staff_session_token text default null,
+  p_sale_id text default null,
+  p_reason text default null
+) returns jsonb
+
+Comportamiento:
+- valida contexto PRO/staff/admin mediante private.validate_pos_sync_context;
+- valida feature cloud_sales_cancellations;
+- valida permiso POS;
+- valida existencia y estado de la venta;
+- NO modifica ventas/caja/inventario/credito;
+- devuelve can_cancel=true/false;
+- devuelve block_reasons con codigos claros;
+- devuelve preview de lo que se revertiria en:
+  - caja;
+  - inventario/lotes;
+  - credito/ledger;
+- devuelve actor y folio.
+
+Notas:
+- La RPC no escribe datos POS de venta, caja, inventario o credito.
+- La validacion de contexto puede actualizar metadatos internos de sesion staff, segun la funcion private.validate_pos_sync_context existente, pero no altera la venta ni sus efectos contables.
+
+2.2 Soporte dry-run
+
+Se implemento reutilizando la RPC preview como dry-run seguro.
+
+Ademas, public.pos_cancel_cloud_sale ahora funciona como wrapper preventivo:
+1. ejecuta preview;
+2. si preview falla o can_cancel=false, NO llama al motor de cancelacion;
+3. registra auditoria sale.cancel_blocked cuando aplica;
+4. devuelve success=false con block_reasons;
+5. solo si preview permite cancelar, llama al motor transaccional 6E.
+
+2.3 Wrapper public.pos_cancel_cloud_sale
+
+La funcion original de FASE 6E fue renombrada a:
+- public.pos_cancel_cloud_sale_apply_fase6e(...)
+
+La nueva public.pos_cancel_cloud_sale(...) conserva la misma firma que consumia el frontend, pero ahora agrega la capa preventiva.
+
+Esto evita romper el frontend existente y mantiene la idempotencia del motor original.
+
+2.4 RPC public.pos_validate_cloud_sale_integrity
+
+Nueva RPC de diagnostico post-cancelacion.
+
+Firma:
+public.pos_validate_cloud_sale_integrity(
+  p_license_key text,
+  p_device_fingerprint text,
+  p_security_token text default null,
+  p_staff_session_token text default null,
+  p_sale_id text default null
+) returns jsonb
+
+Valida:
+- venta cloud_committed;
+- estado cancelled/cancelled_at;
+- registro unico en pos_sale_cancellations;
+- reversas de caja contra movimientos originales;
+- return_in de inventario contra sale_out original;
+- reversas de ledger CANCEL_CHARGE/CANCEL_PAYMENT;
+- deuda del cliente contra suma del ledger;
+- abonos posteriores independientes;
+- eventos sync de sale, sale_cancellation y report.
+
+Devuelve:
+- success;
+- is_valid;
+- code;
+- issues[];
+- summary.cash;
+- summary.inventory;
+- summary.credit;
+- summary.sync.
+
+2.5 Bloqueo de ventas fiadas con abonos posteriores independientes
+
+Se agrego bloqueo preventivo:
+- SALE_HAS_SUBSEQUENT_CUSTOMER_PAYMENTS
+
+Criterio:
+- venta con credit_effect_status aplicado;
+- existen movimientos pos_customer_ledger del mismo cliente:
+  - type = PAYMENT;
+  - amount < 0;
+  - sale_id distinto a la venta a cancelar;
+  - no son reversas;
+  - creados despues del cargo de la venta.
+
+Resultado:
+- no se modifica caja;
+- no se modifica inventario;
+- no se modifica ledger/deuda;
+- no se marca la venta como cancelada;
+- se devuelve bloqueo claro.
+
+2.6 Auditoria sale.cancel_blocked
+
+Cuando public.pos_cancel_cloud_sale bloquea una cancelacion por preview, registra:
+- event_type = sale.cancel_blocked
+
+Payload incluye:
+- sale_id;
+- folio;
+- reason;
+- block_code;
+- block_reasons;
+- preview;
+- idempotency_key;
+- phase = fase6e1_hardening_cancelaciones_cloud.
+
+2.7 Permisos RPC
+
+Se dejo expuesto a anon/authenticated:
+- public.pos_cancel_cloud_sale(...)
+- public.pos_preview_cloud_sale_cancellation(...)
+- public.pos_validate_cloud_sale_integrity(...)
+
+Se retiro ejecucion directa del motor interno:
+- public.pos_cancel_cloud_sale_apply_fase6e(...)
+
+============================================================
+3. CAMBIOS EN FRONTEND
+============================================================
+
+Archivos modificados:
+
+1) src/services/sync/syncConstants.js
+- Se agrego flag runtime:
+  VITE_ENABLE_CLOUD_SALE_CANCELLATIONS
+- Implementacion:
+  ENABLE_CLOUD_SALE_CANCELLATIONS = import.meta.env.VITE_ENABLE_CLOUD_SALE_CANCELLATIONS !== 'false'
+- Por defecto queda activo para no romper FASE 6E ya habilitada.
+- Si se configura en false, el frontend permite preview pero bloquea aplicar cancelacion cloud.
+
+2) src/services/salesCloud/salesCloudRepository.js
+- Se agrego cliente RPC para:
+  - previewCloudSaleCancellation(...)
+  - validateCloudSaleIntegrity(...)
+- Se conservo cancelCloudSale(...) con la misma firma.
+
+3) src/services/salesCloud/salesCloudCancellationMapper.js
+- Se agrego normalizeCloudCancellationPreview(...).
+- El preview local sigue existiendo como fallback visual.
+- Se normalizan:
+  - canCancel;
+  - blockReasons;
+  - caja;
+  - inventario;
+  - credito;
+  - deuda antes/despues;
+  - cliente;
+  - folio;
+  - runtime flag.
+- El patch local de cancelacion ahora puede guardar cancellationIntegrity.
+
+4) src/services/salesCloud/salesCloudCancellationService.js
+- Antes de cancelar, ejecuta preview server-side.
+- Si preview bloquea, no llama a cancelacion.
+- Si VITE_ENABLE_CLOUD_SALE_CANCELLATIONS=false, muestra preview pero bloquea aplicar.
+- Despues de cancelar, ejecuta validateCloudSaleIntegrity.
+- Si el diagnostico devuelve issues, no revierte la cancelacion ya aplicada, pero deja warning/log para auditoria.
+- Mantiene idempotency key deterministica:
+  sales.cloud_cancel:<sale_id>:<device_id>
+
+5) src/components/dashboard/SaleCancellationModal.jsx
+- Al abrir modal de venta cloud, llama preview.
+- Muestra estado “validando”.
+- Muestra resumen real de reversas:
+  - total;
+  - caja: monto y numero de movimientos;
+  - inventario: unidades y movimientos;
+  - credito: monto, deuda antes/despues;
+  - cliente.
+- Si preview devuelve bloqueos, muestra lista de razones y deshabilita confirmar.
+- Al confirmar, vuelve a llamar preview con el motivo capturado.
+- Si preview falla o bloquea, no llama onConfirm.
+
+6) src/components/dashboard/SaleCancellationModal.css
+- Estilos para:
+  - estado de validacion cloud;
+  - resumen enriquecido;
+  - lista de bloqueos preventivos.
+
+Archivos creados:
+- informe_supabase_fase6e1_hardening_cancelaciones_cloud.txt
+
+============================================================
+4. FREE / LOCAL
+============================================================
+
+No se modifico el flujo local/FREE de cancelaciones.
+
+La logica de modal mantiene dos ramas:
+- ventas cloud_committed: preview/cancelacion cloud;
+- ventas locales: flujo existente de dispositionPlan/restock/no-return/merma.
+
+La ruta local sigue usando cancelSaleCore como antes.
+
+============================================================
+5. IDEMPOTENCIA
+============================================================
+
+Se mantiene idempotencia del motor original de FASE 6E.
+
+El wrapper preventivo no inserta idempotency processing antes de preview.
+Solo si preview permite la cancelacion, delega a public.pos_cancel_cloud_sale_apply_fase6e(...), que conserva la logica existente de pos_idempotency_keys.
+
+En bloqueos:
+- no se crea reversa;
+- no se marca venta como cancelada;
+- no se modifica caja/inventario/credito;
+- solo se registra auditoria sale.cancel_blocked cuando existe venta y contexto valido.
+
+============================================================
+6. PRUEBAS / VERIFICACIONES REALIZADAS
+============================================================
+
+6.1 Supabase
+
+OK — Migracion aplicada correctamente:
+- fase6e1_hardening_cancelaciones_cloud
+
+OK — Verificacion de funciones existentes:
+- pos_cancel_cloud_sale(...)
+- pos_cancel_cloud_sale_apply_fase6e(...)
+- pos_preview_cloud_sale_cancellation(...)
+- pos_validate_cloud_sale_integrity(...)
+
+OK — Verificacion de grants:
+- anon/authenticated tienen EXECUTE sobre:
+  - pos_cancel_cloud_sale;
+  - pos_preview_cloud_sale_cancellation;
+  - pos_validate_cloud_sale_integrity.
+- El motor interno pos_cancel_cloud_sale_apply_fase6e no quedo expuesto directamente a anon/authenticated.
+
+6.2 Frontend
+
+OK — Se reviso integracion estatica de:
+- repository RPC client;
+- cancellation service;
+- mapper de preview;
+- modal cloud;
+- flag runtime.
+
+6.3 Build
+
+PENDIENTE — No pude ejecutar npm run build desde este entorno.
+
+Motivo tecnico:
+- El entorno donde se intento clonar el repositorio no tiene resolucion DNS/acceso hacia github.com:
+  fatal: unable to access 'https://github.com/fdxruli/Lanzo-POS.git/': Could not resolve host: github.com
+
+Tambien se consultaron workflow runs asociados al ultimo commit y no habia ejecucion disponible para validar build automaticamente.
+
+Accion recomendada:
+- Ejecutar localmente o en Vercel/GitHub Actions:
+  npm install
+  npm run build
+
+============================================================
+7. RESULTADO
+============================================================
+
+FASE 6E.1 queda implementada a nivel Supabase y frontend.
+
+Estado:
+- Preview/dry-run: implementado.
+- Wrapper preventivo de cancelacion: implementado.
+- Diagnostico post-cancelacion: implementado.
+- Bloqueo de fiadas con abonos posteriores: implementado.
+- Auditoria sale.cancel_blocked: implementada.
+- Flag VITE_ENABLE_CLOUD_SALE_CANCELLATIONS: implementado.
+- FREE/local: sin cambios funcionales.
+- Build: pendiente de ejecutar en entorno con acceso al repo/dependencias.
+
+============================================================
+8. SIGUIENTE PASO RECOMENDADO
+============================================================
+
+Antes de pasar a FASE 6F:
+1. Ejecutar npm run build.
+2. Probar una cancelacion cloud normal de venta contado.
+3. Probar una cancelacion cloud de venta con inventario/lotes.
+4. Probar una venta fiada sin abonos posteriores.
+5. Probar una venta fiada con abono posterior independiente y confirmar que devuelve:
+   SALE_HAS_SUBSEQUENT_CUSTOMER_PAYMENTS
+6. Revisar en Supabase que se registre sale.cancel_blocked en pos_sale_audit_events para el caso bloqueado.
