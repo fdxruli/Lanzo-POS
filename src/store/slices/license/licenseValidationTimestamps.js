@@ -3,10 +3,10 @@ import {
   FREE_LICENSE_SYNC_INTERVAL_MS,
   BASIC_LICENSE_SYNC_INTERVAL_MS,
   PRO_REALTIME_SAFETY_SYNC_INTERVAL_MS,
-  PRO_POLLING_SYNC_INTERVAL_MS
+  PRO_POLLING_SYNC_INTERVAL_MS,
+  LICENSE_VALIDATION_ERROR_COOLDOWN_MS
 } from './licenseConstants';
 
-const SHORT_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
 const CRITICAL_REASON_PATTERN = /realtime_event|realtime_reconnected|realtime_recover|license_changed|plan_changed|device_changed|device_revoked|staff_changed|staff_invalidated|permission_changed|force|activation|staff_login|renewal/;
 
 export const LAST_LICENSE_VALIDATION_SUCCESS_KEY = 'Lanzo_last_license_validation_success';
@@ -110,7 +110,7 @@ export const shouldSkipRemoteValidationAfterFailure = ({ licenseDetails, reason 
   if (!licenseDetails?.license_key) return false;
   if (isCriticalReason(reason)) return false;
   const lastAttemptMs = readLastLicenseValidationAttemptMs();
-  return lastAttemptMs > 0 && now - lastAttemptMs < SHORT_RETRY_COOLDOWN_MS;
+  return lastAttemptMs > 0 && now - lastAttemptMs < LICENSE_VALIDATION_ERROR_COOLDOWN_MS;
 };
 
 export const readLastLicenseValidationMs = readLastLicenseValidationSuccessMs;

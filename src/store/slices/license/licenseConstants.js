@@ -80,6 +80,11 @@ export const REALTIME_SAFETY_SYNC_INTERVAL_MS = PRO_REALTIME_SAFETY_SYNC_INTERVA
 // Evita duplicar llamadas por focus/online/visibility/pageshow muy juntos.
 export const LICENSE_REMOTE_VALIDATION_COOLDOWN_MS = 90 * 1000;
 
+// FASE 6H.1.1: cooldown corto tras errores técnicos.
+// Un timeout/error de Supabase NO debe alimentar el TTL largo por plan.
+// Este intervalo solo evita spam de reintentos cuando Supabase está lento o caído.
+export const LICENSE_VALIDATION_ERROR_COOLDOWN_MS = 10 * 60 * 1000; // 10 min
+
 // Evita stop/start de realtime en cada regreso a primer plano si el canal sigue vivo.
 export const REALTIME_RECOVERY_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
