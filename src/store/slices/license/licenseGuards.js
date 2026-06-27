@@ -13,21 +13,15 @@ import {
   PRO_POLLING_SYNC_INTERVAL_MS,
   LOCAL_FATAL_APP_STATUSES
 } from './licenseConstants';
-import {
-  LAST_LICENSE_VALIDATION_ATTEMPT_LICENSE_KEY,
-  LAST_LICENSE_VALIDATION_PERSISTENT_KEY,
-  LAST_LICENSE_VALIDATION_SESSION_KEY,
-  LAST_LICENSE_VALIDATION_SUCCESS_KEY,
-  LAST_LICENSE_VALIDATION_SUCCESS_LICENSE_KEY,
-  LAST_REMOTE_LICENSE_KEY,
-  LAST_REMOTE_LICENSE_VALIDATION_KEY,
-  markLastLicenseValidationAttempt,
-  readLastLicenseValidationAttemptMs,
-  readLastLicenseValidationSuccessMs
-} from './licenseValidationTimestamps';
 
-const LEGACY_BACKGROUND_DOUBLE_MARK_WINDOW_MS = 30000;
-const SHORT_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
+import {
+  markLastLicenseValidationAttempt,
+  markLastLicenseValidationSuccess,
+  readLastLicenseValidationAttemptMs,
+  readLastLicenseValidationSuccessMs,
+  shouldSkipRemoteValidationAfterFailure,
+  shouldSkipRemoteValidationForPlan as shouldSkipRemoteValidationForPlanFromTimestamps
+} from './licenseValidationTimestamps';
 
 const CRITICAL_LICENSE_VALIDATION_REASONS = [
   'realtime_event',
@@ -53,23 +47,6 @@ const normalizePlanCode = (licenseDetails = {}) => (
   licenseDetails.product_code ||
   ''
 ).toString().trim().toLowerCase();
-
-const readNumber = (storage, key) => {
-  try {
-    const value = Number(storage.getItem(key) || 0);
-    return Number.isFinite(value) ? value : 0;
-  } catch {
-    return 0;
-  }
-};
-
-const writeValue = (storage, key, value) => {
-  try {
-    storage.setItem(key, value);
-  } catch {
-    // best effort
-  }
-};
 
 const normalizeStatusCode = (value) => String(value || '').trim().toLowerCase();
 
@@ -114,56 +91,16 @@ export const isCriticalLicenseValidationReason = (reason = '') => {
   return CRITICAL_LICENSE_VALIDATION_REASONS.some((item) => normalized.includes(item));
 };
 
-export const readLastLicenseValidationMs = () => readLastLicenseValidationSuccessMs();
+export const readLastLicenseValidationMs = readLastLicenseValidationSuccessMs;
+export const markLastLicenseValidation = markLastLicenseValidationSuccess;
+export const shouldSkipRemoteValidationForPlan = shouldSkipRemoteValidationForPlanFromTimestamps;
 
-export const markLastLicenseValidation = (licenseKey = null) => {
-  const now = Date.now();
-  const nowText = now.toString();
-  const previousAttempt = readLastLicenseValidationAttemptMs();
-  const previousKey = (() => {
-    try {
-      return sessionStorage.getItem(LAST_LICENSE_VALIDATION_ATTEMPT_LICENSE_KEY) || localStorage.getItem(LAST_LICENSE_VALIDATION_ATTEMPT_LICENSE_KEY);
-    } catch {
-      return null;
-    }
-  })();
-
-  markLastLicenseValidationAttempt(licenseKey);
-
-  if (previousKey === licenseKey && previousAttempt > 0 && now - previousAttempt < LEGACY_BACKGROUND_DOUBLE_MARK_WINDOW_MS) {
-    writeValue(localStorage, LAST_LICENSE_VALIDATION_SUCCESS_KEY, nowText);
-    writeValue(sessionStorage, LAST_LICENSE_VALIDATION_SUCCESS_KEY, nowText);
-    writeValue(localStorage, LAST_LICENSE_VALIDATION_PERSISTENT_KEY, nowText);
-    writeValue(sessionStorage, LAST_LICENSE_VALIDATION_SESSION_KEY, nowText);
-    writeValue(sessionStorage, LAST_REMOTE_LICENSE_VALIDATION_KEY, nowText);
-    if (licenseKey) {
-      writeValue(localStorage, LAST_LICENSE_VALIDATION_SUCCESS_LICENSE_KEY, licenseKey);
-      writeValue(sessionStorage, LAST_LICENSE_VALIDATION_SUCCESS_LICENSE_KEY, licenseKey);
-      writeValue(sessionStorage, LAST_REMOTE_LICENSE_KEY, licenseKey);
-    }
-  }
-};
-
-export const shouldSkipRemoteValidationForPlan = ({
-  licenseDetails,
-  mode = getLicenseSyncMode(licenseDetails),
-  reason = 'manual',
-  now = Date.now()
-} = {}) => {
-  if (!licenseDetails?.license_key) return false;
-  if (isCriticalLicenseValidationReason(reason)) return false;
-
-  const lastSuccessMs = readLastLicenseValidationSuccessMs();
-  if (lastSuccessMs > 0) {
-    const intervalMs = getLicenseSyncIntervalMs(licenseDetails, mode);
-    if (now - lastSuccessMs < intervalMs) return true;
-  }
-
-  const lastAttemptMs = Math.max(
-    readLastLicenseValidationAttemptMs(),
-    readNumber(sessionStorage, LAST_REMOTE_LICENSE_VALIDATION_KEY)
-  );
-  return lastAttemptMs > 0 && now - lastAttemptMs < SHORT_RETRY_COOLDOWN_MS;
+export {
+  markLastLicenseValidationAttempt,
+  markLastLicenseValidationSuccess,
+  readLastLicenseValidationAttemptMs,
+  readLastLicenseValidationSuccessMs,
+  shouldSkipRemoteValidationAfterFailure
 };
 
 export const normalizeValidationCode = (validation = {}) => (
