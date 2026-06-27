@@ -51,6 +51,18 @@ const mergeCreditOverview = (basePayload = {}, creditPayload = null) => {
   };
 };
 
+const buildFinalFilters = ({ dateFrom = null, dateTo = null, scope = 'mine', staffUserId = null, deviceId = null, cashSessionId = null, customerId = null, productId = null, categoryId = null } = {}) => ({
+  p_date_from: dateFrom,
+  p_date_to: dateTo,
+  p_scope: scope || 'mine',
+  p_staff_user_id: staffUserId || null,
+  p_device_id: deviceId || null,
+  p_cash_session_id: cashSessionId || null,
+  p_customer_id: customerId || null,
+  p_product_id: productId || null,
+  p_category_id: categoryId || null
+});
+
 export const reportsCloudRepository = {
   async getOverviewReport({ licenseKey, dateFrom = null, dateTo = null, scope = 'mine' } = {}) {
     assertSupabase();
@@ -74,6 +86,99 @@ export const reportsCloudRepository = {
     } catch {
       return overviewPayload;
     }
+  },
+
+  async getSalesFinalOverview({ licenseKey, ...filters } = {}) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_get_sales_final_overview', {
+      ...baseArgs,
+      ...buildFinalFilters(filters)
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async getSalesFinalTimeseries({ licenseKey, metric = 'net_sales', granularity = 'day', ...filters } = {}) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_get_sales_final_timeseries', {
+      ...baseArgs,
+      p_metric: metric,
+      p_granularity: granularity,
+      ...buildFinalFilters(filters)
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async getSalesFinalHistory({ licenseKey, status = null, paymentMethod = null, search = null, limit = 100, offset = 0, ...filters } = {}) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_get_sales_final_history', {
+      ...baseArgs,
+      p_status: status,
+      p_payment_method: paymentMethod,
+      p_search: search,
+      p_limit: normalizeLimit(limit),
+      p_offset: Math.max(Number(offset) || 0, 0),
+      ...buildFinalFilters(filters)
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async getSalesProfitReport({ licenseKey, limit = 100, offset = 0, ...filters } = {}) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_get_sales_profit_report', {
+      ...baseArgs,
+      p_limit: normalizeLimit(limit),
+      p_offset: Math.max(Number(offset) || 0, 0),
+      ...buildFinalFilters(filters)
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async getSalesAuditReport({ licenseKey, eventType = null, limit = 100, offset = 0, ...filters } = {}) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_get_sales_audit_report', {
+      ...baseArgs,
+      p_event_type: eventType,
+      p_limit: normalizeLimit(limit),
+      p_offset: Math.max(Number(offset) || 0, 0),
+      ...buildFinalFilters(filters)
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async validateSalesConsistency({ licenseKey, saleId = null, limit = 200 } = {}) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_validate_sales_consistency', {
+      ...baseArgs,
+      p_sale_id: saleId,
+      p_limit: normalizeLimit(limit)
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async exportSalesFinal({ licenseKey, dataset = 'sales', limit = 1000, offset = 0, ...filters } = {}) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_export_sales_final', {
+      ...baseArgs,
+      p_dataset: dataset,
+      p_limit: Math.min(Math.max(Number(limit) || 1000, 1), 5000),
+      p_offset: Math.max(Number(offset) || 0, 0),
+      ...buildFinalFilters(filters)
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
   },
 
   async getCashReport({ licenseKey, dateFrom = null, dateTo = null, staffUserId = null, status = null, limit = 100, offset = 0 } = {}) {
