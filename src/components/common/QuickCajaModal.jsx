@@ -6,7 +6,10 @@ export default function QuickCajaModal({
   show,
   onClose,
   onConfirm,
-  suggestedAmount = '0'
+  suggestedAmount = '0',
+  responsibleName = '',
+  lockResponsible = false,
+  readOnly = false
 }) {
   if (!show) return null;
 
@@ -37,6 +40,9 @@ export default function QuickCajaModal({
             submitLabel="Abrir caja y continuar"
             cancelLabel="Volver al carrito"
             origin="pos_checkout"
+            responsibleName={responsibleName}
+            lockResponsible={lockResponsible}
+            readOnly={readOnly}
           />
         </div>
       </div>
