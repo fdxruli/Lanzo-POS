@@ -116,6 +116,18 @@ export const salesCloudRepository = {
     return parseRpcPayload(data);
   },
 
+  async previewCloudSaleCancellation({ licenseKey, saleId, reason = null }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_preview_cloud_sale_cancellation', {
+      ...baseArgs,
+      p_sale_id: saleId,
+      p_reason: reason || null
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
   async cancelCloudSale({ licenseKey, saleId, reason, idempotencyKey = null }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
@@ -124,6 +136,17 @@ export const salesCloudRepository = {
       p_sale_id: saleId,
       p_reason: reason,
       p_idempotency_key: idempotencyKey || null
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async validateCloudSaleIntegrity({ licenseKey, saleId }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_validate_cloud_sale_integrity', {
+      ...baseArgs,
+      p_sale_id: saleId
     });
     if (error) throw error;
     return parseRpcPayload(data);
