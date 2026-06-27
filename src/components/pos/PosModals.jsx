@@ -8,15 +8,6 @@ import QuickCajaModal from '../common/QuickCajaModal';
 import PrescriptionModal from './PrescriptionModal';
 import LayawayModal from './LayawayModal';
 
-/**
- * Componente contenedor para todos los modales del POS.
- * Usa un estado unificado de modal activo para controlar cuál se muestra.
- * 
- * @param {Object} props
- * @param {'scanner'|'payment'|'quickCaja'|'prescription'|'layaway'|'tables'|'split'|null} props.activeModal - Modal actualmente activo
- * @param {function} props.onClose - Función para cerrar el modal activo
- * @param {Object} props.handlers - Handlers de cada acción
- */
 export default function PosModals({
     activeModal,
     onClose,
@@ -28,6 +19,7 @@ export default function PosModals({
         handlePaymentModalClose,
         handleConfirmSplitBill,
         handleQuickCajaSubmit,
+        handleQuickCajaClose,
         handlePrescriptionConfirm,
         handleConfirmLayaway,
         handleLoadOpenOrder,
@@ -48,7 +40,6 @@ export default function PosModals({
 
     return (
         <>
-            {/* Modal de Mesas */}
             {features?.hasTables && (
                 <TablesView
                     show={activeModal === 'tables'}
@@ -61,13 +52,11 @@ export default function PosModals({
                 />
             )}
 
-            {/* Modal de Scanner */}
             <ScannerModal
                 show={activeModal === 'scanner'}
                 onClose={() => onClose('scanner')}
             />
 
-            {/* Modal de Pago */}
             <PaymentModal
                 show={activeModal === 'payment'}
                 onClose={handlePaymentModalClose}
@@ -75,7 +64,6 @@ export default function PosModals({
                 total={total}
             />
 
-            {/* Modal de Split Bill */}
             <SplitBillModal
                 show={activeModal === 'split'}
                 onClose={() => onClose('split')}
@@ -85,15 +73,13 @@ export default function PosModals({
                 onConfirm={handleConfirmSplitBill}
             />
 
-            {/* Modal de Quick Caja */}
             <QuickCajaModal
                 show={activeModal === 'quickCaja'}
-                onClose={() => onClose('quickCaja')}
+                onClose={handleQuickCajaClose}
                 onConfirm={handleQuickCajaSubmit}
                 suggestedAmount={aperturaPendiente?.montoSugerido || '0'}
             />
 
-            {/* Modal de Prescripción */}
             <PrescriptionModal
                 show={activeModal === 'prescription'}
                 onClose={() => onClose('prescription')}
@@ -101,7 +87,6 @@ export default function PosModals({
                 itemsRequiringPrescription={prescriptionItems}
             />
 
-            {/* Modal de Apartado (Layaway) */}
             <LayawayModal
                 show={activeModal === 'layaway'}
                 onClose={() => onClose('layaway')}
@@ -121,6 +106,7 @@ PosModals.propTypes = {
         handlePaymentModalClose: PropTypes.func.isRequired,
         handleConfirmSplitBill: PropTypes.func.isRequired,
         handleQuickCajaSubmit: PropTypes.func.isRequired,
+        handleQuickCajaClose: PropTypes.func.isRequired,
         handlePrescriptionConfirm: PropTypes.func.isRequired,
         handleConfirmLayaway: PropTypes.func.isRequired,
         handleLoadOpenOrder: PropTypes.func.isRequired,
