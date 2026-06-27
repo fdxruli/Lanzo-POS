@@ -188,6 +188,11 @@
   margin: 0.35rem 0 0;
 }
 
+.sale-cancellation-notice.cloud-status-notice {
+  border-left: 4px solid var(--primary-color, #2563eb);
+  background: rgba(37, 99, 235, 0.07);
+}
+
 .sale-cancellation-notice.danger-notice,
 .sale-cancellation-error {
   margin: 12px 22px 0;
@@ -224,4 +229,31 @@
   display: block;
   font-size: 0.95rem;
   color: var(--text-color);
+}
+
+.sale-cancellation-cloud-summary small {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--text-light);
+  font-size: 0.76rem;
+}
+
+.sale-cancellation-blocked-list {
+  margin: 12px 22px 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  border-left: 4px solid var(--error-color, #dc2626);
+  border-radius: 0.85rem;
+  background: rgba(220, 38, 38, 0.06);
+  color: var(--text-color);
+  font-size: 0.9rem;
+}
+
+.sale-cancellation-blocked-list ul {
+  margin: 0.45rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.sale-cancellation-blocked-list li + li {
+  margin-top: 0.25rem;
 }
