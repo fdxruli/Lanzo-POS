@@ -24,6 +24,46 @@ const PRODUCT_UNSYNCED_SALE_MESSAGE = [
   'Sincroniza el catá' + 'logo antes de ' + 'vend' + 'erlo en modo cl' + 'oud.'
 ].join(' ');
 
+const PRODUCT_CARD_SHELL_STYLE = {
+  position: 'relative',
+  minWidth: 0
+};
+
+const PRODUCT_SYNC_BADGE_BASE_STYLE = {
+  position: 'absolute',
+  top: 6,
+  left: 6,
+  zIndex: 4,
+  display: 'inline-flex',
+  maxWidth: 'calc(100% - 12px)',
+  minHeight: 20,
+  alignItems: 'center',
+  padding: '3px 7px',
+  overflow: 'hidden',
+  border: '1px solid currentColor',
+  borderRadius: 999,
+  background: 'var(--card-background-color)',
+  boxShadow: '0 4px 10px rgba(15, 23, 42, 0.12)',
+  fontSize: '0.62rem',
+  fontWeight: 800,
+  lineHeight: 1,
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  pointerEvents: 'none'
+};
+
+const PRODUCT_SYNC_BADGE_COLOR = {
+  synced: '#047857',
+  pending: '#a15c05',
+  unsynced: '#b45309',
+  error: '#b91c1c'
+};
+
+const buildProductSyncBadgeStyle = (status) => ({
+  ...PRODUCT_SYNC_BADGE_BASE_STYLE,
+  color: PRODUCT_SYNC_BADGE_COLOR[status] || PRODUCT_SYNC_BADGE_COLOR.unsynced
+});
+
 const playBeep = (freq = 1200, type = 'sine') => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -410,10 +450,11 @@ export default function ProductMenu({
             visibleProducts.map((item) => {
               const syncBadge = buildProductSyncBadge(item);
               return (
-                <div className="pos-product-card-shell" key={item.id}>
+                <div className="pos-product-card-shell" style={PRODUCT_CARD_SHELL_STYLE} key={item.id}>
                   {syncBadge && (
                     <span
                       className={`pos-product-sync-badge pos-product-sync-badge--${syncBadge.status}`}
+                      style={buildProductSyncBadgeStyle(syncBadge.status)}
                       title={syncBadge.title}
                       aria-label={syncBadge.title}
                     >
