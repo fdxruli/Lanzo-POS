@@ -84,6 +84,7 @@ const normalizePaymentMethod = (method) => {
  * DESTRUIDO en:
  *   - handlePaymentModalClose  → usuario cierra el modal explícitamente (click X)
  *   - handleProcessOrder       → antes de llamar a processSale (éxito o error definitivo)
+ *   - handleQuickCajaClose     → usuario cancela la apertura rápida de caja
  *   - RESTAURADO temporalmente → en STOCK_WARNING para permitir el reintento con forceSale
  *
  * ⚠️ IMPORTANTE: El rollback NO usa useEffect. Esto es intencional.
@@ -104,6 +105,7 @@ const normalizePaymentMethod = (method) => {
  *   handleInitiateCheckout: () => Promise<void>,
  *   handleProcessOrder: (paymentData: Object, forceSale?: boolean) => Promise<void>,
  *   handlePaymentModalClose: () => void,
+ *   handleQuickCajaClose: () => Promise<void>,
  *   handleQuickCajaSubmit: (monto: string) => Promise<void>
  * }}
  */
@@ -153,6 +155,35 @@ export function usePosCheckout({
             });
         }
         modal.closeModal('payment');
+    }, [modal]);
+
+    // ── Cancelar apertura rápida de caja ───────────────────────────
+    /**
+     * Si el usuario cierra QuickCaja sin abrir caja, la venta NO fue cobrada.
+     * Por lo tanto debemos liberar el lock de checkout y destruir el snapshot para
+     * que la orden vuelva a ser editable y pueda cobrarse/cancelarse normalmente.
+     */
+    const handleQuickCajaClose = useCallback(async () => {
+        const snapshot = checkoutSnapshotRef.current;
+        checkoutSnapshotRef.current = null;
+
+        try {
+            if (snapshot?.orderId) {
+                await useActiveOrders.getState().unlockOrder(snapshot.orderId);
+            }
+        } catch (err) {
+            console.error('[usePosCheckout] Error liberando lock al cancelar apertura de caja:', err);
+        } finally {
+            modal.closeModal('quickCaja');
+        }
+
+        if (snapshot?.orderId) {
+            showMessageModal(
+                'Apertura de caja cancelada. La venta no se cobró; puedes volver a cobrar cuando abras caja.',
+                null,
+                { type: 'warning' }
+            );
+        }
     }, [modal]);
 
     // ── Iniciar checkout ───────────────────────────────────────────
@@ -489,6 +520,7 @@ export function usePosCheckout({
         handleInitiateCheckout,
         handleProcessOrder,
         handlePaymentModalClose, // ← Exportado para PosModals: onClose del PaymentModal
+        handleQuickCajaClose,
         handleQuickCajaSubmit
     };
 }
