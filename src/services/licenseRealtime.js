@@ -1,5 +1,9 @@
 import { supabaseClient } from './supabase';
 import Logger from './Logger';
+import {
+  REALTIME_FORCE_VALIDATE_AFTER_OFFLINE_MS,
+  REALTIME_SHORT_RECONNECT_GRACE_MS
+} from '../store/slices/license/licenseConstants';
 
 let activeChannel = null;
 let reconnectTimer = null;
@@ -7,6 +11,10 @@ let isConnecting = false;
 let isReconnecting = false;
 let reconnectAttempts = 0;
 let onlineListener = null;
+
+let hasEverSubscribed = false;
+let lastDisconnectedAt = 0;
+let lastSubscribedAt = 0;
 
 const closingChannels = new WeakSet();
 const handledClosedChannels = new WeakSet();
@@ -31,12 +39,44 @@ const DEVICE_EVENTS = new Set([
   'DEVICE_RELEASED'
 ]);
 
-const reportRealtimeFallbackOnce = (callbacks = {}, message) => {
+const resetRealtimeConnectionState = () => {
+  hasEverSubscribed = false;
+  lastDisconnectedAt = 0;
+  lastSubscribedAt = 0;
+};
+
+const markRealtimeDisconnected = () => {
+  if (!lastDisconnectedAt) {
+    lastDisconnectedAt = Date.now();
+  }
+
+  return lastDisconnectedAt;
+};
+
+const buildReconnectMetadata = (topic) => {
+  const subscribedAt = Date.now();
+  const disconnectedDurationMs = lastDisconnectedAt > 0
+    ? Math.max(0, subscribedAt - lastDisconnectedAt)
+    : 0;
+  const wasLongDisconnect = disconnectedDurationMs >= REALTIME_FORCE_VALIDATE_AFTER_OFFLINE_MS;
+  const wasShortReconnect = disconnectedDurationMs > 0 && disconnectedDurationMs <= REALTIME_SHORT_RECONNECT_GRACE_MS;
+
+  return {
+    reason: wasShortReconnect ? 'resubscribed' : 'reconnected',
+    subscribedAt,
+    topic,
+    disconnectedDurationMs,
+    wasLongDisconnect
+  };
+};
+
+const reportRealtimeFallbackOnce = (callbacks = {}, message, metadata = {}) => {
   if (realtimeFallbackReported) return;
 
   realtimeFallbackReported = true;
   callbacks.onPermanentFailure?.(
-    message || 'La conexión en tiempo real se interrumpió. Lanzo POS seguirá funcionando en modo híbrido.'
+    message || 'La conexión en tiempo real se interrumpió. Lanzo POS seguirá funcionando en modo híbrido.',
+    metadata
   );
 };
 
@@ -49,7 +89,8 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
   if (!supabaseClient) {
     Logger.warn('[Realtime] Supabase no esta configurado. Usando fallback hibrido.');
     callbacks.onPermanentFailure?.(
-      'Realtime no esta disponible. Se trabajara con sincronizacion hibrida.'
+      'Realtime no esta disponible. Se trabajara con sincronizacion hibrida.',
+      { permanent: true, reason: 'supabase_not_configured' }
     );
     return null;
   }
@@ -65,6 +106,12 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
 
   if (!navigator.onLine) {
     Logger.warn('[Realtime] Sin conexión. Realtime queda en espera hasta recuperar red.');
+    markRealtimeDisconnected();
+    callbacks.onDisconnected?.({
+      reason: 'disconnected',
+      disconnectedAt: lastDisconnectedAt,
+      topic: realtimeTopic
+    });
     handleReconnect(licenseKey, deviceFingerprint, realtimeTopic, callbacks);
     return null;
   }
@@ -122,16 +169,46 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
     })
     .subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
-        Logger.log('[Realtime] Canal privado conectado.');
+        const subscribedAt = Date.now();
+        const isInitialSubscription = !hasEverSubscribed;
+        const metadata = buildReconnectMetadata(realtimeTopic);
+
+        Logger.log(
+          isInitialSubscription
+            ? '[Realtime] Canal conectado inicialmente; sin validación remota forzada.'
+            : `[Realtime] Canal reconectado (${metadata.reason}) tras ${Math.round(metadata.disconnectedDurationMs / 1000)}s.`
+        );
+
         isConnecting = false;
         isReconnecting = false;
         activeChannel = channel;
         reconnectAttempts = 0;
         realtimeFallbackReported = false;
+        lastSubscribedAt = subscribedAt;
+        hasEverSubscribed = true;
+        lastDisconnectedAt = 0;
+
         if (reconnectTimer) clearTimeout(reconnectTimer);
-        callbacks.onConnectionRestored?.();
+
+        if (isInitialSubscription) {
+          callbacks.onInitialSubscribed?.({
+            subscribedAt,
+            topic: realtimeTopic
+          });
+          return;
+        }
+
+        callbacks.onConnectionRestored?.(metadata);
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        const reason = status === 'TIMED_OUT' ? 'timed_out' : 'channel_error';
+        markRealtimeDisconnected();
+
         Logger.error('[Realtime] Error de conexion:', err || status);
+        callbacks.onDisconnected?.({
+          reason,
+          disconnectedAt: lastDisconnectedAt,
+          topic: realtimeTopic
+        });
         isConnecting = false;
 
         supabaseClient.removeChannel(channel).catch(() => { });
@@ -158,11 +235,19 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
         }
 
         if (!wasManualClose) {
+          markRealtimeDisconnected();
+          callbacks.onDisconnected?.({
+            reason: 'disconnected',
+            disconnectedAt: lastDisconnectedAt,
+            topic: realtimeTopic
+          });
+
           Logger.warn('[Realtime] Canal cerrado inesperadamente. Usando fallback/reintento.');
 
           reportRealtimeFallbackOnce(
             callbacks,
-            'La conexión en tiempo real se interrumpió. Lanzo POS seguirá funcionando en modo híbrido.'
+            'La conexión en tiempo real se interrumpió. Lanzo POS seguirá funcionando en modo híbrido.',
+            { permanent: false, reason: 'channel_closed' }
           );
 
           handleReconnect(licenseKey, deviceFingerprint, realtimeTopic, callbacks);
@@ -177,6 +262,7 @@ const handleReconnect = (key, fp, topic, callbacks = {}) => {
   if (reconnectTimer || isReconnecting) return;
 
   if (!navigator.onLine) {
+    markRealtimeDisconnected();
     Logger.log('[Realtime] Red caida. Esperando reconexion del sistema operativo.');
     isReconnecting = true;
 
@@ -196,7 +282,8 @@ const handleReconnect = (key, fp, topic, callbacks = {}) => {
     window.addEventListener('online', onlineListener);
     reportRealtimeFallbackOnce(
       callbacks,
-      'Conexión perdida. Lanzo POS trabajará offline hasta que regrese internet.'
+      'Conexión perdida. Lanzo POS trabajará offline hasta que regrese internet.',
+      { permanent: false, reason: 'offline' }
     );
     return;
   }
@@ -219,7 +306,8 @@ const handleReconnect = (key, fp, topic, callbacks = {}) => {
     Logger.error('[Realtime] Sin conexion tras maximos reintentos. Modo hibrido.');
     reportRealtimeFallbackOnce(
       callbacks,
-      'No se pudo establecer conexión en tiempo real con el servidor. Se trabajará en modo híbrido.'
+      'No se pudo establecer conexión en tiempo real con el servidor. Se trabajará en modo híbrido.',
+      { permanent: true, reason: 'max_reconnect_attempts' }
     );
   }
 };
@@ -249,6 +337,7 @@ export const stopLicenseListener = async (channel) => {
     }
   }
   if (activeChannel === channel) activeChannel = null;
+  resetRealtimeConnectionState();
 };
 
 export const cleanupAllChannels = async () => {
@@ -258,5 +347,8 @@ export const cleanupAllChannels = async () => {
 export const getConnectionStatus = () => ({
   isActive: activeChannel !== null,
   isConnecting,
-  isReconnecting
+  isReconnecting,
+  hasEverSubscribed,
+  lastDisconnectedAt,
+  lastSubscribedAt
 });
