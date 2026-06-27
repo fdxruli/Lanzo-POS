@@ -177,6 +177,9 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                     prescriptionItems: data.prescriptionItems,
                     cajaActual: data.cajaActual,
                     aperturaPendiente: data.aperturaPendiente,
+                    cashActor: data.cashActor,
+                    isCloudCash: data.isCloudCash,
+                    isCloudCashReadOnly: data.isCloudCashReadOnly,
                     activeOrderId: data.activeOrderId,
                     features
                 }}
@@ -206,6 +209,9 @@ PosPageContent.propTypes = {
         aperturaPendiente: PropTypes.shape({
             montoSugerido: PropTypes.string
         }),
+        cashActor: PropTypes.object,
+        isCloudCash: PropTypes.bool,
+        isCloudCashReadOnly: PropTypes.bool,
         activeOrderId: PropTypes.string
     }).isRequired,
     ui: PropTypes.shape({
