@@ -18,77 +18,138 @@ import { createLicenseProcessingActions } from './license/licenseProcessingActio
 import { createLicenseIntegrityActions } from './license/licenseIntegrityActions';
 import { createLicenseBackgroundValidationActions } from './license/licenseBackgroundValidationActions';
 import { createLicenseBootstrapActions } from './license/licenseBootstrapActions';
+import {
+  getLicenseSyncIntervalMs,
+  getLicenseSyncMode
+} from './license/licenseGuards';
 
 const clearLocalLicenseSession = clearLocalLicenseSessionForLicenseSlice;
+const LAST_VALIDATION_STORAGE_KEY = 'Lanzo_last_validation_persistent';
 
-export const createLicenseSlice = (set, get) => ({
-  ...createLicenseInitialState(),
+const readLastValidationMs = () => {
+  try {
+    const localValue = Number(localStorage.getItem(LAST_VALIDATION_STORAGE_KEY) || 0);
+    const sessionValue = Number(sessionStorage.getItem('Lanzo_last_validation') || 0);
+    const candidate = Math.max(localValue || 0, sessionValue || 0);
+    return Number.isFinite(candidate) ? candidate : 0;
+  } catch {
+    return 0;
+  }
+};
 
-  isAdminDevice: () => get().currentDeviceRole !== 'staff',
+const isCriticalBackgroundReason = (reason = '') => {
+  const normalized = String(reason || '').toLowerCase();
+  return (
+    normalized.includes('realtime') ||
+    normalized.includes('force') ||
+    normalized.includes('staff') ||
+    normalized.includes('plan') ||
+    normalized.includes('device') ||
+    normalized.includes('renewal') ||
+    normalized.includes('activation')
+  );
+};
 
-  canAccess: (permission) => {
-    const state = get();
+const shouldSkipBackgroundValidation = (licenseDetails, options = {}) => {
+  if (options.refreshProfile) return false;
+  if (isCriticalBackgroundReason(options.reason)) return false;
+  if (!licenseDetails?.license_key) return false;
 
-    if (state.currentDeviceRole !== 'staff') return true;
-    if (!state.currentStaffUser) return false;
+  const intervalMs = getLicenseSyncIntervalMs(
+    licenseDetails,
+    getLicenseSyncMode(licenseDetails)
+  );
+  const lastValidationMs = readLastValidationMs();
 
-    return state.currentStaffUser.permissions?.[permission] === true;
-  },
+  return lastValidationMs > 0 && Date.now() - lastValidationMs < intervalMs;
+};
 
-  ...createLicenseRealtimeActions({
-    set,
-    get,
-    hasStaffValidationContext
-  }),
-
-  ...createLicenseSyncActions({
-    set,
-    get
-  }),
-
-  ...createLicenseStaffActions({
-    set,
-    get
-  }),
-
-  ...createLicenseSessionActions({
-    set,
-    get
-  }),
-
-  ...createLicenseActivationActions({
-    set,
-    get,
-    hasStaffValidationContext
-  }),
-
-  ...createLicenseMaintenanceActions({
-    set,
-    get
-  }),
-
-  ...createLicenseProcessingActions({
+export const createLicenseSlice = (set, get) => {
+  const backgroundValidationActions = createLicenseBackgroundValidationActions({
     set,
     get,
     clearLocalLicenseSession,
     hasStaffValidationContext
-  }),
+  });
 
-  ...createLicenseIntegrityActions({
-    set,
-    get,
-    hasStaffValidationContext
-  }),
+  return {
+    ...createLicenseInitialState(),
 
-  ...createLicenseBackgroundValidationActions({
-    set,
-    get,
-    clearLocalLicenseSession,
-    hasStaffValidationContext
-  }),
+    isAdminDevice: () => get().currentDeviceRole !== 'staff',
 
-  ...createLicenseBootstrapActions({
-    set,
-    get
-  })
-});
+    canAccess: (permission) => {
+      const state = get();
+
+      if (state.currentDeviceRole !== 'staff') return true;
+      if (!state.currentStaffUser) return false;
+
+      return state.currentStaffUser.permissions?.[permission] === true;
+    },
+
+    ...createLicenseRealtimeActions({
+      set,
+      get,
+      hasStaffValidationContext
+    }),
+
+    ...createLicenseSyncActions({
+      set,
+      get
+    }),
+
+    ...createLicenseStaffActions({
+      set,
+      get
+    }),
+
+    ...createLicenseSessionActions({
+      set,
+      get
+    }),
+
+    ...createLicenseActivationActions({
+      set,
+      get,
+      hasStaffValidationContext
+    }),
+
+    ...createLicenseMaintenanceActions({
+      set,
+      get
+    }),
+
+    ...createLicenseProcessingActions({
+      set,
+      get,
+      clearLocalLicenseSession,
+      hasStaffValidationContext
+    }),
+
+    ...createLicenseIntegrityActions({
+      set,
+      get,
+      hasStaffValidationContext
+    }),
+
+    ...backgroundValidationActions,
+
+    ...createLicenseBootstrapActions({
+      set,
+      get
+    }),
+
+    _validateInBackground: async (licenseKey, options = {}) => {
+      const normalizedOptions = {
+        reason: 'background',
+        refreshProfile: false,
+        ...(options || {})
+      };
+
+      if (shouldSkipBackgroundValidation(get().licenseDetails, normalizedOptions)) {
+        return false;
+      }
+
+      return backgroundValidationActions._validateInBackground(licenseKey, normalizedOptions);
+    }
+  };
+};
