@@ -114,6 +114,24 @@ export const createLicenseSyncActions = ({
     }
   },
 
+  switchLicenseSyncToPollingFallback: async (reason = 'realtime_failure') => {
+    const state = get();
+
+    if (!state.licenseDetails?.license_key || !state.licenseSyncActive) {
+      return;
+    }
+
+    set({
+      licenseSyncMode: 'hybrid_polling',
+      realtimeSubscription: null
+    });
+
+    restartLicenseSyncTimer(get, 'hybrid_polling');
+
+    const intervalMs = getLicenseSyncIntervalMs(state.licenseDetails, 'hybrid_polling');
+    Logger.warn(`[LicenseSync] Fallback polling activo cada ${Math.round(intervalMs / 60000)}min (${reason}).`);
+  },
+
   startLicenseSync: async () => {
     const state = get();
     const licenseKey = state.licenseDetails?.license_key;
@@ -157,8 +175,7 @@ export const createLicenseSyncActions = ({
       const channel = await get().startRealtimeSecurity();
 
       if (!channel) {
-        set({ licenseSyncMode: 'hybrid_polling' });
-        restartLicenseSyncTimer(get, 'hybrid_polling');
+        await get().switchLicenseSyncToPollingFallback('realtime_start_failed');
       }
     } else {
       await get().stopRealtimeSecurity();
@@ -190,8 +207,7 @@ export const createLicenseSyncActions = ({
       const channel = await get().startRealtimeSecurity();
 
       if (!channel) {
-        set({ licenseSyncMode: 'hybrid_polling' });
-        restartLicenseSyncTimer(get, 'hybrid_polling');
+        await get().switchLicenseSyncToPollingFallback('realtime_refresh_failed');
       }
     } else {
       await get().stopRealtimeSecurity();
