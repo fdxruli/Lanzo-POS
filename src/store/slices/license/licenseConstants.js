@@ -67,12 +67,36 @@ export const LICENSE_PLAN_BLOCK_REASONS = [
 
 export const GRACE_PERIOD_DAYS = 7;
 
-// Polling normal para planes sin realtime. Mantiene bajo el consumo de Supabase.
-export const LICENSE_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+// FASE 6H: intervalos por plan/modo para evitar revalidaciones agresivas.
+export const FREE_LICENSE_SYNC_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000; // 3 dias
+export const BASIC_LICENSE_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
+export const PRO_REALTIME_SAFETY_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
+export const PRO_POLLING_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30min fallback sin realtime
 
-// Red de seguridad para PWA móvil con realtime. Si Android/iOS pausa el WebSocket
-// sin disparar CLOSED/TIMED_OUT, este check evita esperar 30 minutos.
-export const REALTIME_SAFETY_SYNC_INTERVAL_MS = 2 * 60 * 1000;
+// Compatibilidad con imports antiguos.
+export const LICENSE_SYNC_INTERVAL_MS = PRO_POLLING_SYNC_INTERVAL_MS;
+export const REALTIME_SAFETY_SYNC_INTERVAL_MS = PRO_REALTIME_SAFETY_SYNC_INTERVAL_MS;
+
+// Evita duplicar llamadas por focus/online/visibility/pageshow muy juntos.
+export const LICENSE_REMOTE_VALIDATION_COOLDOWN_MS = 90 * 1000;
+
+// Evita stop/start de realtime en cada regreso a primer plano si el canal sigue vivo.
+export const REALTIME_RECOVERY_MIN_INTERVAL_MS = 5 * 60 * 1000;
+
+// Perfil: TTL largo. No se refresca en ventas ni safety checks frecuentes.
+export const PROFILE_REFRESH_TTL_MS = 12 * 60 * 60 * 1000;
+export const PROFILE_LAST_LOAD_KEY = 'Lanzo_last_profile_load';
+export const PROFILE_LAST_LICENSE_KEY = 'Lanzo_last_profile_license_key';
+
+export const LOCAL_FATAL_APP_STATUSES = [
+  'expired',
+  'revoked',
+  'cancelled',
+  'blocked',
+  'device_revoked',
+  'staff_login_required',
+  'locked_renewal'
+];
 
 export const ENABLE_LICENSE_REALTIME =
   import.meta.env.VITE_ENABLE_LICENSE_REALTIME === 'true';
