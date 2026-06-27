@@ -71,7 +71,9 @@ const buildReconnectMetadata = (topic) => {
 };
 
 const reportRealtimeFallbackOnce = (callbacks = {}, message, metadata = {}) => {
-  if (realtimeFallbackReported) return;
+  const isPermanentFailure = metadata.permanent === true;
+
+  if (realtimeFallbackReported && !isPermanentFailure) return;
 
   realtimeFallbackReported = true;
   callbacks.onPermanentFailure?.(
