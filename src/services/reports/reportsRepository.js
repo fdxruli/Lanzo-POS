@@ -19,6 +19,7 @@ export const REPORT_SYNC_UPDATED_EVENT = 'lanzo:reports-sync-updated';
 const REPORT_TYPES = Object.freeze({
   OVERVIEW: 'overview',
   SALES_FINAL_OVERVIEW: 'sales_final_overview',
+  SALES_FINAL_HISTORY: 'sales_final_history',
   CASH: 'cash',
   CUSTOMER_CREDIT: 'customer_credit',
   PRODUCT_CATALOG: 'product_catalog',
@@ -172,6 +173,15 @@ const normalizeOverviewFilters = (filters = {}) => ({
   categoryId: filters.categoryId || filters.category_id || null
 });
 
+const normalizeSalesFinalHistoryFilters = (filters = {}) => ({
+  ...normalizeOverviewFilters(filters),
+  status: filters.status === 'all' ? null : (filters.status || null),
+  paymentMethod: filters.paymentMethod === 'all' ? null : (filters.paymentMethod || filters.payment_method || null),
+  search: filters.search || filters.query || null,
+  limit: Math.max(Number(filters.limit) || 50, 1),
+  offset: Math.max(Number(filters.offset) || 0, 0)
+});
+
 const normalizeCashFilters = (filters = {}) => ({
   dateFrom: filters.dateFrom || null,
   dateTo: filters.dateTo || null,
@@ -216,6 +226,36 @@ const mapCloudFinalReport = (payload, options = {}) => reportsMapper.normalizeRe
   mode: options.stale ? REPORT_SOURCE_MODES.CACHE : REPORT_SOURCE_MODES.CLOUD_FINAL,
   stale: Boolean(options.stale)
 });
+
+const mapCloudFinalHistoryReport = (payload, options = {}) => reportsMapper.normalizeSalesFinalHistoryPayload(payload, {
+  mode: options.stale ? REPORT_SOURCE_MODES.CACHE : REPORT_SOURCE_MODES.CLOUD_FINAL,
+  stale: Boolean(options.stale)
+});
+
+const buildLocalSalesHistoryFallback = async (filters = {}, warnings = []) => {
+  const localReport = await reportsLocalRepository.getOverviewReport(filters);
+  const allSales = Array.isArray(localReport.sales) ? localReport.sales : [];
+  const offset = Math.max(Number(filters.offset) || 0, 0);
+  const limit = Math.max(Number(filters.limit) || 50, 1);
+  const rows = allSales.slice(offset, offset + limit);
+
+  return reportsMapper.normalizeSalesFinalHistoryPayload({
+    success: true,
+    generated_at: new Date().toISOString(),
+    rows,
+    total_count: allSales.length,
+    limit,
+    offset,
+    has_more: offset + rows.length < allSales.length,
+    warnings,
+    source: {
+      mode: REPORT_SOURCE_MODES.LOCAL,
+      official: [],
+      local: ['sales'],
+      warnings
+    }
+  }, { mode: REPORT_SOURCE_MODES.LOCAL });
+};
 
 const rowsToCsv = (rows = []) => {
   const list = Array.isArray(rows) ? rows : [];
@@ -273,6 +313,29 @@ export const reportsRepository = {
       cacheWarning: DEFAULT_CACHE_WARNING,
       cloudErrorCacheWarning: DEFAULT_CLOUD_ERROR_CACHE_WARNING,
       cloudErrorLocalWarning: 'No se pudo cargar el reporte cloud y no hay snapshot previo. Se mantienen ventas y datos locales de este dispositivo.'
+    });
+  },
+
+  async getSalesFinalHistory(filters = {}) {
+    const mode = getMode();
+    const cloudFilters = normalizeSalesFinalHistoryFilters(filters);
+    const localHistoryWarning = 'Historial local no oficial de este dispositivo.';
+
+    if (!mode.cloudSalesFinal) {
+      return buildLocalSalesHistoryFallback(cloudFilters, [localHistoryWarning]);
+    }
+
+    return withCacheFallback({
+      reportType: REPORT_TYPES.SALES_FINAL_HISTORY,
+      filters: cloudFilters,
+      reportMode: mode,
+      loader: () => reportsCloudRepository.getSalesFinalHistory({ licenseKey: mode.licenseKey, ...cloudFilters }),
+      mapper: mapCloudFinalHistoryReport,
+      localFallback: () => buildLocalSalesHistoryFallback(cloudFilters, [localHistoryWarning]),
+      offlineWarning: 'Sin conexión y sin snapshot cloud final previo. Se muestra historial local no oficial de este dispositivo.',
+      cacheWarning: 'Último snapshot cloud final de historial. Puede estar desactualizado.',
+      cloudErrorCacheWarning: 'No se pudo cargar historial cloud final. Mostrando el último snapshot guardado.',
+      cloudErrorLocalWarning: 'No se pudo cargar historial cloud final y no hay snapshot previo. Se muestra historial local no oficial de este dispositivo.'
     });
   },
 
