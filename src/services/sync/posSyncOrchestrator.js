@@ -10,6 +10,8 @@ import { syncOutboxService } from './syncOutboxService';
 import {
   getLicenseKeyFromDetails,
   isCloudPosSyncEnabled,
+  POS_SYNC_FOCUS_PULL_COOLDOWN_MS,
+  POS_SYNC_REALTIME_PULL_DEBOUNCE_MS,
   SYNC_LIMITS,
   SYNC_STATUS
 } from './syncConstants';
@@ -22,7 +24,14 @@ const runtime = {
   licenseKey: null,
   status: SYNC_STATUS.DISABLED,
   pullInProgress: false,
+  pendingPull: false,
   outboxInProgress: false,
+  realtimePullScheduled: false,
+  realtimePullTimer: null,
+  lastPullReason: null,
+  lastPullStartedAt: 0,
+  lastPullFinishedAt: 0,
+  lastForegroundPullAt: 0,
   realtimeChannel: null,
   realtimeTopic: null,
   onlineListener: null
@@ -43,6 +52,19 @@ const setRuntimeStatus = async (status, { licenseKey = runtime.licenseKey, reaso
   if (reason) {
     Logger.log(`[PosSync] Estado ${status}: ${reason}`);
   }
+};
+
+const clearRealtimePullTimer = () => {
+  if (!runtime.realtimePullTimer) return;
+
+  if (typeof window !== 'undefined') {
+    window.clearTimeout(runtime.realtimePullTimer);
+  } else {
+    clearTimeout(runtime.realtimePullTimer);
+  }
+
+  runtime.realtimePullTimer = null;
+  runtime.realtimePullScheduled = false;
 };
 
 const stopRealtimeChannel = async () => {
@@ -78,7 +100,7 @@ const dispatchPulledEvents = async (events = []) => {
     if (!handler?.onEvents) continue;
 
     try {
-      await handler.onEvents(entityEvents);
+      await handler.onEvents(entityEvents, { licenseKey: runtime.licenseKey });
     } catch (error) {
       Logger.warn(`[PosSync] Handler ${entityType} fallo al consumir eventos:`, error);
     }
@@ -88,15 +110,17 @@ const dispatchPulledEvents = async (events = []) => {
 const attachOnlineListener = () => {
   if (runtime.onlineListener || typeof window === 'undefined') return;
 
-  runtime.onlineListener = () => {
-    Logger.log('[PosSync] Red recuperada. Ejecutando pull incremental y outbox.');
+  runtime.onlineListener = async () => {
+    Logger.log('[POS Sync] Procesando outbox online.');
 
-    posSyncOrchestrator.pullIncremental('online').catch((error) => {
-      Logger.warn('[PosSync] Pull al reconectar fallo:', error);
-    });
-
-    posSyncOrchestrator.processOutbox('online').catch((error) => {
+    try {
+      await posSyncOrchestrator.processOutbox('online');
+    } catch (error) {
       Logger.warn('[PosSync] Outbox al reconectar fallo:', error);
+    }
+
+    posSyncOrchestrator.schedulePullIncremental('online').catch((error) => {
+      Logger.warn('[PosSync] Pull al reconectar fallo:', error);
     });
   };
 
@@ -110,6 +134,8 @@ const detachOnlineListener = () => {
 
   runtime.onlineListener = null;
 };
+
+const shouldUseRealtimeDebounce = (reason = '') => String(reason || '').toLowerCase().includes('realtime');
 
 export const posSyncOrchestrator = {
   registerEntitySyncHandler(entityType, handler) {
@@ -208,8 +234,14 @@ export const posSyncOrchestrator = {
           runtime.realtimeChannel = startPosRealtimeListener({
             posTopic,
             callbacks: {
-              onPosChangeAvailable: () => {
-                this.pullIncremental('realtime').catch((error) => {
+              onPosChangeAvailable: ({ eventType, entity, changeSeq } = {}) => {
+                Logger.log('[POS Sync] Realtime avisó cambios; programando pull incremental.', {
+                  eventType,
+                  entity,
+                  changeSeq
+                });
+
+                this.schedulePullIncremental('realtime').catch((error) => {
                   Logger.warn('[PosSync] Pull por realtime fallo:', error);
                 });
               },
@@ -220,7 +252,7 @@ export const posSyncOrchestrator = {
                 }).catch(() => {});
               },
               onConnectionRestored: () => {
-                this.pullIncremental('realtime_restored').catch((error) => {
+                this.schedulePullIncremental('realtime_restored').catch((error) => {
                   Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error);
                 });
               }
@@ -246,10 +278,15 @@ export const posSyncOrchestrator = {
   },
 
   async stop({ preserveStatus = false } = {}) {
+    clearRealtimePullTimer();
     await stopRealtimeChannel();
 
     runtime.started = false;
     runtime.startInProgress = false;
+    runtime.pullInProgress = false;
+    runtime.pendingPull = false;
+    runtime.outboxInProgress = false;
+    runtime.lastPullReason = null;
     detachOnlineListener();
 
     if (!preserveStatus) {
@@ -258,6 +295,62 @@ export const posSyncOrchestrator = {
         reason: 'stopped'
       });
     }
+  },
+
+  async schedulePullIncremental(reason = 'manual', { debounceMs = null } = {}) {
+    if (!runtime.started || !runtime.licenseKey) return null;
+
+    const safeReason = String(reason || 'manual');
+    const resolvedDebounceMs = debounceMs ?? (
+      shouldUseRealtimeDebounce(safeReason) ? POS_SYNC_REALTIME_PULL_DEBOUNCE_MS : 0
+    );
+
+    if (!Number.isFinite(Number(resolvedDebounceMs)) || Number(resolvedDebounceMs) <= 0) {
+      return this.pullIncremental(safeReason);
+    }
+
+    if (runtime.realtimePullTimer) {
+      clearRealtimePullTimer();
+      Logger.log('[POS Sync] Realtime avisó cambios; pull incremental ya programado, reagrupando evento.');
+    }
+
+    runtime.realtimePullScheduled = true;
+    runtime.realtimePullTimer = window.setTimeout(() => {
+      runtime.realtimePullTimer = null;
+      runtime.realtimePullScheduled = false;
+      this.pullIncremental(safeReason).catch((error) => {
+        Logger.warn('[PosSync] Pull incremental programado fallo:', error);
+      });
+    }, Number(resolvedDebounceMs));
+
+    return {
+      scheduled: true,
+      reason: safeReason,
+      debounceMs: Number(resolvedDebounceMs)
+    };
+  },
+
+  async handleForegroundResume(reason = 'focus') {
+    if (!runtime.started || !runtime.licenseKey) return null;
+
+    const now = Date.now();
+    const elapsedSinceLastForegroundPull = now - runtime.lastForegroundPullAt;
+
+    if (
+      runtime.realtimeChannel &&
+      runtime.lastForegroundPullAt > 0 &&
+      elapsedSinceLastForegroundPull < POS_SYNC_FOCUS_PULL_COOLDOWN_MS
+    ) {
+      Logger.log('[POS Sync] Pull incremental por focus omitido: cooldown activo y realtime POS sigue sano.');
+      return {
+        skipped: true,
+        reason: 'focus_cooldown',
+        cooldownMs: POS_SYNC_FOCUS_PULL_COOLDOWN_MS
+      };
+    }
+
+    runtime.lastForegroundPullAt = now;
+    return this.schedulePullIncremental(reason);
   },
 
   async pullIncremental(reason = 'manual') {
@@ -273,36 +366,65 @@ export const posSyncOrchestrator = {
     }
 
     if (runtime.pullInProgress) {
-      Logger.log(`[PosSync] Pull ya en curso; se omite ${reason}.`);
-      return null;
+      runtime.pendingPull = true;
+      runtime.lastPullReason = reason;
+      Logger.log('[POS Sync] Pull incremental omitido: ya hay uno en curso.');
+      Logger.log('[POS Sync] Pull incremental pendiente; se ejecutará al terminar el actual.');
+      return {
+        skipped: true,
+        reason: 'pull_in_progress_pending'
+      };
     }
 
     runtime.pullInProgress = true;
+    runtime.lastPullReason = reason;
+    runtime.lastPullStartedAt = Date.now();
 
     try {
-      const sinceChangeSeq = await syncMetaService.getLastChangeSeq(runtime.licenseKey);
+      let sinceChangeSeq = await syncMetaService.getLastChangeSeq(runtime.licenseKey);
+      let latestResponse = null;
+      let totalEvents = 0;
+      let hasMore = true;
 
-      const response = await posSyncClient.pullSyncEvents({
-        licenseKey: runtime.licenseKey,
-        sinceChangeSeq,
-        limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
-      });
-
-      if (!response.success) {
-        const nextStatus = response.code === 'CLOUD_POS_SYNC_DISABLED'
-          ? SYNC_STATUS.DISABLED
-          : SYNC_STATUS.DEGRADED;
-
-        await setRuntimeStatus(nextStatus, {
+      while (hasMore) {
+        const batchSinceChangeSeq = Number(sinceChangeSeq) || 0;
+        const response = await posSyncClient.pullSyncEvents({
           licenseKey: runtime.licenseKey,
-          reason: response.code || 'pull_not_success'
+          sinceChangeSeq: batchSinceChangeSeq,
+          limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
         });
 
-        return response;
+        latestResponse = response;
+
+        if (!response.success) {
+          const nextStatus = response.code === 'CLOUD_POS_SYNC_DISABLED'
+            ? SYNC_STATUS.DISABLED
+            : SYNC_STATUS.DEGRADED;
+
+          await setRuntimeStatus(nextStatus, {
+            licenseKey: runtime.licenseKey,
+            reason: response.code || 'pull_not_success'
+          });
+          return response;
+        }
+
+        const pulledEvents = Array.isArray(response.events) ? response.events : [];
+        totalEvents += pulledEvents.length;
+        await dispatchPulledEvents(pulledEvents);
+
+        const latestChangeSeq = Number(response.latestChangeSeq ?? batchSinceChangeSeq) || batchSinceChangeSeq;
+        if (latestChangeSeq > batchSinceChangeSeq) {
+          sinceChangeSeq = latestChangeSeq;
+          await syncMetaService.setLastChangeSeq(latestChangeSeq, runtime.licenseKey);
+        }
+
+        hasMore = Boolean(response.hasMore);
+        if (hasMore && latestChangeSeq <= batchSinceChangeSeq) {
+          Logger.warn('[POS Sync] Pull incremental detenido: has_more sin avance de cursor.');
+          hasMore = false;
+        }
       }
 
-      await dispatchPulledEvents(response.events);
-      await syncMetaService.setLastChangeSeq(response.latestChangeSeq, runtime.licenseKey);
       await syncMetaService.setLastPullAt(runtime.licenseKey);
       await syncMetaService.setLastPullError(null, runtime.licenseKey);
 
@@ -311,7 +433,11 @@ export const posSyncOrchestrator = {
         reason: `pull_${reason}`
       });
 
-      return response;
+      return {
+        ...(latestResponse || { success: true, events: [] }),
+        totalEvents,
+        latestChangeSeq: Number(sinceChangeSeq) || 0
+      };
     } catch (error) {
       Logger.warn('[PosSync] Pull incremental fallo:', error);
       await syncMetaService.setLastPullError(error, runtime.licenseKey);
@@ -324,6 +450,15 @@ export const posSyncOrchestrator = {
       return null;
     } finally {
       runtime.pullInProgress = false;
+      runtime.lastPullFinishedAt = Date.now();
+
+      const pendingReason = runtime.pendingPull ? runtime.lastPullReason || 'pending' : null;
+      runtime.pendingPull = false;
+
+      if (pendingReason && runtime.started && runtime.licenseKey && isBrowserOnline()) {
+        Logger.log('[POS Sync] Ejecutando pull incremental pendiente al terminar el actual.');
+        await this.pullIncremental(`pending_after_${pendingReason}`);
+      }
     }
   },
 
@@ -384,8 +519,10 @@ export const posSyncOrchestrator = {
   },
 
   getStatus() {
+    const { realtimePullTimer, ...safeRuntime } = runtime;
     return {
-      ...runtime,
+      ...safeRuntime,
+      realtimePullScheduled: Boolean(realtimePullTimer) || runtime.realtimePullScheduled,
       handlers: Array.from(entityHandlers.keys())
     };
   }
