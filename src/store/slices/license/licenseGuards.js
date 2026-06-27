@@ -8,7 +8,12 @@ import {
   STAFF_DEVICE_AUTH_REASONS,
   STAFF_DEVICE_AUTH_MESSAGE,
   LICENSE_PLAN_BLOCK_REASONS,
-  GRACE_PERIOD_DAYS
+  GRACE_PERIOD_DAYS,
+  FREE_LICENSE_SYNC_INTERVAL_MS,
+  BASIC_LICENSE_SYNC_INTERVAL_MS,
+  PRO_REALTIME_SAFETY_SYNC_INTERVAL_MS,
+  PRO_POLLING_SYNC_INTERVAL_MS,
+  LOCAL_FATAL_APP_STATUSES
 } from './licenseConstants';
 
 export const isRealtimeEnabledForLicense = (licenseDetails) => (
@@ -17,9 +22,50 @@ export const isRealtimeEnabledForLicense = (licenseDetails) => (
   Boolean(licenseDetails?.realtime_topic)
 );
 
+const normalizePlanCode = (licenseDetails = {}) => (
+  licenseDetails.plan_code ||
+  licenseDetails.plan ||
+  licenseDetails.subscription_plan ||
+  licenseDetails.product_code ||
+  ''
+).toString().trim().toLowerCase();
+
+export const isProLicense = (licenseDetails = {}) => {
+  const planCode = normalizePlanCode(licenseDetails);
+  return planCode.includes('pro') || licenseDetails.features?.cloud_sales_base === true;
+};
+
+export const isBasicLicense = (licenseDetails = {}) => {
+  const planCode = normalizePlanCode(licenseDetails);
+  return planCode.includes('basic');
+};
+
+export const isFreeLicense = (licenseDetails = {}) => {
+  const planCode = normalizePlanCode(licenseDetails);
+  return !isProLicense(licenseDetails) && (
+    planCode.includes('free') ||
+    planCode.includes('trial') ||
+    planCode.length === 0
+  );
+};
+
 export const getLicenseSyncMode = (licenseDetails) => (
   isRealtimeEnabledForLicense(licenseDetails) ? 'hybrid_realtime' : 'hybrid_polling'
 );
+
+export const getLicenseSyncIntervalMs = (licenseDetails = {}, mode = getLicenseSyncMode(licenseDetails)) => {
+  if (isProLicense(licenseDetails)) {
+    return mode === 'hybrid_realtime'
+      ? PRO_REALTIME_SAFETY_SYNC_INTERVAL_MS
+      : PRO_POLLING_SYNC_INTERVAL_MS;
+  }
+
+  if (isBasicLicense(licenseDetails)) {
+    return BASIC_LICENSE_SYNC_INTERVAL_MS;
+  }
+
+  return FREE_LICENSE_SYNC_INTERVAL_MS;
+};
 
 export const normalizeValidationCode = (validation = {}) => (
   validation.reason ||
@@ -28,6 +74,8 @@ export const normalizeValidationCode = (validation = {}) => (
   validation.code ||
   ''
 ).toString();
+
+const normalizeStatusCode = (value) => String(value || '').trim().toLowerCase();
 
 export const isFatalValidationFailure = (validation = {}) => {
   const code = normalizeValidationCode(validation);
@@ -159,4 +207,85 @@ export const deriveGracePeriodEnd = (validationData = {}, fallbackLicense = {}) 
   return new Date(
     expiryDate.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
   ).toISOString();
+};
+
+const parseTime = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : null;
+};
+
+const isFatalLocalStatus = (status) => {
+  const normalized = normalizeStatusCode(status);
+  return LOCAL_FATAL_APP_STATUSES.some((item) => item.toLowerCase() === normalized);
+};
+
+export const assertLocalTransactionAllowed = (licenseDetails, state = {}) => {
+  if (!licenseDetails) {
+    return {
+      ok: false,
+      code: 'LICENSE_MISSING',
+      message: 'No hay una licencia activa para cobrar.'
+    };
+  }
+
+  if (!licenseDetails.license_key) {
+    return {
+      ok: false,
+      code: 'LICENSE_KEY_MISSING',
+      message: 'No se encontró la clave de licencia local.'
+    };
+  }
+
+  if (licenseDetails.valid === false) {
+    return {
+      ok: false,
+      code: 'LICENSE_INVALID',
+      message: 'La licencia local no es válida.'
+    };
+  }
+
+  const appStatus = state.appStatus || '';
+  const licenseStatus = state.licenseStatus || licenseDetails.status || '';
+  const detailStatus = licenseDetails.status || licenseDetails.reason || licenseDetails.code || '';
+
+  if (isFatalLocalStatus(appStatus) || isFatalLocalStatus(licenseStatus) || isFatalLocalStatus(detailStatus)) {
+    return {
+      ok: false,
+      code: normalizeStatusCode(appStatus || licenseStatus || detailStatus).toUpperCase() || 'LICENSE_BLOCKED',
+      message: 'La licencia está bloqueada o requiere una acción antes de cobrar.'
+    };
+  }
+
+  const now = Date.now();
+  const expiresAt = parseTime(licenseDetails.expires_at);
+  const graceEnds = parseTime(
+    licenseDetails.grace_period_ends ||
+    licenseDetails.gracePeriodEnds ||
+    state.gracePeriodEnds
+  );
+
+  if (expiresAt && expiresAt <= now && (!graceEnds || graceEnds <= now)) {
+    return {
+      ok: false,
+      code: 'LICENSE_EXPIRED',
+      message: 'La licencia está expirada.'
+    };
+  }
+
+  const isStaff =
+    state.currentDeviceRole === 'staff' ||
+    licenseDetails.device_role === 'staff' ||
+    Boolean(licenseDetails.staff_user);
+
+  if (isStaff && !(state.currentStaffUser || licenseDetails.staff_user)) {
+    return {
+      ok: false,
+      code: 'STAFF_LOGIN_REQUIRED',
+      message: 'Inicia sesión staff para cobrar.'
+    };
+  }
+
+  return { ok: true };
 };
