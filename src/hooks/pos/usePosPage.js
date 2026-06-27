@@ -28,7 +28,10 @@ export function usePosPage() {
         cajaActual,
         aperturaPendiente,
         abrirCaja,
-        asegurarCajaAbierta
+        asegurarCajaAbierta,
+        cashActor,
+        isCloudCash,
+        isCloudCashReadOnly
     } = useCaja();
     const { scanProductFast } = useInventoryMovement();
 
@@ -103,6 +106,9 @@ export function usePosPage() {
         tableData,
         cajaActual,
         aperturaPendiente,
+        cashActor,
+        isCloudCash,
+        isCloudCashReadOnly,
         companyName,
         total,
         totalItemsCount,
