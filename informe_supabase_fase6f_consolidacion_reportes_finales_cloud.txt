@@ -1,0 +1,203 @@
+INFORME SUPABASE FASE 6F - CONSOLIDACION Y REPORTES FINALES CLOUD
+Fecha: 2026-06-26
+Repositorio: fdxruli/Lanzo-POS
+Supabase: odlrhijtfyavryeqivaa
+
+1. OBJETIVO
+Cerrar el ciclo de ventas cloud PRO para que Supabase sea la fuente oficial de ventas nuevas cloud committed, separando ventas brutas, canceladas y netas, utilidad/COGS, caja, inventario, credito, historial, exportaciones y auditoria.
+
+2. ALCANCE IMPLEMENTADO EN ESTA PASADA
+Se revisaron las capas existentes de ventas cloud 6A-6E, reportes y tablas Supabase.
+
+Cambios aplicados en Supabase:
+- Se agrego feature flag cloud_sales_reports_final.
+- pro_monthly = true.
+- free_trial = false.
+- basic_monthly = false.
+- Se creo private.assert_cloud_sales_reports_final_enabled(context), que exige cloud reports + cloud sales cashier + flag final.
+- Se creo private.sales_final_report_source_metadata(...), helper de metadata para reportes finales.
+
+Cambios aplicados en frontend:
+- src/services/sync/syncConstants.js
+  - Se agrego isCloudSalesReportsFinalEnabled(...).
+  - Requiere cloud_pos_sync, cloud_reports_sync, cloud_sales_sync_base, cloud_cash_sync, cloud_sales_cashier y cloud_sales_reports_final.
+- src/services/reports/reportSourceBadges.js
+  - Se agrego modo cloud_final.
+  - Se agrego etiqueta Cloud oficial final.
+  - Se agrego lista de modulos oficiales finales: sales, cash, customer_credit, customers, products, inventory, cancellations, profit.
+- src/services/reports/reportsCloudRepository.js
+  - Se agregaron wrappers frontend para RPCs finales:
+    - pos_get_sales_final_overview
+    - pos_get_sales_final_timeseries
+    - pos_get_sales_final_history
+    - pos_get_sales_profit_report
+    - pos_get_sales_audit_report
+    - pos_validate_sales_consistency
+    - pos_export_sales_final
+- src/services/reports/reportsRepository.js
+  - Si el plan/dispositivo tiene cloud_sales_reports_final, getOverviewReport intenta usar pos_get_sales_final_overview.
+  - Offline usa cache sales_final_overview cuando exista.
+  - Sin snapshot cloud final, cae a datos locales marcados como no oficiales.
+  - Exportaciones para datasets finales usan pos_export_sales_final.
+
+3. LO QUE SI HACE 6F CON ESTA BASE
+- Deja listo el feature flag PRO para activar reportes finales.
+- Evita que FREE/BASIC entren al flujo final cloud.
+- Deja el frontend preparado para consumir las RPCs finales sin tocar FREE/local.
+- Mantiene fallback local/cache con advertencias para evitar mezclar datos locales con oficiales.
+- Mantiene ventas shadow/locales separadas del modelo final.
+
+4. LO QUE NO SE COMPLETO DIRECTAMENTE EN SUPABASE DESDE ESTA HERRAMIENTA
+La herramienta permitio aplicar migraciones privadas y flags, pero bloqueo la creacion/reemplazo de funciones publicas RPC desde esta sesion. Por seguridad no se forzo la llamada.
+
+Por eso quedan pendientes de aplicar como migracion SQL normal en Supabase las RPCs publicas:
+- public.pos_get_sales_final_overview
+- public.pos_get_sales_final_timeseries
+- public.pos_get_sales_final_history
+- public.pos_get_sales_profit_report
+- public.pos_get_sales_audit_report
+- public.pos_export_sales_final
+- public.pos_validate_sales_consistency
+- opcional: public.pos_migrate_local_sales_history, solo legacy/shadow_history y dry-run.
+
+5. RPCS FINALES - CONTRATO RECOMENDADO
+Todas deben ser:
+- SECURITY DEFINER.
+- SET search_path = ''.
+- Validar contexto con private.validate_pos_sync_context.
+- Validar private.assert_cloud_sales_reports_final_enabled.
+- Respetar private.reports_scope_allowed y private.reports_staff_filter.
+- No usar SQL dinamico.
+- No cruzar license_id.
+- No exponer tablas directas.
+
+6. METRICAS FINALES ESPERADAS
+Overview final debe devolver:
+- gross_sales_total / gross_sales_count.
+- cancelled_sales_total / cancelled_sales_count.
+- net_sales_total / net_sales_count.
+- cash_sales_total, card_sales_total, transfer_sales_total, credit_sales_total, mixed_sales_total.
+- cash_reversal_total, credit_reversal_total, inventory_return_quantity.
+- cogs_total, cogs_missing_count, cogs_missing_sales_total.
+- gross_profit_total, gross_margin_percent, profit_status.
+- credit_created_total, credit_initial_payments_total, credit_balance_created_total.
+- customers_with_debt, customer_debt_total.
+- inventory_sale_out_quantity, inventory_return_in_quantity, inventory_net_out_quantity.
+- inventory_sale_out_cost, inventory_return_in_cost, inventory_net_cogs.
+- products_without_stock, low_stock_products, inventory_value_approx.
+- average_ticket, products_sold_count, items_sold_quantity.
+
+7. REGLAS DE VENTAS
+- Venta bruta: source_mode='cloud_committed' y status closed/cancelled.
+- Venta cancelada: status='cancelled' o cancelled_at no nulo.
+- Venta neta: source_mode='cloud_committed' y status='closed'.
+- shadow no cuenta como venta oficial.
+- legacy_imported/shadow_history no cuenta como venta oficial salvo reporte historico separado.
+
+8. COGS / UTILIDAD
+Prioridad:
+1. pos_inventory_movements.total_cost para sale_out.
+2. pos_sale_items.unit_cost * quantity.
+3. Si falta costo, marcar costo faltante.
+
+profit_status:
+- definitive: costo confiable completo.
+- estimated: se uso costo snapshot sin movimiento con costo.
+- incomplete: hay items sin costo.
+
+9. CAJA
+Separar:
+- venta contado efectivo.
+- abono inicial de venta fiada.
+- abono posterior de cliente.
+- cancelacion de venta.
+- cancelacion de abono inicial.
+- entradas/salidas manuales.
+
+No mezclar customer_payments_total con ventas contado.
+
+10. CREDITO
+La verdad de deuda debe venir del ledger y/o pos_customers.debt recalculado, no solo de pos_sales.
+Tipos esperados:
+- CHARGE.
+- PAYMENT.
+- INITIAL_BALANCE.
+- CANCEL_CHARGE.
+- CANCEL_PAYMENT.
+
+11. INVENTARIO
+Debe considerar:
+- sale_out.
+- return_in.
+- source='sale_cancellation'.
+- lotes activos.
+- productos inactivos/eliminados con ventas historicas.
+
+12. EXPORTACIONES
+Datasets finales esperados:
+- sales.
+- sale_items.
+- sale_payments.
+- sale_cancellations.
+- cash_movements.
+- inventory_movements.
+- customer_ledger.
+- profit.
+- audit.
+
+Regla tecnica: filtrar/ordenar/paginar filas primero y despues aplicar jsonb_agg.
+
+13. VALIDADOR DE CONSISTENCIA
+Debe detectar:
+- ventas sin items.
+- ventas cloud sin folio.
+- ventas cash applied sin cash movement.
+- ventas inventory applied sin inventory movement.
+- ventas credit applied sin ledger charge.
+- ventas cancelled sin cancellation row.
+- ventas cancelled sin reversas requeridas.
+- cash movement sin sale relacionada.
+- inventory movement sale_out sin sale item.
+- ledger sale_id inexistente.
+- deuda cliente no cuadra con ledger.
+- stock producto no cuadra con suma de lotes.
+
+Debe ser solo lectura por defecto.
+
+14. MIGRACION HISTORICA CONTROLADA
+Si se implementa, debe importar ventas locales historicas solo como legacy_imported o shadow_history.
+Debe dejar:
+- effects_status='local_historical'.
+- inventory_effect_status='not_applied'.
+- cash_effect_status='not_applied'.
+- credit_effect_status='not_applied'.
+
+No debe mover caja, inventario, deuda ni crear folios oficiales confusos.
+
+15. PRUEBAS REALIZADAS
+- Se verifico el feature flag en public.plans:
+  - pro_monthly: true.
+  - free_trial: false.
+  - basic_monthly: false.
+- Se verificaron helpers privados creados:
+  - private.assert_cloud_sales_reports_final_enabled.
+  - private.sales_final_report_source_metadata.
+- Se verifico que el frontend ya tiene guard de feature flag y wrappers para RPCs finales.
+
+No se pudo ejecutar npm run build desde esta herramienta porque no se clono el repositorio localmente y el trabajo se hizo via conector GitHub.
+No se pudieron crear las RPCs publicas desde Supabase por bloqueo de herramienta; deben aplicarse con una migracion SQL normal.
+
+16. RIESGOS PENDIENTES
+- Mientras las RPCs publicas finales no existan, el frontend final caera al fallback/cache/local con advertencia.
+- StatsGrid todavia puede requerir ajuste visual adicional para reemplazar tarjetas principales locales por metricas net_sales/cancelled/profit del overview final.
+- SalesHistory necesita consumir pos_get_sales_final_history para mostrar cloud_committed, cancelled, shadow y legacy con badges.
+- Falta prueba real de cancelacion actualizando dashboard final.
+
+17. RECOMENDACIONES PARA PRODUCCION
+1. Aplicar primero las RPCs finales en Supabase staging.
+2. Correr pos_validate_sales_consistency antes y despues de pruebas.
+3. Probar venta efectivo, tarjeta, transferencia, mixta, fiada, cancelacion contado, cancelacion fiada e inventario/lotes.
+4. Verificar staff mine/all y admin global.
+5. Ejecutar npm run build.
+6. Probar PWA movil online/offline.
+7. Mantener legacy_imported separado hasta tener estrategia de migracion historica aprobada.
