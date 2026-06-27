@@ -3,13 +3,23 @@
 import Logger from '../../../services/Logger';
 import { showMessageModal } from '../../../services/utils';
 import { getStableDeviceId } from '../../../services/supabase';
-import { startLicenseListener, stopLicenseListener } from '../../../services/licenseRealtime';
+import {
+  getConnectionStatus,
+  startLicenseListener,
+  stopLicenseListener
+} from '../../../services/licenseRealtime';
+
+import {
+  REALTIME_RECOVERY_MIN_INTERVAL_MS
+} from './licenseConstants';
 
 import {
   isRealtimeEnabledForLicense
 } from './licenseGuards';
 
 const waitForRealtimeCleanup = () => new Promise((resolve) => setTimeout(resolve, 200));
+
+let lastRealtimeRecoveryAt = 0;
 
 export const createLicenseRealtimeActions = ({
   set,
@@ -156,9 +166,27 @@ export const createLicenseRealtimeActions = ({
       return null;
     }
 
+    const connectionStatus = getConnectionStatus();
+    const now = Date.now();
+    const hasActiveChannel = Boolean(state.realtimeSubscription && connectionStatus.isActive);
+    const recentlyRecovered = now - lastRealtimeRecoveryAt < REALTIME_RECOVERY_MIN_INTERVAL_MS;
+
+    if (hasActiveChannel && !connectionStatus.isReconnecting && !connectionStatus.isConnecting) {
+      if (recentlyRecovered) {
+        Logger.log(`[Realtime] Canal activo; recuperación omitida por cooldown (${reason}).`);
+        return state.realtimeSubscription;
+      }
+
+      lastRealtimeRecoveryAt = now;
+      Logger.log(`[Realtime] Canal activo; no se reinicia, solo safety check (${reason}).`);
+      await get().runLicenseSyncCheck(`realtime_probe_${reason}`);
+      return state.realtimeSubscription;
+    }
+
     set({ _isRecoveringRealtime: true });
 
     try {
+      lastRealtimeRecoveryAt = now;
       Logger.log(`[Realtime] Recuperando canal privado (${reason}).`);
 
       await get().stopRealtimeSecurity();
