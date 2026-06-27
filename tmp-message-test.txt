@@ -1,1 +1,1 @@
-const msg = 'Producto no sincronizado. Este producto existe solo en este dispositivo. ' + 'Sincroniza el catalogo antes de ' + 'venderlo en modo cloud.';
+tmp
