@@ -25,14 +25,16 @@ export const createLicenseBackgroundValidationActions = ({
   clearLocalLicenseSession,
   hasStaffValidationContext
 }) => ({
-  _validateInBackground: async (licenseKey) => {
+  _validateInBackground: async (licenseKey, options = {}) => {
+    const { refreshProfile = false, reason = 'background' } = options || {};
+
     try {
       if (get().appStatus === 'staff_login_required') {
         Logger.log('[Background] Login staff requerido; se conserva la pantalla actual.');
         return;
       }
 
-      Logger.log('[Background] Iniciando validación silenciosa...');
+      Logger.log(`[Background] Iniciando validación silenciosa (${reason})...`);
 
       const BACKGROUND_TIMEOUT = 8000;
 
@@ -188,10 +190,19 @@ export const createLicenseBackgroundValidationActions = ({
         criticalChanges.staffUserChanged
       ) {
         Logger.log('[Background] Cambios detectados en licencia, actualizando...');
-        await get()._processServerValidation(serverValidation, localLicense);
+        await get()._processServerValidation(serverValidation, localLicense, {
+          refreshProfile,
+          reason: `background_${reason}`
+        });
       } else {
-        Logger.log('[Background] Licencia validada sin cambios. Verificando perfil...');
-        await get()._loadProfile(localLicense.license_key);
+        Logger.log('[Background] Licencia validada sin cambios. No se refresca perfil.');
+
+        if (refreshProfile || !get().companyProfile) {
+          await get()._loadProfile(localLicense.license_key, {
+            refreshProfile,
+            reason: `background_${reason}`
+          });
+        }
       }
 
       sessionStorage.setItem('Lanzo_app_loaded', Date.now().toString());

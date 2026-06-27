@@ -21,8 +21,17 @@ import { playBeep, playBulkProductBeep, playErrorBeep } from '../../utils/audio'
  */
 export function usePosPage() {
     // ── Stores ─────────────────────────────────────────────────────
-    const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
+    const verifySessionIntegrityStore = useAppStore((state) => state.verifySessionIntegrity);
     const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
+
+    const verifySessionIntegrity = useCallback((options = {}) => verifySessionIntegrityStore({
+        reason: 'sale_checkout',
+        transactionMode: true,
+        refreshProfile: false,
+        forceRemote: false,
+        allowLocalOnly: true,
+        ...(options || {})
+    }), [verifySessionIntegrityStore]);
 
     const {
         cajaActual,
