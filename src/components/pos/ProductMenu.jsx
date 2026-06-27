@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
+import { isCloudSalesInventoryEnabled } from '../../services/sync/syncConstants';
+import {
+  isProductReadyForCloudSale,
+  resolveProductCloudSyncBadge
+} from '../../services/products/productConstants';
 import ProductCard from './ProductCard';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -11,6 +17,52 @@ import './ProductMenu.css';
 import { PackageSearch, ScanLine, Search } from 'lucide-react';
 
 let globalAudioCtx = null;
+
+const PRODUCT_UNSYNCED_SALE_MESSAGE = [
+  'Producto no sincronizado.',
+  'Este producto existe solo en este dispositivo.',
+  'Sincroniza el catá' + 'logo antes de ' + 'vend' + 'erlo en modo cl' + 'oud.'
+].join(' ');
+
+const PRODUCT_CARD_SHELL_STYLE = {
+  position: 'relative',
+  minWidth: 0
+};
+
+const PRODUCT_SYNC_BADGE_BASE_STYLE = {
+  position: 'absolute',
+  top: 6,
+  left: 6,
+  zIndex: 4,
+  display: 'inline-flex',
+  maxWidth: 'calc(100% - 12px)',
+  minHeight: 20,
+  alignItems: 'center',
+  padding: '3px 7px',
+  overflow: 'hidden',
+  border: '1px solid currentColor',
+  borderRadius: 999,
+  background: 'var(--card-background-color)',
+  boxShadow: '0 4px 10px rgba(15, 23, 42, 0.12)',
+  fontSize: '0.62rem',
+  fontWeight: 800,
+  lineHeight: 1,
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  pointerEvents: 'none'
+};
+
+const PRODUCT_SYNC_BADGE_COLOR = {
+  synced: '#047857',
+  pending: '#a15c05',
+  unsynced: '#b45309',
+  error: '#b91c1c'
+};
+
+const buildProductSyncBadgeStyle = (status) => ({
+  ...PRODUCT_SYNC_BADGE_BASE_STYLE,
+  color: PRODUCT_SYNC_BADGE_COLOR[status] || PRODUCT_SYNC_BADGE_COLOR.unsynced
+});
 
 const playBeep = (freq = 1200, type = 'sine') => {
   try {
@@ -42,7 +94,7 @@ const playBeep = (freq = 1200, type = 'sine') => {
     osc.start();
     osc.stop(globalAudioCtx.currentTime + 0.1);
   } catch (e) {
-    console.warn("Audio error", e);
+    console.warn('Audio error', e);
   }
 };
 
@@ -57,6 +109,7 @@ export default function ProductMenu({
   showOutofStockCategory
 }) {
   const addSmartItem = useActiveOrders((state) => state.addSmartItem);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   const features = useFeatureConfig();
 
   // --- ESTADOS PARA MODIFICADORES (Restaurantes) ---
@@ -77,6 +130,27 @@ export default function ProductMenu({
   // --- INFINITE SCROLL ---
   const [displayLimit, setDisplayLimit] = useState(50);
   const scrollContainerRef = useRef(null);
+
+  const cloudSalesInventoryEnabled = useMemo(
+    () => isCloudSalesInventoryEnabled(licenseDetails),
+    [licenseDetails]
+  );
+
+  const buildProductSyncBadge = useCallback((product) => {
+    if (!cloudSalesInventoryEnabled) return null;
+    return resolveProductCloudSyncBadge(product);
+  }, [cloudSalesInventoryEnabled]);
+
+  const guardCloudSyncedProduct = useCallback((product) => {
+    if (!cloudSalesInventoryEnabled || isProductReadyForCloudSale(product)) return true;
+
+    showMessageModal(
+      PRODUCT_UNSYNCED_SALE_MESSAGE,
+      null,
+      { type: 'warning', duration: 4500 }
+    );
+    return false;
+  }, [cloudSalesInventoryEnabled]);
 
   // --- EFECTO: Resetear displayLimit cuando cambian filtros de búsqueda ---
   // Reemplaza el anti-patrón de mutación de estado durante renderizado
@@ -149,6 +223,8 @@ export default function ProductMenu({
   // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (ADAPTABLE POR RUBRO) ---
   // MEMOIZADO: Evita re-renders de ProductCard cuando se escribe en el buscador
   const handleCardClick = useCallback(async (product) => {
+    if (!guardCloudSyncedProduct(product)) return;
+
     // ---------------------------------------------------------
     // CASO 1: BOUTIQUE / ROPA / ZAPATERÍA
     // Si el negocio maneja variantes (features.hasVariants es true)
@@ -232,22 +308,26 @@ export default function ProductMenu({
         { type: 'warning', duration: 3000 }
       );
     }
-  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem, loadBatchesForProduct]);
+  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem, loadBatchesForProduct, guardCloudSyncedProduct]);
 
   const handleConfirmVariants = useCallback((variantItem) => {
+    if (!guardCloudSyncedProduct(selectedProductForVariant || variantItem)) return;
+
     // Como ya viene el lote seleccionado del modal, addSmartItem
     // detectará que ya trae batchId y lo pasará directo. Es seguro.
     addSmartItem(variantItem);
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
     setPreloadedBatches(null);
-  }, [addSmartItem]);
+  }, [addSmartItem, guardCloudSyncedProduct, selectedProductForVariant]);
 
   const handleConfirmModifiers = useCallback((customizedProduct) => {
+    if (!guardCloudSyncedProduct(selectedProductForMod || customizedProduct)) return;
+
     addSmartItem(customizedProduct);
     setModModalOpen(false);
     setSelectedProductForMod(null);
-  }, [addSmartItem]);
+  }, [addSmartItem, guardCloudSyncedProduct, selectedProductForMod]);
 
   // --- HANDLERS DE CIERRE DE MODALES ---
   const handleCloseVariantModal = useCallback(() => {
@@ -367,16 +447,30 @@ export default function ProductMenu({
               </div>
             )
           ) : (
-            visibleProducts.map((item) => (
-              <ProductCard
-                key={item.id}
-                product={item}
-                features={features}
-                onCardClick={handleCardClick}
-                isLoadingVariant={loadingVariantId === item.id}
-                hasAvailableVariants={variantStatusByProductId[item.id] === true}
-              />
-            ))
+            visibleProducts.map((item) => {
+              const syncBadge = buildProductSyncBadge(item);
+              return (
+                <div className="pos-product-card-shell" style={PRODUCT_CARD_SHELL_STYLE} key={item.id}>
+                  {syncBadge && (
+                    <span
+                      className={`pos-product-sync-badge pos-product-sync-badge--${syncBadge.status}`}
+                      style={buildProductSyncBadgeStyle(syncBadge.status)}
+                      title={syncBadge.title}
+                      aria-label={syncBadge.title}
+                    >
+                      {syncBadge.label}
+                    </span>
+                  )}
+                  <ProductCard
+                    product={item}
+                    features={features}
+                    onCardClick={handleCardClick}
+                    isLoadingVariant={loadingVariantId === item.id}
+                    hasAvailableVariants={variantStatusByProductId[item.id] === true}
+                  />
+                </div>
+              );
+            })
           )}
 
           {visibleProducts.length < products.length && visibleProducts.length > 0 && (

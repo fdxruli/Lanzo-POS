@@ -11,6 +11,7 @@ import {
 import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
 import { productMigrationService } from './productMigrationService';
+import { productLocalCatalogRecovery } from './productLocalCatalogRecovery';
 import { productConflictService } from './productConflictService';
 import {
   PRODUCT_CATALOG_ENTITY_TYPES,
@@ -22,6 +23,12 @@ let registered = false;
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails);
+
+const canMigrateProductCatalog = () => {
+  const state = useAppStore.getState();
+  if (typeof state?.canAccess !== 'function') return true;
+  return state.canAccess('products') === true;
+};
 
 const asError = (response, fallback) => {
   const error = new Error(response?.message || response?.code || fallback);
@@ -83,13 +90,34 @@ export const productSyncHandler = {
     if (!licenseKey || !isOnline()) return { skipped: true };
 
     try {
+      const canMigrateProducts = canMigrateProductCatalog();
+
+      if (!canMigrateProducts) {
+        const recovery = await productLocalCatalogRecovery.savePermissionBlockedWarning({ licenseKey });
+        const snapshot = await productMigrationService.pullFullSnapshot({ licenseKey });
+        if (recovery?.blocked) {
+          Logger.warn('[Products/Sync] Rescate de catalogo local bloqueado por permisos:', recovery);
+        }
+        return { ...snapshot, recovery, migrationSkipped: true };
+      }
+
       const migrationResult = await productMigrationService.runInitialMigrationIfNeeded({ licenseKey });
       if (migrationResult?.blocked) {
         Logger.warn('[Products/Sync] Migracion inicial bloqueada:', migrationResult);
+        return migrationResult;
       }
-      return migrationResult;
+
+      const recovery = await productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+        licenseKey,
+        canMigrateProducts
+      });
+      if (recovery?.blocked) {
+        Logger.warn('[Products/Sync] Rescate de catalogo local bloqueado:', recovery);
+      }
+
+      return { ...migrationResult, recovery };
     } catch (error) {
-      Logger.warn('[Products/Sync] Migracion inicial fallo sin bloquear app:', error);
+      Logger.warn('[Products/Sync] Migracion/rescate de catalogo fallo sin bloquear app:', error);
       return { success: false, error };
     }
   },
