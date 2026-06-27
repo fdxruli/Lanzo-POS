@@ -1,1 +1,1 @@
-const msg = 'vend' + 'erlo en modo cl' + 'oud';
+tmp
