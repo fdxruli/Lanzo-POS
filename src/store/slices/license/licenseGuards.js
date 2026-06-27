@@ -23,9 +23,9 @@ import {
   shouldSkipRemoteValidationForPlan as shouldSkipRemoteValidationForPlanFromTimestamps
 } from './licenseValidationTimestamps';
 
-const CRITICAL_LICENSE_VALIDATION_REASONS = [
+const CRITICAL_LICENSE_VALIDATION_REASONS = new Set([
   'realtime_event',
-  'realtime_reconnected',
+  'realtime_reconnected_long',
   'realtime_recover',
   'license_changed',
   'plan_changed',
@@ -38,6 +38,10 @@ const CRITICAL_LICENSE_VALIDATION_REASONS = [
   'activation',
   'staff_login',
   'renewal'
+]);
+
+const CRITICAL_LICENSE_VALIDATION_REASON_PREFIXES = [
+  'realtime_recover_'
 ];
 
 const normalizePlanCode = (licenseDetails = {}) => (
@@ -88,7 +92,9 @@ export const getLicenseSyncIntervalMs = (licenseDetails = {}, mode = getLicenseS
 
 export const isCriticalLicenseValidationReason = (reason = '') => {
   const normalized = String(reason || '').toLowerCase();
-  return CRITICAL_LICENSE_VALIDATION_REASONS.some((item) => normalized.includes(item));
+
+  return CRITICAL_LICENSE_VALIDATION_REASONS.has(normalized) ||
+    CRITICAL_LICENSE_VALIDATION_REASON_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 };
 
 export const readLastLicenseValidationMs = readLastLicenseValidationSuccessMs;
