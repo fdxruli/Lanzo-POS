@@ -11,6 +11,11 @@ const firstText = (...values) => {
   return null;
 };
 
+const getFirstBlockMessage = (reasons = []) => {
+  const first = Array.isArray(reasons) ? reasons[0] : null;
+  return firstText(first?.message, first?.code);
+};
+
 export const getCloudSaleId = (sale = {}) => firstText(
   sale.cloudSaleId,
   sale.cloud_sale_id,
@@ -43,13 +48,52 @@ export const buildCancellationPreview = (sale = {}) => {
 
   return {
     total,
+    canCancel: true,
+    source: 'local_estimate',
     cashReversalRequired: cashEffectStatus === 'applied' || Boolean(sale.cashMovementId || sale.cash_movement_id),
     inventoryReversalRequired: inventoryEffectStatus === 'applied',
     creditReversalRequired: creditEffectStatus === 'applied' || balanceDue > 0,
     cashAmount,
     balanceDue,
     customerName: firstText(sale.customerName, sale.customer_name, sale.customer?.name, sale.customerSnapshot?.name),
-    folio: firstText(sale.cloudFolio, sale.cloud_folio, sale.folio, sale.id)
+    folio: firstText(sale.cloudFolio, sale.cloud_folio, sale.folio, sale.id),
+    blockReasons: []
+  };
+};
+
+export const normalizeCloudCancellationPreview = (response = {}, localSale = {}) => {
+  const base = buildCancellationPreview(localSale);
+  const preview = response?.preview || {};
+  const sale = response?.sale || {};
+  const cash = preview.cash || {};
+  const inventory = preview.inventory || {};
+  const credit = preview.credit || {};
+  const blockReasons = Array.isArray(response?.block_reasons) ? response.block_reasons : [];
+
+  return {
+    ...base,
+    source: response?.mode || 'cloud_sale_cancellation_preview',
+    canCancel: response?.can_cancel !== false,
+    code: response?.code || 'OK',
+    message: response?.message || getFirstBlockMessage(blockReasons),
+    blockReasons,
+    total: toNumber(sale.total ?? localSale.total, base.total),
+    folio: firstText(response?.folio, sale.cloud_folio, sale.folio, localSale.cloudFolio, localSale.folio, localSale.id),
+    cashReversalRequired: Boolean(cash.required),
+    cashAmount: toNumber(cash.reversal_amount, base.cashAmount),
+    cashMovementCount: toNumber(cash.original_movement_count, 0),
+    cashSessionIds: Array.isArray(cash.cash_session_ids) ? cash.cash_session_ids : [],
+    inventoryReversalRequired: Boolean(inventory.required),
+    inventoryQuantity: toNumber(inventory.return_quantity, 0),
+    inventoryMovementCount: toNumber(inventory.original_movement_count, 0),
+    creditReversalRequired: Boolean(credit.required),
+    creditReversalAmount: toNumber(credit.reversal_amount, 0),
+    debtBefore: toNumber(credit.debt_before, 0),
+    debtAfterPreview: toNumber(credit.debt_after_preview, 0),
+    subsequentPaymentCount: toNumber(credit.subsequent_payment_count, 0),
+    customerName: firstText(credit.customer_name, sale.customer_name, base.customerName),
+    runtimeCancellationEnabled: response?.runtimeCancellationEnabled !== false,
+    licenseCancellationEnabled: response?.licenseCancellationEnabled !== false
   };
 };
 
@@ -78,6 +122,7 @@ export const mapCancellationResponseToLocalPatch = (response = {}) => {
     cashEffectStatus: sale.cash_effect_status || undefined,
     inventoryEffectStatus: sale.inventory_effect_status || undefined,
     creditEffectStatus: sale.credit_effect_status || undefined,
+    cancellationIntegrity: response.integrity || undefined,
     syncStatus: 'SYNCED',
     cloudSalesSyncStatus: 'synced',
     cloudSalesLastSyncAt: new Date().toISOString(),
@@ -93,5 +138,6 @@ export default {
   shouldUseCloudCancellation,
   buildCancellationIdempotencyKey,
   buildCancellationPreview,
+  normalizeCloudCancellationPreview,
   mapCancellationResponseToLocalPatch
 };
