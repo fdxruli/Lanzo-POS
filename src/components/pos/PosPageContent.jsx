@@ -66,28 +66,18 @@ const ActiveOrderControls = () => {
     );
 };
 
-/**
- * Contenido principal de la página POS.
- * Componente "tonto" que recibe todas las props y renderiza.
- * Separamos esto del wrapper para facilitar testing y memoización.
- */
 const PosPageContent = ({ data, ui, actions, features }) => {
     const createOrder = useActiveOrders((state) => state.createOrder);
     const loadOrdersFromDB = useActiveOrders((state) => state.loadOrdersFromDB);
     const [isInitializing, setIsInitializing] = useState(true);
 
-    // EFECTO 1: Inicializar órdenes desde BD al montar
     useEffect(() => {
         const initializeOrders = async () => {
             try {
                 setIsInitializing(true);
-
-                // 2. Cargar órdenes abiertas de BD y localStorage
                 await loadOrdersFromDB();
-
             } catch (error) {
                 console.error('Error en inicialización de órdenes:', error);
-                // Crear orden por defecto si falla
                 createOrder();
             } finally {
                 setIsInitializing(false);
@@ -97,7 +87,6 @@ const PosPageContent = ({ data, ui, actions, features }) => {
         initializeOrders();
     }, [createOrder, loadOrdersFromDB]);
 
-    // Mostrar cargando mientras se inicializa
     if (isInitializing) {
         return (
             <div style={{ padding: '24px', textAlign: 'center', color: '#999' }}>
@@ -113,7 +102,6 @@ const PosPageContent = ({ data, ui, actions, features }) => {
         <>
             {!features.hasTables && <ActiveOrderControls />}
 
-            {/* Layout principal */}
             <div className={`pos-page-layout${hasMobileFloatingBar ? ' pos-page-layout--with-floating-bar' : ''}`}>
                 <div className="pos-grid">
                     <ProductMenu
@@ -140,7 +128,6 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                 </div>
             </div>
 
-            {/* Barra flotante móvil */}
             <PosFloatingBar
                 hasTables={features.hasTables}
                 activeTablesCount={data.activeTablesCount}
@@ -151,7 +138,6 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                 onOpenCart={ui.openMobileCart}
             />
 
-            {/* Modal móvil del carrito */}
             <MobilePosCart
                 isOpen={ui.isMobileCartOpen}
                 onClose={ui.closeMobileCart}
@@ -166,10 +152,8 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                 kitchenRejectedOpenCount={data.kitchenRejectedOpenCount}
             />
 
-            {/* Toast notifications */}
             <PosToast message={data.toastMsg} />
 
-            {/* Contenedor de modales */}
             <PosModals
                 activeModal={ui.activeModal}
                 onClose={ui.closeModal}
@@ -178,6 +162,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                     handlePaymentModalClose: actions.handlePaymentModalClose,
                     handleConfirmSplitBill: actions.handleConfirmSplitBill,
                     handleQuickCajaSubmit: actions.handleQuickCajaSubmit,
+                    handleQuickCajaClose: actions.handleQuickCajaClose,
                     handlePrescriptionConfirm: actions.handlePrescriptionConfirm,
                     handleConfirmLayaway: actions.handleConfirmLayaway,
                     handleLoadOpenOrder: actions.handleLoadOpenOrder,
@@ -242,6 +227,7 @@ PosPageContent.propTypes = {
         handlePaymentModalClose: PropTypes.func.isRequired,
         handleConfirmSplitBill: PropTypes.func.isRequired,
         handleQuickCajaSubmit: PropTypes.func.isRequired,
+        handleQuickCajaClose: PropTypes.func.isRequired,
         handlePrescriptionConfirm: PropTypes.func.isRequired,
         handleConfirmLayaway: PropTypes.func.isRequired,
         handleLoadOpenOrder: PropTypes.func.isRequired,
