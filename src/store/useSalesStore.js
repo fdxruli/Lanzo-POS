@@ -180,22 +180,27 @@ export const useSalesStore = create((set, get) => ({
       dispositionPlan = null,
       reason = '',
       cancelledBy = 'local-user',
-      allowWaste = false
+      allowWaste = false,
+      saleOverride = null
     } = {}
   ) => {
     const normalizedRestoreStock = Boolean(restoreStock);
     set({ isLoading: true });
 
     try {
-      // 1. Recuperar ventas actuales en memoria
-      const currentSales = get().sales;
+      const currentSales = saleOverride
+        ? [saleOverride, ...get().sales.filter((sale) => sale.id !== saleOverride.id && sale.cloudSaleId !== saleOverride.cloudSaleId)]
+        : get().sales;
 
-      // 2. Pasar currentSales para respetar la firma original de la función (evita la regresión)
       const saleToCancel = currentSales.find((sale) => (
-        sale.id === saleIdentifier || sale.timestamp === saleIdentifier
+        sale.id === saleIdentifier ||
+        sale.timestamp === saleIdentifier ||
+        sale.cloudSaleId === saleIdentifier ||
+        sale.cloud_sale_id === saleIdentifier
       ));
+
       const result = await cancelSale({
-        saleId: saleToCancel?.id || saleIdentifier,
+        saleId: saleToCancel?.id || saleToCancel?.cloudSaleId || saleToCancel?.cloud_sale_id || saleIdentifier,
         timestamp: saleToCancel?.timestamp || saleIdentifier,
         restoreStock: normalizedRestoreStock,
         currentSales,
@@ -210,6 +215,7 @@ export const useSalesStore = create((set, get) => ({
           sales: state.sales.map(sale =>
             sale.id === (result.sale?.id || saleToCancel?.id || saleIdentifier)
               || sale.timestamp === (result.sale?.timestamp || saleToCancel?.timestamp || saleIdentifier)
+              || sale.cloudSaleId === (result.sale?.cloudSaleId || saleToCancel?.cloudSaleId || saleIdentifier)
               ? (result.sale || sale)
               : sale
           )
