@@ -87,6 +87,9 @@ export const RETRY_CONFIG = Object.freeze({
   MAX_ATTEMPTS: 8
 });
 
+export const ENABLE_CLOUD_SALE_CANCELLATIONS =
+  import.meta.env.VITE_ENABLE_CLOUD_SALE_CANCELLATIONS !== 'false';
+
 export const isFeatureEnabled = (features = {}, featureName) => (
   features?.[featureName] === true || features?.[featureName] === 'true'
 );
