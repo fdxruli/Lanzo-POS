@@ -1,0 +1,261 @@
+FASE 6G — QA final, hardening y estabilizacion de ventas cloud PRO
+Fecha: 2026-06-27
+Repositorio: fdxruli/Lanzo-POS
+Proyecto Supabase: odlrhijtfyavryeqivaa
+
+1. RESUMEN GENERAL
+
+Se reviso la fase 6G con enfoque en estabilidad, consistencia, doble click, offline/online, caja, inventario, credito, cancelaciones, reportes finales y mensajes de usuario final.
+
+Resultado general:
+- Se encontro y corrigio un punto critico en frontend/servicio: en PRO cloud, una venta contado compatible podia caer a flujo local/shadow cuando el navegador estaba offline. Eso podia provocar ventas locales no oficiales y riesgo de duplicado al volver online.
+- Se corrigio para que PRO cloud offline bloquee ventas cloud reales con mensaje amigable, sin afectar FREE/local.
+- Se verifico que las RPCs criticas de 6B, 6C, 6D, 6E, 6E.1 y 6F existen en Supabase.
+- Se verificaron tablas criticas y checks estructurales de datos actuales.
+- Se verifico que el despliegue Vercel del commit de correccion quedo READY, por lo que el build de produccion paso.
+
+2. BUILD
+
+Ejecucion solicitada: npm run build
+
+Resultado:
+- En el contenedor local no fue posible clonar el repositorio por restriccion de red/DNS hacia github.com.
+- Se valido el build mediante Vercel despues del commit de correccion:
+  - Commit: f50ed4376f4ebbaef8710fbf2c4b3a1f2d8b6c12
+  - Mensaje: Fase 6G: bloquear ventas cloud PRO offline
+  - Deployment: dpl_A2reNPgoCsgitS2rJ2zGUtxabZct
+  - Estado: READY
+  - Target: production
+
+Errores corregidos:
+- No hubo error de build reportado por Vercel.
+- Se corrigio preventivamente el flujo offline PRO cloud para evitar venta local no oficial.
+
+3. PRUEBAS DE VENTAS
+
+Metodo usado:
+- Revision estructural de frontend + wrappers RPC.
+- Revision de tablas y datos actuales en Supabase sin insertar ventas destructivas de prueba.
+- Validacion de rutas de pago y efectos esperados.
+
+Venta contado efectivo:
+- processSaleCore decide venta cloud antes del commit local y, si cloud confirma, no ejecuta venta local ni shadow.
+- salesCloudCashierService enruta contado a las RPCs cloud cashier correspondientes.
+- salesCloudCashierMapper normaliza efectivo como cash y genera payment.
+- usePosCheckout exige caja abierta para flujo cloud actual.
+- Datos actuales: cash_sale_without_cash_movement_count = 0.
+
+Venta tarjeta:
+- Mapper normaliza tarjeta como card.
+- La venta cloud recibe payments con method card.
+- Datos actuales: non_cash_sale_with_cash_movement_count = 0.
+
+Venta transferencia:
+- Mapper normaliza transferencia como transfer.
+- No se detecto evidencia de movimientos de efectivo indebidos.
+- Datos actuales: non_cash_sale_with_cash_movement_count = 0.
+
+Venta fiada sin abono:
+- salesCloudCashierService enruta credit/fiado a venta fiada cloud.
+- Mapper exige cliente y balance pendiente.
+- Mensajes friendly contemplan cliente requerido, cliente no encontrado y saldo requerido.
+- Datos actuales: credit_sale_without_ledger_count = 0.
+
+Venta fiada con abono efectivo:
+- Mapper extrae pagos iniciales de credito con method cash/card/transfer.
+- Servicio cloud credit manda payments a la RPC de credito.
+- usePosCheckout exige caja para credit con componente efectivo.
+
+Venta fiada con abono tarjeta/transferencia:
+- Mapper permite initialPaymentMethod card/transfer.
+- Datos actuales: no se detecto no-efectivo con movimiento efectivo indebido.
+
+4. PRUEBAS DE INVENTARIO
+
+Producto sin lote:
+- En cloud inventory, Supabase valida stock transaccionalmente.
+- La RPC de venta cloud con inventario existe y toca movimientos de inventario.
+- El mapper envia product_id, quantity, unit_cost y batch_id opcional.
+
+Producto con lote:
+- Mapper conserva batch_id, batch_sku y fecha de caducidad.
+- Checks actuales no detectan stock negativo en productos ni lotes.
+
+Stock insuficiente:
+- En cloud inventory, Supabase queda como autoridad transaccional.
+- Mensaje friendly de stock insuficiente existe.
+- FREE/local conserva validateStockBeforeSale.
+
+Datos actuales:
+- sale_items_missing_inventory_movement = 0.
+- inventory_movements_orphan_sale = 0.
+- batches_negative_stock = 0.
+- products_negative_stock = 0.
+
+5. PRUEBAS DE CANCELACION
+
+Cancelar venta contado efectivo:
+- salesCloudCancellationService ejecuta preview antes de cancelar.
+- Luego ejecuta cancelacion cloud.
+- Luego ejecuta diagnostico de integridad.
+- Guarda patch local y dispara eventos de refresh de ventas/caja/productos/credito/reportes.
+
+Cancelar venta tarjeta/transferencia:
+- Preview y cancelacion cloud separan cash/inventory/credit reversal status.
+- No se detectaron movimientos de caja indebidos para ventas no efectivo en datos actuales.
+
+Cancelar venta fiada sin abono:
+- Servicio valida preview y bloqueos antes de aplicar.
+- Mensajes friendly contemplan deuda inconsistente y abonos posteriores.
+
+Cancelar venta fiada con abono:
+- Existen estados de reversa para credito, caja e inventario.
+- No hay cancelaciones duplicadas en datos actuales.
+
+Datos actuales:
+- cancellations_total = 3.
+- duplicate_cancellation_sales = 0.
+- cancelled_sales_without_cancellation_row = 0.
+- cancellation_rows_without_cancelled_sale = 0.
+
+6. IDEMPOTENCIA / DOBLE CLICK
+
+Venta:
+- salesCloudCashierService genera llave deterministica por venta + dispositivo.
+- Las tablas criticas tienen indices unicos para evitar duplicados por repeticion.
+- Las RPCs de venta cloud cashier/inventory/credit manejan estado de procesamiento.
+- usePosCheckout usa checkoutSnapshotRef; al procesar venta destruye el ref antes del await para evitar doble commit desde UI.
+
+Cancelacion:
+- salesCloudCancellationService genera llave deterministica por venta + dispositivo.
+- La tabla de cancelaciones tiene indice unico para evitar duplicados por repeticion.
+- El servicio bloquea ventas ya canceladas.
+- Dashboard cierra modal si la venta ya estaba cancelada.
+
+Abono cliente:
+- Se reviso dentro del alcance estructural de caja/credito; no se aplicaron cambios porque no hubo evidencia nueva de bug en esta fase.
+
+7. OFFLINE / ONLINE / PWA
+
+PRO online:
+- Venta cloud permitida si flags y licencia lo habilitan.
+- Cancelacion cloud permitida si online y feature activa.
+- Reportes cloud final via reportsRepository + reportsCloudRepository.
+
+PRO offline:
+- Correccion aplicada en salesCloudCashierService:
+  - Antes: venta contado compatible podia caer a local/shadow si offline.
+  - Ahora: si PRO cloud cashier esta activo y el metodo es cash/card/transfer/mixed compatible, se bloquea con mensaje friendly.
+- Cancelacion cloud ya bloqueaba offline.
+- Reportes cloud final ya usan cache/snapshot si existe o fallback local con advertencia no oficial.
+
+FREE/local offline:
+- No se tocaron flags FREE/local.
+- Si no aplica cloud cashier, el flujo local permanece.
+
+PWA movil:
+- La correccion reduce riesgo PWA de venta PRO local accidental al perder conexion.
+
+8. PERMISOS STAFF / ADMIN
+
+Resultado estructural:
+- Las RPCs reciben contexto de staff/dispositivo.
+- Scope de reportes finales se envia como mine por default desde DashboardPage.
+- Admin/global depende de permisos del contexto Supabase.
+- usePosCheckout exige caja abierta para flujo cloud actual, lo que protege efectivo y abonos iniciales.
+
+Pendiente recomendado:
+- Probar manualmente con staff real:
+  1) staff con POS+caja,
+  2) staff sin caja,
+  3) staff sin clientes,
+  4) staff sin reportes,
+  5) admin global.
+
+9. REPORTES FINALES
+
+Dashboard final:
+- DashboardPage usa CloudFinalStatsGrid cuando reportSource es cloud final.
+- CloudFinalStatsGrid muestra ventas netas, utilidad, COGS, margen, ventas brutas, canceladas, ticket promedio y badge Cloud oficial final.
+- ReportSourceBanner informa si es cloud final, cache o fallback no oficial.
+
+Historial final:
+- DashboardPage carga reportsRepository.getSalesFinalHistory cuando cloudSalesFinal esta activo.
+- SalesHistory recibe isCloudFinal y source.
+- Historial cloud final usa la RPC final de historial.
+
+Exportaciones:
+- reportsRepository.exportReportCsv enruta datasets finales sales, sale_items, sale_payments, sale_cancellations, cash_movements, inventory_movements, customer_ledger, profit y audit a exportacion final cloud cuando cloudSalesFinal + online.
+
+RPCs finales confirmadas:
+- pos_get_sales_final_overview.
+- pos_get_sales_final_timeseries.
+- pos_get_sales_final_history.
+- pos_get_sales_profit_report.
+- pos_get_sales_audit_report.
+- pos_export_sales_final.
+- pos_validate_sales_consistency.
+
+RPCs hardening 6E.1 confirmadas:
+- pos_preview_cloud_sale_cancellation.
+- pos_validate_cloud_sale_integrity.
+
+10. CONSISTENCIA AUTOMATICA / CHECKS DE DATOS
+
+La RPC final de consistencia existe y fue verificada por firma. No se ejecuto con contexto real de dispositivo desde QA para evitar manejo de credenciales sensibles en el informe.
+
+Checks manuales equivalentes sobre datos actuales:
+- sales_checked = 6.
+- payment_mismatch_count = 0.
+- cash_sale_without_cash_movement_count = 0.
+- non_cash_sale_with_cash_movement_count = 0.
+- credit_sale_without_ledger_count = 0.
+- cancelled_count = 3.
+- duplicate_cancellation_sales = 0.
+- cancelled_sales_without_cancellation_row = 0.
+- cancellation_rows_without_cancelled_sale = 0.
+- sale_items_missing_inventory_movement = 0.
+- inventory_movements_orphan_sale = 0.
+- batches_negative_stock = 0.
+- products_negative_stock = 0.
+
+11. CORRECCIONES APLICADAS
+
+Archivo modificado:
+- src/services/salesCloud/salesCloudCashierService.js
+
+Correccion:
+- Bloqueo PRO cloud offline para pagos compatibles cash/card/transfer/mixed.
+- Mensaje OFFLINE cambiado a:
+  "Sin conexion. Esta venta cloud necesita internet para proteger caja, inventario y credito."
+
+Motivo:
+- Evitar que PRO offline genere ventas locales no oficiales cuando ventas cloud PRO ya es fuente oficial.
+- No romper FREE/local porque la rama solo aplica si existe licencia cloud cashier activa y flag experimental activo.
+
+12. RIESGOS PENDIENTES
+
+Riesgo bajo/medio:
+- No se generaron ventas destructivas nuevas para cubrir cada caso de matriz porque se trabajo sobre proyecto real de produccion y datos existentes.
+- Conviene hacer una pasada manual desde la UI con una licencia PRO controlada y caja/staff de prueba para validar los 14 casos con datos visibles.
+
+Riesgo bajo:
+- El flujo actual exige caja abierta para todos los metodos cloud del checkout por diseno reciente. Si se decide permitir tarjeta/transferencia sin caja para staff sin permiso caja, conviene hacerlo como microfase posterior porque cambia regla operativa.
+
+13. RECOMENDACION
+
+Recomendacion actual:
+- FASE 6G queda razonablemente estabilizada a nivel estructural y con build de produccion READY.
+- Se recomienda NO pasar todavia a FASE 7 sin una prueba manual final en UI con licencia PRO controlada:
+  1) venta efectivo,
+  2) venta tarjeta,
+  3) venta transferencia,
+  4) fiada sin abono,
+  5) fiada con abono efectivo,
+  6) fiada con abono tarjeta/transfer,
+  7) cancelacion de cada tipo,
+  8) reload/doble click,
+  9) modo offline PRO.
+
+Criterio de cierre:
+- Si esas pruebas manuales no muestran issues criticos y Vercel permanece READY, se puede cerrar 6G y pasar a FASE 7.
