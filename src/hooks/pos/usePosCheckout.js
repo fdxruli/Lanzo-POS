@@ -5,6 +5,26 @@ import { broadcastDBChange } from '../../store/useProductStore';
 import { showMessageModal } from '../../services/utils';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
+import {
+    isCloudSalesCashierEnabled,
+    isCloudSalesCreditEnabled
+} from '../../services/sync/syncConstants';
+
+const CLOUD_TURN_REQUIRED_PAYMENT_METHODS = new Set([
+    'cash',
+    'card',
+    'transfer',
+    'credit',
+    'mixed'
+]);
+
+const shouldRequireOpenCashSessionForCloudSale = (licenseDetails) => Boolean(
+    licenseDetails?.valid &&
+    (
+        isCloudSalesCashierEnabled(licenseDetails) ||
+        isCloudSalesCreditEnabled(licenseDetails)
+    )
+);
 
 const normalizePaymentMethod = (method) => {
     const raw = String(method || '').trim().toLowerCase();
@@ -31,6 +51,8 @@ const normalizePaymentMethod = (method) => {
     ].includes(raw)) {
         return 'transfer';
     }
+
+    if (['mixed', 'mixto'].includes(raw)) return 'mixed';
 
     if ([
         'fiado',
@@ -329,7 +351,13 @@ export function usePosCheckout({
                 initialPaymentMethod === 'cash'
             );
 
-        if (hasCashComponent && (!pos.cajaActual || pos.cajaActual.estado !== 'abierta')) {
+        const licenseDetails = useAppStore.getState().licenseDetails;
+        const cloudSalesTurnRequired = shouldRequireOpenCashSessionForCloudSale(licenseDetails);
+        const requiresOpenCashSession = cloudSalesTurnRequired
+            ? CLOUD_TURN_REQUIRED_PAYMENT_METHODS.has(paymentMethod)
+            : hasCashComponent;
+
+        if (requiresOpenCashSession && (!pos.cajaActual || pos.cajaActual.estado !== 'abierta')) {
             modal.closeModal('payment'); // Cierre programático, snapshot sobrevive
             modal.openModal('quickCaja');
             return;
