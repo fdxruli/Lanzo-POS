@@ -16,6 +16,28 @@ import {
   LOCAL_FATAL_APP_STATUSES
 } from './licenseConstants';
 
+export const LAST_LICENSE_VALIDATION_SESSION_KEY = 'Lanzo_last_validation';
+export const LAST_LICENSE_VALIDATION_PERSISTENT_KEY = 'Lanzo_last_validation_persistent';
+export const LAST_REMOTE_LICENSE_VALIDATION_KEY = 'Lanzo_last_remote_license_validation';
+export const LAST_REMOTE_LICENSE_KEY = 'Lanzo_last_remote_license_key';
+
+const CRITICAL_LICENSE_VALIDATION_REASONS = [
+  'realtime_event',
+  'realtime_reconnected',
+  'realtime_recover',
+  'license_changed',
+  'plan_changed',
+  'device_changed',
+  'device_revoked',
+  'staff_changed',
+  'staff_invalidated',
+  'permission_changed',
+  'force',
+  'activation',
+  'staff_login',
+  'renewal'
+];
+
 export const isRealtimeEnabledForLicense = (licenseDetails) => (
   ENABLE_LICENSE_REALTIME &&
   licenseDetails?.features?.realtime_license_sync === true &&
@@ -65,6 +87,57 @@ export const getLicenseSyncIntervalMs = (licenseDetails = {}, mode = getLicenseS
   }
 
   return FREE_LICENSE_SYNC_INTERVAL_MS;
+};
+
+export const isCriticalLicenseValidationReason = (reason = '') => {
+  const normalized = String(reason || '').toLowerCase();
+  return CRITICAL_LICENSE_VALIDATION_REASONS.some((item) => normalized.includes(item));
+};
+
+export const readLastLicenseValidationMs = () => {
+  try {
+    const sessionValue = Number(sessionStorage.getItem(LAST_LICENSE_VALIDATION_SESSION_KEY) || 0);
+    const persistentValue = Number(localStorage.getItem(LAST_LICENSE_VALIDATION_PERSISTENT_KEY) || 0);
+    const legacyRemoteValue = Number(sessionStorage.getItem(LAST_REMOTE_LICENSE_VALIDATION_KEY) || 0);
+    const candidate = Math.max(sessionValue || 0, persistentValue || 0, legacyRemoteValue || 0);
+    return Number.isFinite(candidate) ? candidate : 0;
+  } catch {
+    return 0;
+  }
+};
+
+export const markLastLicenseValidation = (licenseKey = null) => {
+  const now = Date.now().toString();
+
+  try {
+    sessionStorage.setItem(LAST_LICENSE_VALIDATION_SESSION_KEY, now);
+    sessionStorage.setItem(LAST_REMOTE_LICENSE_VALIDATION_KEY, now);
+    if (licenseKey) sessionStorage.setItem(LAST_REMOTE_LICENSE_KEY, licenseKey);
+  } catch {
+    // Best effort.
+  }
+
+  try {
+    localStorage.setItem(LAST_LICENSE_VALIDATION_PERSISTENT_KEY, now);
+  } catch {
+    // Best effort.
+  }
+};
+
+export const shouldSkipRemoteValidationForPlan = ({
+  licenseDetails,
+  mode = getLicenseSyncMode(licenseDetails),
+  reason = 'manual',
+  now = Date.now()
+} = {}) => {
+  if (!licenseDetails?.license_key) return false;
+  if (isCriticalLicenseValidationReason(reason)) return false;
+
+  const lastValidationMs = readLastLicenseValidationMs();
+  if (!lastValidationMs) return false;
+
+  const intervalMs = getLicenseSyncIntervalMs(licenseDetails, mode);
+  return now - lastValidationMs < intervalMs;
 };
 
 export const normalizeValidationCode = (validation = {}) => (
