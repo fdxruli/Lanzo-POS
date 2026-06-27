@@ -88,6 +88,12 @@ export const LICENSE_VALIDATION_ERROR_COOLDOWN_MS = 10 * 60 * 1000; // 10 min
 // Evita stop/start de realtime en cada regreso a primer plano si el canal sigue vivo.
 export const REALTIME_RECOVERY_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
+// FASE 6H.2: reconexión realtime adaptativa.
+// Microcortes cortos no deben convertir SUBSCRIBED en validación remota crítica.
+export const REALTIME_SHORT_RECONNECT_GRACE_MS = 2 * 60 * 1000; // 2 min
+// Si la app/canal estuvo fuera suficiente tiempo, se valida remoto al regresar.
+export const REALTIME_FORCE_VALIDATE_AFTER_OFFLINE_MS = 15 * 60 * 1000; // 15 min
+
 // Perfil: TTL largo. No se refresca en ventas ni safety checks frecuentes.
 export const PROFILE_REFRESH_TTL_MS = 12 * 60 * 60 * 1000;
 export const PROFILE_LAST_LOAD_KEY = 'Lanzo_last_profile_load';
