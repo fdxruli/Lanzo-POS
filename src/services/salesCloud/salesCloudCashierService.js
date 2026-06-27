@@ -70,7 +70,7 @@ const friendlyCloudCashierError = (error) => {
     CLOUD_SALES_CREDIT_DISABLED: 'Venta fiada cloud aún no está activa para esta licencia.',
     CLOUD_SALES_INVENTORY_DISABLED: 'Venta cloud con inventario aún no está activa para esta licencia.',
     POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar la licencia de este dispositivo. Revisa conexión y licencia.',
-    OFFLINE: 'No hay conexión. La venta fiada cloud necesita internet para proteger deuda, caja e inventario.',
+    OFFLINE: 'Sin conexión. Esta venta cloud necesita internet para proteger caja, inventario y crédito.',
     INSUFFICIENT_CLOUD_STOCK: 'No hay suficiente stock en la nube para completar esta venta fiada. No se creó deuda.',
     PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE: 'Este producto aún no está listo para venta cloud. Sincroniza el catálogo antes de vender fiado.',
     CLOUD_PRODUCT_NOT_AVAILABLE: 'Este producto no está activo en la nube. Revisa el catálogo antes de venderlo.',
@@ -118,8 +118,17 @@ export const salesCloudCashierService = {
       };
     }
 
-    if (!context.online) return { useCloud: false, reason: 'offline_local_shadow' };
-    if (!isCloudCashierCompatiblePayment(paymentData)) return { useCloud: false, reason: 'payment_not_compatible' };
+    const cashierCompatible = isCloudCashierCompatiblePayment(paymentData);
+    if (!cashierCompatible) return { useCloud: false, reason: 'payment_not_compatible' };
+
+    if (!context.online) {
+      return {
+        useCloud: true,
+        reason: 'cloud_cashier_offline_block',
+        mode: context.inventoryFeatureEnabled ? 'cloud_cashier_inventory' : 'cloud_cashier',
+        context
+      };
+    }
 
     return {
       useCloud: true,
