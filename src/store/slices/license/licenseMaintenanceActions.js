@@ -38,8 +38,8 @@ export const createLicenseMaintenanceActions = ({
         if (!lastActiveRaw && !isRealtimeMode) return;
 
         const lastActive = lastActiveRaw ? parseInt(lastActiveRaw, 10) : now;
-        const timeAwayMs = Number.isFinite(lastActive) ? now - lastActive : 0;
-        const timeAwayMinutes = Math.max(timeAwayMs, 0) / (1000 * 60);
+        const timeAwayMs = Number.isFinite(lastActive) ? Math.max(0, now - lastActive) : 0;
+        const timeAwayMinutes = timeAwayMs / (1000 * 60);
 
         // Antes se omitía todo si la app estuvo fuera menos de 3 minutos. En PWA móvil
         // eso deja canales WebSocket dormidos/stale aunque la app esté abierta. Para
@@ -65,7 +65,7 @@ export const createLicenseMaintenanceActions = ({
         }
 
         if (isRealtimeMode && typeof state.recoverRealtimeSecurity === 'function') {
-            await state.recoverRealtimeSecurity(reason);
+            await state.recoverRealtimeSecurity(reason, { timeAwayMs });
             return;
         }
 
