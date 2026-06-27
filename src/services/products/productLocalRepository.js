@@ -30,6 +30,22 @@ const ensureOpen = async () => {
   if (!db.isOpen()) await db.open();
 };
 
+const isActiveCatalogRecord = (record) => (
+  record?.id &&
+  record.isActive !== false &&
+  !record.deletedAt &&
+  !record.deletedTimestamp
+);
+
+const isUnsyncedCatalogRecord = (record) => {
+  if (!isActiveCatalogRecord(record)) return false;
+  return (
+    record.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED ||
+    !record.serverVersion ||
+    !record.lastSyncedAt
+  );
+};
+
 const validateCategoryNameUnique = async (category) => {
   const displayName = String(category?.name || '').trim();
   const comparisonName = displayName.replace(/\s+/g, '').toLowerCase();
@@ -360,9 +376,24 @@ export const productLocalRepository = {
     ]);
 
     return {
-      categories: categories.filter((category) => category?.id && category.isActive !== false && !category.deletedAt && !category.deletedTimestamp),
-      products: products.filter((product) => product?.id && product.isActive !== false && !product.deletedAt && !product.deletedTimestamp),
-      batches: batches.filter((batch) => batch?.id && batch.isActive !== false && !batch.deletedAt && !batch.deletedTimestamp)
+      categories: categories.filter(isActiveCatalogRecord),
+      products: products.filter(isActiveCatalogRecord),
+      batches: batches.filter(isActiveCatalogRecord)
+    };
+  },
+
+  async listUnsyncedLocalCatalogForCloud() {
+    await ensureOpen();
+    const [categories, products, batches] = await Promise.all([
+      db.table(STORES.CATEGORIES).toArray(),
+      db.table(STORES.MENU).toArray(),
+      db.table(STORES.PRODUCT_BATCHES).toArray()
+    ]);
+
+    return {
+      categories: categories.filter(isUnsyncedCatalogRecord),
+      products: products.filter(isUnsyncedCatalogRecord),
+      batches: batches.filter(isUnsyncedCatalogRecord)
     };
   },
 
