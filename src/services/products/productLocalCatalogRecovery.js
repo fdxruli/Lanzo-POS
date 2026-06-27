@@ -150,7 +150,8 @@ export const productLocalCatalogRecovery = {
       return { success: true, skipped: true, reason: 'no_unsynced_catalog' };
     }
 
-    const issues = validateLocalCatalogForMigration(catalog);
+    const validationCatalog = await productLocalRepository.getLocalCatalogForMigration();
+    const issues = validateLocalCatalogForMigration(validationCatalog);
     if (issues.length > 0) {
       await saveRecoveryWarning({
         licenseKey,
