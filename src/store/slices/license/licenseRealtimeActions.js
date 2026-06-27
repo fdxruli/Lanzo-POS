@@ -10,6 +10,7 @@ import {
 } from '../../../services/licenseRealtime';
 
 import {
+  REALTIME_FORCE_VALIDATE_AFTER_OFFLINE_MS,
   REALTIME_RECOVERY_MIN_INTERVAL_MS
 } from './licenseConstants';
 
@@ -20,6 +21,16 @@ import {
 const waitForRealtimeCleanup = () => new Promise((resolve) => setTimeout(resolve, 200));
 
 let lastRealtimeRecoveryAt = 0;
+
+const normalizeRealtimeReason = (reason = 'manual') => String(reason || 'manual')
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9_-]+/g, '_') || 'manual';
+
+const getOfflineDurationMs = (metadata = {}) => {
+  const value = Number(metadata.offlineDurationMs ?? metadata.timeAwayMs ?? 0);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+};
 
 export const createLicenseRealtimeActions = ({
   set,
@@ -111,16 +122,33 @@ export const createLicenseRealtimeActions = ({
             }
           },
 
-          onPermanentFailure: (message) => {
-            get().reportServerFailure(message, {
-              health: 'down',
-              reason: 'realtime_permanent_failure'
-            });
+          onInitialSubscribed: () => {
+            get().clearServerStatus?.();
+            Logger.log('[Realtime] Canal conectado inicialmente; sin validación remota forzada.');
           },
 
-          onConnectionRestored: () => {
+          onPermanentFailure: async (message, metadata = {}) => {
+            get().reportServerFailure(message, {
+              health: 'down',
+              reason: metadata.reason || 'realtime_permanent_failure'
+            });
+
+            if (metadata.permanent === true) {
+              await get().switchLicenseSyncToPollingFallback?.('realtime_permanent_failure');
+            }
+          },
+
+          onConnectionRestored: async (metadata = {}) => {
             get().clearServerStatus?.();
-            get().runLicenseSyncCheck('realtime_reconnected');
+
+            if (metadata.wasLongDisconnect) {
+              Logger.log('[Realtime] Reconexión larga; se fuerza validación.');
+              await get().runLicenseSyncCheck('realtime_reconnected_long');
+              return;
+            }
+
+            Logger.log('[Realtime] Reconexión corta; se respeta TTL.');
+            await get().runLicenseSyncCheck('realtime_resubscribed_short');
           }
         }
       );
@@ -144,11 +172,14 @@ export const createLicenseRealtimeActions = ({
     }
   },
 
-  recoverRealtimeSecurity: async (reason = 'manual') => {
+  recoverRealtimeSecurity: async (reason = 'manual', metadata = {}) => {
     const state = get();
+    const safeReason = normalizeRealtimeReason(reason);
+    const offlineDurationMs = getOfflineDurationMs(metadata);
+    const wasLongOffline = offlineDurationMs >= REALTIME_FORCE_VALIDATE_AFTER_OFFLINE_MS;
 
     if (state._isRecoveringRealtime) {
-      Logger.log(`[Realtime] Recuperación ya en curso; se omite ${reason}.`);
+      Logger.log(`[Realtime] Recuperación ya en curso; se omite ${safeReason}.`);
       return state.realtimeSubscription;
     }
 
@@ -162,7 +193,7 @@ export const createLicenseRealtimeActions = ({
     }
 
     if (!navigator.onLine) {
-      Logger.warn(`[Realtime] No se recupera canal (${reason}): sin conexión.`);
+      Logger.warn(`[Realtime] No se recupera canal (${safeReason}): sin conexión.`);
       return null;
     }
 
@@ -171,15 +202,32 @@ export const createLicenseRealtimeActions = ({
     const hasActiveChannel = Boolean(state.realtimeSubscription && connectionStatus.isActive);
     const recentlyRecovered = now - lastRealtimeRecoveryAt < REALTIME_RECOVERY_MIN_INTERVAL_MS;
 
-    if (hasActiveChannel && !connectionStatus.isReconnecting && !connectionStatus.isConnecting) {
-      if (recentlyRecovered) {
-        Logger.log(`[Realtime] Canal activo; recuperación omitida por cooldown (${reason}).`);
+    if (connectionStatus.isReconnecting || connectionStatus.isConnecting) {
+      if (wasLongOffline) {
+        Logger.log('[Realtime] Canal reconectando tras pausa larga; se fuerza validación.');
+        await get().runLicenseSyncCheck('realtime_reconnected_long');
+      } else {
+        Logger.log(`[Realtime] Canal reconectando; se evita recuperación duplicada (${safeReason}).`);
+      }
+      return state.realtimeSubscription;
+    }
+
+    if (hasActiveChannel) {
+      if (recentlyRecovered && !wasLongOffline) {
+        Logger.log(`[Realtime] Canal activo; recuperación omitida por cooldown (${safeReason}).`);
         return state.realtimeSubscription;
       }
 
       lastRealtimeRecoveryAt = now;
-      Logger.log(`[Realtime] Canal activo; no se reinicia, solo safety check (${reason}).`);
-      await get().runLicenseSyncCheck(`realtime_probe_${reason}`);
+
+      if (wasLongOffline) {
+        Logger.log('[Realtime] Canal activo tras pausa larga; se fuerza validación.');
+        await get().runLicenseSyncCheck('realtime_reconnected_long');
+        return state.realtimeSubscription;
+      }
+
+      Logger.log('[Realtime] Canal activo; probe no crítico.');
+      await get().runLicenseSyncCheck(`realtime_probe_${safeReason}`);
       return state.realtimeSubscription;
     }
 
@@ -187,16 +235,21 @@ export const createLicenseRealtimeActions = ({
 
     try {
       lastRealtimeRecoveryAt = now;
-      Logger.log(`[Realtime] Recuperando canal privado (${reason}).`);
+      Logger.log('[Realtime] Canal caído; recuperando y validando.');
 
       await get().stopRealtimeSecurity();
       await waitForRealtimeCleanup();
 
       const channel = await get().startRealtimeSecurity();
+      const validationReason = wasLongOffline
+        ? 'realtime_reconnected_long'
+        : `realtime_recover_${safeReason}`;
 
-      // La PWA móvil puede perder eventos mientras estuvo pausada. Al recuperar el
-      // WebSocket forzamos una revalidación inmediata para no depender del polling.
-      await get().runLicenseSyncCheck(`realtime_recover_${reason}`);
+      await get().runLicenseSyncCheck(validationReason);
+
+      if (!channel) {
+        await get().switchLicenseSyncToPollingFallback?.('realtime_recover_failed');
+      }
 
       return channel;
     } catch (error) {
