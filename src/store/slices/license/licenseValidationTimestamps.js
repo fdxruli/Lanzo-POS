@@ -1,8 +1,10 @@
 import {
-  getLicenseSyncIntervalMs,
-  getLicenseSyncMode,
-  isCriticalLicenseValidationReason
-} from './licenseGuards';
+  ENABLE_LICENSE_REALTIME,
+  FREE_LICENSE_SYNC_INTERVAL_MS,
+  BASIC_LICENSE_SYNC_INTERVAL_MS,
+  PRO_REALTIME_SAFETY_SYNC_INTERVAL_MS,
+  PRO_POLLING_SYNC_INTERVAL_MS
+} from './licenseConstants';
 
 const SHORT_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
 
@@ -27,9 +29,31 @@ const readNum = (storage, key) => {
 const write = (storage, key, value) => {
   try {
     storage.setItem(key, value);
-  } catch {
-    // Best effort.
-  }
+  } catch {}
+};
+
+const planCodeOf = (licenseDetails = {}) => (
+  licenseDetails.plan_code ||
+  licenseDetails.plan ||
+  licenseDetails.subscription_plan ||
+  licenseDetails.product_code ||
+  ''
+).toString().trim().toLowerCase();
+
+const isCriticalReason = (reason = '') => /realtime|license|plan|device|staff|permission|force|activation|renewal/.test(String(reason || '').toLowerCase());
+
+const getMode = (licenseDetails = {}) => (
+  ENABLE_LICENSE_REALTIME && licenseDetails?.features?.realtime_license_sync === true && Boolean(licenseDetails?.realtime_topic)
+    ? 'hybrid_realtime'
+    : 'hybrid_polling'
+);
+
+const getIntervalMs = (licenseDetails = {}, mode = getMode(licenseDetails)) => {
+  const code = planCodeOf(licenseDetails);
+  const isPro = code.includes('pro') || licenseDetails.features?.cloud_sales_base === true;
+  if (isPro) return mode === 'hybrid_realtime' ? PRO_REALTIME_SAFETY_SYNC_INTERVAL_MS : PRO_POLLING_SYNC_INTERVAL_MS;
+  if (code.includes('basic')) return BASIC_LICENSE_SYNC_INTERVAL_MS;
+  return FREE_LICENSE_SYNC_INTERVAL_MS;
 };
 
 export const readLastLicenseValidationSuccessMs = () => {
@@ -37,9 +61,7 @@ export const readLastLicenseValidationSuccessMs = () => {
     readNum(localStorage, LAST_LICENSE_VALIDATION_SUCCESS_KEY),
     readNum(sessionStorage, LAST_LICENSE_VALIDATION_SUCCESS_KEY)
   );
-
   if (primary > 0) return primary;
-
   return Math.max(
     readNum(sessionStorage, LAST_LICENSE_VALIDATION_SESSION_KEY),
     readNum(localStorage, LAST_LICENSE_VALIDATION_PERSISTENT_KEY),
@@ -54,13 +76,11 @@ export const readLastLicenseValidationAttemptMs = () => Math.max(
 
 export const markLastLicenseValidationSuccess = (licenseKey = null) => {
   const now = Date.now().toString();
-
   write(localStorage, LAST_LICENSE_VALIDATION_SUCCESS_KEY, now);
   write(sessionStorage, LAST_LICENSE_VALIDATION_SUCCESS_KEY, now);
   write(localStorage, LAST_LICENSE_VALIDATION_PERSISTENT_KEY, now);
   write(sessionStorage, LAST_LICENSE_VALIDATION_SESSION_KEY, now);
   write(sessionStorage, LAST_REMOTE_LICENSE_VALIDATION_KEY, now);
-
   if (licenseKey) {
     write(localStorage, LAST_LICENSE_VALIDATION_SUCCESS_LICENSE_KEY, licenseKey);
     write(sessionStorage, LAST_LICENSE_VALIDATION_SUCCESS_LICENSE_KEY, licenseKey);
@@ -70,44 +90,26 @@ export const markLastLicenseValidationSuccess = (licenseKey = null) => {
 
 export const markLastLicenseValidationAttempt = (licenseKey = null) => {
   const now = Date.now().toString();
-
   write(localStorage, LAST_LICENSE_VALIDATION_ATTEMPT_KEY, now);
   write(sessionStorage, LAST_LICENSE_VALIDATION_ATTEMPT_KEY, now);
-
   if (licenseKey) {
     write(localStorage, LAST_LICENSE_VALIDATION_ATTEMPT_LICENSE_KEY, licenseKey);
     write(sessionStorage, LAST_LICENSE_VALIDATION_ATTEMPT_LICENSE_KEY, licenseKey);
   }
 };
 
-export const shouldSkipRemoteValidationForPlan = ({
-  licenseDetails,
-  mode = getLicenseSyncMode(licenseDetails),
-  reason = 'manual',
-  now = Date.now()
-} = {}) => {
+export const shouldSkipRemoteValidationForPlan = ({ licenseDetails, mode = getMode(licenseDetails), reason = 'manual', now = Date.now() } = {}) => {
   if (!licenseDetails?.license_key) return false;
-  if (isCriticalLicenseValidationReason(reason)) return false;
-
+  if (isCriticalReason(reason)) return false;
   const lastSuccessMs = readLastLicenseValidationSuccessMs();
-  if (!lastSuccessMs) return false;
-
-  const intervalMs = getLicenseSyncIntervalMs(licenseDetails, mode);
-  return now - lastSuccessMs < intervalMs;
+  return lastSuccessMs > 0 && now - lastSuccessMs < getIntervalMs(licenseDetails, mode);
 };
 
-export const shouldSkipRemoteValidationAfterFailure = ({
-  licenseDetails,
-  reason = 'manual',
-  now = Date.now()
-} = {}) => {
+export const shouldSkipRemoteValidationAfterFailure = ({ licenseDetails, reason = 'manual', now = Date.now() } = {}) => {
   if (!licenseDetails?.license_key) return false;
-  if (isCriticalLicenseValidationReason(reason)) return false;
-
+  if (isCriticalReason(reason)) return false;
   const lastAttemptMs = readLastLicenseValidationAttemptMs();
-  if (!lastAttemptMs) return false;
-
-  return now - lastAttemptMs < SHORT_RETRY_COOLDOWN_MS;
+  return lastAttemptMs > 0 && now - lastAttemptMs < SHORT_RETRY_COOLDOWN_MS;
 };
 
 export const readLastLicenseValidationMs = readLastLicenseValidationSuccessMs;
