@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { salesRepository } from '../../services/db/sales';
+import { REPORT_SOURCE_MODES } from '../../services/reports/reportSourceBadges';
 import './SalesHistory.css';
 
 const toText = (value) => String(value || '').trim().toLowerCase();
 
-const getSaleKey = (sale) => sale?.id || sale?.timestamp || 'sale-without-id';
+const getSaleKey = (sale) => sale?.cloudSaleId || sale?.cloud_sale_id || sale?.id || sale?.timestamp || 'sale-without-id';
 
 const isSplitParentSale = (sale = {}) => (
   sale.type === 'split_parent' ||
@@ -22,8 +23,20 @@ const isCostMissing = (value) => (
   Number.isNaN(Number(value))
 );
 
+const readFirst = (...values) => {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return '';
+};
+
+const toMoney = (value) => parseFloat(String(value ?? 0).replace(/[^0-9.-]+/g, '')) || 0;
+
+const getSaleTimestamp = (sale = {}) => readFirst(sale.timestamp, sale.soldAt, sale.sold_at, sale.createdAt, sale.created_at);
+
 const getCustomerLabel = (sale = {}) => (
   sale.customerName ||
+  sale.customer_name ||
   sale.customer?.name ||
   sale.customerSnapshot?.name ||
   sale.customerId ||
@@ -37,11 +50,14 @@ const getPaymentLabel = (sale = {}) => (
   ''
 );
 
+const getSourceMode = (sale = {}) => String(sale.sourceMode || sale.source_mode || '').toLowerCase();
+
 const getSaleStatus = (sale = {}) => {
   const status = String(sale.status || '').toLowerCase();
-  const fulfillmentStatus = String(sale.fulfillmentStatus || '').toLowerCase();
+  const fulfillmentStatus = String(sale.fulfillmentStatus || sale.fulfillment_status || '').toLowerCase();
   if (status === 'cancelled' || fulfillmentStatus === 'cancelled') return 'cancelled';
   if (status === 'open' || fulfillmentStatus === 'open') return 'open';
+  if (status === 'closed' || fulfillmentStatus === 'closed') return 'closed';
   return status || fulfillmentStatus || 'completed';
 };
 
@@ -56,13 +72,18 @@ const buildCancellationSummary = (sale = {}) => {
   const restockCount = disposition.filter((entry) => entry.action === 'RESTOCK').length;
   const wasteCount = disposition.filter((entry) => entry.action === 'WASTE').length;
   const noReturnCount = disposition.filter((entry) => entry.action === 'NO_RETURN').length;
+  const cloudReversals = [
+    sale.cashReversalStatus || sale.cash_reversal_status ? `Caja: ${sale.cashReversalStatus || sale.cash_reversal_status}` : null,
+    sale.inventoryReversalStatus || sale.inventory_reversal_status ? `Inventario: ${sale.inventoryReversalStatus || sale.inventory_reversal_status}` : null,
+    sale.creditReversalStatus || sale.credit_reversal_status ? `Credito: ${sale.creditReversalStatus || sale.credit_reversal_status}` : null
+  ].filter(Boolean);
 
   return {
-    cancelledBy: sale.cancelledBy || 'No registrado',
-    cancelReason: sale.cancelReason || sale.deletedReason || 'Sin motivo',
+    cancelledBy: sale.cancelledBy || sale.cancelled_by || sale.actorName || 'No registrado',
+    cancelReason: sale.cancelReason || sale.cancel_reason || sale.deletedReason || 'Sin motivo',
     inventoryText: sale.inventoryRestored
       ? `Stock devuelto (${restockCount || 'parcial'})`
-      : 'Stock no devuelto',
+      : (cloudReversals.length ? cloudReversals.join(' | ') : 'Stock no devuelto'),
     wasteText: sale.cancellationWasteRecordIds?.length
       ? `${sale.cancellationWasteRecordIds.length} merma(s) registrada(s)`
       : (wasteCount ? `${wasteCount} item(s) enviados a merma` : 'Sin merma'),
@@ -70,9 +91,94 @@ const buildCancellationSummary = (sale = {}) => {
       restockCount ? `${restockCount} reposicion` : null,
       wasteCount ? `${wasteCount} merma` : null,
       noReturnCount ? `${noReturnCount} sin retorno` : null
-    ].filter(Boolean).join(' | ') || 'Sin plan detallado'
+    ].filter(Boolean).join(' | ') || (cloudReversals.length ? 'Reversas cloud aplicadas' : 'Sin plan detallado')
   };
 };
+
+const isEffectApplied = (status) => String(status || '').toLowerCase() === 'applied';
+
+const buildCloudBadges = (sale = {}, isCloudFinal = false) => {
+  if (!isCloudFinal) return [];
+
+  const sourceMode = getSourceMode(sale);
+  const status = getSaleStatus(sale);
+  const badges = [];
+
+  if (sourceMode === 'cloud_committed') badges.push({ label: 'Cloud oficial', tone: 'cloud' });
+  if (sourceMode === 'shadow') badges.push({ label: 'Shadow', tone: 'warning' });
+  if (sourceMode === 'legacy_imported' || sourceMode === 'legacy') badges.push({ label: 'Historico local importado', tone: 'local' });
+  if (status === 'closed') badges.push({ label: 'Cerrada', tone: 'success' });
+  if (status === 'cancelled') badges.push({ label: 'Cancelada', tone: 'danger' });
+
+  if (isEffectApplied(sale.cashEffectStatus || sale.cash_effect_status)) badges.push({ label: 'Caja aplicada', tone: 'cloud' });
+  if (isEffectApplied(sale.inventoryEffectStatus || sale.inventory_effect_status)) badges.push({ label: 'Inventario aplicado', tone: 'cloud' });
+  if (isEffectApplied(sale.creditEffectStatus || sale.credit_effect_status)) badges.push({ label: 'Credito aplicado', tone: 'cloud' });
+
+  const hasReversals = [
+    sale.cashReversalStatus || sale.cash_reversal_status,
+    sale.inventoryReversalStatus || sale.inventory_reversal_status,
+    sale.creditReversalStatus || sale.credit_reversal_status
+  ].some(isEffectApplied);
+  if (hasReversals) badges.push({ label: 'Reversas aplicadas', tone: 'danger' });
+
+  return badges;
+};
+
+const badgeStyle = (tone) => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '2px 7px',
+  borderRadius: '999px',
+  fontSize: '0.68rem',
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  border: tone === 'danger' ? '1px solid rgba(220, 38, 38, 0.35)' : '1px solid rgba(99, 102, 241, 0.25)',
+  color: tone === 'danger' ? 'var(--error-color)' : tone === 'success' ? 'var(--success-color)' : 'var(--secondary-color)',
+  background: tone === 'danger' ? 'rgba(220, 38, 38, 0.08)' : 'rgba(99, 102, 241, 0.1)'
+});
+
+const getCloudActionState = (sale = {}, isCloudFinal = false) => {
+  const status = getSaleStatus(sale);
+  const sourceMode = getSourceMode(sale);
+
+  if (!isCloudFinal) {
+    return {
+      disabled: false,
+      action: status === 'cancelled' ? 'archive' : 'cancel',
+      label: status === 'cancelled' ? 'Mover a papelera' : `Cancelar ${isSplitParentSale(sale) ? 'origen' : 'venta'}`,
+      title: ''
+    };
+  }
+
+  if (status === 'cancelled') {
+    return {
+      disabled: true,
+      action: 'none',
+      label: 'Ya cancelada',
+      title: 'Esta venta cloud ya fue cancelada y no puede cancelarse otra vez.'
+    };
+  }
+
+  if (status === 'closed' && sourceMode === 'cloud_committed') {
+    return {
+      disabled: false,
+      action: 'cancel',
+      label: 'Cancelar venta cloud',
+      title: 'Usa el flujo seguro de cancelacion cloud 6E.'
+    };
+  }
+
+  return {
+    disabled: true,
+    action: 'none',
+    label: 'Solo consulta',
+    title: sourceMode === 'shadow' || sourceMode === 'legacy_imported'
+      ? 'Esta venta no tiene efectos cloud reales; no se cancela desde el flujo cloud.'
+      : 'Solo se pueden cancelar ventas cloud cerradas.'
+  };
+};
+
+const getItems = (sale = {}) => (Array.isArray(sale.items) ? sale.items : []);
 
 export default function SalesHistory({
   sales,
@@ -82,7 +188,10 @@ export default function SalesHistory({
   onPrev,
   hasMore = false,
   currentPageIndex = 0,
-  isLoading = false
+  isLoading = false,
+  source = null,
+  reportSource = null,
+  isCloudFinal = false
 }) {
   const [expandedSplits, setExpandedSplits] = useState({});
   const [filters, setFilters] = useState({
@@ -93,6 +202,10 @@ export default function SalesHistory({
     status: 'all',
     split: 'all'
   });
+
+  const effectiveSource = source || reportSource || {};
+  const effectiveIsCloudFinal = Boolean(isCloudFinal || effectiveSource.final === true || effectiveSource.mode === REPORT_SOURCE_MODES.CLOUD_FINAL);
+  const sourceWarnings = Array.isArray(effectiveSource.warnings) ? effectiveSource.warnings : [];
 
   const mainSales = useMemo(
     () => (sales || []).filter((sale) => !sale.splitParentId),
@@ -113,12 +226,14 @@ export default function SalesHistory({
     const toMs = filters.dateTo ? new Date(`${filters.dateTo}T23:59:59`).getTime() : null;
 
     return mainSales.filter((sale) => {
-      const saleTime = Date.parse(sale.timestamp);
+      const saleTime = Date.parse(getSaleTimestamp(sale));
       const splitParent = isSplitParentSale(sale);
       const status = getSaleStatus(sale);
       const haystack = [
         sale.id,
+        sale.cloudSaleId,
         sale.folio,
+        sale.cloudFolio,
         getCustomerLabel(sale),
         getPaymentLabel(sale),
         sale.total
@@ -173,14 +288,16 @@ export default function SalesHistory({
   };
 
   const exportCsv = () => {
-    const header = ['id', 'folio', 'fecha', 'cliente', 'metodo_pago', 'estado', 'total'];
+    const header = ['id', 'cloud_sale_id', 'folio', 'fecha', 'cliente', 'metodo_pago', 'estado', 'source_mode', 'total'];
     const rows = filteredSales.map((sale) => [
       sale.id,
-      sale.folio,
-      sale.timestamp,
+      sale.cloudSaleId || sale.cloud_sale_id,
+      sale.folio || sale.cloudFolio,
+      getSaleTimestamp(sale),
       getCustomerLabel(sale),
       getPaymentLabel(sale),
       getSaleStatus(sale),
+      getSourceMode(sale),
       sale.total
     ]);
     const csv = [header, ...rows]
@@ -198,11 +315,12 @@ export default function SalesHistory({
   const printPdf = () => {
     const rows = filteredSales.map((sale) => `
       <tr>
-        <td>${sale.folio || sale.id || ''}</td>
-        <td>${new Date(sale.timestamp).toLocaleString()}</td>
+        <td>${sale.folio || sale.cloudFolio || sale.id || ''}</td>
+        <td>${new Date(getSaleTimestamp(sale)).toLocaleString()}</td>
         <td>${getCustomerLabel(sale) || '-'}</td>
         <td>${getPaymentLabel(sale) || '-'}</td>
         <td>${getSaleStatus(sale)}</td>
+        <td>${getSourceMode(sale) || '-'}</td>
         <td>$${(Number(sale.total) || 0).toFixed(2)}</td>
       </tr>
     `).join('');
@@ -223,7 +341,7 @@ export default function SalesHistory({
           <h1>Historial de ventas</h1>
           <table>
             <thead>
-              <tr><th>Folio</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Estado</th><th>Total</th></tr>
+              <tr><th>Folio</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Estado</th><th>Fuente</th><th>Total</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
@@ -248,6 +366,19 @@ export default function SalesHistory({
           </button>
         </div>
       </div>
+
+      {effectiveIsCloudFinal && (
+        <div className="card-mini-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.5rem' }}>
+          <span className="mini-stat-pill">Cloud oficial final</span>
+          {effectiveSource.mode === REPORT_SOURCE_MODES.CACHE && <span className="mini-stat-pill">Último snapshot cloud final</span>}
+        </div>
+      )}
+
+      {sourceWarnings.length > 0 && (
+        <div className="empty-message" style={{ margin: '0 0 0.5rem', textAlign: 'left', fontSize: '0.8rem' }}>
+          {sourceWarnings[0]}
+        </div>
+      )}
 
       <div className="history-filters">
         <input
@@ -297,6 +428,13 @@ export default function SalesHistory({
             const isCancelled = getSaleStatus(sale) === 'cancelled';
             const expandedData = expandedSplits[sale.id];
             const cancellationSummary = buildCancellationSummary(sale);
+            const actionState = getCloudActionState(sale, effectiveIsCloudFinal);
+            const badges = buildCloudBadges(sale, effectiveIsCloudFinal);
+            const items = getItems(sale);
+            const itemsCount = Number(sale.itemsCount || sale.items_count || items.length || 0);
+            const itemsQuantity = Number(sale.itemsQuantity || sale.items_quantity || 0);
+            const amountPaid = Number(sale.amountPaid || sale.amount_paid || 0);
+            const balanceDue = Number(sale.balanceDue || sale.balance_due || 0);
 
             return (
               <div key={getSaleKey(sale)} className={`sale-card-wrapper ${isSplitParent ? 'split-parent-card' : ''}`}>
@@ -304,30 +442,37 @@ export default function SalesHistory({
                   <div className="sale-header">
                     <div className="sale-date">
                       <span className="sale-folio-tag">
-                        Folio: {sale.folio || sale.id?.substring(0, 6) || '---'}
+                        Folio: {sale.folio || sale.cloudFolio || sale.id?.substring?.(0, 6) || '---'}
                       </span>
-                      {new Date(sale.timestamp).toLocaleString()}
+                      {new Date(getSaleTimestamp(sale)).toLocaleString()}
                       {isSplitParent && (
                         <span className="split-badge">Cuentas Separadas</span>
                       )}
                       {isCancelled && (
                         <span className="cancelled-sale-badge">Cancelada</span>
                       )}
+                      {badges.map((badge) => (
+                        <span key={`${getSaleKey(sale)}-${badge.label}`} style={badgeStyle(badge.tone)}>{badge.label}</span>
+                      ))}
                     </div>
                     <div className={`sale-total ${isSplitParent ? 'split-total' : ''}`}>
-                      ${(parseFloat(String(sale.total).replace(/[^0-9.-]+/g, '')) || 0).toFixed(2)}
+                      ${(toMoney(sale.total)).toFixed(2)}
                     </div>
                   </div>
 
                   <div className="sale-item-info">
-                    {(sale.items || []).length === 0 ? (
-                      <p className="text-muted" style={{ fontSize: '0.85rem', margin: '4px 0' }}>Sin detalle de productos</p>
+                    {items.length === 0 ? (
+                      <p className="text-muted" style={{ fontSize: '0.85rem', margin: '4px 0' }}>
+                        {itemsCount || itemsQuantity
+                          ? `${itemsCount || 0} partida(s), ${itemsQuantity || 0} unidad(es)`
+                          : 'Sin detalle de productos'}
+                      </p>
                     ) : (
                       <ul>
-                        {(sale.items || []).map((item) => {
+                        {items.map((item) => {
                           const costMissing = isCostMissing(item.cost);
                           return (
-                            <li key={item.lineId || item.cartLineId || item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <li key={item.lineId || item.cartLineId || item.id || `${item.name}-${item.quantity}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span className={isSplitParent ? 'text-muted-strike' : ''}>
                                 {item.quantity}x {item.name}
                               </span>
@@ -336,7 +481,7 @@ export default function SalesHistory({
                                 <span className="prescription-tag">(Controlado)</span>
                               )}
 
-                              {costMissing && !isSplitParent && (
+                              {costMissing && !isSplitParent && !effectiveIsCloudFinal && (
                                 <span className="warning-cost-tag" title="Vendido sin costo de compra registrado.">
                                   Sin Costo
                                 </span>
@@ -345,6 +490,16 @@ export default function SalesHistory({
                           );
                         })}
                       </ul>
+                    )}
+
+                    {effectiveIsCloudFinal && (
+                      <div className="card-mini-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.45rem' }}>
+                        {getCustomerLabel(sale) && <span className="mini-stat-pill">Cliente: {getCustomerLabel(sale)}</span>}
+                        {getPaymentLabel(sale) && <span className="mini-stat-pill">Pago: {getPaymentLabel(sale)}</span>}
+                        {amountPaid > 0 && <span className="mini-stat-pill">Pagado: ${amountPaid.toFixed(2)}</span>}
+                        {balanceDue > 0 && <span className="mini-stat-pill">Saldo: ${balanceDue.toFixed(2)}</span>}
+                        {sale.actorName && <span className="mini-stat-pill">Actor: {sale.actorName}</span>}
+                      </div>
                     )}
                   </div>
 
@@ -360,7 +515,7 @@ export default function SalesHistory({
                   )}
 
                   <div className="sale-actions">
-                    {isSplitParent && (
+                    {isSplitParent && !effectiveIsCloudFinal && (
                       <button
                         type="button"
                         className="toggle-split-btn"
@@ -373,11 +528,14 @@ export default function SalesHistory({
                     <button
                       type="button"
                       className="delete-order-btn"
-                      onClick={() => (
-                        isCancelled ? onArchiveSale(sale) : onDeleteSale(sale)
-                      )}
+                      title={actionState.title}
+                      disabled={actionState.disabled}
+                      onClick={() => {
+                        if (actionState.action === 'archive') onArchiveSale?.(sale);
+                        if (actionState.action === 'cancel') onDeleteSale?.(sale);
+                      }}
                     >
-                      {isCancelled ? 'Mover a papelera' : `Cancelar ${isSplitParent ? 'origen' : 'venta'}`}
+                      {actionState.label}
                     </button>
                   </div>
 
