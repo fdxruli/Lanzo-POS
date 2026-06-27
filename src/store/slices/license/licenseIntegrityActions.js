@@ -1,26 +1,15 @@
 // src/store/slices/license/licenseIntegrityActions.js
 
 import Logger from '../../../services/Logger';
-
-import {
-    revalidateLicense
-} from '../../../services/supabase';
-
-import {
-    saveLicenseToStorage
-} from '../../../services/licenseStorage';
-
+import { revalidateLicense } from '../../../services/supabase';
+import { saveLicenseToStorage } from '../../../services/licenseStorage';
 import {
     LICENSE_REMOTE_VALIDATION_COOLDOWN_MS,
     RENEWAL_REASONS
 } from './licenseConstants';
-
 import {
     assertLocalTransactionAllowed,
     isCriticalLicenseValidationReason,
-    markLastLicenseValidation,
-    LAST_REMOTE_LICENSE_KEY,
-    LAST_REMOTE_LICENSE_VALIDATION_KEY,
     normalizeValidationCode,
     isFatalValidationFailure,
     isRecoverableValidationFailure,
@@ -29,6 +18,12 @@ import {
     isLicensePlanBlockFailure,
     deriveGracePeriodEnd
 } from './licenseGuards';
+import {
+    LAST_REMOTE_LICENSE_KEY,
+    LAST_REMOTE_LICENSE_VALIDATION_KEY,
+    markLastLicenseValidationAttempt,
+    markLastLicenseValidationSuccess
+} from './licenseValidationTimestamps';
 
 const normalizeOptions = (options = {}) => {
     if (typeof options === 'string') {
@@ -54,10 +49,6 @@ const shouldSkipRemoteValidationByCooldown = ({ forceRemote, reason, licenseKey 
     } catch {
         return false;
     }
-};
-
-const markRemoteValidation = (licenseKey) => {
-    markLastLicenseValidation(licenseKey);
 };
 
 const shouldRefreshProfileAfterValidation = ({ refreshProfile, state, previousDetails, updatedDetails }) => {
@@ -92,15 +83,10 @@ export const createLicenseIntegrityActions = ({
         const localCheck = assertLocalTransactionAllowed(licenseDetails, state);
 
         if (!localCheck.ok) {
-            Logger.warn(
-                `[Integrity] Validación local bloqueó operación (${reason}):`,
-                localCheck.code
-            );
+            Logger.warn(`[Integrity] Validación local bloqueó operación (${reason}):`, localCheck.code);
             return false;
         }
 
-        // FASE 6H: durante una venta no se duplica seguridad con Supabase ni se carga perfil.
-        // FREE/local queda 100% local. PRO cloud delega validación fuerte a la RPC transaccional.
         if (transactionMode && allowLocalOnly && !forceRemote) {
             Logger.log(`[Integrity] Validación local de transacción aprobada (${reason}).`);
             return true;
@@ -111,7 +97,6 @@ export const createLicenseIntegrityActions = ({
                 Logger.warn(`[Integrity] Sin conexión; usando validación local (${reason}).`);
                 return true;
             }
-
             return false;
         }
 
@@ -126,9 +111,16 @@ export const createLicenseIntegrityActions = ({
 
         try {
             Logger.log(`[Integrity] Verificando sesión con servidor (${reason}).`);
+            markLastLicenseValidationAttempt(licenseDetails.license_key);
 
             const serverCheck = await revalidateLicense(licenseDetails.license_key);
-            markRemoteValidation(licenseDetails.license_key);
+
+            if (!serverCheck?.valid && serverCheck?.valid !== false) {
+                Logger.warn('[Integrity] Respuesta inválida del servidor; no se marca validación exitosa.');
+                return false;
+            }
+
+            markLastLicenseValidationSuccess(licenseDetails.license_key);
 
             if (isLicensePlanBlockFailure(serverCheck)) {
                 await get()._requireLicenseChange(licenseDetails, serverCheck);
@@ -149,11 +141,9 @@ export const createLicenseIntegrityActions = ({
             const now = new Date();
             const derivedGracePeriodEnd = deriveGracePeriodEnd(serverCheck, licenseDetails);
             const graceEnd = derivedGracePeriodEnd ? new Date(derivedGracePeriodEnd) : null;
-
             const isWithinGracePeriod = graceEnd && graceEnd > now;
             const isTechnicallyValid = serverCheck.valid || isWithinGracePeriod;
 
-            // Usa 'has_updated_terms' (con 'd') — igual que _processServerValidation.
             if (serverCheck.legal_status?.has_updated_terms) {
                 Logger.log('Nuevos términos detectados durante el uso.');
                 set({ pendingTermsUpdate: serverCheck.legal_status });
@@ -180,17 +170,12 @@ export const createLicenseIntegrityActions = ({
                     });
 
                     await saveLicenseToStorage(expiredDetails);
-
                     return false;
                 }
 
                 if (isRecoverableValidationFailure(serverCheck)) {
                     const validationReason = normalizeValidationCode(serverCheck);
-
-                    Logger.warn(
-                        '[Integrity] Validación recuperable; manteniendo sesión local:',
-                        validationReason
-                    );
+                    Logger.warn('[Integrity] Validación recuperable; manteniendo sesión local:', validationReason);
 
                     await get()._processOfflineMode(licenseDetails, {
                         refreshProfile: false,
@@ -199,9 +184,7 @@ export const createLicenseIntegrityActions = ({
 
                     set({
                         serverHealth: 'degraded',
-                        serverMessage:
-                            'No se pudo completar la validación segura del dispositivo. ' +
-                            'La sesión local se conserva mientras se recupera el almacenamiento o la conexión.'
+                        serverMessage: 'No se pudo completar la validación segura del dispositivo. La sesión local se conserva mientras se recupera la conexión.'
                     });
 
                     return false;
@@ -213,10 +196,7 @@ export const createLicenseIntegrityActions = ({
                     return false;
                 }
 
-                Logger.warn(
-                    '[Integrity] Respuesta no concluyente del servidor; manteniendo sesión local:',
-                    serverCheck.reason || serverCheck.status || serverCheck.error
-                );
+                Logger.warn('[Integrity] Respuesta no concluyente del servidor; manteniendo sesión local:', serverCheck.reason || serverCheck.status || serverCheck.error);
 
                 await get()._processOfflineMode(licenseDetails, {
                     refreshProfile: false,
@@ -227,7 +207,6 @@ export const createLicenseIntegrityActions = ({
             }
 
             let newStatus = serverCheck.status || serverCheck.reason || 'active';
-
             if (serverCheck.status === 'grace_period' || isWithinGracePeriod) {
                 newStatus = 'grace_period';
             }
@@ -251,10 +230,8 @@ export const createLicenseIntegrityActions = ({
                 licenseDetails.plan_name !== updatedDetails.plan_name ||
                 licenseDetails.product_name !== updatedDetails.product_name ||
                 licenseDetails.device_role !== updatedDetails.device_role ||
-                JSON.stringify(licenseDetails.staff_user || null) !==
-                JSON.stringify(updatedDetails.staff_user || null) ||
-                JSON.stringify(licenseDetails.features || {}) !==
-                JSON.stringify(updatedDetails.features || {});
+                JSON.stringify(licenseDetails.staff_user || null) !== JSON.stringify(updatedDetails.staff_user || null) ||
+                JSON.stringify(licenseDetails.features || {}) !== JSON.stringify(updatedDetails.features || {});
 
             if (hasChanges) {
                 Logger.log(`[Integrity] Sesión actualizada. Estado: ${newStatus}`);
@@ -286,10 +263,8 @@ export const createLicenseIntegrityActions = ({
 
             await get().refreshLicenseSyncMode('integrity');
         } catch (error) {
-            Logger.warn(
-                'Verificación de integridad falló (error red/server), manteniendo sesión:',
-                error
-            );
+            markLastLicenseValidationAttempt(licenseDetails.license_key);
+            Logger.warn('Verificación de integridad falló (red/server), manteniendo sesión:', error);
         }
 
         return true;

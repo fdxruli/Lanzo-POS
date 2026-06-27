@@ -5,10 +5,14 @@ import Logger from '../../../services/Logger';
 import {
   getLicenseSyncIntervalMs,
   getLicenseSyncMode,
-  isCriticalLicenseValidationReason,
-  markLastLicenseValidation,
-  shouldSkipRemoteValidationForPlan
+  isCriticalLicenseValidationReason
 } from './licenseGuards';
+
+import {
+  markLastLicenseValidationAttempt,
+  shouldSkipRemoteValidationAfterFailure,
+  shouldSkipRemoteValidationForPlan
+} from './licenseValidationTimestamps';
 
 let licenseSyncTimer = null;
 let licenseSyncOnlineListener = null;
@@ -51,13 +55,23 @@ export const createLicenseSyncActions = ({
       return false;
     }
 
+    const syncMode = state.licenseSyncMode || getLicenseSyncMode(state.licenseDetails);
+
     if (shouldSkipRemoteValidationForPlan({
       licenseDetails: state.licenseDetails,
-      mode: state.licenseSyncMode || getLicenseSyncMode(state.licenseDetails),
+      mode: syncMode,
       reason
     })) {
-      Logger.log(`[LicenseSync] Revalidación remota omitida por TTL de plan (${reason}).`);
+      Logger.log(`[LicenseSync] Revalidación remota omitida por TTL exitoso de plan (${reason}).`);
       return true;
+    }
+
+    if (shouldSkipRemoteValidationAfterFailure({
+      licenseDetails: state.licenseDetails,
+      reason
+    })) {
+      Logger.log(`[LicenseSync] Revalidación remota omitida por cooldown corto (${reason}).`);
+      return false;
     }
 
     if (isLicenseSyncCheckRunning) {
@@ -79,8 +93,6 @@ export const createLicenseSyncActions = ({
         allowLocalOnly: true
       });
 
-      markLastLicenseValidation(state.licenseDetails.license_key);
-
       if (get().appStatus === 'staff_login_required') {
         return false;
       }
@@ -93,6 +105,7 @@ export const createLicenseSyncActions = ({
 
       return isValid;
     } catch (error) {
+      markLastLicenseValidationAttempt(state.licenseDetails.license_key);
       Logger.warn('[LicenseSync] Falló la revalidación híbrida:', error);
       return false;
     } finally {
