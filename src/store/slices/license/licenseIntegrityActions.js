@@ -17,6 +17,10 @@ import {
 
 import {
     assertLocalTransactionAllowed,
+    isCriticalLicenseValidationReason,
+    markLastLicenseValidation,
+    LAST_REMOTE_LICENSE_KEY,
+    LAST_REMOTE_LICENSE_VALIDATION_KEY,
     normalizeValidationCode,
     isFatalValidationFailure,
     isRecoverableValidationFailure,
@@ -26,25 +30,6 @@ import {
     deriveGracePeriodEnd
 } from './licenseGuards';
 
-const LAST_REMOTE_VALIDATION_KEY = 'Lanzo_last_remote_license_validation';
-const LAST_REMOTE_VALIDATION_LICENSE_KEY = 'Lanzo_last_remote_license_key';
-
-const CRITICAL_REMOTE_REASONS = [
-    'realtime_event',
-    'realtime_reconnected',
-    'license_changed',
-    'plan_changed',
-    'device_changed',
-    'device_revoked',
-    'staff_changed',
-    'staff_invalidated',
-    'permission_changed',
-    'force',
-    'activation',
-    'staff_login',
-    'renewal'
-];
-
 const normalizeOptions = (options = {}) => {
     if (typeof options === 'string') {
         return { reason: options };
@@ -53,17 +38,12 @@ const normalizeOptions = (options = {}) => {
     return options || {};
 };
 
-const isCriticalRemoteReason = (reason = '') => {
-    const normalized = String(reason || '').toLowerCase();
-    return CRITICAL_REMOTE_REASONS.some((item) => normalized.includes(item));
-};
-
 const shouldSkipRemoteValidationByCooldown = ({ forceRemote, reason, licenseKey }) => {
-    if (forceRemote || isCriticalRemoteReason(reason)) return false;
+    if (forceRemote || isCriticalLicenseValidationReason(reason)) return false;
 
     try {
-        const lastLicenseKey = sessionStorage.getItem(LAST_REMOTE_VALIDATION_LICENSE_KEY);
-        const lastRemote = Number(sessionStorage.getItem(LAST_REMOTE_VALIDATION_KEY) || 0);
+        const lastLicenseKey = sessionStorage.getItem(LAST_REMOTE_LICENSE_KEY);
+        const lastRemote = Number(sessionStorage.getItem(LAST_REMOTE_LICENSE_VALIDATION_KEY) || 0);
 
         return (
             lastLicenseKey === licenseKey &&
@@ -77,13 +57,7 @@ const shouldSkipRemoteValidationByCooldown = ({ forceRemote, reason, licenseKey 
 };
 
 const markRemoteValidation = (licenseKey) => {
-    try {
-        sessionStorage.setItem(LAST_REMOTE_VALIDATION_LICENSE_KEY, licenseKey || '');
-        sessionStorage.setItem(LAST_REMOTE_VALIDATION_KEY, Date.now().toString());
-        sessionStorage.setItem('Lanzo_last_validation', Date.now().toString());
-    } catch {
-        // Best effort: el cooldown es una optimización, no una garantía de seguridad.
-    }
+    markLastLicenseValidation(licenseKey);
 };
 
 const shouldRefreshProfileAfterValidation = ({ refreshProfile, state, previousDetails, updatedDetails }) => {

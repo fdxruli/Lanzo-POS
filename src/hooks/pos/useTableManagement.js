@@ -10,25 +10,14 @@ import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 
 const EMPTY_ORDER = [];
 
-/**
- * Hook para manejar la gestión de mesas (tables) del POS.
- * Encapsula la lógica de guardar orden abierta, cargar mesa, y split bill.
- * 
- * @param {Object} deps - Dependencias externas
- * @param {function} deps.openModal - Función para abrir modales
- * @param {function} deps.closeModal - Función para cerrar modales
- * @param {function} deps.refreshData - Función para recargar datos del store
- * @param {function} deps.checkHasOutOfStockProducts - Función para verificar productos agotados
- * @param {function} deps.fetchActiveTablesCount - Función para actualizar conteo de mesas
- * @returns {{
- *   handleSaveAsOpen: () => Promise<void>,
- *   handleLoadOpenOrder: (orderId: string) => void,
- *   handleQuickTableAction: (targetOrder: Object, actionType: 'checkout' | 'split') => Promise<void>,
- *   handleOpenSplitBill: () => void,
- *   handleConfirmSplitBill: (splitPayload: Object) => Promise<void>,
- *   handleAnnulKitchenRejectedOrder: (order: Object) => Promise<{ success: boolean, message?: string, cancelled?: boolean }>
- * }}
- */
+const SPLIT_BILL_INTEGRITY_OPTIONS = {
+    reason: 'split_bill_checkout',
+    transactionMode: true,
+    refreshProfile: false,
+    forceRemote: false,
+    allowLocalOnly: true
+};
+
 export function useTableManagement({
     openModal,
     closeModal,
@@ -48,32 +37,26 @@ export function useTableManagement({
     const currentOrder = useActiveOrders(selectCurrentOrder);
     const order = currentOrder?.items || EMPTY_ORDER;
     const activeOrderId = useActiveOrders((state) => state.currentOrderId);
-    
+
     const clearSession = useCallback(() => {
         useActiveOrders.getState().cancelCurrentOrder();
     }, []);
 
-    // ── Guardar orden abierta ──────────────────────────────────────
     const handleSaveAsOpen = useCallback(async () => {
         if (!features?.hasTables) return;
 
-        const currentOrder = selectCurrentOrder(useActiveOrders.getState());
-        const currentTableData = currentOrder?.tableData;
-        const isUpdating = Boolean(currentOrder?.isSaved);
+        const currentOrderState = selectCurrentOrder(useActiveOrders.getState());
+        const currentTableData = currentOrderState?.tableData;
+        const isUpdating = Boolean(currentOrderState?.isSaved);
 
         if (!currentTableData || currentTableData.trim() === '') {
-            const promptedName = window.prompt('Por favor, ingresa un identificador para la mesa (Ej: Mesa 2, Barra, Cliente):');
-
-            if (!promptedName || promptedName.trim() === '') {
-                return;
-            }
+            const promptedName = window.prompt('Ingresa un identificador para la mesa:');
+            if (!promptedName || promptedName.trim() === '') return;
             useActiveOrders.getState().updateCurrentOrder({ tableData: promptedName.trim() });
         }
 
         const result = await saveOrderAsOpen();
         if (result.success) {
-            // 🔧 FIX: Cambiar fulfillmentStatus a 'pending' para que NO se recargue como "en edición"
-            // cuando se regrese del OrderPage al POS
             try {
                 const orderId = useActiveOrders.getState().currentOrderId || result.id;
                 await db.table(STORES.SALES).update(orderId, {
@@ -81,26 +64,16 @@ export function useTableManagement({
                     updatedAt: new Date().toISOString()
                 });
             } catch (err) {
-                console.error("Error actualizando fulfillmentStatus a pending:", err);
-                // Continuamos aunque falle, la orden ya está guardada
+                console.error('Error actualizando fulfillmentStatus a pending:', err);
             }
 
-            // Eliminar la orden de la sesión activa tras enviarla a la cocina (Mesas)
             try {
                 const currentId = useActiveOrders.getState().currentOrderId || result.id;
-                // Si la función importada useActiveOrders está disponible
                 await useActiveOrders.getState().removeOrder(currentId);
-                
-                // Si hay más órdenes activas cambiamos a otra, si no cerramos
             } catch (err) {
-                console.error("No se pudo cerrar la pestaña activa:", err);
+                console.error('No se pudo cerrar la pestaña activa:', err);
             }
 
-            // Cerrar modal móvil si está abierto
-            const modalState = document.querySelector('.mobile-pos-cart-modal');
-            if (modalState) {
-                // El padre se encarga de cerrar el modal móvil
-            }
             showMessageModal(isUpdating ? '✅ Mesa actualizada correctamente.' : '✅ Pedido guardado y enviado a cocina.');
             await fetchActiveTablesCount();
             return;
@@ -109,7 +82,6 @@ export function useTableManagement({
         showMessageModal(result.message || 'No se pudo guardar la orden abierta.', null, { type: 'error' });
     }, [features?.hasTables, saveOrderAsOpen, fetchActiveTablesCount]);
 
-    // ── Cargar orden abierta ───────────────────────────────────────
     const executeLoadOpenOrder = useCallback(async (orderId, silent = false) => {
         const result = await loadOpenOrder(orderId);
         if (result.success) {
@@ -138,89 +110,64 @@ export function useTableManagement({
 
         showMessageModal(
             'Hay un carrito activo. Deseas reemplazarlo por la mesa seleccionada?',
-            () => {
-                void executeLoadOpenOrder(orderId);
-            },
+            () => void executeLoadOpenOrder(orderId),
             {
                 title: 'Cambiar mesa activa',
                 type: 'warning',
-                confirmButtonText: 'Si, cargar mesa',
+                confirmButtonText: 'Si, cargar mesa'
             }
         );
     }, [features?.hasTables, order, executeLoadOpenOrder]);
 
-    // ── Acción rápida desde TablesView ─────────────────────────────
     const handleQuickTableAction = useCallback(async (targetOrder, actionType) => {
         const hasCurrentOrder = order.some((item) => Number(item?.quantity) > 0);
 
         if (hasCurrentOrder) {
             showMessageModal(
-                'Tienes un carrito activo sin guardar. Límpialo o guárdalo antes de cobrar una mesa diferente.',
-                () => { },
-                {
-                    title: 'Acción bloqueada',
-                    type: 'error',
-                    confirmButtonText: 'Entendido'
-                }
+                'Tienes un carrito activo sin guardar. Limpialo o guardalo antes de cobrar una mesa diferente.',
+                null,
+                { title: 'Acción bloqueada', type: 'error', confirmButtonText: 'Entendido' }
             );
             return;
         }
 
         try {
             const result = await executeLoadOpenOrder(targetOrder.id, true);
-
-            if (result && result.success) {
-                closeModal('tables');
-
-                if (actionType === 'checkout') {
-                    // CORRECCIÓN: Delegar al flujo oficial de checkout.
-                    // Llamar handleInitiateCheckout en lugar de openModal('payment') directamente
-                    // garantiza que siempre se genere el snapshot inmutable y se adquiera
-                    // el lock atómico sobre la orden antes de abrir el modal de pagos.
-                    if (typeof handleInitiateCheckout === 'function') {
-                        await handleInitiateCheckout();
-                    } else {
-                        // Fallback de seguridad: nunca debería llegar aquí
-                        console.error('[useTableManagement] handleInitiateCheckout no está disponible.');
-                        openModal('payment');
-                    }
-                } else if (actionType === 'split') {
-                    openModal('split');
-                }
-            } else {
+            if (!result?.success) {
                 showMessageModal(result?.message || 'Error al cargar la mesa para cobro.', null, { type: 'error' });
+                return;
+            }
+
+            closeModal('tables');
+
+            if (actionType === 'checkout') {
+                if (typeof handleInitiateCheckout === 'function') {
+                    await handleInitiateCheckout();
+                } else {
+                    console.error('[useTableManagement] handleInitiateCheckout no está disponible.');
+                    openModal('payment');
+                }
+            } else if (actionType === 'split') {
+                openModal('split');
             }
         } catch (error) {
-            console.error("Error al cargar la mesa para acción rápida:", error);
+            console.error('Error al cargar la mesa para acción rápida:', error);
         }
     }, [order, executeLoadOpenOrder, closeModal, openModal, handleInitiateCheckout]);
 
-    /**
-     * Anula en sistema una venta abierta rechazada en cocina (sale del modal de mesas).
-     */
     const handleAnnulKitchenRejectedOrder = useCallback(async (targetOrder) => {
-        if (!features?.hasTables) {
-            return { success: false, message: 'Mesas no disponibles.' };
-        }
-        if (!targetOrder?.id) {
-            return { success: false, message: 'Orden inválida.' };
-        }
-        if (
-            targetOrder.status !== SALE_STATUS.OPEN
-            || targetOrder.fulfillmentStatus !== 'cancelled'
-        ) {
+        if (!features?.hasTables) return { success: false, message: 'Mesas no disponibles.' };
+        if (!targetOrder?.id) return { success: false, message: 'Orden inválida.' };
+
+        if (targetOrder.status !== SALE_STATUS.OPEN || targetOrder.fulfillmentStatus !== 'cancelled') {
             return {
                 success: false,
                 message: 'Solo se puede anular desde aquí una comanda abierta y rechazada en cocina.'
             };
         }
 
-        const ok = window.confirm(
-            '¿Anular esta venta en el sistema? Se liberará el stock comprometido y desaparecerá de mesas y cocina. No genera cobro.'
-        );
-        if (!ok) {
-            return { success: false, cancelled: true };
-        }
+        const ok = window.confirm('¿Anular esta venta en el sistema?');
+        if (!ok) return { success: false, cancelled: true };
 
         try {
             const { useActiveOrders } = await import('./useActiveOrders.js');
@@ -240,10 +187,8 @@ export function useTableManagement({
         }
     }, [features?.hasTables, fetchActiveTablesCount]);
 
-    // ── Split Bill ─────────────────────────────────────────────────
     const handleOpenSplitBill = useCallback(() => {
         if (!features?.hasTables) return;
-
         if (!activeOrderId) {
             showMessageModal('No hay una mesa activa cargada para dividir.');
             return;
@@ -259,8 +204,7 @@ export function useTableManagement({
     }, [features?.hasTables, activeOrderId, order, openModal]);
 
     const handleConfirmSplitBill = useCallback(async (splitPayload) => {
-        // Verificar idempotencia (usamos un ref en el componente padre si es necesario)
-        const isSessionValid = await verifySessionIntegrity();
+        const isSessionValid = await verifySessionIntegrity(SPLIT_BILL_INTEGRITY_OPTIONS);
         if (!isSessionValid) {
             showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
                 window.location.reload();
@@ -282,11 +226,7 @@ export function useTableManagement({
                 await asegurarCajaAbierta();
             } catch (error) {
                 Logger.error('No se pudo abrir caja para Split Bill:', error);
-                showMessageModal(
-                    error?.message || 'No se pudo abrir la caja automáticamente.',
-                    null,
-                    { type: 'error' }
-                );
+                showMessageModal(error?.message || 'No se pudo abrir la caja automáticamente.', null, { type: 'error' });
                 return;
             }
         }
@@ -310,14 +250,9 @@ export function useTableManagement({
                 return;
             }
 
-            if (result.errorType === 'DIRTY_ORDER') {
+            if (result.errorType === 'DIRTY_ORDER' || result.errorType === 'RACE_CONDITION') {
                 showMessageModal(result.message, null, { type: 'warning' });
-                return;
-            }
-
-            if (result.errorType === 'RACE_CONDITION') {
-                showMessageModal(result.message, null, { type: 'warning' });
-                await refreshData();
+                if (result.errorType === 'RACE_CONDITION') await refreshData();
                 return;
             }
 

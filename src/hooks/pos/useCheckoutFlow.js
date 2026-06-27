@@ -9,6 +9,14 @@ import { showMessageModal } from '../../services/utils';
 
 const EMPTY_ORDER = [];
 
+const CHECKOUT_INTEGRITY_OPTIONS = {
+    reason: 'sale_checkout',
+    transactionMode: true,
+    refreshProfile: false,
+    forceRemote: false,
+    allowLocalOnly: true
+};
+
 /**
  * Hook para manejar el flujo de checkout (pago) del POS.
  * Encapsula la lógica de inicio de pago, validación de sesión y procesamiento de venta.
@@ -99,7 +107,7 @@ export function useCheckoutFlow({
             return;
         }
 
-        const isSessionValid = await verifySessionIntegrity();
+        const isSessionValid = await verifySessionIntegrity(CHECKOUT_INTEGRITY_OPTIONS);
         if (!isSessionValid) {
             showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
                 window.location.reload();
