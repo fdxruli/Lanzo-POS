@@ -26,6 +26,48 @@ import { AlertTriangle, XCircle } from 'lucide-react';
 const MAX_RETRIES = 3;
 const GLOBAL_COOLDOWN_MS = 5000; // 5 segundos de cooldown global
 
+const resetAppShellCache = async () => {
+  try {
+    if ('caches' in window) {
+      const cacheNames = await window.caches.keys();
+      await Promise.all(
+        cacheNames
+          .filter((cacheName) => (
+            cacheName.includes('workbox') ||
+            cacheName.includes('precache') ||
+            cacheName.includes('runtime') ||
+            cacheName.includes('vite') ||
+            cacheName.includes('lanzo')
+          ))
+          .map((cacheName) => window.caches.delete(cacheName))
+      );
+    }
+
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(
+        registrations.map(async (registration) => {
+          try {
+            registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+            await registration.unregister();
+          } catch (swError) {
+            Logger.warn('No se pudo reiniciar el Service Worker:', swError);
+          }
+        })
+      );
+    }
+  } catch (cacheError) {
+    Logger.warn('No se pudo limpiar la caché de la aplicación:', cacheError);
+  }
+};
+
+const reloadAfterLazyFailure = async (componentKey) => {
+  window.sessionStorage.removeItem(componentKey);
+  window.sessionStorage.removeItem('lazy_retry_last_time');
+  await resetAppShellCache();
+  window.location.reload();
+};
+
 const lazyRetry = (importFn, componentName = 'Component') => {
   const componentKey = `lazy_retry_${componentName}`;
 
@@ -49,8 +91,8 @@ const lazyRetry = (importFn, componentName = 'Component') => {
       } else if (currentRetries < MAX_RETRIES) {
         window.sessionStorage.setItem(componentKey, (currentRetries + 1).toString());
         window.sessionStorage.setItem('lazy_retry_last_time', now.toString());
-        Logger.warn(`Reintentando carga de ${componentName} (${currentRetries + 1}/${MAX_RETRIES})...`);
-        window.location.reload();
+        Logger.warn(`Reintentando carga limpia de ${componentName} (${currentRetries + 1}/${MAX_RETRIES})...`);
+        resetAppShellCache().finally(() => window.location.reload());
         return new Promise(() => { });
       }
 
@@ -68,17 +110,13 @@ const lazyRetry = (importFn, componentName = 'Component') => {
             <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
               {!navigator.onLine
-                ? "Parece que no tienes conexión a internet."
-                : "Puede haber un problema con la caché o la conexión."}
+                ? 'Parece que no tienes conexión a internet.'
+                : 'Puede haber una versión anterior guardada en caché. Presiona Reintentar para limpiar caché y cargar la versión nueva.'}
             </p>
             <button
               className="btn btn-primary"
               style={{ marginTop: '1rem' }}
-              onClick={() => {
-                window.sessionStorage.removeItem(componentKey);
-                window.sessionStorage.removeItem('lazy_retry_last_time');
-                window.location.reload();
-              }}
+              onClick={() => reloadAfterLazyFailure(componentKey)}
             >
               Reintentar
             </button>
@@ -107,7 +145,7 @@ const PageLoader = () => (
 
 function App() {
   if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) {
-    throw new Error("Faltan las variables de entorno de Supabase (VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY). Revisa la configuración de Vercel.");
+    throw new Error('Faltan las variables de entorno de Supabase (VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY). Revisa la configuración de Vercel.');
   }
 
   const isDuplicate = useSingleInstance();
@@ -295,7 +333,7 @@ function App() {
                 <Route path="/" element={<Layout />}>
                   <Route index element={<PermissionRoute permission="pos"><Suspense fallback={<PageLoader />}><PosPage /></Suspense></PermissionRoute>} />
                   <Route path="caja" element={<PermissionRoute permission="cash_register"><Suspense fallback={<PageLoader />}><CajaPage /></Suspense></PermissionRoute>} />
-                  <Route path='pedidos' element={<PermissionRoute permission="orders"><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
+                  <Route path="pedidos" element={<PermissionRoute permission="orders"><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
                   <Route path="productos" element={<PermissionRoute permission="products"><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
                   <Route path="clientes" element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
                   <Route path="ventas" element={<PermissionRoute permission="reports"><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></PermissionRoute>} />
