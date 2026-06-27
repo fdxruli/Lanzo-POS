@@ -7,6 +7,7 @@ import {
 } from './licenseConstants';
 
 const SHORT_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
+const CRITICAL_REASON_PATTERN = /realtime_event|realtime_reconnected|realtime_recover|license_changed|plan_changed|device_changed|device_revoked|staff_changed|staff_invalidated|permission_changed|force|activation|staff_login|renewal/;
 
 export const LAST_LICENSE_VALIDATION_SUCCESS_KEY = 'Lanzo_last_license_validation_success';
 export const LAST_LICENSE_VALIDATION_SUCCESS_LICENSE_KEY = 'Lanzo_last_license_validation_success_key';
@@ -40,7 +41,7 @@ const planCodeOf = (licenseDetails = {}) => (
   ''
 ).toString().trim().toLowerCase();
 
-const isCriticalReason = (reason = '') => /realtime|license|plan|device|staff|permission|force|activation|renewal/.test(String(reason || '').toLowerCase());
+const isCriticalReason = (reason = '') => CRITICAL_REASON_PATTERN.test(String(reason || '').toLowerCase());
 
 const getMode = (licenseDetails = {}) => (
   ENABLE_LICENSE_REALTIME && licenseDetails?.features?.realtime_license_sync === true && Boolean(licenseDetails?.realtime_topic)
