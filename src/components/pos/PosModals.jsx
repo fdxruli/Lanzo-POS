@@ -35,8 +35,13 @@ export default function PosModals({
         prescriptionItems,
         cajaActual,
         aperturaPendiente,
+        cashActor,
+        isCloudCashReadOnly,
         features
     } = data;
+
+    const quickCajaResponsibleName = cashActor?.responsibleName || cashActor?.displayName || '';
+    const lockQuickCajaResponsible = Boolean(cashActor?.isStaff && quickCajaResponsibleName);
 
     return (
         <>
@@ -78,6 +83,9 @@ export default function PosModals({
                 onClose={handleQuickCajaClose}
                 onConfirm={handleQuickCajaSubmit}
                 suggestedAmount={aperturaPendiente?.montoSugerido || '0'}
+                responsibleName={quickCajaResponsibleName}
+                lockResponsible={lockQuickCajaResponsible}
+                readOnly={Boolean(aperturaPendiente?.readOnly || isCloudCashReadOnly)}
             />
 
             <PrescriptionModal
@@ -121,8 +129,11 @@ PosModals.propTypes = {
         prescriptionItems: PropTypes.array.isRequired,
         cajaActual: PropTypes.object,
         aperturaPendiente: PropTypes.shape({
-            montoSugerido: PropTypes.string
+            montoSugerido: PropTypes.string,
+            readOnly: PropTypes.bool
         }),
+        cashActor: PropTypes.object,
+        isCloudCashReadOnly: PropTypes.bool,
         activeOrderId: PropTypes.string,
         features: PropTypes.object.isRequired
     }).isRequired
