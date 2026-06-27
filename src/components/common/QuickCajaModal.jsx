@@ -21,7 +21,7 @@ export default function QuickCajaModal({
             <p>Apertura requerida</p>
             <h2 id="quick-caja-title">Abrir caja antes de cobrar</h2>
           </div>
-          <button type="button" className="caja-modal__close" onClick={onClose} aria-label="Cancelar apertura">
+          <button type="button" className="caja-modal__close" onClick={onClose} aria-label="Cerrar apertura de caja">
             <X size={20} aria-hidden="true" />
           </button>
         </header>
@@ -35,7 +35,7 @@ export default function QuickCajaModal({
             onConfirm={onConfirm}
             onCancel={onClose}
             submitLabel="Abrir caja y continuar"
-            cancelLabel="Cancelar venta"
+            cancelLabel="Volver al carrito"
             origin="pos_checkout"
           />
         </div>
