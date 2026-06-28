@@ -5,6 +5,7 @@ import { syncMetaService } from '../sync/syncMetaService';
 import {
   getLicenseKeyFromDetails,
   isCloudSalesBaseSyncEnabled,
+  shouldDeferPosBootstrapStartHook,
   SYNC_ENTITY_TYPES,
   SYNC_LIMITS,
   SYNC_OPERATIONS
@@ -45,10 +46,15 @@ const applySalesPayload = async (response = {}) => {
 };
 
 export const salesCloudSyncHandler = {
-  async onStart({ licenseDetails, licenseKey } = {}) {
+  async onStart({ licenseDetails, licenseKey, reason = 'manual', force = false } = {}) {
     const resolvedLicenseKey = licenseKey || getLicenseKeyFromDetails(licenseDetails);
     if (!resolvedLicenseKey || !isOnline() || !isCloudSalesBaseSyncEnabled(licenseDetails)) {
       return { skipped: true };
+    }
+
+    if (shouldDeferPosBootstrapStartHook(reason, { force })) {
+      Logger.log('[SalesCloud/Sync] Snapshot inicial diferido por bootstrap inteligente.');
+      return { skipped: true, deferred: true, reason: 'bootstrap_deferred_snapshot' };
     }
 
     try {
@@ -57,7 +63,8 @@ export const salesCloudSyncHandler = {
       const snapshot = await salesCloudRepository.pullSalesSnapshot({
         licenseKey: resolvedLicenseKey,
         limit: 100,
-        includeDeleted: false
+        includeDeleted: false,
+        force
       });
 
       if (snapshot?.success === false) {
