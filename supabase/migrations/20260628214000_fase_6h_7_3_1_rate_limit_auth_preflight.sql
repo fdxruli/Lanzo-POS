@@ -18,6 +18,8 @@ DECLARE
   v_device record;
   v_session record;
   v_features jsonb := '{}'::jsonb;
+  v_staff_user_id uuid := NULL;
+  v_staff_permissions jsonb := '{}'::jsonb;
 BEGIN
   IF NULLIF(BTRIM(COALESCE(p_license_key, '')), '') IS NULL THEN
     RETURN jsonb_build_object(
@@ -199,6 +201,9 @@ BEGIN
         'message', 'Usuario staff inactivo.'
       );
     END IF;
+
+    v_staff_user_id := v_session.staff_user_id;
+    v_staff_permissions := COALESCE(v_session.permissions, '{}'::jsonb);
   END IF;
 
   RETURN jsonb_build_object(
@@ -208,8 +213,8 @@ BEGIN
     'license_key', v_license.license_key,
     'device_id', v_device.id,
     'device_role', v_device.device_role,
-    'staff_user_id', CASE WHEN v_device.device_role = 'staff' THEN v_session.staff_user_id ELSE NULL END,
-    'staff_permissions', CASE WHEN v_device.device_role = 'staff' THEN COALESCE(v_session.permissions, '{}'::jsonb) ELSE '{}'::jsonb END,
+    'staff_user_id', v_staff_user_id,
+    'staff_permissions', v_staff_permissions,
     'plan_code', v_license.plan_code,
     'plan_name', v_license.plan_name,
     'features', COALESCE(v_features, '{}'::jsonb),
