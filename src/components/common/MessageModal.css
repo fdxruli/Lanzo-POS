@@ -25,17 +25,17 @@
 }
 
 /* Orden visual: Acción principal arriba */
-.btn-confirm,
-.btn-modal {
+#message-modal .btn-confirm,
+#message-modal .btn-modal {
   order: 1;
 }
 
-.btn-cancel {
+#message-modal .btn-cancel {
   order: 2;
 }
 
 /* Botón extra (ej: "Descartar") */
-.btn-secondary {
+#message-modal .btn-secondary {
   order: 3;
   margin-top: var(--spacing-xs);
 }
@@ -82,17 +82,17 @@
     min-width: 120px;
   }
 
-  .btn-secondary {
+  #message-modal .btn-secondary {
     order: 1;
     margin-top: 0; /* IMPORTANTE: Quitar el margen de móvil para que no se vea caído */
     margin-right: auto; /* Opcional: Empuja el botón extra a la extrema izquierda para separarlo del grupo de acción */
   }
 
-  .btn-confirm {
+  #message-modal .btn-confirm {
     order: 2;
   }
 
-  .btn-cancel {
+  #message-modal .btn-cancel {
     order: 1;
   }
 }
