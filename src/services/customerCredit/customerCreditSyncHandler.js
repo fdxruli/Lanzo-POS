@@ -5,6 +5,7 @@ import { syncMetaService } from '../sync/syncMetaService';
 import {
   getLicenseKeyFromDetails,
   isCloudCustomerCreditSyncEnabled,
+  shouldDeferPosBootstrapStartHook,
   SYNC_ENTITY_TYPES,
   SYNC_LIMITS
 } from '../sync/syncConstants';
@@ -56,10 +57,15 @@ const applyCreditPayload = async (response = {}) => {
 };
 
 export const customerCreditSyncHandler = {
-  async onStart({ licenseDetails, licenseKey } = {}) {
+  async onStart({ licenseDetails, licenseKey, reason = 'manual', force = false } = {}) {
     const resolvedLicenseKey = licenseKey || getLicenseKeyFromDetails(licenseDetails);
     if (!resolvedLicenseKey || !isBrowserOnline() || !isCloudCustomerCreditSyncEnabled(licenseDetails)) {
       return { skipped: true };
+    }
+
+    if (shouldDeferPosBootstrapStartHook(reason, { force })) {
+      Logger.log('[CustomerCredit/Sync] Snapshot/migracion inicial diferida por bootstrap inteligente.');
+      return { skipped: true, deferred: true, reason: 'bootstrap_deferred_snapshot' };
     }
 
     try {
@@ -67,7 +73,8 @@ export const customerCreditSyncHandler = {
       const snapshot = await customerCreditCloudRepository.pullCreditSnapshot({
         licenseKey: resolvedLicenseKey,
         limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT,
-        includeDeleted: false
+        includeDeleted: false,
+        force
       });
 
       if (snapshot?.success === false) {
