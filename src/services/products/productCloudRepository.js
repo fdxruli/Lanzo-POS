@@ -50,6 +50,7 @@ const callRpc = async (name, args) => {
   return parseRpcPayload(data);
 };
 
+// IMPORTANTE: las mutaciones/migraciones de catálogo son críticas y NO deben pasar por CloudRequestManager.
 const callCatalogMutationRpc = async (name, licenseKey, args) => {
   const response = await callRpc(name, args);
   if (response?.success !== false) invalidateCloudCacheAfterCatalogMutation(licenseKey);
@@ -57,6 +58,7 @@ const callCatalogMutationRpc = async (name, licenseKey, args) => {
 };
 
 const cachedProductRpc = ({ rpcName, licenseKey, baseArgs, params = {}, force = false, fn }) => cloudRequestManager.request({
+  rpcName,
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
     params

@@ -54,6 +54,7 @@ const cachedCreditRpc = ({
   force = false,
   fn
 }) => cloudRequestManager.request({
+  rpcName,
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
     params
@@ -78,6 +79,7 @@ const invalidateAfterCreditSuccess = (licenseKey, response) => {
 };
 
 export const customerCreditCloudRepository = {
+  // IMPORTANTE: abonos y migraciones de crédito son críticos y NO deben pasar por CloudRequestManager.
   async recordCustomerPayment({
     licenseKey,
     customerId,

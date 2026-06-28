@@ -82,6 +82,7 @@ const cachedSalesRpc = ({
   force = false,
   fn
 }) => cloudRequestManager.request({
+  rpcName,
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
     params
@@ -118,6 +119,7 @@ export const salesCloudRepository = {
     return isCloudSalesCancellationEnabled(licenseDetails);
   },
 
+  // IMPORTANTE: estas RPCs son transaccionales/críticas y NO deben pasar por CloudRequestManager.
   async upsertSaleShadow({ licenseKey, sale, items = [], payments = [], idempotencyKey }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
