@@ -1,3 +1,4 @@
+import { assertNonCriticalCloudRequestRpc } from './cloudCriticalRpcGuards';
 import {
   CLOUD_REQUEST_BACKOFF,
   CLOUD_REQUEST_CACHE,
@@ -228,6 +229,7 @@ const hasTag = (entry, tag) => entry?.tags?.includes(tag);
 export const cloudRequestManager = {
   async request({
     key,
+    rpcName = null,
     ttlMs = 0,
     cooldownMs = 0,
     dedupe = true,
@@ -235,6 +237,8 @@ export const cloudRequestManager = {
     tags = [],
     fn
   } = {}) {
+    assertNonCriticalCloudRequestRpc(rpcName);
+
     const requestKey = normalizeKey(key);
     if (typeof fn !== 'function') throw new Error('CLOUD_REQUEST_FN_REQUIRED');
 
@@ -264,7 +268,7 @@ export const cloudRequestManager = {
     const requestTags = normalizeTags(tags);
     stats.requestsStarted += 1;
     lastStartedAt.set(requestKey, time);
-    debug('fetch', { key: requestKey, ttlMs, cooldownMs, tags: requestTags });
+    debug('fetch', { key: requestKey, rpcName, ttlMs, cooldownMs, tags: requestTags });
 
     const promise = Promise.resolve()
       .then(fn)
