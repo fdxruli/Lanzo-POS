@@ -12,6 +12,7 @@ import {
   isCloudPosSyncEnabled,
   POS_SYNC_FOCUS_PULL_COOLDOWN_MS,
   POS_SYNC_REALTIME_PULL_DEBOUNCE_MS,
+  shouldDeferPosBootstrapStartHook,
   SYNC_LIMITS,
   SYNC_STATUS
 } from './syncConstants';
@@ -224,8 +225,12 @@ export const posSyncOrchestrator = {
       await setRuntimeStatus(SYNC_STATUS.ONLINE, { licenseKey, reason });
       await runEntityStartHooks({ licenseDetails, licenseKey, reason });
 
-      await this.pullIncremental('start');
-      await this.processOutbox('start');
+      if (shouldDeferPosBootstrapStartHook(reason)) {
+        Logger.log('[PosSync] Pull/outbox inicial omitido: el bootstrap inteligente lo agenda con jitter.');
+      } else {
+        await this.pullIncremental('start');
+        await this.processOutbox('start');
+      }
 
       if (posTopic) {
         if (!runtime.realtimeChannel || runtime.realtimeTopic !== posTopic) {
