@@ -89,6 +89,7 @@ const cachedReportRpc = ({
   force = false,
   fn
 }) => cloudRequestManager.request({
+  rpcName,
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
     params
