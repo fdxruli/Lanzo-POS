@@ -5,6 +5,7 @@ import { syncConflictService } from '../sync/syncConflictService';
 import { syncMetaService } from '../sync/syncMetaService';
 import {
   getLicenseKeyFromDetails,
+  shouldDeferPosBootstrapStartHook,
   SYNC_ENTITY_TYPES,
   SYNC_LIMITS,
   SYNC_OPERATIONS
@@ -65,8 +66,13 @@ const savePushConflict = async ({ operation, response }) => {
 };
 
 export const customerSyncHandler = {
-  async onStart({ licenseKey } = {}) {
+  async onStart({ licenseKey, reason = 'manual', force = false } = {}) {
     if (!licenseKey || !isOnline()) return { skipped: true };
+
+    if (shouldDeferPosBootstrapStartHook(reason, { force })) {
+      Logger.log('[Customers/Sync] Migracion inicial diferida por bootstrap inteligente.');
+      return { skipped: true, deferred: true, reason: 'bootstrap_deferred_snapshot' };
+    }
 
     try {
       const migrationResult = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey });
