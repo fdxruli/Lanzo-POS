@@ -387,7 +387,7 @@
     }
 }
 
-.btn-cancel {
+.layaway-modal-overlay .btn-cancel {
     padding: 12px 20px;
     border: 1px solid var(--border-color);
     background-color: transparent;
@@ -396,7 +396,7 @@
     font-weight: 600;
 }
 
-.btn-cancel:hover {
+.layaway-modal-overlay .btn-cancel:hover {
     background-color: var(--light-background);
     color: var(--text-dark);
 }
