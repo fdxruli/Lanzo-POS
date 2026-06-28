@@ -13,6 +13,7 @@ import { showMessageModal } from '../../../../services/utils';
 import { loadBatchesForManager } from '../../../../services/inventoryMovement';
 import { useStatsStore } from '../../../../store/useStatsStore';
 import Logger from '../../../../services/Logger';
+import { showInputPromptModal } from '../../../common/InputPromptModal';
 
 /**
  * @param {Object} params
@@ -251,7 +252,15 @@ export function useBatchManagerController({
       actionType = 'Corrección de Descuadre';
     }
 
-    const userNote = window.prompt(confirmMessage + '\n\n(Opcional) Puedes escribir una nota o motivo para archivar este lote:');
+    const userNote = await showInputPromptModal({
+      title: 'Archivar lote',
+      message: `${confirmMessage}\n\nOpcional: puedes escribir una nota o motivo para archivar este lote.`,
+      placeholder: 'Motivo o nota opcional',
+      confirmButtonText: 'Archivar lote',
+      cancelButtonText: 'Cancelar',
+      required: false
+    });
+
     if (userNote === null) return;
 
     const finalNote = userNote.trim() ? ` - Nota del usuario: ${userNote.trim()}` : '';
