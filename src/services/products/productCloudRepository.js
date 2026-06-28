@@ -1,4 +1,14 @@
 import { supabaseClient } from '../supabase';
+import {
+  CLOUD_REQUEST_COOLDOWN,
+  CLOUD_REQUEST_TAGS,
+  CLOUD_REQUEST_TTL,
+  buildBaseRpcContextFromArgs,
+  buildRpcRequestKey,
+  cloudRequestManager,
+  cloudRequestTags,
+  invalidateCloudCacheAfterCatalogMutation
+} from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 
@@ -40,9 +50,30 @@ const callRpc = async (name, args) => {
   return parseRpcPayload(data);
 };
 
+const callCatalogMutationRpc = async (name, licenseKey, args) => {
+  const response = await callRpc(name, args);
+  if (response?.success !== false) invalidateCloudCacheAfterCatalogMutation(licenseKey);
+  return response;
+};
+
+const cachedProductRpc = ({ rpcName, licenseKey, baseArgs, params = {}, fn }) => cloudRequestManager.request({
+  key: buildRpcRequestKey(rpcName, {
+    ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
+    params
+  }),
+  ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
+  cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
+  tags: [
+    CLOUD_REQUEST_TAGS.PRODUCTS,
+    cloudRequestTags.license(licenseKey),
+    cloudRequestTags.rpc(rpcName)
+  ],
+  fn
+});
+
 export const productCloudRepository = {
   async upsertCategory({ licenseKey, category, expectedVersion = null, idempotencyKey }) {
-    return callRpc('pos_upsert_category', {
+    return callCatalogMutationRpc('pos_upsert_category', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_category: category,
       p_expected_version: expectedVersion,
@@ -51,7 +82,7 @@ export const productCloudRepository = {
   },
 
   async deleteCategory({ licenseKey, categoryId, expectedVersion = null, idempotencyKey }) {
-    return callRpc('pos_delete_category', {
+    return callCatalogMutationRpc('pos_delete_category', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_category_id: categoryId,
       p_expected_version: expectedVersion,
@@ -60,7 +91,7 @@ export const productCloudRepository = {
   },
 
   async upsertProduct({ licenseKey, product, initialBatches = [], expectedVersion = null, idempotencyKey }) {
-    return callRpc('pos_upsert_product', {
+    return callCatalogMutationRpc('pos_upsert_product', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_product: product,
       p_initial_batches: initialBatches,
@@ -70,7 +101,7 @@ export const productCloudRepository = {
   },
 
   async deleteProduct({ licenseKey, productId, expectedVersion = null, idempotencyKey }) {
-    return callRpc('pos_delete_product', {
+    return callCatalogMutationRpc('pos_delete_product', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_product_id: productId,
       p_expected_version: expectedVersion,
@@ -79,7 +110,7 @@ export const productCloudRepository = {
   },
 
   async toggleProductStatus({ licenseKey, productId, isActive, expectedVersion = null, idempotencyKey }) {
-    return callRpc('pos_toggle_product_status', {
+    return callCatalogMutationRpc('pos_toggle_product_status', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_product_id: productId,
       p_is_active: Boolean(isActive),
@@ -89,7 +120,7 @@ export const productCloudRepository = {
   },
 
   async upsertProductBatch({ licenseKey, batch, expectedVersion = null, idempotencyKey }) {
-    return callRpc('pos_upsert_product_batch', {
+    return callCatalogMutationRpc('pos_upsert_product_batch', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_batch: batch,
       p_expected_version: expectedVersion,
@@ -98,7 +129,7 @@ export const productCloudRepository = {
   },
 
   async deleteProductBatch({ licenseKey, batchId, expectedVersion = null, idempotencyKey }) {
-    return callRpc('pos_delete_product_batch', {
+    return callCatalogMutationRpc('pos_delete_product_batch', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_batch_id: batchId,
       p_expected_version: expectedVersion,
@@ -113,12 +144,22 @@ export const productCloudRepository = {
     offset = 0,
     includeDeleted = true
   }) {
-    return callRpc('pos_pull_product_catalog_snapshot', {
-      ...(await buildBaseRpcArgs(licenseKey)),
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const params = {
       p_entity_type: entityType,
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
       p_include_deleted: Boolean(includeDeleted)
+    };
+    return cachedProductRpc({
+      rpcName: 'pos_pull_product_catalog_snapshot',
+      licenseKey,
+      baseArgs,
+      params,
+      fn: () => callRpc('pos_pull_product_catalog_snapshot', {
+        ...baseArgs,
+        ...params
+      })
     });
   },
 
@@ -131,7 +172,7 @@ export const productCloudRepository = {
   },
 
   async migrateLocalCatalog({ licenseKey, categories = [], products = [], batches = [], batchId }) {
-    return callRpc('pos_migrate_local_product_catalog', {
+    return callCatalogMutationRpc('pos_migrate_local_product_catalog', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_categories: categories,
       p_products: products,

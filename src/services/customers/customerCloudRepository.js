@@ -1,4 +1,14 @@
 import { supabaseClient } from '../supabase';
+import {
+  CLOUD_REQUEST_COOLDOWN,
+  CLOUD_REQUEST_TAGS,
+  CLOUD_REQUEST_TTL,
+  buildBaseRpcContextFromArgs,
+  buildRpcRequestKey,
+  cloudRequestManager,
+  cloudRequestTags,
+  invalidateCloudCacheAfterCustomerMutation
+} from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 
@@ -35,6 +45,28 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
   SYNC_LIMITS.MAX_PULL_LIMIT
 );
 
+const cachedCustomerRpc = ({ rpcName, licenseKey, baseArgs, params = {}, fn }) => cloudRequestManager.request({
+  key: buildRpcRequestKey(rpcName, {
+    ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
+    params
+  }),
+  ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
+  cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
+  tags: [
+    CLOUD_REQUEST_TAGS.CUSTOMERS,
+    cloudRequestTags.license(licenseKey),
+    cloudRequestTags.rpc(rpcName)
+  ],
+  fn
+});
+
+const invalidateAfterCustomerSuccess = (licenseKey, response) => {
+  if (response?.success !== false) {
+    invalidateCloudCacheAfterCustomerMutation(licenseKey);
+  }
+  return response;
+};
+
 export const customerCloudRepository = {
   async upsertCustomer({ licenseKey, customer, expectedVersion = null, idempotencyKey }) {
     assertSupabase();
@@ -48,7 +80,7 @@ export const customerCloudRepository = {
     });
 
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCustomerSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async deleteCustomer({ licenseKey, customerId, expectedVersion = null, idempotencyKey }) {
@@ -63,22 +95,33 @@ export const customerCloudRepository = {
     });
 
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCustomerSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async pullCustomerSnapshot({ licenseKey, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, includeDeleted = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-
-    const { data, error } = await supabaseClient.rpc('pos_pull_customers_snapshot', {
-      ...baseArgs,
+    const params = {
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
       p_include_deleted: Boolean(includeDeleted)
-    });
+    };
 
-    if (error) throw error;
-    return parseRpcPayload(data);
+    return cachedCustomerRpc({
+      rpcName: 'pos_pull_customers_snapshot',
+      licenseKey,
+      baseArgs,
+      params,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_pull_customers_snapshot', {
+          ...baseArgs,
+          ...params
+        });
+
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
+    });
   },
 
   async pullCustomerChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {
@@ -106,7 +149,7 @@ export const customerCloudRepository = {
     });
 
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCustomerSuccess(licenseKey, parseRpcPayload(data));
   }
 };
 

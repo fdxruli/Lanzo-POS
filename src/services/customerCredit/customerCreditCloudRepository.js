@@ -1,4 +1,14 @@
 import { supabaseClient } from '../supabase';
+import {
+  CLOUD_REQUEST_COOLDOWN,
+  CLOUD_REQUEST_TAGS,
+  CLOUD_REQUEST_TTL,
+  buildBaseRpcContextFromArgs,
+  buildRpcRequestKey,
+  cloudRequestManager,
+  cloudRequestTags,
+  invalidateCloudCacheAfterCreditMutation
+} from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 import { localAllocationsToCloud } from './customerCreditMapper';
@@ -34,6 +44,30 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
   SYNC_LIMITS.MAX_PULL_LIMIT
 );
 
+const cachedCreditRpc = ({
+  rpcName,
+  licenseKey,
+  baseArgs,
+  params = {},
+  ttlMs = CLOUD_REQUEST_TTL.MEDIUM,
+  cooldownMs = CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
+  fn
+}) => cloudRequestManager.request({
+  key: buildRpcRequestKey(rpcName, {
+    ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
+    params
+  }),
+  ttlMs,
+  cooldownMs,
+  tags: [
+    CLOUD_REQUEST_TAGS.CUSTOMER_CREDIT,
+    CLOUD_REQUEST_TAGS.CUSTOMERS,
+    cloudRequestTags.license(licenseKey),
+    cloudRequestTags.rpc(rpcName)
+  ],
+  fn
+});
+
 export const customerCreditCloudRepository = {
   async recordCustomerPayment({
     licenseKey,
@@ -58,32 +92,58 @@ export const customerCreditCloudRepository = {
       p_idempotency_key: idempotencyKey
     });
     if (error) throw error;
-    return parseRpcPayload(data);
+    const response = parseRpcPayload(data);
+    if (response?.success !== false) {
+      invalidateCloudCacheAfterCreditMutation(licenseKey);
+    }
+    return response;
   },
 
   async getCustomerCreditSummary({ licenseKey, customerId }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_get_customer_credit_summary', {
-      ...baseArgs,
-      p_customer_id: customerId
+    const params = { p_customer_id: customerId };
+    return cachedCreditRpc({
+      rpcName: 'pos_get_customer_credit_summary',
+      licenseKey,
+      baseArgs,
+      params,
+      ttlMs: CLOUD_REQUEST_TTL.SHORT,
+      cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_get_customer_credit_summary', {
+          ...baseArgs,
+          ...params
+        });
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
     });
-    if (error) throw error;
-    return parseRpcPayload(data);
   },
 
   async pullCreditSnapshot({ licenseKey, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, customerId = null, includeDeleted = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_pull_customer_credit_snapshot', {
-      ...baseArgs,
+    const params = {
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
       p_customer_id: customerId,
       p_include_deleted: Boolean(includeDeleted)
+    };
+    return cachedCreditRpc({
+      rpcName: 'pos_pull_customer_credit_snapshot',
+      licenseKey,
+      baseArgs,
+      params,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_pull_customer_credit_snapshot', {
+          ...baseArgs,
+          ...params
+        });
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
     });
-    if (error) throw error;
-    return parseRpcPayload(data);
   },
 
   async pullCreditChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {

@@ -1,4 +1,13 @@
 import { supabaseClient } from '../supabase';
+import {
+  CLOUD_REQUEST_COOLDOWN,
+  CLOUD_REQUEST_TAGS,
+  CLOUD_REQUEST_TTL,
+  buildBaseRpcContextFromArgs,
+  buildRpcRequestKey,
+  cloudRequestManager,
+  cloudRequestTags
+} from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 
@@ -33,13 +42,47 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
   SYNC_LIMITS.MAX_PULL_LIMIT
 );
 
+const cachedCashRpc = ({
+  rpcName,
+  licenseKey,
+  baseArgs,
+  params = {},
+  ttlMs = CLOUD_REQUEST_TTL.SHORT,
+  cooldownMs = CLOUD_REQUEST_COOLDOWN.SHORT,
+  tags = [],
+  fn
+}) => cloudRequestManager.request({
+  key: buildRpcRequestKey(rpcName, {
+    ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
+    params
+  }),
+  ttlMs,
+  cooldownMs,
+  tags: [
+    CLOUD_REQUEST_TAGS.CASH,
+    cloudRequestTags.license(licenseKey),
+    cloudRequestTags.rpc(rpcName),
+    ...tags
+  ],
+  fn
+});
+
 export const cashCloudRepository = {
   async getCurrentCashSession({ licenseKey }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_get_current_cash_session', baseArgs);
-    if (error) throw error;
-    return parseRpcPayload(data);
+    return cachedCashRpc({
+      rpcName: 'pos_get_current_cash_session',
+      licenseKey,
+      baseArgs,
+      ttlMs: CLOUD_REQUEST_TTL.VERY_SHORT,
+      cooldownMs: CLOUD_REQUEST_COOLDOWN.VERY_SHORT,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_get_current_cash_session', baseArgs);
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
+    });
   },
 
   async openCashSession({ licenseKey, opening, idempotencyKey }) {
@@ -102,15 +145,28 @@ export const cashCloudRepository = {
   async pullCashSnapshot({ licenseKey, scope = 'mine', limit = 100, offset = 0, includeClosed = true }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_pull_cash_snapshot', {
-      ...baseArgs,
+    const params = {
       p_scope: scope,
       p_limit: Math.min(normalizeLimit(limit), 500),
       p_offset: Math.max(Number(offset) || 0, 0),
       p_include_closed: Boolean(includeClosed)
+    };
+    return cachedCashRpc({
+      rpcName: 'pos_pull_cash_snapshot',
+      licenseKey,
+      baseArgs,
+      params,
+      ttlMs: CLOUD_REQUEST_TTL.SHORT,
+      cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_pull_cash_snapshot', {
+          ...baseArgs,
+          ...params
+        });
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
     });
-    if (error) throw error;
-    return parseRpcPayload(data);
   },
 
   async pullCashChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {
@@ -128,28 +184,50 @@ export const cashCloudRepository = {
   async listCashSessionsForAudit({ licenseKey, status = null, staffUserId = null, dateFrom = null, dateTo = null, limit = 100, offset = 0 }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_admin_list_cash_sessions', {
-      ...baseArgs,
+    const params = {
       p_status: status,
       p_staff_user_id: staffUserId,
       p_date_from: dateFrom,
       p_date_to: dateTo,
       p_limit: Math.min(normalizeLimit(limit), 500),
       p_offset: Math.max(Number(offset) || 0, 0)
+    };
+    return cachedCashRpc({
+      rpcName: 'pos_admin_list_cash_sessions',
+      licenseKey,
+      baseArgs,
+      params,
+      ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_admin_list_cash_sessions', {
+          ...baseArgs,
+          ...params
+        });
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
     });
-    if (error) throw error;
-    return parseRpcPayload(data);
   },
 
   async getCashSessionDetailForAudit({ licenseKey, cashSessionId }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_admin_get_cash_session_detail', {
-      ...baseArgs,
-      p_cash_session_id: cashSessionId
+    const params = { p_cash_session_id: cashSessionId };
+    return cachedCashRpc({
+      rpcName: 'pos_admin_get_cash_session_detail',
+      licenseKey,
+      baseArgs,
+      params,
+      ttlMs: CLOUD_REQUEST_TTL.SHORT,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_admin_get_cash_session_detail', {
+          ...baseArgs,
+          ...params
+        });
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
     });
-    if (error) throw error;
-    return parseRpcPayload(data);
   }
 };
 
