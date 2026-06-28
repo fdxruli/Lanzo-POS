@@ -10,6 +10,15 @@ import { CASH_OPENING_POLICY } from '../../services/cashOpeningPolicyService.js'
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
+function InputStatusIcon({ isLocked }) {
+  if (!isLocked) return null;
+  return (
+    <span title="Bloqueado" className="settings-lock-icon">
+      <Lock size={16} />
+    </span>
+  );
+}
+
 // Lógica del tema
 const MQL = window.matchMedia('(prefers-color-scheme: dark)');
 const applyTheme = (theme) => {
@@ -161,39 +170,13 @@ export default function GeneralSettings() {
     showMessageModal('¡Datos actualizados correctamente! Los campos nuevos se han bloqueado.');
   };
 
-  const InputStatusIcon = ({ isLocked }) => {
-    if (!isLocked) return null;
-    return (
-      <span title="Bloqueado" style={{ position: 'absolute', right: '10px', top: '38px', color: '#718096' }}>
-        <Lock size={16} />
-      </span>
-    );
-  };
-
   return (
     <div className="company-form-container">
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        flexWrap: 'wrap',
-        gap: '10px',
-        marginBottom: '20px'
-      }}>
-        <h3 className="subtitle" style={{ margin: 0, whiteSpace: 'nowrap' }}>Datos de la Empresa</h3>
+      <div className="settings-panel-header">
+        <h3 className="subtitle settings-title-inline">Datos de la Empresa</h3>
 
-        <div style={{
-          fontSize: '0.8rem',
-          color: 'var(--text-light)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '5px',
-          backgroundColor: 'var(--bg-light)',
-          padding: '4px 8px',
-          borderRadius: '4px',
-          maxWidth: '100%'
-        }}>
-          <Info size={14} style={{ flexShrink: 0 }} />
+        <div className="settings-lock-note">
+          <Info size={14} className="settings-icon-shrink" />
           <span>Los datos registrados se bloquearán al guardar. Si requiere actualizar sus datos contacte a soporte</span>
         </div>
       </div>
@@ -202,8 +185,8 @@ export default function GeneralSettings() {
 
         <div className="settings-grid">
           {/* 1. Nombre */}
-          <div className="form-group" style={{ position: 'relative' }}>
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="form-group settings-field-relative">
+            <label className="form-label settings-label-icon">
               <Store size={16} /> Nombre del Negocio
             </label>
             <input
@@ -213,14 +196,13 @@ export default function GeneralSettings() {
               onChange={(e) => setName(e.target.value)}
               placeholder="Ej. Mi Tiendita"
               disabled={lockedFields.name}
-              style={lockedFields.name ? { backgroundColor: '#f7fafc', cursor: 'not-allowed', color: '#718096' } : {}}
             />
             <InputStatusIcon isLocked={lockedFields.name} />
           </div>
 
           {/* 2. Teléfono */}
-          <div className="form-group" style={{ position: 'relative' }}>
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="form-group settings-field-relative">
+            <label className="form-label settings-label-icon">
               <Phone size={16} /> Teléfono / WhatsApp
             </label>
             <input
@@ -230,28 +212,26 @@ export default function GeneralSettings() {
               onChange={(e) => setPhone(e.target.value)}
               placeholder="Ej. 55 1234 5678"
               disabled={lockedFields.phone}
-              style={lockedFields.phone ? { backgroundColor: '#f7fafc', cursor: 'not-allowed', color: '#718096' } : {}}
             />
             <InputStatusIcon isLocked={lockedFields.phone} />
           </div>
 
           {/* 3. Logo */}
           <div className="form-group logo-upload-group">
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <label className="form-label settings-label-icon">
               <ImageIcon size={16} /> Logo
             </label>
-            <div className={`image-upload-wrapper ${lockedFields.logo ? 'locked' : ''}`}
-              style={lockedFields.logo ? { opacity: 0.7, cursor: 'not-allowed' } : {}}>
+            <div className={`image-upload-wrapper ${lockedFields.logo ? 'locked' : ''}`}>
 
               {isProcessingLogo && (
-                <div className="spinner-loader small" style={{ position: 'absolute', inset: 0, margin: 'auto' }}></div>
+                <div className="spinner-loader small settings-logo-spinner"></div>
               )}
 
               <img className="image-preview" src={logoPreview} alt="Logo" />
 
               {lockedFields.logo && (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.5)' }}>
-                  <Lock size={24} color="#4A5568" />
+                <div className="settings-logo-lock-overlay">
+                  <Lock size={24} />
                 </div>
               )}
 
@@ -266,8 +246,8 @@ export default function GeneralSettings() {
           </div>
 
           {/* 4. Dirección */}
-          <div className="form-group full-width" style={{ position: 'relative' }}>
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="form-group full-width settings-field-relative">
+            <label className="form-label settings-label-icon">
               <MapPin size={16} /> Dirección
             </label>
             <textarea
@@ -277,10 +257,9 @@ export default function GeneralSettings() {
               rows="2"
               placeholder="Calle, número, colonia..."
               disabled={lockedFields.address}
-              style={lockedFields.address ? { backgroundColor: '#f7fafc', cursor: 'not-allowed', color: '#718096' } : {}}
             ></textarea>
             {lockedFields.address && (
-              <span title="Bloqueado" style={{ position: 'absolute', right: '10px', top: '38px', color: '#718096' }}>
+              <span title="Bloqueado" className="settings-lock-icon">
                 <Lock size={16} />
               </span>
             )}
@@ -288,12 +267,11 @@ export default function GeneralSettings() {
         </div>
 
         {/* Botón Dinámico */}
-        <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', height: '40px' }}>
+        <div className="settings-submit-row">
           {hasChanges && (
             <button
               type="submit"
-              className="btn btn-save animate-fade-in"
-              style={{ minWidth: '150px' }}
+              className="btn btn-save animate-fade-in settings-submit-button"
             >
               Actualizar datos
             </button>
@@ -302,7 +280,7 @@ export default function GeneralSettings() {
       </form>
 
       {/* SECCIÓN APARIENCIA */}
-      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+      <div className="settings-subsection">
         <h3 className="subtitle">Apariencia</h3>
         <div className="theme-toggle-container">
           {['light', 'dark', 'system'].map(theme => (
@@ -315,7 +293,7 @@ export default function GeneralSettings() {
                 onChange={handleThemeChange}
               />
               {/* Aquí se reemplazaron los Emojis por los Iconos de Lucide */}
-              <span className="theme-radio-text" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="theme-radio-text settings-label-icon">
                 {theme === 'light' ? <><Sun size={16} /> Claro</> : 
                  theme === 'dark' ? <><Moon size={16} /> Oscuro</> : 
                  <><Monitor size={16} /> Sistema</>}
@@ -326,7 +304,7 @@ export default function GeneralSettings() {
       </div>
 
       {/* SECCIÓN BARRA DE ANUNCIOS (TICKER) */}
-      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+      <div className="settings-subsection">
         <h3 className="subtitle">Barra de Anuncios (Ticker)</h3>
 
         <div style={{
@@ -351,10 +329,10 @@ export default function GeneralSettings() {
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Cinta de Notificaciones Superior</span>
               <p>Muestra alertas dinámicas en la parte superior de la pantalla.</p>
-              <span style={{ fontSize: '0.85rem', color: '#E53E3E', fontWeight: 500 }}>
+              <span className="settings-warning-text">
                 ⚠️ Al desactivar esta barra dejarás de ver notificaciones críticas de stock bajo y caducidad.
               </span>
-              <span style={{ fontSize: '0.85rem', color: '#E53E3E', fontWeight: 500 }}>
+              <span className="settings-warning-text">
                 Nota: Activar y desactivar este control reiniciará la animación de los mensajes en cola.
               </span>
               <br />
@@ -403,7 +381,7 @@ export default function GeneralSettings() {
       </div>
 
       {/* SECCIÓN ASISTENTE VIRTUAL */}
-      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+      <div className="settings-subsection">
         <h3 className="subtitle">Asistente Virtual</h3>
 
         <div style={{
@@ -474,7 +452,7 @@ export default function GeneralSettings() {
       </div>
 
       {/* SECCIÓN MÚLTIPLES ÓRDENES */}
-      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+      <div className="settings-subsection">
         <h3 className="subtitle">Múltiples Órdenes</h3>
 
         <div style={{
@@ -506,7 +484,7 @@ export default function GeneralSettings() {
                 {enableMultipleOrders ? 'Múltiples órdenes activadas.' : 'Solo se permite una orden a la vez.'}
               </span>
               {activeOrdersCount > 1 && (
-                <span style={{ fontSize: '0.85rem', color: '#E53E3E', marginTop: '4px', fontWeight: 500 }}>
+                <span className="settings-warning-text">
                   Debes cerrar, cobrar o cancelar todas las órdenes secundarias en el POS antes de desactivar esta función.
                 </span>
               )}
@@ -556,7 +534,7 @@ export default function GeneralSettings() {
       </div>
 
       {/* SECCIÓN LEGAL */}
-      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+      <div className="settings-subsection">
         <h3 className="subtitle">Legal y Privacidad</h3>
 
         <div
@@ -590,7 +568,7 @@ export default function GeneralSettings() {
         </div>
       </div>
 
-      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+      <div className="settings-subsection">
         <h3 className="subtitle">Política de Caja</h3>
 
         <div style={{

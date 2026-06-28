@@ -133,9 +133,9 @@ export default function LicenseSettings() {
 
         if (inGracePeriod) {
             return (
-                <div style={{ color: '#d97706', fontWeight: 'bold' }}>
+                <div className="license-expiration-state license-expiration-state--grace">
                     Vencida (Periodo de Gracia)<br/>
-                    <span style={{ fontSize: '0.85em', fontWeight: 'normal' }}>
+                    <span className="license-expiration-note">
                         Corte definitivo en: {daysLeftInGrace} días
                     </span>
                 </div>
@@ -144,9 +144,9 @@ export default function LicenseSettings() {
 
         if (isExpired && !inGracePeriod) {
              return (
-                <div style={{ color: '#dc2626', fontWeight: 'bold' }}>
+                <div className="license-expiration-state license-expiration-state--expired">
                     Licencia Suspendida<br/>
-                    <span style={{ fontSize: '0.85em', fontWeight: 'normal' }}>
+                    <span className="license-expiration-note">
                         Expiró el: {formattedDate}
                     </span>
                 </div>
@@ -325,8 +325,7 @@ export default function LicenseSettings() {
                 )}
                 
                 <button 
-                    className="btn btn-cancel" 
-                    style={{ width: 'auto', marginTop: '1rem' }} 
+                    className="btn btn-cancel license-logout-button" 
                     onClick={isStaffDevice ? handleStaffLogout : handleLogout}
                 >
                     {isStaffDevice ? 'Cerrar sesion staff' : 'Cerrar sesion local'}
@@ -340,15 +339,7 @@ export default function LicenseSettings() {
             <h3 className="subtitle">Configuración de Módulos</h3>
 
             {maxRubrosAllowed === 1 && (
-                <p style={{
-                    fontSize: '0.9rem',
-                    color: '#155724',
-                    marginBottom: '15px',
-                    backgroundColor: '#d4edda',
-                    padding: '10px',
-                    borderRadius: '6px',
-                    borderLeft: '4px solid #28a745'
-                }}>
+                <p className="ui-alert ui-alert--success license-linked-alert">
                     🔒 <strong>Licencia Vinculada:</strong> Tu sistema está configurado exclusivamente para el giro seleccionado abajo.
                 </p>
             )}
@@ -407,12 +398,12 @@ export default function LicenseSettings() {
                             {rubro.label}
 
                             {isSelected && (
-                                <span style={{ position: 'absolute', top: 5, right: 8, fontSize: '1rem' }}>
+                                <span className="rubro-state-icon">
                                     {isHardLocked ? '🔒' : '✅'}
                                 </span>
                             )}
                             {(!isSelected && (isLimitReached || !isAllowed || isHardLocked)) && (
-                                <span style={{ position: 'absolute', top: 5, right: 8, fontSize: '1rem', filter: 'grayscale(100%)', opacity: 0.5 }}>🔒</span>
+                                <span className="rubro-state-icon rubro-state-icon--muted">🔒</span>
                             )}
                         </div>
                     );
@@ -425,7 +416,7 @@ export default function LicenseSettings() {
                     : "Selecciona los giros adicionales para activar sus funciones."}
             </small>
 
-            <h3 className="subtitle" style={{ marginTop: '2rem' }}>Información de Licencia</h3>
+            <h3 className="subtitle license-section-title">Información de Licencia</h3>
             {renderLicenseInfo()}
         </div>
     );

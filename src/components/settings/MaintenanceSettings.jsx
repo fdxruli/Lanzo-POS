@@ -114,15 +114,15 @@ export default function MaintenanceSettings() {
     <div className="company-form-container">
       <h3 className="subtitle">Mantenimiento del Sistema</h3>
 
-      <div className="backup-container" style={{ marginTop: '0', borderTop: 'none' }}>
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', marginBottom: '20px' }}>
+      <div className="backup-container maintenance-container-reset">
+        <p className="maintenance-lead">
           Herramientas para corregir inconsistencias y optimizar la base de datos.
         </p>
 
         <div className="maintenance-grid">
           <div className="maintenance-tool-card">
             <div className="tool-info">
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h4>
                 <BarChart2 size={20} /> Reconstruir Reportes desde Historial
               </h4>
               <p>- Recalcula los reportes basándose ÚNICAMENTE en lo que se cobró en cada ticket histórico. NO actualiza a costos de hoy.</p>
@@ -135,7 +135,7 @@ export default function MaintenanceSettings() {
 
           <div className="maintenance-tool-card">
             <div className="tool-info">
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h4>
                 <Package size={20} /> Sincronizar Stock
               </h4>
               <p>- Corrige discrepancias si ves &quot;Agotado&quot; pero tienes lotes.</p>
@@ -146,9 +146,9 @@ export default function MaintenanceSettings() {
             </button>
           </div>
 
-          <div className="maintenance-tool-card" style={{ borderColor: '#7c3aed' }}>
+          <div className="maintenance-tool-card maintenance-tool-card--archive">
             <div className="tool-info">
-              <h4 style={{ color: '#7c3aed', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h4>
                 <Archive size={20} /> Archivar Historial
               </h4>
               <p>- Limpia ventas antiguas para acelerar.</p>
@@ -156,26 +156,24 @@ export default function MaintenanceSettings() {
               <p>- Recomendado cada 6 meses o mas.</p>
             </div>
             <button
-              className="btn btn-secondary"
               onClick={handleArchive}
-              style={{ backgroundColor: '#7c3aed', color: 'white', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
+              className="btn btn-secondary maintenance-button--archive"
             >
               <Archive size={16} /> Archivar
             </button>
           </div>
 
-          <div className="maintenance-tool-card" style={{ borderColor: '#3b82f6' }}>
+          <div className="maintenance-tool-card maintenance-tool-card--data">
             <div className="tool-info">
-              <h4 style={{ color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h4>
                 <Database size={20} /> Respaldo y Datos
               </h4>
               <p>- Exporta tu base de datos o importa un respaldo.</p>
               <p>- Carga masiva de productos via CSV/JSON.</p>
             </div>
             <button
-              className="btn btn-secondary"
               onClick={() => setShowDataTransfer(true)}
-              style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
+              className="btn btn-secondary maintenance-button--data"
             >
               <Download size={16} /> Gestionar Datos
             </button>

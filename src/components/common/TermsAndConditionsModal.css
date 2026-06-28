@@ -170,7 +170,7 @@
 }
 
 /* Botones base (asumiendo que tienes clases globales, pero por seguridad las definimos) */
-.btn {
+.terms-modal-content .btn {
   padding: 0.6rem 1.2rem;
   border-radius: 8px;
   font-weight: 500;
@@ -184,18 +184,18 @@
   gap: 8px;
 }
 
-.btn-secondary {
+.terms-modal-content .btn-secondary {
   background-color: white;
   border: 1px solid var(--border-color, #cbd5e0);
   color: var(--text-primary, #4a5568);
 }
 
-.btn-primary {
+.terms-modal-content .btn-primary {
   background-color: var(--primary-color, #3182ce); /* Azul por defecto */
   color: white;
 }
 
-.btn:disabled {
+.terms-modal-content .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

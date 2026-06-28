@@ -230,6 +230,10 @@
   grid-template-columns: 1fr;
 }
 
+.stats-insights-section--top {
+  align-items: flex-start;
+}
+
 .stats-insight-card {
   background-color: var(--card-background-color);
   border-radius: 16px;
@@ -237,6 +241,14 @@
   border: 1px solid var(--border-color);
   box-shadow: var(--box-shadow);
   min-height: 220px;
+}
+
+.stats-insight-card--full {
+  width: 100%;
+}
+
+.stats-chart-block {
+  margin-top: 10px;
 }
 
 .insight-header {
@@ -338,6 +350,12 @@
   margin-top: 0.5rem;
 }
 
+.card-mini-stats--inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
 .mini-stat-pill {
   background-color: rgba(124, 58, 237, 0.1);
   color: var(--secondary-color);
@@ -404,6 +422,7 @@
 }
 
 .inventory-bar {
+  width: 100%;
   height: 100%;
   background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
   border-radius: 3px;
@@ -448,6 +467,10 @@
   font-weight: 700;
   line-height: 1.25;
   margin-top: 0.5rem;
+}
+
+.financial-quality-warning--compact {
+  margin-bottom: 0.75rem;
 }
 
 .financial-quality-text {

@@ -439,7 +439,7 @@ export default function StatsGrid({
     if (!badges.length) return null;
 
     return (
-      <div className="card-mini-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+      <div className="card-mini-stats card-mini-stats--inline">
         {badges.map((badge) => (
           <span key={`${badge.variant}-${badge.label}`} className="mini-stat-pill" title={badge.title || badge.label}>
             {badge.label}
@@ -842,7 +842,7 @@ export default function StatsGrid({
           </div>
           {metrics.inventory !== null && (
             <div className="inventory-bar-container">
-              <div className="inventory-bar" style={{ width: '100%' }}></div>
+              <div className="inventory-bar"></div>
             </div>
           )}
           <small className={`inventory-footer-text ${metrics.inventory === null ? 'error-text-light' : 'text-muted'}`}>
@@ -929,15 +929,15 @@ export default function StatsGrid({
       </div>
 
       {/* Sección de gráficas y datos adicionales */}
-      <div className="stats-insights-section" style={{ alignItems: 'flex-start' }}>
+      <div className="stats-insights-section stats-insights-section--top">
         {/* Gráfica por fecha real */}
         {metrics.dailyRevenue.length > 0 && (
-          <div className="stats-insight-card" style={{ width: '100%' }}>
+          <div className="stats-insight-card stats-insight-card--full">
             <div className="insight-header">
               <Calendar size={18} />
               <h4>{`${metrics.selectedMetricLabel} por fecha`}</h4>
             </div>
-            <div style={{ marginTop: '10px' }}>
+            <div className="stats-chart-block">
               <BarWeekdayChart
                 data={metrics.dailyRevenue}
                 height={260}
@@ -949,13 +949,13 @@ export default function StatsGrid({
         )}
 
         {/* Productos más vendidos — filteredSales respeta el periodo y excluye abiertas/canceladas */}
-        <div className="stats-insight-card" style={{ width: '100%' }}>
+        <div className="stats-insight-card stats-insight-card--full">
           <TopProducts sales={metrics.filteredSales} limit={5} />
           {renderSourceBadges(reportContext.salesBadges)}
         </div>
 
         {/* Clientes frecuentes — filteredSales respeta el periodo y excluye abiertas/canceladas */}
-        <div className="stats-insight-card" style={{ width: '100%' }}>
+        <div className="stats-insight-card stats-insight-card--full">
           <TopCustomers sales={metrics.filteredSales} customers={customers} limit={5} />
           {renderSourceBadges(reportContext.salesBadges)}
         </div>

@@ -425,7 +425,7 @@
   font-weight: bold;
 }
 
-.error-message {
+#business-setup-modal .error-message {
   color: var(--error-color);
   background-color: #fee2e2;
   padding: 12px;

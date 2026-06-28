@@ -2,6 +2,7 @@
 /* Mobile-First Responsive Design */
 
 .expiration-widget {
+  position: relative;
   background-color: var(--card-background-color);
   border-radius: var(--border-radius);
   box-shadow: var(--box-shadow);
@@ -339,7 +340,7 @@
   width: 100%;
 }
 
-.btn-action {
+.expiration-widget .btn-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -356,23 +357,23 @@
 }
 
 @media (min-width: 480px) {
-  .btn-action {
+  .expiration-widget .btn-action {
     flex: none;
     min-width: auto;
   }
 }
 
-.btn-action:disabled {
+.expiration-widget .btn-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.btn-action .btn-label {
+.expiration-widget .btn-action .btn-label {
   display: none;
 }
 
 @media (min-width: 480px) {
-  .btn-action .btn-label {
+  .expiration-widget .btn-action .btn-label {
     display: inline;
   }
 }
@@ -576,23 +577,23 @@
   transition: all 0.2s ease;
 }
 
-.btn-secondary {
+.expiration-widget .btn-secondary {
   background: var(--secondary-color);
   color: white;
   border: none;
 }
 
-.btn-secondary:hover {
+.expiration-widget .btn-secondary:hover {
   opacity: 0.9;
 }
 
-.btn-cancel {
+.expiration-widget .btn-cancel {
   background: transparent;
   color: var(--text-light);
   border: 1px solid var(--border-color);
 }
 
-.btn-cancel:hover {
+.expiration-widget .btn-cancel:hover {
   border-color: var(--text-dark);
   color: var(--text-dark);
 }
@@ -627,7 +628,7 @@
     flex-direction: column;
   }
 
-  .btn-action {
+  .expiration-widget .btn-action {
     width: 100%;
     min-width: 100%;
   }

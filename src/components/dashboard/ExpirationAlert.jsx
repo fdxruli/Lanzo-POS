@@ -79,7 +79,7 @@ export default function ExpirationAlert() {
   }
 
   return (
-    <div className="expiration-widget" style={{ position: 'relative' }}>
+    <div className="expiration-widget">
       {/* Header */}
       <div className={`widget-header ${expiredCount > 0 ? 'header-critical' : 'header-warning'}`}>
         <div className="header-content">

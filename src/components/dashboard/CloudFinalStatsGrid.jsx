@@ -60,7 +60,7 @@ const MetricCard = ({ label, value, formatter = formatCurrency, note, icon = <Ac
     <div className="card-value-small">{formatter(value)}</div>
     {note && <small className="text-muted">{note}</small>}
     {badges.length > 0 && (
-      <div className="card-mini-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+      <div className="card-mini-stats card-mini-stats--inline">
         {badges.map((badge) => (
           <span key={`${badge.variant}-${badge.label}`} className="mini-stat-pill">
             {badge.label}
@@ -108,7 +108,7 @@ export default function CloudFinalStatsGrid({ reportData = null, reportSource = 
           <p className="stats-subtitle">
             <Activity size={16} /> Reporte oficial final desde ventas cloud. No mezcla ventas locales/Dexie.
           </p>
-          <div className="card-mini-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+          <div className="card-mini-stats card-mini-stats--inline">
             {badges.map((badge) => (
               <span key={`${badge.variant}-${badge.label}`} className="mini-stat-pill">
                 {badge.label}
@@ -119,7 +119,7 @@ export default function CloudFinalStatsGrid({ reportData = null, reportSource = 
       </div>
 
       {missingRequiredMetrics.length > 0 && (
-        <div className="financial-quality-warning" style={{ marginBottom: '0.75rem' }}>
+        <div className="financial-quality-warning financial-quality-warning--compact">
           <AlertTriangle size={15} />
           <span>
             Faltan métricas cloud finales ({missingRequiredMetrics.slice(0, 4).join(', ')}). Se muestran en 0 para no romper la UI.
