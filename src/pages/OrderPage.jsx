@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Clock, Flame, CheckCircle, History, RefreshCw, ChefHat, UtensilsCrossed, User, Store, AlertTriangle, StickyNote } from 'lucide-react';
 import { saveDataSafe, STORES, getOrdersSince } from '../services/database';
-import { showMessageModal } from '../services/utils';
+import { showConfirmModal, showMessageModal } from '../services/utils';
 import Logger from '../services/Logger';
 import './OrderPage.css';
 
@@ -117,7 +117,11 @@ export default function OrdersPage() {
     };
 
     const handleCancelOrder = async (order) => {
-        if (!window.confirm('¿Rechazar esta comanda en cocina? (El cajero deberá gestionar la cancelación financiera si aplica)')) return;
+        if (!(await showConfirmModal('¿Rechazar esta comanda en cocina? (El cajero deberá gestionar la cancelación financiera si aplica)', {
+            title: 'Rechazar comanda',
+            confirmButtonText: 'Si, rechazar',
+            cancelButtonText: 'Cancelar'
+        }))) return;
 
         const updatedOrder = {
             ...order,

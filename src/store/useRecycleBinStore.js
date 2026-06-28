@@ -8,6 +8,7 @@ import {
 } from '../services/database';
 import Logger from '../services/Logger';
 import { restoreDeletedSale } from '../services/salesService';
+import { showMessageModal } from '../services/utils';
 
 const RECYCLE_BIN_LIMIT = 50;
 
@@ -195,7 +196,7 @@ export const useRecycleBinStore = create((set, get) => ({
       set((state) => removeFromState(state, item));
     } catch (error) {
       Logger.error('Error eliminando permanentemente', error);
-      alert('Error al eliminar el archivo permanentemente.');
+      showMessageModal('Error al eliminar el archivo permanentemente.', null, { type: 'error' });
     } finally {
       set({ isLoading: false });
     }
@@ -249,7 +250,7 @@ export const useRecycleBinStore = create((set, get) => ({
       });
     } catch (error) {
       Logger.error('Error vaciando papelera', error);
-      alert('Hubo un problema al intentar vaciar la papelera.');
+      showMessageModal('Hubo un problema al intentar vaciar la papelera.', null, { type: 'error' });
     } finally {
       set({ isLoading: false });
     }

@@ -1,6 +1,6 @@
 // src/store/useDashboardStore.js
 import { create } from 'zustand';
-import { roundCurrency } from '../services/utils';
+import { roundCurrency, showConfirmModal } from '../services/utils';
 import {
   loadData,
   saveData,
@@ -418,7 +418,11 @@ export const useDashboardStore = create((set, get) => ({
   },
 
   deleteSale: async (timestamp) => {
-    if (!window.confirm('¿Restaurar stock y eliminar venta?')) return;
+    if (!(await showConfirmModal('¿Restaurar stock y eliminar venta?', {
+      title: 'Eliminar venta',
+      confirmButtonText: 'Si, eliminar',
+      cancelButtonText: 'Cancelar'
+    }))) return;
     try {
       let saleToDelete = get().sales.find(s => s.timestamp === timestamp);
       if (!saleToDelete) {

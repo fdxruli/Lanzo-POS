@@ -1,0 +1,55 @@
+:root {
+  /* UI palette aliases */
+  --ui-color-primary: var(--primary-color);
+  --ui-color-primary-hover: var(--primary-hover);
+  --ui-color-secondary: var(--secondary-color);
+  --ui-color-success: var(--success-color);
+  --ui-color-warning: var(--warning-color);
+  --ui-color-danger: var(--error-color);
+
+  /* UI surfaces */
+  --ui-bg-page: var(--background-color);
+  --ui-bg-surface: var(--card-background-color);
+  --ui-bg-muted: var(--light-background);
+  --ui-bg-overlay: rgba(15, 23, 42, 0.62);
+  --ui-border-color: var(--border-color);
+
+  /* UI text */
+  --ui-text-strong: var(--text-dark);
+  --ui-text: var(--text-color);
+  --ui-text-muted: var(--text-light);
+  --ui-text-on-primary: #ffffff;
+  --ui-text-on-danger: #ffffff;
+
+  /* UI spacing */
+  --ui-space-2xs: 0.25rem;
+  --ui-space-xs: var(--spacing-xs);
+  --ui-space-sm: var(--spacing-sm);
+  --ui-space-md: var(--spacing-md);
+  --ui-space-lg: var(--spacing-lg);
+  --ui-space-xl: var(--spacing-xl);
+  --ui-space-2xl: 2.5rem;
+
+  /* UI shape and elevation */
+  --ui-radius-xs: 6px;
+  --ui-radius-sm: var(--border-radius-sm);
+  --ui-radius-md: var(--border-radius);
+  --ui-radius-lg: 16px;
+  --ui-shadow-sm: var(--box-shadow);
+  --ui-shadow-md: 0 10px 20px -12px rgba(15, 23, 42, 0.28);
+  --ui-shadow-lg: var(--box-shadow-lg);
+
+  /* UI motion */
+  --ui-transition-fast: 0.16s ease;
+  --ui-transition: 0.2s ease-in-out;
+  --ui-theme-transition: var(--theme-transition-duration) ease-in-out;
+
+  /* Legacy z-index compatibility */
+  --z-modal: var(--z-modal-base);
+  --z-tooltip: var(--z-modal-top);
+}
+
+[data-theme="dark"] {
+  --ui-bg-overlay: rgba(2, 6, 23, 0.72);
+  --ui-shadow-md: 0 14px 28px -18px rgba(0, 0, 0, 0.85);
+}

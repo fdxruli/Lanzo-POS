@@ -7,6 +7,7 @@ import {
 } from '../services/database';
 import Logger from '../services/Logger';
 import { categoriesRepository } from '../services/db/general';
+import { showConfirmModal, showMessageModal } from '../services/utils';
 
 // Variables privadas del módulo para gestionar listeners
 let broadcastChannel = null;
@@ -449,7 +450,11 @@ export const useProductStore = create((set, get) => ({
     },
 
     deleteProduct: async (productId) => {
-        if (!window.confirm('¿Estas seguro de mover este producto a la Papelera?')) return;
+        if (!(await showConfirmModal('¿Estas seguro de mover este producto a la Papelera?', {
+            title: 'Mover a papelera',
+            confirmButtonText: 'Si, mover',
+            cancelButtonText: 'Cancelar'
+        }))) return;
 
         set({ isLoading: true });
         try {
@@ -477,7 +482,7 @@ export const useProductStore = create((set, get) => ({
                     get().fetchPage('prev');
                 }
             } else {
-                alert(`Error al eliminar: ${result.message || 'No encontrado'}`);
+                showMessageModal(`Error al eliminar: ${result.message || 'No encontrado'}`, null, { type: 'error' });
                 set({ isLoading: false });
             }
         } catch (error) {

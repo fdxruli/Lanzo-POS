@@ -30,7 +30,7 @@ import {
   isCloudFinalReportSource,
   REPORT_SOURCE_MODES
 } from '../services/reports/reportSourceBadges';
-import { showMessageModal } from '../services/utils';
+import { showConfirmModal, showMessageModal } from '../services/utils';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
 import { Save, BarChart3, Trash2, ArrowRight } from 'lucide-react';
@@ -314,7 +314,11 @@ export default function DashboardPage() {
   };
 
   const handleArchiveCancelledSale = async (sale) => {
-    if (!window.confirm('Mover esta venta cancelada a la papelera?')) return;
+    if (!(await showConfirmModal('Mover esta venta cancelada a la papelera?', {
+      title: 'Mover a papelera',
+      confirmButtonText: 'Si, mover',
+      cancelButtonText: 'Cancelar'
+    }))) return;
     const result = await archiveCancelledSale(sale.id);
     if (!result.success) {
       showMessageModal(result.message || 'No se pudo mover la venta a papelera.', null, { type: 'error' });

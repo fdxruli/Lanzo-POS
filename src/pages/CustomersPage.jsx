@@ -7,7 +7,7 @@ import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
 import AbonoModal from '../components/customers/AbonoModal';
 import LayawayModal from '../components/customers/LayawayModal';
 import { useCaja } from '../hooks/useCaja';
-import { showMessageModal, sendWhatsAppMessage } from '../services/utils';
+import { showConfirmModal, showMessageModal, sendWhatsAppMessage } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useNavigate } from 'react-router-dom';
 import Logger from '../services/Logger';
@@ -321,7 +321,11 @@ export default function CustomersPage() {
   };
 
   const handleDeleteCustomer = async (customerId) => {
-    if (window.confirm('¿Seguro que quieres eliminar este cliente?')) {
+    if (await showConfirmModal('¿Seguro que quieres eliminar este cliente?', {
+      title: 'Eliminar cliente',
+      confirmButtonText: 'Si, eliminar',
+      cancelButtonText: 'Cancelar'
+    })) {
       const customer = customers.find(c => c.id === customerId);
 
       if (customer && getSafeCustomerDebt(customer.debt) > 0) {

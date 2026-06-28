@@ -33,10 +33,22 @@
     --box-shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.08);
 
     /* --- Z-INDEX --- */
+    --z-normal: 1;
     --z-navbar: 100;
+    --z-sticky: 200;
+    --z-floating-ui: 500;
+    --z-drawer-backdrop: 700;
+    --z-drawer: 710;
     --z-backdrop: 900;
-    --z-modal: 1000;
-    --z-tooltip: 1200;
+    --z-modal-base: 1000;
+    --z-modal-high: 1100;
+    --z-modal-top: 1200;
+    --z-modal-critical: 1300;
+    --z-modal-overlay: 2200;
+    --z-toast: 30000;
+    --z-critical-blocker: 2147483647;
+    --z-modal: var(--z-modal-base);
+    --z-tooltip: var(--z-modal-top);
 
     /* --- TRANSICIONES --- */
     --transition-fast: 0.2s ease-in-out;

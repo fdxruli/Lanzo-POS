@@ -1,6 +1,6 @@
 // src/pages/ProductsPage.jsx
 import { useState, useEffect } from 'react';
-import { showMessageModal } from '../services/utils';
+import { showConfirmModal, showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
 import CategoryManagerModal from '../components/products/CategoryManagerModal';
@@ -152,7 +152,11 @@ export default function ProductsPage() {
     };
 
     const handleDeleteCategory = async (categoryId) => {
-        if (!window.confirm('¿Eliminar esta categoría? Los productos asociados quedarán "Sin Categoría".')) return;
+        if (!(await showConfirmModal('¿Eliminar esta categoría? Los productos asociados quedarán "Sin Categoría".', {
+            title: 'Eliminar categoría',
+            confirmButtonText: 'Si, eliminar',
+            cancelButtonText: 'Cancelar'
+        }))) return;
 
         setIsLoading(true);
         try {
@@ -240,7 +244,11 @@ export default function ProductsPage() {
     };
 
     const handleDeleteProduct = async (product) => {
-        if (!window.confirm(`¿Eliminar "${product.name}"?`)) return;
+        if (!(await showConfirmModal(`¿Eliminar "${product.name}"?`, {
+            title: 'Eliminar producto',
+            confirmButtonText: 'Si, eliminar',
+            cancelButtonText: 'Cancelar'
+        }))) return;
 
         setIsLoading(true);
         try {
