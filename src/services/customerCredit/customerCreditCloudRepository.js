@@ -6,7 +6,8 @@ import {
   buildBaseRpcContextFromArgs,
   buildRpcRequestKey,
   cloudRequestManager,
-  cloudRequestTags
+  cloudRequestTags,
+  invalidateCloudCacheAfterCreditMutation
 } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
@@ -91,7 +92,11 @@ export const customerCreditCloudRepository = {
       p_idempotency_key: idempotencyKey
     });
     if (error) throw error;
-    return parseRpcPayload(data);
+    const response = parseRpcPayload(data);
+    if (response?.success !== false) {
+      invalidateCloudCacheAfterCreditMutation(licenseKey);
+    }
+    return response;
   },
 
   async getCustomerCreditSummary({ licenseKey, customerId }) {
