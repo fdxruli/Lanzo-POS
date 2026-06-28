@@ -5,24 +5,24 @@
   z-index: var(--z-modal-high);
 }
 
-.payment-details {
+#payment-modal .payment-details {
   margin-bottom: var(--spacing-lg);
 }
 
-.payment-label {
+#payment-modal .payment-label {
   font-weight: 500;
   margin-bottom: var(--spacing-xs);
   color: var(--text-dark);
 }
 
-.payment-total {
+#payment-modal .payment-total {
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--primary-color);
   margin-bottom: var(--spacing-md);
 }
 
-.payment-input {
+#payment-modal .payment-input {
   margin-bottom: var(--spacing-md);
   font-size: 1.2rem;
   text-align: center;
@@ -32,53 +32,77 @@
   border-color: var(--border-color);
 }
 
-.payment-change {
+#payment-modal .payment-change {
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--success-color);
   text-align: center;
 }
 
-.btn-confirm {
-  background-color: var(--success-color);
-  color: white;
+#payment-modal .payment-confirm-button {
   width: 100%;
   margin-bottom: var(--spacing-sm);
-  border: none;
 }
 
-.btn-confirm:hover {
-  background-color: #059669;
-  /* Podrías crear una variable --success-hover si deseas */
+#payment-modal .payment-confirm-button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
-.btn-confirm:disabled {
-  background-color: var(--text-light);
-  cursor: not-allowed;
-  opacity: 0.7;
-  transform: none;
-}
-
-.btn-cancel-payment {
-  background-color: transparent;
-  color: var(--text-light);
-  border: 1px solid var(--border-color);
+#payment-modal .payment-cancel-button {
   width: 100%;
 }
 
-.btn-cancel-payment:hover {
+#payment-modal .payment-cancel-button:hover:not(:disabled) {
   background-color: rgba(239, 68, 68, 0.1);
   color: var(--error-color);
   border-color: var(--error-color);
 }
 
-.form-group.customer-search-wrapper {
+#payment-modal .payment-form-group-spaced {
+  margin-top: var(--spacing-md);
+}
+
+#payment-modal .payment-date-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#payment-modal .payment-alert {
+  margin-top: var(--spacing-sm);
+  font-size: 0.85rem;
+}
+
+#payment-modal .payment-alert strong {
+  color: inherit;
+}
+
+#payment-modal .payment-credit-available {
+  align-items: center;
+  justify-content: space-between;
+}
+
+#payment-modal .payment-credit-available strong {
+  white-space: nowrap;
+}
+
+#payment-modal .payment-inline-message {
+  margin: var(--ui-space-xs) 0 0;
+}
+
+#payment-modal .payment-inline-message--helper {
+  line-height: 1.4;
+}
+
+#payment-modal .payment-initial-payment-method {
+  margin-top: var(--spacing-sm);
+}
+
+#payment-modal .form-group.customer-search-wrapper {
   position: relative;
 }
 
 /* Resultados de búsqueda */
-.customer-search-results {
+#payment-modal .customer-search-results {
   position: absolute;
   width: 100%;
   background-color: var(--card-background-color);
@@ -91,7 +115,7 @@
   z-index: 10;
 }
 
-.customer-result-item {
+#payment-modal .customer-result-item {
   padding: var(--spacing-sm);
   cursor: pointer;
   color: var(--text-color);
@@ -99,23 +123,23 @@
   border-bottom: 1px solid var(--light-background);
 }
 
-.customer-result-item:hover {
+#payment-modal .customer-result-item:hover {
   background-color: var(--light-background);
   color: var(--primary-color);
 }
 
-.customer-result-item:last-child {
+#payment-modal .customer-result-item:last-child {
   border-bottom: none;
 }
 
 /* Selector de método de pago */
-.payment-method-selector {
+#payment-modal .payment-method-selector {
   display: flex;
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-md);
 }
 
-.btn-method {
+#payment-modal .btn-method {
   flex: 1;
   padding: var(--spacing-sm);
   border: 1px solid var(--border-color);
@@ -124,20 +148,20 @@
   transition: var(--transition);
 }
 
-.btn-method:hover {
+#payment-modal .btn-method:hover {
   background-color: var(--light-background);
   color: var(--primary-color);
   border-color: var(--border-color);
 }
 
-.btn-method.active {
+#payment-modal .btn-method.active {
   background-color: var(--primary-color);
   color: white;
   border-color: var(--primary-color);
 }
 
 /* --- Botón de añadir rápido --- */
-.btn-quick-add {
+#payment-modal .btn-quick-add {
   background-color: transparent;
   color: var(--primary-color);
   border: none;
@@ -147,12 +171,12 @@
   font-size: 0.9rem;
 }
 
-.btn-quick-add:hover {
+#payment-modal .btn-quick-add:hover {
   text-decoration: underline;
 }
 
 /* --- Saldo pendiente (fiado) --- */
-.payment-saldo {
+#payment-modal .payment-saldo {
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--error-color);
@@ -160,7 +184,7 @@
 }
 
 /* --- Estilos para los botones de billetes rápidos (CORREGIDOS) --- */
-.quick-cash-options {
+#payment-modal .quick-cash-options {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--spacing-xs);
@@ -168,7 +192,7 @@
   margin-top: -5px;
 }
 
-.btn-cash-option {
+#payment-modal .btn-cash-option {
   padding: 10px 4px;
   /* Usamos variables del tema en lugar de colores fijos */
   border: 1px solid var(--border-color);
@@ -183,7 +207,7 @@
   /* Usar la transición global */
 }
 
-.btn-cash-option:hover {
+#payment-modal .btn-cash-option:hover {
   background-color: var(--light-background);
   border-color: var(--primary-color);
   color: var(--primary-color);
@@ -191,9 +215,15 @@
   box-shadow: var(--box-shadow);
 }
 
-.btn-cash-option:active {
+#payment-modal .btn-cash-option:active {
   transform: translateY(0);
   background-color: var(--light-background);
+}
+
+#payment-modal .btn-cash-option-exact {
+  grid-column: 1 / -1;
+  border-color: var(--success-color);
+  color: var(--success-color);
 }
 
 /* * Layout de dos columnas para pantallas grandes 
@@ -206,7 +236,7 @@
     width: 90%;
   }
 
-  .payment-grid {
+  #payment-modal .payment-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 2rem;
@@ -214,18 +244,18 @@
   }
 
   /* Eliminamos el margen inferior en el contenedor izquierdo para que no empuje el layout */
-  .payment-col-left .payment-details {
+  #payment-modal .payment-col-left .payment-details {
     margin-bottom: 0;
   }
 
   /* Aseguramos que los botones queden pegados al fondo de la columna derecha */
-  .payment-col-right {
+  #payment-modal .payment-col-right {
     display: flex;
     flex-direction: column;
     height: 100%;
   }
 
-  .payment-actions {
+  #payment-modal .payment-actions {
     margin-top: auto;
   }
 }
