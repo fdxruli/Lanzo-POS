@@ -46,6 +46,7 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
 );
 
 const cachedCustomerRpc = ({ rpcName, licenseKey, baseArgs, params = {}, force = false, fn }) => cloudRequestManager.request({
+  rpcName,
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
     params
@@ -69,6 +70,7 @@ const invalidateAfterCustomerSuccess = (licenseKey, response) => {
 };
 
 export const customerCloudRepository = {
+  // IMPORTANTE: las mutaciones/migraciones de clientes son críticas y NO deben pasar por CloudRequestManager.
   async upsertCustomer({ licenseKey, customer, expectedVersion = null, idempotencyKey }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
