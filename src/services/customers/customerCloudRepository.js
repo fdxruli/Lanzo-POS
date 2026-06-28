@@ -6,7 +6,8 @@ import {
   buildBaseRpcContextFromArgs,
   buildRpcRequestKey,
   cloudRequestManager,
-  cloudRequestTags
+  cloudRequestTags,
+  invalidateCloudCacheAfterCustomerMutation
 } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
@@ -59,6 +60,13 @@ const cachedCustomerRpc = ({ rpcName, licenseKey, baseArgs, params = {}, fn }) =
   fn
 });
 
+const invalidateAfterCustomerSuccess = (licenseKey, response) => {
+  if (response?.success !== false) {
+    invalidateCloudCacheAfterCustomerMutation(licenseKey);
+  }
+  return response;
+};
+
 export const customerCloudRepository = {
   async upsertCustomer({ licenseKey, customer, expectedVersion = null, idempotencyKey }) {
     assertSupabase();
@@ -72,7 +80,7 @@ export const customerCloudRepository = {
     });
 
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCustomerSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async deleteCustomer({ licenseKey, customerId, expectedVersion = null, idempotencyKey }) {
@@ -87,7 +95,7 @@ export const customerCloudRepository = {
     });
 
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCustomerSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async pullCustomerSnapshot({ licenseKey, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, includeDeleted = false }) {
@@ -141,7 +149,7 @@ export const customerCloudRepository = {
     });
 
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCustomerSuccess(licenseKey, parseRpcPayload(data));
   }
 };
 
