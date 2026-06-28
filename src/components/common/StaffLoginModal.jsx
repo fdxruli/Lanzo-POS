@@ -71,14 +71,14 @@ export default function StaffLoginModal() {
         </div>
 
         {!isOnline && (
-          <div className="staff-login-alert" role="status">
+          <div className="staff-login-alert ui-alert ui-alert--danger" role="status">
             <WifiOff size={18} aria-hidden="true" />
             <span>El login staff requiere conexion a internet.</span>
           </div>
         )}
 
         {staffAlreadyInUse && (
-          <div className="staff-login-warning" role="alert">
+          <div className="staff-login-warning ui-alert ui-alert--warning" role="alert">
             <div className="staff-login-warning-header">
               <AlertTriangle size={18} aria-hidden="true" />
               <span>{staffAlreadyInUseMessage || 'Este usuario staff ya está activo en otro dispositivo.'}</span>
@@ -94,7 +94,7 @@ export default function StaffLoginModal() {
         )}
 
         {staffLoginMessage && !errorMessage && !staffAlreadyInUse && (
-          <div className="staff-login-note" role="status">
+          <div className="staff-login-note ui-alert ui-alert--info" role="status">
             {staffLoginMessage}
           </div>
         )}
@@ -128,14 +128,14 @@ export default function StaffLoginModal() {
           </div>
 
           {errorMessage && (
-            <div className="staff-login-error" role="alert">
+            <div className="staff-login-error ui-alert ui-alert--danger" role="alert">
               {errorMessage}
             </div>
           )}
 
           <button
             type="submit"
-            className="btn btn-primary staff-login-submit"
+            className="ui-button ui-button--primary staff-login-submit"
             disabled={isLoading || !isOnline || !username.trim() || !password}
           >
             <LogIn size={18} aria-hidden="true" />
@@ -145,7 +145,7 @@ export default function StaffLoginModal() {
 
         <div className="staff-login-footer">
           <span>{licenseKey ? `Licencia ${licenseKey.slice(0, 12)}...` : 'Licencia pendiente'}</span>
-          <button type="button" className="btn btn-cancel" onClick={logout} disabled={isLoading}>
+          <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={isLoading}>
             Cambiar licencia
           </button>
         </div>
