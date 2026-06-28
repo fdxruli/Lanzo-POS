@@ -60,6 +60,28 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
   }
 }
 
+export function showConfirmModal(message, options = {}) {
+  return new Promise((resolve) => {
+    showMessage(
+      message,
+      () => resolve(true),
+      {
+        type: 'warning',
+        title: 'Confirmar accion',
+        confirmButtonText: 'Si, continuar',
+        cancelButtonText: 'Cancelar',
+        showCancel: true,
+        isDismissible: false,
+        ...options,
+        onCancel: () => {
+          options.onCancel?.();
+          resolve(false);
+        }
+      }
+    );
+  });
+}
+
 /**
  * Genera un identificador único universal y ordenable cronológicamente (K-Sortable).
  * Combina un timestamp en Base36 con entropía de un UUID para evitar colisiones,
