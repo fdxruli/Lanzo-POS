@@ -1,6 +1,7 @@
 import Logger from '../Logger';
 import { showMessageModal } from '../utils';
 import { Money } from '../../utils/moneyMath';
+import { invalidateCloudCacheAfterCashMutation } from '../cloud';
 import { generateIdempotencyKey } from '../sync/idempotency';
 import {
   SYNC_ENTITY_TYPES,
@@ -191,6 +192,7 @@ export const cashRepository = {
 
     if (response?.cash_session) {
       const applied = await applyCloudResponse(response);
+      invalidateCloudCacheAfterCashMutation(mode.licenseKey);
       posSyncOrchestrator.pullIncremental('cash_open').catch(() => {});
       return {
         success: response.success !== false || response.code === 'CASH_SESSION_ALREADY_OPEN',
@@ -245,6 +247,7 @@ export const cashRepository = {
     }
 
     const applied = await applyCloudResponse(response);
+    invalidateCloudCacheAfterCashMutation(mode.licenseKey);
     posSyncOrchestrator.pullIncremental('cash_movement').catch(() => {});
 
     return {
@@ -289,6 +292,7 @@ export const cashRepository = {
     }
 
     const applied = await applyCloudResponse(response);
+    invalidateCloudCacheAfterCashMutation(mode.licenseKey);
     posSyncOrchestrator.pullIncremental('cash_adjust').catch(() => {});
     return {
       success: true,
@@ -332,6 +336,7 @@ export const cashRepository = {
     }
 
     const applied = await applyCloudResponse(response);
+    invalidateCloudCacheAfterCashMutation(mode.licenseKey);
     posSyncOrchestrator.pullIncremental('cash_close').catch(() => {});
     return {
       success: true,
