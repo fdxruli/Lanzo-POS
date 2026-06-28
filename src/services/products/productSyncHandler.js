@@ -4,6 +4,7 @@ import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { syncMetaService } from '../sync/syncMetaService';
 import {
   getLicenseKeyFromDetails,
+  shouldDeferPosBootstrapStartHook,
   SYNC_ENTITY_TYPES,
   SYNC_LIMITS,
   SYNC_OPERATIONS
@@ -86,8 +87,13 @@ export const pullCatalogChanges = async (licenseKeyOverride = null) => {
 };
 
 export const productSyncHandler = {
-  async onStart({ licenseKey } = {}) {
+  async onStart({ licenseKey, reason = 'manual', force = false } = {}) {
     if (!licenseKey || !isOnline()) return { skipped: true };
+
+    if (shouldDeferPosBootstrapStartHook(reason, { force })) {
+      Logger.log('[Products/Sync] Snapshot/migracion inicial diferida por bootstrap inteligente.');
+      return { skipped: true, deferred: true, reason: 'bootstrap_deferred_snapshot' };
+    }
 
     try {
       const canMigrateProducts = canMigrateProductCatalog();
