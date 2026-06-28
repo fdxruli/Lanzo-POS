@@ -1,4 +1,13 @@
 import { supabaseClient } from '../supabase';
+import {
+  CLOUD_REQUEST_COOLDOWN,
+  CLOUD_REQUEST_TAGS,
+  CLOUD_REQUEST_TTL,
+  buildBaseRpcContextFromArgs,
+  buildRpcRequestKey,
+  cloudRequestManager,
+  cloudRequestTags
+} from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 
@@ -39,6 +48,21 @@ const callRpc = async (name, args) => {
   if (error) throw error;
   return parseRpcPayload(data);
 };
+
+const cachedProductRpc = ({ rpcName, licenseKey, baseArgs, params = {}, fn }) => cloudRequestManager.request({
+  key: buildRpcRequestKey(rpcName, {
+    ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
+    params
+  }),
+  ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
+  cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
+  tags: [
+    CLOUD_REQUEST_TAGS.PRODUCTS,
+    cloudRequestTags.license(licenseKey),
+    cloudRequestTags.rpc(rpcName)
+  ],
+  fn
+});
 
 export const productCloudRepository = {
   async upsertCategory({ licenseKey, category, expectedVersion = null, idempotencyKey }) {
@@ -113,12 +137,22 @@ export const productCloudRepository = {
     offset = 0,
     includeDeleted = true
   }) {
-    return callRpc('pos_pull_product_catalog_snapshot', {
-      ...(await buildBaseRpcArgs(licenseKey)),
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const params = {
       p_entity_type: entityType,
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
       p_include_deleted: Boolean(includeDeleted)
+    };
+    return cachedProductRpc({
+      rpcName: 'pos_pull_product_catalog_snapshot',
+      licenseKey,
+      baseArgs,
+      params,
+      fn: () => callRpc('pos_pull_product_catalog_snapshot', {
+        ...baseArgs,
+        ...params
+      })
     });
   },
 
