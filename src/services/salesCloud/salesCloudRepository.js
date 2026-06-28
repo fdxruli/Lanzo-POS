@@ -1,4 +1,13 @@
 import { supabaseClient } from '../supabase';
+import {
+  CLOUD_REQUEST_COOLDOWN,
+  CLOUD_REQUEST_TAGS,
+  CLOUD_REQUEST_TTL,
+  buildBaseRpcContextFromArgs,
+  buildRpcRequestKey,
+  cloudRequestManager,
+  cloudRequestTags
+} from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import {
   isCloudSalesBaseSyncEnabled,
@@ -53,6 +62,29 @@ const buildCloudCashierArgs = ({ baseArgs, sale, items, payments, cashSessionId,
 const buildCloudCreditArgs = ({ baseArgs, sale, items, payments, cashSessionId, customerId, idempotencyKey }) => ({
   ...buildCloudCashierArgs({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }),
   p_customer_id: customerId || sale?.customer_id || sale?.customerId || null
+});
+
+const cachedSalesRpc = ({
+  rpcName,
+  licenseKey,
+  baseArgs,
+  params = {},
+  ttlMs = CLOUD_REQUEST_TTL.MEDIUM,
+  cooldownMs = CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
+  fn
+}) => cloudRequestManager.request({
+  key: buildRpcRequestKey(rpcName, {
+    ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
+    params
+  }),
+  ttlMs,
+  cooldownMs,
+  tags: [
+    CLOUD_REQUEST_TAGS.SALES,
+    cloudRequestTags.license(licenseKey),
+    cloudRequestTags.rpc(rpcName)
+  ],
+  fn
 });
 
 export const salesCloudRepository = {
@@ -155,24 +187,46 @@ export const salesCloudRepository = {
   async getSale({ licenseKey, saleId }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_get_sale', { ...baseArgs, p_sale_id: saleId });
-    if (error) throw error;
-    return parseRpcPayload(data);
+    const params = { p_sale_id: saleId };
+    return cachedSalesRpc({
+      rpcName: 'pos_get_sale',
+      licenseKey,
+      baseArgs,
+      params,
+      ttlMs: CLOUD_REQUEST_TTL.VERY_SHORT,
+      cooldownMs: CLOUD_REQUEST_COOLDOWN.VERY_SHORT,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_get_sale', { ...baseArgs, ...params });
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
+    });
   },
 
   async pullSalesSnapshot({ licenseKey, limit = 500, offset = 0, dateFrom = null, dateTo = null, includeDeleted = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_pull_sales_snapshot', {
-      ...baseArgs,
+    const params = {
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
       p_date_from: dateFrom || null,
       p_date_to: dateTo || null,
       p_include_deleted: Boolean(includeDeleted)
+    };
+    return cachedSalesRpc({
+      rpcName: 'pos_pull_sales_snapshot',
+      licenseKey,
+      baseArgs,
+      params,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_pull_sales_snapshot', {
+          ...baseArgs,
+          ...params
+        });
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
     });
-    if (error) throw error;
-    return parseRpcPayload(data);
   },
 
   async pullSalesChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {
