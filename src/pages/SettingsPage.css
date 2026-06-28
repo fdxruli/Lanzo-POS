@@ -48,12 +48,11 @@
 
 .settings-page-wrapper .tab-btn.active {
   background-color: var(--primary-color); /* O el color que uses para activo */
-  color: white; /* O el color de contraste */
+  color: var(--ui-text-on-primary); /* O el color de contraste */
   /* Si no tienes variables globales definidas aquí, se usará el fallback del navegador o 
      puedes usar var(--text-dark) si prefieres un estilo tipo 'pill' gris */
-  background-color: #3b82f6; /* Fallback azul estándar si var no carga */
   background-color: var(--primary-color);
-  color: #ffffff;
+  color: var(--ui-text-on-primary);
 }
 
 /* ===== ESTILOS BASE PARA MÓVIL (Existentes) ===== */
@@ -183,6 +182,16 @@
   opacity: 0.7;
 }
 
+.settings-option-row--legal,
+.settings-option-row--interactive {
+  justify-content: flex-start;
+}
+
+.settings-option-row--warning {
+  border-color: var(--ui-border-warning);
+  background: var(--ui-bg-warning-soft);
+}
+
 .settings-option-row--clickable {
   cursor: pointer;
   transition: border-color var(--ui-transition-fast);
@@ -204,6 +213,20 @@
 .settings-option-copy {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+}
+
+.settings-option-copy p {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.settings-option-copy p + p,
+.settings-option-copy p + .settings-option-meta,
+.settings-option-copy br + .settings-option-meta {
+  margin-top: 4px;
 }
 
 .settings-option-title {
@@ -247,6 +270,16 @@
 .settings-icon-bubble--warning {
   color: var(--ui-text-warning);
   background: var(--ui-bg-warning-soft);
+}
+
+.settings-icon-bubble--muted {
+  color: var(--text-light);
+  background: color-mix(in srgb, var(--light-background) 70%, var(--card-background-color));
+}
+
+.settings-icon-bubble--danger {
+  color: var(--ui-text-danger);
+  background: var(--ui-bg-danger-soft);
 }
 
 .settings-switch {
@@ -791,7 +824,7 @@
 /* Estilo cuando está seleccionado */
 input[type="radio"]:checked + .theme-radio-text {
   background-color: var(--primary-color);
-  color: white;
+  color: var(--ui-text-on-primary);
   border-color: var(--primary-color);
   box-shadow: 0 4px 6px rgba(var(--primary-rgb), 0.2);
 }
@@ -878,7 +911,7 @@ input[type="radio"] {
 
 .rubro-box.selected {
   background-color: var(--primary-color);
-  color: white;
+  color: var(--ui-text-on-primary);
   border-color: var(--primary-color);
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
