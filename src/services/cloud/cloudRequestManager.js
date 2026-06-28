@@ -21,6 +21,8 @@ const stats = {
 
 let lastCleanupAt = 0;
 
+const RATE_LIMITED_ERROR_CODE = 'RATE_LIMITED';
+
 const CRITICAL_ERROR_CODES = new Set([
   'LICENSE_REQUIRED',
   'STAFF_LOGIN_REQUIRED',
@@ -62,6 +64,40 @@ const normalizeTags = (tags = []) => Array.from(new Set(
     .filter(Boolean)
 ));
 
+const getPayloadCode = (payload) => String(
+  payload?.code ||
+  payload?.error?.code ||
+  payload?.response?.code ||
+  ''
+).trim();
+
+const isRateLimitedPayload = (payload) => (
+  payload?.success === false && getPayloadCode(payload) === RATE_LIMITED_ERROR_CODE
+);
+
+const buildRateLimitedError = (payload = {}) => {
+  const retryAfterSeconds = Number(
+    payload.retry_after_seconds ??
+    payload.retryAfterSeconds ??
+    0
+  ) || 0;
+
+  const message = payload.message || 'Demasiadas solicitudes. Intenta nuevamente en unos segundos.';
+  const error = new Error(
+    retryAfterSeconds > 0
+      ? `${message} Intenta de nuevo en ${retryAfterSeconds} s.`
+      : message
+  );
+
+  error.code = RATE_LIMITED_ERROR_CODE;
+  error.retryAfterSeconds = retryAfterSeconds;
+  error.retryAfterMs = retryAfterSeconds > 0 ? retryAfterSeconds * 1000 : 0;
+  error.payload = payload;
+  error.response = payload;
+
+  return error;
+};
+
 const getErrorCode = (error) => String(
   error?.code ||
   error?.error?.code ||
@@ -101,6 +137,7 @@ const isCriticalOrBusinessError = (error) => {
 
 export const isTemporaryCloudRequestError = (error) => {
   if (isCriticalOrBusinessError(error)) return false;
+  if (getErrorCode(error) === RATE_LIMITED_ERROR_CODE) return true;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
   if (error?.name === 'TypeError') return true;
 
@@ -110,6 +147,7 @@ export const isTemporaryCloudRequestError = (error) => {
   return (
     code === '57014' ||
     code === '429' ||
+    code === 'rate_limited' ||
     code.startsWith('08') ||
     code.startsWith('53') ||
     code.startsWith('5') ||
@@ -122,6 +160,7 @@ export const isTemporaryCloudRequestError = (error) => {
     message.includes('timeout') ||
     message.includes('temporarily unavailable') ||
     message.includes('too many requests') ||
+    message.includes('demasiadas solicitudes') ||
     message.includes('502') ||
     message.includes('503') ||
     message.includes('504')
@@ -169,7 +208,10 @@ const registerBackoff = (key, error) => {
 
   const previous = backoff.get(key);
   const attempts = Math.min((previous?.attempts || 0) + 1, CLOUD_REQUEST_BACKOFF.MAX_ATTEMPTS);
-  const delayMs = buildBackoffDelay(attempts);
+  const retryAfterMs = Number(error?.retryAfterMs || 0);
+  const delayMs = retryAfterMs > 0
+    ? Math.min(retryAfterMs, CLOUD_REQUEST_BACKOFF.MAX_MS)
+    : buildBackoffDelay(attempts);
 
   backoff.set(key, {
     attempts,
@@ -213,6 +255,7 @@ const assertCanStartRequest = ({ key, force, time }) => {
   const error = new Error('CLOUD_REQUEST_BACKOFF_ACTIVE');
   error.code = 'CLOUD_REQUEST_BACKOFF_ACTIVE';
   error.retryAfterMs = backoffRecord.until - time;
+  error.retryAfterSeconds = Math.ceil(error.retryAfterMs / 1000);
   error.cause = backoffRecord.error;
   debug('backoff hit', { key, retryAfterMs: error.retryAfterMs });
   throw error;
@@ -273,6 +316,10 @@ export const cloudRequestManager = {
     const promise = Promise.resolve()
       .then(fn)
       .then((result) => {
+        if (isRateLimitedPayload(result)) {
+          throw buildRateLimitedError(result);
+        }
+
         backoff.delete(requestKey);
 
         if (Number(ttlMs) > 0 && currentVersion(requestKey) === requestVersion) {
