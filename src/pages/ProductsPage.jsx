@@ -299,13 +299,26 @@ export default function ProductsPage() {
 
     return (
         <>
-            <div className="products-header">
-                <div style={{ display: 'flex', gap: '10px', flexDirection: 'column', width: '100%' }}>
+            <main className="ui-page products-page" aria-labelledby="products-page-title">
+            <header className="ui-page__header products-header">
+                <div>
+                    <h1 id="products-page-title" className="ui-page__title">Productos</h1>
+                    <p className="ui-page__subtitle">Administra inventario, lotes, categorias e insumos.</p>
+                </div>
+                <div className="ui-section__actions products-header__actions">
+                    <span className="ui-badge ui-badge--info">{productsForSale.length} venta</span>
+                    {features.hasRecipes && <span className="ui-badge ui-badge--neutral">{ingredientsOnly.length} insumos</span>}
+                    {isLoading && <span className="ui-badge ui-badge--warning">Procesando</span>}
+                </div>
+            </header>
+            <div className="products-header products-header--legacy" hidden>
+                <div className="products-header__legacy-slot">
                     {/* El botón de Frutería fue movido a ProductList */}
                 </div>
             </div >
 
-            <div className="tabs-container" id="product-tabs" style={{ overflowX: 'auto' }}>
+            <section className="ui-section products-tabs-section" aria-label="Secciones de productos">
+            <div className="tabs-container products-tabs" id="product-tabs">
                 <button
                     className={`tab-btn ${activeTab === 'add-product' ? 'active' : ''}`}
                     onClick={() => {
@@ -356,7 +369,9 @@ export default function ProductsPage() {
                     Categorías
                 </button>
             </div>
+            </section>
 
+            <section className="ui-section products-workspace">
             {activeTab === 'add-product' && (
                 <ProductForm
                     onSave={handleSaveProduct}
@@ -409,6 +424,8 @@ export default function ProductsPage() {
             {activeTab === 'variants-view' && features.hasVariants && isApparel && (
                 <VariantInventoryView />
             )}
+            </section>
+            </main>
 
             <CategoryManagerModal
                 show={showCategoryModal}

@@ -12,6 +12,27 @@
   margin-bottom: var(--spacing-xl);
 }
 
+.dashboard-page {
+  padding-bottom: calc(var(--ui-space-xl) + 72px);
+}
+
+.dashboard-page__header {
+  margin-bottom: var(--ui-space-md);
+}
+
+.dashboard-tabs-section {
+  margin-bottom: var(--ui-space-lg);
+}
+
+.dashboard-section {
+  min-width: 0;
+}
+
+.dashboard-tab-danger.active {
+  color: var(--error-color);
+  border-bottom-color: var(--error-color);
+}
+
 /* Contenedor de carga centrado */
 .loading-container {
   display: flex;
@@ -170,6 +191,15 @@
   margin-left: 4px;
   font-size: inherit;
   transition: opacity 0.2s;
+}
+
+.data-warning-banner .link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  margin-left: 4px;
+  vertical-align: baseline;
 }
 
 .link-button:hover {

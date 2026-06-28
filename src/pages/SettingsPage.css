@@ -8,10 +8,22 @@
   width: 100%;
 }
 
+.settings-page__header {
+  margin-bottom: var(--ui-space-md);
+}
+
+.settings-tabs-section {
+  margin-bottom: var(--ui-space-lg);
+}
+
+.settings-content {
+  min-width: 0;
+}
+
 /* * AÑADIDO: Estilos básicos para los tabs (botones superiores)
  * Para asegurar que se vean bien alineados 
  */
-.tabs-container {
+.settings-page-wrapper .tabs-container {
   display: flex;
   gap: 10px;
   overflow-x: auto; /* Permite scroll horizontal si son muchos tabs en pantallas muy pequeñas */
@@ -21,7 +33,7 @@
   -webkit-overflow-scrolling: touch; /* Scroll suave en iOS */
 }
 
-.tab-btn {
+.settings-page-wrapper .tab-btn {
   padding: 8px 16px;
   border: none;
   background: none;
@@ -34,7 +46,7 @@
   font-size: 0.95rem;
 }
 
-.tab-btn.active {
+.settings-page-wrapper .tab-btn.active {
   background-color: var(--primary-color); /* O el color que uses para activo */
   color: white; /* O el color de contraste */
   /* Si no tienes variables globales definidas aquí, se usará el fallback del navegador o 

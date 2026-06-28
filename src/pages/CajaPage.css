@@ -1,4 +1,12 @@
 /* Caja page: Pulso de Caja */
+.caja-page {
+  padding-bottom: calc(var(--ui-space-xl) + 72px);
+}
+
+.caja-page__header {
+  margin-bottom: var(--ui-space-md);
+}
+
 .caja-grid {
   --caja-navy: #102a43;
   --caja-navy-light: #173f63;
@@ -14,6 +22,10 @@
   margin: 0 auto;
   padding: 0.875rem;
   padding-bottom: 2rem;
+}
+
+.caja-page .caja-grid {
+  margin-bottom: 0;
 }
 
 .caja-loading {

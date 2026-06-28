@@ -80,13 +80,13 @@ const ReportSourceBanner = ({ source }) => {
   const warnings = Array.isArray(source.warnings) ? source.warnings : [];
 
   return (
-    <div className={`data-warning-banner report-source-banner report-source-banner--${source.mode || 'local'}`}>
-      <span className="data-warning-icon">
+    <div className={`ui-alert ui-alert--warning data-warning-banner report-source-banner report-source-banner--${source.mode || 'local'}`}>
+      <span className="ui-alert__icon data-warning-icon">
         <Save size={22} strokeWidth={1.5} />
       </span>
-      <div>
-        <strong>{getReportSourceLabel(source)}</strong>
-        <p>
+      <div className="ui-alert__content">
+        <strong className="ui-alert__title">{getReportSourceLabel(source)}</strong>
+        <p className="ui-alert__text">
           {isCloudFinal && isCache
             ? 'Sin conexion o servicio no disponible: se muestra el ultimo snapshot cloud final guardado. Ventas netas, utilidad e historial siguen separados de ventas locales.'
             : isCloudFinal
@@ -408,8 +408,8 @@ export default function DashboardPage() {
 
   if (isStatsLoading) {
     return (
-      <div className="loading-container">
-        <div className="spinner-loader"></div>
+      <div className="ui-loading-state loading-container">
+        <div className="ui-spinner spinner-loader"></div>
         <p>Analizando ventas e inventario...</p>
       </div>
     );
@@ -426,64 +426,86 @@ export default function DashboardPage() {
 
   return (
     <>
-      <div className="tabs-container" id="sales-tabs">
+      <main className="ui-page dashboard-page" aria-labelledby="dashboard-page-title">
+      <header className="ui-page__header dashboard-page__header">
+        <div>
+          <h1 id="dashboard-page-title" className="ui-page__title">Dashboard</h1>
+          <p className="ui-page__subtitle">Resumen operativo de ventas, inventario, clientes y reportes.</p>
+        </div>
+
+        <div className="ui-section__actions dashboard-page__actions">
+          {statsSource && (
+            <span className={`ui-badge ${statsIsCloudFinal ? 'ui-badge--success' : 'ui-badge--info'}`}>
+              {getReportSourceLabel(statsSource)}
+            </span>
+          )}
+        </div>
+      </header>
+
+      <section className="ui-section dashboard-tabs-section" aria-label="Secciones del dashboard">
+      <div className="tabs-container dashboard-tabs" id="sales-tabs">
         <button className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`} onClick={() => handleTabChange('stats')}>Estadisticas Clave</button>
         <button className={`tab-btn ${activeTab === 'tips' ? 'active' : ''}`} onClick={() => handleTabChange('tips')}>Consejos Lan</button>
         <button className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`} onClick={() => handleTabChange('restock')}>Reabastecimiento</button>
         <button className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => handleTabChange('history')}>Historial y Papelera</button>
         <button className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`} onClick={() => handleTabChange('expiration')}>Caducidad</button>
         {features.hasWaste && (
-          <button className={`tab-btn ${activeTab === 'waste' ? 'active' : ''}`} onClick={() => handleTabChange('waste')} style={{ color: activeTab === 'waste' ? 'var(--error-color)' : '' }}>Mermas</button>
+          <button className={`tab-btn dashboard-tab-danger ${activeTab === 'waste' ? 'active' : ''}`} onClick={() => handleTabChange('waste')}>Mermas</button>
         )}
       </div>
+      </section>
 
       <ReportSourceBanner source={reportingData.reportSource} />
 
       {activeTab === 'stats' && (
-        statsIsCloudFinal ? (
-          <CloudFinalStatsGrid
-            reportData={reportingData.overviewReport}
-            reportSource={reportingData.reportSource}
-          />
-        ) : (
-          <StatsGrid
-            stats={stats}
-            customers={customers}
-            reportRefreshKey={reportingData.refreshKey}
-            activeRubros={features.activeRubros}
-            reportData={reportingData.overviewReport}
-            reportSource={reportingData.reportSource}
-            isCloudReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.CLOUD}
-            isMixedReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.MIXED}
-            isStale={Boolean(reportingData.reportSource?.stale)}
-          />
-        )
+        <section className="ui-section dashboard-section dashboard-section--stats" aria-label="Estadisticas principales">
+          {statsIsCloudFinal ? (
+            <CloudFinalStatsGrid
+              reportData={reportingData.overviewReport}
+              reportSource={reportingData.reportSource}
+            />
+          ) : (
+            <StatsGrid
+              stats={stats}
+              customers={customers}
+              reportRefreshKey={reportingData.refreshKey}
+              activeRubros={features.activeRubros}
+              reportData={reportingData.overviewReport}
+              reportSource={reportingData.reportSource}
+              isCloudReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.CLOUD}
+              isMixedReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.MIXED}
+              isStale={Boolean(reportingData.reportSource?.stale)}
+            />
+          )}
+        </section>
       )}
 
       {activeTab === 'restock' && (
-        <RestockSuggestions reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
+        <section className="ui-section dashboard-section dashboard-section--restock" aria-label="Reabastecimiento">
+          <RestockSuggestions reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
+        </section>
       )}
 
       {activeTab === 'history' && (
-        <div className="tab-content fade-in">
-          <div className="data-warning-banner">
-            <span className="data-warning-icon"><Save size={24} strokeWidth={1.5} /></span>
-            <div>
-              <strong>
+        <section className="ui-section tab-content fade-in dashboard-section dashboard-section--history">
+          <div className="ui-alert ui-alert--warning data-warning-banner">
+            <span className="ui-alert__icon data-warning-icon"><Save size={24} strokeWidth={1.5} /></span>
+            <div className="ui-alert__content">
+              <strong className="ui-alert__title">
                 {historyIsCloudFinal
                   ? 'Historial cloud final oficial.'
                   : reportingData.usesRepositorySalesHistory
                     ? 'Historial local no oficial de este dispositivo.'
                     : 'Importante: historial de ventas local.'}
               </strong>
-              <p>
+              <p className="ui-alert__text">
                 {historyIsCloudFinal
                   ? 'Las ventas se leen desde Supabase usando pos_get_sales_final_history. No se mezclan con ventas locales/Dexie.'
                   : reportingData.usesRepositorySalesHistory
                     ? 'Sin snapshot cloud final disponible o sin conexión: se muestra historial local no oficial de este dispositivo.'
                     : 'Las ventas e historial se leen desde este dispositivo. Caja, abonos y credito pueden venir de cloud en PRO.'}
                 {!historyIsCloudFinal && (
-                  <button onClick={() => navigate('/settings')} className="link-button" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <button onClick={() => navigate('/settings')} className="ui-button ui-button--ghost ui-button--sm link-button">
                     Ir a Respaldar ahora <ArrowRight size={16} />
                   </button>
                 )}
@@ -492,8 +514,8 @@ export default function DashboardPage() {
           </div>
 
           <div className="history-layout-grid">
-            <section className="dashboard-panel history-panel">
-              <div className="panel-header">
+            <section className="ui-card dashboard-panel history-panel">
+              <div className="ui-card__header panel-header">
                 <h3><BarChart3 size={20} /> Historial de Movimientos</h3>
                 <span className="panel-subtitle">
                   {historyIsCloudFinal
@@ -518,41 +540,51 @@ export default function DashboardPage() {
               </div>
             </section>
 
-            <section className="dashboard-panel recycle-panel">
-              <div className="panel-header danger-theme">
+            <section className="ui-card dashboard-panel recycle-panel">
+              <div className="ui-card__header panel-header danger-theme">
                 <h3><Trash2 size={20} /> Papelera</h3>
                 <span className="panel-subtitle">Elementos eliminados</span>
               </div>
               <div className="panel-body"><RecycleBin /></div>
             </section>
           </div>
-        </div>
+        </section>
       )}
 
       {activeTab === 'tips' && (
-        canUseAIAgents ? (
-          <OperationalDiagnostics sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
-        ) : (
-          <BusinessTips sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} activeRubros={features.activeRubros} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} onNavigate={(route) => navigate(route)} />
-        )
+        <section className="ui-section dashboard-section dashboard-section--tips" aria-label="Consejos y diagnosticos">
+          {canUseAIAgents ? (
+            <OperationalDiagnostics sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
+          ) : (
+            <BusinessTips sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} activeRubros={features.activeRubros} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} onNavigate={(route) => navigate(route)} />
+          )}
+        </section>
       )}
 
-      {activeTab === 'expiration' && <ExpirationAlert reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />}
+      {activeTab === 'expiration' && (
+        <section className="ui-section dashboard-section dashboard-section--expiration" aria-label="Alertas de caducidad">
+          <ExpirationAlert reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
+        </section>
+      )}
 
       {activeTab === 'waste' && features.hasWaste && (
-        <WasteHistory
-          logs={wasteLogs}
-          totalCount={analyticsWasteLogs.length}
-          totalLoss={totalWasteLoss}
-          onNext={() => fetchWastePage('next')}
-          onPrev={() => fetchWastePage('prev')}
-          hasMoreWaste={hasMoreWaste}
-          currentWastePageIndex={currentWastePageIndex}
-          isWasteLoading={isWasteLoading}
-          activeRubros={features.activeRubros}
-          reportSource={reportingData.reportSource}
-        />
+        <section className="ui-section dashboard-section dashboard-section--waste" aria-label="Historial de mermas">
+          <WasteHistory
+            logs={wasteLogs}
+            totalCount={analyticsWasteLogs.length}
+            totalLoss={totalWasteLoss}
+            onNext={() => fetchWastePage('next')}
+            onPrev={() => fetchWastePage('prev')}
+            hasMoreWaste={hasMoreWaste}
+            currentWastePageIndex={currentWastePageIndex}
+            isWasteLoading={isWasteLoading}
+            activeRubros={features.activeRubros}
+            reportSource={reportingData.reportSource}
+          />
+        </section>
       )}
+
+      </main>
 
       <SaleCancellationModal
         show={Boolean(saleToCancel)}

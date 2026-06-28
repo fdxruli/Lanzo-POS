@@ -430,8 +430,8 @@ export default function CajaPage() {
   // ============================================================
   if (isLoading) {
     return (
-      <div className="caja-loading" role="status" aria-live="polite">
-        <div className="spinner-loader"></div>
+      <div className="ui-loading-state caja-loading" role="status" aria-live="polite">
+        <div className="ui-spinner spinner-loader"></div>
         <p>Sincronizando caja inteligente...</p>
       </div>
     );
@@ -439,9 +439,9 @@ export default function CajaPage() {
 
   if (estadoCaja === 'error') {
     return (
-      <div className="caja-loading" role="alert">
+      <div className="ui-error-state caja-loading" role="alert">
         <p>{error || 'No se pudo cargar el estado de caja.'}</p>
-        <button type="button" className="btn btn-primary" onClick={sincronizarEstadoCaja}>
+        <button type="button" className="ui-button ui-button--primary btn btn-primary" onClick={sincronizarEstadoCaja}>
           Reintentar
         </button>
       </div>
@@ -450,7 +450,20 @@ export default function CajaPage() {
 
   if (estadoCaja === 'needs_opening') {
     return (
-      <div className="caja-grid caja-grid--opening" role="main" aria-label="Apertura de Caja">
+      <main className="ui-page caja-page" aria-labelledby="caja-page-title">
+        <header className="ui-page__header caja-page__header">
+          <div>
+            <h1 id="caja-page-title" className="ui-page__title">Caja</h1>
+            <p className="ui-page__subtitle">Apertura, movimientos y cortes del turno.</p>
+          </div>
+          <div className="ui-section__actions">
+            <span className={`ui-badge ${isCloudCash ? 'ui-badge--success' : 'ui-badge--neutral'}`}>
+              {isCloudCash ? 'Cloud PRO' : 'Local'}
+            </span>
+            <span className="ui-badge ui-badge--warning">Requiere apertura</span>
+          </div>
+        </header>
+      <section className="ui-section caja-grid caja-grid--opening" role="main" aria-label="Apertura de Caja">
         <CajaOpeningPanel
           aperturaPendiente={aperturaPendiente}
           onOpen={abrirCaja}
@@ -466,7 +479,8 @@ export default function CajaPage() {
             isReadOnly={isCloudCashReadOnly}
           />
         )}
-      </div>
+      </section>
+      </main>
     );
   }
 
@@ -474,7 +488,23 @@ export default function CajaPage() {
   // RENDER PRINCIPAL (< 50 líneas de JSX)
   // ============================================================
   return (
-    <div className="caja-grid" role="main" aria-label="Gestión de Caja">
+    <main className="ui-page caja-page" aria-labelledby="caja-page-title">
+      <header className="ui-page__header caja-page__header">
+        <div>
+          <h1 id="caja-page-title" className="ui-page__title">Caja</h1>
+          <p className="ui-page__subtitle">Apertura, movimientos, auditoria y cortes del turno.</p>
+        </div>
+        <div className="ui-section__actions">
+          <span className={`ui-badge ${cajaActual?.estado === 'abierta' ? 'ui-badge--success' : 'ui-badge--warning'}`}>
+            {cajaActual?.estado === 'abierta' ? 'Caja abierta' : estadoCaja}
+          </span>
+          <span className={`ui-badge ${isCloudCash ? 'ui-badge--success' : 'ui-badge--neutral'}`}>
+            {isCloudCash ? 'Cloud PRO' : 'Local'}
+          </span>
+          {isCloudCashReadOnly && <span className="ui-badge ui-badge--warning">Solo consulta</span>}
+        </div>
+      </header>
+    <section className="ui-section caja-grid" role="main" aria-label="Gestion de Caja">
       {/* 1. TARJETA DE ESTADO */}
       <CajaStatusCard
         cajaActual={cajaActual}
@@ -573,6 +603,7 @@ export default function CajaPage() {
         maxCashThreshold={CAJA_CONFIG?.MAX_CASH_THRESHOLD}
         isDisabled={isBackupLoading}
       />
-    </div>
+    </section>
+    </main>
   );
 }

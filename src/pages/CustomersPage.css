@@ -8,8 +8,17 @@
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 0;
+  padding: var(--ui-space-lg);
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.customers-hero__subtitle {
+  max-width: 38rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.customers-page__content {
+  margin-top: var(--ui-space-lg);
 }
 
 .customers-page button,
@@ -152,6 +161,7 @@
 }
 
 .customers-page__content {
+  margin-top: var(--ui-space-lg);
   min-width: 0;
   background: var(--card-background-color);
   border: 0;
@@ -169,6 +179,13 @@
     min-width: 180px;
   }
 
+}
+
+@media (max-width: 640px) {
+  .customers-page {
+    padding: var(--ui-space-md);
+    padding-bottom: calc(var(--ui-space-xl) + 72px);
+  }
 }
 
 @media (min-width: 980px) {

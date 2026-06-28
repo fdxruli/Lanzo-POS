@@ -575,11 +575,12 @@ ${itemsString}
 
   return (
     <>
-      <main className="customers-page">
-        <section className="customers-hero" aria-labelledby="customers-page-title">
+      <main className="ui-page customers-page" aria-labelledby="customers-page-title">
+        <section className="ui-page__header customers-hero" aria-labelledby="customers-page-title">
           <div className="customers-hero__identity">
             <p className="customers-eyebrow">Directorio y credito</p>
-            <h1 id="customers-page-title">Clientes</h1>
+            <h1 id="customers-page-title" className="ui-page__title">Clientes</h1>
+            <p className="ui-page__subtitle customers-hero__subtitle">Control de clientes, fiado, abonos y seguimiento.</p>
           </div>
 
           <div className="customers-hero__metric">
@@ -592,7 +593,7 @@ ${itemsString}
             <div>
               <strong>{customerPortfolio.overLimitCount}</strong>
               {customerPortfolio.overLimitCount > 0 && (
-                <span className="customers-alert-badge">
+                <span className="ui-badge ui-badge--warning customers-alert-badge">
                   <AlertTriangle size={16} aria-hidden="true" />
                   Limite excedido
                 </span>
@@ -602,7 +603,7 @@ ${itemsString}
 
           <button
             type="button"
-            className={`customers-add-button ${activeTab === 'add-customer' ? 'is-active' : ''}`}
+            className={`ui-button ui-button--primary customers-add-button ${activeTab === 'add-customer' ? 'is-active' : ''}`}
             onClick={() => {
               if (activeTab === 'add-customer') {
                 handleTabChange('view-customers');
@@ -626,7 +627,7 @@ ${itemsString}
           </button>
         </section>
 
-        <div className="customers-page__content">
+        <section className="ui-section customers-page__content">
           {activeTab === 'add-customer' ? (
             <CustomerForm
               onSave={handleSaveCustomer}
@@ -651,7 +652,7 @@ ${itemsString}
               onWhatsAppLoading={whatsAppLoading}
             />
           )}
-        </div>
+        </section>
       </main>
 
       <PurchaseHistoryModal

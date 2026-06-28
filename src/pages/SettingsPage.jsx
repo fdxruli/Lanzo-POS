@@ -54,8 +54,16 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="settings-page-wrapper">
-      <div className="tabs-container">
+    <main className="ui-page settings-page-wrapper" aria-labelledby="settings-page-title">
+      <header className="ui-page__header settings-page__header">
+        <div>
+          <h1 id="settings-page-title" className="ui-page__title">Configuracion</h1>
+          <p className="ui-page__subtitle">Ajustes del negocio, licencia, mantenimiento y respaldos.</p>
+        </div>
+      </header>
+
+      <section className="ui-section settings-tabs-section" aria-label="Secciones de configuracion">
+      <div className="tabs-container settings-tabs">
         <button
           className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`}
           onClick={() => handleTabChange('general')}
@@ -86,7 +94,7 @@ export default function SettingsPage() {
         </button>
         {import.meta.env.DEV && (
           <button
-            className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`} // Ajusta 'tab-btn' a tu clase CSS real
+            className={`tab-btn ${activeTab === 'test-ventas' ? 'active' : ''}`} // Ajusta 'tab-btn' a tu clase CSS real
             onClick={() => handleTabChange('debug')}
           >
             Depuración DB
@@ -102,14 +110,15 @@ export default function SettingsPage() {
           </button>
         )}
       </div>
+      </section>
 
-      <div className="settings-content">
+      <section className="ui-section settings-content">
         {activeTab === 'general' && <GeneralSettings />}
         {activeTab === 'license' && <LicenseSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}
         {activeTab === 'backup' && <BackupSettings />}
         {activeTab === 'debug' && (
-          <div className="debug-section">
+          <div className="ui-card debug-section">
             <h3>Zona de Peligro & Pruebas</h3>
             <p className="text-warning">
               Herramienta técnica para verificar la migración a Dexie v2.
@@ -119,7 +128,7 @@ export default function SettingsPage() {
           </div>
         )}
         {activeTab === 'test-ventas' && (
-          <div className="debug-section">
+          <div className="ui-card debug-section">
             <h3>Zona de Peligro & Pruebas</h3>
             <p className="text-warning">
               Herramienta técnica para verificar la migración de salesService.js
@@ -127,7 +136,7 @@ export default function SettingsPage() {
             <SalesSystemTester />
           </div>
         )}
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
