@@ -62,15 +62,15 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
           <h3 id="history-title" className="section-title">{title}</h3>
         </div>
       </div>
-      {historial.length > 0 && <span className="items-count">{historial.length}</span>}
+      {historial.length > 0 && <span className="ui-badge ui-badge--neutral items-count">{historial.length}</span>}
     </div>
   );
 
   if (historial.length === 0) {
     return (
-      <section id="caja-history-container" className="caja-card" aria-labelledby="history-title">
+      <section id="caja-history-container" className="ui-card ui-card--compact caja-card" aria-labelledby="history-title">
         {sectionHeading}
-        <div className="empty-state">
+        <div className="ui-empty-state empty-state">
           <Archive className="empty-state-icon" size={30} aria-hidden="true" />
           <p>No hay historial de cortes registrados.</p>
         </div>
@@ -79,7 +79,7 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
   }
 
   return (
-    <section id="caja-history-container" className="caja-card" aria-labelledby="history-title">
+    <section id="caja-history-container" className="ui-card ui-card--compact caja-card" aria-labelledby="history-title">
       {sectionHeading}
 
       <div className="history-list">
@@ -91,7 +91,7 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
             <div className="history-content">
               <div className="movement-header">
                 <strong className="movement-title">{c.fecha} {c.hora}</strong>
-                <span className={`status-badge ${c.isCuadrada ? 'success' : 'error'}`}>
+                <span className={`ui-badge ${c.isCuadrada ? 'ui-badge--success' : 'ui-badge--danger'} status-badge ${c.isCuadrada ? 'success' : 'error'}`}>
                   {c.isCuadrada ? 'Cuadrada' : 'Descuadre'}
                 </span>
               </div>
@@ -114,12 +114,12 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
 
       {totalPaginas > 1 && (
         <div className="pagination">
-          <button onClick={handlePaginaAnterior} disabled={paginaActual === 1} aria-label="Página anterior">
+          <button className="ui-button ui-button--ghost ui-button--sm" onClick={handlePaginaAnterior} disabled={paginaActual === 1} aria-label="Página anterior">
             <ChevronLeft size={16} aria-hidden="true" />
             Anterior
           </button>
           <span>Página {paginaActual} de {totalPaginas}</span>
-          <button onClick={handlePaginaSiguiente} disabled={paginaActual === totalPaginas} aria-label="Página siguiente">
+          <button className="ui-button ui-button--ghost ui-button--sm" onClick={handlePaginaSiguiente} disabled={paginaActual === totalPaginas} aria-label="Página siguiente">
             Siguiente
             <ChevronRight size={16} aria-hidden="true" />
           </button>

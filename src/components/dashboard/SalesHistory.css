@@ -371,6 +371,36 @@
   margin-bottom: 2px;
 }
 
+.sales-history-mini-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.sales-history-mini-stats--nested {
+  margin-top: 0.45rem;
+  margin-bottom: 0;
+}
+
+.sales-history-warning {
+  min-height: 0;
+  margin: 0 0 0.5rem;
+  text-align: left;
+  font-size: 0.8rem;
+}
+
+.sales-history-item-note {
+  margin: 4px 0;
+  font-size: 0.85rem;
+}
+
+.sales-history-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 @media (max-width: 900px) {
   .history-filters {
     grid-template-columns: 1fr 1fr;

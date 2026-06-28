@@ -10,7 +10,7 @@ export default function CajaOpeningPanel({ aperturaPendiente, onOpen, cashActor 
   const responsibleName = actor?.responsibleName || actor?.displayName || '';
 
   return (
-    <section className="caja-card caja-opening-panel" aria-labelledby="cash-opening-title">
+    <section className="ui-card ui-card--compact caja-card caja-opening-panel" aria-labelledby="cash-opening-title">
       <div className="caja-opening-heading">
         <span className="caja-opening-icon" aria-hidden="true"><ClipboardCheck size={24} /></span>
         <div>
@@ -19,13 +19,13 @@ export default function CajaOpeningPanel({ aperturaPendiente, onOpen, cashActor 
         </div>
       </div>
 
-      <div className="cash-opening-notice">
+      <div className="ui-alert ui-alert--info cash-opening-notice">
         <ShieldCheck size={19} aria-hidden="true" />
         <p>{cloudEnabled ? 'Caja PRO separada por usuario para auditoría.' : 'Valida el fondo inicial antes de operar efectivo.'}</p>
       </div>
 
       {actor?.isStaff && responsibleName && (
-        <div className="cash-opening-notice">
+        <div className="ui-alert ui-alert--info cash-opening-notice">
           <ShieldCheck size={19} aria-hidden="true" />
           <p>Responsable automático: <strong>{responsibleName}</strong></p>
         </div>

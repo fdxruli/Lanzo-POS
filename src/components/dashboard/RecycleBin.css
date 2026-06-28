@@ -272,7 +272,7 @@
 }
 
 /* --- ESTADO VACÍO --- */
-.empty-state {
+.recycle-bin-container .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -283,7 +283,7 @@
   text-align: center;
 }
 
-.empty-state-icon {
+.recycle-bin-container .empty-state-icon {
   color: var(--border-color);
   margin-bottom: 0.5rem;
 }
@@ -312,4 +312,29 @@
           display: table-cell;
       }
   }
+}
+
+.recycle-empty-icon {
+  opacity: 0.2;
+}
+
+.recycle-col-element {
+  width: 40%;
+}
+
+.recycle-col-type {
+  width: 15%;
+}
+
+.recycle-col-date {
+  width: 25%;
+}
+
+.recycle-col-actions {
+  width: 20%;
+}
+
+.recycle-item-code {
+  color: #94a3b8;
+  font-size: 0.8em;
 }

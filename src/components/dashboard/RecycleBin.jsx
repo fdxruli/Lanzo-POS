@@ -20,11 +20,11 @@ const formatDate = (dateString) => {
 
 const getTypeBadge = (type) => {
   switch (type) {
-    case 'Producto': return <span className="badge badge-product">Producto</span>;
-    case 'Cliente': return <span className="badge badge-customer">Cliente</span>;
-    case 'Pedido': return <span className="badge badge-sale">Venta</span>;
-    case 'Categoria': return <span className="badge badge-default">Categoria</span>;
-    default: return <span className="badge badge-default">{type}</span>;
+    case 'Producto': return <span className="ui-badge ui-badge--info badge badge-product">Producto</span>;
+    case 'Cliente': return <span className="ui-badge ui-badge--success badge badge-customer">Cliente</span>;
+    case 'Pedido': return <span className="ui-badge ui-badge--warning badge badge-sale">Venta</span>;
+    case 'Categoria': return <span className="ui-badge ui-badge--neutral badge badge-default">Categoria</span>;
+    default: return <span className="ui-badge ui-badge--neutral badge badge-default">{type}</span>;
   }
 };
 
@@ -119,7 +119,7 @@ const RecycleBin = () => {
           </div>
           
           {deletedItems.length > 0 && (
-            <button type="button" className="btn-empty-bin" onClick={handleEmptyBin} disabled={isLoading}>
+            <button type="button" className="ui-button ui-button--danger btn-empty-bin" onClick={handleEmptyBin} disabled={isLoading}>
               <Trash2 size={16} />
               {isLoading ? 'Procesando...' : 'Vaciar Todo'}
             </button>
@@ -130,22 +130,22 @@ const RecycleBin = () => {
       {/* Tabla */}
       <div className="recycle-table-wrapper">
         {isLoading && deletedItems.length === 0 ? (
-          <div className="empty-state">
+          <div className="ui-loading-state empty-state">
              <p>Cargando elementos eliminados...</p>
           </div>
         ) : filteredItems.length === 0 ? (
-          <div className="empty-state">
-            <Archive className="empty-state-icon" size={64} style={{ opacity: 0.2 }} />
+          <div className="ui-empty-state empty-state">
+            <Archive className="empty-state-icon recycle-empty-icon" size={64} />
             <p>La papelera está vacía o no hay resultados.</p>
           </div>
         ) : (
           <table className="recycle-table">
             <thead>
               <tr>
-                <th style={{ width: '40%' }}>Elemento</th>
-                <th style={{ width: '15%' }}>Tipo</th>
-                <th style={{ width: '25%' }}>Fecha Eliminación</th>
-                <th style={{ width: '20%' }}>Acciones</th>
+                <th className="recycle-col-element">Elemento</th>
+                <th className="recycle-col-type">Tipo</th>
+                <th className="recycle-col-date">Fecha Eliminación</th>
+                <th className="recycle-col-actions">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -154,7 +154,7 @@ const RecycleBin = () => {
                   <td>
                     <strong>{item.mainLabel || item.name}</strong>
                     {item.code && (
-                      <div style={{ fontSize: '0.8em', color: '#94a3b8' }}>
+                      <div className="recycle-item-code">
                         Código: {item.code}
                       </div>
                     )}
@@ -192,7 +192,7 @@ const RecycleBin = () => {
       <div className="recycle-pagination">
         <button
           type="button"
-          className="btn-recycle-page"
+          className="ui-button ui-button--ghost ui-button--sm btn-recycle-page"
           onClick={() => fetchRecycleBinPage('prev')}
           disabled={isLoading || !hasPrev}
         >
@@ -201,7 +201,7 @@ const RecycleBin = () => {
         <span>Pagina {currentPageIndex + 1}</span>
         <button
           type="button"
-          className="btn-recycle-page"
+          className="ui-button ui-button--ghost ui-button--sm btn-recycle-page"
           onClick={() => fetchRecycleBinPage('next')}
           disabled={isLoading || !hasMore}
         >

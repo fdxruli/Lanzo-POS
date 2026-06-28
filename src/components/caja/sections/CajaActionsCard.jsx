@@ -27,7 +27,7 @@ const CajaActionsCard = ({
   const responsibleName = cajaActual?.responsable_apertura || cajaActual?.responsibleName || cashActor?.responsibleName || cashActor?.displayName;
 
   return (
-    <section className="caja-card actions-card" aria-labelledby="cash-actions-title">
+    <section className="ui-card ui-card--compact caja-card actions-card" aria-labelledby="cash-actions-title">
       <div className="actions-heading">
         <span className="actions-heading-icon" aria-hidden="true">
           <Wallet size={20} />
@@ -51,21 +51,21 @@ const CajaActionsCard = ({
       </div>
 
       {isReadOnly && (
-        <div className="cash-opening-notice cash-opening-notice--warning">
+        <div className="ui-alert ui-alert--warning cash-opening-notice cash-opening-notice--warning">
           <LockKeyhole size={18} aria-hidden="true" />
           <p>{readOnlyMessage || 'Caja cloud está en modo consulta. Revisa la conexión para registrar movimientos.'}</p>
         </div>
       )}
 
       {isCloudCash && cashActor?.isStaff && !isReadOnly && (
-        <div className="cash-opening-notice">
+        <div className="ui-alert ui-alert--info cash-opening-notice">
           <ShieldCheck size={18} aria-hidden="true" />
           <p>Los movimientos se registran en la caja propia de este staff.</p>
         </div>
       )}
 
       <div className="actions-grid">
-        <button className="btn btn-audit" onClick={onCorte} disabled={disabled}>
+        <button className="ui-button ui-button--primary btn btn-audit" onClick={onCorte} disabled={disabled}>
           <span className="action-button-icon" aria-hidden="true">
             <LockKeyhole size={21} />
           </span>
@@ -76,18 +76,18 @@ const CajaActionsCard = ({
         </button>
 
         <div className="actions-row">
-          <button className="btn btn-entry" onClick={onEntrada} disabled={disabled}>
+          <button className="ui-button ui-button--success btn btn-entry" onClick={onEntrada} disabled={disabled}>
             <ArrowDownToLine size={20} aria-hidden="true" />
             <span>Entrada</span>
           </button>
-          <button className="btn btn-exit" onClick={onSalida} disabled={disabled}>
+          <button className="ui-button ui-button--danger btn btn-exit" onClick={onSalida} disabled={disabled}>
             <ArrowUpFromLine size={20} aria-hidden="true" />
             <span>Salida</span>
           </button>
         </div>
 
         <button
-          className="btn btn-adjust"
+          className="ui-button ui-button--neutral btn btn-adjust"
           onClick={onAjuste}
           disabled={disabled}
           title="Registrar ajuste auditable por diferencia física"

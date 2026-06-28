@@ -50,7 +50,7 @@ const CustomerCard = memo(({
         .toUpperCase() || 'CL';
 
     return (
-        <article className={`customer-card ${hasDebt ? 'has-debt' : ''} ${isOverLimit ? 'is-over-limit' : ''}`}>
+        <article className={`ui-card ui-card--interactive customer-card ${hasDebt ? 'has-debt' : ''} ${isOverLimit ? 'is-over-limit' : ''}`}>
             <div className="customer-content">
                 <div className="customer-identity">
                     <span className="customer-avatar" aria-hidden="true">{initials}</span>
@@ -59,7 +59,7 @@ const CustomerCard = memo(({
                         <span className="customer-record-label">Cliente registrado</span>
                         {syncBadge && (
                             <span
-                                className={`customer-status-badge ${syncBadge.className}`}
+                                className={`ui-badge ui-badge--${syncBadge.className === 'danger' ? 'danger' : syncBadge.className} customer-status-badge ${syncBadge.className}`}
                                 title={customer.conflictReason || 'Estado de sincronizacion'}
                             >
                                 {syncBadge.label}
@@ -80,7 +80,7 @@ const CustomerCard = memo(({
                 </div>
 
                 <div className="customer-credit-status">
-                    <span className={`customer-status-badge ${isOverLimit ? 'warning' : hasDebt ? 'danger' : 'success'}`}>
+                    <span className={`ui-badge ${isOverLimit ? 'ui-badge--warning' : hasDebt ? 'ui-badge--danger' : 'ui-badge--success'} customer-status-badge ${isOverLimit ? 'warning' : hasDebt ? 'danger' : 'success'}`}>
                         {isOverLimit && <AlertCircle size={14} aria-hidden="true" />}
                         {isOverLimit ? 'Limite excedido' : hasDebt ? 'Con deuda' : 'Al corriente'}
                     </span>
@@ -112,7 +112,7 @@ const CustomerCard = memo(({
                     {hasDebt && (
                         <button
                             type="button"
-                            className="btn btn-abono"
+                            className="ui-button ui-button--success btn btn-abono"
                             onClick={() => onAbonar(customer)}
                         >
                             <Wallet size={18} aria-hidden="true" />
@@ -123,7 +123,7 @@ const CustomerCard = memo(({
                     {hasLayaway && (
                         <button
                             type="button"
-                            className="btn btn-layaway"
+                            className="ui-button ui-button--neutral btn btn-layaway"
                             onClick={() => onViewLayaways(customer)}
                             title="Ver apartados activos"
                         >
@@ -135,7 +135,7 @@ const CustomerCard = memo(({
                     {customer.phone && (
                         <button
                             type="button"
-                            className="btn btn-whatsapp"
+                            className="ui-button ui-button--secondary btn btn-whatsapp"
                             onClick={() => onWhatsApp(customer)}
                             disabled={isWhatsAppLoading}
                         >
@@ -148,7 +148,7 @@ const CustomerCard = memo(({
                 <div className="actions-secondary">
                     <button
                         type="button"
-                        className="btn-icon-text"
+                        className="ui-button ui-button--ghost ui-button--sm btn-icon-text"
                         onClick={() => onViewHistory(customer)}
                         title="Ver historial"
                     >
@@ -158,7 +158,7 @@ const CustomerCard = memo(({
 
                     <button
                         type="button"
-                        className="btn-icon-text info"
+                        className="ui-button ui-button--ghost ui-button--sm btn-icon-text info"
                         onClick={() => onEdit(customer)}
                         title="Editar"
                     >
@@ -168,7 +168,7 @@ const CustomerCard = memo(({
 
                     <button
                         type="button"
-                        className="btn-icon-text danger"
+                        className="ui-button ui-button--danger ui-button--sm btn-icon-text danger"
                         onClick={() => onDelete(customer.id)}
                         title="Borrar"
                     >

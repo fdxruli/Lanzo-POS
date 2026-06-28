@@ -124,18 +124,12 @@ const buildCloudBadges = (sale = {}, isCloudFinal = false) => {
   return badges;
 };
 
-const badgeStyle = (tone) => ({
-  display: 'inline-flex',
-  alignItems: 'center',
-  padding: '2px 7px',
-  borderRadius: '999px',
-  fontSize: '0.68rem',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  border: tone === 'danger' ? '1px solid rgba(220, 38, 38, 0.35)' : '1px solid rgba(99, 102, 241, 0.25)',
-  color: tone === 'danger' ? 'var(--error-color)' : tone === 'success' ? 'var(--success-color)' : 'var(--secondary-color)',
-  background: tone === 'danger' ? 'rgba(220, 38, 38, 0.08)' : 'rgba(99, 102, 241, 0.1)'
-});
+const getUiBadgeTone = (tone) => {
+  if (tone === 'danger') return 'ui-badge--danger';
+  if (tone === 'success') return 'ui-badge--success';
+  if (tone === 'warning') return 'ui-badge--warning';
+  return 'ui-badge--info';
+};
 
 const getCloudActionState = (sale = {}, isCloudFinal = false) => {
   const status = getSaleStatus(sale);
@@ -368,14 +362,14 @@ export default function SalesHistory({
       </div>
 
       {effectiveIsCloudFinal && (
-        <div className="card-mini-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.5rem' }}>
-          <span className="mini-stat-pill">Cloud oficial final</span>
-          {effectiveSource.mode === REPORT_SOURCE_MODES.CACHE && <span className="mini-stat-pill">Último snapshot cloud final</span>}
+        <div className="card-mini-stats sales-history-mini-stats">
+          <span className="ui-badge ui-badge--success mini-stat-pill">Cloud oficial final</span>
+          {effectiveSource.mode === REPORT_SOURCE_MODES.CACHE && <span className="ui-badge ui-badge--warning mini-stat-pill">Último snapshot cloud final</span>}
         </div>
       )}
 
       {sourceWarnings.length > 0 && (
-        <div className="empty-message" style={{ margin: '0 0 0.5rem', textAlign: 'left', fontSize: '0.8rem' }}>
+        <div className="ui-alert ui-alert--warning empty-message sales-history-warning">
           {sourceWarnings[0]}
         </div>
       )}
@@ -452,7 +446,7 @@ export default function SalesHistory({
                         <span className="cancelled-sale-badge">Cancelada</span>
                       )}
                       {badges.map((badge) => (
-                        <span key={`${getSaleKey(sale)}-${badge.label}`} style={badgeStyle(badge.tone)}>{badge.label}</span>
+                        <span key={`${getSaleKey(sale)}-${badge.label}`} className={`ui-badge ui-badge--sm ${getUiBadgeTone(badge.tone)}`}>{badge.label}</span>
                       ))}
                     </div>
                     <div className={`sale-total ${isSplitParent ? 'split-total' : ''}`}>
@@ -462,7 +456,7 @@ export default function SalesHistory({
 
                   <div className="sale-item-info">
                     {items.length === 0 ? (
-                      <p className="text-muted" style={{ fontSize: '0.85rem', margin: '4px 0' }}>
+                      <p className="text-muted sales-history-item-note">
                         {itemsCount || itemsQuantity
                           ? `${itemsCount || 0} partida(s), ${itemsQuantity || 0} unidad(es)`
                           : 'Sin detalle de productos'}
@@ -472,7 +466,7 @@ export default function SalesHistory({
                         {items.map((item) => {
                           const costMissing = isCostMissing(item.cost);
                           return (
-                            <li key={item.lineId || item.cartLineId || item.id || `${item.name}-${item.quantity}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <li key={item.lineId || item.cartLineId || item.id || `${item.name}-${item.quantity}`} className="sales-history-item-row">
                               <span className={isSplitParent ? 'text-muted-strike' : ''}>
                                 {item.quantity}x {item.name}
                               </span>
@@ -493,12 +487,12 @@ export default function SalesHistory({
                     )}
 
                     {effectiveIsCloudFinal && (
-                      <div className="card-mini-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.45rem' }}>
-                        {getCustomerLabel(sale) && <span className="mini-stat-pill">Cliente: {getCustomerLabel(sale)}</span>}
-                        {getPaymentLabel(sale) && <span className="mini-stat-pill">Pago: {getPaymentLabel(sale)}</span>}
-                        {amountPaid > 0 && <span className="mini-stat-pill">Pagado: ${amountPaid.toFixed(2)}</span>}
-                        {balanceDue > 0 && <span className="mini-stat-pill">Saldo: ${balanceDue.toFixed(2)}</span>}
-                        {sale.actorName && <span className="mini-stat-pill">Actor: {sale.actorName}</span>}
+                      <div className="card-mini-stats sales-history-mini-stats sales-history-mini-stats--nested">
+                        {getCustomerLabel(sale) && <span className="ui-badge ui-badge--neutral mini-stat-pill">Cliente: {getCustomerLabel(sale)}</span>}
+                        {getPaymentLabel(sale) && <span className="ui-badge ui-badge--neutral mini-stat-pill">Pago: {getPaymentLabel(sale)}</span>}
+                        {amountPaid > 0 && <span className="ui-badge ui-badge--success mini-stat-pill">Pagado: ${amountPaid.toFixed(2)}</span>}
+                        {balanceDue > 0 && <span className="ui-badge ui-badge--warning mini-stat-pill">Saldo: ${balanceDue.toFixed(2)}</span>}
+                        {sale.actorName && <span className="ui-badge ui-badge--neutral mini-stat-pill">Actor: {sale.actorName}</span>}
                       </div>
                     )}
                   </div>

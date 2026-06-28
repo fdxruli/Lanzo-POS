@@ -59,31 +59,31 @@ const CajaStatusCard = ({
   const isOfflineCloud = Boolean(isCloudCash && (isReadOnly || cashMode?.online === false));
 
   return (
-    <section className="caja-card status-card" aria-labelledby="cash-total-title">
+    <section className="ui-card ui-card--compact caja-card status-card" aria-labelledby="cash-total-title">
       <div className="status-ribbon">
         <div className="status-ribbon-main">
           <div className="status-badges">
-            <span className="status-badge open">
+            <span className="ui-badge ui-badge--success status-badge open">
               <span className="status-badge-dot" aria-hidden="true" />
               Turno activo
             </span>
-            <span className={`status-badge ${isCloudCash ? 'success' : 'neutral'}`}>
+            <span className={`ui-badge ${isCloudCash ? 'ui-badge--success' : 'ui-badge--neutral'} status-badge ${isCloudCash ? 'success' : 'neutral'}`}>
               <ShieldCheck size={14} aria-hidden="true" />
               {isCloudCash ? 'Cloud PRO' : 'Local'}
             </span>
             {isReadOnly && (
-              <span className="status-badge warning">
+              <span className="ui-badge ui-badge--warning status-badge warning">
                 <ShieldCheck size={14} aria-hidden="true" />
                 Solo consulta
               </span>
             )}
-            <span className={`status-badge ${isStaffCash ? 'warning' : 'success'}`}>
+            <span className={`ui-badge ${isStaffCash ? 'ui-badge--warning' : 'ui-badge--success'} status-badge ${isStaffCash ? 'warning' : 'success'}`}>
               <UserRound size={14} aria-hidden="true" />
               {actorLabel}
             </span>
             {excesoLiquidez && (
               <span
-                className="status-badge danger"
+                className="ui-badge ui-badge--danger status-badge danger"
                 title={`Excede el límite sugerido de $${maxCashThreshold.toLocaleString()}`}
               >
                 <AlertTriangle size={14} aria-hidden="true" />
@@ -92,7 +92,7 @@ const CajaStatusCard = ({
             )}
             {!excesoLiquidez && porcentajeLiquidez >= 70 && (
               <span
-                className="status-badge warning"
+                className="ui-badge ui-badge--warning status-badge warning"
                 title={`Alcanzaste el ${porcentajeLiquidez.toFixed(0)}% del límite sugerido`}
               >
                 <AlertTriangle size={14} aria-hidden="true" />
@@ -144,7 +144,7 @@ const CajaStatusCard = ({
 
         <div className="status-utilities" aria-label="Utilidades de caja">
           <button
-            className="utility-button utility-button-primary"
+            className="ui-button ui-button--primary utility-button utility-button-primary"
             onClick={onBackup}
             disabled={isBackupLoading}
             title="Guardar copia de seguridad ahora"
@@ -156,7 +156,7 @@ const CajaStatusCard = ({
             )}
           </button>
           <button
-            className="utility-button"
+            className="ui-button ui-button--neutral utility-button"
             onClick={onReporte}
             disabled={isBackupLoading || !onReporte}
             title="Descargar reporte del turno en CSV"
@@ -165,7 +165,7 @@ const CajaStatusCard = ({
             <span>Reporte</span>
           </button>
           <button
-            className="utility-button"
+            className="ui-button ui-button--neutral utility-button"
             onClick={onResumen}
             disabled={isBackupLoading || !onResumen}
             title="Ver resumen estadístico del turno"
@@ -174,7 +174,7 @@ const CajaStatusCard = ({
             <span>Resumen</span>
           </button>
           <button
-            className="utility-button"
+            className="ui-button ui-button--neutral utility-button"
             onClick={onImprimir}
             disabled={isBackupLoading}
             title="Imprimir vista actual"

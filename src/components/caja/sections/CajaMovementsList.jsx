@@ -88,7 +88,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
   const hayFiltrosActivos = filtroTipo !== 'todos' || busqueda;
 
   return (
-    <section id="caja-movements-container" className="caja-card" aria-labelledby="movements-title">
+    <section id="caja-movements-container" className="ui-card ui-card--compact caja-card" aria-labelledby="movements-title">
       <div className="section-header">
         <div className="section-heading">
           <span className="section-heading-icon" aria-hidden="true">
@@ -99,7 +99,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
             <h3 id="movements-title" className="section-title">Movimientos del turno</h3>
           </div>
         </div>
-        <span className="items-count">{movimientosRender.length} de {movimientos.length}</span>
+        <span className="ui-badge ui-badge--neutral items-count">{movimientosRender.length} de {movimientos.length}</span>
       </div>
 
       <div className="filters-bar">
@@ -126,7 +126,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
         </label>
 
         {hayFiltrosActivos && (
-          <button onClick={handleLimpiarFiltros} className="btn-clear-filters">
+          <button onClick={handleLimpiarFiltros} className="ui-button ui-button--ghost ui-button--sm btn-clear-filters">
             <SlidersHorizontal size={16} aria-hidden="true" />
             Limpiar
           </button>
@@ -135,7 +135,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
 
       <div id="caja-movements-list" className="movements-list">
         {movimientosRender.length === 0 ? (
-          <div className="empty-state">
+          <div className="ui-empty-state empty-state">
             <ReceiptText className="empty-state-icon" size={30} aria-hidden="true" />
             <p>{movimientos.length === 0 ? 'No hay movimientos registrados.' : 'No se encontraron movimientos con los filtros actuales.'}</p>
           </div>
@@ -162,7 +162,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
                   {mov.staff && <small>Staff: {mov.staff}</small>}
                   {mov.actorKey && <small>Actor key: {mov.actorKey}</small>}
                   {mov.origen && <small>Origen: {mov.origen}</small>}
-                  {mov.badge && <span className="movement-badge">{mov.badge}</span>}
+                  {mov.badge && <span className="ui-badge ui-badge--neutral ui-badge--sm movement-badge">{mov.badge}</span>}
                 </div>
               </div>
             </div>

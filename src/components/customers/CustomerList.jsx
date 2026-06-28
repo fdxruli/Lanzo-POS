@@ -17,9 +17,9 @@ const CreditConfigModal = ({ isOpen, onClose, currentGlobal, onSaveGlobal, isSav
 
     return (
         <div className="modal-overlay">
-            <div className="modal-content" style={{ maxWidth: '400px' }}>
+            <div className="modal-content credit-config-modal">
                 <h3 className="modal-title">Configuración de Crédito</h3>
-                <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '15px' }}>
+                <p className="credit-config-modal__intro">
                     Define el monto máximo que se puede fiar por defecto a los clientes.
                 </p>
 
@@ -34,33 +34,26 @@ const CreditConfigModal = ({ isOpen, onClose, currentGlobal, onSaveGlobal, isSav
                     />
                 </div>
 
-                <div style={{
-                    marginTop: '15px',
-                    padding: '10px',
-                    background: '#fff3cd',
-                    borderRadius: '6px',
-                    border: '1px solid #ffeeba',
-                    fontSize: '0.85rem'
-                }}>
-                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                <div className="ui-alert ui-alert--warning credit-config-warning">
+                    <label className="credit-config-warning__label">
                         <input
                             type="checkbox"
                             checked={applyToAll}
                             onChange={(e) => setApplyToAll(e.target.checked)}
-                            style={{ marginTop: '3px' }}
+                            className="credit-config-warning__checkbox"
                         />
                         <span>
                             <strong>Aplicar a todos los clientes existentes</strong>
                             <br />
-                            <span style={{ color: '#856404' }}>Cuidado: Esto sobrescribirá los límites personalizados de todos los clientes registrados.</span>
+                            <span className="credit-config-warning__copy">Cuidado: Esto sobrescribirá los límites personalizados de todos los clientes registrados.</span>
                         </span>
                     </label>
                 </div>
 
-                <div className="modal-actions" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                    <button className="btn btn-cancel" onClick={onClose} disabled={isSaving}>Cancelar</button>
+                <div className="modal-actions credit-config-modal__actions">
+                    <button className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose} disabled={isSaving}>Cancelar</button>
                     <button
-                        className="btn btn-save"
+                        className="ui-button ui-button--primary btn btn-save"
                         onClick={() => onSaveGlobal(limit, applyToAll)}
                         disabled={isSaving}
                     >
@@ -154,8 +147,8 @@ export default function CustomerList({
 
     if (isLoading) {
         return (
-            <div className="customer-loading-state" role="status">
-                <div className="spinner-loader"></div>
+            <div className="ui-loading-state customer-loading-state" role="status">
+                <div className="ui-spinner spinner-loader"></div>
                 <p>Cargando clientes...</p>
             </div>
         );
@@ -163,8 +156,8 @@ export default function CustomerList({
 
     if (safeCustomers.length === 0) {
         return (
-            <div className="customer-empty-message">
-                <span className="customer-empty-icon">
+            <div className="ui-empty-state customer-empty-message">
+                <span className="ui-empty-state__icon customer-empty-icon">
                     <Users size={30} aria-hidden="true" />
                 </span>
                 <p>No hay clientes registrados.</p>
@@ -173,7 +166,7 @@ export default function CustomerList({
                 </span>
                 {/* Botón de config inicial */}
                 <button
-                    className="customer-config-button"
+                    className="ui-button ui-button--secondary customer-config-button"
                     onClick={() => setShowConfigModal(true)}
                 >
                     <Settings size={14} /> Configurar Límite de Crédito
@@ -190,7 +183,7 @@ export default function CustomerList({
     }
 
     return (
-        <div className="customer-list-container">
+        <div className="ui-section customer-list-container">
             {/* Cabecera de Resumen de Crédito */}
             <div className="customer-directory-toolbar">
                 <div className="customer-directory-heading">
@@ -198,7 +191,7 @@ export default function CustomerList({
                     <h2>Registros de clientes</h2>
                 </div>
                 <button
-                    className="customer-config-button"
+                    className="ui-button ui-button--secondary customer-config-button"
                     onClick={() => setShowConfigModal(true)}
                 >
                     <Settings size={18} aria-hidden="true" />
