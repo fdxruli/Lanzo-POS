@@ -78,6 +78,42 @@ export const POS_SYNC_REALTIME_PULL_DEBOUNCE_MS = 1000;
 export const POS_SYNC_FOCUS_PULL_COOLDOWN_MS = 60 * 1000;
 export const POS_SYNC_MAX_PULL_LIMIT = 500;
 
+export const POS_BOOTSTRAP_JITTER_MS = Object.freeze({
+  MIN: 500,
+  MAX: 3500
+});
+
+export const POS_DEFERRED_SNAPSHOT_DELAY_MS = Object.freeze({
+  PRODUCTS: 1500,
+  CUSTOMERS: 2500,
+  CASH: 2000,
+  CREDIT: 3000,
+  SALES: 4000,
+  REPORTS: 5000
+});
+
+export const POS_BOOTSTRAP_RESOURCES = Object.freeze({
+  POS: 'pos',
+  PRODUCTS: 'products',
+  CUSTOMERS: 'customers',
+  CASH: 'cash',
+  CREDIT: 'credit',
+  SALES: 'sales',
+  REPORTS: 'reports'
+});
+
+const BOOTSTRAP_DEFERRED_START_REASONS = new Set([
+  'app_ready',
+  'initial_bootstrap',
+  'store_update',
+  'state_change'
+]);
+
+export const shouldDeferPosBootstrapStartHook = (reason = '', { force = false } = {}) => {
+  if (force) return false;
+  return BOOTSTRAP_DEFERRED_START_REASONS.has(String(reason || '').toLowerCase());
+};
+
 export const SYNC_LIMITS = Object.freeze({
   DEFAULT_PULL_LIMIT: POS_SYNC_MAX_PULL_LIMIT,
   MAX_PULL_LIMIT: POS_SYNC_MAX_PULL_LIMIT,
