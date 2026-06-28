@@ -20,6 +20,7 @@ import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore';
 import usePersistentStorage from '../../hooks/usePersistentStorage';
 import Logger from '../../services/Logger';
+import { showMessageModal } from '../../services/utils';
 import './MessageModal.css';
 
 // Días de gracia según el nivel de riesgo
@@ -103,7 +104,7 @@ export default function BackupReminder() {
       throw new Error('Resultado de respaldo no reconocido.');
     } catch (error) {
       Logger.error('Error generando respaldo:', error);
-      alert('Error al generar el respaldo. Intenta de nuevo o ve a Configuración → Respaldo.');
+      showMessageModal('Error al generar el respaldo. Intenta de nuevo o ve a Configuración → Respaldo.', null, { type: 'error' });
     } finally {
       setBackupLoading(false);
     }

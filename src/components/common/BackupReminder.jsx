@@ -23,6 +23,7 @@ import {
 import { useAppStore } from '../../store/useAppStore';
 import { useBackupRiskStore, evaluator } from '../../services/BackupRiskEvaluator';
 import Logger from '../../services/Logger';
+import { showMessageModal } from '../../services/utils';
 import './MessageModal.css';
 
 export default function BackupReminder() {
@@ -62,7 +63,7 @@ export default function BackupReminder() {
       throw new Error('Resultado de respaldo no reconocido.');
     } catch (error) {
       Logger.error('Error generando respaldo:', error);
-      alert('Error al generar el respaldo. Intenta de nuevo o ve a Configuración → Respaldo.');
+      showMessageModal('Error al generar el respaldo. Intenta de nuevo o ve a Configuración → Respaldo.', null, { type: 'error' });
     } finally {
       setBackupLoading(false);
       setLocalLoading(false);

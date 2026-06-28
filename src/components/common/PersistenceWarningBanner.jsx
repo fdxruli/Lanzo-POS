@@ -18,6 +18,7 @@ import { useAppStore } from '../../store/useAppStore';
 import Logger from '../../services/Logger';
 import './PersistenceWarningBanner.css';
 import { downloadBackupSmart } from '../../services/dataTransfer';
+import { showMessageModal } from '../../services/utils';
 
 function detectBrowser() {
   const ua = navigator.userAgent;
@@ -51,9 +52,9 @@ const CriticalStorageLockScreen = () => {
     setBackupLoading(true);
     try {
       await downloadBackupSmart();
-      alert('Respaldo de emergencia completado. Ahora libera espacio en tu dispositivo.');
+      showMessageModal('Respaldo de emergencia completado. Ahora libera espacio en tu dispositivo.');
     } catch (e) {
-      alert('Fallo al respaldar.');
+      showMessageModal('Fallo al respaldar.', null, { type: 'error' });
     } finally {
       setBackupLoading(false);
     }

@@ -13,6 +13,7 @@ import {
 import './WelcomeModal.css';
 import Logger from '../../services/Logger';
 import { getStableDeviceId } from '../../services/supabase';
+import { showMessageModal } from '../../services/utils';
 
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');
@@ -144,7 +145,7 @@ DESCRIBE TU PROBLEMA:
 ¡Gracias por su ayuda!`);
 
     navigator.clipboard.writeText(supportEmail).then(() => {
-      alert(`📧 Correo de soporte copiado: ${supportEmail}\n\nSi no se abre tu aplicación de correo, puedes escribirnos manualmente.`);
+      showMessageModal(`📧 Correo de soporte copiado: ${supportEmail}\n\nSi no se abre tu aplicación de correo, puedes escribirnos manualmente.`);
     }).catch(err => console.error("No se pudo copiar", err));
 
     setTimeout(() => {

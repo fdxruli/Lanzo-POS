@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Logger from '../../services/Logger';
-import { checkInternetConnection } from '../../services/utils';
+import { checkInternetConnection, showConfirmModal, showMessageModal } from '../../services/utils';
 import './ReconnectionBanner.css';
 
 export default function ReconnectionBanner() {
@@ -73,7 +73,7 @@ export default function ReconnectionBanner() {
     try {
       const isOnline = await checkInternetConnection();
       if (!isOnline) {
-        alert('No se detecta conexión a internet. Verifica tu red.');
+        showMessageModal('No se detecta conexión a internet. Verifica tu red.', null, { type: 'warning' });
         setIsReconnecting(false);
         return;
       }
@@ -98,7 +98,11 @@ export default function ReconnectionBanner() {
       
     } catch (error) {
       Logger.error('Error reconectando:', error);
-      if (confirm('La reconexión automática falló. ¿Deseas recargar la página para corregirlo?')) {
+      if (await showConfirmModal('La reconexión automática falló. ¿Deseas recargar la página para corregirlo?', {
+        title: 'Reconexión fallida',
+        confirmButtonText: 'Recargar pagina',
+        cancelButtonText: 'Cancelar'
+      })) {
         window.location.reload();
       }
       setIsReconnecting(false);

@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import DeviceManager from '../common/DeviceManager';
 import StaffUsersSettings from './StaffUsersSettings';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 
 const BUSINESS_RUBROS = [
     { id: 'food_service', label: 'Restaurante / Cocina' },
@@ -49,7 +50,7 @@ export default function LicenseSettings() {
 
     const handleRubroToggle = async (rubroId) => {
         if (!isAllAllowed && !allowedRubrosList.includes(rubroId)) {
-            alert("⚠️ Tu licencia no incluye acceso a este módulo. Contacta a soporte para ampliarla.");
+            showMessageModal("⚠️ Tu licencia no incluye acceso a este módulo. Contacta a soporte para ampliarla.", null, { type: 'warning' });
             return;
         }
 
@@ -58,7 +59,7 @@ export default function LicenseSettings() {
         // 1. ESCENARIO: DESELECCIONAR
         if (isCurrentlySelected) {
             if (maxRubrosAllowed === 1) {
-                alert("🔒 BLOQUEADO: Tu licencia está vinculada permanentemente a este giro de negocio.\n\nNo puedes cambiar el rubro activo sin renovar o actualizar tu licencia.");
+                showMessageModal("🔒 BLOQUEADO: Tu licencia está vinculada permanentemente a este giro de negocio.\n\nNo puedes cambiar el rubro activo sin renovar o actualizar tu licencia.", null, { type: 'warning' });
                 return;
             }
             const newSelection = selectedRubros.filter(id => id !== rubroId);
@@ -70,9 +71,9 @@ export default function LicenseSettings() {
         // 2. ESCENARIO: SELECCIONAR
         if (selectedRubros.length >= maxRubrosAllowed) {
             if (maxRubrosAllowed === 1) {
-                alert(`🔒 Tu licencia ya tiene un giro activo. No puedes cambiarlo.`);
+                showMessageModal(`🔒 Tu licencia ya tiene un giro activo. No puedes cambiarlo.`, null, { type: 'warning' });
             } else {
-                alert(`🛑 Límite alcanzado. Tu licencia permite máximo ${maxRubrosAllowed} giros de negocio.`);
+                showMessageModal(`🛑 Límite alcanzado. Tu licencia permite máximo ${maxRubrosAllowed} giros de negocio.`, null, { type: 'warning' });
             }
             return;
         }
@@ -82,19 +83,25 @@ export default function LicenseSettings() {
         if (companyProfile) await updateCompanyProfile({ ...companyProfile, business_type: newSelection });
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
         const confirmMessage =
             "Cerrar sesion solo saldra de la app en este equipo.\n\n" +
             "La licencia seguira vinculada a este dispositivo. Si quieres liberar el cupo remoto, usa el boton Liberar en la lista de dispositivos.\n\n" +
             "Deseas cerrar sesion localmente?";
 
-        if (window.confirm(confirmMessage)) {
+        if (await showConfirmModal(confirmMessage, {
+            title: 'Cerrar sesion local',
+            confirmButtonText: 'Si, cerrar sesion'
+        })) {
             logout();
         }
     };
 
-    const handleStaffLogout = () => {
-        if (window.confirm('Deseas cerrar solo la sesion staff en este dispositivo?')) {
+    const handleStaffLogout = async () => {
+        if (await showConfirmModal('Deseas cerrar solo la sesion staff en este dispositivo?', {
+            title: 'Cerrar sesion staff',
+            confirmButtonText: 'Si, cerrar sesion'
+        })) {
             logoutStaff();
         }
     };

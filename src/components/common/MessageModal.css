@@ -47,8 +47,27 @@
   100% { transform: scale(1); }
 }
 
-.modal-content.shake-animation {
+.modal-content.shake-animation,
+.ui-modal__content.shake-animation {
   animation: shake-effect 0.15s ease-out;
+}
+
+.message-modal-local-toast {
+  position: fixed;
+  bottom: 15%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.85);
+  color: #ffffff;
+  padding: 12px 24px;
+  border-radius: 30px;
+  z-index: var(--z-toast);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  font-size: 0.95rem;
+  font-weight: 500;
+  animation: fadeIn 0.2s ease-out;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 @media (min-width: 600px) {

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import './DeviceManager.css';
 import { getLicenseDevicesSmart, deactivateDeviceSmart } from '../../services/licenseService';
-import { showMessageModal } from '../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { useAppStore } from '../../store/useAppStore';
 
 export default function DeviceManager({ licenseKey }) {
@@ -67,7 +67,11 @@ export default function DeviceManager({ licenseKey }) {
       ? 'Vas a liberar este dispositivo. Se cerrara la sesion local y esta licencia podra activarse de nuevo despues. Deseas continuar?'
       : 'Vas a liberar este dispositivo de la licencia. Deseas continuar?';
 
-    if (!window.confirm(confirmMessage)) return;
+    if (!(await showConfirmModal(confirmMessage, {
+      title: 'Liberar dispositivo',
+      confirmButtonText: 'Si, liberar',
+      cancelButtonText: 'Cancelar'
+    }))) return;
 
     setIsLoading(true);
     const result = await deactivateDeviceSmart(device.device_id, licenseKey);

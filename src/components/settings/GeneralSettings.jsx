@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
-import { compressImage } from '../../services/utils';
+import { compressImage, showMessageModal } from '../../services/utils';
 import Logger from '../../services/Logger';
 // Se importaron nuevos iconos de lucide-react (Store, Phone, MapPin, Image, Sun, Moon, Monitor)
 import { Lock, Info, FileText, Bot, Bell, Store, Phone, MapPin, Image as ImageIcon, Sun, Moon, Monitor, ShieldCheck } from 'lucide-react';
@@ -146,7 +146,7 @@ export default function GeneralSettings() {
       setPendingLogoFile(null);
     } catch (error) {
       Logger.error(error);
-      alert("Error al guardar.");
+      showMessageModal("Error al guardar.", null, { type: 'error' });
     }
   };
 
@@ -158,7 +158,7 @@ export default function GeneralSettings() {
     }
 
     await updateProfileWrapper(updates);
-    alert('¡Datos actualizados correctamente! Los campos nuevos se han bloqueado.');
+    showMessageModal('¡Datos actualizados correctamente! Los campos nuevos se han bloqueado.');
   };
 
   const InputStatusIcon = ({ isLocked }) => {

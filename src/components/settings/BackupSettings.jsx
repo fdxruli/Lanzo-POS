@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { useBackupManager } from '../../hooks/useBackupManager';
 import * as googleDriveService from '../../services/googleDriveService';
 import { useAppStore } from '../../store/useAppStore';
+import { showConfirmModal } from '../../services/utils';
 import GoogleDriveSettings from './GoogleDriveSettings';
 import './BackupSettings.css';
 
@@ -150,9 +151,15 @@ function LocalBackupSettings() {
 
   const executeRestore = async () => {
     if (!restoreFile || !restorePin) return;
-    if (!window.confirm(
-      'La restauración reemplazará completamente la base actual. Antes se creará un respaldo preventivo. ¿Continuar?'
-    )) return;
+    const confirmed = await showConfirmModal(
+      'La restauración reemplazará completamente la base actual. Antes se creará un respaldo preventivo. ¿Continuar?',
+      {
+        title: 'Restaurar respaldo',
+        confirmButtonText: 'Si, restaurar',
+        cancelButtonText: 'Cancelar'
+      }
+    );
+    if (!confirmed) return;
 
     const result = await run(() => backupManager.restore(restoreFile, restorePin));
     if (result) {

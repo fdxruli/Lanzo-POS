@@ -7,6 +7,7 @@ import { useProductStore } from '../../store/useProductStore';
 import { maintenanceTools } from '../../services/db';
 import { BarChart2, Package, Archive, Database, Download } from 'lucide-react';
 import { evaluator } from '../../services/BackupRiskEvaluator';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 
 const DEFAULT_REBUILD_DAYS = 30;
 
@@ -17,7 +18,15 @@ export default function MaintenanceSettings() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleArchive = async () => {
-    if (!confirm("Esto descargara y BORRARA las ventas de hace mas de 6 meses para acelerar el sistema. Continuar?")) return;
+    const confirmed = await showConfirmModal(
+      'Esto descargara y BORRARA las ventas de hace mas de 6 meses para acelerar el sistema. Continuar?',
+      {
+        title: 'Archivar historial',
+        confirmButtonText: 'Si, archivar',
+        cancelButtonText: 'Cancelar'
+      }
+    );
+    if (!confirmed) return;
 
     setIsProcessing(true);
     try {
@@ -37,13 +46,13 @@ export default function MaintenanceSettings() {
         }
 
         evaluator.ping();
-        alert(`Se han archivado y eliminado ${oldSales.length} ventas antiguas correctamente.`);
+        showMessageModal(`Se han archivado y eliminado ${oldSales.length} ventas antiguas correctamente.`);
       } else {
-        alert('No hay ventas con mas de 6 meses de antiguedad para archivar.');
+        showMessageModal('No hay ventas con mas de 6 meses de antiguedad para archivar.', null, { type: 'warning' });
       }
     } catch (error) {
       Logger.error('Error archivando datos:', error);
-      alert('Ocurrio un error al intentar archivar el historial.');
+      showMessageModal('Ocurrio un error al intentar archivar el historial.', null, { type: 'error' });
     } finally {
       setIsProcessing(false);
     }
@@ -54,14 +63,14 @@ export default function MaintenanceSettings() {
     try {
       const result = await maintenanceTools.fixStock();
       if (result.success) {
-        alert(result.message);
+        showMessageModal(result.message);
         if (result.details.length > 0) {
           Logger.info('Detalles de correccion:', result.details);
         }
         await loadInitialProducts();
       }
     } catch (e) {
-      alert(`Error: ${e?.message || e}`);
+      showMessageModal(`Error: ${e?.message || e}`, null, { type: 'error' });
     } finally {
       setIsProcessing(false);
     }
@@ -79,17 +88,17 @@ export default function MaintenanceSettings() {
     if (confirmation === null) return;
 
     if (confirmation.trim() !== 'CONFIRMAR') {
-      alert('Confirmación inválida. Debes escribir exactamente CONFIRMAR para ejecutar esta acción.');
+      showMessageModal('Confirmación inválida. Debes escribir exactamente CONFIRMAR para ejecutar esta acción.', null, { type: 'warning' });
       return;
     }
 
     setIsProcessing(true);
     try {
       const result = await maintenanceTools.rebuildStats({ days: DEFAULT_REBUILD_DAYS });
-      alert(result.message);
+      showMessageModal(result.message);
       await loadStats(false);
     } catch (e) {
-      alert(`Error: ${e?.message || e}`);
+      showMessageModal(`Error: ${e?.message || e}`, null, { type: 'error' });
     } finally {
       setIsProcessing(false);
     }

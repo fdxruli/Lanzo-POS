@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Shield, CheckCircle, Loader2, AlertCircle } from 'lucide-react'; 
 import { fetchLegalTerms, acceptLegalTerms } from '../../services/supabase'; 
 import Logger from '../../services/Logger';
+import { showMessageModal } from '../../services/utils';
 import './TermsAndConditionsModal.css';
 
 // 🔒 SEGURIDAD: Sanitizador de HTML para prevenir XSS.
@@ -146,7 +147,7 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
     if (result.success || result.message === 'ALREADY_ACCEPTED') {
       onClose();
     } else {
-      alert("Hubo un error registrando tu aceptación.");
+      showMessageModal("Hubo un error registrando tu aceptación.", null, { type: 'error' });
     }
   };
 

@@ -61,12 +61,12 @@ export default function MessageModal() {
   return (
     <div 
       id="message-modal" 
-      className="modal" 
+      className="ui-modal ui-modal--critical" 
       style={{ display: 'flex' }}
       onClick={handleBackdropClick} 
     >
-      <div className={`modal-content ${showShake ? 'shake-animation' : ''}`} onClick={(e) => e.stopPropagation()}>
-        <h2 className={`modal-title ${options.type || ''}`}>
+      <div className={`ui-modal__content ui-modal__content--sm ${showShake ? 'shake-animation' : ''}`} onClick={(e) => e.stopPropagation()}>
+        <h2 className={`ui-modal__title ${options.type || ''}`}>
             {options.title || 'Mensaje'}
         </h2>
         
@@ -74,27 +74,27 @@ export default function MessageModal() {
             {message}
         </p>
         
-        <div className="modal-buttons">
+        <div className="ui-modal__actions modal-buttons">
           {options.extraButton && (
-            <button className="btn btn-secondary" onClick={handleExtraAction}>
+            <button className="ui-button ui-button--secondary btn-secondary" onClick={handleExtraAction}>
               {options.extraButton.text}
             </button>
           )}
 
           {confirmMode ? (
             <>
-              <button className="btn btn-confirm" onClick={handleConfirm}>
+              <button className="ui-button ui-button--primary btn-confirm" onClick={handleConfirm}>
                 {options.confirmButtonText || 'Sí, continuar'}
               </button>
 
               {showCancel && (
-                <button className="btn btn-cancel" onClick={handleCancel}>
+                <button className="ui-button ui-button--ghost btn-cancel" onClick={handleCancel}>
                   {options.cancelButtonText || 'Cancelar'}
                 </button>
               )}
             </>
           ) : (
-            <button className="btn btn-modal" onClick={hide}>
+            <button className="ui-button ui-button--primary btn-modal" onClick={hide}>
               Aceptar
             </button>
           )}
@@ -103,23 +103,7 @@ export default function MessageModal() {
 
       {/* --- RENDERIZADO DEL TOAST --- */}
       {toastMsg && (
-        <div style={{
-          position: 'fixed',
-          bottom: '15%', // Un poco más arriba para que se note sobre el modal
-          left: '50%',
-          transform: 'translateX(-50%)',
-          backgroundColor: 'rgba(0, 0, 0, 0.85)',
-          color: 'white',
-          padding: '12px 24px',
-          borderRadius: '30px',
-          zIndex: 'var(--z-toast)',
-          boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
-          fontSize: '0.95rem',
-          fontWeight: '500',
-          animation: 'fadeIn 0.2s ease-out',
-          pointerEvents: 'none', // Para que no interfiera con clics
-          whiteSpace: 'nowrap'
-        }}>
+        <div className="message-modal-local-toast">
           {toastMsg}
         </div>
       )}
