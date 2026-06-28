@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Info } from 'lucide-react';
+import { showMessageModal } from '../../services/utils';
 import './CustomerForm.css';
 
 // Recibimos 'globalCreditLimit' para sugerirlo por defecto
@@ -43,7 +44,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
     if (isSaving) return;
 
     if (name.trim().length === 0) {
-      alert('El nombre del cliente no puede estar vacio.');
+      showMessageModal('El nombre del cliente no puede estar vacio.', null, { type: 'warning' });
       return;
     }
 

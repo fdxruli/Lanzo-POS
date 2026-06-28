@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { getCartLineId } from '../../utils/cartLineIdentity';
+import { showMessageModal } from '../../services/utils';
 
 export default function PrescriptionModal({ show, onClose, onConfirm, itemsRequiringPrescription }) {
     const [doctorName, setDoctorName] = useState('');
@@ -11,7 +12,7 @@ export default function PrescriptionModal({ show, onClose, onConfirm, itemsRequi
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!doctorName || !licenseNumber) {
-            alert("El nombre del médico y la cédula son obligatorios para antibióticos/controlados.");
+            showMessageModal("El nombre del médico y la cédula son obligatorios para antibióticos/controlados.", null, { type: 'warning' });
             return;
         }
         onConfirm({ doctorName, licenseNumber, notes });

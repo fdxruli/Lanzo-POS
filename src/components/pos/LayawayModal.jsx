@@ -90,12 +90,12 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
         e.preventDefault();
 
         if (!selectedCustomer) {
-            alert("Es obligatorio asignar un cliente.");
+            showMessageModal("Es obligatorio asignar un cliente.", null, { type: 'warning' });
             return;
         }
 
         if (remaining < 0) {
-            alert("El abono no puede ser mayor al total.");
+            showMessageModal("El abono no puede ser mayor al total.", null, { type: 'warning' });
             return;
         }
 

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { layawayRepository } from '../../services/db/layaways';
 import { useCaja } from '../../hooks/useCaja';
-import { showMessageModal } from '../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 import Logger from '../../services/Logger';
 import './LayawayModal.css';
 
@@ -94,7 +94,11 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
             return;
         }
 
-        if (!window.confirm("¿Confirmar entrega de mercancía? Se registrará la venta histórica.")) return;
+        if (!(await showConfirmModal("¿Confirmar entrega de mercancía? Se registrará la venta histórica.", {
+            title: 'Entregar apartado',
+            confirmButtonText: 'Si, entregar',
+            cancelButtonText: 'Cancelar'
+        }))) return;
 
         setProcessingId(layaway.id);
         try {
@@ -130,16 +134,25 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
 
     const handleCancel = async (layaway) => {
     const isOverdue = checkIsOverdue(layaway.deadline);
-    if (!window.confirm(`¿CANCELAR apartado ${isOverdue ? 'VENCIDO' : ''}? El stock será devuelto al inventario.`)) return;
+    if (!(await showConfirmModal(`¿CANCELAR apartado ${isOverdue ? 'VENCIDO' : ''}? El stock será devuelto al inventario.`, {
+        title: 'Cancelar apartado',
+        confirmButtonText: 'Si, cancelar apartado',
+        cancelButtonText: 'Volver'
+    }))) return;
 
     let retenerDinero = false;
     if (layaway.paidAmount > 0) {
         // Obligamos al usuario a decidir qué pasa con los fondos
-        retenerDinero = window.confirm(
+        retenerDinero = await showConfirmModal(
             `💰 FONDOS RETENIDOS: $${layaway.paidAmount.toFixed(2)}\n\n` +
             `¿Deseas COBRAR este dinero como penalización?\n` +
             `[Aceptar] = La tienda se queda el dinero.\n` +
-            `[Cancelar] = Reembolsar al cliente (registrará salida de caja).`
+            `[Cancelar] = Reembolsar al cliente (registrará salida de caja).`,
+            {
+                title: 'Fondos del apartado',
+                confirmButtonText: 'Cobrar penalizacion',
+                cancelButtonText: 'Reembolsar'
+            }
         );
 
         if (!retenerDinero && (!cajaActual || cajaActual.estado !== 'abierta')) {

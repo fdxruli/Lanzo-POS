@@ -3,6 +3,7 @@ import { Users, Settings } from 'lucide-react';
 import CustomerCard from './CustomerCard';
 import { useAppStore } from '../../store/useAppStore'; // Para guardar la config global
 import { customerCreditRepository } from '../../services/db/customerCreditRepository';
+import { showMessageModal } from '../../services/utils';
 import './CustomerList.css';
 
 // --- SUB-COMPONENTE: Modal de Configuración de Crédito ---
@@ -143,7 +144,7 @@ export default function CustomerList({
             setShowConfigModal(false);
         } catch (error) {
             console.error("Error guardando config:", error);
-            alert("Hubo un error al guardar la configuración.");
+            showMessageModal("Hubo un error al guardar la configuración.", null, { type: 'error' });
         } finally {
             setIsSavingConfig(false);
         }

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import './RecycleBin.css';
 import { useSalesStore } from '../../store/useSalesStore';
-import { showMessageModal } from '../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 
 const formatDate = (dateString) => {
   if (!dateString) return '-';
@@ -58,7 +58,11 @@ const RecycleBin = () => {
   );
 
   const handleRestore = async (item) => {
-    if (confirm(`¿Restaurar "${item.mainLabel || item.name}" a su lugar original?`)) {
+    if (await showConfirmModal(`¿Restaurar "${item.mainLabel || item.name}" a su lugar original?`, {
+      title: 'Restaurar elemento',
+      confirmButtonText: 'Si, restaurar',
+      cancelButtonText: 'Cancelar'
+    })) {
       const result = await restoreItem(item);
       if (result?.success === false) {
         showMessageModal(result.message || 'No se pudo restaurar el elemento.', null, { type: 'error' });
@@ -74,13 +78,21 @@ const RecycleBin = () => {
   };
 
   const handleDeleteForever = async (item) => {
-    if (confirm('¿Estás seguro? Esta acción liberará espacio y no se puede deshacer.')) {
+    if (await showConfirmModal('¿Estás seguro? Esta acción liberará espacio y no se puede deshacer.', {
+      title: 'Eliminar permanentemente',
+      confirmButtonText: 'Si, eliminar',
+      cancelButtonText: 'Cancelar'
+    })) {
       await permanentlyDelete(item);
     }
   };
 
   const handleEmptyBin = async () => {
-    if (confirm('¿Vaciar toda la papelera? Se eliminarán permanentemente todos los elementos.')) {
+    if (await showConfirmModal('¿Vaciar toda la papelera? Se eliminarán permanentemente todos los elementos.', {
+      title: 'Vaciar papelera',
+      confirmButtonText: 'Si, vaciar',
+      cancelButtonText: 'Cancelar'
+    })) {
       await emptyBin();
     }
   };

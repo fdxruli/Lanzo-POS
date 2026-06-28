@@ -10,6 +10,7 @@ import OrderTabs from './OrderTabs';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
+import { showMessageModal } from '../../services/utils';
 
 const ActiveOrderControls = () => {
     const activeOrders = useActiveOrders((state) => state.activeOrders);
@@ -30,7 +31,7 @@ const ActiveOrderControls = () => {
             await cancelOrder(id);
         } catch (error) {
             console.error('Error eliminando orden:', error);
-            alert(error.message || 'Error al eliminar la orden');
+            showMessageModal(error.message || 'Error al eliminar la orden', null, { type: 'error' });
         } finally {
             setIsPausing(false);
         }

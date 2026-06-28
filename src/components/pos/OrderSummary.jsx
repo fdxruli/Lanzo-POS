@@ -15,7 +15,7 @@ import { useState, useEffect } from 'react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { db, STORES } from '../../services/db/dexie';
-import { showMessageModal } from '../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
 import './OrderSummary.css';
@@ -126,7 +126,12 @@ export default function OrderSummary({
       ? '¿Descartar los cambios no guardados y salir de la mesa?'
       : '¿Vaciar carrito?';
 
-    if (!window.confirm(confirmMessage)) return;
+    const confirmed = await showConfirmModal(confirmMessage, {
+      title: isEditMode && showRestaurantActions ? 'Salir sin guardar' : 'Vaciar carrito',
+      confirmButtonText: isEditMode && showRestaurantActions ? 'Si, salir' : 'Si, vaciar',
+      cancelButtonText: 'Cancelar'
+    });
+    if (!confirmed) return;
 
     try {
       await useActiveOrders.getState().cancelCurrentOrder();
