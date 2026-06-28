@@ -133,8 +133,8 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
   if ((isLoading && products.length === 0) || (isSearchMode && isSearching && displayProducts.length === 0)) {
     return (
-      <div className="loader-container">
-        <div className="spinner"></div>
+      <div className="ui-loading-state loader-container">
+        <div className="ui-spinner spinner"></div>
         <p>{isSearchMode ? 'Buscando productos...' : 'Cargando inventario...'}</p>
       </div>
     );
@@ -149,8 +149,8 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
           <span className="product-count">{displayProducts.length} items mostrados</span>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="search-box" style={{ flex: 1 }}>
+        <div className="product-list-actions">
+          <div className="search-box product-list-search">
             <span className="search-icon"><Icons.Search /></span>
             <input
               type="text"
@@ -163,7 +163,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
           <select
             value={statusFilter}
             onChange={(e) => setFilters({ status: e.target.value })}
-            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', backgroundColor: '#fff', outline: 'none', color: '#374151', minWidth: '140px' }}
+            className="product-status-filter"
           >
             <option value="all">Todos los estados</option>
             <option value="active">Solo Activos</option>
@@ -172,7 +172,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
           {features.hasDailyPricing && (
             <button
-                className="btn-update-price"
+                className="ui-button ui-button--secondary btn-update-price"
                 onClick={onOpenDailyPrice}
                 title="Actualizar Precios del Día"
             >
@@ -184,8 +184,8 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
       </div>
 
       {displayProducts.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon"><Icons.Empty /></div>
+        <div className="ui-empty-state empty-state">
+          <div className="ui-empty-state__icon empty-icon"><Icons.Empty /></div>
           <h3>No se encontraron productos</h3>
           <p>Intenta con otro término de búsqueda.</p>
         </div>
@@ -222,7 +222,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             else if (isLowStock) borderClass = 'border-warning';
 
             return (
-              <div key={item.id} className={`product-card-complex ${borderClass} ${!isActive ? 'opacity-dim' : ''}`}>
+              <div key={item.id} className={`ui-card ui-card--interactive product-card-complex ${borderClass} ${!isActive ? 'opacity-dim' : ''}`}>
 
                 {/* 1. Cabecera e Imagen */}
                 <div className="complex-header">
@@ -235,15 +235,15 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                       <h4 title={item.name}>{item.name}</h4>
                     </div>
                     <div className="sub-meta">
-                      <span className="category-badge">{categoryName}</span>
-                      {features.hasSKU && item.sku && <span className="sku-badge">SKU: {item.sku}</span>}
+                      <span className="ui-badge ui-badge--neutral category-badge">{categoryName}</span>
+                      {features.hasSKU && item.sku && <span className="ui-badge ui-badge--info sku-badge">SKU: {item.sku}</span>}
                     </div>
                   </div>
 
                   <div className="actions-area">
                     {isTracked && (
                       <button
-                        className="btn-action btn-batches"
+                        className="ui-button ui-button--neutral ui-button--sm btn-action btn-batches"
                         onClick={() => onManageBatches(item.id)}
                         title="Gestionar Lotes / Caducidades"
                         disabled={!isActive}
@@ -251,10 +251,10 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                         <Icons.Layers /> <span>Lotes</span>
                       </button>
                     )}
-                    <button className="btn-action btn-edit" onClick={() => onEdit(item)} title="Editar" disabled={!isActive}>
+                    <button className="ui-button ui-button--ghost ui-button--sm btn-action btn-edit" onClick={() => onEdit(item)} title="Editar" disabled={!isActive}>
                       <Icons.Edit /> <span>Editar</span>
                     </button>
-                    <button className="btn-action btn-delete" onClick={() => onDelete(item)} title="Eliminar" disabled={!isActive}>
+                    <button className="ui-button ui-button--danger ui-button--sm btn-action btn-delete" onClick={() => onDelete(item)} title="Eliminar" disabled={!isActive}>
                       <Icons.Delete /> <span>Eliminar</span>
                     </button>
                   </div>
@@ -264,12 +264,12 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                 {(features.hasExpiry && isNearingExpiry) || (isLowStock && isTracked) ? (
                   <div className="alert-section-wrapper">
                     {features.hasExpiry && isNearingExpiry && (
-                      <div className="alert-banner alert-red">
+                      <div className="ui-alert ui-alert--danger alert-banner alert-red">
                         📅 Caduca: {expiryDays === 0 ? 'HOY' : `${expiryDays} días`}
                       </div>
                     )}
                     {isLowStock && isTracked && (
-                      <div className="alert-banner alert-orange">
+                      <div className="ui-alert ui-alert--warning alert-banner alert-orange">
                         ⚠️ Stock Bajo ({availableStock} {showMinMax && item.minStock !== null && item.minStock !== undefined ? `≤ ${item.minStock}` : ''})
                       </div>
                     )}
@@ -355,15 +355,15 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                   <div className="footer-actions">
                     {/* Badges Informativos */}
                     {features.hasWholesale && item.wholesaleTiers?.length > 0 && (
-                      <span className="feat-badge purple" title="Tiene precios de mayoreo">Mayoreo</span>
+                      <span className="ui-badge ui-badge--info feat-badge purple" title="Tiene precios de mayoreo">Mayoreo</span>
                     )}
                     {item.productType === 'ingredient' && (
-                      <span className="feat-badge gray">Insumo</span>
+                      <span className="ui-badge ui-badge--neutral feat-badge gray">Insumo</span>
                     )}
 
                     {/* Botón de Merma (Solo visible si el rubro lo permite y está activo) */}
                     {features.hasWaste && isActive && (
-                      <button className="btn-waste-text" onClick={() => handleOpenWaste(item)}>
+                      <button className="ui-button ui-button--warning ui-button--sm btn-waste-text" onClick={() => handleOpenWaste(item)}>
                         <Icons.Waste /> Merma
                       </button>
                     )}
@@ -377,7 +377,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
       {!isSearchMode && hasMore && (
         <div className="pagination-container">
-          <button className="btn-load-more" onClick={() => fetchPage('next')} disabled={isGlobalLoading}>
+          <button className="ui-button ui-button--secondary btn-load-more" onClick={() => fetchPage('next')} disabled={isGlobalLoading}>
             {isGlobalLoading ? 'Cargando...' : 'Cargar más productos'}
           </button>
         </div>

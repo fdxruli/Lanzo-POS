@@ -669,3 +669,34 @@
   width: 16px !important;
   height: 16px !important;
 }
+
+.product-list-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.product-list-search {
+  flex: 1 1 220px;
+}
+
+.product-status-filter {
+  min-width: 140px;
+  padding: 8px 12px;
+  color: var(--text-dark);
+  background-color: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  outline: none;
+}
+
+.product-card-complex.ui-card {
+  padding: 0;
+}
+
+.product-list-container .alert-banner.ui-alert {
+  align-items: center;
+  min-height: 0;
+  padding: 8px 10px;
+}
