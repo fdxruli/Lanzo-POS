@@ -45,13 +45,14 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
   SYNC_LIMITS.MAX_PULL_LIMIT
 );
 
-const cachedCustomerRpc = ({ rpcName, licenseKey, baseArgs, params = {}, fn }) => cloudRequestManager.request({
+const cachedCustomerRpc = ({ rpcName, licenseKey, baseArgs, params = {}, force = false, fn }) => cloudRequestManager.request({
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
     params
   }),
   ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
   cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
+  force,
   tags: [
     CLOUD_REQUEST_TAGS.CUSTOMERS,
     cloudRequestTags.license(licenseKey),
@@ -98,7 +99,7 @@ export const customerCloudRepository = {
     return invalidateAfterCustomerSuccess(licenseKey, parseRpcPayload(data));
   },
 
-  async pullCustomerSnapshot({ licenseKey, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, includeDeleted = false }) {
+  async pullCustomerSnapshot({ licenseKey, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, includeDeleted = false, force = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -112,6 +113,7 @@ export const customerCloudRepository = {
       licenseKey,
       baseArgs,
       params,
+      force,
       fn: async () => {
         const { data, error } = await supabaseClient.rpc('pos_pull_customers_snapshot', {
           ...baseArgs,

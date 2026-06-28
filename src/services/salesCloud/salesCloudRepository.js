@@ -79,6 +79,7 @@ const cachedSalesRpc = ({
   params = {},
   ttlMs = CLOUD_REQUEST_TTL.MEDIUM,
   cooldownMs = CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
+  force = false,
   fn
 }) => cloudRequestManager.request({
   key: buildRpcRequestKey(rpcName, {
@@ -87,6 +88,7 @@ const cachedSalesRpc = ({
   }),
   ttlMs,
   cooldownMs,
+  force,
   tags: [
     CLOUD_REQUEST_TAGS.SALES,
     cloudRequestTags.license(licenseKey),
@@ -192,7 +194,7 @@ export const salesCloudRepository = {
     return parseRpcPayload(data);
   },
 
-  async getSale({ licenseKey, saleId }) {
+  async getSale({ licenseKey, saleId, force = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = { p_sale_id: saleId };
@@ -203,6 +205,7 @@ export const salesCloudRepository = {
       params,
       ttlMs: CLOUD_REQUEST_TTL.VERY_SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.VERY_SHORT,
+      force,
       fn: async () => {
         const { data, error } = await supabaseClient.rpc('pos_get_sale', { ...baseArgs, ...params });
         if (error) throw error;
@@ -211,7 +214,7 @@ export const salesCloudRepository = {
     });
   },
 
-  async pullSalesSnapshot({ licenseKey, limit = 500, offset = 0, dateFrom = null, dateTo = null, includeDeleted = false }) {
+  async pullSalesSnapshot({ licenseKey, limit = 500, offset = 0, dateFrom = null, dateTo = null, includeDeleted = false, force = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -226,6 +229,7 @@ export const salesCloudRepository = {
       licenseKey,
       baseArgs,
       params,
+      force,
       fn: async () => {
         const { data, error } = await supabaseClient.rpc('pos_pull_sales_snapshot', {
           ...baseArgs,

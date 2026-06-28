@@ -194,7 +194,7 @@ const maybeReturnCooldownCache = ({ key, cooldownMs, force, time }) => {
   if (!lastStarted || time - lastStarted >= Number(cooldownMs)) return null;
 
   const entry = cache.get(key);
-  if (!entry) return null;
+  if (!entry || entry.expiresAt <= time) return null;
 
   entry.lastAccessedAt = time;
   stats.cacheHits += 1;

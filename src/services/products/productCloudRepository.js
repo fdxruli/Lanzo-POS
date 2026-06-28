@@ -56,13 +56,14 @@ const callCatalogMutationRpc = async (name, licenseKey, args) => {
   return response;
 };
 
-const cachedProductRpc = ({ rpcName, licenseKey, baseArgs, params = {}, fn }) => cloudRequestManager.request({
+const cachedProductRpc = ({ rpcName, licenseKey, baseArgs, params = {}, force = false, fn }) => cloudRequestManager.request({
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
     params
   }),
   ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
   cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
+  force,
   tags: [
     CLOUD_REQUEST_TAGS.PRODUCTS,
     cloudRequestTags.license(licenseKey),
@@ -142,7 +143,8 @@ export const productCloudRepository = {
     entityType = 'all',
     limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT,
     offset = 0,
-    includeDeleted = true
+    includeDeleted = true,
+    force = false
   }) {
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -156,6 +158,7 @@ export const productCloudRepository = {
       licenseKey,
       baseArgs,
       params,
+      force,
       fn: () => callRpc('pos_pull_product_catalog_snapshot', {
         ...baseArgs,
         ...params

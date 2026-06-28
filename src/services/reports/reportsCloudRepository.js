@@ -86,6 +86,7 @@ const cachedReportRpc = ({
   tags = [],
   ttlMs = CLOUD_REQUEST_TTL.REPORTS,
   cooldownMs = CLOUD_REQUEST_COOLDOWN.REPORTS,
+  force = false,
   fn
 }) => cloudRequestManager.request({
   key: buildRpcRequestKey(rpcName, {
@@ -94,12 +95,19 @@ const cachedReportRpc = ({
   }),
   ttlMs,
   cooldownMs,
+  force,
   tags: buildReportTags(licenseKey, [cloudRequestTags.rpc(rpcName), ...tags]),
   fn
 });
 
+const callRpc = async (rpcName, args) => {
+  const { data, error } = await supabaseClient.rpc(rpcName, args);
+  if (error) throw error;
+  return parseRpcPayload(data);
+};
+
 export const reportsCloudRepository = {
-  async getOverviewReport({ licenseKey, dateFrom = null, dateTo = null, scope = 'mine' } = {}) {
+  async getOverviewReport({ licenseKey, dateFrom = null, dateTo = null, scope = 'mine', force = false } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const rpcArgs = {
@@ -119,16 +127,13 @@ export const reportsCloudRepository = {
       licenseKey,
       baseArgs,
       params: cacheParams,
+      force,
       fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_reports_overview', rpcArgs);
-        if (error) throw error;
-
-        const overviewPayload = parseRpcPayload(data);
+        const overviewPayload = await callRpc('pos_get_reports_overview', rpcArgs);
 
         try {
-          const { data: creditData, error: creditError } = await supabaseClient.rpc('pos_get_reports_credit_overview', rpcArgs);
-          if (creditError) return overviewPayload;
-          return mergeCreditOverview(overviewPayload, parseRpcPayload(creditData));
+          const creditPayload = await callRpc('pos_get_reports_credit_overview', rpcArgs);
+          return mergeCreditOverview(overviewPayload, creditPayload);
         } catch {
           return overviewPayload;
         }
@@ -136,7 +141,7 @@ export const reportsCloudRepository = {
     });
   },
 
-  async getSalesFinalOverview({ licenseKey, ...filters } = {}) {
+  async getSalesFinalOverview({ licenseKey, force = false, ...filters } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const finalFilters = buildFinalFilters(filters);
@@ -146,25 +151,18 @@ export const reportsCloudRepository = {
       baseArgs,
       params: finalFilters,
       tags: [CLOUD_REQUEST_TAGS.SALES],
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_sales_final_overview', {
-          ...baseArgs,
-          ...finalFilters
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_get_sales_final_overview', { ...baseArgs, ...finalFilters })
     });
   },
 
-  async getSalesFinalTimeseries({ licenseKey, metric = 'net_sales', granularity = 'day', ...filters } = {}) {
+  async getSalesFinalTimeseries({ licenseKey, metric = 'net_sales', granularity = 'day', force = false, ...filters } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const finalFilters = buildFinalFilters(filters);
     const params = {
       p_metric: metric,
       p_granularity: granularity,
-      ...finalFilters
+      ...buildFinalFilters(filters)
     };
     return cachedReportRpc({
       rpcName: 'pos_get_sales_final_timeseries',
@@ -172,28 +170,21 @@ export const reportsCloudRepository = {
       baseArgs,
       params,
       tags: [CLOUD_REQUEST_TAGS.SALES],
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_sales_final_timeseries', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_get_sales_final_timeseries', { ...baseArgs, ...params })
     });
   },
 
-  async getSalesFinalHistory({ licenseKey, status = null, paymentMethod = null, search = null, limit = 100, offset = 0, ...filters } = {}) {
+  async getSalesFinalHistory({ licenseKey, status = null, paymentMethod = null, search = null, limit = 100, offset = 0, force = false, ...filters } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const finalFilters = buildFinalFilters(filters);
     const params = {
       p_status: status,
       p_payment_method: paymentMethod,
       p_search: search,
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
-      ...finalFilters
+      ...buildFinalFilters(filters)
     };
     return cachedReportRpc({
       rpcName: 'pos_get_sales_final_history',
@@ -202,25 +193,18 @@ export const reportsCloudRepository = {
       params,
       tags: [CLOUD_REQUEST_TAGS.SALES],
       ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_sales_final_history', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_get_sales_final_history', { ...baseArgs, ...params })
     });
   },
 
-  async getSalesProfitReport({ licenseKey, limit = 100, offset = 0, ...filters } = {}) {
+  async getSalesProfitReport({ licenseKey, limit = 100, offset = 0, force = false, ...filters } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const finalFilters = buildFinalFilters(filters);
     const params = {
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
-      ...finalFilters
+      ...buildFinalFilters(filters)
     };
     return cachedReportRpc({
       rpcName: 'pos_get_sales_profit_report',
@@ -228,26 +212,19 @@ export const reportsCloudRepository = {
       baseArgs,
       params,
       tags: [CLOUD_REQUEST_TAGS.SALES],
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_sales_profit_report', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_get_sales_profit_report', { ...baseArgs, ...params })
     });
   },
 
-  async getSalesAuditReport({ licenseKey, eventType = null, limit = 100, offset = 0, ...filters } = {}) {
+  async getSalesAuditReport({ licenseKey, eventType = null, limit = 100, offset = 0, force = false, ...filters } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const finalFilters = buildFinalFilters(filters);
     const params = {
       p_event_type: eventType,
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
-      ...finalFilters
+      ...buildFinalFilters(filters)
     };
     return cachedReportRpc({
       rpcName: 'pos_get_sales_audit_report',
@@ -256,18 +233,12 @@ export const reportsCloudRepository = {
       params,
       tags: [CLOUD_REQUEST_TAGS.SALES],
       ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_sales_audit_report', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_get_sales_audit_report', { ...baseArgs, ...params })
     });
   },
 
-  async validateSalesConsistency({ licenseKey, saleId = null, limit = 200 } = {}) {
+  async validateSalesConsistency({ licenseKey, saleId = null, limit = 200, force = false } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -282,26 +253,19 @@ export const reportsCloudRepository = {
       tags: [CLOUD_REQUEST_TAGS.SALES],
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_validate_sales_consistency', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_validate_sales_consistency', { ...baseArgs, ...params })
     });
   },
 
-  async exportSalesFinal({ licenseKey, dataset = 'sales', limit = 1000, offset = 0, ...filters } = {}) {
+  async exportSalesFinal({ licenseKey, dataset = 'sales', limit = 1000, offset = 0, force = false, ...filters } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const finalFilters = buildFinalFilters(filters);
     const params = {
       p_dataset: dataset,
       p_limit: Math.min(Math.max(Number(limit) || 1000, 1), 5000),
       p_offset: Math.max(Number(offset) || 0, 0),
-      ...finalFilters
+      ...buildFinalFilters(filters)
     };
     return cachedReportRpc({
       rpcName: 'pos_export_sales_final',
@@ -309,18 +273,12 @@ export const reportsCloudRepository = {
       baseArgs,
       params,
       tags: [CLOUD_REQUEST_TAGS.SALES],
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_export_sales_final', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_export_sales_final', { ...baseArgs, ...params })
     });
   },
 
-  async getCashReport({ licenseKey, dateFrom = null, dateTo = null, staffUserId = null, status = null, limit = 100, offset = 0 } = {}) {
+  async getCashReport({ licenseKey, dateFrom = null, dateTo = null, staffUserId = null, status = null, limit = 100, offset = 0, force = false } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -337,18 +295,12 @@ export const reportsCloudRepository = {
       baseArgs,
       params,
       tags: [CLOUD_REQUEST_TAGS.CASH],
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_cash_report', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_get_cash_report', { ...baseArgs, ...params })
     });
   },
 
-  async getCustomerCreditReport({ licenseKey, dateFrom = null, dateTo = null, customerId = null, limit = 100, offset = 0 } = {}) {
+  async getCustomerCreditReport({ licenseKey, dateFrom = null, dateTo = null, customerId = null, limit = 100, offset = 0, force = false } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -364,18 +316,12 @@ export const reportsCloudRepository = {
       baseArgs,
       params,
       tags: [CLOUD_REQUEST_TAGS.CUSTOMER_CREDIT, CLOUD_REQUEST_TAGS.CUSTOMERS],
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_customer_credit_report', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_get_customer_credit_report', { ...baseArgs, ...params })
     });
   },
 
-  async getProductCatalogReport({ licenseKey, dateFrom = null, dateTo = null, limit = 100, offset = 0 } = {}) {
+  async getProductCatalogReport({ licenseKey, dateFrom = null, dateTo = null, limit = 100, offset = 0, force = false } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -390,18 +336,12 @@ export const reportsCloudRepository = {
       baseArgs,
       params,
       tags: [CLOUD_REQUEST_TAGS.PRODUCTS],
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_product_catalog_report', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_get_product_catalog_report', { ...baseArgs, ...params })
     });
   },
 
-  async getTimeseriesReport({ licenseKey, metric = 'cash_entries', granularity = 'day', dateFrom = null, dateTo = null } = {}) {
+  async getTimeseriesReport({ licenseKey, metric = 'cash_entries', granularity = 'day', dateFrom = null, dateTo = null, force = false } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -415,18 +355,12 @@ export const reportsCloudRepository = {
       licenseKey,
       baseArgs,
       params,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_report_timeseries', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_get_report_timeseries', { ...baseArgs, ...params })
     });
   },
 
-  async exportReportData({ licenseKey, reportType = 'cash_movements', dateFrom = null, dateTo = null, limit = 1000, offset = 0 } = {}) {
+  async exportReportData({ licenseKey, reportType = 'cash_movements', dateFrom = null, dateTo = null, limit = 1000, offset = 0, force = false } = {}) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -441,14 +375,8 @@ export const reportsCloudRepository = {
       licenseKey,
       baseArgs,
       params,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_export_report_data', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      force,
+      fn: () => callRpc('pos_export_report_data', { ...baseArgs, ...params })
     });
   }
 };
