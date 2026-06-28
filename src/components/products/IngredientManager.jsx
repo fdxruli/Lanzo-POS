@@ -1,6 +1,7 @@
 // src/components/products/IngredientManager.jsx
 import React, { useState } from 'react';
 import { Package, Pencil, Trash2 } from 'lucide-react';
+import { showConfirmModal } from '../../services/utils';
 import './IngredientManager.css';
 
 export default function IngredientManager({ ingredients, onSave, onDelete, onManageBatches }) {
@@ -50,8 +51,12 @@ export default function IngredientManager({ ingredients, onSave, onDelete, onMan
         setUnit(savedUnit);
     };
 
-    const handleDelete = (id) => {
-        if (window.confirm('¿Seguro que quieres eliminar este insumo?')) {
+    const handleDelete = async (id) => {
+        if (await showConfirmModal('�Seguro que quieres eliminar este insumo?', {
+            title: 'Eliminar insumo',
+            confirmButtonText: 'Si, eliminar',
+            cancelButtonText: 'Cancelar'
+        })) {
             onDelete({ id, name: 'Insumo' }); // Pasamos objeto mínimo compatible
         }
     };

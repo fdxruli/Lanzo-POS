@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { loadData, saveBulkSafe, STORES } from '../../services/database';
-import { showMessageModal } from '../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 // 1. IMPORTAR STORE PARA OBTENER CATEGORÍAS
 import { useProductStore } from '../../store/useProductStore';
 import Logger from '../../services/Logger';
@@ -80,7 +80,12 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
                                        `${conflicts.slice(0, 5).join(', ')}${conflicts.length > 5 ? ' y otros...' : ''}\n\n` +
                                        `¿Deseas sobrescribir los precios de todos modos? (El stock registrado recientemente no se perderá).`;
                 
-                if (!window.confirm(confirmMessage)) {
+                const confirmed = await showConfirmModal(confirmMessage, {
+                    title: 'Conflictos detectados',
+                    confirmButtonText: 'Si, sobrescribir',
+                    cancelButtonText: 'Cancelar'
+                });
+                if (!confirmed) {
                     return; // Aborta el guardado
                 }
             }

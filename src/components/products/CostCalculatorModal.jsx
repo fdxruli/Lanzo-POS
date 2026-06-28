@@ -1,6 +1,6 @@
 // src/components/products/CostCalculatorModal.jsx
 import React, { useState, useMemo } from 'react';
-import { roundCurrency} from '../../services/utils';
+import { roundCurrency, showMessageModal } from '../../services/utils';
 import './CostCalculatorModal.css'
 
 export default function CostCalculatorModal({ show, onClose, onAssignCost }) {
@@ -14,7 +14,7 @@ export default function CostCalculatorModal({ show, onClose, onAssignCost }) {
     const nCost = parseFloat(cost);
     const nQty = parseInt(quantity, 10);
     if (!name || isNaN(nCost) || nCost <= 0) {
-      alert('Por favor, ingresa un nombre y costo válidos.');
+      showMessageModal('Por favor, ingresa un nombre y costo válidos.', null, { type: 'warning' });
       return;
     }
     setIngredients([

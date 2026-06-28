@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadInventorySmart, processImport, downloadFile, generatePharmacyReport, downloadTemplate } from '../../services/dataTransfer';
-import { showMessageModal } from '../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import Logger from '../../services/Logger';
@@ -81,7 +81,15 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (!window.confirm('IMPORTANTE: Esta acción agregará nuevos productos o actualizará los existentes si coinciden los IDs. ¿Deseas continuar?')) {
+    const confirmed = await showConfirmModal(
+      'IMPORTANTE: Esta acción agregará nuevos productos o actualizará los existentes si coinciden los IDs. ¿Deseas continuar?',
+      {
+        title: 'Importar productos',
+        confirmButtonText: 'Si, importar',
+        cancelButtonText: 'Cancelar'
+      }
+    );
+    if (!confirmed) {
       e.target.value = '';
       return;
     }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 // --- CAMBIO: Usamos useProductStore en lugar de useDashboardStore ---
 import { useProductStore } from '../../store/useProductStore';
-import { roundCurrency } from '../../services/utils';
+import { roundCurrency, showMessageModal } from '../../services/utils';
 import './RecipeBuilderModal.css';
 
 export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSave, productName }) {
@@ -57,7 +57,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
 
   const handleAdd = () => {
     if (!selectedIngredientId || !quantity || parseFloat(quantity) <= 0) {
-      alert('Selecciona un ingrediente y una cantidad válida.');
+      showMessageModal('Selecciona un ingrediente y una cantidad válida.', null, { type: 'warning' });
       return;
     }
 
@@ -65,7 +65,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     if (!ingredient) return;
 
     if (recipeItems.some(item => item.ingredientId === selectedIngredientId)) {
-      alert('Este ingrediente ya está en la receta. Elimínalo para editarlo.');
+      showMessageModal('Este ingrediente ya está en la receta. Elimínalo para editarlo.', null, { type: 'warning' });
       return;
     }
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useProductCommon } from '../../../hooks/useProductCommon';
 import CommonProductFields from './CommonProductFields';
 import FarmaciaFields from '../fieldsets/FarmaciaFIelds';
-import { generateID } from '../../../services/utils';
+import { generateID, showConfirmModal, showMessageModal } from '../../../services/utils';
 import Logger from '../../../services/Logger';
 import { updateProduct } from '../../../services/db/productUpdates';
 
@@ -18,19 +18,19 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
     const validatePharmacyRules = () => {
         // Regla 1: Datos obligatorios para controlados
         if (prescriptionType !== 'otc' && !activeSubstance.trim()) {
-            alert('⚠️ Integridad de Datos:\n\nSi el medicamento es Antibiótico o Controlado, DEBES especificar la Sustancia Activa para los reportes de COFEPRIS/Salud.');
+            showMessageModal('⚠️ Integridad de Datos:\n\nSi el medicamento es Antibiótico o Controlado, DEBES especificar la Sustancia Activa para los reportes de COFEPRIS/Salud.', null, { type: 'warning' });
             return false;
         }
         
         // Regla 2: Precio mayor a 0 (vital en farmacia)
         if (parseFloat(common.price) <= 0) {
-            alert('❌ El precio de venta debe ser mayor a 0.');
+            showMessageModal('❌ El precio de venta debe ser mayor a 0.', null, { type: 'error' });
             return false;
         }
 
         // Regla 3: Validar Vida Útil
         if (common.expirationMode === 'SHELF_LIFE' && (!common.shelfLifeValue || common.shelfLifeValue <= 0)) {
-            alert('❌ Debes especificar un valor válido para la Vida Útil.');
+            showMessageModal('❌ Debes especificar un valor válido para la Vida Útil.', null, { type: 'error' });
             return false;
         }
         
@@ -85,7 +85,7 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
                     Logger.info('[Farmacia] Purga atómica completada:', result.batchOperation);
                 } catch (purgeError) {
                     Logger.error('Error durante la purga atómica de caducidades (Farmacia):', purgeError);
-                    alert('Error al cambiar modo de caducidad: No se pudieron purgar las fechas de los lotes. El producto no ha sido modificado.');
+                    showMessageModal('Error al cambiar modo de caducidad: No se pudieron purgar las fechas de los lotes. El producto no ha sido modificado.', null, { type: 'error' });
                     common.setIsSaving(false);
                     return; // Abortar guardado completo
                 }
@@ -94,7 +94,7 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
             await onSave(payload, productToEdit || { id: productId, isNew: true });
         } catch (error) {
             Logger.error(error);
-            alert("Error al guardar producto farmacéutico");
+            showMessageModal("Error al guardar producto farmacéutico", null, { type: 'error' });
         } finally {
             common.setIsSaving(false);
         }
@@ -124,11 +124,16 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
                     <select
                         className="form-input"
                         value={common.expirationMode}
-                        onChange={(e) => {
+                        onChange={async (e) => {
                             const newValue = e.target.value;
                             if ((common.expirationMode === 'STRICT' || common.expirationMode === 'SHELF_LIFE') && newValue === 'NONE') {
-                                const confirmPurge = window.confirm(
-                                    "⚠️ Existen lotes activos con fechas de caducidad. ¿Deseas purgar estas fechas o cancelar el cambio?"
+                                const confirmPurge = await showConfirmModal(
+                                    "⚠️ Existen lotes activos con fechas de caducidad. ¿Deseas purgar estas fechas o cancelar el cambio?",
+                                    {
+                                        title: 'Purgar caducidades',
+                                        confirmButtonText: 'Si, purgar',
+                                        cancelButtonText: 'Cancelar'
+                                    }
                                 );
                                 if (!confirmPurge) return;
                                 common.setPendingBatchPurge(true);

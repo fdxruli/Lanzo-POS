@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { queryBatchesByProductIdAndActive, saveBatchAndSyncProductSafe } from '../../../../services/database';
-import { generateID, showMessageModal } from '../../../../services/utils';
+import { generateID, showConfirmModal, showMessageModal } from '../../../../services/utils';
 import Logger from '../../../../services/Logger';
 import {
   buildBatchManagementConfig,
@@ -69,7 +69,7 @@ export function useRetailProductFormController({
     loadVariants();
   }, [common.cost, common.price, isApparel, productToEdit?.id]);
 
-  const validateRetailRules = useCallback(() => {
+  const validateRetailRules = useCallback(async () => {
     const price = Number.parseFloat(common.price) || 0;
     const cost = Number.parseFloat(common.cost) || 0;
 
@@ -80,21 +80,31 @@ export function useRetailProductFormController({
 
     if (cost > 0) {
       if (price < cost) {
-        const confirmLoss = window.confirm(
+        const confirmLoss = await showConfirmModal(
           `ALERTA CRITICA DE PRECIO!\n\n`
           + `Estas configurando el Precio ($${price}) MENOR al Costo ($${cost}).\n\n`
           + `Esto generara PERDIDAS en cada venta.\n`
-          + `Estas 100% seguro de continuar?`
+          + `Estas 100% seguro de continuar?`,
+          {
+            title: 'Precio menor al costo',
+            confirmButtonText: 'Si, continuar',
+            cancelButtonText: 'Revisar precio'
+          }
         );
         if (!confirmLoss) return false;
       }
 
       const margin = ((price - cost) / cost) * 100;
       if (margin < 10 && price >= cost) {
-        const confirmLowMargin = window.confirm(
+        const confirmLowMargin = await showConfirmModal(
           `Margen de Ganancia Bajo (${margin.toFixed(1)}%)\n\n`
           + `El estandar sugerido es al menos 15-20%.\n`
-          + `Deseas guardar de todos modos?`
+          + `Deseas guardar de todos modos?`,
+          {
+            title: 'Margen bajo',
+            confirmButtonText: 'Si, guardar',
+            cancelButtonText: 'Revisar margen'
+          }
         );
         if (!confirmLowMargin) return false;
       }
@@ -103,10 +113,15 @@ export function useRetailProductFormController({
     if (features.hasWholesale && wholesaleTiers.length > 0 && cost > 0) {
       const badTier = wholesaleTiers.find((tier) => Number.parseFloat(tier.price) < cost);
       if (badTier) {
-        const confirmWholesaleLoss = window.confirm(
+        const confirmWholesaleLoss = await showConfirmModal(
           `Error en Mayoreo\n\n`
           + `El precio de mayoreo ($${badTier.price}) para ${badTier.min} pzas es MENOR al costo ($${cost}).\n`
-          + `Realmente quieres perder dinero en ventas mayoristas?`
+          + `Realmente quieres perder dinero en ventas mayoristas?`,
+          {
+            title: 'Mayoreo bajo costo',
+            confirmButtonText: 'Si, continuar',
+            cancelButtonText: 'Revisar mayoreo'
+          }
         );
         if (!confirmWholesaleLoss) return false;
       }
@@ -142,8 +157,13 @@ export function useRetailProductFormController({
         ));
 
         if (badVariant) {
-          const confirmed = window.confirm(
-            `La variante (${badVariant.color} ${badVariant.talla}) tiene precio menor al costo. Continuar?`
+          const confirmed = await showConfirmModal(
+            `La variante (${badVariant.color} ${badVariant.talla}) tiene precio menor al costo. Continuar?`,
+            {
+              title: 'Variante bajo costo',
+              confirmButtonText: 'Si, continuar',
+              cancelButtonText: 'Revisar variante'
+            }
           );
           if (!confirmed) return false;
         }
@@ -193,7 +213,7 @@ export function useRetailProductFormController({
 
   const handleSubmit = useCallback(async (event) => {
     event.preventDefault();
-    if (!validateRetailRules()) return;
+    if (!(await validateRetailRules())) return;
     if (common.isSaving) return;
 
     common.setIsSaving(true);

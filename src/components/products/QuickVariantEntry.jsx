@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { showConfirmModal } from '../../services/utils';
 import './QuickVariantEntry.css';
 
 export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChange, initialData = [] }) {
@@ -132,8 +133,13 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
     updateRow(id, 'sku', sku);
   };
 
-  const syncColumn = (field, value) => {
-    if (!window.confirm(`¿Aplicar $${value} a todas las variantes?`)) return;
+  const syncColumn = async (field, value) => {
+    const confirmed = await showConfirmModal(`¿Aplicar $${value} a todas las variantes?`, {
+      title: 'Aplicar a variantes',
+      confirmButtonText: 'Si, aplicar',
+      cancelButtonText: 'Cancelar'
+    });
+    if (!confirmed) return;
     setRows(prev => prev.map(r => ({ ...r, [field]: value })));
   };
 

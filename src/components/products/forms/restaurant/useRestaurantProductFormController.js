@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { generateID, roundCurrency, showMessageModal } from '../../../../services/utils';
+import { generateID, roundCurrency, showConfirmModal, showMessageModal } from '../../../../services/utils';
 import Logger from '../../../../services/Logger';
 import {
   buildRestaurantPayload,
@@ -56,8 +56,13 @@ export function useRestaurantProductFormController({
     const currentCost = Number.parseFloat(common.cost) || 0;
 
     if (productType === 'sellable' && currentPrice < currentCost) {
-      const confirmLoss = window.confirm(
-        `ALERTA DE PERDIDA!\n\nEl precio de venta ($${currentPrice}) es MENOR al costo de la receta ($${currentCost}).\n\nEstas seguro que deseas guardar con perdidas?`
+      const confirmLoss = await showConfirmModal(
+        `ALERTA DE PERDIDA!\n\nEl precio de venta ($${currentPrice}) es MENOR al costo de la receta ($${currentCost}).\n\nEstas seguro que deseas guardar con perdidas?`,
+        {
+          title: 'Precio menor al costo',
+          confirmButtonText: 'Si, guardar',
+          cancelButtonText: 'Revisar precio'
+        }
       );
       if (!confirmLoss) return;
     }

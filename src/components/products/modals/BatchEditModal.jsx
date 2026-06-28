@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { productRepository } from '../../../services/products/productRepository';
 import Logger from '../../../services/Logger';
+import { showConfirmModal } from '../../../services/utils';
 
 export default function BatchEditModal({ batchData, onClose, onSave, features }) {
     // Inicializamos el estado
@@ -62,10 +63,15 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
         }
 
         if (newPrice < newCost) {
-            const confirmLoss = window.confirm(
+            const confirmLoss = await showConfirmModal(
                 `⚠️ ALERTA DE PÉRDIDA\n\n` +
                 `Estás configurando el Precio ($${newPrice}) MENOR al Costo ($${newCost}).\n` +
-                `¿Deseas guardar de todos modos?`
+                `¿Deseas guardar de todos modos?`,
+                {
+                    title: 'Precio menor al costo',
+                    confirmButtonText: 'Si, guardar',
+                    cancelButtonText: 'Revisar precio'
+                }
             );
             if (!confirmLoss) return;
         }

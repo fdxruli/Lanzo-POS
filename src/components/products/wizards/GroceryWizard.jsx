@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import ScannerModal from '../../scanner/ScannerModal';
 import '../ProductWizard.css'; // Asegúrate de que este CSS exista o usa estilos en línea como fallback
-import { showMessageModal } from '../../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../../services/utils';
 
 export default function GroceryWizard({ onSave, onCancel, categories, mainRubro }) {
     // 1. OBTENER CONFIGURACIÓN DEL RUBRO ACTUAL
@@ -78,7 +78,7 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
     };
 
     // --- VALIDACIÓN ESTRICTA (HARDENING) ---
-    const validateStep = (currentStep) => {
+    const validateStep = async (currentStep) => {
         // PASO 1: Validación básica (usualmente el código de barras es opcional, pero si lo ponen, ok)
         if (currentStep === 1) {
             // Si quieres obligar a tener código, descomenta esto:
@@ -107,11 +107,16 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
             // Regla 2: Vender bajo costo
             if (cost > 0 && price < cost) {
                 // Confirmación nativa bloqueante y agresiva para evitar clicks accidentales
-                const confirmLoss = window.confirm(
+                const confirmLoss = await showConfirmModal(
                     `🛑 ALERTA DE SEGURIDAD FINANCIERA 🛑\n\n` +
                     `Estás configurando un precio de venta ($${price}) MENOR al costo de compra ($${cost}).\n` +
                     `Esto generará PÉRDIDAS directas en cada venta.\n\n` +
-                    `¿Estás absolutamente seguro de proceder con esta configuración?`
+                    `¿Estás absolutamente seguro de proceder con esta configuración?`,
+                    {
+                        title: 'Precio menor al costo',
+                        confirmButtonText: 'Si, proceder',
+                        cancelButtonText: 'Revisar precio'
+                    }
                 );
                 if (!confirmLoss) return false;
             }
@@ -440,8 +445,8 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                 )}
 
                 {step < 4 ? (
-                    <button className="btn btn-primary bg-blue-600 hover:bg-blue-700" onClick={() => {
-                        if (validateStep(step)) setStep(step + 1);
+                    <button className="btn btn-primary bg-blue-600 hover:bg-blue-700" onClick={async () => {
+                        if (await validateStep(step)) setStep(step + 1);
                     }}>
                         Siguiente <ChevronRight size={16} />
                     </button>

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import RestauranteFields from '../fieldsets/RestauranteFields';
 import '../ProductWizard.css';
-import { showMessageModal } from '../../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../../services/utils';
 
 export default function RestaurantWizard({ onSave, onCancel, categories }) {
     // Inicializamos lógica de producto con valores seguros
@@ -39,7 +39,7 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
     }, [data.categoryId, categories]);
 
     // --- VALIDACIONES ROBUSTAS ---
-    const validateStep = (currentStep) => {
+    const validateStep = async (currentStep) => {
         // Validación Paso 2: Datos Básicos
         if (currentStep === 2) {
             if (!data.name || data.name.trim().length < 2) { 
@@ -59,10 +59,15 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
 
                 // Hardening: Prevención de Pérdidas
                 if (cost > 0 && price < cost) {
-                    const confirmLoss = window.confirm(
+                    const confirmLoss = await showConfirmModal(
                         `⚠️ ALERTA DE PÉRDIDA\n\n` +
                         `El precio de venta ($${price}) es MENOR al costo ($${cost}).\n` +
-                        `¿Realmente deseas registrar este producto con pérdidas?`
+                        `¿Realmente deseas registrar este producto con pérdidas?`,
+                        {
+                            title: 'Precio menor al costo',
+                            confirmButtonText: 'Si, continuar',
+                            cancelButtonText: 'Revisar precio'
+                        }
                     );
                     if (!confirmLoss) return false;
                 }
@@ -400,8 +405,8 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
                 )}
 
                 {step < 4 ? (
-                    <button className="btn btn-primary bg-orange-600 hover:bg-orange-700" onClick={() => {
-                        if (validateStep(step)) setStep(step + 1);
+                    <button className="btn btn-primary bg-orange-600 hover:bg-orange-700" onClick={async () => {
+                        if (await validateStep(step)) setStep(step + 1);
                     }}>
                         Siguiente <ChevronRight size={16} />
                     </button>

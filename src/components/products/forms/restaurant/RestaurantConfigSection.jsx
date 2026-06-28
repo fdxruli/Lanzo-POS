@@ -1,5 +1,6 @@
 import React from 'react';
 import RestauranteFields from '../../fieldsets/RestauranteFields';
+import { showConfirmModal } from '../../../../services/utils';
 
 export default function RestaurantConfigSection({
   common,
@@ -58,11 +59,16 @@ export default function RestaurantConfigSection({
           <select
             className="form-input"
             value={common.expirationMode}
-            onChange={(e) => {
+            onChange={async (e) => {
               const newValue = e.target.value;
               if ((common.expirationMode === 'STRICT' || common.expirationMode === 'SHELF_LIFE') && newValue === 'NONE') {
-                const confirmPurge = window.confirm(
-                  "⚠️ Existen lotes activos con fechas de caducidad. ¿Deseas purgar estas fechas o cancelar el cambio?"
+                const confirmPurge = await showConfirmModal(
+                  "⚠️ Existen lotes activos con fechas de caducidad. ¿Deseas purgar estas fechas o cancelar el cambio?",
+                  {
+                    title: 'Purgar caducidades',
+                    confirmButtonText: 'Si, purgar',
+                    cancelButtonText: 'Cancelar'
+                  }
                 );
                 if (!confirmPurge) return;
                 common.setPendingBatchPurge(true);
@@ -106,4 +112,3 @@ export default function RestaurantConfigSection({
     </div>
   );
 }
-

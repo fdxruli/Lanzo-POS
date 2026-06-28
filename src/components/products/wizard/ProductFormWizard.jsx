@@ -1,6 +1,7 @@
 import Step1Basicos from './Step1Basicos';
 import Step2Inventario from './Step2Inventario';
 import Step3PrecioDetalles from './Step3PrecioDetalles';
+import { showMessageModal } from '../../../services/utils';
 
 export default function ProductFormWizard({
     wizard,
@@ -76,7 +77,7 @@ export default function ProductFormWizard({
             await onSave(payload, productToEdit || { id: productId, isNew: true });
         } catch (error) {
             console.error('Error al guardar producto:', error);
-            alert('Error al guardar el producto. Por favor intenta de nuevo.');
+            showMessageModal('Error al guardar el producto. Por favor intenta de nuevo.', null, { type: 'error' });
         } finally {
             setIsSaving?.(false);
         }

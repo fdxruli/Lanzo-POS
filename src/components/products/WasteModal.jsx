@@ -1,7 +1,7 @@
 // src/components/products/WasteModal.jsx
 import React, { useState } from 'react';
 import { saveDataSafe, STORES, updateProductSafe } from '../../services/database';
-import { generateID, showMessageModal, roundCurrency } from '../../services/utils';
+import { generateID, showConfirmModal, showMessageModal, roundCurrency } from '../../services/utils';
 // --- CAMBIO: Usamos el store correcto (Estadísticas) ---
 import { useStatsStore } from '../../store/useStatsStore';
 import { useProductStore } from '../../store/useProductStore';
@@ -47,7 +47,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
         const qty = parseFloat(quantity);
 
         if (!qty || qty <= 0) {
-            alert("Ingresa una cantidad válida.");
+            showMessageModal("Ingresa una cantidad válida.", null, { type: 'warning' });
             return;
         }
 
@@ -59,7 +59,15 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
         if (product.productType === 'sellable' && product.recipe && product.recipe.length > 0) {
 
             // Confirmación extra porque esto afectará varios productos
-            if (!window.confirm(`Al mermar este platillo se descontarán sus ingredientes del inventario.\n¿Confirmar merma de ${qty} ${product.name}?`)) {
+            const confirmed = await showConfirmModal(
+                `Al mermar este platillo se descontarán sus ingredientes del inventario.\n¿Confirmar merma de ${qty} ${product.name}?`,
+                {
+                    title: 'Confirmar merma',
+                    confirmButtonText: 'Si, registrar merma',
+                    cancelButtonText: 'Cancelar'
+                }
+            );
+            if (!confirmed) {
                 return;
             }
 
@@ -92,7 +100,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
                     updateProductSafe(ing.id, { stock: ing.stock })
                 ));
             } catch (error) {
-                alert("Error al descontar ingredientes: " + error.message);
+                showMessageModal("Error al descontar ingredientes: " + error.message, null, { type: 'error' });
                 return;
             }
 
@@ -100,7 +108,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
         // CASO B: Es un Insumo o Producto Directo (Descuento Simple)
         else {
             if (qty > product.stock) {
-                alert("No puedes mermar más de lo que tienes en stock.");
+                showMessageModal("No puedes mermar más de lo que tienes en stock.", null, { type: 'warning' });
                 return;
             }
 
@@ -108,7 +116,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
 
             const prodResult = await updateProductSafe(product.id, { stock: newStock });
             if (!prodResult.success) {
-                alert(`Error al actualizar stock: ${prodResult.error?.message}`);
+                showMessageModal(`Error al actualizar stock: ${prodResult.error?.message}`, null, { type: 'error' });
                 return;
             }
 
@@ -133,7 +141,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
         const wasteResult = await saveDataSafe(STORES.WASTE, wasteRecord);
 
         if (!wasteResult.success) {
-            alert(`Advertencia: Inventario actualizado pero falló el registro de historial.`);
+            showMessageModal(`Advertencia: Inventario actualizado pero falló el registro de historial.`, null, { type: 'warning' });
         } else {
             await registerWasteRecord(wasteRecord);
         }
