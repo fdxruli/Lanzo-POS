@@ -3,10 +3,11 @@ import { useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { splitOpenTableOrder } from '../../services/salesService';
 import Logger from '../../services/Logger';
-import { showMessageModal } from '../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
+import { showInputPromptModal } from '../../components/common/InputPromptModal';
 
 const EMPTY_ORDER = [];
 
@@ -50,9 +51,17 @@ export function useTableManagement({
         const isUpdating = Boolean(currentOrderState?.isSaved);
 
         if (!currentTableData || currentTableData.trim() === '') {
-            const promptedName = window.prompt('Ingresa un identificador para la mesa:');
-            if (!promptedName || promptedName.trim() === '') return;
-            useActiveOrders.getState().updateCurrentOrder({ tableData: promptedName.trim() });
+            const promptedName = await showInputPromptModal({
+                title: 'Identificador de mesa',
+                message: 'Ingresa un nombre o número para reconocer esta mesa.',
+                placeholder: 'Ej. Mesa 1, Terraza, Cliente Juan',
+                confirmButtonText: 'Guardar mesa',
+                cancelButtonText: 'Cancelar',
+                required: true
+            });
+
+            if (!promptedName) return;
+            useActiveOrders.getState().updateCurrentOrder({ tableData: promptedName });
         }
 
         const result = await saveOrderAsOpen();
@@ -166,7 +175,13 @@ export function useTableManagement({
             };
         }
 
-        const ok = window.confirm('¿Anular esta venta en el sistema?');
+        const ok = await showConfirmModal('¿Anular esta venta en el sistema?', {
+            title: 'Anular venta',
+            type: 'warning',
+            confirmButtonText: 'Sí, anular',
+            cancelButtonText: 'Cancelar'
+        });
+
         if (!ok) return { success: false, cancelled: true };
 
         try {
