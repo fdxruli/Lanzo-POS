@@ -6,7 +6,8 @@ import {
   buildBaseRpcContextFromArgs,
   buildRpcRequestKey,
   cloudRequestManager,
-  cloudRequestTags
+  cloudRequestTags,
+  invalidateCloudCacheAfterSaleMutation
 } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import {
@@ -63,6 +64,13 @@ const buildCloudCreditArgs = ({ baseArgs, sale, items, payments, cashSessionId, 
   ...buildCloudCashierArgs({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }),
   p_customer_id: customerId || sale?.customer_id || sale?.customerId || null
 });
+
+const invalidateAfterSaleSuccess = (licenseKey, response) => {
+  if (response?.success !== false) {
+    invalidateCloudCacheAfterSaleMutation(licenseKey);
+  }
+  return response;
+};
 
 const cachedSalesRpc = ({
   rpcName,
@@ -121,7 +129,7 @@ export const salesCloudRepository = {
     });
 
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async createCloudCashierSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null }) {
@@ -129,7 +137,7 @@ export const salesCloudRepository = {
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_cashier', buildCloudCashierArgs({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }));
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async createCloudCashierInventorySale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null }) {
@@ -137,7 +145,7 @@ export const salesCloudRepository = {
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_cashier_inventory', buildCloudCashierArgs({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }));
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async createCloudCreditSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, customerId = null, idempotencyKey = null }) {
@@ -145,7 +153,7 @@ export const salesCloudRepository = {
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_credit', buildCloudCreditArgs({ baseArgs, sale, items, payments, cashSessionId, customerId, idempotencyKey }));
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async previewCloudSaleCancellation({ licenseKey, saleId, reason = null }) {
@@ -170,7 +178,7 @@ export const salesCloudRepository = {
       p_idempotency_key: idempotencyKey || null
     });
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async validateCloudSaleIntegrity({ licenseKey, saleId }) {
