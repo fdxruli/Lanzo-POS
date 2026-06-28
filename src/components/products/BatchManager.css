@@ -7,6 +7,12 @@
   box-shadow: var(--box-shadow);
 }
 
+.batch-manager-empty {
+  margin-top: 20px;
+  color: var(--text-light);
+  text-align: center;
+}
+
 .batch-details-container {
   margin-top: var(--spacing-lg);
   padding-top: var(--spacing-lg);
@@ -239,7 +245,7 @@
   gap: 8px;
 }
 
-.btn-action {
+.batch-manager-container .btn-action {
   background: var(--light-background);
   border: 1px solid transparent;
   color: var(--text-light);
@@ -252,18 +258,18 @@
   transition: all 0.2s ease;
 }
 
-.btn-action:hover {
+.batch-manager-container .btn-action:hover {
   background: var(--card-background-color);
   border-color: var(--border-color, rgba(0,0,0,0.1));
   transform: translateY(-2px);
   box-shadow: 0 4px 6px rgba(0,0,0,0.05);
 }
 
-.btn-action.edit:hover {
+.batch-manager-container .btn-action.edit:hover {
   color: var(--primary-color);
 }
 
-.btn-action.archive:hover {
+.batch-manager-container .btn-action.archive:hover {
   color: var(--error-color, #ef4444);
 }
 

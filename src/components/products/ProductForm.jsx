@@ -93,58 +93,25 @@ export default function ProductForm(props) {
 
     return (
         <div className="product-form-container">
-            <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                marginBottom: '20px' 
-            }}>
-                <h3 className="subtitle" style={{ margin: 0 }}>
+            <div className="product-form-header">
+                <h3 className="subtitle product-form-title">
                     {props.productToEdit ? `Editar: ${props.productToEdit.name}` : 'Añadir Nuevo Producto'}
                 </h3>
                 
                 {/* Toggle Modo Asistido/Experto (solo para productos nuevos) */}
                 {!props.productToEdit && (
-                    <div style={{
-                        display: 'flex',
-                        backgroundColor: '#f1f5f9',
-                        borderRadius: '8px',
-                        padding: '4px',
-                        gap: '4px'
-                    }}>
+                    <div className="product-form-mode-toggle">
                         <button
                             type="button"
                             onClick={() => setIsExpertMode(false)}
-                            style={{
-                                padding: '8px 16px',
-                                borderRadius: '6px',
-                                border: 'none',
-                                backgroundColor: !isExpertMode ? 'white' : 'transparent',
-                                color: !isExpertMode ? 'var(--primary-color)' : '#64748b',
-                                fontWeight: !isExpertMode ? '600' : '400',
-                                fontSize: '0.9rem',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                boxShadow: !isExpertMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-                            }}
+                            className={`product-form-mode-button ${!isExpertMode ? 'is-active' : ''}`}
                         >
                             ✨ Asistido
                         </button>
                         <button
                             type="button"
                             onClick={() => setIsExpertMode(true)}
-                            style={{
-                                padding: '8px 16px',
-                                borderRadius: '6px',
-                                border: 'none',
-                                backgroundColor: isExpertMode ? 'white' : 'transparent',
-                                color: isExpertMode ? 'var(--primary-color)' : '#64748b',
-                                fontWeight: isExpertMode ? '600' : '400',
-                                fontSize: '0.9rem',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                boxShadow: isExpertMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-                            }}
+                            className={`product-form-mode-button ${isExpertMode ? 'is-active' : ''}`}
                         >
                             🛠️ Experto
                         </button>
@@ -175,26 +142,17 @@ export default function ProductForm(props) {
 
             {/* SELECTOR DE CONTEXTO (Solo si hay múltiples rubros y es producto nuevo) */}
             {showRubroSelector && (
-                <div className="context-selector" style={{ marginBottom: '20px', padding: '12px', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
-                    <label style={{ display: 'block', fontSize: '0.85rem', color: '#0369a1', marginBottom: '8px', fontWeight: 'bold' }}>
+                <div className="context-selector">
+                    <label className="context-selector-label">
                         ¿A qué área pertenece este producto?
                     </label>
-                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <div className="context-selector-options">
                         {globalBusinessTypes.map(rubro => (
                             <button
                                 key={rubro}
                                 type="button"
                                 onClick={() => setActiveRubroContext(rubro)}
-                                style={{
-                                    padding: '6px 14px',
-                                    borderRadius: '20px',
-                                    border: activeRubroContext === rubro ? '2px solid #0284c7' : '1px solid #cbd5e1',
-                                    backgroundColor: activeRubroContext === rubro ? 'white' : '#f1f5f9',
-                                    color: activeRubroContext === rubro ? '#0284c7' : '#64748b',
-                                    fontWeight: activeRubroContext === rubro ? 'bold' : 'normal',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
-                                }}
+                                className={`context-selector-button ${activeRubroContext === rubro ? 'is-active' : ''}`}
                             >
                                 {RUBRO_LABELS[rubro] || rubro}
                             </button>

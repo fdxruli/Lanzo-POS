@@ -9,6 +9,113 @@
   box-shadow: var(--box-shadow);
 }
 
+.product-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.product-form-title {
+  margin: 0;
+}
+
+.product-form-mode-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--light-background);
+  border-radius: 8px;
+}
+
+.product-form-mode-button {
+  padding: 8px 16px;
+  color: var(--text-light);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 400;
+  transition: all 0.2s;
+}
+
+.product-form-mode-button.is-active {
+  color: var(--primary-color);
+  background: var(--card-background-color);
+  box-shadow: var(--ui-shadow-sm);
+  font-weight: 600;
+}
+
+.product-form-mode-note,
+.context-selector {
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  border: 1px solid var(--ui-border-info);
+  border-radius: 8px;
+  background: var(--ui-bg-info-soft);
+}
+
+.product-form-mode-note.is-expert {
+  border-color: var(--border-color);
+  background: var(--light-background);
+}
+
+.product-form-mode-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.product-form-mode-icon {
+  font-size: 1.2rem;
+}
+
+.product-form-mode-copy {
+  margin: 0;
+  color: var(--ui-text-info);
+  font-size: 0.85rem;
+}
+
+.product-form-mode-note.is-expert .product-form-mode-copy {
+  color: var(--text-color);
+}
+
+.context-selector {
+  padding: 12px;
+}
+
+.context-selector-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ui-text-info);
+  font-size: 0.85rem;
+  font-weight: bold;
+}
+
+.context-selector-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.context-selector-button {
+  padding: 6px 14px;
+  color: var(--text-light);
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.context-selector-button.is-active {
+  color: var(--ui-text-info);
+  background: var(--card-background-color);
+  border: 2px solid var(--ui-text-info);
+  font-weight: bold;
+}
+
 .form-group {
   margin-bottom: var(--spacing-md);
 }
@@ -27,16 +134,16 @@
 }
 
 /* Botón de ayuda (ej. Calcular Costo, Administrar Categorías) */
-.btn-help {
+.product-form-container .btn-help {
   background-color: var(--light-background);
   color: var(--primary-color);
-  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  border: 1px solid var(--border-color);
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: 0.875rem;
   margin-top: var(--spacing-xs);
 }
 
-.btn-help:hover {
+.product-form-container .btn-help:hover {
   background-color: rgba(99, 102, 241, 0.1);
 }
 
@@ -52,7 +159,7 @@
   height: 100px;
   border-radius: var(--border-radius-sm);
   object-fit: cover;
-  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  border: 1px solid var(--border-color);
 }
 
 .file-input {
@@ -61,25 +168,25 @@
 }
 
 /* Botones de Guardar y Cancelar */
-.btn-save {
+.product-form-container .btn-save {
   background-color: var(--primary-color);
   color: white;
   width: 100%;
   margin-bottom: var(--spacing-sm);
 }
 
-.btn-save:hover {
-  background-color: #5558e3; /* TODO: Usar variable */
+.product-form-container .btn-save:hover {
+  background-color: var(--primary-hover);
 }
 
-.btn-cancel {
+.product-form-container .btn-cancel {
   background-color: transparent;
   color: var(--text-light);
-  border: 1px solid #e5e7eb; /* TODO: Usar variable */
+  border: 1px solid var(--border-color);
   width: 100%;
 }
 
-.btn-cancel:hover {
+.product-form-container .btn-cancel:hover {
   background-color: rgba(239, 68, 68, 0.1);
   color: var(--error-color);
   border-color: var(--error-color);
@@ -158,7 +265,7 @@
   /* Separador visual */
   margin-top: var(--spacing-lg);
   padding-top: var(--spacing-lg);
-  border-top: 2px dashed #e5e7eb; /* TODO: Usar variable */
+  border-top: 2px dashed var(--border-color);
 }
 
 @keyframes fadeIn {
@@ -175,14 +282,14 @@
 /* Añadir al final de src/components/products/ProductForm.css */
 
 /* Estilo para el botón secundario (Gestionar Lotes/Variantes) */
-.btn-secondary {
+.product-form-container .btn-secondary {
   background-color: var(--secondary-color);
   color: white;
   width: 100%;
   margin-bottom: var(--spacing-sm);
 }
 
-.btn-secondary:hover {
+.product-form-container .btn-secondary:hover {
   opacity: 0.9;
 }
 

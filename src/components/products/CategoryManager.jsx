@@ -37,7 +37,7 @@ export default function CategoryManager({ categories, onSave, onRefresh, onDelet
               style={{ borderLeftColor: cat.color || 'var(--primary-color)' }}
             >
               <span className="category-name">
-                {cat.name} <small style={{ opacity: 0.7, fontSize: '0.85em', marginLeft: '4px' }}>(Ord: {cat.sortOrder})</small>
+                {cat.name} <small className="category-sort-order">(Ord: {cat.sortOrder})</small>
               </span>
               
               <div className="category-actions">

@@ -55,7 +55,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
       </div>
 
       {!selectedProduct && !controller.isLoadingBatches && (
-        <p style={{ textAlign: 'center', color: '#888', marginTop: '20px' }}>
+        <p className="ui-empty-state batch-manager-empty">
           Selecciona un producto para comenzar.
         </p>
       )}

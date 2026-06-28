@@ -235,3 +235,9 @@
 [data-theme="dark"] .category-card-item {
   background-color: #1f2937;
 }
+
+.category-sort-order {
+  margin-left: 4px;
+  opacity: 0.7;
+  font-size: 0.85em;
+}
