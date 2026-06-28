@@ -4,16 +4,16 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: var(--background-color);
+  background: var(--ui-bg-page);
 }
 
 .staff-login-panel {
   width: min(100%, 430px);
   padding: 24px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--card-background-color);
-  box-shadow: var(--box-shadow-lg);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-surface);
+  box-shadow: var(--ui-shadow-lg);
 }
 
 .staff-login-brand {
@@ -26,11 +26,12 @@
 .staff-login-brand h1 {
   margin-bottom: 4px;
   font-size: 1.45rem;
+  color: var(--ui-text-strong);
 }
 
 .staff-login-brand p,
 .staff-login-footer span {
-  color: var(--text-light);
+  color: var(--ui-text-muted);
   font-size: 0.92rem;
 }
 
@@ -40,10 +41,10 @@
   justify-content: center;
   width: 48px;
   height: 48px;
-  border-radius: 8px;
-  color: #075985;
-  background: #e0f2fe;
-  border: 1px solid #bae6fd;
+  border-radius: var(--ui-radius-md);
+  color: var(--ui-color-secondary);
+  background: var(--ui-bg-muted);
+  border: 1px solid var(--ui-border-color);
   flex-shrink: 0;
 }
 
@@ -56,36 +57,15 @@
 .staff-login-alert,
 .staff-login-note,
 .staff-login-error {
-  display: flex;
   align-items: center;
-  gap: 8px;
   margin-bottom: 16px;
-  padding: 10px 12px;
-  border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
 }
 
-.staff-login-alert,
-.staff-login-error {
-  color: #b91c1c;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-}
-
-.staff-login-note {
-  color: #075985;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-}
-
 .staff-login-warning {
+  display: block;
   margin-bottom: 16px;
-  padding: 12px;
-  border: 1px solid #facc15;
-  border-radius: 8px;
-  color: #854d0e;
-  background: #fefce8;
 }
 
 .staff-login-warning-header {
@@ -100,6 +80,7 @@
 .staff-login-warning-header svg {
   flex-shrink: 0;
   margin-top: 1px;
+  color: var(--ui-color-warning);
 }
 
 .staff-login-warning-device {
@@ -108,10 +89,12 @@
   gap: 4px;
   margin-top: 10px;
   font-size: 0.9rem;
+  color: var(--ui-text);
 }
 
 .staff-login-warning p {
   margin: 10px 0 0;
+  color: var(--ui-text-muted);
   font-size: 0.88rem;
   line-height: 1.4;
 }
@@ -128,10 +111,10 @@
   gap: 12px;
   margin-top: 18px;
   padding-top: 16px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--ui-border-color);
 }
 
-.staff-login-footer .btn {
+.staff-login-footer .ui-button {
   width: auto;
   white-space: nowrap;
 }
@@ -146,7 +129,7 @@
     flex-direction: column;
   }
 
-  .staff-login-footer .btn {
+  .staff-login-footer .ui-button {
     width: 100%;
   }
 }
