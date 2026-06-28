@@ -8,6 +8,7 @@ import { maintenanceTools } from '../../services/db';
 import { BarChart2, Package, Archive, Database, Download } from 'lucide-react';
 import { evaluator } from '../../services/BackupRiskEvaluator';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
+import { showInputPromptModal } from '../common/InputPromptModal';
 
 const DEFAULT_REBUILD_DAYS = 30;
 
@@ -77,13 +78,18 @@ export default function MaintenanceSettings() {
   };
 
   const handleRebuildStats = async () => {
-    const confirmation = window.prompt(
-      [
+    const confirmation = await showInputPromptModal({
+      title: 'Reconstruir reportes',
+      message: [
         `Esto reconstruirá los reportes de los últimos ${DEFAULT_REBUILD_DAYS} días basándose ÚNICAMENTE en lo que quedó guardado en cada ticket histórico.`,
         'NO actualiza a costos de hoy.',
         'Escribe CONFIRMAR para ejecutar.'
-      ].join('\n\n')
-    );
+      ].join('\n\n'),
+      placeholder: 'CONFIRMAR',
+      confirmButtonText: 'Reconstruir',
+      cancelButtonText: 'Cancelar',
+      required: true
+    });
 
     if (confirmation === null) return;
 
