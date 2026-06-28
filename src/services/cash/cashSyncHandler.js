@@ -5,6 +5,7 @@ import { syncMetaService } from '../sync/syncMetaService';
 import {
   getLicenseKeyFromDetails,
   isCloudCashSyncEnabled,
+  shouldDeferPosBootstrapStartHook,
   SYNC_ENTITY_TYPES,
   SYNC_LIMITS
 } from '../sync/syncConstants';
@@ -38,10 +39,15 @@ const applyCashPayload = async (response = {}) => {
 };
 
 export const cashSyncHandler = {
-  async onStart({ licenseDetails, licenseKey } = {}) {
+  async onStart({ licenseDetails, licenseKey, reason = 'manual', force = false } = {}) {
     const resolvedLicenseKey = licenseKey || getLicenseKeyFromDetails(licenseDetails);
     if (!resolvedLicenseKey || !isBrowserOnline() || !isCloudCashSyncEnabled(licenseDetails)) {
       return { skipped: true };
+    }
+
+    if (shouldDeferPosBootstrapStartHook(reason, { force })) {
+      Logger.log('[Cash/Sync] Snapshot inicial diferido por bootstrap inteligente.');
+      return { skipped: true, deferred: true, reason: 'bootstrap_deferred_snapshot' };
     }
 
     try {
@@ -51,7 +57,8 @@ export const cashSyncHandler = {
         licenseKey: resolvedLicenseKey,
         scope,
         limit: 100,
-        includeClosed: true
+        includeClosed: true,
+        force
       });
 
       if (response?.success === false) {
