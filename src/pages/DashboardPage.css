@@ -69,10 +69,10 @@
 
 /* Estilo base de tarjeta (hereda variables del sistema) */
 .dashboard-panel {
-  background: var(--card-background-color, #ffffff);
-  border-radius: 12px;
+  background: var(--ui-bg-surface);
+  border-radius: var(--ui-radius-md);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--ui-border-color);
   
   /* Flexbox vertical para que el contenido ocupe todo el alto disponible */
   display: flex;
@@ -92,8 +92,8 @@
 .panel-header {
   flex: 0 0 auto; /* No encoger ni estirar */
   padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--border-color, #eff0f2);
-  background-color: #f9fafb;
+  border-bottom: 1px solid var(--ui-border-color);
+  background-color: var(--ui-bg-muted);
 }
 
 .panel-header h3 {
@@ -127,7 +127,7 @@
 
 /* Panel Historial (Azul / Seguro) */
 .history-panel {
-  border-top: 4px solid #3B82F6; /* Azul informativo */
+  border-top: 4px solid var(--ui-color-info);
 }
 
 /* Panel Papelera (Rojo / Peligro) */
@@ -145,10 +145,10 @@
    ====================================================== */
 
 .data-warning-banner {
-  background-color: #FFF7ED; /* Fondo naranja muy claro */
-  border: 1px solid #FDBA74; /* Borde naranja suave */
-  border-left: 5px solid #F97316; /* Borde de acento izquierdo */
-  color: #9A3412; /* Texto naranja oscuro */
+  background-color: var(--ui-bg-warning-soft);
+  border: 1px solid var(--ui-border-warning);
+  border-left: 5px solid var(--ui-color-warning);
+  color: var(--ui-text-warning);
   
   padding: var(--spacing-md);
   border-radius: var(--border-radius-sm);
@@ -169,11 +169,11 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0; /* Evita que el SVG se aplaste si el texto es muy largo */
-  color: #C2410C; /* Asegura que el SVG tome el color naranja oscuro del tema */
+  color: var(--ui-text-warning);
 }
 
 .data-warning-banner strong {
-  color: #C2410C;
+  color: var(--ui-text-warning);
   font-weight: 700;
   display: block;
   margin-bottom: 4px;
@@ -184,7 +184,7 @@
   background: none;
   border: none;
   text-decoration: underline;
-  color: #C2410C;
+  color: var(--ui-text-warning);
   font-weight: 700;
   cursor: pointer;
   padding: 0;
@@ -208,15 +208,15 @@
 
 /* --- Adaptación a MODO OSCURO del Banner --- */
 [data-theme="dark"] .data-warning-banner {
-  background-color: #431407; /* Fondo café oscuro */
-  border-color: #7C2D12;
-  border-left-color: #EA580C;
-  color: #FDBA74; /* Texto naranja claro */
+  background-color: var(--ui-bg-warning-soft);
+  border-color: var(--ui-border-warning);
+  border-left-color: var(--ui-color-warning);
+  color: var(--ui-text-warning-on-dark);
 }
 
 [data-theme="dark"] .data-warning-banner strong,
 [data-theme="dark"] .link-button {
-  color: #FFEDD5;
+  color: var(--ui-text-warning-on-dark);
 }
 
 [data-theme="dark"] .panel-header {

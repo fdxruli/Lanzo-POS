@@ -94,7 +94,7 @@ export default function SettingsPage() {
         </button>
         {import.meta.env.DEV && (
           <button
-            className={`tab-btn ${activeTab === 'test-ventas' ? 'active' : ''}`} // Ajusta 'tab-btn' a tu clase CSS real
+            className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`}
             onClick={() => handleTabChange('debug')}
           >
             Depuración DB
@@ -103,7 +103,7 @@ export default function SettingsPage() {
 
         {import.meta.env.DEV && (
           <button
-            className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`} // Ajusta 'tab-btn' a tu clase CSS real
+            className={`tab-btn ${activeTab === 'test-ventas' ? 'active' : ''}`}
             onClick={() => handleTabChange('test-ventas')}
           >
             Test Ventas

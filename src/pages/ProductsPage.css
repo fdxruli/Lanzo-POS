@@ -14,12 +14,6 @@
   padding-bottom: calc(var(--ui-space-xl) + 72px);
 }
 
-.products-page .products-header {
-  margin-bottom: var(--ui-space-md);
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
 .products-header__actions {
   align-self: center;
 }
@@ -54,7 +48,7 @@
    ESTILOS DEL ENCABEZADO (CORREGIDOS Y DEFINITIVOS)
    ================================================ */
 
-.products-header {
+.products-header--legacy {
   display: flex;
   flex-direction: column;
   /* MÓVIL: Apila los elementos verticalmente */
@@ -68,7 +62,7 @@
 }
 
 /* --- TÍTULO --- */
-.products-header {
+.products-header--legacy {
   order: 1;
   /* FUERZA al título a ir PRIMERO (Arriba) */
 
@@ -106,7 +100,7 @@
    MEDIA QUERY PARA ESCRITORIO (>= 768px)
    ================================================ */
 @media (min-width: 768px) {
-  .products-header {
+  .products-header--legacy {
     flex-direction: row;
     /* ESCRITORIO: Uno al lado del otro */
     align-items: center;
@@ -115,7 +109,7 @@
     /* Separa los elementos a los extremos opuestos */
   }
 
-  .products-header .section-title {
+  .products-header--legacy .section-title {
     font-size: 2.5rem;
     /* Título MUY GRANDE en escritorio */
     flex-grow: 1;

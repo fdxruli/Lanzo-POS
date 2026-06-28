@@ -10,10 +10,10 @@
 .caja-grid {
   --caja-navy: #102a43;
   --caja-navy-light: #173f63;
-  --caja-blue-soft: rgba(59, 130, 246, 0.1);
-  --caja-success-soft: rgba(0, 196, 140, 0.11);
-  --caja-warning-soft: rgba(255, 184, 0, 0.13);
-  --caja-error-soft: rgba(255, 59, 92, 0.11);
+  --caja-blue-soft: var(--ui-bg-info-soft);
+  --caja-success-soft: var(--ui-bg-success-soft);
+  --caja-warning-soft: var(--ui-bg-warning-soft);
+  --caja-error-soft: var(--ui-bg-danger-soft);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0.875rem;
@@ -141,18 +141,18 @@
 
 .caja-grid .status-badge.open,
 .caja-grid .status-badge.success {
-  color: #087f61;
+  color: var(--ui-text-success);
   background: var(--caja-success-soft);
 }
 
 .caja-grid .status-badge.warning {
-  color: #9a6700;
+  color: var(--ui-text-warning);
   background: var(--caja-warning-soft);
 }
 
 .caja-grid .status-badge.danger,
 .caja-grid .status-badge.error {
-  color: #c62243;
+  color: var(--ui-text-danger);
   background: var(--caja-error-soft);
 }
 
@@ -436,7 +436,7 @@
 
 .caja-grid .amount.positive,
 .caja-grid .history-difference.positive {
-  color: #07946f;
+  color: var(--ui-text-success);
 }
 
 .caja-grid .amount.negative,
@@ -445,7 +445,7 @@
 }
 
 .caja-grid .amount.warning {
-  color: #b47600;
+  color: var(--ui-text-warning);
 }
 
 /* Operations */
@@ -567,9 +567,9 @@
 }
 
 .caja-grid .btn-entry {
-  color: #087f61;
+  color: var(--ui-text-success);
   background: var(--caja-success-soft);
-  border: 1px solid rgba(0, 196, 140, 0.22);
+  border: 1px solid var(--ui-border-success);
 }
 
 .caja-grid .btn-entry:hover:not(:disabled) {
@@ -578,9 +578,9 @@
 }
 
 .caja-grid .btn-exit {
-  color: #c62243;
+  color: var(--ui-text-danger);
   background: var(--caja-error-soft);
-  border: 1px solid rgba(255, 59, 92, 0.22);
+  border: 1px solid var(--ui-border-danger);
 }
 
 .caja-grid .btn-exit:hover:not(:disabled) {
@@ -780,18 +780,18 @@
 
 .caja-grid .movement-positive .movement-icon,
 .caja-grid .history-status-icon.success {
-  color: #087f61;
+  color: var(--ui-text-success);
   background: var(--caja-success-soft);
 }
 
 .caja-grid .movement-negative .movement-icon,
 .caja-grid .history-status-icon.error {
-  color: #c62243;
+  color: var(--ui-text-danger);
   background: var(--caja-error-soft);
 }
 
 .caja-grid .movement-warning .movement-icon {
-  color: #9a6700;
+  color: var(--ui-text-warning);
   background: var(--caja-warning-soft);
 }
 
@@ -831,7 +831,7 @@
 }
 
 .caja-grid .movement-positive .movement-amount {
-  color: #07946f;
+  color: var(--ui-text-success);
 }
 
 .caja-grid .movement-negative .movement-amount {
@@ -839,7 +839,7 @@
 }
 
 .caja-grid .movement-warning .movement-amount {
-  color: #b47600;
+  color: var(--ui-text-warning);
 }
 
 .caja-grid .movement-card .movement-amount {

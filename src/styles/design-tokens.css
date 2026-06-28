@@ -6,18 +6,33 @@
   --ui-color-success: var(--success-color);
   --ui-color-warning: var(--warning-color);
   --ui-color-danger: var(--error-color);
+  --ui-color-info: var(--primary-color);
 
   /* UI surfaces */
   --ui-bg-page: var(--background-color);
   --ui-bg-surface: var(--card-background-color);
   --ui-bg-muted: var(--light-background);
   --ui-bg-overlay: rgba(15, 23, 42, 0.62);
+  --ui-bg-success-soft: rgba(16, 185, 129, 0.12);
+  --ui-bg-warning-soft: rgba(255, 184, 0, 0.14);
+  --ui-bg-danger-soft: rgba(239, 68, 68, 0.12);
+  --ui-bg-info-soft: rgba(59, 130, 246, 0.12);
   --ui-border-color: var(--border-color);
+  --ui-border-success: color-mix(in srgb, var(--ui-color-success) 45%, transparent);
+  --ui-border-warning: color-mix(in srgb, var(--ui-color-warning) 45%, transparent);
+  --ui-border-danger: color-mix(in srgb, var(--ui-color-danger) 45%, transparent);
+  --ui-border-info: color-mix(in srgb, var(--ui-color-info) 45%, transparent);
 
   /* UI text */
   --ui-text-strong: var(--text-dark);
   --ui-text: var(--text-color);
   --ui-text-muted: var(--text-light);
+  --ui-text-success: color-mix(in srgb, var(--ui-color-success) 70%, #064e3b);
+  --ui-text-warning: color-mix(in srgb, var(--ui-color-warning) 68%, #78350f);
+  --ui-text-danger: color-mix(in srgb, var(--ui-color-danger) 78%, #7f1d1d);
+  --ui-text-info: color-mix(in srgb, var(--ui-color-info) 72%, #1e3a8a);
+  --ui-text-warning-on-dark: #ffd166;
+  --ui-text-danger-on-dark: #ff8ca0;
   --ui-text-on-primary: #ffffff;
   --ui-text-on-danger: #ffffff;
 
