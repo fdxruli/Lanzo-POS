@@ -53,6 +53,7 @@ const cachedCashRpc = ({
   force = false,
   fn
 }) => cloudRequestManager.request({
+  rpcName,
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
     params
@@ -88,6 +89,7 @@ export const cashCloudRepository = {
     });
   },
 
+  // IMPORTANTE: estas RPCs de caja son transaccionales y NO deben pasar por CloudRequestManager.
   async openCashSession({ licenseKey, opening, idempotencyKey }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
