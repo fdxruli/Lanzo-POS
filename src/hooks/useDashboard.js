@@ -1,6 +1,7 @@
 // src/hooks/useDashboard.js
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { loadData, saveData, deleteData, STORES } from '../services/database';
+import { showConfirmModal } from '../services/utils';
 
 // Esta función es de tu app.js original, la traemos aquí
 function normalizeProducts(products) {
@@ -114,7 +115,17 @@ export function useDashboard() {
    * Lógica de 'deleteOrder'
    */
   const deleteSale = async (timestamp) => {
-    if (!window.confirm('¿Seguro? Se restaurará el stock y el pedido irá a la papelera.')) return;
+    const confirmed = await showConfirmModal(
+      '¿Seguro? Se restaurará el stock y el pedido irá a la papelera.',
+      {
+        title: 'Mover pedido a papelera',
+        type: 'warning',
+        confirmButtonText: 'Sí, mover',
+        cancelButtonText: 'Cancelar'
+      }
+    );
+
+    if (!confirmed) return;
 
     try {
       const saleToDelete = sales.find(s => s.timestamp === timestamp);
