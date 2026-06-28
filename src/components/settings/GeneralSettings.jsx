@@ -307,27 +307,13 @@ export default function GeneralSettings() {
       <div className="settings-subsection">
         <h3 className="subtitle">Barra de Anuncios (Ticker)</h3>
 
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '12px',
-          backgroundColor: 'var(--bg-light)',
-          borderRadius: '8px',
-          border: '1px solid var(--border-color)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              backgroundColor: showTicker ? '#EBF8FF' : '#EDF2F7',
-              padding: '8px',
-              borderRadius: '50%',
-              color: showTicker ? '#3182CE' : '#A0AEC0',
-              transition: 'all 0.3s ease'
-            }}>
+        <div className="settings-option-row">
+          <div className="settings-option-main settings-option-main--center">
+            <div className={`settings-icon-bubble ${showTicker ? 'settings-icon-bubble--info' : 'settings-icon-bubble--muted'}`}>
               <Bell size={24} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Cinta de Notificaciones Superior</span>
+            <div className="settings-option-copy">
+              <span className="settings-option-title">Cinta de Notificaciones Superior</span>
               <p>Muestra alertas dinámicas en la parte superior de la pantalla.</p>
               <span className="settings-warning-text">
                 ⚠️ Al desactivar esta barra dejarás de ver notificaciones críticas de stock bajo y caducidad.
@@ -336,46 +322,24 @@ export default function GeneralSettings() {
                 Nota: Activar y desactivar este control reiniciará la animación de los mensajes en cola.
               </span>
               <br />
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <span className="settings-option-meta">
                 {showTicker ? 'La barra de anuncios está activa.' : 'La barra de anuncios está oculta.'}
               </span>
             </div>
           </div>
 
           {/* Toggle Switch Personalizado */}
-          <label style={{
-            position: 'relative',
-            display: 'inline-block',
-            width: '50px',
-            height: '26px',
-            cursor: 'pointer',
-            flexShrink: 0,
-            userSelect: 'none'
-          }}>
+          <label className="settings-switch">
             <input
+              className="settings-switch__input"
               type="checkbox"
               checked={!!showTicker}
               onChange={(e) => setShowTicker(e.target.checked)}
-              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
             />
 
-            <span style={{
-              position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: showTicker ? 'var(--primary-color)' : '#CBD5E0',
-              transition: 'background-color .4s',
-              borderRadius: '34px'
-            }}></span>
+            <span className={`settings-switch__track ${showTicker ? 'is-on' : ''}`}></span>
 
-            <span style={{
-              position: 'absolute', content: '""', height: '20px', width: '20px',
-              left: '3px',
-              bottom: '3px',
-              backgroundColor: 'white',
-              transition: 'transform .4s',
-              borderRadius: '50%',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-              transform: showTicker ? 'translateX(24px)' : 'translateX(0)'
-            }}></span>
+            <span className={`settings-switch__thumb ${showTicker ? 'is-on' : ''}`}></span>
           </label>
         </div>
       </div>
@@ -384,69 +348,33 @@ export default function GeneralSettings() {
       <div className="settings-subsection">
         <h3 className="subtitle">Asistente Virtual</h3>
 
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '12px',
-          backgroundColor: 'var(--bg-light)',
-          borderRadius: '8px',
-          border: '1px solid var(--border-color)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              backgroundColor: showAssistantBot ? '#EBF8FF' : '#EDF2F7',
-              padding: '8px',
-              borderRadius: '50%',
-              color: showAssistantBot ? '#3182CE' : '#A0AEC0',
-              transition: 'all 0.3s ease'
-            }}>
+        <div className="settings-option-row">
+          <div className="settings-option-main settings-option-main--center">
+            <div className={`settings-icon-bubble ${showAssistantBot ? 'settings-icon-bubble--info' : 'settings-icon-bubble--muted'}`}>
               <Bot size={24} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Lanzo Bot (experimental)</span>
+            <div className="settings-option-copy">
+              <span className="settings-option-title">Lanzo Bot (experimental)</span>
               <p>Estamos enseñando a nuestro BOT a ser mejor. <br/>Mientras puedes utilizarlo pero revisa los movimientos</p>
               <br />
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <span className="settings-option-meta">
                 {showAssistantBot ? 'El asistente está activo y te dará sugerencias.' : 'El asistente está desactivado.'}
               </span>
             </div>
           </div>
 
           {/* Toggle Switch Personalizado */}
-          <label style={{
-            position: 'relative',
-            display: 'inline-block',
-            width: '50px',
-            height: '26px',
-            cursor: 'pointer',
-            flexShrink: 0,
-            userSelect: 'none'
-          }}>
+          <label className="settings-switch">
             <input
+              className="settings-switch__input"
               type="checkbox"
               checked={!!showAssistantBot}
               onChange={(e) => setShowAssistantBot(e.target.checked)}
-              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
             />
 
-            <span style={{
-              position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: showAssistantBot ? 'var(--primary-color)' : '#CBD5E0',
-              transition: 'background-color .4s',
-              borderRadius: '34px'
-            }}></span>
+            <span className={`settings-switch__track ${showAssistantBot ? 'is-on' : ''}`}></span>
 
-            <span style={{
-              position: 'absolute', content: '""', height: '20px', width: '20px',
-              left: '3px',
-              bottom: '3px',
-              backgroundColor: 'white',
-              transition: 'transform .4s',
-              borderRadius: '50%',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-              transform: showAssistantBot ? 'translateX(24px)' : 'translateX(0)'
-            }}></span>
+            <span className={`settings-switch__thumb ${showAssistantBot ? 'is-on' : ''}`}></span>
           </label>
         </div>
       </div>
@@ -455,32 +383,17 @@ export default function GeneralSettings() {
       <div className="settings-subsection">
         <h3 className="subtitle">Múltiples Órdenes</h3>
 
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '12px',
-          backgroundColor: 'var(--bg-light)',
-          borderRadius: '8px',
-          border: '1px solid var(--border-color)',
-          opacity: activeOrdersCount > 1 ? 0.7 : 1
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              backgroundColor: enableMultipleOrders ? '#EBF8FF' : '#EDF2F7',
-              padding: '8px',
-              borderRadius: '50%',
-              color: enableMultipleOrders ? '#3182CE' : '#A0AEC0',
-              transition: 'all 0.3s ease'
-            }}>
+        <div className={`settings-option-row ${activeOrdersCount > 1 ? 'settings-option-row--disabled' : ''}`}>
+          <div className="settings-option-main settings-option-main--center">
+            <div className={`settings-icon-bubble ${enableMultipleOrders ? 'settings-icon-bubble--info' : 'settings-icon-bubble--muted'}`}>
               <FileText size={24} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Pestañas de Órdenes Simultáneas</span>
+            <div className="settings-option-copy">
+              <span className="settings-option-title">Pestañas de Órdenes Simultáneas</span>
               <p>Permite atender a múltiples clientes a la vez usando pestañas (tabs).</p>
               <p> Aún en desarrollo. Revisa tus ventas despues de cerrarlas</p>
               <br />
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <span className="settings-option-meta">
                 {enableMultipleOrders ? 'Múltiples órdenes activadas.' : 'Solo se permite una orden a la vez.'}
               </span>
               {activeOrdersCount > 1 && (
@@ -491,16 +404,9 @@ export default function GeneralSettings() {
             </div>
           </div>
 
-          <label style={{
-            position: 'relative',
-            display: 'inline-block',
-            width: '50px',
-            height: '26px',
-            cursor: activeOrdersCount > 1 ? 'not-allowed' : 'pointer',
-            flexShrink: 0,
-            userSelect: 'none'
-          }}>
+          <label className={`settings-switch ${activeOrdersCount > 1 ? 'is-disabled' : ''}`}>
             <input
+              className="settings-switch__input"
               type="checkbox"
               checked={!!enableMultipleOrders}
               onChange={(e) => {
@@ -508,27 +414,11 @@ export default function GeneralSettings() {
                 setEnableMultipleOrders(e.target.checked);
               }}
               disabled={activeOrdersCount > 1}
-              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
             />
 
-            <span style={{
-              position: 'absolute', cursor: activeOrdersCount > 1 ? 'not-allowed' : 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: enableMultipleOrders ? 'var(--primary-color)' : '#CBD5E0',
-              transition: 'background-color .4s',
-              borderRadius: '34px',
-              opacity: activeOrdersCount > 1 ? 0.6 : 1
-            }}></span>
+            <span className={`settings-switch__track ${enableMultipleOrders ? 'is-on' : ''} ${activeOrdersCount > 1 ? 'is-disabled' : ''}`}></span>
 
-            <span style={{
-              position: 'absolute', content: '""', height: '20px', width: '20px',
-              left: '3px',
-              bottom: '3px',
-              backgroundColor: 'white',
-              transition: 'transform .4s',
-              borderRadius: '50%',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-              transform: enableMultipleOrders ? 'translateX(24px)' : 'translateX(0)'
-            }}></span>
+            <span className={`settings-switch__thumb ${enableMultipleOrders ? 'is-on' : ''}`}></span>
           </label>
         </div>
       </div>
@@ -538,32 +428,15 @@ export default function GeneralSettings() {
         <h3 className="subtitle">Legal y Privacidad</h3>
 
         <div
+          className="settings-option-row settings-option-row--clickable settings-option-row--legal"
           onClick={() => setShowTerms(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '12px',
-            borderRadius: '8px',
-            backgroundColor: 'var(--bg-light)',
-            border: '1px solid var(--border-color)',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-color)'}
-          onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}
         >
-          <div style={{
-            backgroundColor: '#EBF8FF',
-            padding: '8px',
-            borderRadius: '50%',
-            color: '#3182CE'
-          }}>
+          <div className="settings-icon-bubble settings-icon-bubble--info">
             <FileText size={20} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Términos y Condiciones de Uso</span>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Consulta nuestras políticas de manejo de datos y privacidad.</span>
+          <div className="settings-option-copy">
+            <span className="settings-option-title">Términos y Condiciones de Uso</span>
+            <span className="settings-option-meta">Consulta nuestras políticas de manejo de datos y privacidad.</span>
           </div>
         </div>
       </div>
@@ -571,33 +444,19 @@ export default function GeneralSettings() {
       <div className="settings-subsection">
         <h3 className="subtitle">Política de Caja</h3>
 
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '16px',
-          padding: '12px',
-          backgroundColor: 'var(--bg-light)',
-          borderRadius: '8px',
-          border: '1px solid var(--border-color)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-            <div style={{
-              backgroundColor: cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? '#FFF5D6' : '#E6FFFA',
-              padding: '8px',
-              borderRadius: '50%',
-              color: cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? '#A36A00' : '#087F61'
-            }}>
+        <div className={`settings-option-row ${cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? 'settings-option-row--warning' : ''}`}>
+          <div className="settings-option-main">
+            <div className={`settings-icon-bubble ${cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? 'settings-icon-bubble--warning' : 'settings-icon-bubble--success'}`}>
               <ShieldCheck size={24} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
+            <div className="settings-option-copy">
+              <span className="settings-option-title">
                 Autoapertura de caja
               </span>
               <p>
                 Desactivada, exige fondo confirmado, conteo físico y empleado responsable en cada turno.
               </p>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <span className="settings-option-meta">
                 {cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC
                   ? 'Activa: el sistema heredará el fondo y registrará al sistema como responsable.'
                   : 'Recomendada: ninguna caja se abre sin confirmación del operador.'}
@@ -605,16 +464,9 @@ export default function GeneralSettings() {
             </div>
           </div>
 
-          <label style={{
-            position: 'relative',
-            display: 'inline-block',
-            width: '50px',
-            height: '26px',
-            cursor: 'pointer',
-            flexShrink: 0,
-            userSelect: 'none'
-          }}>
+          <label className="settings-switch">
             <input
+              className="settings-switch__input"
               type="checkbox"
               checked={cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC}
               onChange={(event) => setCashOpeningPolicy(
@@ -622,33 +474,10 @@ export default function GeneralSettings() {
                   ? CASH_OPENING_POLICY.AUTOMATIC
                   : CASH_OPENING_POLICY.MANUAL
               )}
-              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
               aria-label="Permitir autoapertura de caja"
             />
-            <span style={{
-              position: 'absolute',
-              cursor: 'pointer',
-              inset: 0,
-              backgroundColor: cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC
-                ? 'var(--warning-color)'
-                : '#CBD5E0',
-              transition: 'background-color .4s',
-              borderRadius: '34px'
-            }} />
-            <span style={{
-              position: 'absolute',
-              height: '20px',
-              width: '20px',
-              left: '3px',
-              bottom: '3px',
-              backgroundColor: 'white',
-              transition: 'transform .4s',
-              borderRadius: '50%',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-              transform: cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC
-                ? 'translateX(24px)'
-                : 'translateX(0)'
-            }} />
+            <span className={`settings-switch__track ${cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? 'is-on is-warning' : ''}`} />
+            <span className={`settings-switch__thumb ${cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? 'is-on' : ''}`} />
           </label>
         </div>
       </div>

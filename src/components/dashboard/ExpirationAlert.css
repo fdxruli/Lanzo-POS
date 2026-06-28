@@ -91,7 +91,7 @@
 
 .btn-restore:hover {
   background: var(--secondary-color);
-  color: white;
+  color: var(--ui-text-on-primary);
 }
 
 /* --- HEADER VARIANTS --- */
@@ -102,25 +102,25 @@
 }
 
 .header-critical {
-  border-left: 6px solid var(--error-color);
-  background: linear-gradient(90deg, rgba(255, 59, 92, 0.08) 0%, transparent 100%);
+  border-left: 6px solid var(--ui-color-danger);
+  background: linear-gradient(90deg, var(--ui-bg-danger-soft) 0%, transparent 100%);
 }
 
 .header-critical h3 {
-  color: var(--error-color);
+  color: var(--ui-text-danger);
 }
 
 .header-warning {
-  border-left: 6px solid var(--warning-color);
-  background: linear-gradient(90deg, rgba(255, 184, 0, 0.08) 0%, transparent 100%);
+  border-left: 6px solid var(--ui-color-warning);
+  background: linear-gradient(90deg, var(--ui-bg-warning-soft) 0%, transparent 100%);
 }
 
 .header-warning h3 {
-  color: var(--warning-color);
+  color: var(--ui-text-warning);
 }
 
 [data-theme="dark"] .header-warning h3 {
-  color: #fbbf24;
+  color: var(--ui-text-warning-on-dark);
 }
 
 .header-content {
@@ -193,13 +193,13 @@
 
 /* Card States */
 .card-expired {
-  border-color: var(--error-color);
-  background: linear-gradient(135deg, rgba(255, 59, 92, 0.05) 0%, transparent 100%);
+  border-color: var(--ui-color-danger);
+  background: linear-gradient(135deg, var(--ui-bg-danger-soft) 0%, transparent 100%);
 }
 
 .card-urgent {
-  border-color: var(--warning-color);
-  background: linear-gradient(135deg, rgba(255, 184, 0, 0.05) 0%, transparent 100%);
+  border-color: var(--ui-color-warning);
+  background: linear-gradient(135deg, var(--ui-bg-warning-soft) 0%, transparent 100%);
 }
 
 .card-normal {
@@ -265,13 +265,13 @@
 }
 
 .status-danger {
-  background: rgba(255, 59, 92, 0.15);
-  color: var(--error-color);
+  background: var(--ui-bg-danger-soft);
+  color: var(--ui-text-danger);
 }
 
 .status-warning {
-  background: rgba(255, 184, 0, 0.15);
-  color: var(--warning-color);
+  background: var(--ui-bg-warning-soft);
+  color: var(--ui-text-warning);
 }
 
 .status-info {
@@ -387,18 +387,18 @@
 .btn-edit:hover:not(:disabled) {
   border-color: var(--secondary-color);
   background: var(--secondary-color);
-  color: white;
+  color: var(--ui-text-on-primary);
 }
 
 .btn-waste {
-  background: rgba(255, 184, 0, 0.1);
-  color: var(--warning-color);
+  background: var(--ui-bg-warning-soft);
+  color: var(--ui-text-warning);
 }
 
 .btn-waste:hover:not(:disabled) {
-  border-color: var(--warning-color);
-  background: var(--warning-color);
-  color: white;
+  border-color: var(--ui-color-warning);
+  background: var(--ui-color-warning);
+  color: var(--ui-text-on-primary);
 }
 
 .btn-ignore {
@@ -579,7 +579,7 @@
 
 .expiration-widget .btn-secondary {
   background: var(--secondary-color);
-  color: white;
+  color: var(--ui-text-on-primary);
   border: none;
 }
 
