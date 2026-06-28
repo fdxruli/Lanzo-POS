@@ -32,7 +32,7 @@ function InputPromptModal({
       return;
     }
 
-    onResolve(trimmedValue || null);
+    onResolve(trimmedValue);
   };
 
   const handleSubmit = (event) => {
