@@ -15,7 +15,7 @@ import { storageManager } from './services/storageManager';
 import Logger from './services/Logger';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { cleanupDevelopmentServiceWorkers } from './services/devServiceWorkerCleanup';
-import { startPosSyncAutoBootstrap } from './services/sync/posSyncAutoBootstrap';
+import { startPosSyncAutoBootstrap } from './services/sync/posSyncBootstrapAutoCoordinator';
 
 function Thrower({ error }) {
   throw error;
