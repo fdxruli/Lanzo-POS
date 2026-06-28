@@ -6,3 +6,5 @@ export * from './syncConflictService';
 export * from './posSyncClient';
 export * from './posSyncOrchestrator';
 export * from './posSyncAutoBootstrap';
+export * from './posSyncBootstrapCoordinator';
+export * from './posSyncBootstrapAutoCoordinator';
