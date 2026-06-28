@@ -259,22 +259,21 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   </div>
 
                   {isFiado && (
-                    <div className="form-group" style={{ marginTop: '15px' }}>
+                    <div className="form-group payment-form-group-spaced">
                       <label className="form-label" htmlFor="due-date-input">
                         Fecha de Vencimiento:
                       </label>
                       <input
                         id="due-date-input"
                         type="date"
-                        className="form-input"
+                        className="form-input payment-date-input"
                         value={dueDate}
                         min={new Date().toISOString().split('T')[0]}
                         onChange={(e) => setDueDate(e.target.value)}
                         required
-                        style={{ width: '100%', boxSizing: 'border-box' }}
                       />
                       {dueDate && dueDate < new Date().toISOString().split('T')[0] && (
-                        <p style={{ color: 'var(--error-color)', fontSize: '0.8rem', marginTop: '5px' }}>
+                        <p className="ui-inline-error payment-inline-message">
                           La fecha de vencimiento no puede ser menor a la actual.
                         </p>
                       )}
@@ -282,25 +281,15 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   )}
 
                   {isFiado && hasOverdueCredit && (
-                    <div style={{
-                      marginTop: '15px',
-                      padding: '10px',
-                      borderRadius: '6px',
-                      backgroundColor: '#fed7d7',
-                      color: '#c53030',
-                      border: '1px solid #feb2b2',
-                      fontSize: '0.85rem'
-                    }}>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <span>⚠️</span>
-                        <div>
-                          <strong>Atención:</strong> Este cliente tiene saldos vencidos anteriores.
-                        </div>
+                    <div className="ui-alert ui-alert--warning payment-alert">
+                      <span aria-hidden="true">⚠️</span>
+                      <div>
+                        <strong>Atención:</strong> Este cliente tiene saldos vencidos anteriores.
                       </div>
                     </div>
                   )}
 
-                  <div className="form-group customer-search-wrapper" style={{ marginTop: '15px' }}>
+                  <div className="form-group customer-search-wrapper payment-form-group-spaced">
                     <label className="form-label" htmlFor="sale-customer-input">
                       {isFiado ? 'Asignar a Cliente (Obligatorio):' : 'Asignar a Cliente (Opcional):'}
                     </label>
@@ -337,7 +326,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
                   {/* El checkbox de ticket puede ir en esta columna para no estorbar los botones */}
                   {selectedCustomerId && (
-                    <div className="form-group-checkbox" style={{ marginTop: '15px' }}>
+                    <div className="form-group-checkbox payment-form-group-spaced">
                       <input
                         id="send-receipt-ticket"
                         type="checkbox"
@@ -369,7 +358,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   />
 
                   {hasInitialCreditPayment && (
-                    <div className="form-group" style={{ marginTop: '12px' }}>
+                    <div className="form-group payment-initial-payment-method">
                       <label className="form-label" htmlFor="initial-payment-method">
                         Método del abono inicial:
                       </label>
@@ -385,7 +374,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                         <option value="transferencia">Transferencia</option>
                       </select>
 
-                      <p style={{ fontSize: '0.78rem', opacity: 0.75, marginTop: '6px' }}>
+                      <p className="ui-inline-help payment-inline-message payment-inline-message--helper">
                         Solo efectivo se reflejará en caja. Tarjeta y transferencia quedarán como pago sin aumentar efectivo esperado.
                       </p>
                     </div>
@@ -406,8 +395,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                       {/* Botón extra para "Monto Exacto" si lo deseas */}
                       <button
                         type="button"
-                        className="btn-cash-option"
-                        style={{ gridColumn: '1 / -1', borderColor: 'var(--success-color)', color: 'var(--success-color)' }}
+                        className="btn-cash-option btn-cash-option-exact"
                         onClick={() => setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString())}
                       >
                         Exacto (${Money.toNumber(safeTotal).toFixed(2)})
@@ -430,35 +418,27 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                       </p>
                       {/* ALERTA DE LÍMITE DE CRÉDITO */}
                       {isFiado && currentCustomer && (
-                        <div style={{
-                          marginTop: '10px',
-                          padding: '10px',
-                          borderRadius: '6px',
-                          fontSize: '0.85rem',
-                          backgroundColor: isOverLimit ? '#fed7d7' : '#e6fffa', // Rojo si se pasa, Verde/Azul si está bien
-                          color: isOverLimit ? '#c53030' : '#2c7a7b',
-                          border: `1px solid ${isOverLimit ? '#feb2b2' : '#b2f5ea'}`
-                        }}>
+                        <div className={`ui-alert ${isOverLimit ? 'ui-alert--danger' : 'ui-alert--success'} payment-alert ${!isOverLimit ? 'payment-credit-available' : ''}`}>
                           {isOverLimit ? (
                             // CASO ERROR: Se pasó del límite
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              <span>🚫</span>
+                            <>
+                              <span aria-hidden="true">🚫</span>
                               <div>
                                 <strong>Crédito Insuficiente</strong>
-                                <div style={{ fontSize: '0.8em' }}>{limitMessage}</div>
+                                <p className="ui-alert__text">{limitMessage}</p>
                               </div>
-                            </div>
+                            </>
                           ) : (
                             // CASO OK: Muestra cuánto le queda disponible
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <>
                               <span>Crédito disponible:</span>
                               <strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong>
-                            </div>
+                            </>
                           )}
                         </div>
                       )}
                       {isFiado && safePaid.gt(safeTotal) && (
-                        <p style={{ color: 'var(--error-color)', fontSize: '0.8rem', marginTop: '5px' }}>
+                        <p className="ui-inline-error payment-inline-message">
                           El abono inicial no puede ser mayor al total.
                         </p>
                       )}
@@ -470,17 +450,16 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                 <div className="payment-actions">
                   <button
                     id="confirm-payment-btn"
-                    className="btn btn-confirm"
+                    className="ui-button ui-button--success payment-confirm-button"
                     type="submit"
                     disabled={!canConfirm || isSubmitting}
-                    style={isSubmitting ? { opacity: 0.7, cursor: 'wait' } : {}}
                   >
                     {isSubmitting ? 'Procesando...' : 'Confirmar Pago'}
                   </button>
 
                   <button
                     id="cancel-payment-btn"
-                    className="btn btn-cancel-payment"
+                    className="ui-button ui-button--ghost payment-cancel-button"
                     type="button"
                     onClick={onClose}
                     disabled={isSubmitting}

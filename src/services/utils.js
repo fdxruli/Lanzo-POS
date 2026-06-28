@@ -30,10 +30,10 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
     toast(message, {
       icon: '⚠️',
       style: {
-        border: '1px solid #FFB800',
+        border: '1px solid var(--ui-color-warning)',
         padding: '12px',
-        color: '#713200',
-        background: '#FFFAE5', // Fondo cremita suave
+        color: 'var(--ui-text-strong)',
+        background: 'rgba(255, 184, 0, 0.14)',
       },
       duration: 4000
     });

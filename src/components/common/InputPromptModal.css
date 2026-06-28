@@ -1,0 +1,44 @@
+.input-prompt-modal {
+  z-index: var(--z-modal-critical);
+}
+
+.input-prompt-modal__content {
+  width: min(92vw, 430px);
+}
+
+.input-prompt-modal__message {
+  margin: 0 0 var(--ui-space-md);
+  color: var(--ui-text-muted);
+  line-height: 1.45;
+}
+
+.input-prompt-modal__field {
+  margin-bottom: var(--ui-space-md);
+}
+
+.input-prompt-modal__field .form-input {
+  width: 100%;
+}
+
+.input-prompt-modal__error {
+  margin: var(--ui-space-xs) 0 0;
+}
+
+.input-prompt-modal__actions {
+  gap: var(--ui-space-sm);
+}
+
+.input-prompt-modal__actions .ui-button {
+  width: 100%;
+}
+
+@media (min-width: 520px) {
+  .input-prompt-modal__actions {
+    justify-content: flex-end;
+  }
+
+  .input-prompt-modal__actions .ui-button {
+    width: auto;
+    min-width: 132px;
+  }
+}
