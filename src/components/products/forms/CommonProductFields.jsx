@@ -11,11 +11,9 @@ const getMarginTone = (marginVal) => {
 };
 
 export default function CommonProductFields({
-    common, // Objeto que retorna useProductCommon
+    common,
     categories,
-    onOpenCategoryManager,
-    productId,
-    readOnlyCost
+    onOpenCategoryManager
 }) {
     const {
         name, setName,
@@ -34,17 +32,14 @@ export default function CommonProductFields({
 
     const marginTone = getMarginTone(margin);
 
-    // 1. Para el NOMBRE: Capitalizar al perder el foco (onBlur)
     const handleNameBlur = () => {
         if (!name) return;
-        // Convierte "coca cola" en "Coca Cola"
         const formatted = name.toLowerCase().replace(/(?:^|\s)\S/g, a => a.toUpperCase());
         setName(formatted.trim());
     };
 
-    // 2. Para el CÓDIGO DE BARRAS: Forzar mayúsculas y quitar espacios
     const handleBarcodeChange = (e) => {
-        const val = e.target.value.toUpperCase().replace(/\s/g, ''); // Sin espacios, todo UPPER
+        const val = e.target.value.toUpperCase().replace(/\s/g, '');
         setBarcode(val);
     };
 
@@ -77,7 +72,7 @@ export default function CommonProductFields({
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             onBlur={handleNameBlur}
-                            placeholder="Ej: Aspirina 500mg"
+                            placeholder="Ej: Producto 500g"
                         />
                     </div>
 
@@ -134,7 +129,6 @@ export default function CommonProductFields({
                             placeholder="0.00"
                             min="0"
                             step="0.01"
-                            readOnly={readOnlyCost}
                         />
                     </div>
 
