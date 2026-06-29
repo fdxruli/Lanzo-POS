@@ -13,6 +13,8 @@
   --ui-bg-surface: var(--card-background-color);
   --ui-bg-muted: var(--light-background);
   --ui-bg-overlay: rgba(15, 23, 42, 0.62);
+  --ui-bg-overlay-strong: rgba(15, 23, 42, 0.72);
+  --ui-bg-overlay-soft: rgba(15, 23, 42, 0.45);
   --ui-bg-success-soft: rgba(16, 185, 129, 0.12);
   --ui-bg-warning-soft: rgba(255, 184, 0, 0.14);
   --ui-bg-danger-soft: rgba(239, 68, 68, 0.12);
@@ -50,9 +52,13 @@
   --ui-radius-sm: var(--border-radius-sm);
   --ui-radius-md: var(--border-radius);
   --ui-radius-lg: 16px;
+  --ui-radius-pill: 999px;
   --ui-shadow-sm: var(--box-shadow);
   --ui-shadow-md: 0 10px 20px -12px rgba(15, 23, 42, 0.28);
   --ui-shadow-lg: var(--box-shadow-lg);
+  --ui-shadow-focus-primary: 0 0 0 3px color-mix(in srgb, var(--ui-color-primary) 28%, transparent);
+  --ui-shadow-focus-danger: 0 0 0 3px color-mix(in srgb, var(--ui-color-danger) 24%, transparent);
+  --ui-shadow-focus-success: 0 0 0 3px color-mix(in srgb, var(--ui-color-success) 24%, transparent);
 
   /* UI motion */
   --ui-transition-fast: 0.16s ease;
@@ -66,5 +72,7 @@
 
 [data-theme="dark"] {
   --ui-bg-overlay: rgba(2, 6, 23, 0.72);
+  --ui-bg-overlay-strong: rgba(2, 6, 23, 0.82);
+  --ui-bg-overlay-soft: rgba(2, 6, 23, 0.56);
   --ui-shadow-md: 0 14px 28px -18px rgba(0, 0, 0, 0.85);
 }
