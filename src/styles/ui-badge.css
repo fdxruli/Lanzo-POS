@@ -4,7 +4,7 @@
   min-height: 24px;
   padding: 0.25rem 0.625rem;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--ui-radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -29,18 +29,18 @@
 .status-badge.success,
 .status-badge.active,
 .badge-success {
-  background-color: rgba(0, 196, 140, 0.14);
-  color: var(--ui-color-success);
-  border-color: rgba(0, 196, 140, 0.24);
+  background-color: var(--ui-bg-success-soft);
+  color: var(--ui-text-success);
+  border-color: var(--ui-border-success);
 }
 
 .ui-badge--warning,
 .status-badge.warning,
 .status-badge.pending,
 .badge-warning {
-  background-color: rgba(255, 184, 0, 0.16);
-  color: #9a6500;
-  border-color: rgba(255, 184, 0, 0.28);
+  background-color: var(--ui-bg-warning-soft);
+  color: var(--ui-text-warning);
+  border-color: var(--ui-border-warning);
 }
 
 .ui-badge--danger,
@@ -50,16 +50,16 @@
 .status-badge.inactive,
 .badge-danger,
 .badge-error {
-  background-color: rgba(255, 59, 92, 0.13);
-  color: var(--ui-color-danger);
-  border-color: rgba(255, 59, 92, 0.24);
+  background-color: var(--ui-bg-danger-soft);
+  color: var(--ui-text-danger);
+  border-color: var(--ui-border-danger);
 }
 
 .ui-badge--info,
 .badge-info {
-  background-color: rgba(6, 182, 212, 0.13);
-  color: var(--ui-color-secondary);
-  border-color: rgba(6, 182, 212, 0.24);
+  background-color: var(--ui-bg-info-soft);
+  color: var(--ui-text-info);
+  border-color: var(--ui-border-info);
 }
 
 .ui-badge--sm {
@@ -72,5 +72,15 @@
 [data-theme="dark"] .status-badge.warning,
 [data-theme="dark"] .status-badge.pending,
 [data-theme="dark"] .badge-warning {
-  color: #ffd166;
+  color: var(--ui-text-warning-on-dark);
+}
+
+[data-theme="dark"] .ui-badge--danger,
+[data-theme="dark"] .ui-badge--error,
+[data-theme="dark"] .status-badge.error,
+[data-theme="dark"] .status-badge.danger,
+[data-theme="dark"] .status-badge.inactive,
+[data-theme="dark"] .badge-danger,
+[data-theme="dark"] .badge-error {
+  color: var(--ui-text-danger-on-dark);
 }
