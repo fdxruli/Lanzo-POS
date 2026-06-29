@@ -5,29 +5,27 @@
  * El Kiosco no puede calcular el costo usando la función A mientras la base de 
  * datos descuenta lotes usando la función B. Esta función pura retorna un plan 
  * de deducción exacto que debe ser usado tanto en UI como en persistencia.
+ *
+ * FASE CAD.1: los productos STRICT no pueden vender lotes vencidos.
  */
+
+import { isBatchExpiredForSale } from '../utils/dateUtils';
 
 /**
  * Estrategia de selección de lotes
- * @typedef {'FEFO'|'FIFO'} BatchSelectionMode
+ * @typedef {'FEFO'|'FIFO'|'STRICT'|'SHELF_LIFE'} BatchSelectionMode
  */
 
-/**
- * Plan de deducción de un lote
- * @typedef {Object} BatchDeduction
- * @property {string} batchId - ID del lote
- * @property {number} qty - Cantidad a deducir
- * @property {number} unitCost - Costo unitario del lote
- * @property {string} productId - ID del producto padre
- */
+const EPSILON = 0.0001;
 
-/**
- * Resultado del cálculo de deducciones
- * @typedef {Object} DeductionPlan
- * @property {BatchDeduction[]} deductions - Array de deducciones por lote
- * @property {number} totalCost - Costo total calculado
- * @property {number} remainingQty - Cantidad restante no cubierta (0 si éxito)
- */
+const createInventoryStrategyError = (code, message, metadata = {}) => {
+    const error = new Error(message);
+    error.code = code;
+    error.metadata = metadata;
+    return error;
+};
+
+const isActiveBatch = (batch) => batch?.isActive !== false && batch?.status !== 'inactive';
 
 /**
  * Ordena lotes según la estrategia de selección.
@@ -44,25 +42,22 @@ const sortBatchesByStrategy = (batches, mode) => {
 
     return [...batches].sort((left, right) => {
         if (isFEFO) {
-            // FEFO: Priorizar por fecha de caducidad (más cercana primero)
             const leftExp = left.alertTargetDate || left.expiryDate;
             const rightExp = right.alertTargetDate || right.expiryDate;
             
             if (leftExp && rightExp) {
                 const leftTime = new Date(leftExp).getTime();
                 const rightTime = new Date(rightExp).getTime();
-                if (leftTime !== rightTime) {
+                if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
                     return leftTime - rightTime;
                 }
             }
             
-            // Si solo uno tiene fecha de caducidad, ese va primero
             if (leftExp || rightExp) {
                 return leftExp ? -1 : 1;
             }
         }
         
-        // FIFO: Por fecha de creación (más antiguo primero)
         const leftCreated = left.createdAt ? new Date(left.createdAt).getTime() : 0;
         const rightCreated = right.createdAt ? new Date(right.createdAt).getTime() : 0;
         return leftCreated - rightCreated;
@@ -79,9 +74,33 @@ const sortBatchesByStrategy = (batches, mode) => {
 const getAvailableStock = (batch) => {
     if (!batch) return 0;
     const stock = Number(batch.stock) || 0;
-    const committed = Number(batch.committedStock) || 0;
+    const committed = Number(batch.committedStock ?? batch.committed_stock) || 0;
     return Math.max(0, stock - committed);
 };
+
+const splitEligibleBatches = (availableBatches = [], options = {}) => {
+    const {
+        product = null,
+        excludeExpiredStrict = true,
+        now = new Date()
+    } = options || {};
+
+    const activeStockBatches = availableBatches.filter((batch) => isActiveBatch(batch) && getAvailableStock(batch) > 0);
+
+    if (!excludeExpiredStrict || (product?.expirationMode || product?.expiration_mode) !== 'STRICT') {
+        return {
+            eligibleBatches: activeStockBatches,
+            expiredStrictBatches: []
+        };
+    }
+
+    const expiredStrictBatches = activeStockBatches.filter((batch) => isBatchExpiredForSale(batch, product, now));
+    const eligibleBatches = activeStockBatches.filter((batch) => !isBatchExpiredForSale(batch, product, now));
+
+    return { eligibleBatches, expiredStrictBatches };
+};
+
+const sumAvailableStock = (batches = []) => batches.reduce((sum, batch) => sum + getAvailableStock(batch), 0);
 
 /**
  * Función pura sin side-effects. Retorna un plan de deducción exacto.
@@ -93,38 +112,20 @@ const getAvailableStock = (batch) => {
  * @param {number} requestedQty - Cantidad solicitada
  * @param {Array} availableBatches - Lotes disponibles con stock
  * @param {BatchSelectionMode} mode - Modo de selección ('FEFO' o 'FIFO')
- * @returns {DeductionPlan} Plan de deducciones
+ * @param {Object} options Opciones CAD.1
+ * @returns {Object} Plan de deducciones
  * @throws {Error} Si no hay stock suficiente
- * 
- * @example
- * const plan = calculateBatchDeductions(10, batches, 'FEFO');
- * // plan = {
- * //   deductions: [
- * //     { batchId: 'batch-1', qty: 5, unitCost: 10.50, productId: 'prod-1' },
- * //     { batchId: 'batch-2', qty: 5, unitCost: 11.00, productId: 'prod-1' }
- * //   ],
- * //   totalCost: 107.50,
- * //   remainingQty: 0
- * // }
  */
-export const calculateBatchDeductions = (requestedQty, availableBatches, mode = 'FEFO') => {
-    // Validaciones de entrada
+export const calculateBatchDeductions = (requestedQty, availableBatches, mode = 'FEFO', options = {}) => {
     if (!Number.isFinite(requestedQty) || requestedQty <= 0) {
-        throw new Error(`Cantidad solicitada inválida: ${requestedQty}`);
+        throw createInventoryStrategyError('INVALID_BATCH_REQUEST_QUANTITY', `Cantidad solicitada inválida: ${requestedQty}`);
     }
     
     if (!Array.isArray(availableBatches)) {
-        throw new Error("availableBatches debe ser un array");
+        throw createInventoryStrategyError('INVALID_BATCH_LIST', 'availableBatches debe ser un array');
     }
 
-    // Filtrar solo lotes activos con stock disponible
-    const eligibleBatches = availableBatches.filter(batch => {
-        const isActive = batch.isActive !== false && batch.status !== 'inactive';
-        const hasStock = getAvailableStock(batch) > 0;
-        return isActive && hasStock;
-    });
-
-    // Ordenar según estrategia
+    const { eligibleBatches, expiredStrictBatches } = splitEligibleBatches(availableBatches, options);
     const sortedBatches = sortBatchesByStrategy(eligibleBatches, mode);
 
     let remaining = requestedQty;
@@ -143,29 +144,36 @@ export const calculateBatchDeductions = (requestedQty, availableBatches, mode = 
         deductions.push({
             batchId: batch.id,
             qty: deductQty,
-            unitCost: unitCost,
-            productId: batch.productId
+            unitCost,
+            productId: batch.productId ?? batch.product_id
         });
         
         totalCost += deductQty * unitCost;
         remaining -= deductQty;
     }
 
-    // Si quedó cantidad por cubrir, lanzar error
-    if (remaining > 0.0001) {
-        const availableTotal = eligibleBatches.reduce(
-            (sum, b) => sum + getAvailableStock(b), 0
-        );
-        throw new Error(
-            `Stock insuficiente para el cálculo de lote. ` +
-            `Solicitado: ${requestedQty}, Disponible: ${availableTotal}, ` +
-            `Faltante: ${remaining}`
-        );
+    if (remaining > EPSILON) {
+        const availableTotal = sumAvailableStock(eligibleBatches);
+        const expiredAvailableTotal = sumAvailableStock(expiredStrictBatches);
+        const product = options?.product || null;
+        const code = expiredAvailableTotal > 0 ? 'INSUFFICIENT_NON_EXPIRED_STOCK' : 'INSUFFICIENT_BATCH_STOCK';
+        const message = expiredAvailableTotal > 0
+            ? 'No hay stock vigente suficiente para completar la venta. Revisa los lotes vencidos en Caducidad.'
+            : `Stock insuficiente para el cálculo de lote. Solicitado: ${requestedQty}, Disponible: ${availableTotal}, Faltante: ${remaining}`;
+
+        throw createInventoryStrategyError(code, message, {
+            productId: product?.id,
+            productName: product?.name,
+            requestedQuantity: requestedQty,
+            availableQuantity: availableTotal,
+            expiredAvailableQuantity: expiredAvailableTotal,
+            remainingQuantity: remaining
+        });
     }
 
     return {
         deductions,
-        totalCost: Math.round(totalCost * 100) / 100, // Redondear a 2 decimales
+        totalCost: Math.round(totalCost * 100) / 100,
         remainingQty: 0
     };
 };
@@ -177,9 +185,10 @@ export const calculateBatchDeductions = (requestedQty, availableBatches, mode = 
  * @param {Array} items - Ítems a procesar
  * @param {Map<string, Array>} batchesByProduct - Mapa de productId -> lotes
  * @param {Object} strategies - Mapa de productId -> modo de selección
- * @returns {Map<string, DeductionPlan>} Planes de deducción por producto
+ * @param {Object} optionsByProduct - Opciones por productId
+ * @returns {Map<string, Object>} Planes de deducción por producto
  */
-export const calculateMultiProductDeductions = (items, batchesByProduct, strategies = {}) => {
+export const calculateMultiProductDeductions = (items, batchesByProduct, strategies = {}, optionsByProduct = {}) => {
     const results = new Map();
     const errors = [];
 
@@ -193,20 +202,22 @@ export const calculateMultiProductDeductions = (items, batchesByProduct, strateg
         const mode = strategies[productId] || 'FEFO';
         
         try {
-            const plan = calculateBatchDeductions(quantity, batches, mode);
+            const plan = calculateBatchDeductions(quantity, batches, mode, optionsByProduct[productId] || {});
             results.set(productId, plan);
         } catch (error) {
             errors.push({
                 productId,
                 productName: item.name,
-                error: error.message
+                error: error.message,
+                code: error.code
             });
         }
     }
 
     if (errors.length > 0) {
         const errorMsg = errors.map(e => `${e.productName}: ${e.error}`).join('; ');
-        throw new Error(`Errores en cálculo de deducciones: ${errorMsg}`);
+        const error = createInventoryStrategyError(errors[0]?.code || 'BATCH_DEDUCTION_ERRORS', `Errores en cálculo de deducciones: ${errorMsg}`, { errors });
+        throw error;
     }
 
     return results;
@@ -218,22 +229,28 @@ export const calculateMultiProductDeductions = (items, batchesByProduct, strateg
  * 
  * @param {number} requestedQty - Cantidad solicitada
  * @param {Array} availableBatches - Lotes disponibles
+ * @param {Object} options Opciones CAD.1
  * @returns {Object} Resultado de validación
  */
-export const validateBatchAvailability = (requestedQty, availableBatches) => {
+export const validateBatchAvailability = (requestedQty, availableBatches, options = {}) => {
     if (!Number.isFinite(requestedQty) || requestedQty <= 0) {
-        return { ok: false, error: 'Cantidad inválida' };
+        return { ok: false, error: 'Cantidad inválida', code: 'INVALID_BATCH_REQUEST_QUANTITY' };
     }
 
-    const availableStock = availableBatches
-        .filter(b => b.isActive !== false)
-        .reduce((sum, b) => sum + getAvailableStock(b), 0);
+    const { eligibleBatches, expiredStrictBatches } = splitEligibleBatches(availableBatches, options);
+    const availableStock = sumAvailableStock(eligibleBatches);
+    const expiredAvailableStock = sumAvailableStock(expiredStrictBatches);
 
     if (availableStock < requestedQty) {
+        const hasExpiredBlockedStock = expiredAvailableStock > 0;
         return {
             ok: false,
-            error: `Stock insuficiente: ${availableStock} disponible, ${requestedQty} solicitado`,
+            code: hasExpiredBlockedStock ? 'INSUFFICIENT_NON_EXPIRED_STOCK' : 'INSUFFICIENT_BATCH_STOCK',
+            error: hasExpiredBlockedStock
+                ? 'No hay stock vigente suficiente para completar la venta. Revisa los lotes vencidos en Caducidad.'
+                : `Stock insuficiente: ${availableStock} disponible, ${requestedQty} solicitado`,
             available: availableStock,
+            expiredAvailable: expiredAvailableStock,
             requested: requestedQty,
             deficit: requestedQty - availableStock
         };
@@ -242,6 +259,7 @@ export const validateBatchAvailability = (requestedQty, availableBatches) => {
     return {
         ok: true,
         available: availableStock,
+        expiredAvailable: expiredAvailableStock,
         requested: requestedQty
     };
 };
@@ -249,7 +267,7 @@ export const validateBatchAvailability = (requestedQty, availableBatches) => {
 /**
  * Calcula el costo promedio ponderado basado en un plan de deducciones.
  * 
- * @param {DeductionPlan} plan - Plan de deducciones
+ * @param {Object} plan - Plan de deducciones
  * @returns {number} Costo promedio unitario
  */
 export const calculateWeightedAverageCost = (plan) => {

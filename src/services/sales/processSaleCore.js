@@ -179,14 +179,16 @@ export const processSaleCore = async ({
             allProducts,
             queryBatchesByProductIdAndActive,
             queryByIndex,
-            STORES
+            STORES,
+            enforceExpiryStrict: !isCloudInventorySale
         });
 
         const { processedItems, batchesToDeduct } = buildProcessedItemsAndDeductions({
             itemsToProcess,
             allProducts,
             batchesMap,
-            roundCurrency
+            roundCurrency,
+            enforceExpiryStrict: !isCloudInventorySale
         });
 
         const currentIsoTime = new Date().toISOString();
