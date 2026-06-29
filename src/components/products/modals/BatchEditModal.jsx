@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { productRepository } from '../../../services/products/productRepository';
 import Logger from '../../../services/Logger';
 import { showConfirmModal } from '../../../services/utils';
+import { useDismissibleHistoryLayer } from '../../../hooks/useDismissibleHistoryLayer';
 import './BatchEditModal.css';
 
 export default function BatchEditModal({ batchData, onClose, onSave, features }) {
@@ -18,6 +19,17 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
     
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+
+    const handleClose = useCallback(() => {
+        if (saving) return;
+        onClose();
+    }, [saving, onClose]);
+
+    const dismissModal = useDismissibleHistoryLayer({
+        isOpen: true,
+        onDismiss: handleClose,
+        layerId: 'batch-edit-modal'
+    });
 
     // Cargar datos al montar
     useEffect(() => {
@@ -257,9 +269,10 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
                         {/* flex: 1 en ambos botones asegura el mismo tamaño */}
                         <button 
                             type="button" 
-                            onClick={onClose} 
+                            onClick={dismissModal} 
                             className="ui-button ui-button--ghost btn btn-secondary" 
                             style={{ flex: 1, justifyContent: 'center' }}
+                            disabled={saving}
                         >
                             Cancelar
                         </button>
