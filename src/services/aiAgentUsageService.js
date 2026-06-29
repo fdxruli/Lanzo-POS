@@ -1,7 +1,16 @@
 import { loadData, STORES } from './database';
 import { getDeviceSecurityToken, getStableDeviceId, supabaseClient } from './supabase';
+import {
+  CLOUD_REQUEST_COOLDOWN,
+  CLOUD_REQUEST_TAGS,
+  CLOUD_REQUEST_TTL,
+  buildCloudRequestKey,
+  cloudRequestManager,
+  cloudRequestTags
+} from './cloud';
 
 const EDGE_FUNCTION_NAME = import.meta.env.VITE_AI_EDGE_FUNCTION || 'lanzo-ai-agent';
+const AI_AGENT_USAGE_RESOURCE = 'edge:lanzo-ai-agent:usage';
 
 const readLocalLicense = () => {
   try {
@@ -70,7 +79,22 @@ const normalizeUsage = (data = {}) => {
   };
 };
 
-export const getAIAgentUsage = async () => {
+const buildUsageRequestKey = (auth = {}) => buildCloudRequestKey({
+  resource: AI_AGENT_USAGE_RESOURCE,
+  context: {
+    licenseKey: auth.licenseKey,
+    deviceId: auth.deviceFingerprint,
+    staffSessionToken: auth.staffSessionToken || null
+  }
+});
+
+const normalizeUsageError = (error) => normalizeUsage({
+  success: false,
+  code: error?.code || 'EDGE_FUNCTION_ERROR',
+  message: error?.message || 'No se pudo consultar el uso de IA.'
+});
+
+export const getAIAgentUsage = async ({ force = false } = {}) => {
   if (!supabaseClient) {
     return normalizeUsage({
       success: false,
@@ -89,22 +113,39 @@ export const getAIAgentUsage = async () => {
     });
   }
 
-  const { data, error } = await supabaseClient.functions.invoke(EDGE_FUNCTION_NAME, {
-    body: {
-      action: 'usage',
-      auth
-    }
-  });
+  try {
+    return await cloudRequestManager.request({
+      key: buildUsageRequestKey(auth),
+      ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
+      cooldownMs: CLOUD_REQUEST_COOLDOWN.REPORTS,
+      force,
+      tags: [
+        CLOUD_REQUEST_TAGS.LICENSE,
+        cloudRequestTags.license(auth.licenseKey),
+        cloudRequestTags.device(auth.deviceFingerprint),
+        AI_AGENT_USAGE_RESOURCE
+      ],
+      fn: async () => {
+        const { data, error } = await supabaseClient.functions.invoke(EDGE_FUNCTION_NAME, {
+          body: {
+            action: 'usage',
+            auth
+          }
+        });
 
-  if (error) {
-    return normalizeUsage({
-      success: false,
-      code: error.code || 'EDGE_FUNCTION_ERROR',
-      message: error.message || 'No se pudo consultar el uso de IA.'
+        if (error) {
+          const edgeError = new Error(error.message || 'No se pudo consultar el uso de IA.');
+          edgeError.code = error.code || 'EDGE_FUNCTION_ERROR';
+          edgeError.cause = error;
+          throw edgeError;
+        }
+
+        return normalizeUsage(data);
+      }
     });
+  } catch (error) {
+    return normalizeUsageError(error);
   }
-
-  return normalizeUsage(data);
 };
 
 export default { getAIAgentUsage };
