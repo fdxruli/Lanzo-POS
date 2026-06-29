@@ -36,6 +36,7 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 11px;
+  min-width: 0;
 }
 
 .pos-menu-heading h2 {
@@ -44,6 +45,8 @@
   font-size: 1.18rem;
   font-weight: 800;
   line-height: 1.2;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pos-menu-heading p {
@@ -372,15 +375,19 @@
   align-items: baseline;
   gap: 3px;
   margin-top: auto;
+  min-width: 0;
 }
 
 .product-card__price {
+  min-width: 0;
   color: var(--text-dark);
   font-size: 1rem;
   font-weight: 850;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .product-card__unit {

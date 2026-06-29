@@ -3,8 +3,10 @@
 /* --- Layout del Modal --- */
 .modal-content.layaway-modal-content {
   max-width: 800px;
-  width: 95%;
+  width: min(95%, calc(100vw - 1rem));
+  min-width: 0;
   height: 90vh;
+  height: min(90vh, calc(100dvh - 1rem));
   /* Un poco más alto para móviles */
   display: flex;
   flex-direction: column;
@@ -16,7 +18,9 @@
 
 .layaway-modal-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: var(--spacing-md);
   background-color: var(--background-color);
 }
@@ -41,6 +45,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 12px;
   /* Mejor alineación si el texto es largo */
 }
 
@@ -132,7 +137,7 @@
 
 .financial-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   /* 3 columnas iguales */
   gap: 15px;
   margin-bottom: 15px;
@@ -156,6 +161,7 @@
 .finance-value {
   font-size: 1.2rem;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .finance-value.total {
@@ -346,6 +352,7 @@
 
   /* Ajustar Grid Financiero */
   .financial-grid {
+    grid-template-columns: 1fr;
     gap: 10px;
   }
 

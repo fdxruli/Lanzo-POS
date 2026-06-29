@@ -7,6 +7,7 @@
 .abono-modal-content {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: var(--spacing-md);
   padding: var(--spacing-lg);
   max-width: 450px !important; /* Ligeramente más estrecho para resaltar foco numérico */
@@ -20,6 +21,7 @@
   border-bottom: 1px solid var(--border-color);
   padding-bottom: var(--spacing-sm);
   margin-bottom: var(--spacing-xs);
+  min-width: 0;
 }
 
 .abono-header .modal-title {
@@ -81,6 +83,7 @@
   font-weight: 700;
   color: var(--text-dark);
   font-size: 1.1rem;
+  overflow-wrap: anywhere;
 }
 
 .deuda-row {
@@ -90,6 +93,8 @@
   margin-top: 4px;
   padding-top: 8px;
   border-top: 1px dashed var(--border-color);
+  gap: 10px;
+  min-width: 0;
 }
 
 .deuda-label {
@@ -102,12 +107,14 @@
   color: var(--error-color);
   font-weight: 800;
   font-size: 1.5rem;
+  overflow-wrap: anywhere;
 }
 
 /* --- FORMULARIO Y ENTRADA DE MONTO --- */
 .abono-form {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: var(--spacing-md);
   margin-top: var(--spacing-xs);
 }
@@ -190,6 +197,7 @@
   border: 1px solid var(--border-color);
   transition: var(--transition);
   margin-bottom: var(--spacing-xs);
+  min-width: 0;
 }
 
 .abono-whatsapp-toggle:hover {
@@ -204,6 +212,8 @@
   color: var(--text-dark);
   font-weight: 500;
   font-size: 0.95rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .icon-whatsapp {
@@ -278,6 +288,8 @@
 
 .abono-modal-content {
   width: 95%;
+  max-height: calc(100dvh - 2rem);
+  overflow: hidden;
   transition: max-width 0.3s ease;
 }
 
@@ -302,10 +314,12 @@
   flex-wrap: wrap;
   gap: 1.5rem;
   align-items: flex-start;
+  min-width: 0;
 }
 
 .abono-left-col {
   flex: 1 1 300px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -350,6 +364,7 @@
 
 .abono-right-col {
   flex: 1 1 400px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   max-height: 55vh;
@@ -357,7 +372,9 @@
 
 .allocations-container {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 0.5rem;
   background-color: var(--ui-bg-surface);
 }
@@ -377,6 +394,7 @@
   gap: 0.75rem;
   padding: 0.5rem;
   border-bottom: 1px solid var(--border-color);
+  min-width: 0;
 }
 
 .allocation-row:last-child {
@@ -410,6 +428,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .allocation-input-wrap {
@@ -449,6 +468,7 @@
   gap: 1rem;
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
+  flex: 0 0 auto;
 }
 
 .abono-submit-help {
@@ -459,4 +479,59 @@
 .abono-footer .abono-whatsapp-toggle,
 .abono-footer .abono-actions {
   margin: 0;
+}
+
+@media (max-width: 640px) {
+  .abono-modal-content,
+  .abono-modal-content--wide {
+    width: min(100%, calc(100vw - 1rem));
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .abono-header {
+    align-items: flex-start;
+  }
+
+  .abono-header .modal-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .abono-desktop-split {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .abono-left-col,
+  .abono-right-col {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .abono-right-col {
+    max-height: none;
+  }
+
+  .allocation-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sale-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .allocation-input-wrap {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .abono-actions {
+    flex-direction: column-reverse;
+  }
+
+  .abono-actions .btn {
+    min-height: 44px;
+  }
 }

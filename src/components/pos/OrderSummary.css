@@ -246,6 +246,7 @@
 }
 
 .order-item-line-total {
+  min-width: 0;
   flex: 0 0 auto;
   color: var(--text-dark);
   font-size: 1rem;
@@ -433,13 +434,16 @@
   color: var(--text-dark);
   font-size: 1.1rem;
   font-weight: 800;
+  min-width: 0;
 }
 
 .total-price {
+  min-width: 0;
   color: var(--order-primary-hover);
   font-size: 1.55rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 
 .order-actions {
@@ -466,6 +470,7 @@
   font-size: 0.88rem;
   font-weight: 750;
   line-height: 1.2;
+  white-space: normal;
   transition: transform 0.12s ease, background-color 0.16s ease, box-shadow 0.16s ease;
 }
 

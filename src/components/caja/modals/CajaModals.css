@@ -6,7 +6,11 @@
   --caja-modal-warning-soft: rgba(255, 184, 0, 0.13);
   --caja-modal-error-soft: rgba(255, 59, 92, 0.11);
   z-index: var(--z-modal-top);
-  padding: 0.75rem;
+  padding:
+    max(0.75rem, var(--safe-area-top))
+    max(0.75rem, var(--safe-area-right))
+    max(0.75rem, var(--safe-area-bottom))
+    max(0.75rem, var(--safe-area-left));
   background: rgba(7, 20, 36, 0.68);
   backdrop-filter: blur(8px);
 }
@@ -17,7 +21,9 @@
 
 .caja-modal .caja-modal__content {
   width: 100%;
+  min-width: 0;
   max-height: min(92vh, 900px);
+  max-height: min(calc(100dvh - 1.5rem), 900px);
   padding: 0;
   overflow: hidden;
   background: var(--card-background-color);
@@ -120,8 +126,10 @@
 
 .caja-modal__body {
   max-height: calc(min(92vh, 900px) - 76px);
+  max-height: calc(min(calc(100dvh - 1.5rem), 900px) - 76px);
   padding: 1rem;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) transparent;
 }
@@ -239,12 +247,14 @@
   border-radius: 12px;
   font-size: 0.75rem;
   font-weight: 700;
+  min-width: 0;
 }
 
 .caja-modal__reference strong {
   color: var(--primary-color);
   font-size: 1rem;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .caja-modal__difference {
@@ -273,6 +283,7 @@
   color: var(--text-dark);
   font-size: 1.25rem;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .caja-modal__difference p {
@@ -435,12 +446,14 @@
   border-radius: 12px;
   font-size: 0.76rem;
   font-weight: 700;
+  min-width: 0;
 }
 
 .cash-opening-reference strong {
   color: var(--primary-color);
   font-size: 1rem;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .cash-opening-fields {
@@ -631,6 +644,7 @@
 .caja-summary__ledger strong {
   color: var(--text-dark);
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .caja-summary__ledger strong.positive {
@@ -746,6 +760,22 @@
 }
 
 @media (max-width: 519px) {
+  .caja-modal {
+    padding:
+      max(0.5rem, var(--safe-area-top))
+      max(0.5rem, var(--safe-area-right))
+      max(0.5rem, var(--safe-area-bottom))
+      max(0.5rem, var(--safe-area-left));
+  }
+
+  .caja-modal .caja-modal__content {
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .caja-modal__body {
+    max-height: calc(100dvh - 1rem - 76px);
+  }
+
   .caja-summary__quick-stats,
   .caja-summary__performance {
     grid-template-columns: 1fr;

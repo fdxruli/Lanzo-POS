@@ -11,6 +11,12 @@
   align-items: center;     /* Centra verticalmente */
   backdrop-filter: blur(2px); /* Opcional: efecto borroso en el fondo */
   z-index: var(--z-modal-high);
+  padding:
+    max(var(--ui-space-sm), var(--safe-area-top))
+    max(var(--ui-space-sm), var(--safe-area-right))
+    max(var(--ui-space-sm), var(--safe-area-bottom))
+    max(var(--ui-space-sm), var(--safe-area-left));
+  overflow: hidden;
 }
 
 .history-chevron {
@@ -26,12 +32,14 @@
   background-color: var(--card-background-color); 
   color: var(--text-color);
   max-width: 650px !important;
-  width: 90%;
+  width: min(90%, calc(100vw - 1rem));
+  min-width: 0;
   padding: 0 !important;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   height: 85vh;
+  height: min(85vh, calc(100dvh - 1rem));
   border-radius: var(--border-radius);
   box-shadow: var(--box-shadow-lg);
   border: 1px solid var(--border-color);
@@ -45,6 +53,8 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
 }
 
 .purchase-history-modal-title {
@@ -77,7 +87,7 @@
 /* --- Stats Grid --- */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   padding: 16px 24px;
   /* Fondo ligeramente diferente para contraste (gris claro en light, gris oscuro en dark) */
@@ -93,6 +103,7 @@
   border: 1px solid var(--border-color); /* Borde sutil */
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .stat-label {
@@ -107,6 +118,7 @@
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--text-dark);
+  overflow-wrap: anywhere;
 }
 
 /* Bordes de estado */
@@ -157,6 +169,9 @@
 .filter-group {
   display: flex;
   gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .filter-chip {
@@ -185,7 +200,9 @@
 /* --- List Container --- */
 .history-list-container {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 0;
   background-color: var(--background-color); /* Fondo de la lista */
 }
@@ -207,6 +224,7 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
 }
 
 /* Columna Fecha */
@@ -225,10 +243,10 @@
 .date-col .month { font-size: 0.7rem; text-transform: uppercase; color: var(--text-light); }
 
 /* Columna Info */
-.info-col { flex: 1; }
+.info-col { flex: 1; min-width: 0; }
 .info-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.sale-id { font-weight: 600; color: var(--text-dark); }
-.info-sub { font-size: 0.85rem; color: var(--text-light); }
+.sale-id { font-weight: 600; color: var(--text-dark); overflow-wrap: anywhere; }
+.info-sub { font-size: 0.85rem; color: var(--text-light); overflow-wrap: anywhere; }
 
 /* Badges con transparencia para que se vean bien en dark mode */
 .badge {
@@ -255,6 +273,7 @@
   align-items: flex-end;
   gap: 4px;
   color: var(--text-dark);
+  min-width: 0;
 }
 .amount-col .amount { font-weight: 700; font-size: 1rem; }
 
@@ -282,6 +301,7 @@
 .detail-row {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
   font-size: 0.9rem;
   color: var(--text-light); /* Texto secundario */
   padding: 4px 0;
@@ -313,3 +333,35 @@
   justify-content: flex-end;
 }
 .transaction-hash { font-size: 0.7rem; color: var(--text-light); font-family: monospace; }
+
+@media (max-width: 640px) {
+  .history-modal-content {
+    width: min(100%, calc(100vw - 1rem));
+    height: calc(100dvh - 1rem);
+  }
+
+  .purchase-history-modal-header,
+  .stats-grid,
+  .history-toolbar,
+  .history-item-header {
+    padding-inline: 16px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-item-header {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .amount-col {
+    flex: 0 1 auto;
+  }
+
+  .detail-row,
+  .breakdown-row {
+    gap: 8px;
+  }
+}

@@ -1,6 +1,8 @@
 /* Mobile First CSS */
 .order-tabs-container {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   background: var(--card-background-color, #f9f9f9);
   border-bottom: 1px solid var(--border-color, #e0e0e0);
   overflow: hidden;
@@ -14,6 +16,8 @@
   gap: 4px;
   padding: 6px 8px 0 8px; /* smaller padding for mobile */
   overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
 }
@@ -74,6 +78,7 @@
   align-items: center;
   gap: 4px;
   margin-bottom: 4px;
+  min-width: 0;
 }
 
 .active-icon {
@@ -167,6 +172,16 @@
   min-width: 140px;
   font-family: inherit;
   transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+@media (max-width: 380px) {
+  .order-tab {
+    min-width: 104px;
+  }
+
+  .order-tab-form input {
+    min-width: 112px;
+  }
 }
 
 .order-tab-form input:focus {

@@ -114,6 +114,7 @@
   color: var(--text-dark);
   font-size: 0.92rem;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .customer-record-label,
@@ -164,8 +165,7 @@
 
 .address-text {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .customer-credit-status {
@@ -261,6 +261,7 @@
   font-size: 1.05rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .customer-debt.has-value strong {
@@ -283,6 +284,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem;
+  min-width: 0;
 }
 
 .customer-actions-container::before,
@@ -304,6 +306,8 @@
   font-weight: 800;
   cursor: pointer;
   transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+  min-width: 0;
+  white-space: normal;
 }
 
 .btn-abono {
@@ -341,6 +345,13 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   padding-top: 0;
   border-top: 0;
+}
+
+@media (max-width: 380px) {
+  .actions-primary,
+  .actions-secondary {
+    grid-template-columns: 1fr;
+  }
 }
 
 .btn-icon-text {
