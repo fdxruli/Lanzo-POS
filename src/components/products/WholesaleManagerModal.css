@@ -5,7 +5,6 @@
   width: min(100%, calc(100vw - 2rem));
   max-width: 550px;
   min-width: 0;
-  /* El fondo y color de texto ya se heredan de las variables globales */
 }
 
 .modal-subtitle {
@@ -99,7 +98,7 @@
 
 .tiers-table .price-cell {
   font-weight: 700;
-  color: var(--ui-color-success);
+  color: var(--ui-text-success);
 }
 
 /* Botón eliminar */
@@ -116,7 +115,7 @@
 
 .btn-delete-tier:hover {
   background-color: var(--ui-bg-danger-soft);
-  color: var(--ui-color-danger);
+  color: var(--ui-text-danger);
 }
 
 /* Mensaje vacío */
@@ -147,15 +146,12 @@
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  /* Opcional: si quieres una línea separadora arriba */
-  /* border-top: 1px solid var(--border-color); */
-  /* padding-top: var(--spacing-md); */
 }
 
 /* 1. Estilo base forzado para AMBOS botones dentro del modal */
 .modal-actions button {
-  height: 42px;           /* Altura fija idéntica para ambos */
-  min-width: 110px;       /* Ancho mínimo igual */
+  height: 42px;
+  min-width: 110px;
   padding: 0 20px;
   margin-bottom: 0;
   display: inline-flex;
@@ -164,14 +160,14 @@
   font-size: 0.95rem;
   line-height: 1;
   border-radius: var(--border-radius-sm);
-  box-shadow: none;       /* Reseteamos sombras para evitar diferencias */
+  box-shadow: none;
 }
 
-/* 2. Ajuste para el botón Cancelar (que tiene borde visible) */
+/* 2. Ajuste para el botón Cancelar */
 .modal-actions .btn-cancel {
   border: 1px solid var(--ui-border-color);
   background-color: transparent;
-  color: var(--text-light);
+  color: var(--ui-text-muted);
 }
 
 .modal-actions .btn-cancel:hover {
@@ -179,26 +175,15 @@
   color: var(--ui-text-strong);
 }
 
-/* 3. Ajuste para el botón Guardar (Borde transparente para igualar tamaño) */
+/* 3. Ajuste para el botón Guardar */
 .modal-actions .btn-save {
-  /* Truco: Borde transparente de 1px para ocupar el mismo espacio que 'cancelar' */
-  border: 1px solid transparent; 
-  background-color: var(--ui-color-primary);
+  border: 1px solid transparent;
+  background-color: var(--primary-color);
   color: var(--ui-text-on-primary);
 }
 
 .modal-actions .btn-save:hover {
-  background-color: var(--ui-color-primary-hover);
-}
-
-/* --- Ajustes Específicos para Modo Oscuro (Si alguna variable no cubre todo) --- */
-/* Ya casi todo debería estar cubierto por las variables globales, 
-   pero reforzamos si quieres un contraste específico */
-
-[data-theme="dark"] .tiers-table th {
-  /* Opcional: Si quieres que el header sea un pelín más oscuro que el light-background estándar */
-  background-color: rgba(255, 255, 255, 0.05); 
-  color: var(--text-dark);
+  background-color: var(--primary-hover);
 }
 
 @media (max-width: 640px) {
