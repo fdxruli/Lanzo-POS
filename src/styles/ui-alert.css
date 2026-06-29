@@ -38,23 +38,25 @@
 .ui-alert--info,
 .alert-info,
 .message-info {
-  background-color: rgba(6, 182, 212, 0.1);
-  border-color: rgba(6, 182, 212, 0.22);
-  color: var(--ui-text-strong);
+  background-color: var(--ui-bg-info-soft);
+  border-color: var(--ui-border-info);
+  color: var(--ui-text-info);
 }
 
 .ui-alert--success,
 .alert-success,
 .message-success {
-  background-color: rgba(0, 196, 140, 0.12);
-  border-color: rgba(0, 196, 140, 0.24);
+  background-color: var(--ui-bg-success-soft);
+  border-color: var(--ui-border-success);
+  color: var(--ui-text-success);
 }
 
 .ui-alert--warning,
 .alert-warning,
 .message-warning {
-  background-color: rgba(255, 184, 0, 0.14);
-  border-color: rgba(255, 184, 0, 0.3);
+  background-color: var(--ui-bg-warning-soft);
+  border-color: var(--ui-border-warning);
+  color: var(--ui-text-warning);
 }
 
 .ui-alert--danger,
@@ -62,13 +64,28 @@
 .alert-danger,
 .alert-error,
 .message-error {
-  background-color: rgba(255, 59, 92, 0.11);
-  border-color: rgba(255, 59, 92, 0.24);
+  background-color: var(--ui-bg-danger-soft);
+  border-color: var(--ui-border-danger);
+  color: var(--ui-text-danger);
+}
+
+[data-theme="dark"] .ui-alert--warning,
+[data-theme="dark"] .alert-warning,
+[data-theme="dark"] .message-warning {
+  color: var(--ui-text-warning-on-dark);
+}
+
+[data-theme="dark"] .ui-alert--danger,
+[data-theme="dark"] .ui-alert--error,
+[data-theme="dark"] .alert-danger,
+[data-theme="dark"] .alert-error,
+[data-theme="dark"] .message-error {
+  color: var(--ui-text-danger-on-dark);
 }
 
 .ui-inline-error,
 .validation-message.error {
-  color: var(--ui-color-danger);
+  color: var(--ui-text-danger);
   font-size: 0.88rem;
   font-weight: 700;
 }

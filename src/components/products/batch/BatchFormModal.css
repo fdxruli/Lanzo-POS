@@ -8,20 +8,21 @@
   flex-direction: column;
   padding: 0 !important;
   overflow: hidden;
-  background-color: var(--card-background-color, #ffffff);
-  border-radius: var(--border-radius, 12px);
-  box-shadow: var(--box-shadow, 0 20px 25px -5px rgba(0, 0, 0, 0.1));
+  background-color: var(--ui-bg-surface);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+  box-shadow: var(--ui-shadow-lg);
 }
 
 /* --- HEADER --- */
 .batch-modal-header {
   padding: 20px 24px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.08));
+  border-bottom: 1px solid var(--ui-border-color);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  background-color: var(--card-background-color);
+  background-color: var(--ui-bg-surface);
 }
 
 .batch-modal-header-info {
@@ -34,7 +35,7 @@
   margin: 0;
   font-size: 1.4rem;
   font-weight: 700;
-  color: var(--text-dark);
+  color: var(--ui-text-strong);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -42,30 +43,37 @@
 
 .batch-modal-subtitle {
   margin: 0;
-  color: var(--text-light);
+  color: var(--ui-text-muted);
   font-size: 0.95rem;
 }
 
 .batch-modal-subtitle strong {
-  color: var(--primary-color, #3b82f6);
+  color: var(--ui-color-primary);
 }
 
 .btn-close-modal {
   background: transparent;
   border: none;
-  color: var(--text-light);
+  color: var(--ui-text-muted);
   cursor: pointer;
   padding: 4px;
-  border-radius: 8px;
+  border-radius: var(--ui-radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: background-color var(--ui-transition), color var(--ui-transition), box-shadow var(--ui-transition);
 }
 
 .btn-close-modal:hover {
-  background-color: var(--light-background, #f1f5f9);
-  color: var(--error-color, #ef4444);
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text-danger);
+}
+
+.btn-close-modal:focus-visible,
+.batch-link-button:focus-visible,
+.caja-payment-toggle:focus-within {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-primary);
 }
 
 /* --- FORM AREA --- */
@@ -83,7 +91,7 @@
   background: transparent;
 }
 .batch-form-scroll-area::-webkit-scrollbar-thumb {
-  background: var(--border-color, #cbd5e1);
+  background: var(--ui-border-color);
   border-radius: 10px;
 }
 
@@ -104,7 +112,7 @@
   align-items: center;
   gap: 6px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: var(--ui-text-strong);
   margin-bottom: 6px;
 }
 
@@ -112,37 +120,37 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-  background-color: var(--light-background, #f8fafc);
+  background-color: var(--ui-bg-muted);
   padding: 16px;
   border-radius: 10px;
-  border: 1px solid var(--border-color, rgba(0,0,0,0.05));
+  border: 1px solid var(--ui-border-color);
 }
 
 [data-theme="dark"] .price-cost-group {
-  background-color: rgba(0,0,0,0.2);
+  background-color: color-mix(in srgb, var(--ui-bg-muted) 72%, transparent);
 }
 
 /* --- TOGGLE CAJA --- */
 .caja-payment-toggle {
   margin-top: 8px;
   padding: 16px;
-  background-color: var(--card-background-color);
-  border: 2px solid var(--border-color, #e2e8f0);
+  background-color: var(--ui-bg-surface);
+  border: 2px solid var(--ui-border-color);
   border-radius: 10px;
   display: flex;
   align-items: center;
   gap: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color var(--ui-transition), border-color var(--ui-transition), box-shadow var(--ui-transition);
 }
 
 .caja-payment-toggle.active {
-  background-color: rgba(59, 130, 246, 0.08); /* Primary color con opacidad */
-  border-color: var(--primary-color, #3b82f6);
+  background-color: var(--ui-bg-info-soft);
+  border-color: var(--ui-color-primary);
 }
 
 .caja-payment-toggle.active label {
-  color: var(--primary-color, #3b82f6);
+  color: var(--ui-color-primary);
   font-weight: 600;
 }
 
@@ -150,7 +158,7 @@
   width: 20px;
   height: 20px;
   cursor: pointer;
-  accent-color: var(--primary-color);
+  accent-color: var(--ui-color-primary);
 }
 
 .caja-payment-toggle label {
@@ -161,15 +169,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--text-dark);
+  color: var(--ui-text-strong);
 }
 
 /* --- FOOTER --- */
 .batch-footer-fixed {
   flex-shrink: 0;
   padding: 16px 24px;
-  background-color: var(--card-background-color);
-  border-top: 1px solid var(--border-color, #e2e8f0);
+  padding-bottom: max(16px, var(--safe-area-bottom));
+  background-color: var(--ui-bg-surface);
+  border-top: 1px solid var(--ui-border-color);
 }
 
 .batch-footer-actions {
@@ -188,75 +197,6 @@
   padding: 12px 16px;
   font-weight: 600;
   box-sizing: border-box;
-}
-
-/* --- MEDIA QUERIES (Desktop) --- */
-@media (min-width: 768px) {
-  .batch-form-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 24px;
-  }
-  
-  .batch-footer-actions {
-    flex-direction: row;
-    justify-content: flex-end; /* Alinea el bloque completo a la derecha */
-    gap: 16px;
-    max-width: 620px; /* Evita que los botones se estiren infinitamente */
-    margin-left: auto; /* Empuja el contenedor hacia la derecha */
-  }
-
-  .batch-footer-actions .btn {
-    flex: 1; /* Hace que todos los botones tengan exactamente el mismo ancho */
-    width: auto;
-    white-space: nowrap; /* Evita saltos de línea internos extraños */
-  }
-}/* --- FOOTER --- */
-.batch-footer-fixed {
-  flex-shrink: 0;
-  padding: 16px 24px;
-  background-color: var(--card-background-color);
-  border-top: 1px solid var(--border-color, #e2e8f0);
-}
-
-.batch-footer-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-}
-
-.batch-footer-actions .btn {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  font-weight: 600;
-  box-sizing: border-box;
-  flex: 1;
-  white-space: nowrap;
-}
-
-/* --- MEDIA QUERIES (Desktop) --- */
-@media (min-width: 768px) {
-  .batch-form-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 24px;
-  }
-  
-  .batch-footer-actions {
-    flex-direction: row;
-    justify-content: flex-end;
-    gap: 16px;
-    max-width: none;
-  }
-
-  .batch-footer-actions .btn {
-    width: auto;
-    flex: 1;
-    max-width: 200px;
-  }
 }
 
 .batch-modal-form {
@@ -290,7 +230,7 @@
 
 .batch-update-price-label {
   margin: 0;
-  color: var(--text-light);
+  color: var(--ui-text-muted);
   font-size: 0.9rem;
   cursor: pointer;
 }
@@ -353,6 +293,7 @@
   color: var(--ui-color-primary);
   background: none;
   border: 0;
+  border-radius: var(--ui-radius-xs);
   font: inherit;
   font-size: 0.82rem;
   text-decoration: underline;
@@ -395,13 +336,32 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.batch-footer-fixed {
-  padding-bottom: max(16px, var(--safe-area-bottom));
-}
-
 .batch-update-price-label,
 .caja-payment-toggle label {
   overflow-wrap: anywhere;
+}
+
+/* --- MEDIA QUERIES (Desktop) --- */
+@media (min-width: 768px) {
+  .batch-form-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+
+  .batch-footer-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    gap: 16px;
+    max-width: 640px;
+    margin-left: auto;
+  }
+
+  .batch-footer-actions .btn {
+    width: auto;
+    flex: 1;
+    max-width: 210px;
+    white-space: nowrap;
+  }
 }
 
 @media (max-width: 640px) {
@@ -434,5 +394,12 @@
   .batch-footer-actions .btn {
     min-height: 44px;
     white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-close-modal,
+  .caja-payment-toggle {
+    transition: none;
   }
 }

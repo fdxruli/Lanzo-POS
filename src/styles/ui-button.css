@@ -31,8 +31,8 @@
 
 .ui-button:focus-visible,
 .btn:focus-visible {
-  outline: 3px solid rgba(6, 182, 212, 0.28);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-primary);
 }
 
 .ui-button:disabled,
@@ -67,7 +67,7 @@
 .ui-button--secondary,
 .btn-secondary {
   background-color: var(--ui-color-secondary);
-  color: #ffffff;
+  color: var(--ui-text-on-primary);
   border-color: var(--ui-color-secondary);
 }
 
@@ -106,9 +106,9 @@
 .ui-button--danger,
 .btn-delete,
 .btn-danger {
-  background-color: rgba(255, 59, 92, 0.1);
-  color: var(--ui-color-danger);
-  border-color: rgba(255, 59, 92, 0.18);
+  background-color: var(--ui-bg-danger-soft);
+  color: var(--ui-text-danger);
+  border-color: var(--ui-border-danger);
 }
 
 .ui-button--danger:hover:not(:disabled),
@@ -119,16 +119,26 @@
   border-color: var(--ui-color-danger);
 }
 
+.ui-button--danger:focus-visible,
+.btn-delete:focus-visible,
+.btn-danger:focus-visible {
+  box-shadow: var(--ui-shadow-focus-danger);
+}
+
 .ui-button--success {
   background-color: var(--ui-color-success);
-  color: #ffffff;
+  color: var(--ui-text-on-primary);
   border-color: var(--ui-color-success);
 }
 
+.ui-button--success:focus-visible {
+  box-shadow: var(--ui-shadow-focus-success);
+}
+
 .ui-button--warning {
-  background-color: rgba(255, 184, 0, 0.14);
-  color: #9a6500;
-  border-color: rgba(255, 184, 0, 0.3);
+  background-color: var(--ui-bg-warning-soft);
+  color: var(--ui-text-warning);
+  border-color: var(--ui-border-warning);
 }
 
 .ui-button--sm,
@@ -170,7 +180,7 @@
 }
 
 [data-theme="dark"] .ui-button--warning {
-  color: #ffd166;
+  color: var(--ui-text-warning-on-dark);
 }
 
 @media (max-width: 640px) {
@@ -185,5 +195,15 @@
   .btn-icon-small {
     min-width: 40px;
     min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button,
+  .btn,
+  .ui-icon-button,
+  .btn-icon,
+  .btn-icon-small {
+    transition: none;
   }
 }
