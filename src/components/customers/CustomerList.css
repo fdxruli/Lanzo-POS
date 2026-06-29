@@ -354,6 +354,12 @@
   }
 }
 
+@media (max-width: 640px) {
+  .customer-card {
+    margin-inline: 0;
+  }
+}
+
 .btn-icon-text {
   color: var(--text-light);
 }

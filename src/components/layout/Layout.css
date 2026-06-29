@@ -50,6 +50,12 @@
     padding-bottom: 88px;
 }
 
+@media (max-width: 640px) {
+    .page-container {
+        padding-inline: 0;
+    }
+}
+
 @media (max-width: 1023px) {
     .content-wrapper--pos .notification-ticker-container {
         margin-bottom: 8px;
