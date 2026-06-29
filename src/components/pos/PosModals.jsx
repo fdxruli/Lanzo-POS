@@ -1,4 +1,5 @@
 // src/components/pos/PosModals.jsx
+import { useCallback } from 'react';
 import PropTypes from 'prop-types';
 import TablesView from './TablesView';
 import SplitBillModal from './SplitBillModal';
@@ -7,6 +8,7 @@ import PaymentModal from '../common/PaymentModal';
 import QuickCajaModal from '../common/QuickCajaModal';
 import PrescriptionModal from './PrescriptionModal';
 import LayawayModal from './LayawayModal';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 
 export default function PosModals({
     activeModal,
@@ -40,6 +42,28 @@ export default function PosModals({
         features
     } = data;
 
+    const handleDismissActiveModal = useCallback(() => {
+        if (!activeModal) return;
+
+        if (activeModal === 'payment') {
+            handlePaymentModalClose();
+            return;
+        }
+
+        if (activeModal === 'quickCaja') {
+            handleQuickCajaClose();
+            return;
+        }
+
+        onClose(activeModal);
+    }, [activeModal, handlePaymentModalClose, handleQuickCajaClose, onClose]);
+
+    const dismissActiveModal = useDismissibleHistoryLayer({
+        isOpen: Boolean(activeModal),
+        onDismiss: handleDismissActiveModal,
+        layerId: `pos-${activeModal || 'modal'}`
+    });
+
     const quickCajaResponsibleName = cashActor?.responsibleName || cashActor?.displayName || '';
     const lockQuickCajaResponsible = Boolean(cashActor?.isStaff && quickCajaResponsibleName);
 
@@ -48,7 +72,7 @@ export default function PosModals({
             {features?.hasTables && (
                 <TablesView
                     show={activeModal === 'tables'}
-                    onClose={() => onClose('tables')}
+                    onClose={dismissActiveModal}
                     onSelectOrder={handleLoadOpenOrder}
                     onCheckoutOrder={(order) => handleQuickTableAction(order, 'checkout')}
                     onSplitOrder={(order) => handleQuickTableAction(order, 'split')}
@@ -59,19 +83,19 @@ export default function PosModals({
 
             <ScannerModal
                 show={activeModal === 'scanner'}
-                onClose={() => onClose('scanner')}
+                onClose={dismissActiveModal}
             />
 
             <PaymentModal
                 show={activeModal === 'payment'}
-                onClose={handlePaymentModalClose}
+                onClose={dismissActiveModal}
                 onConfirm={handleProcessOrder}
                 total={total}
             />
 
             <SplitBillModal
                 show={activeModal === 'split'}
-                onClose={() => onClose('split')}
+                onClose={dismissActiveModal}
                 order={order}
                 total={total}
                 isCajaOpen={Boolean(cajaActual && cajaActual.estado === 'abierta')}
@@ -80,7 +104,7 @@ export default function PosModals({
 
             <QuickCajaModal
                 show={activeModal === 'quickCaja'}
-                onClose={handleQuickCajaClose}
+                onClose={dismissActiveModal}
                 onConfirm={handleQuickCajaSubmit}
                 suggestedAmount={aperturaPendiente?.montoSugerido || '0'}
                 responsibleName={quickCajaResponsibleName}
@@ -90,14 +114,14 @@ export default function PosModals({
 
             <PrescriptionModal
                 show={activeModal === 'prescription'}
-                onClose={() => onClose('prescription')}
+                onClose={dismissActiveModal}
                 onConfirm={handlePrescriptionConfirm}
                 itemsRequiringPrescription={prescriptionItems}
             />
 
             <LayawayModal
                 show={activeModal === 'layaway'}
-                onClose={() => onClose('layaway')}
+                onClose={dismissActiveModal}
                 onConfirm={handleConfirmLayaway}
                 total={total}
                 customer={customer}
