@@ -1,6 +1,9 @@
 .daily-price-modal {
   width: min(700px, calc(100vw - 2rem));
+  max-width: 100%;
+  min-width: 0;
   height: min(80vh, 760px);
+  max-height: calc(100dvh - 2rem);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -17,6 +20,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--ui-border-color);
   border-radius: var(--ui-radius-sm);
 }
@@ -85,11 +89,16 @@
 
 @media (max-width: 640px) {
   .daily-price-modal {
-    width: 100%;
+    width: min(100%, calc(100vw - 1rem));
+    max-height: calc(100dvh - 1rem);
     height: calc(100dvh - 1rem);
   }
 
   .daily-price-modal__filters {
     grid-template-columns: 1fr;
+  }
+
+  .daily-price-modal__actions .ui-button {
+    width: 100%;
   }
 }

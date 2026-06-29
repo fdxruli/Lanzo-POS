@@ -700,3 +700,60 @@
   min-height: 0;
   padding: 8px 10px;
 }
+
+/* UI.6 responsive hardening */
+.product-list-container,
+.product-list-container .list-header,
+.product-list-container .product-grid,
+.product-list-container .product-card-complex,
+.product-list-container .title-area,
+.product-list-container .stat-block,
+.product-list-container .detail-item,
+.product-list-actions {
+  min-width: 0;
+}
+
+.product-list-container .product-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+}
+
+.product-list-container .main-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.product-list-container .title-top h4,
+.product-list-container .stat-value,
+.product-list-container .value {
+  overflow-wrap: anywhere;
+}
+
+.product-list-container .detail-item {
+  gap: 8px;
+}
+
+.product-list-search {
+  min-width: min(100%, 220px);
+}
+
+@media (max-width: 480px) {
+  .product-list-container .product-grid,
+  .product-list-container .main-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .product-list-container .complex-footer {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .product-list-container .footer-actions,
+  .product-list-container .actions-area {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .product-list-container .btn-action {
+    min-height: 40px !important;
+  }
+}

@@ -1,5 +1,7 @@
 .batch-edit-modal {
+  width: min(100%, calc(100vw - 2rem));
   max-width: 600px;
+  min-width: 0;
 }
 
 .batch-edit-modal__error {
@@ -19,6 +21,11 @@
 }
 
 @media (max-width: 560px) {
+  .batch-edit-modal {
+    width: min(100%, calc(100vw - 1rem));
+    max-height: calc(100dvh - 1rem);
+  }
+
   .batch-edit-modal__actions {
     flex-direction: column-reverse;
     align-items: stretch;

@@ -2,7 +2,9 @@
 
 /* Ajustes específicos para el contenido de este modal */
 .wholesale-modal {
+  width: min(100%, calc(100vw - 2rem));
   max-width: 550px;
+  min-width: 0;
   /* El fondo y color de texto ya se heredan de las variables globales */
 }
 
@@ -17,6 +19,7 @@
 /* Fila del formulario */
 .wholesale-form-row {
   display: flex;
+  min-width: 0;
   gap: var(--spacing-md);
   align-items: flex-end;
   margin-bottom: var(--spacing-lg);
@@ -56,7 +59,8 @@
 /* Contenedor de la lista */
 .tiers-list {
   max-height: 250px;
-  overflow-y: auto;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--ui-border-color);
   border-radius: var(--border-radius-sm);
   background-color: var(--ui-bg-surface);
@@ -65,6 +69,7 @@
 /* Tabla */
 .tiers-table {
   width: 100%;
+  min-width: 360px;
   border-collapse: collapse;
 }
 
@@ -194,4 +199,18 @@
   /* Opcional: Si quieres que el header sea un pelín más oscuro que el light-background estándar */
   background-color: rgba(255, 255, 255, 0.05); 
   color: var(--text-dark);
+}
+
+@media (max-width: 640px) {
+  .wholesale-form-row,
+  .modal-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .wholesale-form-row .btn-save,
+  .modal-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
 }

@@ -367,3 +367,72 @@
 .batch-secondary-save-button {
   background-color: var(--ui-color-secondary);
 }
+
+/* UI.6 responsive hardening */
+.batch-modal-wrapper,
+.batch-modal-form,
+.batch-modal-header-info,
+.batch-form-grid,
+.batch-update-price-row,
+.batch-update-price-label {
+  min-width: 0;
+}
+
+.batch-modal-wrapper {
+  max-height: calc(100dvh - 2rem);
+}
+
+.batch-modal-header {
+  gap: 16px;
+}
+
+.batch-form-scroll-area {
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.price-cost-group {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.batch-footer-fixed {
+  padding-bottom: max(16px, var(--safe-area-bottom));
+}
+
+.batch-update-price-label,
+.caja-payment-toggle label {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .batch-modal-wrapper {
+    width: min(100%, calc(100vw - 1rem));
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .batch-modal-header {
+    padding: 16px;
+  }
+
+  .batch-form-scroll-area {
+    padding: 16px;
+  }
+
+  .price-cost-group {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .caja-payment-toggle {
+    align-items: flex-start;
+  }
+
+  .batch-footer-fixed {
+    padding: 12px 16px max(12px, var(--safe-area-bottom));
+  }
+
+  .batch-footer-actions .btn {
+    min-height: 44px;
+    white-space: normal;
+  }
+}
