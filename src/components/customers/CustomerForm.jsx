@@ -109,7 +109,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
             <label className="form-label customer-credit-label" htmlFor="credit-limit">
               Limite de Credito ($)
               <span title="Monto maximo que se le puede fiar a este cliente. Ponga 0 para desactivar fiado.">
-                <Info size={14} color="#718096" />
+                <Info size={14} className="customer-credit-info-icon" />
               </span>
             </label>
             <input
@@ -140,10 +140,10 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
         </div>
 
         <div className="form-actions customer-form-actions">
-          <button type="submit" className="btn btn-save" disabled={isSaving}>
+          <button type="submit" className="ui-button ui-button--primary btn btn-save" disabled={isSaving}>
             {isSaving ? 'Guardando...' : 'Guardar Cliente'}
           </button>
-          <button type="button" className="btn btn-cancel" onClick={onCancel} disabled={isSaving}>
+          <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onCancel} disabled={isSaving}>
             Cancelar
           </button>
         </div>

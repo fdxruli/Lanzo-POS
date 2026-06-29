@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { queryByIndex, STORES } from '../../services/database';
 import './PurchaseHistoryModal.css';
 import Logger from '../../services/Logger';
@@ -7,7 +7,7 @@ import { customerCreditRepository } from '../../services/customerCredit/customer
 
 // Iconos simples (puedes reemplazarlos por lucide-react o fontawesome si usas)
 const ChevronIcon = ({ expanded }) => (
-  <span style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', display: 'inline-block' }}>
+  <span className={`history-chevron ${expanded ? 'history-chevron--expanded' : ''}`}>
     ▼
   </span>
 );
@@ -76,18 +76,18 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
   if (!show || !customer) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content history-modal-content"
+    <div className="ui-modal purchase-history-modal-overlay" onClick={onClose}>
+      <div className="ui-modal__content history-modal-content purchase-history-modal"
         onClick={(e) => e.stopPropagation()}
       >
 
         {/* HEADER */}
-        <div className="modal-header">
+        <div className="purchase-history-modal-header">
           <div>
-            <h2 className="modal-title">Historial del Cliente</h2>
-            <p className="modal-subtitle">{customer.name}</p>
+            <h2 className="purchase-history-modal-title">Historial del Cliente</h2>
+            <p className="purchase-history-modal-subtitle">{customer.name}</p>
           </div>
-          <button className="btn-icon-close" onClick={onClose}>&times;</button>
+          <button className="purchase-history-close-button" onClick={onClose}>&times;</button>
         </div>
 
         {/* RESUMEN FINANCIERO (TARJETAS) */}
@@ -131,20 +131,20 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
         </div>
 
         {(isCloudCredit || ledgerEntries.length > 0) && (
-          <div className="history-toolbar" style={{ alignItems: 'stretch' }}>
-            <div style={{ width: '100%' }}>
-              <strong style={{ display: 'block', marginBottom: '0.5rem' }}>
+          <div className="history-toolbar history-ledger-toolbar">
+            <div className="history-ledger-content">
+              <strong className="history-ledger-title">
                 Ledger de credito{isCloudCredit ? ' cloud' : ''}
               </strong>
               {ledgerEntries.length === 0 ? (
-                <p style={{ color: 'var(--text-secondary)', margin: 0 }}>Sin movimientos de ledger registrados.</p>
+                <p className="history-ledger-empty">Sin movimientos de ledger registrados.</p>
               ) : (
-                <div style={{ display: 'grid', gap: '0.5rem' }}>
+                <div className="history-ledger-list">
                   {ledgerEntries.slice(0, 8).map((entry) => {
                     const amount = Number(entry.amount || 0);
                     const createdAt = entry.created_at || entry.createdAt || entry.timestamp;
                     return (
-                      <div key={entry.id} className="history-item-header" style={{ padding: '0.5rem 0' }}>
+                      <div key={entry.id} className="history-item-header history-ledger-row">
                         <div className="info-col">
                           <div className="info-top">
                             <span className="sale-id">#{String(entry.id).slice(-6)}</span>

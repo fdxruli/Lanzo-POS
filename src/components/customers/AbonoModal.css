@@ -275,3 +275,188 @@
   background-color: var(--light-background);
   border-color: var(--border-color);
 }
+
+.abono-modal-content {
+  width: 95%;
+  transition: max-width 0.3s ease;
+}
+
+.abono-modal-content--wide {
+  max-width: 850px !important;
+}
+
+.abono-header .btn-icon-close {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+}
+
+.abono-summary-card {
+  margin: 0;
+}
+
+.abono-desktop-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.abono-left-col {
+  flex: 1 1 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.abono-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.abono-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.abono-mode-label.is-disabled,
+.abono-whatsapp-toggle.is-disabled {
+  cursor: not-allowed;
+}
+
+.abono-input-group {
+  margin: 0;
+}
+
+.abono-monto-input:read-only {
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text-muted) !important;
+}
+
+.abono-alert {
+  align-items: center;
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.abono-right-col {
+  flex: 1 1 400px;
+  display: flex;
+  flex-direction: column;
+  max-height: 55vh;
+}
+
+.allocations-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+  background-color: var(--ui-bg-surface);
+}
+
+.allocations-empty {
+  margin: 0;
+  padding: 1rem;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.allocation-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.allocation-row:last-child {
+  border-bottom: 0;
+}
+
+.sale-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sale-folio {
+  color: var(--text-dark);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.sale-date {
+  color: var(--text-light);
+  font-size: 0.8rem;
+}
+
+.sale-pending {
+  color: var(--error-color);
+  font-size: 0.8rem;
+}
+
+.sale-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.allocation-input-wrap {
+  width: 100px;
+}
+
+.allocation-currency-symbol {
+  left: 8px;
+  font-size: 1rem;
+}
+
+.allocation-input {
+  height: 32px;
+  padding-right: 5px;
+  padding-left: 20px !important;
+  font-size: 0.9rem;
+}
+
+.allocation-full-button {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 0.8rem;
+}
+
+.allocation-check-icon {
+  color: var(--text-light);
+}
+
+.allocation-check-icon--active {
+  color: var(--primary-color);
+}
+
+.abono-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.abono-submit-help {
+  margin: 0;
+  color: var(--text-light);
+}
+
+.abono-footer .abono-whatsapp-toggle,
+.abono-footer .abono-actions {
+  margin: 0;
+}

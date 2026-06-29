@@ -1,8 +1,7 @@
 /* src/components/customers/PurchaseHistoryModal.css */
-.modal-overlay {
+.purchase-history-modal-overlay {
   position: fixed; /* Fija el elemento a la ventana del navegador */
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100vh;
   height: 100dvh;
@@ -12,6 +11,15 @@
   align-items: center;     /* Centra verticalmente */
   backdrop-filter: blur(2px); /* Opcional: efecto borroso en el fondo */
   z-index: var(--z-modal-high);
+}
+
+.history-chevron {
+  display: inline-block;
+  transition: transform 0.2s;
+}
+
+.history-chevron--expanded {
+  transform: rotate(180deg);
 }
 
 .history-modal-content {
@@ -30,7 +38,7 @@
 }
 
 /* --- Header --- */
-.modal-header {
+.purchase-history-modal-header {
   padding: 20px 24px;
   background-color: var(--card-background-color); /* Se adapta al modo oscuro */
   border-bottom: 1px solid var(--border-color);
@@ -39,20 +47,20 @@
   align-items: flex-start;
 }
 
-.modal-title {
+.purchase-history-modal-title {
   font-size: 1.25rem;
   font-weight: 700;
   margin: 0;
   color: var(--text-dark); /* Texto principal */
 }
 
-.modal-subtitle {
+.purchase-history-modal-subtitle {
   margin: 4px 0 0 0;
   color: var(--text-light); /* Texto secundario */
   font-size: 0.95rem;
 }
 
-.btn-icon-close {
+.purchase-history-close-button {
   background: none;
   border: none;
   font-size: 1.5rem;
@@ -62,7 +70,7 @@
   transition: color 0.2s;
 }
 
-.btn-icon-close:hover {
+.purchase-history-close-button:hover {
   color: var(--error-color);
 }
 
@@ -117,6 +125,33 @@
   padding: 12px 24px;
   background: var(--card-background-color);
   border-bottom: 1px solid var(--border-color);
+}
+
+.history-ledger-toolbar {
+  align-items: stretch;
+}
+
+.history-ledger-content {
+  width: 100%;
+}
+
+.history-ledger-title {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.history-ledger-empty {
+  margin: 0;
+  color: var(--text-light);
+}
+
+.history-ledger-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.history-ledger-row {
+  padding: 0.5rem 0;
 }
 
 .filter-group {

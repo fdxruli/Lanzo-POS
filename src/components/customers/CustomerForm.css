@@ -70,6 +70,10 @@
   gap: 0.35rem;
 }
 
+.customer-credit-info-icon {
+  color: var(--text-light);
+}
+
 .customer-credit-help,
 .customer-form-container .form-help-text {
   margin: 0;

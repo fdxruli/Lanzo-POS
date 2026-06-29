@@ -1,5 +1,5 @@
 // src/components/customers/AbonoModal.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Wallet, X, CheckCircle, MessageCircle, AlertTriangle, List } from 'lucide-react';
 import { db } from '../../services/db/dexie';
 import { Money } from '../../utils/moneyMath';
@@ -210,24 +210,24 @@ export default function AbonoModal({
   if (!show || !customer) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }}>
-      <div className="modal-content abono-modal-content" style={{ maxWidth: advancedMode ? '850px' : '450px', transition: 'max-width 0.3s ease', width: '95%' }}>
-        <div className="abono-header">
-          <h2 className="modal-title">
+    <div className="ui-modal ui-modal--high abono-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="abono-modal-title">
+      <div className={`ui-modal__content abono-modal-content ${advancedMode ? 'abono-modal-content--wide' : ''}`}>
+        <header className="ui-modal__header abono-header">
+          <h2 className="ui-modal__title modal-title" id="abono-modal-title">
             <Wallet size={24} className="text-primary" />
             Abonar a Deuda
           </h2>
-          <button className="btn-icon-close" onClick={handleClose} aria-label="Cerrar" disabled={isSubmitting}>
+          <button type="button" className="ui-button ui-button--ghost ui-button--sm btn-icon-close" onClick={handleClose} aria-label="Cerrar" disabled={isSubmitting}>
             <X size={24} />
           </button>
-        </div>
+        </header>
 
-        <form onSubmit={handleSubmit} className="abono-form" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }} aria-busy={isSubmitting}>
-          <div className="abono-desktop-split" style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'flex-start' }}>
+        <form onSubmit={handleSubmit} className="ui-modal__body abono-form" aria-busy={isSubmitting}>
+          <div className="abono-desktop-split">
 
             {/* COLUMNA IZQUIERDA */}
-            <div className="abono-left-col" style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div className="abono-summary-card" style={{ margin: 0 }}>
+            <div className="abono-left-col">
+              <div className="ui-card abono-summary-card">
                 <div className="cliente-info">
                   <span className="cliente-label">Cliente:</span>
                   <span className="cliente-name">{customer.name}</span>
@@ -249,13 +249,13 @@ export default function AbonoModal({
               </div>
 
               {isCloudCredit && isBlocked && (
-                <p className="form-help-text validation-message error">
+                <p className="ui-alert ui-alert--danger abono-alert">
                   <AlertTriangle size={14} /> {blockedReason || 'Abonos cloud requieren caja abierta y conexion.'}
                 </p>
               )}
 
-              <div className="abono-mode-toggle" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+              <div className="abono-mode-toggle">
+                <label className={`abono-mode-label ${isSubmitting ? 'is-disabled' : ''}`}>
                   <input
                     type="checkbox"
                     checked={advancedMode}
@@ -270,7 +270,7 @@ export default function AbonoModal({
                 </label>
               </div>
 
-              <div className="form-group abono-input-group" style={{ margin: 0 }}>
+              <div className="form-group abono-input-group">
                 <div className="abono-input-header">
                   <label className="form-label" htmlFor="abono-monto">Monto a Abonar ($):</label>
                   {!advancedMode && (
@@ -302,11 +302,10 @@ export default function AbonoModal({
                     autoFocus
                     readOnly={advancedMode}
                     disabled={isBlocked || isSubmitting}
-                    style={advancedMode ? { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' } : {}}
                   />
                 </div>
                 {error && (
-                  <p className="form-help-text validation-message error">
+                  <p className="ui-alert ui-alert--danger abono-alert">
                     <AlertTriangle size={14} /> {error}
                   </p>
                 )}
@@ -315,29 +314,28 @@ export default function AbonoModal({
 
             {/* COLUMNA DERECHA (Solo en modo avanzado) */}
             {advancedMode && (
-              <div className="abono-right-col" style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', maxHeight: '55vh' }}>
-                <div className="allocations-container" style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '0.5rem', backgroundColor: 'var(--bg-primary)' }}>
+              <div className="abono-right-col">
+                <div className="ui-card allocations-container">
                   {pendingSales.length === 0 ? (
-                    <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem', padding: '1rem' }}>No hay notas pendientes.</p>
+                    <p className="allocations-empty">No hay notas pendientes.</p>
                   ) : (
                     pendingSales.map(sale => (
-                      <div key={sale.id} className="allocation-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', borderBottom: '1px solid var(--border-color)' }}>
-                        <div className="sale-info" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>Folio: {sale.folio || sale.id.substring(0, 6)}</span>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <div key={sale.id} className="allocation-row">
+                        <div className="sale-info">
+                          <span className="sale-folio">Folio: {sale.folio || sale.id.substring(0, 6)}</span>
+                          <span className="sale-date">
                             Fecha: {new Date(sale.timestamp).toLocaleDateString()}
                           </span>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--error-color)' }}>
+                          <span className="sale-pending">
                             Pendiente: ${Number(sale.saldoPendiente).toFixed(2)}
                           </span>
                         </div>
-                        <div className="sale-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <div className="input-with-currency" style={{ width: '100px' }}>
-                            <span className="currency-symbol" style={{ left: '8px' }}>$</span>
+                        <div className="sale-actions">
+                          <div className="input-with-currency allocation-input-wrap">
+                            <span className="currency-symbol allocation-currency-symbol">$</span>
                             <input
                               type="number"
-                              className="form-input"
-                              style={{ paddingLeft: '20px', paddingRight: '5px', height: '32px', fontSize: '0.9rem' }}
+                              className="form-input allocation-input"
                               placeholder="0.00"
                               step="0.01"
                               min="0"
@@ -350,12 +348,11 @@ export default function AbonoModal({
                           <button
                             type="button"
                             onClick={() => handleToggleFullAllocation(sale)}
-                            className="btn btn-icon"
-                            style={{ height: '32px', padding: '0 8px', fontSize: '0.8rem' }}
+                            className="ui-button ui-button--ghost ui-icon-button ui-icon-button--sm btn btn-icon allocation-full-button"
                             title="Asignar total de esta nota"
                             disabled={isBlocked || isSubmitting}
                           >
-                            <CheckCircle size={16} color={(parseFloat(allocations[sale.id]) === sale.saldoPendiente) ? 'var(--primary-color)' : 'var(--text-secondary)'} />
+                            <CheckCircle size={16} className={(parseFloat(allocations[sale.id]) === sale.saldoPendiente) ? 'allocation-check-icon allocation-check-icon--active' : 'allocation-check-icon'} />
                           </button>
                         </div>
                       </div>
@@ -367,8 +364,8 @@ export default function AbonoModal({
           </div>
 
           {/* FOOTER */}
-          <div className="abono-footer" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <label className="abono-whatsapp-toggle" style={{ margin: 0, cursor: isSubmitting ? 'not-allowed' : undefined }}>
+          <div className="abono-footer">
+            <label className={`abono-whatsapp-toggle ${isSubmitting ? 'is-disabled' : ''}`}>
               <div className="toggle-info">
                 <MessageCircle size={20} className="icon-whatsapp" />
                 <span>Enviar recibo por WhatsApp</span>
@@ -383,20 +380,20 @@ export default function AbonoModal({
             </label>
 
             {isSubmitting && (
-              <p className="form-help-text" style={{ margin: 0, color: 'var(--text-secondary)' }}>
+              <p className="form-help-text abono-submit-help">
                 Registrando abono, por favor espera...
               </p>
             )}
 
-            <div className="abono-actions" style={{ margin: 0 }}>
-              <button type="submit" className="btn btn-save" disabled={isBlocked || isSubmitting || !!error || !monto}>
+            <footer className="ui-modal__actions abono-actions">
+              <button type="submit" className="ui-button ui-button--success btn btn-save" disabled={isBlocked || isSubmitting || !!error || !monto}>
                 <CheckCircle size={18} />
                 {isSubmitting ? 'Registrando abono...' : 'Confirmar Abono'}
               </button>
-              <button type="button" className="btn btn-cancel" onClick={handleClose} disabled={isSubmitting}>
+              <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={handleClose} disabled={isSubmitting}>
                 Cancelar
               </button>
-            </div>
+            </footer>
           </div>
         </form>
       </div>
