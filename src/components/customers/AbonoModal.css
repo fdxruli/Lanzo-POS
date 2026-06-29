@@ -263,17 +263,14 @@
    3. MODO OSCURO (COMPATIBILIDAD SISTEMA)
    ========================================= */
 [data-theme="dark"] .abono-summary-card {
-  background-color: #450a0a; /* Fondo rojo muy oscuro para resaltar la deuda */
-  border-color: #991b1b;
+  background-color: color-mix(in srgb, var(--ui-color-danger) 18%, var(--ui-bg-surface));
+  border-color: var(--ui-border-danger);
 }
 
 [data-theme="dark"] .abono-summary-card .cliente-label,
-[data-theme="dark"] .abono-summary-card .deuda-label {
-  color: #fca5a5;
-}
-
+[data-theme="dark"] .abono-summary-card .deuda-label,
 [data-theme="dark"] .abono-summary-card .deuda-total {
-  color: #f87171;
+  color: var(--ui-text-danger-on-dark);
 }
 
 [data-theme="dark"] .btn-saldar-quick {

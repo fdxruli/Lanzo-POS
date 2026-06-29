@@ -75,13 +75,13 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
     };
 
     return (
-        <div className="modal-overlay">
-            <div className="modal-content modifiers-modal">
+        <div className="ui-modal product-modifiers-modal-overlay">
+            <div className="ui-modal__content modal-content modifiers-modal product-modifiers-modal-content">
                 {/* HEADER */}
                 <div className="modifiers-header">
-                    <div className="header-top">
-                        <h2 className="modal-title">{product.name}</h2>
-                        <button className="close-btn" onClick={onClose}><X size={24} /></button>
+                    <div className="header-top product-modifiers-header-top">
+                        <h2 className="modal-title product-modifiers-modal-title">{product.name}</h2>
+                        <button className="close-btn product-modifiers-close-button" onClick={onClose}><X size={24} /></button>
                     </div>
                     {product.description && (
                         <p className="product-description">{product.description}</p>
