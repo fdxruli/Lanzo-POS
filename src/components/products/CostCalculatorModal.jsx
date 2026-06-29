@@ -1,6 +1,7 @@
 // src/components/products/CostCalculatorModal.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { roundCurrency, showMessageModal } from '../../services/utils';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import './CostCalculatorModal.css'
 
 export default function CostCalculatorModal({ show, onClose, onAssignCost }) {
@@ -8,6 +9,17 @@ export default function CostCalculatorModal({ show, onClose, onAssignCost }) {
   const [name, setName] = useState('');
   const [cost, setCost] = useState('');
   const [quantity, setQuantity] = useState(1);
+
+  const handleClose = useCallback(() => {
+    setIngredients([]); // Limpia la lista al cerrar
+    onClose();
+  }, [onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: show,
+    onDismiss: handleClose,
+    layerId: 'cost-calculator-modal'
+  });
 
   // Lógica de 'addIngredient'
   const addIngredient = () => {
@@ -36,12 +48,7 @@ export default function CostCalculatorModal({ show, onClose, onAssignCost }) {
 
   const handleAssign = () => {
     onAssignCost(totalCost); // Envía el total al padre
-    onClose(); // Cierra el modal
-  };
-  
-  const handleClose = () => {
-    setIngredients([]); // Limpia la lista al cerrar
-    onClose();
+    dismissModal(); // Cierra el modal
   };
 
   if (!show) return null;
@@ -85,7 +92,7 @@ export default function CostCalculatorModal({ show, onClose, onAssignCost }) {
           <button id="assign-cost" className="btn btn-assign" onClick={handleAssign}>
             Asignar a Costo
           </button>
-          <button id="close-cost-modal" className="btn btn-cancel" onClick={handleClose}>
+          <button id="close-cost-modal" className="btn btn-cancel" onClick={dismissModal}>
             Cerrar
           </button>
         </div>
