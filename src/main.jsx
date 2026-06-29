@@ -16,6 +16,9 @@ import Logger from './services/Logger';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { cleanupDevelopmentServiceWorkers } from './services/devServiceWorkerCleanup';
 import { startPosSyncAutoBootstrap } from './services/sync/posSyncBootstrapAutoCoordinator';
+import { installMobileZoomGuard } from './services/mobileZoomGuard';
+
+installMobileZoomGuard();
 
 function Thrower({ error }) {
   throw error;
