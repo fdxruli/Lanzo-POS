@@ -1,5 +1,5 @@
 // src/components/products/WasteModal.jsx
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { saveDataSafe, STORES, updateProductSafe } from '../../services/database';
 import { generateID, showConfirmModal, showMessageModal, roundCurrency } from '../../services/utils';
 // --- CAMBIO: Usamos el store correcto (Estadísticas) ---
@@ -8,6 +8,7 @@ import { useProductStore } from '../../store/useProductStore';
 import { useSalesStore } from '../../store/useSalesStore';
 import { useAppStore } from '../../store/useAppStore';
 import { Trash2, AlertCircle, PackageX, ShieldAlert, Gift, Flame, XCircle, AlertTriangle, X, CheckCircle, Leaf, Droplet } from 'lucide-react';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import './WasteModal.css';
 
 const VERDULERIA_REASONS = [
@@ -40,6 +41,17 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
     // --- CAMBIO: Usamos el hook del store de estadísticas ---
     const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
     const registerWasteRecord = useSalesStore(state => state.registerWasteRecord);
+
+    const handleDismiss = useCallback(() => {
+        onClose();
+    }, [onClose]);
+
+    const dismissModal = useDismissibleHistoryLayer({
+        isOpen: Boolean(show && product),
+        onDismiss: handleDismiss,
+        layerId: 'waste-modal'
+    });
+
     if (!show || !product) return null;
 
     const handleSave = async (e) => {
@@ -152,7 +164,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
         showMessageModal(`✅ Merma registrada.\nSe descontaron los insumos correctamente.\nPérdida: $${totalCostLoss.toFixed(2)}`);
 
         onConfirm(); // Recargar lista
-        onClose();
+        dismissModal();
         setQuantity(''); setNotes('');
     };
 
@@ -163,7 +175,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
                     <h2 className="waste-modal-title">
                         <Trash2 size={24} /> Registrar Merma
                     </h2>
-                    <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-color, #333)' }}>
+                    <button type="button" onClick={dismissModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-color, #333)' }}>
                         <X size={24} />
                     </button>
                 </div>
@@ -207,7 +219,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
                     </div>
 
                     <div className="waste-actions">
-                        <button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button>
+                        <button type="button" className="btn btn-cancel" onClick={dismissModal}>Cancelar</button>
                         <button type="submit" className="btn btn-delete">
                             <CheckCircle size={18} /> Confirmar Pérdida
                         </button>
