@@ -1,8 +1,9 @@
 // src/components/caja/modals/EditInitialModal.jsx
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 import { showMessageModal } from '../../../services/utils';
+import { useDismissibleHistoryLayer } from '../../../../hooks/useDismissibleHistoryLayer';
 import Logger from '../../../services/Logger';
 
 /**
@@ -20,6 +21,17 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
   const [focusedElement, setFocusedElement] = useState(null);
   const inputRef = useRef(null);
 
+  const handleDismiss = useCallback(() => {
+    if (isDisabled) return;
+    onClose();
+  }, [isDisabled, onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: show,
+    onDismiss: handleDismiss,
+    layerId: 'edit-initial-cash-modal'
+  });
+
   // Inicializar al abrir el modal
   useEffect(() => {
     if (show) {
@@ -33,7 +45,7 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
     if (!show || isDisabled) return;
 
     const handleEsc = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') dismissModal();
     };
 
     // Focus trap: mantener el foco dentro del modal
@@ -72,7 +84,7 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
         focusedElement.focus();
       }
     };
-  }, [show, onClose, isDisabled, focusedElement]);
+  }, [show, dismissModal, isDisabled, focusedElement]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -85,7 +97,7 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
         return;
       }
       onSave(Money.toExactString(safeVal));
-      onClose();
+      dismissModal();
     } catch (error) {
       Logger.error('Error en fondo inicial:', error);
       showMessageModal('Monto inválido. Por favor verifica el formato.', null, { type: 'error' });
@@ -108,7 +120,7 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
           <button
             type="button"
             className="ui-button ui-button--ghost ui-button--sm cash-modal-close"
-            onClick={onClose}
+            onClick={dismissModal}
             disabled={isDisabled}
             aria-label="Cerrar modal"
           >
@@ -136,7 +148,7 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
             />
           </div>
           <footer className="ui-modal__actions cash-modal-actions">
-            <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
+            <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={dismissModal} disabled={isDisabled}>Cancelar</button>
             <button type="submit" className="ui-button ui-button--primary btn btn-save" disabled={isDisabled}>Actualizar</button>
           </footer>
         </form>
