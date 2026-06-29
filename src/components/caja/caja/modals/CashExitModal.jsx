@@ -1,6 +1,7 @@
 // src/components/caja/modals/CashExitModal.jsx
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useDismissibleHistoryLayer } from '../../../../hooks/useDismissibleHistoryLayer';
 
 /**
  * Modal para registrar salida de efectivo
@@ -12,17 +13,28 @@ import { X } from 'lucide-react';
  * @param {boolean} [props.isDisabled=false] - Deshabilita la interacción
  */
 const CashExitModal = ({ show, onClose, onSubmit, isDisabled = false }) => {
+  const handleDismiss = useCallback(() => {
+    if (isDisabled) return;
+    onClose();
+  }, [isDisabled, onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: show,
+    onDismiss: handleDismiss,
+    layerId: 'cash-exit-modal'
+  });
+
   // Soporte para tecla ESC
   useEffect(() => {
     if (!show || isDisabled) return;
 
     const handleEsc = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') dismissModal();
     };
 
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
-  }, [show, onClose, isDisabled]);
+  }, [show, dismissModal, isDisabled]);
 
   if (!show) return null;
 
@@ -39,7 +51,7 @@ const CashExitModal = ({ show, onClose, onSubmit, isDisabled = false }) => {
           <button
             type="button"
             className="ui-button ui-button--ghost ui-button--sm cash-modal-close"
-            onClick={onClose}
+            onClick={dismissModal}
             disabled={isDisabled}
             aria-label="Cerrar modal"
           >
@@ -80,7 +92,7 @@ const CashExitModal = ({ show, onClose, onSubmit, isDisabled = false }) => {
             />
           </div>
           <footer className="ui-modal__actions cash-modal-actions">
-            <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
+            <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={dismissModal} disabled={isDisabled}>Cancelar</button>
             <button type="submit" className="ui-button ui-button--danger btn btn-delete" disabled={isDisabled}>Registrar Salida</button>
           </footer>
         </form>
