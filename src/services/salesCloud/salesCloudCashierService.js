@@ -71,12 +71,15 @@ const friendlyCloudCashierError = (error) => {
     CLOUD_SALES_INVENTORY_DISABLED: 'Venta cloud con inventario aún no está activa para esta licencia.',
     POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar la licencia de este dispositivo. Revisa conexión y licencia.',
     OFFLINE: 'Sin conexión. Esta venta cloud necesita internet para proteger caja, inventario y crédito.',
-    INSUFFICIENT_CLOUD_STOCK: 'No hay suficiente stock en la nube para completar esta venta fiada. No se creó deuda.',
-    PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE: 'Este producto aún no está listo para venta cloud. Sincroniza el catálogo antes de vender fiado.',
+    INSUFFICIENT_CLOUD_STOCK: 'No hay suficiente stock en la nube para completar esta venta. No se creó el movimiento.',
+    PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE: 'Este producto aún no está listo para venta cloud. Sincroniza el catálogo antes de venderlo.',
     CLOUD_PRODUCT_NOT_AVAILABLE: 'Este producto no está activo en la nube. Revisa el catálogo antes de venderlo.',
     CLOUD_BATCH_NOT_AVAILABLE: 'El lote seleccionado no está disponible en la nube. Actualiza lotes e intenta de nuevo.',
     CLOUD_BATCH_ALLOCATION_MISMATCH: 'Las cantidades por lote no cuadran con la cantidad vendida. Revisa el producto e intenta de nuevo.',
-    SALE_CREDIT_DUPLICATE_OR_CONFLICT: 'La venta fiada ya fue registrada o hay un conflicto de folio. Actualiza ventas antes de reintentar.'
+    SALE_CREDIT_DUPLICATE_OR_CONFLICT: 'La venta fiada ya fue registrada o hay un conflicto de folio. Actualiza ventas antes de reintentar.',
+    EXPIRED_BATCH_BLOCKED: 'Este lote ya está vencido y no puede venderse. Muévelo a merma o corrige la fecha si fue un error.',
+    INSUFFICIENT_NON_EXPIRED_STOCK: 'No hay stock vigente suficiente para completar la venta. Revisa los lotes vencidos en Caducidad.',
+    STRICT_EXPIRY_REQUIRED: 'Este producto requiere fecha de caducidad por lote antes de poder venderse.'
   };
 
   const friendly = messages[code] || messages[raw] || raw || 'No se pudo confirmar la venta cloud.';
