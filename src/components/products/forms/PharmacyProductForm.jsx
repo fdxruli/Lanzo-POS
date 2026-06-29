@@ -18,19 +18,19 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
     const validatePharmacyRules = () => {
         // Regla 1: Datos obligatorios para controlados
         if (prescriptionType !== 'otc' && !activeSubstance.trim()) {
-            showMessageModal('⚠️ Integridad de Datos:\n\nSi el medicamento es Antibiótico o Controlado, DEBES especificar la Sustancia Activa para los reportes de COFEPRIS/Salud.', null, { type: 'warning' });
+            showMessageModal('Integridad de datos:\n\nSi el medicamento es Antibiótico o Controlado, DEBES especificar la Sustancia Activa para los reportes de COFEPRIS/Salud.', null, { type: 'warning' });
             return false;
         }
         
         // Regla 2: Precio mayor a 0 (vital en farmacia)
         if (parseFloat(common.price) <= 0) {
-            showMessageModal('❌ El precio de venta debe ser mayor a 0.', null, { type: 'error' });
+            showMessageModal('El precio de venta debe ser mayor a 0.', null, { type: 'error' });
             return false;
         }
 
         // Regla 3: Validar Vida Útil
         if (common.expirationMode === 'SHELF_LIFE' && (!common.shelfLifeValue || common.shelfLifeValue <= 0)) {
-            showMessageModal('❌ Debes especificar un valor válido para la Vida Útil.', null, { type: 'error' });
+            showMessageModal('Debes especificar un valor válido para la Vida Útil.', null, { type: 'error' });
             return false;
         }
         
@@ -101,13 +101,12 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
     };
 
     return (
-        <form onSubmit={handleSubmit}>
-            <div style={{ 
-                marginBottom: '15px', padding: '10px', 
-                backgroundColor: '#eff6ff', borderLeft: '4px solid #3b82f6', 
-                borderRadius: '4px', color: '#1e40af', fontSize: '0.9rem' 
-            }}>
-                <strong>⚕️ Modo Farmacia:</strong> Control de caducidades (FEFO) y alertas de receta activadas.
+        <form onSubmit={handleSubmit} className="product-expert-form">
+            <div className="product-form-alert product-form-alert--info">
+                <div className="product-form-alert__content">
+                    <strong className="product-form-alert__title">Modo farmacia</strong>
+                    <p>Control de caducidades FEFO y alertas de receta activadas.</p>
+                </div>
             </div>
 
             <CommonProductFields 
@@ -119,8 +118,16 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
 
             {/* CONFIGURACIÓN DE CADUCIDAD (DESACOPLADA) */}
             {common.doesTrackStock && (
-                <div className="form-group" style={{ marginTop: '15px', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
-                    <label className="form-label" style={{ fontWeight: 'bold', color: '#334155' }}>Modo de Caducidad</label>
+                <section className="product-form-section product-form-section--compact">
+                    <div className="product-form-section__header">
+                        <div className="product-form-section__heading">
+                            <h4 className="product-form-section__title">Modo de caducidad</h4>
+                            <p className="product-form-section__subtitle">
+                                Define cómo se gestionarán las fechas al recibir lotes.
+                            </p>
+                        </div>
+                    </div>
+
                     <select
                         className="form-input"
                         value={common.expirationMode}
@@ -128,10 +135,10 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
                             const newValue = e.target.value;
                             if ((common.expirationMode === 'STRICT' || common.expirationMode === 'SHELF_LIFE') && newValue === 'NONE') {
                                 const confirmPurge = await showConfirmModal(
-                                    "⚠️ Existen lotes activos con fechas de caducidad. ¿Deseas purgar estas fechas o cancelar el cambio?",
+                                    "Existen lotes activos con fechas de caducidad. ¿Deseas purgar estas fechas o cancelar el cambio?",
                                     {
                                         title: 'Purgar caducidades',
-                                        confirmButtonText: 'Si, purgar',
+                                        confirmButtonText: 'Sí, purgar',
                                         cancelButtonText: 'Cancelar'
                                     }
                                 );
@@ -141,15 +148,15 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
                             common.setExpirationMode(newValue);
                         }}
                     >
-                        <option value="NONE">No Controlar Caducidad</option>
-                        <option value="STRICT">Estricto (Requerir fecha al recibir)</option>
-                        <option value="SHELF_LIFE">Vida Útil (Días/Meses desde recepción)</option>
+                        <option value="NONE">No controlar caducidad</option>
+                        <option value="STRICT">Estricto (requerir fecha al recibir)</option>
+                        <option value="SHELF_LIFE">Vida útil (días/meses desde recepción)</option>
                     </select>
 
                     {common.expirationMode === 'SHELF_LIFE' && (
-                        <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                            <div style={{ flex: 1 }}>
-                                <label className="form-label" style={{ fontSize: '0.85rem' }}>Vida Útil</label>
+                        <div className="product-form-grid product-form-grid--2" style={{ marginTop: '10px' }}>
+                            <div className="form-group product-form-no-margin">
+                                <label className="form-label">Vida útil</label>
                                 <input
                                     type="number"
                                     className="form-input"
@@ -159,8 +166,8 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
                                     placeholder="Ej. 5"
                                 />
                             </div>
-                            <div style={{ flex: 1 }}>
-                                <label className="form-label" style={{ fontSize: '0.85rem' }}>Unidad de Tiempo</label>
+                            <div className="form-group product-form-no-margin">
+                                <label className="form-label">Unidad de tiempo</label>
                                 <select
                                     className="form-input"
                                     value={common.shelfLifeUnit}
@@ -172,25 +179,23 @@ export default function PharmacyProductForm({ onSave, onCancel, productToEdit, c
                             </div>
                         </div>
                     )}
-                </div>
+                </section>
             )}
 
-            <div className="module-section" style={{ borderTop: '2px solid #bfdbfe', marginTop: '15px', paddingTop: '15px' }}>
-                <FarmaciaFields 
-                    prescriptionType={prescriptionType}
-                    setPrescriptionType={setPrescriptionType}
-                    activeSubstance={activeSubstance}
-                    setActiveSubstance={setActiveSubstance}
-                    laboratory={laboratory}
-                    setLaboratory={setLaboratory}
-                />
-            </div>
+            <FarmaciaFields 
+                prescriptionType={prescriptionType}
+                setPrescriptionType={setPrescriptionType}
+                activeSubstance={activeSubstance}
+                setActiveSubstance={setActiveSubstance}
+                laboratory={laboratory}
+                setLaboratory={setLaboratory}
+            />
 
-            <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-                <button type="submit" className="btn btn-save" style={{ flex: 2 }} disabled={common.isSaving}>
-                    {common.isSaving ? '⏳ Guardando...' : 'Guardar Medicamento'}
+            <div className="form-actions-bar">
+                <button type="submit" className="btn btn-save" disabled={common.isSaving}>
+                    {common.isSaving ? 'Guardando...' : 'Guardar medicamento'}
                 </button>
-                <button type="button" className="btn btn-cancel" style={{ flex: 1 }} onClick={onCancel}>Cancelar</button>
+                <button type="button" className="btn btn-cancel" onClick={onCancel}>Cancelar</button>
             </div>
         </form>
     );
