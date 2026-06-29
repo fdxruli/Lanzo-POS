@@ -5,32 +5,42 @@
 .dashboard-page .tabs-container {
   display: flex;
   align-items: center;
-  gap: var(--ui-space-sm);
+  gap: var(--ui-space-xs);
   width: 100%;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0 0 var(--ui-space-sm);
+  padding: var(--ui-space-2xs);
   margin: 0;
-  border-bottom: 1px solid var(--ui-border-color);
-  scrollbar-width: thin;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-pill);
+  background: color-mix(in srgb, var(--ui-bg-muted) 74%, var(--ui-bg-surface));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 42%, transparent);
+  scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+}
+
+.products-page .tabs-container::-webkit-scrollbar,
+.dashboard-page .tabs-container::-webkit-scrollbar {
+  display: none;
 }
 
 .products-page .tab-btn,
 .dashboard-page .tab-btn {
+  position: relative;
   flex: 0 0 auto;
-  min-height: 42px;
-  padding: 0.62rem 1rem;
+  min-height: 40px;
+  padding: 0.58rem 0.96rem;
   border: 1px solid transparent;
   border-radius: var(--ui-radius-pill);
   background: transparent;
   color: var(--ui-text-muted);
   box-shadow: none;
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.93rem;
   line-height: 1.2;
   white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
   transition:
     background-color var(--ui-transition-fast),
     border-color var(--ui-transition-fast),
@@ -41,53 +51,132 @@
 
 .products-page .tab-btn:hover,
 .dashboard-page .tab-btn:hover {
-  background: var(--ui-bg-muted);
-  border-color: var(--ui-border-color);
+  background: color-mix(in srgb, var(--ui-bg-surface) 72%, var(--ui-bg-muted));
   color: var(--ui-text-strong);
 }
 
 .products-page .tab-btn.active,
-.dashboard-page .tab-btn.active {
-  background: var(--ui-color-primary);
-  border-color: var(--ui-color-primary);
-  color: var(--ui-text-on-primary);
-  box-shadow: var(--ui-shadow-md);
+.products-page .tab-btn.active:hover,
+.products-page .tab-btn.active:focus,
+.products-page .tab-btn.active:focus-visible,
+.products-page .tab-btn.active:active,
+.dashboard-page .tab-btn.active,
+.dashboard-page .tab-btn.active:hover,
+.dashboard-page .tab-btn.active:focus,
+.dashboard-page .tab-btn.active:focus-visible,
+.dashboard-page .tab-btn.active:active {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ui-color-primary) 12%, var(--ui-bg-surface)) 0%,
+      color-mix(in srgb, var(--ui-color-primary) 7%, var(--ui-bg-surface)) 100%
+    );
+  border-color: color-mix(in srgb, var(--ui-color-primary) 28%, transparent);
+  color: var(--ui-color-primary);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ui-color-primary) 12%, transparent),
+    0 8px 18px -16px color-mix(in srgb, var(--ui-color-primary) 70%, transparent);
+  transform: none;
+}
+
+.products-page .tab-btn.active::after,
+.dashboard-page .tab-btn.active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 18px;
+  height: 2px;
+  border-radius: var(--ui-radius-pill);
+  background: currentColor;
+  opacity: 0.72;
+  transform: translateX(-50%);
 }
 
 .products-page .tab-btn:focus-visible,
 .dashboard-page .tab-btn:focus-visible {
   outline: none;
-  border-color: var(--ui-color-primary);
   box-shadow: var(--ui-shadow-focus-primary);
 }
 
-.dashboard-page .tab-btn.dashboard-tab-danger.active {
-  background: var(--ui-color-danger);
-  border-color: var(--ui-color-danger);
-  color: var(--ui-text-on-danger);
+.dashboard-page .tab-btn.dashboard-tab-danger.active,
+.dashboard-page .tab-btn.dashboard-tab-danger.active:hover,
+.dashboard-page .tab-btn.dashboard-tab-danger.active:focus,
+.dashboard-page .tab-btn.dashboard-tab-danger.active:focus-visible,
+.dashboard-page .tab-btn.dashboard-tab-danger.active:active {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ui-color-danger) 12%, var(--ui-bg-surface)) 0%,
+      color-mix(in srgb, var(--ui-color-danger) 7%, var(--ui-bg-surface)) 100%
+    );
+  border-color: color-mix(in srgb, var(--ui-color-danger) 28%, transparent);
+  color: var(--ui-color-danger);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ui-color-danger) 12%, transparent),
+    0 8px 18px -16px color-mix(in srgb, var(--ui-color-danger) 70%, transparent);
 }
 
 .dashboard-page .tab-btn.dashboard-tab-danger:focus-visible {
-  border-color: var(--ui-color-danger);
   box-shadow: var(--ui-shadow-focus-danger);
+}
+
+[data-theme="dark"] .products-page .tabs-container,
+[data-theme="dark"] .dashboard-page .tabs-container {
+  background: color-mix(in srgb, var(--ui-bg-muted) 64%, black 12%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 [data-theme="dark"] .products-page .tab-btn:hover,
 [data-theme="dark"] .dashboard-page .tab-btn:hover {
-  background: color-mix(in srgb, var(--ui-bg-muted) 78%, white 4%);
+  background: color-mix(in srgb, var(--ui-bg-muted) 82%, white 4%);
+}
+
+[data-theme="dark"] .products-page .tab-btn.active,
+[data-theme="dark"] .products-page .tab-btn.active:hover,
+[data-theme="dark"] .products-page .tab-btn.active:focus,
+[data-theme="dark"] .products-page .tab-btn.active:focus-visible,
+[data-theme="dark"] .products-page .tab-btn.active:active,
+[data-theme="dark"] .dashboard-page .tab-btn.active,
+[data-theme="dark"] .dashboard-page .tab-btn.active:hover,
+[data-theme="dark"] .dashboard-page .tab-btn.active:focus,
+[data-theme="dark"] .dashboard-page .tab-btn.active:focus-visible,
+[data-theme="dark"] .dashboard-page .tab-btn.active:active {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ui-color-primary) 20%, var(--ui-bg-surface)) 0%,
+      color-mix(in srgb, var(--ui-color-primary) 12%, var(--ui-bg-surface)) 100%
+    );
+  border-color: color-mix(in srgb, var(--ui-color-primary) 38%, transparent);
+  color: color-mix(in srgb, var(--ui-color-primary) 74%, white 26%);
+}
+
+[data-theme="dark"] .dashboard-page .tab-btn.dashboard-tab-danger.active,
+[data-theme="dark"] .dashboard-page .tab-btn.dashboard-tab-danger.active:hover,
+[data-theme="dark"] .dashboard-page .tab-btn.dashboard-tab-danger.active:focus,
+[data-theme="dark"] .dashboard-page .tab-btn.dashboard-tab-danger.active:focus-visible,
+[data-theme="dark"] .dashboard-page .tab-btn.dashboard-tab-danger.active:active {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ui-color-danger) 20%, var(--ui-bg-surface)) 0%,
+      color-mix(in srgb, var(--ui-color-danger) 12%, var(--ui-bg-surface)) 100%
+    );
+  border-color: color-mix(in srgb, var(--ui-color-danger) 38%, transparent);
+  color: color-mix(in srgb, var(--ui-color-danger) 70%, white 30%);
 }
 
 @media (max-width: 520px) {
   .products-page .tabs-container,
   .dashboard-page .tabs-container {
-    gap: var(--ui-space-xs);
-    padding-bottom: var(--ui-space-xs);
+    padding: 3px;
   }
 
   .products-page .tab-btn,
   .dashboard-page .tab-btn {
-    min-height: 40px;
-    padding: 0.58rem 0.86rem;
-    font-size: 0.9rem;
+    min-height: 38px;
+    padding: 0.54rem 0.82rem;
+    font-size: 0.88rem;
   }
 }
