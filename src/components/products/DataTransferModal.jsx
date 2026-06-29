@@ -1,11 +1,12 @@
 // src/components/products/DataTransferModal.jsx
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadInventorySmart, processImport, downloadFile, generatePharmacyReport, downloadTemplate } from '../../services/dataTransfer';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import Logger from '../../services/Logger';
 
 export default function DataTransferModal({ show, onClose, onRefresh }) {
@@ -25,6 +26,17 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
   })();
 
   const categories = useProductStore(state => state.categories);
+
+  const handleClose = useCallback(() => {
+    if (isLoading) return;
+    onClose();
+  }, [isLoading, onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: show,
+    onDismiss: handleClose,
+    layerId: 'data-transfer-modal'
+  });
 
   const handleExport = async () => {
     setIsLoading(true);
@@ -229,7 +241,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem', borderTop: '1px solid #eee', paddingTop: '1rem' }}>
-          <button className="btn btn-cancel" onClick={onClose}>Cerrar</button>
+          <button className="btn btn-cancel" onClick={dismissModal} disabled={isLoading}>Cerrar</button>
         </div>
       </div>
     </div>
