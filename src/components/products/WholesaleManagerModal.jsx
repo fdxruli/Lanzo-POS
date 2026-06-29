@@ -1,11 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { showMessageModal } from '../../services/utils';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import './WholesaleManagerModal.css';
 
 export default function WholesaleManagerModal({ show, onClose, tiers, onSave, basePrice }) {
   const [localTiers, setLocalTiers] = useState([]);
   const [minQty, setMinQty] = useState('');
   const [price, setPrice] = useState('');
+
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: show,
+    onDismiss: handleClose,
+    layerId: 'wholesale-manager-modal'
+  });
 
   useEffect(() => {
     if (show) {
@@ -50,7 +61,7 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
 
   const handleSave = () => {
     onSave(localTiers);
-    onClose();
+    dismissModal();
   };
 
   if (!show) return null;
@@ -133,7 +144,7 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
              * Recuerda hacer clic en <strong>&quot;Guardar Producto&quot;</strong> al salir para aplicar los cambios.
            </p>
            <div className="ui-modal__actions modal-actions">
-            <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose}>Cancelar</button>
+            <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={dismissModal}>Cancelar</button>
             <button type="button" className="ui-button ui-button--primary btn btn-save" onClick={handleSave}>Aplicar</button>
           </div>
         </div>
