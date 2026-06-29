@@ -258,3 +258,10 @@
     max-width: 200px;
   }
 }
+
+.batch-modal-form {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}

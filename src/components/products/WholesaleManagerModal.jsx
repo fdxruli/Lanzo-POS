@@ -56,15 +56,19 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ zIndex: 'var(--z-modal-high)' }}>
-      <div className="modal-content">
-        <h2 className="modal-title">Precios de Mayoreo</h2>
-        <p className="modal-subtitle">Precio Base actual: ${basePrice || '0.00'}</p>
+    <div className="ui-modal ui-modal--high wholesale-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="wholesale-modal-title">
+      <div className="ui-modal__content ui-modal__content--md wholesale-modal">
+        <header className="ui-modal__header">
+          <div>
+            <h2 id="wholesale-modal-title" className="ui-modal__title">Precios de Mayoreo</h2>
+            <p className="ui-modal__subtitle modal-subtitle">Precio Base actual: ${basePrice || '0.00'}</p>
+          </div>
+        </header>
 
         {/* Formulario de ingreso */}
-        <div className="wholesale-form-row">
+        <div className="ui-card ui-card--compact ui-card--flat wholesale-form-row">
           <div className="form-group">
-            <label>A partir de (Cant.)</label>
+            <label className="form-label">A partir de (Cant.)</label>
             <input 
               type="number" 
               className="form-input" 
@@ -74,7 +78,7 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
             />
           </div>
           <div className="form-group">
-            <label>Nuevo Precio ($)</label>
+            <label className="form-label">Nuevo Precio ($)</label>
             <input 
               type="number" 
               className="form-input" 
@@ -83,7 +87,7 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
               onChange={(e) => setPrice(e.target.value)}
             />
           </div>
-          <button type="button" className="btn btn-save" onClick={handleAdd}>
+          <button type="button" className="ui-button ui-button--primary btn btn-save" onClick={handleAdd}>
             +
           </button>
         </div>
@@ -91,7 +95,7 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
         {/* Lista de reglas */}
         <div className="tiers-list">
           {localTiers.length === 0 ? (
-            <p className="empty-tiers-message">No hay reglas definidas.</p>
+            <p className="ui-empty-state empty-tiers-message">No hay reglas definidas.</p>
           ) : (
             <table className="tiers-table">
               <thead>
@@ -125,11 +129,11 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
         {/* Footer */}
         <div className="modal-actions-container">
            <p className="footer-note">
-             * Recuerda hacer clic en <strong>"Guardar Producto"</strong> al salir para aplicar los cambios.
+             * Recuerda hacer clic en <strong>&quot;Guardar Producto&quot;</strong> al salir para aplicar los cambios.
            </p>
-           <div className="modal-actions">
-            <button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button>
-            <button type="button" className="btn btn-save" onClick={handleSave}>Aplicar</button>
+           <div className="ui-modal__actions modal-actions">
+            <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose}>Cancelar</button>
+            <button type="button" className="ui-button ui-button--primary btn btn-save" onClick={handleSave}>Aplicar</button>
           </div>
         </div>
 

@@ -1,0 +1,95 @@
+.daily-price-modal {
+  width: min(700px, calc(100vw - 2rem));
+  height: min(80vh, 760px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.daily-price-modal__filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ui-space-sm);
+  margin-bottom: var(--ui-space-md);
+}
+
+.daily-price-modal__table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+}
+
+.daily-price-modal__table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+}
+
+.daily-price-modal__table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ui-bg-muted);
+}
+
+.daily-price-modal__table th,
+.daily-price-modal__table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--ui-border-color);
+}
+
+.daily-price-modal__table th {
+  color: var(--ui-text-strong);
+  font-size: 0.86rem;
+  text-align: left;
+}
+
+.daily-price-modal__table th:nth-child(2),
+.daily-price-modal__table th:nth-child(3) {
+  width: 120px;
+}
+
+.daily-price-modal__unit {
+  margin-left: 5px;
+  color: var(--ui-text-muted);
+  font-size: 0.8rem;
+}
+
+.daily-price-modal__margin {
+  font-weight: 700;
+}
+
+.daily-price-modal__margin--low {
+  color: var(--ui-color-danger);
+}
+
+.daily-price-modal__margin--ok {
+  color: var(--ui-color-success);
+}
+
+.daily-price-modal__number-input {
+  padding: 5px;
+  font-size: 0.9rem;
+}
+
+.daily-price-modal__price-input {
+  color: var(--ui-color-primary);
+  font-weight: 800;
+}
+
+.daily-price-modal__actions {
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .daily-price-modal {
+    width: 100%;
+    height: calc(100dvh - 1rem);
+  }
+
+  .daily-price-modal__filters {
+    grid-template-columns: 1fr;
+  }
+}

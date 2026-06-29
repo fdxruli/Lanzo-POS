@@ -4,6 +4,7 @@ import { showConfirmModal, showMessageModal } from '../../services/utils';
 // 1. IMPORTAR STORE PARA OBTENER CATEGORÍAS
 import { useProductStore } from '../../store/useProductStore';
 import Logger from '../../services/Logger';
+import './DailyPriceModal.css';
 
 export default function DailyPriceModal({ show, onClose, products, onRefresh }) {
     const [editedProducts, setEditedProducts] = useState({});
@@ -109,26 +110,24 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
     if (!show) return null;
 
     return (
-        <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
-            <div className="modal-content" style={{ maxWidth: '700px', height: '80vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="ui-modal ui-modal--overlay daily-price-modal-overlay" role="dialog" aria-modal="true" aria-label="Actualizacion rapida de precios">
+            <div className="ui-modal__content ui-modal__content--lg daily-price-modal">
                 <h2 className="modal-title">📝 Actualización Rápida de Precios</h2>
                 <p style={{ marginBottom: '10px', color: '#666' }}>Ajusta costos y precios según el mercado de hoy.</p>
 
                 {/* 4. UI DE FILTROS ENCABEZADO */}
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                <div className="daily-price-modal__filters">
                     <input
                         type="text"
                         className="form-input"
                         placeholder="Buscar producto..."
                         value={filter}
                         onChange={(e) => setFilter(e.target.value)}
-                        style={{ flex: 1 }}
                         autoFocus
                     />
 
                     <select
                         className="form-input"
-                        style={{ flex: 1 }}
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
                     >
@@ -139,13 +138,13 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
                     </select>
                 </div>
 
-                <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #eee', borderRadius: '8px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead style={{ position: 'sticky', top: 0, background: '#f9fafb', zIndex: 1 }}>
+                <div className="daily-price-modal__table-wrap">
+                    <table className="daily-price-modal__table">
+                        <thead>
                             <tr>
-                                <th style={{ padding: '10px', textAlign: 'left' }}>Producto</th>
-                                <th style={{ padding: '10px', width: '120px' }}>Costo ($)</th>
-                                <th style={{ padding: '10px', width: '120px' }}>Venta ($)</th>
+                                <th>Producto</th>
+                                <th>Costo ($)</th>
+                                <th>Venta ($)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -156,30 +155,28 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
                                 const margin = currentCost > 0 ? (((currentPrice - currentCost) / currentCost) * 100).toFixed(0) : 0;
 
                                 return (
-                                    <tr key={p.id} style={{ borderBottom: '1px solid #eee' }}>
-                                        <td style={{ padding: '10px' }}>
+                                    <tr key={p.id}>
+                                        <td>
                                             <strong>{p.name}</strong>
                                             {/* Mostrar unidad para referencia */}
-                                            <span style={{ fontSize: '0.8rem', color: '#666', marginLeft: '5px' }}>
+                                            <span className="daily-price-modal__unit">
                                                 ({p.bulkData?.purchase?.unit || 'Unidad'})
                                             </span>
                                             <br />
-                                            <small style={{ color: margin < 15 ? 'red' : 'green' }}>Margen: {margin}%</small>
+                                            <small className={margin < 15 ? 'daily-price-modal__margin daily-price-modal__margin--low' : 'daily-price-modal__margin daily-price-modal__margin--ok'}>Margen: {margin}%</small>
                                         </td>
-                                        <td style={{ padding: '10px' }}>
+                                        <td>
                                             <input
-                                                type="number" className="form-input" step="0.50"
+                                                type="number" className="form-input daily-price-modal__number-input" step="0.50"
                                                 value={currentCost}
                                                 onChange={(e) => handlePriceChange(p.id, 'cost', e.target.value)}
-                                                style={{ padding: '5px', fontSize: '0.9rem' }}
                                             />
                                         </td>
-                                        <td style={{ padding: '10px' }}>
+                                        <td>
                                             <input
-                                                type="number" className="form-input" step="0.50"
+                                                type="number" className="form-input daily-price-modal__number-input daily-price-modal__price-input" step="0.50"
                                                 value={currentPrice}
                                                 onChange={(e) => handlePriceChange(p.id, 'price', e.target.value)}
-                                                style={{ padding: '5px', fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--primary-color)' }}
                                             />
                                         </td>
                                     </tr>
@@ -189,9 +186,9 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
                     </table>
                 </div>
 
-                <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                    <button className="btn btn-cancel" onClick={onClose}>Cancelar</button>
-                    <button className="btn btn-save" onClick={handleSaveAll}>
+                <div className="ui-modal__actions daily-price-modal__actions">
+                    <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose}>Cancelar</button>
+                    <button type="button" className="ui-button ui-button--primary btn btn-save" onClick={handleSaveAll}>
                         Guardar Cambios
                     </button>
                 </div>

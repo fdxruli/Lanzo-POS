@@ -19,12 +19,12 @@ export default function CategoryManagerModal({ show, onClose, categories, onSave
   };
 
   return (
-    <div id="category-modal" className="modal" style={{ display: 'flex' }}>
-      <div className="modal-content">
+    <div id="category-modal" className="ui-modal category-modal" role="dialog" aria-modal="true" aria-label="Gestionar categorias">
+      <div className="ui-modal__content category-modal__content">
         <h2 className="modal-title">Gestionar Categorías</h2>
         
         {/* Inyectamos el formulario centralizado */}
-        <div style={{ marginBottom: '20px' }}>
+        <div className="category-modal__form">
           <CategoryForm 
             initialData={editingCategory}
             onSave={onSave}
@@ -54,9 +54,11 @@ export default function CategoryManagerModal({ show, onClose, categories, onSave
           )}
         </div>
         
-        <button id="close-category-modal-btn" className="btn btn-cancel" onClick={handleClose} style={{ marginTop: '20px' }}>
-          Cerrar
-        </button>
+        <footer className="ui-modal__actions category-modal__actions">
+          <button id="close-category-modal-btn" type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={handleClose}>
+            Cerrar
+          </button>
+        </footer>
       </div>
     </div>
   );

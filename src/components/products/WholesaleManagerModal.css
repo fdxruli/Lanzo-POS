@@ -1,17 +1,17 @@
 /* src/components/products/WholesaleManagerModal.css */
 
 /* Ajustes específicos para el contenido de este modal */
-.modal-content {
+.wholesale-modal {
   max-width: 550px;
   /* El fondo y color de texto ya se heredan de las variables globales */
 }
 
 .modal-subtitle {
   font-size: 0.95rem;
-  color: var(--text-light);
+  color: var(--ui-text-muted);
   margin-bottom: var(--spacing-lg);
   padding-bottom: var(--spacing-sm);
-  border-bottom: 1px solid var(--border-color); /* Usamos variable global */
+  border-bottom: 1px solid var(--ui-border-color);
 }
 
 /* Fila del formulario */
@@ -20,10 +20,10 @@
   gap: var(--spacing-md);
   align-items: flex-end;
   margin-bottom: var(--spacing-lg);
-  background-color: var(--light-background); /* Se adapta auto a oscuro */
+  background-color: var(--ui-bg-muted);
   padding: var(--spacing-md);
   border-radius: var(--border-radius-sm);
-  border: 1px solid var(--border-color); /* Borde sutil */
+  border: 1px solid var(--ui-border-color);
 }
 
 .wholesale-form-row .form-group {
@@ -36,7 +36,7 @@
   margin-bottom: 4px;
   display: block;
   font-weight: 600;
-  color: var(--text-dark); /* Color adaptativo */
+  color: var(--ui-text-strong);
 }
 
 /* Botón de agregar (+) */
@@ -57,9 +57,9 @@
 .tiers-list {
   max-height: 250px;
   overflow-y: auto;
-  border: 1px solid var(--border-color); /* Variable global */
+  border: 1px solid var(--ui-border-color);
   border-radius: var(--border-radius-sm);
-  background-color: var(--card-background-color); /* Fondo correcto en dark mode */
+  background-color: var(--ui-bg-surface);
 }
 
 /* Tabla */
@@ -69,8 +69,8 @@
 }
 
 .tiers-table th {
-  background-color: var(--light-background); /* Gris claro en light, gris oscuro en dark */
-  color: var(--text-dark); /* Texto visible en ambos modos */
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text-strong);
   font-size: 0.85rem;
   text-transform: uppercase;
   font-weight: 600;
@@ -83,8 +83,8 @@
 
 .tiers-table td {
   padding: var(--spacing-sm);
-  border-bottom: 1px solid var(--border-color); /* Variable global */
-  color: var(--text-color);
+  border-bottom: 1px solid var(--ui-border-color);
+  color: var(--ui-text);
   font-size: 0.95rem;
 }
 
@@ -94,7 +94,7 @@
 
 .tiers-table .price-cell {
   font-weight: 700;
-  color: var(--success-color);
+  color: var(--ui-color-success);
 }
 
 /* Botón eliminar */
@@ -102,7 +102,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-light);
+  color: var(--ui-text-muted);
   padding: 6px;
   border-radius: 4px;
   transition: all 0.2s;
@@ -110,15 +110,15 @@
 }
 
 .btn-delete-tier:hover {
-  background-color: rgba(255, 59, 92, 0.1);
-  color: var(--error-color);
+  background-color: var(--ui-bg-danger-soft);
+  color: var(--ui-color-danger);
 }
 
 /* Mensaje vacío */
 .empty-tiers-message {
   padding: var(--spacing-lg);
   text-align: center;
-  color: var(--text-light);
+  color: var(--ui-text-muted);
   font-style: italic;
 }
 
@@ -132,7 +132,7 @@
 
 .footer-note {
   font-size: 0.8rem; 
-  color: var(--text-light);
+  color: var(--ui-text-muted);
   font-style: italic; 
   text-align: center;
 }
@@ -164,26 +164,26 @@
 
 /* 2. Ajuste para el botón Cancelar (que tiene borde visible) */
 .modal-actions .btn-cancel {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--ui-border-color);
   background-color: transparent;
   color: var(--text-light);
 }
 
 .modal-actions .btn-cancel:hover {
-  background-color: var(--light-background);
-  color: var(--text-dark);
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text-strong);
 }
 
 /* 3. Ajuste para el botón Guardar (Borde transparente para igualar tamaño) */
 .modal-actions .btn-save {
   /* Truco: Borde transparente de 1px para ocupar el mismo espacio que 'cancelar' */
   border: 1px solid transparent; 
-  background-color: var(--primary-color);
-  color: white;
+  background-color: var(--ui-color-primary);
+  color: var(--ui-text-on-primary);
 }
 
 .modal-actions .btn-save:hover {
-  background-color: var(--primary-hover);
+  background-color: var(--ui-color-primary-hover);
 }
 
 /* --- Ajustes Específicos para Modo Oscuro (Si alguna variable no cubre todo) --- */

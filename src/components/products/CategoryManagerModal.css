@@ -46,3 +46,35 @@
 .delete-category-btn:hover {
   color: var(--error-color);
 }
+
+.category-modal__content {
+  max-width: 560px;
+}
+
+.category-modal__form {
+  margin-bottom: var(--ui-space-lg);
+}
+
+.category-modal__actions {
+  margin-top: var(--ui-space-lg);
+}
+
+.category-modal .category-list {
+  border-top-color: var(--ui-border-color);
+}
+
+.category-modal .category-item-managed {
+  border-bottom-color: var(--ui-border-color);
+}
+
+.category-modal .category-item-managed:hover {
+  background-color: var(--ui-bg-muted);
+}
+
+.category-modal .edit-category-btn:hover {
+  color: var(--ui-color-primary);
+}
+
+.category-modal .delete-category-btn:hover {
+  color: var(--ui-color-danger);
+}

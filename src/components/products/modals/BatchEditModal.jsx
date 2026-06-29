@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { productRepository } from '../../../services/products/productRepository';
 import Logger from '../../../services/Logger';
 import { showConfirmModal } from '../../../services/utils';
+import './BatchEditModal.css';
 
 export default function BatchEditModal({ batchData, onClose, onSave, features }) {
     // Inicializamos el estado
@@ -119,8 +120,8 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
     };
 
     return (
-        <div className="modal" style={{ zIndex: 'var(--z-modal-high)' }}>
-            <div className="modal-content" style={{ maxWidth: '600px' }}>
+        <div className="ui-modal ui-modal--high batch-edit-modal-overlay" role="dialog" aria-modal="true" aria-label="Editar variante o lote">
+            <div className="ui-modal__content ui-modal__content--md batch-edit-modal">
                 {/* Cabecera */}
                 <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '15px', marginBottom: '20px' }}>
                     <h3 style={{ margin: 0 }}>Editar Variante / Lote</h3>
@@ -146,14 +147,7 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
                 </div>
 
                 {error && (
-                    <div style={{ 
-                        backgroundColor: 'rgba(255, 59, 92, 0.1)', 
-                        color: 'var(--error-color)', 
-                        padding: '10px', 
-                        borderRadius: 'var(--border-radius-sm)', 
-                        marginBottom: '15px', 
-                        fontWeight: 'bold' 
-                    }}>
+                    <div className="ui-alert ui-alert--danger batch-edit-modal__error">
                         ⚠️ {error}
                     </div>
                 )}
@@ -252,7 +246,7 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
                     </div>
 
                     {/* Botones Igualados */}
-                    <div style={{ 
+                    <div className="ui-modal__actions batch-edit-modal__actions" style={{ 
                         display: 'flex', 
                         justifyContent: 'space-between', // Asegura que ocupen todo el ancho
                         gap: '15px', 
@@ -264,7 +258,7 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
                         <button 
                             type="button" 
                             onClick={onClose} 
-                            className="btn btn-secondary" 
+                            className="ui-button ui-button--ghost btn btn-secondary" 
                             style={{ flex: 1, justifyContent: 'center' }}
                         >
                             Cancelar
@@ -272,7 +266,7 @@ export default function BatchEditModal({ batchData, onClose, onSave, features })
                         <button 
                             type="submit" 
                             disabled={saving} 
-                            className="btn btn-primary" 
+                            className="ui-button ui-button--primary btn btn-primary" 
                             style={{ flex: 1, justifyContent: 'center' }}
                         >
                             {saving ? 'Guardando...' : 'Guardar Cambios'}

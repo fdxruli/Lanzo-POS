@@ -60,8 +60,8 @@ export default function BatchFormModal({
   const stockInputProps = getBatchStockInputProps(product, rubroGroup, features);
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-high)' }}>
-      <div className="modal-content batch-modal-wrapper">
+    <div className="ui-modal ui-modal--high batch-form-modal-overlay" role="dialog" aria-modal="true" aria-label={isEditing ? 'Editar lote' : 'Registrar lote'}>
+      <div className="ui-modal__content ui-modal__content--xl batch-modal-wrapper">
 
         {/* ENCABEZADO */}
         <div className="batch-modal-header">
@@ -79,7 +79,7 @@ export default function BatchFormModal({
           </button>
         </div>
 
-        <form style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <form className="batch-modal-form">
           {/* CUERPO DEL FORMULARIO CON SCROLL */}
           <div className="batch-form-scroll-area">
             <div className="batch-form-grid">
@@ -346,7 +346,7 @@ export default function BatchFormModal({
               {!isEditing && (
                 <button
                   type="button"
-                  className="btn btn-save"
+                  className="ui-button ui-button--secondary btn btn-save"
                   onClick={() => handleProcessSave(false)}
                   style={{ backgroundColor: 'var(--secondary-color)' }}
                 >
@@ -357,7 +357,7 @@ export default function BatchFormModal({
 
               <button
                 type="button"
-                className="btn btn-cancel"
+                className="ui-button ui-button--ghost btn btn-cancel"
                 onClick={onClose}
               >
                 Cancelar
@@ -365,7 +365,7 @@ export default function BatchFormModal({
 
               <button
                 type="button"
-                className="btn btn-primary"
+                className="ui-button ui-button--primary btn btn-primary"
                 onClick={() => handleProcessSave(true)}
               >
                 <Save size={18} />

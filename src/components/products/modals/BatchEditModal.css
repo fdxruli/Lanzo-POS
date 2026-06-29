@@ -1,0 +1,26 @@
+.batch-edit-modal {
+  max-width: 600px;
+}
+
+.batch-edit-modal__error {
+  margin-bottom: var(--ui-space-md);
+  font-weight: 800;
+}
+
+.batch-edit-modal__actions {
+  gap: var(--ui-space-md) !important;
+  margin-top: var(--ui-space-lg) !important;
+  padding-top: var(--ui-space-md) !important;
+  border-top-color: var(--ui-border-color) !important;
+}
+
+.batch-edit-modal__actions .ui-button {
+  flex: 1;
+}
+
+@media (max-width: 560px) {
+  .batch-edit-modal__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
