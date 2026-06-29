@@ -1,7 +1,8 @@
 // src/components/caja/modals/CashAdjustmentModal.jsx
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import { useDismissibleHistoryLayer } from '../../../../hooks/useDismissibleHistoryLayer';
 
 /**
  * Modal para registrar ajustes de caja por diferencias físicas
@@ -26,17 +27,28 @@ const CashAdjustmentModal = ({
   const [comentario, setComentario] = useState('');
   const [mostrarConfirmacionCero, setMostrarConfirmacionCero] = useState(false);
 
+  const handleDismiss = useCallback(() => {
+    if (isDisabled) return;
+    onClose();
+  }, [isDisabled, onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: show,
+    onDismiss: handleDismiss,
+    layerId: 'cash-adjustment-modal'
+  });
+
   // Soporte para tecla ESC
   useEffect(() => {
     if (!show || isDisabled) return;
 
     const handleEsc = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') dismissModal();
     };
 
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
-  }, [show, onClose, isDisabled]);
+  }, [show, dismissModal, isDisabled]);
 
   // Handler para resetear el estado cuando se abre el modal
   const handleOpen = () => {
@@ -93,7 +105,7 @@ const CashAdjustmentModal = ({
           <h3 className="modal-title" style={{ margin: 0 }} id="modal-title-ajuste">Ajuste de Caja</h3>
           <button
             type="button"
-            onClick={onClose}
+            onClick={dismissModal}
             disabled={isDisabled}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)' }}
             aria-label="Cerrar modal"
@@ -207,7 +219,7 @@ const CashAdjustmentModal = ({
           )}
 
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '15px' }}>
-            <button type="button" className="btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
+            <button type="button" className="btn btn-cancel" onClick={dismissModal} disabled={isDisabled}>Cancelar</button>
             <button
               type="submit"
               className="btn btn-save"
