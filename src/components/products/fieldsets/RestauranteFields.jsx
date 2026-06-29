@@ -40,7 +40,7 @@ export default function RestauranteFields({
     updated[groupIndex].options.push({
       name: optionName,
       price: parseFloat(price) || 0,
-      ingredientId: ingredientId // <--- Guardamos el ID para descontar inventario
+      ingredientId: ingredientId // Guardamos el ID para descontar inventario
     });
     setModifiers(updated);
   };
@@ -58,29 +58,29 @@ export default function RestauranteFields({
   const ingredientList = menu.filter(p => p.productType === 'ingredient' && p.isActive !== false);
 
   return (
-    <div className="restaurant-fields-container" style={{ animation: 'fadeIn 0.3s' }}>
+    <div className="restaurant-fields-container">
 
-      {/* 1. SELECTOR DE TIPO (VISUALMENTE MEJORADO) */}
+      {/* 1. SELECTOR DE TIPO */}
       {/* Solo se muestra si hideTypeSelector es falso (por defecto) */}
       {!hideTypeSelector && (
-        <div className="form-group product-type-toggle" style={{ backgroundColor: 'var(--light-background)', padding: '10px', borderRadius: '8px' }}>
-          <label className="form-label" style={{ marginBottom: '10px' }}>Tipo de Ítem</label>
-          <div className="theme-toggle-container" style={{ width: '100%', display: 'flex' }}>
-            <label className="theme-radio-label" style={{ flex: 1, textAlign: 'center' }}>
+        <div className="form-group product-form-option-panel">
+          <label className="form-label">Tipo de ítem</label>
+          <div className="product-form-choice-grid">
+            <label className={`product-form-choice ${productType === 'sellable' ? 'is-active' : ''}`}>
               <input
                 type="radio" name="productType" value="sellable"
                 checked={productType === 'sellable'}
                 onChange={() => setProductType('sellable')}
               />
-              <span className="theme-radio-text">🍽️ Platillo (Venta)</span>
+              <span>Platillo (venta)</span>
             </label>
-            <label className="theme-radio-label" style={{ flex: 1, textAlign: 'center' }}>
+            <label className={`product-form-choice ${productType === 'ingredient' ? 'is-active' : ''}`}>
               <input
                 type="radio" name="productType" value="ingredient"
                 checked={productType === 'ingredient'}
                 onChange={() => setProductType('ingredient')}
               />
-              <span className="theme-radio-text">🥕 Insumo (Inventario)</span>
+              <span>Insumo (inventario)</span>
             </label>
           </div>
         </div>
@@ -89,70 +89,67 @@ export default function RestauranteFields({
       {/* 2. OPCIONES PARA PLATILLOS */}
       {productType === 'sellable' && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
+          <div className="product-form-grid product-form-grid--2">
             {/* Botón Receta Destacado */}
             <div className="form-group">
-              <label className="form-label">Inventario & Costos</label>
+              <label className="form-label">Inventario y costos</label>
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ width: '100%', justifyContent: 'center' }}
                 onClick={onManageRecipe}
               >
-                🥘 Configurar Receta
+                Configurar receta
               </button>
-              <small style={{ display: 'block', marginTop: '5px', color: 'var(--text-light)', fontSize: '0.8rem' }}>Define qué insumos se descuentan.</small>
+              <small>Define qué insumos se descuentan.</small>
             </div>
 
             {/* Estación de Impresión */}
             <div className="form-group">
-              <label className="form-label">Enviar Comanda a:</label>
+              <label className="form-label">Enviar comanda a:</label>
               <select
                 className="form-input"
                 /* CORRECCIÓN: Usar 'kitchen' como default si es undefined */
                 value={printStation || 'kitchen'}
                 onChange={(e) => setPrintStation(e.target.value)}
               >
-                <option value="kitchen">🍳 Cocina</option>
+                <option value="kitchen">Cocina</option>
               </select>
             </div>
           </div>
 
           {/* Tiempo de Preparación */}
-          <div className="form-group" style={{ marginTop: '10px' }}>
-            <label className="form-label">Tiempo Promedio de Preparación</label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <span style={{ position: 'absolute', left: '10px', fontSize: '1.2rem' }}>⏱️</span>
+          <div className="form-group">
+            <label className="form-label">Tiempo promedio de preparación</label>
+            <div className="product-form-field-row product-form-field-row--wrap">
               <input
                 type="number"
-                className="form-input"
+                className="form-input product-form-field-grow"
                 placeholder="Ej: 15"
-                style={{ paddingLeft: '35px' }} // Espacio para el icono
                 value={prepTime || ''}
                 onChange={(e) => setPrepTime(e.target.value)}
               />
-              <span style={{ marginLeft: '10px', color: '#64748b', fontSize: '0.9rem' }}>minutos</span>
+              <span className="product-form-help">minutos</span>
             </div>
             {prepTime > 20 && (
-              <small style={{ color: '#eab308', display: 'block', marginTop: '5px' }}>
-                ⚠️ Este es un tiempo de espera considerable para comida rápida.
+              <small className="product-form-inline-badge product-form-inline-badge--warning">
+                Tiempo de espera considerable para comida rápida.
               </small>
             )}
           </div>
 
-          {/* 3. GESTOR DE MODIFICADORES (NUEVO) */}
-          <div style={{ marginTop: '20px', borderTop: '1px dashed #ccc', paddingTop: '15px' }}>
-            <label className="form-label" style={{ color: 'var(--primary-color)' }}>✨ Modificadores / Extras</label>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '10px' }}>
+          {/* 3. GESTOR DE MODIFICADORES */}
+          <div className="product-form-modifier-panel">
+            <label className="product-form-fieldset-title">Modificadores / extras</label>
+            <p className="product-form-help">
               Ej: "Elige tu Salsa", "Agrega papas", "Término de carne".
             </p>
 
             {/* Input para crear grupo */}
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+            <div className="product-form-field-row" style={{ marginBottom: '15px' }}>
               <input
                 type="text"
-                className="form-input"
-                placeholder="Nuevo Grupo (Ej: Salsas)"
+                className="form-input product-form-field-grow"
+                placeholder="Nuevo grupo (Ej: Salsas)"
                 value={newModGroup}
                 onChange={(e) => setNewModGroup(e.target.value)}
               />
@@ -162,59 +159,38 @@ export default function RestauranteFields({
             {/* Lista de Grupos */}
             <div className="modifiers-list">
               {modifiers && modifiers.map((group, idx) => (
-                <div key={idx} style={{
-                  backgroundColor: 'var(--light-background)',
-                  padding: '10px',
-                  borderRadius: '8px',
-                  marginBottom: '10px',
-                  border: '1px solid var(--border-color)'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <strong style={{ color: 'var(--text-dark)' }}>{group.name}</strong>
-                    <button type="button" style={{ color: 'var(--error-color)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => removeModifierGroup(idx)}>Eliminar Grupo</button>
+                <div key={idx} className="product-form-modifier-card">
+                  <div className="product-form-modifier-card__header">
+                    <strong>{group.name}</strong>
+                    <button type="button" className="product-form-link-danger" onClick={() => removeModifierGroup(idx)}>Eliminar grupo</button>
                   </div>
 
                   {/* Agregar Opción al Grupo */}
-                  <div style={{ 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      gap: '5px', 
-                      marginBottom: '5px', 
-                      padding: '10px', 
-                      // CORRECCIÓN: Usar variable del tema en lugar de #fff
-                      backgroundColor: 'var(--card-background-color)', 
-                      borderRadius: '5px',
-                      // Opcional: Agregar borde sutil para que resalte sobre el fondo claro también
-                      border: '1px solid var(--border-color)'
-                  }}>
-
+                  <div className="product-form-modifier-option-editor">
                     {/* Fila 1: Nombre y Precio */}
-                    <div style={{ display: 'flex', gap: '5px' }}>
+                    <div className="product-form-field-row">
                       <input
                         id={`opt-name-${idx}`}
                         type="text"
-                        className="form-input"
-                        placeholder="Opción (ej: Queso Extra)"
-                        style={{ padding: '5px', fontSize: '0.9rem', flex: 1 }}
+                        className="form-input product-form-field-grow"
+                        placeholder="Opción (ej: Queso extra)"
                       />
                       <input
                         id={`opt-price-${idx}`}
                         type="number"
                         className="form-input"
                         placeholder="$ Extra"
-                        style={{ width: '80px', padding: '5px', fontSize: '0.9rem' }}
+                        style={{ width: '90px' }}
                       />
                     </div>
 
                     {/* Fila 2: Selector de Insumo (Funcionalidad Restaurada) */}
-                    <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                    <div className="product-form-field-row">
                       <select
                         id={`opt-ing-${idx}`} // ID único por grupo
-                        className="form-input"
-                        // CORRECCIÓN: Eliminado 'color: #444' para que herede el color del tema
-                        style={{ fontSize: '0.85rem', flex: 1 }} 
+                        className="form-input product-form-field-grow"
                       >
-                        <option value="">-- Solo Texto (No descuenta stock) --</option>
+                        <option value="">-- Solo texto (no descuenta stock) --</option>
                         {ingredientList.map(ing => (
                           <option key={ing.id} value={ing.id}>
                             {ing.name} (Stock: {ing.stock})
@@ -226,7 +202,7 @@ export default function RestauranteFields({
                       <button
                         type="button"
                         className="btn btn-help"
-                        style={{ margin: 0, padding: '0 15px', height: '35px' }}
+                        style={{ margin: 0, minHeight: '35px' }}
                         onClick={() => {
                           // Capturamos los valores por ID
                           const nameInput = document.getElementById(`opt-name-${idx}`);
@@ -234,7 +210,7 @@ export default function RestauranteFields({
                           const ingInput = document.getElementById(`opt-ing-${idx}`);
 
                           if (nameInput.value) {
-                            // ⚠️ CORRECCIÓN CRÍTICA: Guardamos el ingredientId como string o null
+                            // Guardamos el ingredientId como string o null
                             const linkedIngredientId = ingInput.value.trim() || '';
 
                             addOptionToGroup(
@@ -258,22 +234,19 @@ export default function RestauranteFields({
                   </div>
 
                   {/* Lista de Opciones del Grupo */}
-                  <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                  <ul className="product-form-option-list">
                     {group.options.map((opt, optIdx) => (
-                      <li key={optIdx} style={{ fontSize: '0.9rem', color: 'var(--text-color)', marginBottom: '4px', display: 'flex', alignItems: 'center' }}>
+                      <li key={optIdx} className="product-form-option-item">
+                        <span>{opt.name} {opt.price > 0 && <span className="product-form-success-text">(+${opt.price})</span>}</span>
 
-                        {/* Nombre y Precio */}
-                        <span>{opt.name} {opt.price > 0 && <span style={{ color: 'var(--success-color)', fontWeight: 'bold' }}>(+${opt.price})</span>}</span>
-
-                        {/* --- CORRECCIÓN NUEVA: Alerta visual si cobra pero no descuenta --- */}
+                        {/* Alerta visual si cobra pero no descuenta */}
                         {opt.price > 0 && !opt.ingredientId && (
-                          <span title="⚠️ Cobra precio pero NO descuenta inventario (¿Es un servicio?)" style={{ marginLeft: '8px', cursor: 'help', fontSize: '1.2rem' }}>
-                            ⚠️
+                          <span title="Cobra precio pero no descuenta inventario" className="product-form-inline-badge product-form-inline-badge--warning">
+                            Sin descuento
                           </span>
                         )}
-                        {/* ---------------------------------------------------------------- */}
 
-                        <button type="button" style={{ marginLeft: 'auto', color: '#999', border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => removeOptionFromGroup(idx, optIdx)}>x</button>
+                        <button type="button" className="product-form-delete-inline" onClick={() => removeOptionFromGroup(idx, optIdx)}>×</button>
                       </li>
                     ))}
                   </ul>
@@ -285,9 +258,9 @@ export default function RestauranteFields({
       )}
 
       {productType === 'ingredient' && (
-        <div style={{ padding: '15px', backgroundColor: '#eff6ff', borderRadius: '8px', borderLeft: '4px solid #3b82f6', marginTop: '10px' }}>
-          <h4 style={{ margin: '0 0 5px 0', color: '#1e40af' }}>Modo Insumo</h4>
-          <p style={{ margin: 0, fontSize: '0.9rem', color: '#1e3a8a' }}>
+        <div className="product-form-alert product-form-alert--info product-form-risk-card">
+          <h4 className="product-form-section__title">Modo insumo</h4>
+          <p>
             Este producto <strong>no aparecerá en el menú de ventas</strong>.
             Se usará exclusivamente para construir recetas de otros platillos y descontar inventario automáticamente.
           </p>
