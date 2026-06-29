@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useProductWizard } from '../../hooks/useProductWizard';
@@ -46,6 +47,7 @@ export default function ProductForm(props) {
 
     const [activeRubroContext, setActiveRubroContext] = useState(initialContext);
     const features = useFeatureConfig(activeRubroContext);
+    const ModeIcon = isExpertMode ? SlidersHorizontal : Sparkles;
 
     // 3. INITIALIZAR EL WIZARD (solo para productos nuevos en modo asistido)
     const wizard = useProductWizard(props.productToEdit, activeRubroContext);
@@ -100,20 +102,22 @@ export default function ProductForm(props) {
                 
                 {/* Toggle Modo Asistido/Experto (solo para productos nuevos) */}
                 {!props.productToEdit && (
-                    <div className="product-form-mode-toggle">
+                    <div className="product-form-mode-toggle" aria-label="Modo de registro de producto">
                         <button
                             type="button"
                             onClick={() => setIsExpertMode(false)}
                             className={`product-form-mode-button ${!isExpertMode ? 'is-active' : ''}`}
                         >
-                            ✨ Asistido
+                            <Sparkles size={16} aria-hidden="true" />
+                            Asistido
                         </button>
                         <button
                             type="button"
                             onClick={() => setIsExpertMode(true)}
                             className={`product-form-mode-button ${isExpertMode ? 'is-active' : ''}`}
                         >
-                            🛠️ Experto
+                            <SlidersHorizontal size={16} aria-hidden="true" />
+                            Experto
                         </button>
                     </div>
                 )}
@@ -121,21 +125,14 @@ export default function ProductForm(props) {
 
             {/* Descripción del modo seleccionado */}
             {!props.productToEdit && (
-                <div style={{
-                    marginBottom: '20px',
-                    padding: '10px 14px',
-                    backgroundColor: isExpertMode ? '#f8fafc' : '#eff6ff',
-                    borderRadius: '8px',
-                    border: `1px solid ${isExpertMode ? '#e2e8f0' : '#bfdbfe'}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px'
-                }}>
-                    <span style={{ fontSize: '1.2rem' }}>{isExpertMode ? '🛠️' : '✨'}</span>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: isExpertMode ? '#475569' : '#0c4a6e' }}>
+                <div className={`product-form-mode-note ${isExpertMode ? 'is-expert' : ''}`}>
+                    <span className="product-form-mode-icon" aria-hidden="true">
+                        <ModeIcon size={18} />
+                    </span>
+                    <p className="product-form-mode-copy">
                         {isExpertMode 
-                            ? 'Modo experto: Todos los campos y opciones avanzadas disponibles. Ideal para productos complejos con recetas, variantes o configuración detallada.'
-                            : 'Modo asistido: Te guiamos paso a paso para registrar tu producto rápidamente. Perfecto para productos simples.'}
+                            ? 'Modo experto: todos los campos y opciones avanzadas disponibles. Ideal para productos complejos con recetas, variantes o configuración detallada.'
+                            : 'Modo asistido: te guiamos paso a paso para registrar tu producto rápidamente. Perfecto para productos simples.'}
                     </p>
                 </div>
             )}
