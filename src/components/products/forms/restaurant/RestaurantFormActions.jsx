@@ -6,27 +6,17 @@ export default function RestaurantFormActions({
   onCancel
 }) {
   return (
-    <div
-      style={{
-        marginTop: '25px',
-        display: 'flex',
-        gap: '15px',
-        paddingTop: '15px',
-        borderTop: '1px solid #eee'
-      }}
-    >
+    <div className="form-actions-bar">
       <button
         type="submit"
         className="btn btn-save"
-        style={{ flex: 2, padding: '12px', fontSize: '1.1rem' }}
         disabled={isSaving}
       >
-        {isSaving ? 'Guardando...' : (productType === 'sellable' ? 'Guardar Platillo' : 'Guardar Insumo')}
+        {isSaving ? 'Guardando...' : (productType === 'sellable' ? 'Guardar platillo' : 'Guardar insumo')}
       </button>
-      <button type="button" className="btn btn-cancel" style={{ flex: 1 }} onClick={onCancel}>
+      <button type="button" className="btn btn-cancel" onClick={onCancel}>
         Cancelar
       </button>
     </div>
   );
 }
-
