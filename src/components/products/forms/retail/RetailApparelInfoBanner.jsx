@@ -4,18 +4,14 @@ export default function RetailApparelInfoBanner({ isVisible }) {
   if (!isVisible) return null;
 
   return (
-    <div
-      className="info-box-purple"
-      style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '10px' }}
-    >
-      <span style={{ fontSize: '1.5rem' }}>Moda</span>
-      <div>
-        <strong>Modo Boutique Activo:</strong>
-        <br />
-        Define el <u>Estilo General</u> arriba y usa la tabla inferior para desglosar{' '}
-        <strong>Tallas y Colores</strong>.
+    <div className="product-form-alert product-form-alert--info">
+      <div className="product-form-alert__content">
+        <strong className="product-form-alert__title">Modo boutique activo</strong>
+        <p>
+          Define el <u>Estilo General</u> arriba y usa la tabla inferior para desglosar{' '}
+          <strong>tallas y colores</strong>.
+        </p>
       </div>
     </div>
   );
 }
-
