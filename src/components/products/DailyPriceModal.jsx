@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { loadData, saveBulkSafe, STORES } from '../../services/database';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 // 1. IMPORTAR STORE PARA OBTENER CATEGORÍAS
