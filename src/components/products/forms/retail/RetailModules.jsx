@@ -26,10 +26,15 @@ export default function RetailModules({
   return (
     <>
       {features.hasDailyPricing && (
-        <div
-          className="module-section"
-          style={{ borderTop: '2px solid #86efac', marginTop: '20px', paddingTop: '15px' }}
-        >
+        <section className="product-form-section">
+          <div className="product-form-section__header">
+            <div className="product-form-section__heading">
+              <h4 className="product-form-section__title">Venta por peso o unidad</h4>
+              <p className="product-form-section__subtitle">
+                Configura cómo se venderá este producto en mostrador.
+              </p>
+            </div>
+          </div>
           <FruteriaFields
             saleType={saleType}
             setSaleType={setSaleType}
@@ -37,20 +42,19 @@ export default function RetailModules({
             setUnit={setUnit}
             common={common}
           />
-        </div>
+        </section>
       )}
 
       {(features.hasBulk || features.hasMinMax) && !features.hasDailyPricing && common.doesTrackStock && (
-        <div
-          className="module-section"
-          style={{
-            borderTop: '2px dashed #94a3b8',
-            marginTop: '20px',
-            paddingTop: '15px',
-            position: 'relative'
-          }}
-        >
-          <span className="section-label-floating">Logistica & Inventario</span>
+        <section className="product-form-section">
+          <div className="product-form-section__header">
+            <div className="product-form-section__heading">
+              <h4 className="product-form-section__title">Logística e inventario</h4>
+              <p className="product-form-section__subtitle">
+                Define ubicación, proveedor, venta a granel y alertas de stock.
+              </p>
+            </div>
+          </div>
           <AbarrotesFields
             saleType={saleType}
             setSaleType={setSaleType}
@@ -73,18 +77,26 @@ export default function RetailModules({
             showStockAlerts={features.hasMinMax}
 
           />
-        </div>
+        </section>
       )}
 
       {isApparel && features.hasVariants && (
-        <div className="module-section" style={{ marginTop: '20px' }}>
+        <section className="product-form-section">
+          <div className="product-form-section__header">
+            <div className="product-form-section__heading">
+              <h4 className="product-form-section__title">Variantes</h4>
+              <p className="product-form-section__subtitle">
+                Configura tallas, colores y variantes del producto.
+              </p>
+            </div>
+          </div>
           <QuickVariantEntry
             basePrice={Number.parseFloat(common.price) || 0}
             baseCost={Number.parseFloat(common.cost) || 0}
             onVariantsChange={setQuickVariants}
             initialData={existingVariants}
           />
-        </div>
+        </section>
       )}
     </>
   );
