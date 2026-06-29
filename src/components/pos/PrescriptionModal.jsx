@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { showMessageModal } from '../../services/utils';
+import './PrescriptionModal.css';
 
 export default function PrescriptionModal({ show, onClose, onConfirm, itemsRequiringPrescription }) {
     const [doctorName, setDoctorName] = useState('');
@@ -19,16 +20,16 @@ export default function PrescriptionModal({ show, onClose, onConfirm, itemsRequi
     };
 
     return (
-        <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-critical)' }}>
-            <div className="modal-content" style={{ maxWidth: '500px', borderLeft: '5px solid var(--warning-color)' }}>
+        <div className="ui-modal ui-modal--critical prescription-modal-overlay" role="dialog" aria-modal="true" aria-label="Medicamento controlado">
+            <div className="ui-modal__content prescription-modal">
                 <h2 className="modal-title">⚠️ Medicamento Controlado</h2>
-                <p style={{ marginBottom: '15px', fontSize: '0.9rem', color: 'var(--text-light)' }}>
+                <p className="ui-modal__subtitle prescription-modal__intro">
                     Los siguientes productos requieren receta médica. Por normativa, ingresa los datos del médico prescriptor:
                 </p>
 
-                <ul style={{ background: '#fff3cd', padding: '10px 20px', borderRadius: '8px', marginBottom: '20px', listStyle: 'disc' }}>
+                <ul className="ui-alert ui-alert--warning prescription-modal__items">
                     {itemsRequiringPrescription.map((item, index) => (
-                        <li key={getCartLineId(item, index)} style={{ color: '#856404', fontWeight: '600' }}>
+                        <li key={getCartLineId(item, index)}>
                             {item.name}
                         </li>
                     ))}
@@ -69,9 +70,9 @@ export default function PrescriptionModal({ show, onClose, onConfirm, itemsRequi
                         ></textarea>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                        <button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar Venta</button>
-                        <button type="submit" className="btn btn-save">Confirmar y Cobrar</button>
+                    <div className="ui-modal__actions prescription-modal__actions">
+                        <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose}>Cancelar Venta</button>
+                        <button type="submit" className="ui-button ui-button--primary btn btn-save">Confirmar y Cobrar</button>
                     </div>
                 </form>
             </div>

@@ -1,0 +1,26 @@
+.prescription-modal {
+  max-width: 500px;
+  border-left: 5px solid var(--ui-color-warning);
+}
+
+.prescription-modal__intro {
+  margin-bottom: var(--ui-space-md);
+}
+
+.prescription-modal__items {
+  display: block;
+  margin-bottom: var(--ui-space-lg);
+  padding: var(--ui-space-sm) var(--ui-space-lg);
+  color: var(--ui-text-warning);
+  font-weight: 700;
+  list-style: disc;
+  list-style-position: outside;
+}
+
+.prescription-modal__items li + li {
+  margin-top: var(--ui-space-xs);
+}
+
+.prescription-modal__actions {
+  margin-top: var(--ui-space-lg);
+}
