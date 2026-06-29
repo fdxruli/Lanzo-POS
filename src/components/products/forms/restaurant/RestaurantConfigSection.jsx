@@ -17,26 +17,15 @@ export default function RestaurantConfigSection({
   currentCost
 }) {
   return (
-    <div
-      className="module-section"
-      style={{ borderTop: '2px solid #fdba74', marginTop: '25px', paddingTop: '20px', position: 'relative' }}
-    >
-      <span
-        style={{
-          position: 'absolute',
-          top: '-14px',
-          left: '15px',
-          background: '#fff7ed',
-          padding: '0 8px',
-          borderRadius: '4px',
-          fontSize: '0.85rem',
-          color: '#ea580c',
-          fontWeight: 'bold',
-          border: '1px solid #fdba74'
-        }}
-      >
-        Configuracion de Restaurante
-      </span>
+    <section className="product-form-section">
+      <div className="product-form-section__header">
+        <div className="product-form-section__heading">
+          <h4 className="product-form-section__title">Configuración de restaurante</h4>
+          <p className="product-form-section__subtitle">
+            Ajusta receta, comanda, tiempos y modificadores con el mismo patrón visual.
+          </p>
+        </div>
+      </div>
 
       <RestauranteFields
         productType={productType}
@@ -54,8 +43,16 @@ export default function RestaurantConfigSection({
 
       {/* CONFIGURACIÓN DE CADUCIDAD (DESACOPLADA) */}
       {common?.doesTrackStock && (
-        <div className="form-group" style={{ marginTop: '15px', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
-          <label className="form-label" style={{ fontWeight: 'bold', color: '#334155' }}>Modo de Caducidad</label>
+        <section className="product-form-section product-form-section--nested">
+          <div className="product-form-section__header">
+            <div className="product-form-section__heading">
+              <h4 className="product-form-section__title">Modo de caducidad</h4>
+              <p className="product-form-section__subtitle">
+                Define si los lotes requieren fecha o vida útil al recibir inventario.
+              </p>
+            </div>
+          </div>
+
           <select
             className="form-input"
             value={common.expirationMode}
@@ -63,10 +60,10 @@ export default function RestaurantConfigSection({
               const newValue = e.target.value;
               if ((common.expirationMode === 'STRICT' || common.expirationMode === 'SHELF_LIFE') && newValue === 'NONE') {
                 const confirmPurge = await showConfirmModal(
-                  "⚠️ Existen lotes activos con fechas de caducidad. ¿Deseas purgar estas fechas o cancelar el cambio?",
+                  "Existen lotes activos con fechas de caducidad. ¿Deseas purgar estas fechas o cancelar el cambio?",
                   {
                     title: 'Purgar caducidades',
-                    confirmButtonText: 'Si, purgar',
+                    confirmButtonText: 'Sí, purgar',
                     cancelButtonText: 'Cancelar'
                   }
                 );
@@ -76,15 +73,15 @@ export default function RestaurantConfigSection({
               common.setExpirationMode(newValue);
             }}
           >
-            <option value="NONE">No Controlar Caducidad</option>
-            <option value="STRICT">Estricto (Requerir fecha al recibir)</option>
-            <option value="SHELF_LIFE">Vida Útil (Días/Meses desde recepción)</option>
+            <option value="NONE">No controlar caducidad</option>
+            <option value="STRICT">Estricto (requerir fecha al recibir)</option>
+            <option value="SHELF_LIFE">Vida útil (días/meses desde recepción)</option>
           </select>
 
           {common.expirationMode === 'SHELF_LIFE' && (
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <div style={{ flex: 1 }}>
-                <label className="form-label" style={{ fontSize: '0.85rem' }}>Vida Útil</label>
+            <div className="product-form-grid product-form-grid--2" style={{ marginTop: '10px' }}>
+              <div className="form-group product-form-no-margin">
+                <label className="form-label">Vida útil</label>
                 <input
                   type="number"
                   className="form-input"
@@ -94,8 +91,8 @@ export default function RestaurantConfigSection({
                   placeholder="Ej. 5"
                 />
               </div>
-              <div style={{ flex: 1 }}>
-                <label className="form-label" style={{ fontSize: '0.85rem' }}>Unidad de Tiempo</label>
+              <div className="form-group product-form-no-margin">
+                <label className="form-label">Unidad de tiempo</label>
                 <select
                   className="form-input"
                   value={common.shelfLifeUnit}
@@ -107,8 +104,8 @@ export default function RestaurantConfigSection({
               </div>
             </div>
           )}
-        </div>
+        </section>
       )}
-    </div>
+    </section>
   );
 }
