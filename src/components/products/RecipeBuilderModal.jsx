@@ -115,13 +115,13 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
   return (
     <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
       <div className="modal-content recipe-modal">
-        <h2 className="modal-title">Construir Receta</h2>
-        <p className="modal-subtitle">Producto: <strong>{productName || 'Nuevo Producto'}</strong></p>
+        <h2 className="modal-title">Construir receta</h2>
+        <p className="modal-subtitle">Producto: <strong>{productName || 'Nuevo producto'}</strong></p>
 
         {availableIngredients.length === 0 ? (
           <div className="warning-box">
-            ⚠️ No tienes productos marcados como "Ingrediente" o no se han cargado los lotes. <br />
-            Asegúrate de haber creado Insumos y haber registrado su stock inicial.
+            No tienes productos marcados como "Ingrediente" o no se han cargado los lotes. <br />
+            Asegúrate de haber creado insumos y haber registrado su stock inicial.
           </div>
         ) : (
           <div className="recipe-input-group">
@@ -145,7 +145,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
               <label>
                 Cantidad
                 {/* Label dinámico para guiar al usuario */}
-                {useSmallUnit ? <small style={{ color: 'green' }}> (en {unit === 'kg' ? 'gramos' : 'mililitros'})</small> : ''}
+                {useSmallUnit ? <small className="recipe-unit-helper"> (en {unit === 'kg' ? 'gramos' : 'mililitros'})</small> : ''}
               </label>
               <input
                 type="number"
@@ -163,15 +163,14 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <input
                   type="text"
-                  className="form-input"
+                  className="form-input recipe-unit-input"
                   value={unit}
                   disabled // BLOQUEADO: No dejar editar manualmente para evitar errores
-                  style={{ backgroundColor: '#f3f4f6', color: '#666', width: '60px' }}
                 />
 
                 {/* Solo mostramos el convertidor si es KG o LT */}
                 {(unit === 'kg' || unit === 'lt') && (
-                  <label className="toggle-switch" style={{ cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center' }}>
+                  <label className="toggle-switch recipe-small-unit-toggle">
                     <input
                       type="checkbox"
                       checked={useSmallUnit}
@@ -201,7 +200,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
             <tbody>
               {recipeItems.length === 0 ? (
                 <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', color: '#999' }}>
+                  <td colSpan="4" className="recipe-empty-cell">
                     Sin ingredientes asignados
                   </td>
                 </tr>
@@ -212,10 +211,10 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
                   const isMissing = !originalIngredient;
 
                   return (
-                    <tr key={idx} style={{ backgroundColor: isMissing ? '#fff0f0' : 'transparent' }}>
+                    <tr key={idx} className={isMissing ? 'recipe-row-missing' : ''}>
                       <td>
                         {item.name}
-                        {isMissing && <span style={{ color: 'red', fontSize: '0.8em', display: 'block' }}>⚠️ (Insumo eliminado)</span>}
+                        {isMissing && <span className="recipe-missing-label">Insumo eliminado</span>}
                       </td>
                       <td>{item.quantity} {item.unit}</td>
                       <td>
@@ -223,7 +222,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
                         ${(isMissing ? (item.estimatedCost || 0) : (originalIngredient.cost * item.quantity)).toFixed(2)}
                       </td>
                       <td>
-                        <button className="btn-icon-remove" onClick={() => handleRemove(item.ingredientId)}>🗑️</button>
+                        <button className="btn-icon-remove" onClick={() => handleRemove(item.ingredientId)} aria-label="Eliminar ingrediente">×</button>
                       </td>
                     </tr>
                   );
@@ -235,11 +234,11 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
 
         <div className="recipe-footer">
           <div className="recipe-total">
-            Costo Teórico Total: <span>${totalEstimatedCost.toFixed(2)}</span>
+            Costo teórico total: <span>${totalEstimatedCost.toFixed(2)}</span>
           </div>
           <div className="recipe-actions">
             <button className="btn btn-cancel" onClick={onClose}>Cancelar</button>
-            <button className="btn btn-save" onClick={handleSave}>Guardar Receta</button>
+            <button className="btn btn-save" onClick={handleSave}>Guardar receta</button>
           </div>
         </div>
 
