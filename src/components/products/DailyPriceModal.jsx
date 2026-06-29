@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { loadData, saveBulkSafe, STORES } from '../../services/database';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 // 1. IMPORTAR STORE PARA OBTENER CATEGORÍAS
 import { useProductStore } from '../../store/useProductStore';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import Logger from '../../services/Logger';
 import './DailyPriceModal.css';
 
@@ -13,6 +14,16 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
     // 2. NUEVO ESTADO PARA CATEGORÍA
     const [selectedCategory, setSelectedCategory] = useState('all');
     const categories = useProductStore(state => state.categories);
+
+    const handleDismiss = useCallback(() => {
+        onClose();
+    }, [onClose]);
+
+    const dismissModal = useDismissibleHistoryLayer({
+        isOpen: show,
+        onDismiss: handleDismiss,
+        layerId: 'daily-price-modal'
+    });
 
     // 3. FILTRADO MEJORADO
     const relevantProducts = products.filter(p => {
@@ -71,7 +82,7 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
             });
 
             if (updates.length === 0) {
-                onClose();
+                dismissModal();
                 return;
             }
 
@@ -96,7 +107,7 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
                 await onRefresh();
                 showMessageModal(`✅ Precios actualizados para ${updates.length} productos.`);
                 setEditedProducts({});
-                onClose();
+                dismissModal();
             } else {
                 Logger.error(result.error);
                 showMessageModal(`Error al actualizar precios: ${result.error?.message}`);
@@ -187,7 +198,7 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
                 </div>
 
                 <div className="ui-modal__actions daily-price-modal__actions">
-                    <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose}>Cancelar</button>
+                    <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={dismissModal}>Cancelar</button>
                     <button type="button" className="ui-button ui-button--primary btn btn-save" onClick={handleSaveAll}>
                         Guardar Cambios
                     </button>
