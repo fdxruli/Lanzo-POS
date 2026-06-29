@@ -1,6 +1,7 @@
 /* Caja page: Pulso de Caja */
 .caja-page {
-  padding-bottom: calc(var(--ui-space-xl) + 72px);
+  padding-bottom: calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom));
+  min-width: 0;
 }
 
 .caja-page__header {
@@ -179,6 +180,7 @@
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .caja-grid .activity-dot {
@@ -215,6 +217,8 @@
   font-weight: 700;
   cursor: pointer;
   transition: transform 160ms ease, border-color 160ms ease, color 160ms ease;
+  min-width: 0;
+  white-space: normal;
 }
 
 .caja-grid .utility-button-primary {
@@ -821,6 +825,7 @@
   font-weight: 720;
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .caja-grid .movement-amount {
@@ -854,6 +859,7 @@
   grid-column: 1 / -1;
   color: var(--text-light);
   font-size: 0.68rem;
+  min-width: 0;
 }
 
 .caja-grid .movement-badge {
@@ -903,6 +909,23 @@
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--border-color);
+  min-width: 0;
+}
+
+@media (max-width: 420px) {
+  .caja-grid .status-utilities,
+  .caja-grid .actions-row,
+  .caja-grid .shortcuts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .caja-grid .movement-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .caja-grid .movement-amount {
+    white-space: normal;
+  }
 }
 
 .caja-grid .pagination button {

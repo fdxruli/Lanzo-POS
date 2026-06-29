@@ -13,6 +13,7 @@
   min-height: 0;
   overflow: hidden; /* Evita scrolls dobles indeseados */
   width: 100%;
+  min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -35,6 +36,7 @@
   gap: 16px;
   padding: 0;
   width: 100%;
+  min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -57,7 +59,7 @@
   }
 
   .floating-pos-bar {
-    bottom: calc(73px + env(safe-area-inset-bottom));
+    bottom: calc(73px + var(--safe-area-bottom));
   }
 }
 
@@ -73,7 +75,7 @@
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
-  width: calc(100% - 32px);
+  width: min(calc(100% - 32px), calc(100vw - max(32px, var(--safe-area-left) + var(--safe-area-right))));
   max-width: 500px;
   display: flex;
   gap: 12px;
@@ -83,6 +85,7 @@
 
 .floating-btn {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -146,6 +149,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .cart-count {
@@ -164,6 +168,9 @@
 .cart-total {
   font-weight: 800;
   font-size: 1.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Ocultar en escritorio */
@@ -181,6 +188,7 @@
 
   .pos-page-layout {
     height: calc(100vh - 180px);
+    height: calc(100dvh - 180px);
   }
 
   .section-title {
@@ -227,6 +235,7 @@
   .pos-page-layout {
     /* Descontamos Header + Ticker + márgenes para evitar scroll global */
     height: calc(100vh - 130px);
+    height: calc(100dvh - 130px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -268,6 +277,7 @@
     flex-direction: column;
     overflow: hidden;
     margin: 0;
+    min-width: 0;
   }
 }
 
@@ -278,6 +288,7 @@
 @media (min-width: 1440px) {
   .pos-page-layout {
     height: calc(100vh - 130px);
+    height: calc(100dvh - 130px);
   }
 
   .section-title {

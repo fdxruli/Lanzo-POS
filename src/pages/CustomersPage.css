@@ -6,6 +6,7 @@
   --customers-warning-soft: var(--ui-bg-warning-soft);
   --customers-error-soft: var(--ui-bg-danger-soft);
   width: 100%;
+  min-width: 0;
   max-width: none;
   margin: 0;
   padding: var(--ui-space-lg);
@@ -184,7 +185,7 @@
 @media (max-width: 640px) {
   .customers-page {
     padding: var(--ui-space-md);
-    padding-bottom: calc(var(--ui-space-xl) + 72px);
+    padding-bottom: calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom));
   }
 }
 

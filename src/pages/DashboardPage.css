@@ -241,3 +241,34 @@
     transform: translateY(0); 
   }
 }
+
+/* UI.6 mobile/PWA hardening */
+.dashboard-page,
+.dashboard-grid,
+.dashboard-section,
+.dashboard-panel,
+.data-warning-banner {
+  min-width: 0;
+}
+
+.dashboard-page {
+  padding-bottom: calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom));
+}
+
+.panel-body {
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-warning-banner strong {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 520px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-warning-banner {
+    gap: var(--spacing-sm);
+  }
+}

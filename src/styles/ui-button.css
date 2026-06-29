@@ -172,3 +172,18 @@
 [data-theme="dark"] .ui-button--warning {
   color: #ffd166;
 }
+
+@media (max-width: 640px) {
+  button:not(.ui-icon-button):not(.btn-icon):not(.btn-icon-small),
+  .ui-button:not(.ui-icon-button):not(.ui-icon-button--sm),
+  .btn:not(.btn-icon):not(.btn-icon-small) {
+    min-height: 44px;
+  }
+
+  .ui-icon-button,
+  .btn-icon,
+  .btn-icon-small {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}

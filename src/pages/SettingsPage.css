@@ -1052,3 +1052,40 @@ input[type="radio"] {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* UI.6 mobile/PWA hardening */
+.settings-page-wrapper,
+.settings-content,
+.company-form-container,
+.settings-grid,
+.settings-option-main,
+.license-renewal-panel,
+.maintenance-tool-card {
+  min-width: 0;
+}
+
+.settings-page-wrapper {
+  padding-bottom: calc(120px + var(--safe-area-bottom));
+}
+
+.settings-page-wrapper .tabs-container {
+  max-width: 100%;
+}
+
+.settings-option-copy p,
+.license-value,
+.license-key-value,
+.tool-info p {
+  overflow-wrap: anywhere;
+}
+
+.license-detail {
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .license-detail {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

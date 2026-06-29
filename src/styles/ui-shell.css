@@ -1,5 +1,7 @@
 .ui-shell {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 100%;
   background-color: var(--ui-bg-page);
   color: var(--ui-text);
@@ -7,7 +9,10 @@
 
 .ui-page {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: var(--ui-space-lg);
+  padding-bottom: max(var(--ui-space-lg), var(--safe-area-bottom));
 }
 
 .ui-page__header,
@@ -17,6 +22,7 @@
   justify-content: space-between;
   gap: var(--ui-space-md);
   margin-bottom: var(--ui-space-lg);
+  min-width: 0;
 }
 
 .ui-page__title,
@@ -36,6 +42,7 @@
 }
 
 .ui-section {
+  min-width: 0;
   margin-bottom: var(--ui-space-xl);
 }
 
@@ -168,7 +175,11 @@
 
 @media (max-width: 640px) {
   .ui-page {
-    padding: var(--ui-space-md);
+    padding:
+      var(--ui-space-md)
+      max(var(--ui-space-md), var(--safe-area-right))
+      max(var(--ui-space-md), var(--safe-area-bottom))
+      max(var(--ui-space-md), var(--safe-area-left));
   }
 
   .ui-page__header,
