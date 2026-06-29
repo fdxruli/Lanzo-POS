@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import './InputPromptModal.css';
 
 function InputPromptModal({
@@ -24,6 +25,12 @@ function InputPromptModal({
     onResolve(null);
   };
 
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: true,
+    onDismiss: resolveCancel,
+    layerId: 'input-prompt-modal'
+  });
+
   const resolveConfirm = () => {
     const trimmedValue = value.trim();
 
@@ -46,7 +53,7 @@ function InputPromptModal({
       return;
     }
 
-    resolveCancel();
+    dismissModal();
   };
 
   return (
@@ -90,7 +97,7 @@ function InputPromptModal({
         </div>
 
         <div className="ui-modal__actions input-prompt-modal__actions">
-          <button type="button" className="ui-button ui-button--ghost" onClick={resolveCancel}>
+          <button type="button" className="ui-button ui-button--ghost" onClick={dismissModal}>
             {cancelButtonText}
           </button>
           <button type="submit" className="ui-button ui-button--primary">
