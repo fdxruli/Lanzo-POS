@@ -339,3 +339,20 @@
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 640px) {
+  .products-page {
+    padding-left: max(var(--ui-space-sm), var(--safe-area-left));
+    padding-right: max(var(--ui-space-sm), var(--safe-area-right));
+  }
+
+  .products-tabs-section,
+  .products-workspace {
+    margin-bottom: var(--ui-space-md);
+  }
+
+  .products-tabs {
+    margin-inline: calc(-1 * var(--ui-space-sm));
+    padding-inline: var(--ui-space-sm);
+  }
+}

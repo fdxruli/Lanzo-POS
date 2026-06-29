@@ -162,7 +162,24 @@
 
 @media (max-width: 640px) {
   .customers-page {
-    padding: var(--ui-space-md);
+    padding:
+      var(--ui-space-sm)
+      max(var(--ui-space-sm), var(--safe-area-right))
+      calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom))
+      max(var(--ui-space-sm), var(--safe-area-left));
+  }
+
+  .customers-page__content {
+    margin-top: var(--ui-space-md);
+  }
+
+  .customer-directory-toolbar {
+    padding-inline: var(--ui-space-sm);
+  }
+}
+
+@media (min-width: 641px) {
+  .customers-page {
     padding-bottom: calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom));
   }
 }

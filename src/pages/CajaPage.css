@@ -1123,6 +1123,14 @@
   }
 }
 
+@media (max-width: 640px) {
+  .caja-grid {
+    padding-inline: 0;
+    padding-top: 0;
+    padding-bottom: 2rem;
+  }
+}
+
 /* Dark mode */
 [data-theme="dark"] .caja-grid {
   --caja-navy: #071a2c;

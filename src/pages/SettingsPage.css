@@ -1080,6 +1080,22 @@ input[type="radio"] {
 }
 
 @media (max-width: 640px) {
+  .settings-page-wrapper {
+    padding-left: max(var(--ui-space-sm), var(--safe-area-left));
+    padding-right: max(var(--ui-space-sm), var(--safe-area-right));
+  }
+
+  .settings-page-wrapper .tabs-container {
+    margin-inline: calc(-1 * var(--ui-space-sm));
+    padding-inline: var(--ui-space-sm);
+  }
+
+  .company-form-container,
+  .backup-container,
+  .staff-user-form {
+    padding: var(--ui-space-md);
+  }
+
   .license-detail {
     align-items: flex-start;
     flex-direction: column;

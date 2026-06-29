@@ -176,10 +176,10 @@
 @media (max-width: 640px) {
   .ui-page {
     padding:
-      var(--ui-space-md)
-      max(var(--ui-space-md), var(--safe-area-right))
+      var(--ui-space-sm)
+      max(var(--ui-space-sm), var(--safe-area-right))
       max(var(--ui-space-md), var(--safe-area-bottom))
-      max(var(--ui-space-md), var(--safe-area-left));
+      max(var(--ui-space-sm), var(--safe-area-left));
   }
 
   .ui-page__header,
