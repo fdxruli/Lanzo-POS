@@ -78,8 +78,10 @@ export const cashCloudRepository = {
       rpcName: 'pos_get_current_cash_session',
       licenseKey,
       baseArgs,
-      ttlMs: CLOUD_REQUEST_TTL.VERY_SHORT,
-      cooldownMs: CLOUD_REQUEST_COOLDOWN.VERY_SHORT,
+      // En hora pico esta lectura puede dispararse varias veces por pantalla/foreground.
+      // Las mutaciones de caja siguen siendo directas y limpian caché; 15s evita ráfagas.
+      ttlMs: CLOUD_REQUEST_TTL.SHORT,
+      cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
       force,
       fn: async () => {
         const { data, error } = await supabaseClient.rpc('pos_get_current_cash_session', baseArgs);
