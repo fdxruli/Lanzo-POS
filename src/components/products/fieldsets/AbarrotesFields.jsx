@@ -32,40 +32,37 @@ export default function AbarrotesFields({
   const [showConversionHelp, setShowConversionHelp] = useState(false);
 
   return (
-    <div className="abarrotes-fields-container" style={{ animation: 'fadeIn 0.3s' }}>
-
-      {/* 1. UBICACIÓN Y PROVEEDOR (Usando clase theme-group-container) */}
+    <div className="abarrotes-fields-container">
       <div className="theme-group-container">
         <div className="form-group">
-          <label className="form-label">📍 Ubicación en Bodega / Pasillo</label>
-          <input 
-            type="text" 
-            className="form-input" 
-            placeholder="Ej: Pasillo 4, Estante B" 
-            value={location || ''} 
-            onChange={(e) => setLocation(e.target.value)} 
+          <label className="form-label">Ubicación en bodega / pasillo</label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Ej: Pasillo 4, Estante B"
+            value={location || ''}
+            onChange={(e) => setLocation(e.target.value)}
           />
         </div>
 
         {showSuppliers && (
-            <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Proveedor Principal</label>
-            <input 
-                type="text" 
-                className="form-input" 
-                placeholder="Ej: Coca-Cola, Bimbo..." 
-                value={supplier} 
-                onChange={(e) => setSupplier(e.target.value)} 
+          <div className="form-group product-form-no-margin">
+            <label className="form-label">Proveedor principal</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Ej: Proveedor local"
+              value={supplier}
+              onChange={(e) => setSupplier(e.target.value)}
             />
-            </div>
+          </div>
         )}
       </div>
 
-      {/* 2. FORMA DE VENTA */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
+      <div className="product-form-grid product-form-grid--2">
         {showBulk && (
           <div className="form-group">
-            <label className="form-label">Forma de Venta</label>
+            <label className="form-label">Forma de venta</label>
             <select
               className="form-input"
               value={saleType}
@@ -75,20 +72,19 @@ export default function AbarrotesFields({
                 else if (unit === 'pza') setUnit('kg');
               }}
             >
-              <option value="unit">Por Pieza/Unidad</option>
-              <option value="bulk">A Granel / Fraccionado</option>
+              <option value="unit">Por pieza/unidad</option>
+              <option value="bulk">A granel / fraccionado</option>
             </select>
           </div>
         )}
 
         {saleType === 'bulk' && (
           <div className="form-group">
-            <label className="form-label">Unidad de Venta</label>
+            <label className="form-label">Unidad de venta</label>
             <select
-              className="form-input"
+              className="form-input product-form-emphasis-input"
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
-              style={{ border: '2px solid var(--primary-color)' }}
             >
               {COMMON_UNITS.map(u => (
                 <option key={u.val} value={u.val}>{u.label}</option>
@@ -99,36 +95,32 @@ export default function AbarrotesFields({
 
         {showWholesale && saleType !== 'bulk' && (
           <div className="form-group">
-            <label className="form-label">Precios Especiales</label>
-            <button type="button" className="btn btn-secondary" style={{ width: '100%' }} onClick={onManageWholesale}>
-              Configurar Mayoreo
+            <label className="form-label">Precios especiales</label>
+            <button type="button" className="btn btn-secondary" onClick={onManageWholesale}>
+              Configurar mayoreo
             </button>
           </div>
         )}
       </div>
 
-      {/* 3. CONVERSIÓN DE COMPRA (Estilos corregidos con clases CSS) */}
       {showBulk && saleType === 'bulk' && (
         <div className="conversion-section">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <div className="product-form-section__header">
             <div className="conversion-header">
-              <h4 style={{ margin: 0, fontSize: '0.9rem', color: 'inherit' }}>🔄 Conversión de Compra</h4>
+              <h4 className="product-form-section__title">Conversión de compra</h4>
 
               <button
                 type="button"
                 onClick={() => setShowConversionHelp(!showConversionHelp)}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: showConversionHelp ? 'var(--primary-color)' : 'var(--text-light)',
-                  display: 'flex', alignItems: 'center', marginLeft: '5px'
-                }}
+                className="product-form-icon-button"
                 title="¿Cuándo activar esto?"
+                aria-label={showConversionHelp ? 'Ocultar ayuda de conversión' : 'Mostrar ayuda de conversión'}
               >
                 {showConversionHelp ? <X size={18} /> : <Info size={18} />}
               </button>
             </div>
 
-            <div className="form-group-checkbox" style={{ margin: 0 }}>
+            <div className="form-group-checkbox product-form-no-margin">
               <input
                 type="checkbox"
                 id="enable-conversion"
@@ -138,30 +130,28 @@ export default function AbarrotesFields({
                   enabled: e.target.checked
                 })}
               />
-              <label htmlFor="enable-conversion" style={{ fontSize: '0.85rem', cursor: 'pointer', marginLeft: '5px' }}>Activar</label>
+              <label htmlFor="enable-conversion">Activar</label>
             </div>
           </div>
 
           {showConversionHelp && (
             <div className="help-box-content">
-              <p style={{ marginBottom: '10px', lineHeight: '1.4' }}>
+              <p>
                 <strong>¿Cuándo usar esto?</strong><br />
-                Solo si compras en una unidad (Cajas/Bultos) y vendes en otra (Piezas/Kilos) y <u>no quieres contar al recibir</u>.
+                Solo si compras en una unidad mayor y vendes en otra unidad menor sin contar pieza por pieza al recibir.
               </p>
 
-              <div style={{ display: 'grid', gap: '10px' }}>
+              <div className="product-form-grid">
                 <div className="example-box success">
-                  <strong style={{ display: 'block', marginBottom: '2px' }}>✅ SÍ: Ejemplo "Clavos a Granel"</strong>
+                  <strong className="product-form-alert__title">SÍ: conversión útil</strong>
                   <span>
-                    Compras una caja de 25kg, pero vendes piezas sueltas. <br />
-                    El sistema traduce: <strong>1 Kg = 200 Clavos</strong>.
+                    Compras una caja con varias unidades internas y vendes esas unidades por separado.
                   </span>
                 </div>
                 <div className="example-box warning">
-                  <strong style={{ display: 'block', marginBottom: '2px' }}>❌ NO: Ejemplo "Cemento"</strong>
+                  <strong className="product-form-alert__title">NO: mejor capturar stock directo</strong>
                   <span>
-                    Compras 10 bultos de 50kg y vendes kilos.<br />
-                    <strong>Mejor ingresa "500" directo al stock.</strong> Es más claro ver "Quedan 450 kilos" que "Quedan 9.0 bultos".
+                    Si ya conoces la cantidad final que venderás, registra directamente ese total en inventario.
                   </span>
                 </div>
               </div>
@@ -169,9 +159,9 @@ export default function AbarrotesFields({
           )}
 
           {conversionFactor?.enabled && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.8rem' }}>Unidad de Compra</label>
+            <div className="product-form-grid product-form-grid--2">
+              <div className="form-group product-form-no-margin">
+                <label className="form-label">Unidad de compra</label>
                 <input
                   type="text"
                   className="form-input"
@@ -180,8 +170,8 @@ export default function AbarrotesFields({
                   onChange={(e) => setConversionFactor({ ...conversionFactor, purchaseUnit: e.target.value })}
                 />
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.8rem' }}>Contenido por unidad ({unit})</label>
+              <div className="form-group product-form-no-margin">
+                <label className="form-label">Contenido por unidad ({unit})</label>
                 <input
                   type="number"
                   className="form-input"
@@ -197,12 +187,11 @@ export default function AbarrotesFields({
                 />
               </div>
 
-              {/* --- PREVISUALIZACIÓN DINÁMICA --- */}
               <div className="dynamic-preview-box">
-                <span style={{ fontSize: '1.2rem' }}>📦</span>
+                <span className="product-form-preview-marker" aria-hidden="true" />
                 <div>
                   <strong>Ejemplo:</strong> Si ingresas 1 <span style={{ fontWeight: 'bold', textDecoration: 'underline' }}>{conversionFactor.purchaseUnit || '(Unidad)'}</span>,
-                  el sistema sumará <span style={{ fontWeight: '800', color: 'var(--success-color)', fontSize: '1em' }}>{conversionFactor.factor || 0} {unit}</span> a tu inventario.
+                  el sistema sumará <span className="product-form-success-text">{conversionFactor.factor || 0} {unit}</span> a tu inventario.
                 </div>
               </div>
             </div>
@@ -211,21 +200,15 @@ export default function AbarrotesFields({
       )}
 
       {showStockAlerts && (
-        <div style={{
-          marginTop: '10px',
-          padding: '15px',
-          backgroundColor: 'var(--light-background)',
-          borderRadius: '8px',
-          borderLeft: '4px solid var(--warning-color)'
-        }}>
-          <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: 'var(--text-dark)' }}>🔔 Alertas de Stock</h4>
-          <div style={{ display: 'flex', gap: '15px' }}>
-            <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-              <label className="form-label" style={{ fontSize: '0.85rem' }}>Mínimo (Reordenar)</label>
+        <div className="product-form-alert product-form-alert--warning product-form-risk-card">
+          <h4 className="product-form-section__title">Alertas de stock</h4>
+          <div className="product-form-grid product-form-grid--2" style={{ marginTop: '10px' }}>
+            <div className="form-group product-form-no-margin">
+              <label className="form-label">Mínimo (reordenar)</label>
               <input type="number" className="form-input" placeholder="Ej: 5" value={minStock} onChange={(e) => setMinStock(e.target.value)} />
             </div>
-            <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-              <label className="form-label" style={{ fontSize: '0.85rem' }}>Máximo (Tope)</label>
+            <div className="form-group product-form-no-margin">
+              <label className="form-label">Máximo (tope)</label>
               <input type="number" className="form-input" placeholder="Ej: 50" value={maxStock} onChange={(e) => setMaxStock(e.target.value)} />
             </div>
           </div>
