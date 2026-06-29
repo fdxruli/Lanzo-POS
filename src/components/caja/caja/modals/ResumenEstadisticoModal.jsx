@@ -1,6 +1,8 @@
 // src/components/caja/modals/ResumenEstadisticoModal.jsx
+import { useCallback } from 'react';
 import { X } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import { useDismissibleHistoryLayer } from '../../../../hooks/useDismissibleHistoryLayer';
 
 /**
  * Modal para mostrar el resumen estadístico del turno
@@ -19,6 +21,17 @@ const ResumenEstadisticoModal = ({
   maxCashThreshold,
   isDisabled = false
 }) => {
+  const handleDismiss = useCallback(() => {
+    if (isDisabled) return;
+    onClose();
+  }, [isDisabled, onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: Boolean(show && resumenData),
+    onDismiss: handleDismiss,
+    layerId: 'cash-summary-modal'
+  });
+
   if (!show || !resumenData) return null;
 
   return (
@@ -36,7 +49,7 @@ const ResumenEstadisticoModal = ({
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={dismissModal}
             disabled={isDisabled}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)' }}
             aria-label="Cerrar modal"
@@ -229,7 +242,7 @@ const ResumenEstadisticoModal = ({
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
           <button
             className="btn"
-            onClick={onClose}
+            onClick={dismissModal}
             disabled={isDisabled}
             style={{ backgroundColor: 'var(--primary-color)', color: 'white' }}
           >
