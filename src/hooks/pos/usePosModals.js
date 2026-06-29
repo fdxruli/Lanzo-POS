@@ -1,5 +1,6 @@
 // src/hooks/usePosModals.js
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useDismissibleHistoryLayer } from '../useDismissibleHistoryLayer';
 
 /**
  * Máquina de estados para los modales del POS.
@@ -54,26 +55,18 @@ export function usePosModals() {
 export function useMobileCartModal() {
     const [isOpen, setIsOpen] = useState(false);
 
-    // ── Botón "Atrás" del navegador cierra el modal móvil ─────────
-    useEffect(() => {
-        if (isOpen) {
-            window.history.pushState({ modal: 'cart' }, document.title);
+    const handleDismiss = useCallback(() => {
+        setIsOpen(false);
+    }, []);
 
-            const handlePopState = () => {
-                setIsOpen(false);
-            };
-
-            window.addEventListener('popstate', handlePopState);
-            return () => window.removeEventListener('popstate', handlePopState);
-        }
-    }, [isOpen]);
+    const closeCart = useDismissibleHistoryLayer({
+        isOpen,
+        onDismiss: handleDismiss,
+        layerId: 'mobile-cart'
+    });
 
     const openCart = useCallback(() => {
         setIsOpen(true);
-    }, []);
-
-    const closeCart = useCallback(() => {
-        setIsOpen(false);
     }, []);
 
     return {
