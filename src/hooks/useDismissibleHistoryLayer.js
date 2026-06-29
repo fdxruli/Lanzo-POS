@@ -19,7 +19,8 @@ const stripLayerState = (state) => {
  * Convierte un modal/drawer visible en una capa compatible con el botón Atrás.
  *
  * Regla UX:
- * - Si la capa está abierta y el usuario presiona Atrás, se cierra la capa.
+ * - Si la capa está abierta y el usuario presiona Atrás, se cierra la capa superior.
+ * - Si hay modales apilados, Atrás cierra solo el más reciente.
  * - Si la capa se cierra desde UI, se consume la entrada de historial creada para ella.
  * - Si no hay capa abierta, Atrás sigue navegando normalmente.
  */
@@ -64,8 +65,15 @@ export function useDismissibleHistoryLayer({
       window.location.href
     );
 
-    const handlePopState = () => {
+    const handlePopState = (event) => {
       if (!hasHistoryEntryRef.current && !pendingProgrammaticDismissRef.current) return;
+
+      const nextLayerToken = event.state?.[HISTORY_LAYER_KEY];
+      const isStillCurrentLayer = nextLayerToken === layerTokenRef.current;
+
+      // Cuando hay modales apilados, el modal inferior sigue siendo el estado activo
+      // después de cerrar el superior. En ese caso NO debe cerrarse también.
+      if (isStillCurrentLayer && !pendingProgrammaticDismissRef.current) return;
 
       hasHistoryEntryRef.current = false;
       pendingProgrammaticDismissRef.current = false;
