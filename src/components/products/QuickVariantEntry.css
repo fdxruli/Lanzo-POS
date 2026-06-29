@@ -2,24 +2,31 @@
 
 .quick-variant-container {
   margin-top: 15px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--ui-border-color, var(--border-color));
   border-radius: var(--border-radius);
   overflow: hidden;
-  background-color: var(--card-background-color);
-  box-shadow: var(--box-shadow);
+  background-color: var(--ui-bg-surface, var(--card-background-color));
+  box-shadow: var(--ui-shadow-sm, var(--box-shadow));
   transition: var(--transition);
 }
 
 /* Header */
 .qv-header {
   padding: 15px;
-  border-bottom: 1px solid var(--border-color);
-  background-color: var(--card-background-color);
+  border-bottom: 1px solid var(--ui-border-color, var(--border-color));
+  background-color: var(--ui-bg-surface, var(--card-background-color));
+}
+
+.qv-heading-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
 }
 
 .qv-title {
   margin: 0;
-  color: var(--text-dark);
+  color: var(--ui-text-strong, var(--text-dark));
   display: flex;
   align-items: center;
   gap: 8px;
@@ -28,8 +35,9 @@
 
 .qv-badge {
   font-size: 0.8rem;
-  background-color: rgba(123, 97, 255, 0.15); /* Tint de secondary */
-  color: var(--secondary-color);
+  background-color: var(--ui-bg-info-soft);
+  color: var(--ui-text-info);
+  border: 1px solid var(--ui-border-info);
   padding: 2px 8px;
   border-radius: 10px;
   font-weight: 600;
@@ -38,9 +46,9 @@
 /* Barra de Herramientas (Color y Curvas) */
 .qv-toolbar {
   display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap; /* Clave para móviles */
+  gap: 15px;
+  align-items: flex-start;
+  flex-wrap: wrap;
   margin-top: 10px;
 }
 
@@ -48,16 +56,24 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  background-color: var(--background-color); /* Un poco más oscuro que la tarjeta */
+  min-width: 150px;
+  background-color: var(--ui-bg-muted, var(--background-color));
   padding: 5px 10px;
   border-radius: 6px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--ui-border-color, var(--border-color));
 }
 
-.qv-label {
+.qv-label,
+.qv-group-label {
   font-size: 0.85rem;
-  color: var(--text-light);
+  color: var(--ui-text-muted, var(--text-light));
   white-space: nowrap;
+}
+
+.qv-group-label {
+  width: 100%;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .qv-color-input {
@@ -65,8 +81,14 @@
   outline: none;
   width: 100px;
   font-weight: bold;
-  color: var(--text-dark);
+  color: var(--ui-text-strong, var(--text-dark));
   background-color: transparent;
+}
+
+.qv-size-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .btn-group {
@@ -76,12 +98,12 @@
 }
 
 .btn-xs {
-  padding: 6px 10px; /* Más grande para dedos en móvil */
+  padding: 6px 10px;
   font-size: 0.8rem;
   border-radius: 4px;
-  border: 1px solid var(--border-color);
-  background-color: var(--card-background-color);
-  color: var(--text-dark);
+  border: 1px solid var(--ui-border-color, var(--border-color));
+  background-color: var(--ui-bg-surface, var(--card-background-color));
+  color: var(--ui-text-strong, var(--text-dark));
   cursor: pointer;
   transition: var(--transition);
 }
@@ -102,30 +124,30 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
-  min-width: 600px; /* Fuerza scroll horizontal en móviles muy pequeños en lugar de romper el layout */
+  min-width: 600px;
 }
 
 .qv-table thead th {
   position: sticky;
   top: 0;
-  background-color: var(--card-background-color); /* Crucial para que no sea transparente al scrollear */
+  background-color: var(--ui-bg-surface, var(--card-background-color));
   z-index: 10;
   padding: 10px 8px;
   text-align: left;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--text-light);
-  border-bottom: 2px solid var(--border-color);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  color: var(--ui-text-muted, var(--text-light));
+  border-bottom: 2px solid var(--ui-border-color, var(--border-color));
+  box-shadow: var(--ui-shadow-sm);
 }
 
 .qv-table tbody tr {
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--ui-border-color, var(--border-color));
   background-color: transparent;
 }
 
 .qv-row-duplicate {
-  background-color: rgba(255, 184, 0, 0.15) !important; /* Warning tint transparente para funcionar en dark mode */
+  background-color: var(--ui-bg-warning-soft) !important;
 }
 
 .qv-cell {
@@ -136,24 +158,31 @@
 /* Inputs dentro de la tabla */
 .form-input-compact {
   width: 100%;
-  padding: 8px; /* Touch friendly */
-  border: 1px solid var(--border-color);
+  padding: 8px;
+  border: 1px solid var(--ui-border-color, var(--border-color));
   border-radius: 6px;
   font-size: 0.9rem;
-  background-color: var(--background-color); /* Contraste sutil contra la fila */
-  color: var(--text-dark);
+  background-color: var(--ui-bg-muted, var(--background-color));
+  color: var(--ui-text-strong, var(--text-dark));
   transition: all 0.2s;
 }
 
 .form-input-compact:focus {
   border-color: var(--secondary-color);
   outline: none;
-  background-color: var(--card-background-color);
+  background-color: var(--ui-bg-surface, var(--card-background-color));
 }
 
 .form-input-compact::placeholder {
-  color: var(--text-light);
-  opacity: 0.6;
+  color: var(--ui-text-muted, var(--text-light));
+  opacity: 0.75;
+}
+
+.qv-inline-warning {
+  margin-top: 2px;
+  color: var(--ui-text-warning);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 /* Botones mini */
@@ -161,54 +190,51 @@
   border: none;
   background: none;
   cursor: pointer;
-  font-size: 1rem;
+  font-size: 0.78rem;
   padding: 4px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  color: var(--ui-text-muted, var(--text-light));
 }
 
-.btn-icon.delete { color: var(--error-color); }
-.btn-icon.sync { color: var(--secondary-color); margin-left: 5px; }
-.btn-icon.gen { margin: 0; padding: 0; }
+.btn-icon.delete {
+  color: var(--ui-text-danger);
+  font-size: 1rem;
+}
+
+.btn-icon.sync {
+  color: var(--secondary-color);
+  margin-left: 5px;
+  font-weight: 700;
+}
+
+.btn-icon.gen {
+  margin: 0;
+  padding: 2px 4px;
+  color: var(--ui-text-info);
+  border: 1px solid var(--ui-border-info);
+  border-radius: 4px;
+  background: var(--ui-bg-info-soft);
+  font-weight: 700;
+}
 
 /* Botón inferior */
 .btn-add-row {
   width: 100%;
   padding: 15px;
   font-size: 0.95rem;
-  background: var(--light-background);
+  background: var(--ui-bg-muted, var(--light-background));
   color: var(--secondary-color);
   border: none;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--ui-border-color, var(--border-color));
   cursor: pointer;
   font-weight: 600;
   transition: background 0.2s;
 }
 
 .btn-add-row:hover {
-  background: var(--border-color); /* Un poco más oscuro al hover */
-}
-
-/* Mobile Adjustments */
-@media (max-width: 600px) {
-  .qv-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .qv-input-group {
-    width: 100%;
-  }
-
-  .btn-group {
-    justify-content: space-between;
-  }
-  
-  .btn-xs {
-    flex: 1;
-    text-align: center;
-  }
+  background: var(--ui-border-color, var(--border-color));
 }
 
 /* Nuevo botón para expandir/colapsar categorías */
@@ -246,5 +272,26 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Mobile Adjustments */
+@media (max-width: 600px) {
+  .qv-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .qv-input-group {
+    width: 100%;
+  }
+
+  .btn-group {
+    justify-content: space-between;
+  }
+  
+  .btn-xs {
+    flex: 1;
+    text-align: center;
   }
 }
