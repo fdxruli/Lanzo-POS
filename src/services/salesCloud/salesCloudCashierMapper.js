@@ -28,6 +28,21 @@ const getLineTotal = (item = {}) => {
   return toNumber(item.price, 0) * toNumber(item.quantity, 0);
 };
 
+const hasManualBatchSelection = (item = {}) => Boolean(
+  item.manualBatchSelection === true ||
+  item.batchSelectionSource === 'manual' ||
+  item.stockSource === 'manual_batch' ||
+  item.metadata?.manualBatchSelection === true ||
+  item.metadata?.batchSelectionSource === 'manual'
+);
+
+const getExplicitBatchesUsed = (item = {}, allowLocalBatches = true) => {
+  const batchesUsed = item.batchesUsed || item.batches_used || item.metadata?.batchesUsed || item.metadata?.batches_used;
+  if (!Array.isArray(batchesUsed) || batchesUsed.length === 0) return null;
+  if (allowLocalBatches || hasManualBatchSelection(item)) return batchesUsed;
+  return null;
+};
+
 export const normalizeCloudCashierPaymentMethod = (method) => {
   const raw = String(method || '').trim().toLowerCase();
   if (['cash', 'efectivo'].includes(raw)) return 'cash';
@@ -63,13 +78,18 @@ export const isCloudCashierCompatiblePayment = (paymentData = {}) => {
   return ['cash', 'card', 'transfer'].includes(method);
 };
 
-const mapItem = (item = {}, index = 0) => {
+const mapItem = (item = {}, index = 0, options = {}) => {
   const productId = firstText(item.productId, item.parentId, item.id);
   const quantity = toNumber(item.quantity, 0);
   const unitPrice = toNumber(item.price ?? item.unitPrice, 0);
   const unitCost = item.cost === undefined && item.unitCost === undefined
     ? null
     : toNumber(item.cost ?? item.unitCost, 0);
+  const allowLocalBatches = options.allowLocalBatches !== false;
+  const explicitBatchesUsed = getExplicitBatchesUsed(item, allowLocalBatches);
+  const explicitBatchId = hasManualBatchSelection(item)
+    ? firstText(item.batchId, item.batch_id)
+    : (allowLocalBatches ? firstText(item.batchId, item.batch_id) : null);
 
   return compactObject({
     id: firstText(item.lineId, item.cartLineId) || (productId ? `${productId}:${index + 1}` : null),
@@ -85,18 +105,19 @@ const mapItem = (item = {}, index = 0) => {
     discount_amount: toNumber(item.discountAmount ?? item.discount, 0),
     tax_amount: toNumber(item.taxAmount ?? item.tax, 0),
     line_total: getLineTotal(item),
-    batch_id: firstText(item.batchId, item.batch_id),
-    batch_sku: firstText(item.batchSku, item.batch_sku),
-    batch_expiry_date: firstText(item.batchExpiryDate, item.expiryDate),
+    batch_id: explicitBatchId,
+    batch_sku: explicitBatchId ? firstText(item.batchSku, item.batch_sku) : undefined,
+    batch_expiry_date: explicitBatchId ? firstText(item.batchExpiryDate, item.expiryDate) : undefined,
     rubro: firstText(item.rubro, item.categoryName, item.category),
     metadata: compactObject({
       parentId: item.parentId || null,
       lineId: item.lineId || null,
       cartLineId: item.cartLineId || null,
-      batchesUsed: item.batchesUsed || null,
+      batchesUsed: explicitBatchesUsed,
       stockDeducted: item.stockDeducted ?? null,
       requiresPrescription: item.requiresPrescription || false,
-      inventoryReservation: item.inventoryReservation || null,
+      inventoryReservation: allowLocalBatches ? item.inventoryReservation || null : null,
+      batchSelectionSource: hasManualBatchSelection(item) ? 'manual' : undefined,
       snapshotOnly: true
     })
   });
@@ -238,7 +259,7 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
     })
   });
 
-  const items = (Array.isArray(localSale.items) ? localSale.items : []).map(mapItem);
+  const items = (Array.isArray(localSale.items) ? localSale.items : []).map((item, index) => mapItem(item, index));
   const payments = extractPayments(localSale);
   const idempotencyKey = `sales.shadow_upsert:${localSale.id}:${options.deviceId || 'device'}`;
 
@@ -293,7 +314,8 @@ export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], pa
     })
   });
 
-  const items = (Array.isArray(processedItems) ? processedItems : []).map(mapItem);
+  const itemMapOptions = { allowLocalBatches: !inventoryEnabled };
+  const items = (Array.isArray(processedItems) ? processedItems : []).map((item, index) => mapItem(item, index, itemMapOptions));
   const payments = extractPayments({
     ...sale,
     ...paymentData,
@@ -357,7 +379,8 @@ export const mapLocalCreditCheckoutToCloudSale = ({ sale = {}, processedItems = 
     })
   });
 
-  const items = (Array.isArray(processedItems) ? processedItems : []).map(mapItem);
+  const itemMapOptions = { allowLocalBatches: !inventoryEnabled };
+  const items = (Array.isArray(processedItems) ? processedItems : []).map((item, index) => mapItem(item, index, itemMapOptions));
   const payments = extractInitialCreditPayments({ sale, paymentData, amountPaid });
 
   return {
