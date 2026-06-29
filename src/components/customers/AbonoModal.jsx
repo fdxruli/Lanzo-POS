@@ -1,9 +1,10 @@
 // src/components/customers/AbonoModal.jsx
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { Wallet, X, CheckCircle, MessageCircle, AlertTriangle, List } from 'lucide-react';
 import { db } from '../../services/db/dexie';
 import { Money } from '../../utils/moneyMath';
 import { getSafeCustomerDebt } from '../../utils/customerUtils';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import './AbonoModal.css';
 
 export default function AbonoModal({
@@ -54,6 +55,17 @@ export default function AbonoModal({
       setPendingSales([]);
     }
   }, [show]);
+
+  const handleClose = useCallback(() => {
+    if (isSubmitting) return;
+    onClose();
+  }, [isSubmitting, onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: Boolean(show && customer),
+    onDismiss: handleClose,
+    layerId: 'customer-abono-modal'
+  });
 
   // Cargar notas pendientes si se activa el modo avanzado
   useEffect(() => {
@@ -143,11 +155,6 @@ export default function AbonoModal({
     }));
   };
 
-  const handleClose = () => {
-    if (isSubmitting) return;
-    onClose();
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -217,7 +224,7 @@ export default function AbonoModal({
             <Wallet size={24} className="text-primary" />
             Abonar a Deuda
           </h2>
-          <button type="button" className="ui-button ui-button--ghost ui-button--sm btn-icon-close" onClick={handleClose} aria-label="Cerrar" disabled={isSubmitting}>
+          <button type="button" className="ui-button ui-button--ghost ui-button--sm btn-icon-close" onClick={dismissModal} aria-label="Cerrar" disabled={isSubmitting}>
             <X size={24} />
           </button>
         </header>
@@ -390,7 +397,7 @@ export default function AbonoModal({
                 <CheckCircle size={18} />
                 {isSubmitting ? 'Registrando abono...' : 'Confirmar Abono'}
               </button>
-              <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={handleClose} disabled={isSubmitting}>
+              <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={dismissModal} disabled={isSubmitting}>
                 Cancelar
               </button>
             </footer>
