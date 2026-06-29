@@ -1,11 +1,8 @@
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/utils';
-import { calculateBatchDeductions, validateBatchAvailability } from '../inventoryStrategy';
-import { withUnifiedTimestamp, parseDateStrict } from '../../utils/dateUtils';
+import { withUnifiedTimestamp, parseDateStrict, isBatchExpiredForSale } from '../../utils/dateUtils';
 
 const TABLE_RESERVATION_SOURCE = 'table';
-
-// FASE 4: Usar parseDateStrict de dateUtils.js para validación estricta de fechas FEFO
-// El parseo permisivo anterior permitía fechas inválidas que rompían el ordenamiento FEFO
+const EPSILON = 0.00001;
 
 const getRealProductId = (item) => item?.parentId || item?.id;
 const hasRecipe = (product) => Array.isArray(product?.recipe) && product.recipe.length > 0;
@@ -54,13 +51,10 @@ export const getSortedBatchesForProduct = (batches = [], product) => {
     const mode = product?.expirationMode || 'NONE';
     const isFEFO = mode === 'STRICT' || mode === 'SHELF_LIFE';
 
-    // Shallow clone objects to prevent persisting private _expMs properties
     const batchesCopy = batches.map(b => ({ ...b }));
 
     return batchesCopy.sort((left, right) => {
         if (isFEFO) {
-            // FASE 4: Usar parseDateStrict para validación estricta de fechas FEFO
-            // Las fechas inválidas se convierten en null (0 en timestamp), y van al final
             const leftExpMs = left._expMs || (left._expMs = parseDateStrict(left?.alertTargetDate || left?.expiryDate)?.getTime() || 0);
             const rightExpMs = right._expMs || (right._expMs = parseDateStrict(right?.alertTargetDate || right?.expiryDate)?.getTime() || 0);
 
@@ -73,7 +67,6 @@ export const getSortedBatchesForProduct = (batches = [], product) => {
             }
         }
 
-        // Fallback: ordenar por fecha de creación (FIFO)
         const leftCrtMs = left._crtMs || (left._crtMs = parseDateStrict(left?.createdAt)?.getTime() || 0);
         const rightCrtMs = right._crtMs || (right._crtMs = parseDateStrict(right?.createdAt)?.getTime() || 0);
         return leftCrtMs - rightCrtMs;
@@ -88,8 +81,6 @@ const getQuantityToDeduct = (orderItem, product) => {
 
         if (!Number.isNaN(factor) && factor > 1) {
             quantityToDeduct = quantityToDeduct / factor;
-        } else if (factor > 0 && factor <= 1) {
-            quantityToDeduct = quantityToDeduct;
         }
     }
 
@@ -105,7 +96,6 @@ const buildIngredientRequirements = (orderItem, product) => {
         requirements.set(productId, normalizeStock((requirements.get(productId) || 0) + qty));
     };
 
-    // 1. Evaluación del producto principal (Padre)
     if (hasRecipe(product)) {
         product.recipe.forEach((ingredient) => {
             addRequirement(ingredient.ingredientId, normalizeStock((ingredient.quantity || 0) * quantityToDeduct));
@@ -114,7 +104,6 @@ const buildIngredientRequirements = (orderItem, product) => {
         addRequirement(getRealProductId(orderItem), quantityToDeduct);
     }
 
-    // 2. Evaluación independiente de modificadores (Desacoplamiento)
     if (Array.isArray(orderItem?.selectedModifiers)) {
         orderItem.selectedModifiers.forEach((modifier) => {
             if (modifier?.ingredientId) {
@@ -149,7 +138,54 @@ const assertPositiveQuantity = (quantity, contextMessage) => {
     }
 };
 
-// FASE 4: createInventoryReservation ahora acepta timestamp unificado externo
+const createExpiryBlockedError = ({
+    product,
+    requestedQuantity,
+    availableQuantity = 0,
+    expiredAvailableQuantity = 0,
+    batchId = null,
+    expiryDate = null
+} = {}) => {
+    const error = new Error('No hay stock vigente suficiente para completar la venta. Revisa los lotes vencidos en Caducidad/Merma.');
+    error.code = 'EXPIRED_BATCH_BLOCKED';
+    error.errorType = 'EXPIRED_BATCH_BLOCKED';
+    error.metadata = {
+        productId: product?.id,
+        productName: product?.name,
+        batchId,
+        expiryDate,
+        requestedQuantity,
+        availableQuantity,
+        expiredAvailableQuantity,
+        source: 'inventoryFlow'
+    };
+    return error;
+};
+
+const isBatchActiveForSale = (batch) => batch?.isActive !== false && batch?.status !== 'inactive';
+
+const getBatchAvailableForSale = (batch) => (
+    isBatchActiveForSale(batch) ? getAvailableStock(batch) : 0
+);
+
+const filterBatchesEligibleForSale = (batches = [], product, { enforceExpiryStrict = true, now = new Date() } = {}) => {
+    const activeWithStock = (batches || []).filter((batch) => getBatchAvailableForSale(batch) > 0);
+
+    if (!enforceExpiryStrict) return activeWithStock;
+
+    return activeWithStock.filter((batch) => !isBatchExpiredForSale(batch, product, now));
+};
+
+const sumAvailable = (batches = []) => normalizeStock(
+    (batches || []).reduce((sum, batch) => sum + getBatchAvailableForSale(batch), 0)
+);
+
+const sumExpiredStrictAvailable = (batches = [], product, now) => normalizeStock(
+    (batches || [])
+        .filter((batch) => isBatchExpiredForSale(batch, product, now))
+        .reduce((sum, batch) => sum + getBatchAvailableForSale(batch), 0)
+);
+
 const createInventoryReservation = (orderItem, quantityToDeduct, committedBatches, unifiedTimestamp) => ({
     source: TABLE_RESERVATION_SOURCE,
     committedQuantity: normalizeStock(quantityToDeduct),
@@ -157,16 +193,16 @@ const createInventoryReservation = (orderItem, quantityToDeduct, committedBatche
         batchId: batch.batchId,
         ingredientId: batch.ingredientId,
         quantity: normalizeStock(batch.quantity),
-        cost: Number(batch.cost) || 0
+        cost: Number(batch.cost) || 0,
+        expiryDate: batch.expiryDate || null,
+        batchSku: batch.batchSku || null
     })),
-    committedAt: unifiedTimestamp, // ← Usar timestamp unificado
-    // Conservamos metadata útil si la venta abierta ya trae un identificador externo.
+    committedAt: unifiedTimestamp,
     ...(orderItem?.inventoryReservation?.reservationId
         ? { reservationId: orderItem.inventoryReservation.reservationId }
         : {})
 });
 
-// FASE 4: syncParentCommittedStockFromBatches ahora acepta timestamp unificado
 const syncParentCommittedStockFromBatches = async ({
     productIds,
     db,
@@ -191,7 +227,7 @@ const syncParentCommittedStockFromBatches = async ({
         const updatedProduct = {
             ...product,
             committedStock,
-            updatedAt: unifiedTimestamp || new Date().toISOString() // ← Usar timestamp unificado si existe
+            updatedAt: unifiedTimestamp || new Date().toISOString()
         };
 
         productMap.set(productId, updatedProduct);
@@ -216,7 +252,9 @@ export const loadRelevantBatches = async ({
     allProducts,
     queryBatchesByProductIdAndActive,
     queryByIndex,
-    STORES
+    STORES,
+    enforceExpiryStrict = true,
+    now = new Date()
 }) => {
     const productMap = new Map((allProducts || []).map((product) => [product.id, product]));
     const uniqueProductIds = new Set();
@@ -261,9 +299,11 @@ export const loadRelevantBatches = async ({
                 batches = (allBatches || []).filter((batch) => batch?.isActive);
             }
 
-            const availableBatches = (batches || []).filter((batch) => getAvailableStock(batch) > 0);
+            const availableBatches = filterBatchesEligibleForSale(batches, product, { enforceExpiryStrict, now });
             if (availableBatches.length > 0) {
                 batchesMap.set(productId, getSortedBatchesForProduct(availableBatches, product));
+            } else if ((batches || []).length > 0) {
+                batchesMap.set(productId, []);
             }
         })
     );
@@ -275,14 +315,13 @@ export const buildProcessedItemsAndDeductions = ({
     itemsToProcess,
     allProducts,
     batchesMap,
-    roundCurrency
+    roundCurrency,
+    enforceExpiryStrict = true,
+    now = new Date()
 }) => {
     const productMap = new Map((allProducts || []).map((product) => [product.id, product]));
     const batchesToDeduct = [];
     const processedItems = [];
-
-    // 1. EL NÚCLEO DE LA SOLUCIÓN: Un estado efímero que rastrea el consumo
-    // Esto nos permite saber cuánto hemos gastado de un lote sin mutar el objeto original.
     const virtualConsumptionTracker = new Map();
 
     for (const orderItem of itemsToProcess) {
@@ -313,7 +352,18 @@ export const buildProcessedItemsAndDeductions = ({
             const itemBatchesUsed = [];
             let itemTotalCost = 0;
 
-            committedBatches.forEach((batchUsage) => {
+            for (const batchUsage of committedBatches) {
+                const targetProduct = productMap.get(batchUsage.ingredientId) || product;
+                if (enforceExpiryStrict && batchUsage.expiryDate && isBatchExpiredForSale({ expiryDate: batchUsage.expiryDate }, targetProduct, now)) {
+                    throw createExpiryBlockedError({
+                        product: targetProduct,
+                        requestedQuantity: batchUsage.quantity,
+                        expiredAvailableQuantity: batchUsage.quantity,
+                        batchId: batchUsage.batchId,
+                        expiryDate: batchUsage.expiryDate
+                    });
+                }
+
                 const normalizedQty = normalizeStock(batchUsage.quantity);
                 batchesToDeduct.push({
                     batchId: batchUsage.batchId,
@@ -326,11 +376,13 @@ export const buildProcessedItemsAndDeductions = ({
                     batchId: batchUsage.batchId,
                     ingredientId: batchUsage.ingredientId,
                     quantity: normalizedQty,
-                    cost: batchUsage.cost
+                    cost: batchUsage.cost,
+                    expiryDate: batchUsage.expiryDate || null,
+                    batchSku: batchUsage.batchSku || null
                 });
 
                 itemTotalCost += roundCurrency((Number(batchUsage.cost) || 0) * normalizedQty);
-            });
+            }
 
             if (committedBatches.length === 0) {
                 const authoritativeCost = parseFloat(product.cost) || 0;
@@ -351,6 +403,7 @@ export const buildProcessedItemsAndDeductions = ({
             });
             continue;
         }
+
         let itemTotalCost = 0;
         const itemBatchesUsed = [];
 
@@ -358,20 +411,18 @@ export const buildProcessedItemsAndDeductions = ({
             let requiredQty = normalizeStock(component.neededQty);
             const targetId = component.targetId;
             const targetProduct = productMap.get(targetId);
-            const batches = batchesMap.get(targetId) || [];
+            const rawBatches = batchesMap.get(targetId) || [];
+            const batches = filterBatchesEligibleForSale(rawBatches, targetProduct, { enforceExpiryStrict, now });
+            const requiredStart = requiredQty;
 
             for (const batch of batches) {
                 if (requiredQty <= 0) break;
 
-                // 2. CÁLCULO DE INVENTARIO VIRTUAL
-                // Verificamos cuánto stock real tiene el lote, menos lo que ya le hemos 
-                // "asignado" virtualmente en iteraciones anteriores de este mismo ticket.
                 const alreadyConsumed = virtualConsumptionTracker.get(batch.id) || 0;
                 const virtualAvailableStock = normalizeStock(getAvailableStock(batch) - alreadyConsumed);
 
                 if (virtualAvailableStock <= 0) continue;
 
-                // 3. DEDUCIR BASADO EN EL STOCK VIRTUAL, NO EL REAL
                 const toDeduct = normalizeStock(Math.min(requiredQty, virtualAvailableStock));
 
                 batchesToDeduct.push({
@@ -381,20 +432,36 @@ export const buildProcessedItemsAndDeductions = ({
                     fromCommittedStock: false
                 });
 
-                // 4. ELIMINAMOS LA MUTACIÓN
-                // ANTES: batch.stock = normalizeStock(batch.stock - toDeduct); (ESTO ERA EL ERROR)
-                // AHORA: Actualizamos nuestro libro mayor virtual:
                 virtualConsumptionTracker.set(batch.id, normalizeStock(alreadyConsumed + toDeduct));
 
                 itemBatchesUsed.push({
                     batchId: batch.id,
                     ingredientId: targetId,
                     quantity: toDeduct,
-                    cost: batch.cost
+                    cost: batch.cost,
+                    expiryDate: batch.expiryDate || null,
+                    batchSku: batch.sku || null
                 });
 
                 itemTotalCost += roundCurrency((Number(batch.cost) || 0) * toDeduct);
                 requiredQty = normalizeStock(requiredQty - toDeduct);
+            }
+
+            if (requiredQty > EPSILON && targetProduct?.batchManagement?.enabled) {
+                const expiredAvailableQuantity = sumExpiredStrictAvailable(rawBatches, targetProduct, now);
+                if (enforceExpiryStrict && expiredAvailableQuantity > 0) {
+                    throw createExpiryBlockedError({
+                        product: targetProduct,
+                        requestedQuantity: requiredStart,
+                        availableQuantity: sumAvailable(batches),
+                        expiredAvailableQuantity
+                    });
+                }
+
+                throw new Error(
+                    `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${targetProduct?.name || targetId}. ` +
+                    `Disponible ${sumAvailable(batches)}, requerido ${requiredStart}.`
+                );
             }
 
             if (requiredQty > 0) {
@@ -419,12 +486,18 @@ export const buildProcessedItemsAndDeductions = ({
     return { processedItems, batchesToDeduct };
 };
 
-// FASE 4: commitStock ahora usa withUnifiedTimestamp para determinismo temporal
 export const commitStock = async (items, deps = {}) => {
     const itemsToProcess = Array.isArray(items) ? items : [];
     if (itemsToProcess.length === 0) return [];
 
-    const { db, STORES, allProducts = [] } = deps;
+    const {
+        db,
+        STORES,
+        allProducts = [],
+        enforceExpiryStrict = true,
+        now = new Date()
+    } = deps;
+
     if (!db || !STORES?.MENU || !STORES?.PRODUCT_BATCHES) {
         throw new Error('INVENTORY_CRITICAL: commitStock requiere db, STORES.MENU y STORES.PRODUCT_BATCHES.');
     }
@@ -435,7 +508,6 @@ export const commitStock = async (items, deps = {}) => {
     const updatedBatches = new Map();
     const batchManagedProductIds = new Set();
 
-    // FASE 4: Usar timestamp unificado para toda la operación
     return await withUnifiedTimestamp(async (unifiedTimestamp) => {
         return await db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
             const reservedItems = [];
@@ -469,9 +541,10 @@ export const commitStock = async (items, deps = {}) => {
                             productMap
                         });
 
-                    let pendingQty = normalizeStock(component.neededQty);
+                        let pendingQty = normalizeStock(component.neededQty);
+                        const eligibleBatches = filterBatchesEligibleForSale(productBatches, componentProduct, { enforceExpiryStrict, now });
 
-                        for (const batch of productBatches) {
+                        for (const batch of eligibleBatches) {
                             if (pendingQty <= 0) break;
 
                             const availableStock = getAvailableStock(batch);
@@ -481,24 +554,36 @@ export const commitStock = async (items, deps = {}) => {
                             assertPositiveQuantity(commitQty, `Reserva sobre lote ${batch.id}.`);
 
                             batch.committedStock = normalizeStock(getCommittedStock(batch) + commitQty);
-                            batch.updatedAt = unifiedTimestamp; // ← Timestamp unificado
+                            batch.updatedAt = unifiedTimestamp;
                             updatedBatches.set(batch.id, batch);
 
                             committedBatches.push({
                                 batchId: batch.id,
                                 ingredientId: component.targetId,
                                 quantity: commitQty,
-                                cost: Number(batch.cost) || 0
+                                cost: Number(batch.cost) || 0,
+                                expiryDate: batch.expiryDate || null,
+                                batchSku: batch.sku || null
                             });
 
                             batchManagedProductIds.add(component.targetId);
                             pendingQty = normalizeStock(pendingQty - commitQty);
                         }
 
-                        if (pendingQty > 0) {
+                        if (pendingQty > EPSILON) {
+                            const expiredAvailableQuantity = sumExpiredStrictAvailable(productBatches, componentProduct, now);
+                            if (enforceExpiryStrict && expiredAvailableQuantity > 0) {
+                                throw createExpiryBlockedError({
+                                    product: componentProduct,
+                                    requestedQuantity: component.neededQty,
+                                    availableQuantity: sumAvailable(eligibleBatches),
+                                    expiredAvailableQuantity
+                                });
+                            }
+
                             throw new Error(
                                 `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${componentProduct.name}. ` +
-                                `Disponible ${productBatches.reduce((sum, batch) => sum + getAvailableStock(batch), 0)}, requerido ${component.neededQty}.`
+                                `Disponible ${sumAvailable(eligibleBatches)}, requerido ${component.neededQty}.`
                             );
                         }
                     } else if (componentProduct.trackStock !== false) {
@@ -519,14 +604,13 @@ export const commitStock = async (items, deps = {}) => {
                         }
 
                         productState.committedStock = normalizeStock(getCommittedStock(productState) + component.neededQty);
-                        productState.updatedAt = unifiedTimestamp; // ← Timestamp unificado
+                        productState.updatedAt = unifiedTimestamp;
 
                         updatedProducts.set(component.targetId, productState);
                         productMap.set(component.targetId, productState);
                     }
                 }
 
-                // ← Usar timestamp unificado en la reserva
                 reservedItems.push({
                     ...orderItem,
                     inventoryReservation: createInventoryReservation(orderItem, quantityToDeduct, committedBatches, unifiedTimestamp)
@@ -548,16 +632,15 @@ export const commitStock = async (items, deps = {}) => {
                     STORES,
                     productMap,
                     batchesByProduct,
-                    unifiedTimestamp // ← Pasar timestamp unificado
+                    unifiedTimestamp
                 });
             }
 
-        return reservedItems;
+            return reservedItems;
         });
     });
 };
 
-// FASE 4: releaseCommittedStock ahora usa withUnifiedTimestamp para determinismo temporal
 export const releaseCommittedStock = async (items, deps = {}) => {
     const itemsToProcess = Array.isArray(items) ? items : [];
     if (itemsToProcess.length === 0) return { success: true };
@@ -573,10 +656,8 @@ export const releaseCommittedStock = async (items, deps = {}) => {
     const updatedProducts = new Map();
     const updatedBatches = new Map();
 
-    // FASE 4: Usar timestamp unificado para toda la operación
     return await withUnifiedTimestamp(async (unifiedTimestamp) => {
         await db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
-            // 1. Precargar todos los lotes necesarios en paralelo para evitar lecturas secuenciales N+1
             const batchIdsToLoad = new Set();
             for (const orderItem of itemsToProcess) {
                 if (!isTableReservation(orderItem)) continue;
@@ -585,8 +666,8 @@ export const releaseCommittedStock = async (items, deps = {}) => {
                 committedBatches.forEach(b => batchIdsToLoad.add(b.batchId));
             }
 
-            const loadedBatches = batchIdsToLoad.size > 0 
-                ? await db.table(STORES.PRODUCT_BATCHES).bulkGet(Array.from(batchIdsToLoad)) 
+            const loadedBatches = batchIdsToLoad.size > 0
+                ? await db.table(STORES.PRODUCT_BATCHES).bulkGet(Array.from(batchIdsToLoad))
                 : [];
             const batchMap = new Map(loadedBatches.filter(Boolean).map(b => [b.id, b]));
 
@@ -612,11 +693,10 @@ export const releaseCommittedStock = async (items, deps = {}) => {
                         const quantityToRelease = normalizeStock(batchUsage.quantity);
 
                         if (committedStock < quantityToRelease) {
-                            // Registra la anomalía de forma silenciosa para auditoría, pero no bloquees la venta.
                             console.warn(`[INVENTORY_SYNC_FIX]: El lote ${batch.id} intentó liberar ${quantityToRelease} pero solo tenía ${committedStock}. Se ajustó a 0.`);
                         }
                         batch.committedStock = normalizeStock(Math.max(0, committedStock - quantityToRelease));
-                        batch.updatedAt = unifiedTimestamp; // ← Timestamp unificado
+                        batch.updatedAt = unifiedTimestamp;
                         updatedBatches.set(batch.id, batch);
 
                         batchManagedProductIds.add(batch.productId);
@@ -645,13 +725,12 @@ export const releaseCommittedStock = async (items, deps = {}) => {
                 }
 
                 currentProduct.committedStock = normalizeStock(currentCommitted - committedQuantity);
-                currentProduct.updatedAt = unifiedTimestamp; // ← Timestamp unificado
+                currentProduct.updatedAt = unifiedTimestamp;
 
                 updatedProducts.set(currentProduct.id, currentProduct);
                 productMap.set(currentProduct.id, currentProduct);
             }
 
-            // 2. Ejecutar inserciones masivas en paralelo (bulkPut)
             if (updatedProducts.size > 0) {
                 await db.table(STORES.MENU).bulkPut(Array.from(updatedProducts.values()));
             }
@@ -667,7 +746,7 @@ export const releaseCommittedStock = async (items, deps = {}) => {
                     STORES,
                     productMap,
                     batchesByProduct,
-                    unifiedTimestamp // ← Pasar timestamp unificado
+                    unifiedTimestamp
                 });
             }
         });
