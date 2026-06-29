@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { RefreshCw, X } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import './UpdatePrompt.css';
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -74,60 +75,29 @@ const UpdatePrompt = () => {
   if (!showUpdateModal || isDismissed) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: '20px',
-        right: '20px',
-        zIndex: 'var(--z-toast)',
-        backgroundColor: 'var(--card-background-color)',
-        color: 'var(--text-color)',
-        padding: 'var(--spacing-md)',
-        borderRadius: 'var(--border-radius)',
-        boxShadow: 'var(--box-shadow-lg)',
-        border: '1px solid var(--border-color)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--spacing-sm)',
-        maxWidth: '300px'
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <h4
-          style={{
-            margin: 0,
-            fontSize: '1rem',
-            color: 'var(--text-dark)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
+    <div className="ui-card ui-card--compact update-prompt">
+      <div className="update-prompt__header">
+        <h4 className="update-prompt__title">
           Nueva version disponible
         </h4>
         <button
-        onClick={handleClose}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-light)',
-            cursor: 'pointer',
-            padding: '2px'
-          }}
+          type="button"
+          className="ui-icon-button ui-icon-button--sm ui-button--ghost update-prompt__close"
+          onClick={handleClose}
           aria-label="Cerrar notificacion"
         >
           <X size={18} />
         </button>
       </div>
-      <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-color)' }}>
+      <p className="update-prompt__message">
         Guarda tu venta actual y actualiza para aplicar los cambios en el sistema.
       </p>
 
       <button
-        className="btn-primary"
+        type="button"
+        className="ui-button ui-button--primary ui-button--block update-prompt__action"
         onClick={runUpdate}
         disabled={isUpdating}
-        style={{ marginTop: 'var(--spacing-xs)' }}
       >
         <RefreshCw size={16} />
         {isUpdating ? 'Actualizando...' : 'Actualizar ahora'}

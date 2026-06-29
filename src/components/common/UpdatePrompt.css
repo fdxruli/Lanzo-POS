@@ -1,0 +1,49 @@
+.update-prompt {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: var(--z-toast);
+  width: min(300px, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-sm);
+}
+
+.update-prompt__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-space-sm);
+}
+
+.update-prompt__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--ui-text-strong);
+  font-size: 1rem;
+}
+
+.update-prompt__close {
+  min-height: 34px;
+}
+
+.update-prompt__message {
+  margin: 0;
+  color: var(--ui-text);
+  font-size: 0.9rem;
+}
+
+.update-prompt__action {
+  margin-top: var(--ui-space-xs);
+}
+
+@media (max-width: 480px) {
+  .update-prompt {
+    right: var(--ui-space-md);
+    bottom: var(--ui-space-md);
+    left: var(--ui-space-md);
+    width: auto;
+  }
+}

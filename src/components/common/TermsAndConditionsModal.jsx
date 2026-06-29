@@ -136,7 +136,9 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
       try {
         const parsed = JSON.parse(storedData);
         licenseKey = parsed?.data?.license_key;
-      } catch (e) {}
+      } catch (e) {
+        Logger.warn('No se pudo leer la licencia almacenada para aceptar terminos.', e);
+      }
     }
     if (!licenseKey || !termsData?.id) { onClose(); return; }
 
@@ -154,11 +156,11 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
   if (!isOpen) return null;
 
   return (
-    <div className="terms-modal-overlay" role="dialog" aria-modal="true">
-      <div className="terms-modal-content">
+    <div className="ui-modal ui-modal--critical terms-modal-overlay" role="dialog" aria-modal="true" aria-label="Terminos de uso">
+      <div className="ui-modal__content ui-modal__content--md terms-modal-content">
         
         {/* Header */}
-        <div className="terms-header">
+        <div className="ui-modal__header terms-header">
           <div className="terms-title-group">
             <Shield size={20} className="text-primary" /> 
             <div>
@@ -169,16 +171,9 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
         </div>
 
         {/* Body */}
-        <div className="terms-body">
+        <div className="ui-modal__body terms-body">
             {isUpdateNotification && !loading && (
-                <div style={{
-                    background: '#e0f2fe', 
-                    color: '#0369a1', 
-                    padding: '10px', 
-                    borderRadius: '6px',
-                    marginBottom: '10px',
-                    fontSize: '0.9rem'
-                }}>
+                <div className="ui-alert ui-alert--info terms-update-alert">
                     Hemos actualizado nuestros términos. Al continuar utilizando el sistema, aceptas las nuevas condiciones.
                 </div>
             )}
@@ -208,26 +203,26 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
         </div>
 
         {/* Footer condicional */}
-        <div className="terms-footer">
+        <div className="ui-modal__actions terms-footer">
           {readOnly ? (
-             <button className="btn btn-secondary" onClick={onClose} style={{width: '100%'}}>Cerrar</button>
+             <button type="button" className="ui-button ui-button--secondary ui-button--block btn btn-secondary" onClick={onClose}>Cerrar</button>
           ) : (
              <>
                 {/* En modo actualización, solo mostramos UN botón principal */}
                 {isUpdateNotification ? (
                     <button 
-                        className="btn btn-primary" 
+                        type="button"
+                        className="ui-button ui-button--primary ui-button--block btn btn-primary" 
                         onClick={handleAccept} 
                         disabled={loading || !!error || accepting}
-                        style={{width: '100%'}}
                     >
                         {accepting ? "Guardando..." : "Entendido, continuar"}
                     </button>
                 ) : (
                     /* Modo Clásico (Checkbox / Aceptar explícito) */
                     <>
-                        <button className="btn btn-secondary" onClick={onClose} disabled={accepting}>Cancelar</button>
-                        <button className="btn btn-primary btn-accept-terms" onClick={handleAccept} disabled={loading || !!error || accepting}>
+                        <button type="button" className="ui-button ui-button--ghost btn btn-secondary" onClick={onClose} disabled={accepting}>Cancelar</button>
+                        <button type="button" className="ui-button ui-button--primary btn btn-primary btn-accept-terms" onClick={handleAccept} disabled={loading || !!error || accepting}>
                             {accepting ? "Procesando..." : "Aceptar Condiciones"}
                         </button>
                     </>

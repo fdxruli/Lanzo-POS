@@ -5,7 +5,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.6); /* Fondo semitransparente */
+  background-color: var(--ui-bg-overlay);
   backdrop-filter: blur(4px); /* Efecto borroso moderno */
   z-index: var(--z-modal-critical);
   
@@ -21,13 +21,13 @@
 
 /* --- Content: La caja blanca del modal --- */
 .terms-modal-content {
-  background-color: var(--bg-paper, #ffffff); /* Usa tu variable o blanco por defecto */
+  background-color: var(--ui-bg-surface);
   width: 100%;
   max-width: 500px; /* Ancho máximo en escritorio */
   max-height: 85vh; /* Ocupa máximo el 85% de la altura de la pantalla */
   
-  border-radius: 16px; /* Bordes redondeados modernos */
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-lg);
   
   /* Estructura interna flexible para header/body/footer */
   display: flex;
@@ -45,8 +45,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color, #e2e8f0);
-  background-color: var(--bg-paper, #ffffff);
+  border-bottom: 1px solid var(--ui-border-color);
+  background-color: var(--ui-bg-surface);
   flex-shrink: 0; /* Evita que se encoja */
 }
 
@@ -60,13 +60,13 @@
   margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
-  color: var(--text-primary, #1a202c);
+  color: var(--ui-text-strong);
 }
 
 .terms-version-badge {
   display: block;
   font-size: 0.65rem;
-  color: var(--text-secondary, #718096);
+  color: var(--ui-text-muted);
   font-weight: 600;
   letter-spacing: 0.5px;
   margin-top: 2px;
@@ -76,7 +76,7 @@
 .terms-close-btn {
   background: transparent;
   border: none;
-  color: var(--text-secondary, #718096);
+  color: var(--ui-text-muted);
   cursor: pointer;
   padding: 8px;
   margin: -8px; /* Aumenta el área de toque sin afectar el layout */
@@ -88,8 +88,8 @@
 }
 
 .terms-close-btn:hover {
-  background-color: var(--bg-hover, #f7fafc);
-  color: var(--text-primary, #1a202c);
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text-strong);
 }
 
 /* --- Body: El área con scroll --- */
@@ -101,14 +101,14 @@
   
   /* Scrollbar bonita */
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e0 transparent;
+  scrollbar-color: var(--ui-border-color) transparent;
 }
 
 .terms-body::-webkit-scrollbar {
   width: 6px;
 }
 .terms-body::-webkit-scrollbar-thumb {
-  background-color: #cbd5e0;
+  background-color: var(--ui-border-color);
   border-radius: 4px;
 }
 
@@ -116,7 +116,7 @@
 .terms-dynamic-content {
   font-size: 0.95rem;
   line-height: 1.6;
-  color: var(--text-primary, #2d3748);
+  color: var(--ui-text);
 }
 
 .terms-dynamic-content h1, 
@@ -124,7 +124,7 @@
 .terms-dynamic-content h3 {
   margin-top: 1.5rem;
   margin-bottom: 0.75rem;
-  color: var(--text-primary, #1a202c);
+  color: var(--ui-text-strong);
 }
 
 .terms-dynamic-content p {
@@ -140,7 +140,7 @@
   justify-content: center;
   padding: 40px 20px;
   text-align: center;
-  color: var(--text-secondary, #718096);
+  color: var(--ui-text-muted);
   height: 100%;
 }
 
@@ -152,17 +152,17 @@
 .terms-legal-footer {
   margin-top: 24px;
   padding-top: 16px;
-  border-top: 1px dashed var(--border-color, #e2e8f0);
+  border-top: 1px dashed var(--ui-border-color);
   font-size: 0.8rem;
-  color: var(--text-secondary, #718096);
+  color: var(--ui-text-muted);
   line-height: 1.4;
 }
 
 /* --- Footer: Botones de acción --- */
 .terms-footer {
   padding: 16px 20px;
-  border-top: 1px solid var(--border-color, #e2e8f0);
-  background-color: var(--bg-subtle, #f8fafc); /* Un gris muy clarito */
+  border-top: 1px solid var(--ui-border-color);
+  background-color: var(--ui-bg-muted);
   display: flex;
   justify-content: flex-end; /* Alinea botones a la derecha */
   gap: 12px;
@@ -185,14 +185,14 @@
 }
 
 .terms-modal-content .btn-secondary {
-  background-color: white;
-  border: 1px solid var(--border-color, #cbd5e0);
-  color: var(--text-primary, #4a5568);
+  background-color: var(--ui-bg-surface);
+  border: 1px solid var(--ui-border-color);
+  color: var(--ui-text-strong);
 }
 
 .terms-modal-content .btn-primary {
-  background-color: var(--primary-color, #3182ce); /* Azul por defecto */
-  color: white;
+  background-color: var(--ui-color-primary);
+  color: var(--ui-text-on-primary);
 }
 
 .terms-modal-content .btn:disabled {
@@ -251,4 +251,44 @@
 /* Opcional: Si tienes enlaces en los términos */
 [data-theme='dark'] .terms-dynamic-content a {
   color: #63b3ed; /* Azul claro legible */
+}
+
+.terms-update-alert {
+  margin-bottom: var(--ui-space-sm);
+  font-size: 0.9rem;
+}
+
+.terms-legal-footer__icon {
+  display: inline;
+  margin-right: 5px;
+}
+
+[data-theme='dark'] .terms-modal-content,
+[data-theme='dark'] .terms-header {
+  background-color: var(--ui-bg-surface);
+  border-color: var(--ui-border-color);
+}
+
+[data-theme='dark'] .terms-footer {
+  background-color: var(--ui-bg-muted);
+  border-color: var(--ui-border-color);
+}
+
+[data-theme='dark'] .terms-title-group h3,
+[data-theme='dark'] .terms-dynamic-content,
+[data-theme='dark'] .terms-dynamic-content h1,
+[data-theme='dark'] .terms-dynamic-content h2,
+[data-theme='dark'] .terms-dynamic-content h3,
+[data-theme='dark'] .terms-dynamic-content h4,
+[data-theme='dark'] .terms-dynamic-content strong {
+  color: var(--ui-text-strong) !important;
+}
+
+[data-theme='dark'] .terms-close-btn:hover {
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text-strong);
+}
+
+[data-theme='dark'] .terms-dynamic-content a {
+  color: var(--ui-color-info);
 }

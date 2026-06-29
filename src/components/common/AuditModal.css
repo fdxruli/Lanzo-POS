@@ -1,0 +1,22 @@
+.audit-modal {
+  max-width: 550px;
+}
+
+.audit-modal__intro {
+  margin-bottom: var(--ui-space-lg);
+}
+
+.audit-modal__actions {
+  margin-top: var(--ui-space-lg);
+}
+
+.audit-modal .btn-process {
+  background-color: var(--ui-color-primary);
+  color: var(--ui-text-on-primary);
+  border-color: var(--ui-color-primary);
+}
+
+.audit-modal .btn-process:hover:not(:disabled) {
+  background-color: var(--ui-color-primary-hover);
+  border-color: var(--ui-color-primary-hover);
+}

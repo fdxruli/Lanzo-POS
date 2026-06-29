@@ -1,0 +1,27 @@
+.data-safety-modal__content {
+  max-width: 550px;
+  border-left: 6px solid var(--ui-color-danger);
+}
+
+.data-safety-modal__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ui-color-danger);
+}
+
+.data-safety-modal__body {
+  margin: var(--ui-space-md) 0;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.data-safety-modal__help {
+  color: var(--ui-text-muted);
+  font-size: 0.9rem;
+}
+
+.data-safety-modal__action {
+  min-height: 48px;
+  font-size: 1.02rem;
+}

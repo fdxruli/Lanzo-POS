@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Money } from '../../utils/moneyMath';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
 import '../customers/AbonoModal.css';
+import './AuditModal.css';
 
 // Configuración de validación
 const AUDIT_CONFIG = {
@@ -104,13 +105,13 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }}>
-      <div className="modal-content" style={{ maxWidth: '550px' }}>
-        <h2 className="modal-title">Auditoria de Caja (Cierre)</h2>
+    <div className="ui-modal ui-modal--top audit-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="audit-modal-title">
+      <div className="ui-modal__content ui-modal__content--md audit-modal">
+        <h2 id="audit-modal-title" className="ui-modal__title modal-title">Auditoria de Caja (Cierre)</h2>
 
         {step === 1 ? (
           <>
-            <p style={{ color: 'var(--text-light)', marginBottom: '20px' }}>
+            <p className="ui-modal__subtitle audit-modal__intro">
               Ingresa el efectivo físico total y el fondo que se dejará para el siguiente turno.
               <br />
               <small>El sistema verificará automáticamente el cuadre con el total teórico.</small>
@@ -184,11 +185,11 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
               </div>
             )}
 
-            <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-              <button type="button" className="btn btn-cancel" onClick={requestClose} disabled={isProcessing}>Cancelar</button>
+            <div className="ui-modal__actions audit-modal__actions">
+              <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={requestClose} disabled={isProcessing}>Cancelar</button>
               <button
                 type="button"
-                className="btn btn-save"
+                className="ui-button ui-button--primary btn btn-save"
                 onClick={handleNext}
                 disabled={
                   isProcessing ||

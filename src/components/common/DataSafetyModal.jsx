@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { tryEnablePersistence } from '../../services/utils';
-import './MessageModal.css'; // Reusamos estilos existentes
+import './DataSafetyModal.css';
 
 export default function DataSafetyModal() {
   const [show, setShow] = useState(false);
@@ -27,13 +27,13 @@ export default function DataSafetyModal() {
   if (!show) return null;
 
   return (
-    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-critical)' }}>
-      <div className="modal-content" style={{ borderLeft: '6px solid var(--error-color)', maxWidth: '550px' }}>
-        <h2 style={{ color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <div className="ui-modal ui-modal--critical data-safety-modal" role="dialog" aria-modal="true" aria-labelledby="data-safety-title">
+      <div className="ui-modal__content ui-modal__content--md data-safety-modal__content">
+        <h2 id="data-safety-title" className="ui-modal__title data-safety-modal__title">
           ⚠️ ADVERTENCIA CRÍTICA
         </h2>
         
-        <div style={{ margin: '20px 0', fontSize: '1rem', lineHeight: '1.5' }}>
+        <div className="ui-modal__body data-safety-modal__body">
           <p><strong>Tus datos viven SOLAMENTE en este dispositivo.</strong></p>
           <p>Lanzo POS funciona sin internet, pero eso significa que no hay copia automática en la nube.</p>
           
@@ -47,20 +47,20 @@ export default function DataSafetyModal() {
             color: 'var(--text-dark)' /* Texto legible en ambos modos */
           }}>
             <li style={{ marginBottom: '8px' }}>❌ <strong>NO borres</strong> el historial o datos de navegación.</li>
-            <li style={{ marginBottom: '8px' }}>❌ <strong>NO uses</strong> "Modo Incógnito" o Privado.</li>
+            <li style={{ marginBottom: '8px' }}>❌ <strong>NO uses</strong> &quot;Modo Incognito&quot; o Privado.</li>
             <li>✅ <strong>HAZ COPIAS DE SEGURIDAD</strong> semanales.</li>
           </ul>
           
           {/* CORRECCIÓN: Usamos variable de texto en lugar de #666 */}
-          <p style={{ fontSize: '0.9rem', color: 'var(--text-light)' }}>
+          <p className="data-safety-modal__help">
             Si pierdes tu dispositivo o limpias el navegador, perderás tu inventario y ventas para siempre si no tienes respaldo manual.
           </p>
         </div>
 
         <button 
-          className="btn btn-save" 
+          type="button"
+          className="ui-button ui-button--danger ui-button--block data-safety-modal__action" 
           onClick={handleAcknowledge}
-          style={{ width: '100%', padding: '15px', fontWeight: 'bold', fontSize: '1.1rem', backgroundColor: 'var(--error-color)' }}
         >
           Entendido, soy responsable de mis datos
         </button>
