@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   X,
   Save,
@@ -16,6 +16,7 @@ import PharmacyBatchFields from './fieldsets/PharmacyBatchFields';
 import FruteriaBatchFields from './fieldsets/FruteriaBatchFields';
 import RestaurantBatchFields from './fieldsets/RestaurantBatchFields';
 import { getBatchStockInputProps } from './utils/batchStockInput';
+import { useDismissibleHistoryLayer } from '../../../hooks/useDismissibleHistoryLayer';
 import './BatchFormModal.css'; // Asegúrate de importar los nuevos estilos
 
 function RubroFieldset(props) {
@@ -38,6 +39,16 @@ export default function BatchFormModal({
 }) {
   const [showManualExpiry, setShowManualExpiry] = useState(false);
 
+  const handleDismiss = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: true,
+    onDismiss: handleDismiss,
+    layerId: 'batch-form-modal'
+  });
+
   const {
     formValues,
     isEditing,
@@ -48,7 +59,7 @@ export default function BatchFormModal({
   } = useBatchFormController({
     product,
     batchToEdit,
-    onClose,
+    onClose: dismissModal,
     onSave,
     features,
     rubroGroup,
@@ -74,7 +85,7 @@ export default function BatchFormModal({
               Producto: <strong>{product.name}</strong>
             </p>
           </div>
-          <button type="button" className="btn-close-modal" onClick={onClose} aria-label="Cerrar modal">
+          <button type="button" className="btn-close-modal" onClick={dismissModal} aria-label="Cerrar modal">
             <X size={24} />
           </button>
         </div>
@@ -354,7 +365,7 @@ export default function BatchFormModal({
               <button
                 type="button"
                 className="ui-button ui-button--ghost btn btn-cancel"
-                onClick={onClose}
+                onClick={dismissModal}
               >
                 Cancelar
               </button>
