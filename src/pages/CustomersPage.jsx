@@ -575,14 +575,8 @@ ${itemsString}
 
   return (
     <>
-      <main className="ui-page customers-page" aria-labelledby="customers-page-title">
-        <section className="ui-page__header customers-hero" aria-labelledby="customers-page-title">
-          <div className="customers-hero__identity">
-            <p className="customers-eyebrow">Directorio y credito</p>
-            <h1 id="customers-page-title" className="ui-page__title">Clientes</h1>
-            <p className="ui-page__subtitle customers-hero__subtitle">Control de clientes, fiado, abonos y seguimiento.</p>
-          </div>
-
+      <main className="ui-page customers-page" aria-label="Clientes">
+        <section className="ui-page__header customers-hero" aria-label="Resumen de clientes">
           <div className="customers-hero__metric">
             <span>Fiado total</span>
             <strong>${customerPortfolio.totalDebt.toFixed(2)}</strong>

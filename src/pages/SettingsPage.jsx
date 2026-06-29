@@ -54,14 +54,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <main className="ui-page settings-page-wrapper" aria-labelledby="settings-page-title">
-      <header className="ui-page__header settings-page__header">
-        <div>
-          <h1 id="settings-page-title" className="ui-page__title">Configuracion</h1>
-          <p className="ui-page__subtitle">Ajustes del negocio, licencia, mantenimiento y respaldos.</p>
-        </div>
-      </header>
-
+    <main className="ui-page settings-page-wrapper" aria-label="Configuracion">
       <section className="ui-section settings-tabs-section" aria-label="Secciones de configuracion">
       <div className="tabs-container settings-tabs">
         <button

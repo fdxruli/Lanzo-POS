@@ -13,11 +13,6 @@
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.customers-hero__subtitle {
-  max-width: 38rem;
-  color: rgba(255, 255, 255, 0.72);
-}
-
 .customers-page__content {
   margin-top: var(--ui-space-lg);
 }
@@ -39,7 +34,7 @@
   position: relative;
   display: grid;
   gap: 1rem;
-  padding: 1.25rem;
+  padding: 1rem;
   overflow: hidden;
   color: var(--ui-text-on-primary);
   background:
@@ -61,28 +56,10 @@
   pointer-events: none;
 }
 
-.customers-hero__identity,
 .customers-hero__metric,
 .customers-add-button {
   position: relative;
   z-index: 1;
-}
-
-.customers-eyebrow {
-  margin: 0 0 0.3rem;
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.customers-hero h1 {
-  margin: 0;
-  color: var(--ui-text-on-primary);
-  font-size: clamp(2rem, 8vw, 3.2rem);
-  line-height: 1;
-  letter-spacing: -0.045em;
 }
 
 .customers-hero__metric {
@@ -171,11 +148,12 @@
 
 @media (min-width: 640px) {
   .customers-hero {
-    grid-template-columns: minmax(0, 1.1fr) minmax(180px, 0.9fr);
-    padding: 1.5rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 1.25rem;
   }
 
   .customers-add-button {
+    grid-column: 2;
     justify-self: end;
     min-width: 180px;
   }
@@ -191,9 +169,8 @@
 
 @media (min-width: 980px) {
   .customers-hero {
-    grid-template-columns: minmax(220px, 0.85fr) minmax(260px, 1fr) minmax(220px, 0.8fr) auto;
+    grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.8fr) auto;
     align-items: stretch;
-    min-height: 170px;
   }
 
   .customers-hero__metric {

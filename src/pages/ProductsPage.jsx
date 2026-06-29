@@ -299,18 +299,7 @@ export default function ProductsPage() {
 
     return (
         <>
-            <main className="ui-page products-page" aria-labelledby="products-page-title">
-            <header className="ui-page__header products-header">
-                <div>
-                    <h1 id="products-page-title" className="ui-page__title">Productos</h1>
-                    <p className="ui-page__subtitle">Administra inventario, lotes, categorias e insumos.</p>
-                </div>
-                <div className="ui-section__actions products-header__actions">
-                    <span className="ui-badge ui-badge--info">{productsForSale.length} venta</span>
-                    {features.hasRecipes && <span className="ui-badge ui-badge--neutral">{ingredientsOnly.length} insumos</span>}
-                    {isLoading && <span className="ui-badge ui-badge--warning">Procesando</span>}
-                </div>
-            </header>
+            <main className="ui-page products-page" aria-label="Productos">
             <div className="products-header products-header--legacy" hidden>
                 <div className="products-header__legacy-slot">
                     {/* El botón de Frutería fue movido a ProductList */}

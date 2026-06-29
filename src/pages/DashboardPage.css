@@ -17,6 +17,7 @@
 }
 
 .dashboard-page__header {
+  justify-content: flex-end;
   margin-bottom: var(--ui-space-md);
 }
 

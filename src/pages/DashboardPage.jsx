@@ -426,13 +426,8 @@ export default function DashboardPage() {
 
   return (
     <>
-      <main className="ui-page dashboard-page" aria-labelledby="dashboard-page-title">
-      <header className="ui-page__header dashboard-page__header">
-        <div>
-          <h1 id="dashboard-page-title" className="ui-page__title">Dashboard</h1>
-          <p className="ui-page__subtitle">Resumen operativo de ventas, inventario, clientes y reportes.</p>
-        </div>
-
+      <main className="ui-page dashboard-page" aria-label="Dashboard">
+      <header className="ui-page__header dashboard-page__header" aria-label="Fuente del reporte">
         <div className="ui-section__actions dashboard-page__actions">
           {statsSource && (
             <span className={`ui-badge ${statsIsCloudFinal ? 'ui-badge--success' : 'ui-badge--info'}`}>

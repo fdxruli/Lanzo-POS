@@ -450,12 +450,8 @@ export default function CajaPage() {
 
   if (estadoCaja === 'needs_opening') {
     return (
-      <main className="ui-page caja-page" aria-labelledby="caja-page-title">
-        <header className="ui-page__header caja-page__header">
-          <div>
-            <h1 id="caja-page-title" className="ui-page__title">Caja</h1>
-            <p className="ui-page__subtitle">Apertura, movimientos y cortes del turno.</p>
-          </div>
+      <main className="ui-page caja-page" aria-label="Caja">
+        <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
           <div className="ui-section__actions">
             <span className={`ui-badge ${isCloudCash ? 'ui-badge--success' : 'ui-badge--neutral'}`}>
               {isCloudCash ? 'Cloud PRO' : 'Local'}
@@ -488,12 +484,8 @@ export default function CajaPage() {
   // RENDER PRINCIPAL (< 50 líneas de JSX)
   // ============================================================
   return (
-    <main className="ui-page caja-page" aria-labelledby="caja-page-title">
-      <header className="ui-page__header caja-page__header">
-        <div>
-          <h1 id="caja-page-title" className="ui-page__title">Caja</h1>
-          <p className="ui-page__subtitle">Apertura, movimientos, auditoria y cortes del turno.</p>
-        </div>
+    <main className="ui-page caja-page" aria-label="Caja">
+      <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
         <div className="ui-section__actions">
           <span className={`ui-badge ${cajaActual?.estado === 'abierta' ? 'ui-badge--success' : 'ui-badge--warning'}`}>
             {cajaActual?.estado === 'abierta' ? 'Caja abierta' : estadoCaja}
