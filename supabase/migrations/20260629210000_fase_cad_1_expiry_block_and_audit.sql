@@ -1,0 +1,17 @@
+-- FASE CAD.1 — Bloqueo y auditoría de caducidad por lote
+-- Migration aplicada en Supabase con nombre: fase_cad_1_expiry_block_and_audit
+-- Proyecto: odlrhijtfyavryeqivaa
+--
+-- Esta migración crea/actualiza:
+-- 1. private.is_pos_batch_expired_for_sale(timestamptz)
+-- 2. private.audit_pos_inventory_block(uuid, text, text, jsonb)
+-- 3. private.resolve_sale_inventory_allocations(uuid, jsonb, text)
+-- 4. private.fill_pos_sale_item_batch_snapshot()
+-- 5. trigger trg_pos_sale_items_fill_batch_snapshot
+-- 6. public.pos_register_expiration_waste(...)
+-- 7. public.pos_get_expiring_batches_report(...)
+--
+-- Nota: el SQL completo fue aplicado directamente con Supabase MCP durante la fase CAD.1.
+-- Mantener este archivo como marcador histórico de migración en repo.
+-- Si se requiere reconstruir ambientes desde cero, exportar la definición actual desde Supabase
+-- antes de ejecutar nuevas fases sobre caducidad/lotes.
