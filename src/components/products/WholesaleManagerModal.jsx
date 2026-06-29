@@ -115,8 +115,9 @@ export default function WholesaleManagerModal({ show, onClose, tiers, onSave, ba
                         type="button"
                         className="btn-delete-tier"
                         onClick={() => handleRemove(tier.min)}
+                        aria-label="Eliminar regla de mayoreo"
                       >
-                        🗑️
+                        ×
                       </button>
                     </td>
                   </tr>
