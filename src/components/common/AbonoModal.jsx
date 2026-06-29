@@ -1,5 +1,6 @@
 // src/components/common/AbonoModal.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import './AbonoModal.css';
 
 export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) {
@@ -9,6 +10,16 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
   const [sendReceipt, setSendReceipt] = useState(true);
 
   const deudaActual = customer?.debt || 0;
+
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: Boolean(show && customer),
+    onDismiss: handleClose,
+    layerId: 'legacy-abono-modal'
+  });
 
   useEffect(() => {
     if (!show) {
@@ -98,7 +109,7 @@ export default function AbonoModal({ show, onClose, onConfirmAbono, customer }) 
           <button type="submit" className="btn btn-save" disabled={!!error || !monto}>
             Confirmar Abono
           </button>
-          <button type="button" className="btn btn-cancel" onClick={onClose}>
+          <button type="button" className="btn btn-cancel" onClick={dismissModal}>
             Cancelar
           </button>
         </form>
