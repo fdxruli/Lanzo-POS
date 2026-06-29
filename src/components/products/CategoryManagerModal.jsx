@@ -1,21 +1,28 @@
 // src/components/products/CategoryManagerModal.jsx
-import React, { useState } from 'react';
+import { useCallback, useState } from 'react';
 import CategoryForm from './CategoryForm';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import './CategoryManagerModal.css';
 
 export default function CategoryManagerModal({ show, onClose, categories, onSave, onRefresh, onDelete }) {
   const [editingCategory, setEditingCategory] = useState(null);
+
+  const handleDismiss = useCallback(() => {
+    setEditingCategory(null);
+    onClose();
+  }, [onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: show,
+    onDismiss: handleDismiss,
+    layerId: 'category-manager-modal'
+  });
 
   if (!show) return null;
 
   const handleSaveSuccess = () => {
     setEditingCategory(null);
     if (onRefresh) onRefresh(); // Sincroniza el estado global después de guardar
-  };
-
-  const handleClose = () => {
-    setEditingCategory(null);
-    onClose();
   };
 
   return (
@@ -55,7 +62,7 @@ export default function CategoryManagerModal({ show, onClose, categories, onSave
         </div>
         
         <footer className="ui-modal__actions category-modal__actions">
-          <button id="close-category-modal-btn" type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={handleClose}>
+          <button id="close-category-modal-btn" type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={dismissModal}>
             Cerrar
           </button>
         </footer>
