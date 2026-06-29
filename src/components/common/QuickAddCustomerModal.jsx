@@ -1,8 +1,9 @@
 // src/components/common/QuickAddCustomerModal.jsx
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { saveDataSafe, STORES, DB_ERROR_CODES } from '../../services/database';
 import './QuickAddCustomerModal.css';
 import { generateID } from '../../services/utils';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 
 const getFriendlyError = (result) => {
   if (!result?.error) {
@@ -22,6 +23,20 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved }
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  const handleClose = useCallback(() => {
+    if (isLoading) return;
+    setName('');
+    setPhone('');
+    setError('');
+    onClose();
+  }, [isLoading, onClose]);
+
+  const dismissModal = useDismissibleHistoryLayer({
+    isOpen: show,
+    onDismiss: handleClose,
+    layerId: 'quick-add-customer-modal'
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -45,19 +60,12 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved }
       }
 
       onCustomerSaved(newCustomer);
-      handleClose();
+      dismissModal();
     } catch {
       setError('Error al guardar el cliente.');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleClose = () => {
-    setName('');
-    setPhone('');
-    setError('');
-    onClose();
   };
 
   if (!show) return null;
@@ -97,7 +105,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved }
           <button type="submit" className="btn btn-save" disabled={isLoading}>
             {isLoading ? 'Guardando...' : 'Guardar Cliente'}
           </button>
-          <button type="button" className="btn btn-cancel" onClick={handleClose} disabled={isLoading}>
+          <button type="button" className="btn btn-cancel" onClick={dismissModal} disabled={isLoading}>
             Cancelar
           </button>
         </form>
