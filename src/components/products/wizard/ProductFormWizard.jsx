@@ -1,3 +1,4 @@
+import { Check, ChevronLeft, ChevronRight, Lightbulb, Loader2 } from 'lucide-react';
 import Step1Basicos from './Step1Basicos';
 import Step2Inventario from './Step2Inventario';
 import Step3PrecioDetalles from './Step3PrecioDetalles';
@@ -25,39 +26,7 @@ export default function ProductFormWizard({
         setIsSaving
     } = wizard;
 
-    // Renderizar el paso actual
-    const renderStep = () => {
-        switch (currentStep) {
-            case 1:
-                return (
-                    <Step1Basicos
-                        wizard={wizard}
-                        categories={categories}
-                        onOpenCategoryManager={onOpenCategoryManager}
-                    />
-                );
-            case 2:
-                return (
-                    <Step2Inventario
-                        wizard={wizard}
-                        activeRubroContext={activeRubroContext}
-                    />
-                );
-            case 3:
-                return (
-                    <Step3PrecioDetalles
-                        wizard={wizard}
-                        activeRubroContext={activeRubroContext}
-                    />
-                );
-            default:
-                return null;
-        }
-    };
-
-    // Manejar envío del formulario
     const handleSubmit = async () => {
-        // Validar último paso
         const isValid = wizard.validateStep3 ? wizard.validateStep3() : true;
         if (!isValid) return;
 
@@ -65,7 +34,7 @@ export default function ProductFormWizard({
         try {
             const productData = getProductData();
             const productId = productToEdit?.id || Date.now().toString();
-            
+
             const payload = {
                 id: productId,
                 ...productData,
@@ -83,7 +52,6 @@ export default function ProductFormWizard({
         }
     };
 
-    // Manejar navegación con validación
     const handleNext = () => {
         if (isLastStep) {
             handleSubmit();
@@ -94,82 +62,30 @@ export default function ProductFormWizard({
 
     return (
         <div className="product-form-wizard">
-            {/* Barra de Progreso Superior */}
-            <div style={{
-                marginBottom: '25px',
-                backgroundColor: 'var(--card-background-color)',
-                padding: '20px',
-                borderRadius: '12px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-            }}>
-                {/* Steps Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+            <div className="product-form-wizard__progress">
+                <div className="product-form-wizard__steps">
                     {steps.map((step, index) => {
                         const isCompleted = currentStep > step.id;
                         const isCurrent = currentStep === step.id;
-                        
+
                         return (
-                            <div
-                                key={step.id}
-                                style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    flex: 1,
-                                    position: 'relative'
-                                }}
-                            >
-                                {/* Círculo del paso */}
+                            <div key={step.id} className="product-form-wizard__step">
                                 <div
-                                    style={{
-                                        width: '40px',
-                                        height: '40px',
-                                        borderRadius: '50%',
-                                        backgroundColor: isCompleted || isCurrent 
-                                            ? 'var(--primary-color)' 
-                                            : 'var(--border-color)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontSize: '1.2rem',
-                                        transition: 'all 0.3s ease',
-                                        boxShadow: isCurrent ? '0 0 0 3px rgba(59, 130, 246, 0.3)' : 'none',
-                                        zIndex: 1
-                                    }}
+                                    className={`product-form-wizard__step-dot ${isCompleted ? 'is-completed' : ''} ${isCurrent ? 'is-current' : ''}`}
                                 >
-                                    {isCompleted ? '✓' : step.icon}
+                                    {isCompleted ? <Check size={18} aria-hidden="true" /> : step.icon}
                                 </div>
-                                
-                                {/* Label del paso */}
-                                <span style={{
-                                    fontSize: '0.85rem',
-                                    marginTop: '8px',
-                                    color: isCompleted || isCurrent 
-                                        ? 'var(--primary-color)' 
-                                        : 'var(--text-light)',
-                                    fontWeight: isCurrent ? '600' : '400'
-                                }}>
+
+                                <span className={`product-form-wizard__step-label ${isCompleted || isCurrent ? 'is-active' : ''}`}>
                                     {step.name}
                                 </span>
 
-                                {/* Línea conectora (excepto último) */}
                                 {index < steps.length - 1 && (
-                                    <div style={{
-                                        position: 'absolute',
-                                        top: '20px',
-                                        left: '50%',
-                                        width: '100%',
-                                        height: '2px',
-                                        backgroundColor: 'var(--border-color)',
-                                        zIndex: 0,
-                                        transform: 'translateY(-50%)'
-                                    }}>
-                                        <div style={{
-                                            height: '100%',
-                                            width: `${isCompleted ? '100%' : '0%'}`,
-                                            backgroundColor: 'var(--primary-color)',
-                                            transition: 'width 0.3s ease'
-                                        }}></div>
+                                    <div className="product-form-wizard__connector">
+                                        <div
+                                            className="product-form-wizard__connector-fill"
+                                            style={{ width: `${isCompleted ? '100%' : '0%'}` }}
+                                        />
                                     </div>
                                 )}
                             </div>
@@ -177,137 +93,68 @@ export default function ProductFormWizard({
                     })}
                 </div>
 
-                {/* Barra de progreso lineal */}
-                <div style={{
-                    height: '6px',
-                    backgroundColor: 'var(--light-background)',
-                    borderRadius: '3px',
-                    overflow: 'hidden',
-                    marginTop: '10px'
-                }}>
-                    <div style={{
-                        height: '100%',
-                        width: `${progress}%`,
-                        backgroundColor: 'var(--primary-color)',
-                        transition: 'width 0.3s ease'
-                    }}></div>
+                <div className="product-form-wizard__progress-track">
+                    <div
+                        className="product-form-wizard__progress-fill"
+                        style={{ width: `${progress}%` }}
+                    />
                 </div>
             </div>
 
-            {/* Contenido del Paso */}
-            <div style={{
-                backgroundColor: 'var(--card-background-color)',
-                padding: '25px',
-                borderRadius: '12px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                minHeight: '400px'
-            }}>
-                {renderStep()}
+            <div className="product-form-wizard__content">
+                <ProductWizardStep
+                    currentStep={currentStep}
+                    wizard={wizard}
+                    categories={categories}
+                    onOpenCategoryManager={onOpenCategoryManager}
+                    activeRubroContext={activeRubroContext}
+                />
             </div>
 
-            {/* Botones de Navegación */}
-            <div style={{
-                display: 'flex',
-                gap: '15px',
-                marginTop: '25px',
-                paddingTop: '20px',
-                borderTop: '1px solid var(--border-color)'
-            }}>
-                {/* Botón Atrás */}
+            <div className="product-form-wizard__actions">
                 {!isFirstStep && (
-                    <button
-                        type="button"
-                        className="btn btn-cancel"
-                        onClick={prevStep}
-                        style={{
-                            flex: 1,
-                            padding: '14px 24px',
-                            fontSize: '1rem',
-                            fontWeight: '600'
-                        }}
-                    >
-                        ← Atrás
+                    <button type="button" className="btn btn-cancel" onClick={prevStep}>
+                        <ChevronLeft size={18} aria-hidden="true" />
+                        Atras
                     </button>
                 )}
 
-                {/* Botón Cancelar (solo en primer paso) */}
                 {isFirstStep && (
-                    <button
-                        type="button"
-                        className="btn btn-cancel"
-                        onClick={onCancel}
-                        style={{
-                            flex: 1,
-                            padding: '14px 24px',
-                            fontSize: '1rem',
-                            fontWeight: '600'
-                        }}
-                    >
+                    <button type="button" className="btn btn-cancel" onClick={onCancel}>
                         Cancelar
                     </button>
                 )}
 
-                {/* Botón Siguiente / Guardar */}
                 <button
                     type="button"
                     className="btn btn-save"
                     onClick={handleNext}
                     disabled={isSaving}
-                    style={{
-                        flex: isFirstStep ? 2 : 2,
-                        padding: '14px 24px',
-                        fontSize: '1rem',
-                        fontWeight: '600',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '10px'
-                    }}
                 >
                     {isSaving ? (
                         <>
-                            <span>⏳</span> Guardando...
+                            <Loader2 size={18} aria-hidden="true" /> Guardando...
                         </>
                     ) : isLastStep ? (
                         <>
-                            <span>✓</span> Guardar Producto
+                            <Check size={18} aria-hidden="true" /> Guardar producto
                         </>
                     ) : (
                         <>
-                            Continuar <span>→</span>
+                            Continuar <ChevronRight size={18} aria-hidden="true" />
                         </>
                     )}
                 </button>
             </div>
 
-            {/* Tips por rubro */}
             {activeRubroContext && (
-                <div style={{
-                    marginTop: '20px',
-                    padding: '15px',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '12px'
-                }}>
-                    <span style={{ fontSize: '1.5rem' }}>💡</span>
+                <div className="product-form-wizard__tip">
+                    <Lightbulb size={22} aria-hidden="true" />
                     <div>
-                        <p style={{ 
-                            margin: 0, 
-                            fontSize: '0.9rem', 
-                            fontWeight: '600', 
-                            color: 'var(--text-dark)',
-                            marginBottom: '4px'
-                        }}>
+                        <p className="product-form-wizard__tip-title">
                             Modo {getRubroLabel(activeRubroContext)}
                         </p>
-                        <p style={{ 
-                            margin: 0, 
-                            fontSize: '0.85rem', 
-                            color: 'var(--text-color)' 
-                        }}>
+                        <p className="product-form-wizard__tip-copy">
                             {getRubroTip(activeRubroContext)}
                         </p>
                     </div>
@@ -317,29 +164,63 @@ export default function ProductFormWizard({
     );
 }
 
-// Helpers para labels y tips por rubro
+function ProductWizardStep({
+    currentStep,
+    wizard,
+    categories,
+    onOpenCategoryManager,
+    activeRubroContext
+}) {
+    switch (currentStep) {
+        case 1:
+            return (
+                <Step1Basicos
+                    wizard={wizard}
+                    categories={categories}
+                    onOpenCategoryManager={onOpenCategoryManager}
+                />
+            );
+        case 2:
+            return (
+                <Step2Inventario
+                    wizard={wizard}
+                    activeRubroContext={activeRubroContext}
+                />
+            );
+        case 3:
+            return (
+                <Step3PrecioDetalles
+                    wizard={wizard}
+                    activeRubroContext={activeRubroContext}
+                />
+            );
+        default:
+            return null;
+    }
+}
+
 function getRubroLabel(rubro) {
     const labels = {
-        'food_service': 'Restaurante',
-        'abarrotes': 'Abarrotes',
-        'farmacia': 'Farmacia',
-        'verduleria/fruteria': 'Frutería',
-        'apparel': 'Ropa y Accesorios',
-        'hardware': 'Ferretería',
-        'otro': 'General'
+        food_service: 'Restaurante',
+        abarrotes: 'Abarrotes',
+        farmacia: 'Farmacia',
+        'verduleria/fruteria': 'Fruteria',
+        apparel: 'Ropa y Accesorios',
+        hardware: 'Ferreteria',
+        otro: 'General'
     };
     return labels[rubro] || rubro;
 }
 
 function getRubroTip(rubro) {
     const tips = {
-        'food_service': 'Para platillos, configura el tiempo de preparación y la estación de impresión. Para ingredientes, usa el constructor de recetas.',
-        'abarrotes': 'Si vendes a granel, configura la unidad de medida correcta (kg, lt, mt). Activa alertas de stock mínimo.',
-        'farmacia': 'Los medicamentos controlados requieren sustancia activa. El sistema manejará caducidades con FEFO.',
-        'verduleria/fruteria': 'Configura la vida útil para alertas de merma. Usa kg para peso o pieza para productos unitarios.',
-        'apparel': 'Puedes agregar variantes de talla y color en el siguiente paso.',
-        'hardware': 'Para productos con medidas (tornillos, cables), especifica la unidad de venta claramente.',
-        'otro': 'Configura los campos básicos y agrega detalles según necesites.'
+        food_service: 'Para platillos, configura el tiempo de preparacion y la estacion de impresion. Para ingredientes, usa el constructor de recetas.',
+        abarrotes: 'Si vendes a granel, configura la unidad de medida correcta (kg, lt, mt). Activa alertas de stock minimo.',
+        farmacia: 'Los medicamentos controlados requieren sustancia activa. El sistema manejara caducidades con FEFO.',
+        'verduleria/fruteria': 'Configura la vida util para alertas de merma. Usa kg para peso o pieza para productos unitarios.',
+        apparel: 'Puedes agregar variantes de talla y color en el siguiente paso.',
+        hardware: 'Para productos con medidas (tornillos, cables), especifica la unidad de venta claramente.',
+        otro: 'Configura los campos basicos y agrega detalles segun necesites.'
     };
-    return tips[rubro] || 'Configura los campos según las necesidades de tu producto.';
+    return tips[rubro] || 'Configura los campos segun las necesidades de tu producto.';
 }

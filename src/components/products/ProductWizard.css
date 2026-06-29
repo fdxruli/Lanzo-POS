@@ -4,16 +4,16 @@
 
 /* ===== CONTENEDOR PRINCIPAL ===== */
 .product-wizard-container {
-    background: var(--card-background-color);
-    border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow-lg);
-    max-width: 700px;
-    margin: 20px auto;
-    overflow: hidden;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    max-width: 760px;
+    margin: 0 auto;
+    overflow: visible;
     display: flex;
     flex-direction: column;
-    min-height: 550px;
-    border: 1px solid var(--border-color);
+    min-height: 0;
+    border: 0;
     animation: slideUp 0.4s ease-out;
 }
 
@@ -21,8 +21,8 @@
 .wizard-progress-bar {
     display: flex;
     justify-content: space-between;
-    padding: 30px 50px;
-    background: var(--light-background);
+    padding: 20px 44px;
+    background: transparent;
     border-bottom: 1px solid var(--border-color);
     position: relative;
 }
@@ -69,9 +69,18 @@
 
 /* ===== CONTENIDO PRINCIPAL ===== */
 .wizard-main-content {
-    padding: 40px;
+    padding: 32px;
     flex-grow: 1;
     overflow-y: auto;
+    background:
+        color-mix(
+            in srgb,
+            var(--card-background-color) 78%,
+            transparent
+        );
+    border: 1px solid var(--border-color);
+    border-top: 0;
+    border-radius: 0 0 var(--border-radius-sm, 8px) var(--border-radius-sm, 8px);
 }
 
 .wizard-welcome {
@@ -106,7 +115,7 @@
 .selection-card {
     padding: 24px;
     border: 2px solid var(--border-color);
-    border-radius: var(--border-radius);
+    border-radius: var(--border-radius-sm, 8px);
     cursor: pointer;
     transition: all 0.2s ease;
     text-align: center;
@@ -150,7 +159,7 @@
 .money-wizard-container {
     background: var(--light-background);
     padding: 25px;
-    border-radius: var(--border-radius);
+    border-radius: var(--border-radius-sm, 8px);
     border: 1px solid var(--border-color);
 }
 
@@ -212,7 +221,7 @@
     margin: 30px 0;
     padding: 20px;
     background: rgba(255, 184, 0, 0.1);
-    border-radius: var(--border-radius);
+    border-radius: var(--border-radius-sm, 8px);
     border: 1px solid var(--warning-color);
     display: flex;
     flex-direction: column;
@@ -230,11 +239,12 @@
 
 /* ===== ACCIONES ===== */
 .wizard-actions {
-    padding: 25px 40px;
-    background: var(--light-background);
+    padding: 20px 0 0;
+    background: transparent;
     border-top: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
+    margin-top: var(--spacing-md);
 }
 
 .btn-save.pulse {
@@ -266,8 +276,12 @@
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
+    .product-wizard-container {
+        width: 100%;
+    }
+
     .wizard-progress-bar {
-        padding: 20px 15px;
+        padding: 16px 12px;
     }
 
     .wizard-progress-bar::before {
@@ -276,11 +290,15 @@
     }
 
     .wizard-main-content {
-        padding: 20px;
+        padding: var(--spacing-md) 0;
+        background: transparent;
+        border-width: 1px 0 0;
+        border-radius: 0;
     }
 
     .wizard-actions {
-        padding: 15px 20px;
+        padding: var(--spacing-md) 0 0;
+        gap: var(--spacing-sm);
     }
 
     .selection-grid {
