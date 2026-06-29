@@ -96,33 +96,34 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
 
   return (
     <div
-      className="modal"
-      style={{ display: 'flex', zIndex: 1200 }}
+      className="ui-modal ui-modal--high cash-modal-overlay modal"
+      style={{ display: 'flex' }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title-fondo-inicial"
     >
-      <div className="modal-content" style={{ maxWidth: '400px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 className="modal-title" style={{ margin: 0 }} id="modal-title-fondo-inicial">Ajustar Fondo Inicial</h3>
+      <div className="ui-modal__content ui-modal__content--sm cash-modal-content">
+        <header className="ui-modal__header cash-modal-header">
+          <h3 className="ui-modal__title modal-title" id="modal-title-fondo-inicial">Ajustar Fondo Inicial</h3>
           <button
             type="button"
+            className="ui-button ui-button--ghost ui-button--sm cash-modal-close"
             onClick={onClose}
             disabled={isDisabled}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)' }}
             aria-label="Cerrar modal"
           >
             <X size={20} />
           </button>
-        </div>
-        <p style={{ marginBottom: '15px', color: 'var(--text-light)', fontSize: '0.9rem' }}>
+        </header>
+        <p className="ui-alert ui-alert--info cash-modal-note">
           El sistema calculó este fondo automáticamente del turno anterior.
           Si el dinero físico real es diferente, corrígelo aquí.
         </p>
-        <form onSubmit={handleSubmit}>
+        <form className="ui-modal__body cash-modal-form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">Fondo Real ($)</label>
+            <label className="form-label" htmlFor="fondo-real-input">Fondo Real ($)</label>
             <input
+              id="fondo-real-input"
               type="number"
               className="form-input"
               value={amount}
@@ -134,10 +135,10 @@ const EditInitialModal = ({ show, onClose, onSave, currentAmount, isDisabled = f
               placeholder="0.00"
             />
           </div>
-          <div style={{ display: 'flex', gap: '10px', marginTop: '15px', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
-            <button type="submit" className="btn btn-save" disabled={isDisabled}>Actualizar</button>
-          </div>
+          <footer className="ui-modal__actions cash-modal-actions">
+            <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
+            <button type="submit" className="ui-button ui-button--primary btn btn-save" disabled={isDisabled}>Actualizar</button>
+          </footer>
         </form>
       </div>
     </div>

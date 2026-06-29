@@ -28,34 +28,34 @@ const CashExitModal = ({ show, onClose, onSubmit, isDisabled = false }) => {
 
   return (
     <div
-      className="modal"
-      style={{ display: 'flex' }}
+      className="ui-modal ui-modal--high cash-modal-overlay"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title-salida"
     >
-      <div className="modal-content">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h2 className="modal-title" style={{ margin: 0 }} id="modal-title-salida">Salida de Efectivo</h2>
+      <div className="ui-modal__content ui-modal__content--sm cash-modal-content">
+        <header className="ui-modal__header cash-modal-header">
+          <h2 className="ui-modal__title modal-title" id="modal-title-salida">Salida de Efectivo</h2>
           <button
             type="button"
+            className="ui-button ui-button--ghost ui-button--sm cash-modal-close"
             onClick={onClose}
             disabled={isDisabled}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)' }}
             aria-label="Cerrar modal"
           >
             <X size={20} />
           </button>
-        </div>
+        </header>
 
-        <p style={{ marginBottom: '15px', color: 'var(--text-light)', fontSize: '0.85rem' }}>
+        <p className="ui-alert ui-alert--warning cash-modal-note">
           ⚠️ La salida debe estar justificada y será registrada en el historial de movimientos.
         </p>
 
-        <form onSubmit={onSubmit}>
+        <form className="ui-modal__body cash-modal-form" onSubmit={onSubmit}>
           <div className="form-group">
-            <label className="form-label">Monto ($):</label>
+            <label className="form-label" htmlFor="salida-monto-input">Monto ($):</label>
             <input
+              id="salida-monto-input"
               name="salida-monto-input"
               type="number"
               className="form-input"
@@ -68,8 +68,9 @@ const CashExitModal = ({ show, onClose, onSubmit, isDisabled = false }) => {
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Concepto:</label>
+            <label className="form-label" htmlFor="salida-concepto-input">Concepto:</label>
             <input
+              id="salida-concepto-input"
               name="salida-concepto-input"
               type="text"
               className="form-input"
@@ -78,10 +79,10 @@ const CashExitModal = ({ show, onClose, onSubmit, isDisabled = false }) => {
               disabled={isDisabled}
             />
           </div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
-            <button type="button" className="btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
-            <button type="submit" className="btn btn-delete" disabled={isDisabled}>Registrar Salida</button>
-          </div>
+          <footer className="ui-modal__actions cash-modal-actions">
+            <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={onClose} disabled={isDisabled}>Cancelar</button>
+            <button type="submit" className="ui-button ui-button--danger btn btn-delete" disabled={isDisabled}>Registrar Salida</button>
+          </footer>
         </form>
       </div>
     </div>

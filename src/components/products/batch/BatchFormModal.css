@@ -265,3 +265,105 @@
   min-height: 0;
   flex-direction: column;
 }
+
+.batch-form-field--compact {
+  margin-bottom: 0;
+}
+
+.batch-form-field--spaced {
+  margin-bottom: 12px;
+}
+
+.batch-update-price-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.batch-update-price-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--ui-color-primary);
+}
+
+.batch-update-price-label {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.batch-expiration-panel {
+  grid-template-columns: 1fr;
+}
+
+.batch-expiration-panel--warning {
+  background-color: var(--ui-bg-warning-soft);
+  border-color: var(--ui-border-warning);
+}
+
+.batch-expiration-title {
+  margin: 0 0 12px;
+  color: var(--ui-text-warning);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.batch-required-label {
+  color: var(--ui-text-danger) !important;
+  font-weight: 700 !important;
+}
+
+.batch-required-input {
+  background-color: var(--ui-bg-danger-soft);
+  border-color: var(--ui-border-danger);
+}
+
+.batch-required-help {
+  display: block;
+  margin-top: 4px;
+  color: var(--ui-text-danger);
+  font-size: 0.8rem;
+}
+
+.batch-shelf-life-info {
+  padding: 12px;
+  background-color: var(--ui-bg-success-soft);
+  border: 1px solid var(--ui-border-success);
+  border-radius: 8px;
+}
+
+.batch-shelf-life-title {
+  color: var(--ui-text-success);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.batch-manual-expiry-help {
+  display: block;
+  margin-top: 4px;
+  color: var(--ui-text-warning);
+  font-size: 0.8rem;
+}
+
+.batch-link-button {
+  padding: 6px 0 0;
+  color: var(--ui-color-primary);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.batch-stock-input {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.batch-secondary-save-button {
+  background-color: var(--ui-color-secondary);
+}
