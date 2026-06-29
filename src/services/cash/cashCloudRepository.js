@@ -6,7 +6,8 @@ import {
   buildBaseRpcContextFromArgs,
   buildRpcRequestKey,
   cloudRequestManager,
-  cloudRequestTags
+  cloudRequestTags,
+  invalidateCloudCacheAfterCashMutation
 } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
@@ -41,6 +42,11 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
   Math.max(Number(limit) || SYNC_LIMITS.DEFAULT_PULL_LIMIT, 1),
   SYNC_LIMITS.MAX_PULL_LIMIT
 );
+
+const invalidateAfterCashSuccess = (licenseKey, response) => {
+  if (response?.success !== false) invalidateCloudCacheAfterCashMutation(licenseKey);
+  return response;
+};
 
 const cachedCashRpc = ({
   rpcName,
@@ -79,7 +85,7 @@ export const cashCloudRepository = {
       licenseKey,
       baseArgs,
       // En hora pico esta lectura puede dispararse varias veces por pantalla/foreground.
-      // Las mutaciones de caja siguen siendo directas y limpian caché; 15s evita ráfagas.
+      // Las mutaciones de caja siguen siendo directas e invalidan caché; 15s evita ráfagas.
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
       force,
@@ -101,7 +107,7 @@ export const cashCloudRepository = {
       p_idempotency_key: idempotencyKey
     });
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async registerCashMovement({ licenseKey, cashSessionId, type, amount, concept, idempotencyKey, metadata = {} }) {
@@ -117,7 +123,7 @@ export const cashCloudRepository = {
       p_metadata: metadata
     });
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async adjustInitialCashFund({ licenseKey, cashSessionId, newAmount, reason, expectedVersion = null, idempotencyKey }) {
@@ -132,7 +138,7 @@ export const cashCloudRepository = {
       p_idempotency_key: idempotencyKey
     });
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async closeCashSession({ licenseKey, cashSessionId, closing, expectedVersion = null, idempotencyKey }) {
@@ -146,7 +152,7 @@ export const cashCloudRepository = {
       p_idempotency_key: idempotencyKey
     });
     if (error) throw error;
-    return parseRpcPayload(data);
+    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
   },
 
   async pullCashSnapshot({ licenseKey, scope = 'mine', limit = 100, offset = 0, includeClosed = true, force = false }) {
