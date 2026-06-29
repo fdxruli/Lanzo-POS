@@ -108,6 +108,7 @@ export const startPosRealtimeListener = ({ posTopic, licenseDetails, callbacks =
         Logger.warn('[PosRealtime] Error de canal POS:', error || status);
         isConnecting = false;
         if (activeChannel === channel) activeChannel = null;
+        handledClosedChannels.add(channel);
         supabaseClient.removeChannel(channel).catch(() => {});
         notifyStatus(callbacks, SYNC_STATUS.DEGRADED, { reason: status });
         scheduleReconnect(resolvedTopic, callbacks);

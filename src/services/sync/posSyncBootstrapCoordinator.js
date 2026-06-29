@@ -47,7 +47,8 @@ const bootstrapState = {
   moduleDemand: new Set(),
   completedSnapshots: new Map(),
   routeListenerAttached: false,
-  historyPatched: false
+  historyPatched: false,
+  routeDemandInProgress: false
 };
 
 let originalPushState = null;
@@ -138,6 +139,7 @@ const resetBootstrapState = ({ keepRouteListener = true } = {}) => {
   bootstrapState.startPromise = null;
   bootstrapState.moduleDemand.clear();
   bootstrapState.completedSnapshots.clear();
+  bootstrapState.routeDemandInProgress = false;
 
   if (!keepRouteListener) {
     bootstrapState.routeListenerAttached = false;
@@ -152,9 +154,16 @@ const getResourcesForCurrentRoute = () => {
 };
 
 const emitRouteDemand = () => {
+  if (bootstrapState.routeDemandInProgress) return;
+
   const resources = getResourcesForCurrentRoute();
   if (resources.length > 0) {
-    markModuleDemand(resources, { reason: 'route_demand' });
+    bootstrapState.routeDemandInProgress = true;
+    try {
+      markModuleDemand(resources, { reason: 'route_demand' });
+    } finally {
+      bootstrapState.routeDemandInProgress = false;
+    }
   }
 };
 

@@ -213,6 +213,7 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
         });
         isConnecting = false;
 
+        handledClosedChannels.add(channel);
         supabaseClient.removeChannel(channel).catch(() => { });
         if (activeChannel === channel) activeChannel = null;
 
