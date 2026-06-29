@@ -12,13 +12,13 @@
 #payment-modal .payment-label {
   font-weight: 500;
   margin-bottom: var(--spacing-xs);
-  color: var(--text-dark);
+  color: var(--ui-text-strong);
 }
 
 #payment-modal .payment-total {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--primary-color);
+  color: var(--ui-color-primary);
   margin-bottom: var(--spacing-md);
 }
 
@@ -27,15 +27,15 @@
   font-size: 1.2rem;
   text-align: center;
   /* Asegura que el input use el fondo correcto del tema */
-  background-color: var(--card-background-color);
-  color: var(--text-dark);
-  border-color: var(--border-color);
+  background-color: var(--ui-bg-surface);
+  color: var(--ui-text-strong);
+  border-color: var(--ui-border-color);
 }
 
 #payment-modal .payment-change {
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--success-color);
+  color: var(--ui-text-success);
   text-align: center;
 }
 
@@ -53,9 +53,9 @@
 }
 
 #payment-modal .payment-cancel-button:hover:not(:disabled) {
-  background-color: rgba(239, 68, 68, 0.1);
-  color: var(--error-color);
-  border-color: var(--error-color);
+  background-color: var(--ui-bg-danger-soft);
+  color: var(--ui-text-danger);
+  border-color: var(--ui-color-danger);
 }
 
 #payment-modal .payment-form-group-spaced {
@@ -105,11 +105,11 @@
 #payment-modal .customer-search-results {
   position: absolute;
   width: 100%;
-  background-color: var(--card-background-color);
-  border: 1px solid var(--primary-color);
+  background-color: var(--ui-bg-surface);
+  border: 1px solid var(--ui-color-primary);
   border-top: none;
   border-radius: 0 0 var(--border-radius-sm) var(--border-radius-sm);
-  box-shadow: var(--box-shadow-lg);
+  box-shadow: var(--ui-shadow-lg);
   max-height: 150px;
   overflow-y: auto;
   z-index: 10;
@@ -118,14 +118,15 @@
 #payment-modal .customer-result-item {
   padding: var(--spacing-sm);
   cursor: pointer;
-  color: var(--text-color);
+  color: var(--ui-text);
   font-size: 0.9rem;
-  border-bottom: 1px solid var(--light-background);
+  border-bottom: 1px solid var(--ui-bg-muted);
 }
 
-#payment-modal .customer-result-item:hover {
-  background-color: var(--light-background);
-  color: var(--primary-color);
+#payment-modal .customer-result-item:hover,
+#payment-modal .customer-result-item:focus-visible {
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-color-primary);
 }
 
 #payment-modal .customer-result-item:last-child {
@@ -142,29 +143,37 @@
 #payment-modal .btn-method {
   flex: 1;
   padding: var(--spacing-sm);
-  border: 1px solid var(--border-color);
-  background-color: var(--card-background-color);
-  color: var(--text-light);
+  border: 1px solid var(--ui-border-color);
+  background-color: var(--ui-bg-surface);
+  color: var(--ui-text-muted);
   transition: var(--transition);
 }
 
 #payment-modal .btn-method:hover {
-  background-color: var(--light-background);
-  color: var(--primary-color);
-  border-color: var(--border-color);
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-color-primary);
+  border-color: var(--ui-border-color);
 }
 
 #payment-modal .btn-method.active {
-  background-color: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
+  background-color: var(--ui-color-primary);
+  color: var(--ui-text-on-primary);
+  border-color: var(--ui-color-primary);
+}
+
+#payment-modal .btn-method:focus-visible,
+#payment-modal .btn-cash-option:focus-visible,
+#payment-modal .btn-quick-add:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-primary);
 }
 
 /* --- Botón de añadir rápido --- */
 #payment-modal .btn-quick-add {
   background-color: transparent;
-  color: var(--primary-color);
+  color: var(--ui-color-primary);
   border: none;
+  border-radius: var(--ui-radius-xs);
   padding: var(--spacing-xs) 0;
   margin-top: var(--spacing-xs);
   cursor: pointer;
@@ -179,7 +188,7 @@
 #payment-modal .payment-saldo {
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--error-color);
+  color: var(--ui-text-danger);
   text-align: center;
 }
 
@@ -195,9 +204,9 @@
 #payment-modal .btn-cash-option {
   padding: 10px 4px;
   /* Usamos variables del tema en lugar de colores fijos */
-  border: 1px solid var(--border-color);
-  background-color: var(--card-background-color);
-  color: var(--text-dark);
+  border: 1px solid var(--ui-border-color);
+  background-color: var(--ui-bg-surface);
+  color: var(--ui-text-strong);
 
   border-radius: var(--border-radius-sm);
   cursor: pointer;
@@ -208,22 +217,22 @@
 }
 
 #payment-modal .btn-cash-option:hover {
-  background-color: var(--light-background);
-  border-color: var(--primary-color);
-  color: var(--primary-color);
+  background-color: var(--ui-bg-muted);
+  border-color: var(--ui-color-primary);
+  color: var(--ui-color-primary);
   transform: translateY(-2px);
-  box-shadow: var(--box-shadow);
+  box-shadow: var(--ui-shadow-sm);
 }
 
 #payment-modal .btn-cash-option:active {
   transform: translateY(0);
-  background-color: var(--light-background);
+  background-color: var(--ui-bg-muted);
 }
 
 #payment-modal .btn-cash-option-exact {
   grid-column: 1 / -1;
-  border-color: var(--success-color);
-  color: var(--success-color);
+  border-color: var(--ui-color-success);
+  color: var(--ui-text-success);
 }
 
 /* * Layout de dos columnas para pantallas grandes 
@@ -257,5 +266,13 @@
 
   #payment-modal .payment-actions {
     margin-top: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #payment-modal .payment-confirm-button:hover:not(:disabled),
+  #payment-modal .btn-cash-option:hover,
+  #payment-modal .btn-cash-option:active {
+    transform: none;
   }
 }
