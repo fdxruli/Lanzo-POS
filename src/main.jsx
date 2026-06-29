@@ -11,6 +11,7 @@ import './styles/ui-card.css';
 import './styles/ui-alert.css';
 import './styles/ui-badge.css';
 import './styles/ui-shell.css';
+import './styles/ui-tabs.css';
 import { storageManager } from './services/storageManager';
 import Logger from './services/Logger';
 import ErrorBoundary from './components/common/ErrorBoundary';
