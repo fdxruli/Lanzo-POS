@@ -44,6 +44,13 @@ const normalizeWasteQuantity = (quantity) => {
   return parsed;
 };
 
+const normalizePositiveQuantity = (quantity, fallback = null) => {
+  if (quantity === null || quantity === undefined || quantity === '') return fallback;
+  const parsed = Number(quantity);
+  if (!Number.isFinite(parsed) || parsed <= 0) return NaN;
+  return parsed;
+};
+
 const buildBaseArgs = async (licenseKey) => {
   const context = await buildPosSyncAuthContext({ licenseKey });
   const deviceSecret = context?.['security' + 'Token'];
@@ -99,6 +106,58 @@ export const registerCloudExpirationWaste = async ({
     ...(await buildBaseArgs(licenseKey)),
     p_batch_id: resolvedBatchId,
     p_quantity: normalizedQuantity,
+    p_reason: reason,
+    p_notes: notes || null,
+    p_idempotency_key: idempotencyKey
+  });
+};
+
+export const createCloudBatchFromParentStock = async ({
+  licenseKey,
+  productId,
+  expiryDate,
+  quantity = null,
+  notes = 'Regularización de inventario sin lote',
+  idempotencyKey
+}) => {
+  const normalizedQuantity = normalizePositiveQuantity(quantity, null);
+
+  if (!productId) {
+    return { success: false, code: 'PRODUCT_ID_REQUIRED', message: 'Selecciona un producto para regularizar.' };
+  }
+
+  if (!expiryDate) {
+    return { success: false, code: 'REGULARIZATION_EXPIRY_REQUIRED', message: 'Captura una fecha de caducidad o vida útil estimada para crear el lote.' };
+  }
+
+  if (Number.isNaN(normalizedQuantity)) {
+    return { success: false, code: 'INVALID_REGULARIZATION_QUANTITY', message: 'La cantidad a regularizar no es válida.' };
+  }
+
+  return callCatalogMutationRpc('pos_create_product_batch_from_parent_stock', licenseKey, {
+    ...(await buildBaseArgs(licenseKey)),
+    p_product_id: productId,
+    p_expiry_date: normalizeDateParam(expiryDate),
+    p_quantity: normalizedQuantity,
+    p_notes: notes || null,
+    p_idempotency_key: idempotencyKey
+  });
+};
+
+export const adjustCloudStockWithoutBatchToZero = async ({
+  licenseKey,
+  productId,
+  reason = 'regularizacion_stock_sin_lote',
+  notes = '',
+  idempotencyKey
+}) => {
+  if (!productId) {
+    return { success: false, code: 'PRODUCT_ID_REQUIRED', message: 'Selecciona un producto para ajustar.' };
+  }
+
+  return callCatalogMutationRpc('pos_adjust_product_stock_without_batch_zero', licenseKey, {
+    ...(await buildBaseArgs(licenseKey)),
+    p_product_id: productId,
     p_reason: reason,
     p_notes: notes || null,
     p_idempotency_key: idempotencyKey
@@ -214,6 +273,8 @@ export const getCloudExpirationFefoRecommendations = async ({
 
 export default {
   registerCloudExpirationWaste,
+  createCloudBatchFromParentStock,
+  adjustCloudStockWithoutBatchToZero,
   getCloudExpiringBatchesReport,
   getCloudExpirationWasteHistory,
   getCloudExpirationFefoRecommendations

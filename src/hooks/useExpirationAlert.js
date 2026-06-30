@@ -118,8 +118,8 @@ const sanitizeCloudWasteError = (errorOrResponse = {}) => {
 const getCloudReportRows = (response = {}) => {
   if (Array.isArray(response)) return response;
   return [
-    response.batches,
     response.items,
+    response.batches,
     response.expiring_batches,
     response.expiringBatches,
     response.report,
@@ -148,15 +148,20 @@ const normalizeCloudExpiringReport = (response = {}) => getCloudReportRows(respo
   .map((row) => {
     const batch = row?.batch || row?.product_batch || row?.productBatch || row || {};
     const product = row?.product || {};
-    const id = batch.id || row?.batch_id || row?.batchId;
+    const recordType = row?.record_type || row?.recordType || batch.record_type || batch.recordType;
+    const isProductRecord = recordType === 'product' || row?.type === 'Producto';
     const productId = batch.product_id || batch.productId || row?.product_id || row?.productId || product.id;
+    const id = batch.id || row?.id || row?.batch_id || row?.batchId || (productId ? `product:${productId}` : null);
     const expiryDate = batch.expiry_date || batch.expiryDate || row?.expiry_date || row?.expiryDate;
     const alertTargetDate = batch.alert_target_date || batch.alertTargetDate || row?.alert_target_date || row?.alertTargetDate || expiryDate;
+    const safeAlertTargetDate = alertTargetDate || (isProductRecord ? new Date().toISOString() : null);
     const stock = toSafeNumber(
       row?.available_quantity ??
       row?.availableQuantity ??
       row?.available_stock ??
       row?.availableStock ??
+      row?.parent_available_stock ??
+      row?.parentAvailableStock ??
       batch.available_quantity ??
       batch.availableQuantity ??
       batch.stock ??
@@ -165,11 +170,11 @@ const normalizeCloudExpiringReport = (response = {}) => getCloudReportRows(respo
     );
     const daysRemaining = toSafeNumber(
       row?.days_remaining ?? row?.daysRemaining ?? row?.days_left ?? row?.daysLeft,
-      calculateDaysRemaining(alertTargetDate || expiryDate)
+      calculateDaysRemaining(safeAlertTargetDate || expiryDate)
     );
     const productName = product.name || row?.product_name || row?.productName || row?.name || `Producto (${productId || 'sin ID'})`;
 
-    if (!id || !productId || !alertTargetDate) return null;
+    if (!id || !productId || !safeAlertTargetDate) return null;
 
     return {
       id,
@@ -178,14 +183,26 @@ const normalizeCloudExpiringReport = (response = {}) => getCloudReportRows(respo
       name: productName,
       stock,
       currentStock: stock,
-      expiryDate,
-      alertTargetDate,
-      alertType: batch.alert_type || batch.alertType || row?.alert_type || row?.alertType || 'CADUCIDAD_LEGAL',
+      availableStock: stock,
+      parentAvailableStock: toSafeNumber(row?.parent_available_stock ?? row?.parentAvailableStock, stock),
+      expiryDate: expiryDate || safeAlertTargetDate,
+      alertTargetDate: safeAlertTargetDate,
+      alertType: batch.alert_type || batch.alertType || row?.alert_type || row?.alertType || (isProductRecord ? 'REGULARIZACION_STOCK' : 'CADUCIDAD_LEGAL'),
       daysRemaining,
       daysLeft: daysRemaining,
-      batchSku: batch.sku || row?.batch_sku || row?.batchSku || 'Lote',
+      batchSku: isProductRecord
+        ? (row?.status_label || row?.statusLabel || row?.message || 'Producto')
+        : (batch.sku || row?.batch_sku || row?.batchSku || 'Lote'),
       location: batch.location || row?.location || product.location || '',
-      type: 'Lote',
+      type: row?.type || (isProductRecord ? 'Producto' : 'Lote'),
+      recordType: recordType || (isProductRecord ? 'product' : 'batch'),
+      operationalCategory: row?.operational_category || row?.operationalCategory || null,
+      statusLabel: row?.status_label || row?.statusLabel || null,
+      message: row?.message || null,
+      expirationMode: row?.expiration_mode || row?.expirationMode || null,
+      canMoveToWaste: row?.can_move_to_waste ?? row?.canMoveToWaste ?? !isProductRecord,
+      canCreateBatchFromStock: row?.can_create_batch_from_stock ?? row?.canCreateBatchFromStock ?? false,
+      canAdjustStock: row?.can_adjust_stock ?? row?.canAdjustStock ?? false,
       urgencyLevel: row?.urgency_level || row?.urgencyLevel || getUrgencyLevel(daysRemaining)
     };
   })
@@ -339,7 +356,7 @@ export const useExpirationAlert = () => {
 
   // Mover a merma (registro contable sin eliminar)
   const handleMoveToWaste = useCallback(async (item, isPartial = false, partialQuantity = null) => {
-    if (item.type !== 'Lote') {
+    if (item.type !== 'Lote' || item.canMoveToWaste === false) {
       return { success: false, error: 'Solo los lotes pueden moverse a merma desde este panel.' };
     }
 
