@@ -35,7 +35,6 @@ export default function ExpirationAlert() {
     ignoredCount,
     businessContext,
     strategyTip,
-    refreshAlerts,
     handleIgnore,
     handleRestoreAll,
     handleMoveToWaste,
