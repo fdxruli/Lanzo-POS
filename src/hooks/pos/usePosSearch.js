@@ -1,15 +1,21 @@
 // src/hooks/usePosSearch.js
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useDebounce } from '../useDebounce';
 import { useProductStore } from '../../store/useProductStore';
-import { searchProductsInDB } from '../../services/database';
-import { getAvailableStock } from '../../services/db/utils';
+import { db, searchProductsInDB, STORES } from '../../services/database';
+import {
+    CAT_DYNAMIC_EXPIRED,
+    CAT_DYNAMIC_OUT_OF_STOCK,
+    isExpiredForPosMenu,
+    isOutOfStockForPosMenu,
+    resolveExpiredProductIdsForPosMenu
+} from '../../services/products/productMenuEligibility';
 import Logger from '../../services/Logger';
 
 /**
- * Hook para manejar la búsqueda de productos en el POS.
- * Encapsula el debounce, el estado visual (menuVisual) y la sincronización de búsqueda.
- * 
+ * Hook para manejar la busqueda de productos en el POS.
+ * Encapsula el debounce, el estado visual (menuVisual) y la sincronizacion de busqueda.
+ *
  * @param {Object} options - Opciones del hook
  * @param {number} options.debounceMs - Milisegundos de debounce (default: 300)
  * @returns {{
@@ -20,63 +26,51 @@ import Logger from '../../services/Logger';
  *   activeCategoryId: string|null,
  *   handleSelectCategory: (categoryId: string|null) => void,
  *   hasOutOfStockItems: boolean,
+ *   hasExpiredItems: boolean,
  *   refreshOutOfStock: () => Promise<void>
  * }}
  */
 export function usePosSearch({ debounceMs = 300 } = {}) {
-    // ── Store de productos ─────────────────────────────────────────
     const menu = useProductStore((state) => state.menu);
     const categories = useProductStore((state) => state.categories);
     const activeFilters = useProductStore((state) => state.filters);
     const setFilters = useProductStore((state) => state.setFilters);
     const refreshData = useProductStore((state) => state.loadInitialProducts);
     const checkHasOutOfStockProducts = useProductStore((state) => state.checkHasOutOfStockProducts);
+    const checkHasExpiredProducts = useProductStore((state) => state.checkHasExpiredProducts);
 
-    // ── Estado local ───────────────────────────────────────────────
     const [searchTerm, setSearchTerm] = useState('');
     const debouncedSearchTerm = useDebounce(searchTerm, debounceMs);
     const [menuVisual, setMenuVisual] = useState([]);
     const [hasOutOfStockItems, setHasOutOfStockItems] = useState(false);
+    const [hasExpiredItems, setHasExpiredItems] = useState(false);
 
-    // ── Filtro de productos ────────────────────────────────────────
-    const applyActiveFilters = useCallback((items = []) =>
-        items.filter((item) => {
-            // 1. Descartar inactivos
+    const applyActiveFilters = useCallback(async (items = []) => {
+        const expiredProductIds = await resolveExpiredProductIdsForPosMenu(items, { db, STORES });
+
+        return items.filter((item) => {
             if (item?.isActive === false) return false;
-
-            // 2. Descartar ingredientes
             if (item?.productType === 'ingredient') return false;
 
             const matchesCategory =
                 (activeFilters.categoryId === null || activeFilters.categoryId === undefined) ||
                 item.categoryId === activeFilters.categoryId;
 
-            // Si trackStock es false, el producto es venta libre aunque conserve
-            // batchManagement de registros anteriores.
-            const gestionaStock = item.trackStock !== false && (
-                item.trackStock === true || item.batchManagement?.enabled === true
-            );
+            const isOutOfStock = isOutOfStockForPosMenu(item);
+            const isExpired = expiredProductIds.has(item.id) || isExpiredForPosMenu(item);
 
-            // Determinar si es un producto compuesto (con receta)
-            const isRecipeBased = Array.isArray(item.recipe) && item.recipe.length > 0;
-
-            // Determinar si el producto está agotado. 
-            // Los productos con receta (preparados al momento) NO se consideran agotados
-            // por su stock directo, ya que dependen de los ingredientes.
-            const isOutOfStock = gestionaStock && !isRecipeBased && getAvailableStock(item) <= 0;
-
-            // Lógica excluyente:
-            // - Si outOfStockOnly=true: mostrar solo agotados
-            // - Si outOfStockOnly=false: mostrar todo EXCEPTO agotados
-            // - Los productos sin gestión de stock (trackStock=false) NUNCA se consideran agotados
             if (activeFilters.outOfStockOnly) {
                 return matchesCategory && isOutOfStock;
-            } else {
-                return matchesCategory && !isOutOfStock;
             }
-        }), [activeFilters.categoryId, activeFilters.outOfStockOnly]);
 
-    // ── Sincronización del menú visual ─────────────────────────────
+            if (activeFilters.expiredOnly) {
+                return matchesCategory && !isOutOfStock && isExpired;
+            }
+
+            return matchesCategory && !isOutOfStock && !isExpired;
+        });
+    }, [activeFilters.categoryId, activeFilters.outOfStockOnly, activeFilters.expiredOnly]);
+
     useEffect(() => {
         let isActive = true;
 
@@ -84,16 +78,18 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
             const term = debouncedSearchTerm.trim();
 
             if (!term) {
+                const filteredMenu = await applyActiveFilters(menu);
                 if (isActive) {
-                    setMenuVisual(applyActiveFilters(menu));
+                    setMenuVisual(filteredMenu);
                 }
                 return;
             }
 
             try {
                 const results = await searchProductsInDB(term);
+                const filteredResults = await applyActiveFilters(results);
                 if (isActive) {
-                    setMenuVisual(applyActiveFilters(results));
+                    setMenuVisual(filteredResults);
                 }
             } catch (error) {
                 Logger.error('Error buscando en POS:', error);
@@ -114,32 +110,37 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         applyActiveFilters
     ]);
 
-    // ── Carga inicial de productos agotados ────────────────────────
     useEffect(() => {
         const initialize = async () => {
-            const hasAgotados = await checkHasOutOfStockProducts();
+            const [hasAgotados, hasCaducados] = await Promise.all([
+                checkHasOutOfStockProducts(),
+                checkHasExpiredProducts()
+            ]);
             setHasOutOfStockItems(hasAgotados);
+            setHasExpiredItems(hasCaducados);
         };
         initialize();
-    }, [checkHasOutOfStockProducts]);
+    }, [checkHasOutOfStockProducts, checkHasExpiredProducts]);
 
-    // ── Handlers ───────────────────────────────────────────────────
     const handleSelectCategory = useCallback((categoryId) => {
         setFilters({ categoryId });
     }, [setFilters]);
 
-    // Derivamos el categoryId activo para que ProductMenu pueda marcar
-    // visualmente la categoría seleccionada en el sidebar.
     const activeCategoryId = activeFilters.outOfStockOnly
-        ? 'CAT_DYNAMIC_AGOTADOS'
-        : activeFilters.categoryId;
+        ? CAT_DYNAMIC_OUT_OF_STOCK
+        : activeFilters.expiredOnly
+            ? CAT_DYNAMIC_EXPIRED
+            : activeFilters.categoryId;
 
-    // ── Refresh de agotados (para llamar después de una venta) ─────
     const refreshOutOfStock = useCallback(async () => {
         await refreshData();
-        const hasAgotados = await checkHasOutOfStockProducts();
+        const [hasAgotados, hasCaducados] = await Promise.all([
+            checkHasOutOfStockProducts(),
+            checkHasExpiredProducts()
+        ]);
         setHasOutOfStockItems(hasAgotados);
-    }, [refreshData, checkHasOutOfStockProducts]);
+        setHasExpiredItems(hasCaducados);
+    }, [refreshData, checkHasOutOfStockProducts, checkHasExpiredProducts]);
 
     return {
         searchTerm,
@@ -149,8 +150,8 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         activeCategoryId,
         handleSelectCategory,
         hasOutOfStockItems,
+        hasExpiredItems,
         refreshOutOfStock,
-        // Exponemos refreshData para que el padre pueda recargar todo si es necesario
         refreshData
     };
 }

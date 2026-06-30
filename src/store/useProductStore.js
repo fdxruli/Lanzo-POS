@@ -1,6 +1,7 @@
 // src/store/useProductStore.js
 import { create } from 'zustand';
 import {
+    db,
     loadDataPaginated,
     STORES,
     softDeleteWithCascadeSafe
@@ -8,6 +9,12 @@ import {
 import Logger from '../services/Logger';
 import { categoriesRepository } from '../services/db/general';
 import { showConfirmModal, showMessageModal } from '../services/utils';
+import {
+    CAT_DYNAMIC_EXPIRED,
+    CAT_DYNAMIC_OUT_OF_STOCK,
+    checkHasExpiredProductsForPosMenu,
+    isDynamicPosCategory
+} from '../services/products/productMenuEligibility';
 
 // Variables privadas del módulo para gestionar listeners
 let broadcastChannel = null;
@@ -236,6 +243,7 @@ export const useProductStore = create((set, get) => ({
     filters: {
         categoryId: null,
         outOfStockOnly: false,
+        expiredOnly: false,
         status: 'active',
     },
 
@@ -288,7 +296,7 @@ export const useProductStore = create((set, get) => ({
 
                 const hasDeletedSelectedCategory =
                     filters.categoryId &&
-                    filters.categoryId !== 'CAT_DYNAMIC_AGOTADOS' &&
+                    !isDynamicPosCategory(filters.categoryId) &&
                     !categories.some((category) => category.id === filters.categoryId);
 
                 if (hasDeletedSelectedCategory) {
@@ -297,6 +305,7 @@ export const useProductStore = create((set, get) => ({
                             ...filters,
                             categoryId: null,
                             outOfStockOnly: false,
+                            expiredOnly: false,
                         },
                         cursorStack: [null],
                         currentPageIndex: 0,
@@ -333,22 +342,32 @@ export const useProductStore = create((set, get) => ({
         const currentFilters = get().filters;
         let resolvedFilters = { ...currentFilters, ...safeFilters };
 
-        if (safeFilters.categoryId === 'CAT_DYNAMIC_AGOTADOS') {
+        if (safeFilters.categoryId === CAT_DYNAMIC_OUT_OF_STOCK) {
             resolvedFilters = {
                 ...resolvedFilters,
                 categoryId: null,
                 outOfStockOnly: true,
+                expiredOnly: false,
+            };
+        } else if (safeFilters.categoryId === CAT_DYNAMIC_EXPIRED) {
+            resolvedFilters = {
+                ...resolvedFilters,
+                categoryId: null,
+                outOfStockOnly: false,
+                expiredOnly: true,
             };
         } else if ('categoryId' in safeFilters) {
             resolvedFilters = {
                 ...resolvedFilters,
                 outOfStockOnly: false,
+                expiredOnly: false,
             };
         }
 
         const filtersChanged =
             resolvedFilters.categoryId !== currentFilters.categoryId ||
             resolvedFilters.outOfStockOnly !== currentFilters.outOfStockOnly ||
+            resolvedFilters.expiredOnly !== currentFilters.expiredOnly ||
             resolvedFilters.status !== currentFilters.status;
 
         if (!filtersChanged) return;
@@ -388,6 +407,7 @@ export const useProductStore = create((set, get) => ({
                 cursor: targetCursor,
                 categoryId: state.filters.categoryId,
                 outOfStockOnly: state.filters.outOfStockOnly,
+                expiredOnly: state.filters.expiredOnly,
                 status: state.filters.status,
                 timeIndex: 'createdAt',
             });
@@ -445,6 +465,21 @@ export const useProductStore = create((set, get) => ({
             return data.length > 0;
         } catch (error) {
             Logger.error('Error chequeando productos agotados:', error);
+            return false;
+        }
+    },
+
+    /**
+     * Comprueba si existen productos caducados/no vendibles por fecha.
+     */
+    checkHasExpiredProducts: async () => {
+        try {
+            return await checkHasExpiredProductsForPosMenu({
+                db,
+                STORES
+            });
+        } catch (error) {
+            Logger.error('Error chequeando productos caducados:', error);
             return false;
         }
     },

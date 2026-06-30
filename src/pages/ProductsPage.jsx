@@ -58,9 +58,9 @@ export default function ProductsPage() {
     });
 
     useEffect(() => {
-        setFilters({ categoryId: null, outOfStockOnly: false });
+        setFilters({ categoryId: null, outOfStockOnly: false, expiredOnly: false });
         refreshData();
-    }, []);
+    }, [refreshData, setFilters]);
 
     useEffect(() => {
         const currentTabParam = searchParams.get('tab');
