@@ -198,6 +198,26 @@
   margin-top: 2px;
 }
 
+.expiration-history-limit-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 var(--spacing-md) var(--spacing-md);
+  padding: 10px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--light-background);
+  color: var(--text-light);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.expiration-history-limit-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--secondary-color);
+}
+
 .expiration-history-empty {
   border-top: 1px solid var(--border-color);
   color: var(--success-color);
