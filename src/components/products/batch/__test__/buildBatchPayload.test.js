@@ -140,4 +140,36 @@ describe('buildBatchPayload', () => {
     expect(payload.expiryDate).toBe('2026-03-08T00:00:00.000Z');
     expect(payload.alertTargetDate).toBe('2026-03-08T00:00:00.000Z');
   });
+
+  it('calcula caducidad automatica de SHELF_LIFE con unidades en espanol', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-24T00:00:00.000Z'));
+
+    const payload = buildBatchPayload({
+      batchToEdit: null,
+      product: {
+        id: 'prod-shelf-months',
+        expirationMode: 'SHELF_LIFE',
+        shelfLifeValue: 7,
+        shelfLifeUnit: 'meses'
+      },
+      values: {
+        notes: '',
+        expiryDate: '',
+        attribute1: '',
+        attribute2: '',
+        location: ''
+      },
+      parsed: {
+        nStock: 2,
+        nCost: 10,
+        nPrice: 15
+      },
+      features: { hasVariants: false },
+      finalSku: null
+    });
+
+    expect(payload.expiryDate).toBe('2027-01-24T00:00:00.000Z');
+    expect(payload.alertTargetDate).toBe('2027-01-24T00:00:00.000Z');
+  });
 });

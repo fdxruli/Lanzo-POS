@@ -1,4 +1,5 @@
 import { generateID } from '../../../../services/utils';
+import { calculateShelfLifeTargetDate } from '../../../../utils/expirationPolicy';
 
 /**
  * @param {Object} params
@@ -25,18 +26,10 @@ export function buildBatchPayload({
 
   if (product?.expirationMode === 'SHELF_LIFE') {
     if (!values.expiryDate) {
-      const now = new Date();
-      const shelfValue = Number(product.shelfLifeValue) || 0;
-      const unit = (product.shelfLifeUnit || 'days').toLowerCase();
-      
-      if (unit === 'hours') {
-        now.setHours(now.getHours() + shelfValue);
-      } else if (unit === 'months') {
-        now.setMonth(now.getMonth() + shelfValue);
-      } else { // default to days
-        now.setDate(now.getDate() + shelfValue);
-      }
-      finalExpiryDate = now.toISOString();
+      finalExpiryDate = calculateShelfLifeTargetDate({
+        shelfLifeValue: product.shelfLifeValue,
+        shelfLifeUnit: product.shelfLifeUnit
+      });
     }
   }
 
