@@ -1,7 +1,7 @@
-import React from 'react';
 import { Camera, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import ScannerModal from '../../scanner/ScannerModal';
 import CategorySelect from './CategorySelect';
+import ProductImagePicker from '../ProductImagePicker';
 
 const getMarginTone = (marginVal) => {
     const m = parseFloat(marginVal) || 0;
@@ -19,7 +19,7 @@ export default function CommonProductFields({
         name, setName,
         barcode, setBarcode,
         description, setDescription,
-        imagePreview, isImageProcessing,
+        imagePreview, imageData, isImageProcessing,
         handleImageChange,
         categoryId, setCategoryId,
         cost, price, margin,
@@ -213,10 +213,12 @@ export default function CommonProductFields({
                     </div>
                     <div className="form-group">
                         <label className="form-label">Imagen</label>
-                        <div className="image-upload-container">
-                            <img className="image-preview" src={imagePreview} alt="Vista previa del producto" style={{ opacity: isImageProcessing ? 0.5 : 1 }} />
-                            <input className="file-input" type="file" accept="image/*" onChange={handleImageChange} disabled={isImageProcessing} />
-                        </div>
+                        <ProductImagePicker
+                            imagePreview={imagePreview}
+                            hasImage={Boolean(imageData)}
+                            isProcessing={isImageProcessing}
+                            onImageChange={handleImageChange}
+                        />
                     </div>
                 </section>
             )}

@@ -1,4 +1,8 @@
-import { useRef } from 'react';
+import { useState } from 'react';
+import ProductImagePicker from '../ProductImagePicker';
+import { compressImage, showMessageModal } from '../../../services/utils';
+
+const defaultPlaceholder = 'https://placehold.co/100x100/CCCCCC/000000?text=Elegir';
 
 const getMarginColor = (marginVal) => {
     const m = parseFloat(marginVal) || 0;
@@ -31,24 +35,34 @@ export default function Step3PrecioDetalles({
         handleMarginChange
     } = wizard;
 
-    const fileInputRef = useRef(null);
+    const [isImageProcessing, setIsImageProcessing] = useState(false);
 
     // Handler para imagen
     const handleImageChange = async (e) => {
-        const file = e.target.files[0];
+        const input = e.currentTarget;
+        const file = input.files[0];
         if (file) {
+            setIsImageProcessing(true);
             try {
-                // Compresión básica de imagen
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    setImageData(event.target.result);
-                    setImagePreview(event.target.result);
-                };
-                reader.readAsDataURL(file);
+                const compressedFile = await compressImage(file);
+                if (imagePreview && imagePreview.startsWith('blob:')) URL.revokeObjectURL(imagePreview);
+                const newUrl = URL.createObjectURL(compressedFile);
+                setImageData(compressedFile);
+                setImagePreview(newUrl);
             } catch (error) {
                 console.error('Error al procesar imagen:', error);
+                showMessageModal('Error al procesar imagen', null, { type: 'error' });
+            } finally {
+                setIsImageProcessing(false);
+                input.value = '';
             }
         }
+    };
+
+    const handleRemoveImage = () => {
+        if (imagePreview && imagePreview.startsWith('blob:')) URL.revokeObjectURL(imagePreview);
+        setImageData(null);
+        setImagePreview(defaultPlaceholder);
     };
 
     const marginColor = getMarginColor(margin);
@@ -289,76 +303,17 @@ export default function Step3PrecioDetalles({
                 {/* Imagen */}
                 <div className="form-group">
                     <label className="form-label" style={{ fontSize: '0.9rem' }}>Imagen del Producto</label>
-                    <div style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
-                        <div
-                            onClick={() => fileInputRef.current?.click()}
-                            style={{
-                                width: '100px',
-                                height: '100px',
-                                borderRadius: '8px',
-                                border: '2px dashed #cbd5e1',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: 'pointer',
-                                overflow: 'hidden',
-                                backgroundColor: 'var(--card-background-color)',
-                                transition: 'border-color 0.2s'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-color)'}
-                            onMouseLeave={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
-                        >
-                            {imageData ? (
-                                <img
-                                    src={imagePreview}
-                                    alt="Producto"
-                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                />
-                            ) : (
-                                <div style={{ textAlign: 'center', color: 'var(--text-light)' }}>
-                                    <span style={{ fontSize: '1.5rem' }}>📷</span>
-                                    <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>Agregar</div>
-                                </div>
-                            )}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                onChange={handleImageChange}
-                                style={{ display: 'none' }}
-                            />
-                            <button
-                                type="button"
-                                className="btn btn-secondary"
-                                onClick={() => fileInputRef.current?.click()}
-                                style={{ fontSize: '0.9rem', padding: '8px 16px' }}
-                            >
-                                {imageData ? 'Cambiar imagen' : 'Subir imagen'}
-                            </button>
-                            {imageData && (
-                                <button
-                                    type="button"
-                                    className="btn btn-cancel"
-                                    onClick={() => {
-                                        setImageData(null);
-                                        setImagePreview('https://placehold.co/100x100/CCCCCC/000000?text=Elegir');
-                                    }}
-                                    style={{ 
-                                        fontSize: '0.9rem', 
-                                        padding: '8px 16px',
-                                        marginLeft: '10px'
-                                    }}
-                                >
-                                    Quitar
-                                </button>
-                            )}
-                            <p style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: '8px' }}>
-                                💡 Una imagen ayuda a identificar el producto más rápido en el punto de venta
-                            </p>
-                        </div>
-                    </div>
+                    <ProductImagePicker
+                        imagePreview={imagePreview}
+                        hasImage={Boolean(imageData)}
+                        isProcessing={isImageProcessing}
+                        onImageChange={handleImageChange}
+                        onRemoveImage={handleRemoveImage}
+                        compact
+                    />
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: '8px' }}>
+                        Una imagen ayuda a identificar el producto más rápido en el punto de venta
+                    </p>
                 </div>
             </div>
 
