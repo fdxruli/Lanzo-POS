@@ -16,6 +16,11 @@ import {
   getRecommendedFefoBatch,
   sortBatchesByFefo
 } from '../../services/products/fefoUtils';
+import {
+  isStrictExpiryBatchManagedProduct,
+  STRICT_EXPIRY_NO_CURRENT_BATCH_EMPTY_MESSAGE,
+  STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE
+} from '../../services/products/strictExpirySaleGuards';
 
 // Iconos SVG
 const SearchIcon = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>;
@@ -173,7 +178,10 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
 
   if (!show || !product) return null;
 
-  const hasVariants = Object.keys(groupedByColor).length > 0;
+  const groupedVariants = Object.values(groupedByColor).flat();
+  const hasVariants = groupedVariants.length > 0;
+  const isStrictExpiryProduct = isStrictExpiryBatchManagedProduct(product);
+  const hasCurrentStrictBatch = !isStrictExpiryProduct || groupedVariants.some((variant) => !variant.fefo?.isBlocked);
 
   return (
     <div className="modal-backdrop">
@@ -213,6 +221,11 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
             <div className="empty-state">
               <p>No hay variantes disponibles con stock.</p>
               {searchTerm && <button className="btn-link" onClick={() => setSearchTerm('')}>Limpiar búsqueda</button>}
+            </div>
+          ) : !hasCurrentStrictBatch ? (
+            <div className="empty-state empty-state--strict-expiry">
+              <p>{STRICT_EXPIRY_NO_CURRENT_BATCH_EMPTY_MESSAGE}</p>
+              <small>{STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE}</small>
             </div>
           ) : (
             <div className="color-groups-container">
