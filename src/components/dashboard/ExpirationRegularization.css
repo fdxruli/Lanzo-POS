@@ -1,0 +1,75 @@
+/* FASE CAD.6.1 — Acciones visuales de regularización en Caducidad */
+
+.regularization-chip {
+  background: var(--ui-bg-warning-soft);
+  color: var(--ui-text-warning);
+  font-family: inherit;
+}
+
+.regularization-warning {
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+}
+
+.regularization-warning .card-value {
+  max-width: 60%;
+  line-height: 1.35;
+}
+
+.btn-create-batch {
+  background: rgba(123, 97, 255, 0.1);
+  color: var(--secondary-color);
+}
+
+.btn-create-batch:hover:not(:disabled) {
+  border-color: var(--secondary-color);
+  background: var(--secondary-color);
+  color: var(--ui-text-on-primary);
+}
+
+.btn-adjust-stock {
+  background: var(--ui-bg-danger-soft);
+  color: var(--ui-text-danger);
+}
+
+.btn-adjust-stock:hover:not(:disabled) {
+  border-color: var(--ui-color-danger);
+  background: var(--ui-color-danger);
+  color: var(--ui-text-on-primary);
+}
+
+.mini-modal-regularization {
+  max-width: 420px;
+}
+
+.quantity-input-group {
+  margin-top: var(--spacing-md);
+}
+
+.quantity-input-group input[type="number"] {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background: var(--card-background-color);
+  color: var(--text-dark);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.quantity-input-group small {
+  color: var(--text-light);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 480px) {
+  .regularization-warning {
+    flex-direction: column;
+  }
+
+  .regularization-warning .card-value {
+    max-width: 100%;
+    text-align: left;
+  }
+}
