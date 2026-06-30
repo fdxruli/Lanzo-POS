@@ -2,10 +2,19 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useInventoryMovement } from '../../hooks/useInventoryMovement';
 import './VariantSelectorModal.css';
+import './VariantSelectorFefo.css';
 import Logger from '../../services/Logger';
-import { getAvailableStock } from '../../services/db/utils';
+import { showMessageModal } from '../../services/utils';
 import { createCartLineId } from '../../utils/cartLineIdentity';
 import { getAvailableVariantBatches } from './variantUtils';
+import {
+  getAvailableBatchStock,
+  getBatchExpiryValue,
+  getFefoSelectionState,
+  getFefoWarningForSelection,
+  getRecommendedFefoBatch,
+  sortBatchesByFefo
+} from '../../services/products/fefoUtils';
 
 // Iconos SVG
 const SearchIcon = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>;
@@ -60,12 +69,20 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
     }
   }, [show, product, preloadedBatches, loadBatchesForProduct]);
 
+  const sortedBatches = useMemo(() => sortBatchesByFefo(batches), [batches]);
+
+  const recommendedBatch = useMemo(
+    () => getRecommendedFefoBatch(batches, product),
+    [batches, product]
+  );
+
   // --- LÓGICA DE AGRUPACIÓN POR COLOR ---
   const groupedByColor = useMemo(() => {
     const colorGroups = {};
 
-    batches.forEach(batch => {
+    sortedBatches.forEach(batch => {
       const attrs = batch.attributes || {};
+      const fefo = getFefoSelectionState({ batch, product, recommendedBatch });
 
       // Extracción segura de atributos
       const rawTalla = String(attrs.talla || attrs.modelo || '').trim();
@@ -75,9 +92,10 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
       color = color.charAt(0).toUpperCase() + color.slice(1);
 
       const location = batch.location || '';
+      const expiryValue = getBatchExpiryValue(batch) || '';
 
       // Filtro de búsqueda
-      const searchString = `${talla} ${color} ${batch.sku || ''} ${location}`.toLowerCase();
+      const searchString = `${talla} ${color} ${batch.sku || ''} ${location} ${expiryValue}`.toLowerCase();
       if (searchTerm && !searchString.includes(searchTerm.toLowerCase())) {
         return;
       }
@@ -91,22 +109,13 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
         displayTalla: talla,
         displayColor: color,
         displayLocation: location,
-        stockState: getStockState(getAvailableStock(batch))
-      });
-    });
-
-    // Ordenar tallas
-    Object.keys(colorGroups).forEach(c => {
-      colorGroups[c].sort((a, b) => {
-        const numA = parseFloat(a.displayTalla);
-        const numB = parseFloat(b.displayTalla);
-        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-        return a.displayTalla.localeCompare(b.displayTalla);
+        stockState: getStockState(fefo.availableStock),
+        fefo
       });
     });
 
     return colorGroups;
-  }, [batches, searchTerm]);
+  }, [product, recommendedBatch, searchTerm, sortedBatches]);
 
   function getStockState(stock) {
     if (stock <= 2) return 'critical';
@@ -114,9 +123,22 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
     return 'good';
   }
 
-  if (!show || !product) return null;
-
   const handleSelectVariant = (batch) => {
+    const warning = getFefoWarningForSelection({
+      selectedBatch: batch,
+      recommendedBatch,
+      product
+    });
+
+    if (warning?.blocking) {
+      showMessageModal(warning.message, null, { type: 'error' });
+      return;
+    }
+
+    if (warning?.message) {
+      showMessageModal(warning.message, null, { type: 'warning', duration: 3500 });
+    }
+
     const variantItem = {
       ...product,
       id: product.id,
@@ -124,15 +146,22 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
       name: `${product.name} (${batch.displayColor} ${batch.displayTalla})`,
       price: batch.price,
       cost: batch.cost,
-      stock: getAvailableStock(batch),
+      stock: getAvailableBatchStock(batch),
       trackStock: true,
       isVariant: true,
       batchId: batch.id,
       lineId: createCartLineId({ ...product, batchId: batch.id }),
-      sku: batch.sku
+      sku: batch.sku,
+      fefoSelectedBatchId: batch.id,
+      fefoRecommendedBatchId: recommendedBatch?.id || null,
+      fefoSelectionStatus: batch.fefo?.isRecommended ? 'recommended' : 'manual',
+      fefoBatchExpiryDate: getBatchExpiryValue(batch),
+      fefoBatchSku: batch.sku || null
     };
     onConfirm(variantItem);
   };
+
+  if (!show || !product) return null;
 
   const hasVariants = Object.keys(groupedByColor).length > 0;
 
@@ -172,7 +201,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
             </div>
           ) : !hasVariants ? (
             <div className="empty-state">
-              <p>⚠️ No hay variantes disponibles con stock.</p>
+              <p>No hay variantes disponibles con stock.</p>
               {searchTerm && <button className="btn-link" onClick={() => setSearchTerm('')}>Limpiar búsqueda</button>}
             </div>
           ) : (
@@ -186,35 +215,67 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
                   </div>
 
                   <div className="sizes-grid">
-                    {variants.map((variant) => (
-                      <button
-                        key={variant.id}
-                        className={`size-card stock-${variant.stockState}`}
-                        onClick={() => handleSelectVariant(variant)}
-                      >
-                        <div className="card-top">
-                          <span className="size-label">
-                            <RulerIcon /> {variant.displayTalla}
-                          </span>
-                          <span className="price-label">${variant.price.toFixed(2)}</span>
-                        </div>
+                    {variants.map((variant) => {
+                      const cardClassName = [
+                        'size-card',
+                        `stock-${variant.stockState}`,
+                        variant.fefo?.isRecommended ? 'size-card--fefo-recommended' : '',
+                        variant.fefo?.isBlocked ? 'size-card--blocked' : ''
+                      ].filter(Boolean).join(' ');
 
-                        <div className="card-details">
-                          <small className="sku-text"><TagIcon /> {variant.sku || '---'}</small>
-
-                          {/* Mostrar ubicación solo si es Abarrotes/Ferretería y tiene dato */}
-                          {showLocation && variant.displayLocation && (
-                            <small className="location-text"><MapPinIcon /> {variant.displayLocation}</small>
+                      return (
+                        <button
+                          key={variant.id}
+                          className={cardClassName}
+                          onClick={() => handleSelectVariant(variant)}
+                          disabled={variant.fefo?.isBlocked}
+                          title={variant.fefo?.isBlocked ? 'Este lote está vencido y no puede venderse' : undefined}
+                        >
+                          {(variant.fefo?.isRecommended || variant.fefo?.expiryBadge) && (
+                            <div className="fefo-badge-row">
+                              {variant.fefo?.isRecommended && (
+                                <span className="fefo-badge fefo-badge--info" title="Vender primero">
+                                  FEFO recomendado
+                                </span>
+                              )}
+                              {variant.fefo?.expiryBadge && (
+                                <span className={`fefo-badge fefo-badge--${variant.fefo.expiryBadge.tone}`}>
+                                  {variant.fefo.expiryBadge.label}
+                                </span>
+                              )}
+                            </div>
                           )}
-                        </div>
 
-                        <div className="card-bottom">
-                          <div className={`stock-pill ${variant.stockState}`}>
-                            {variant.stock} disponibles
+                          <div className="card-top">
+                            <span className="size-label">
+                              <RulerIcon /> {variant.displayTalla}
+                            </span>
+                            <span className="price-label">${variant.price.toFixed(2)}</span>
                           </div>
-                        </div>
-                      </button>
-                    ))}
+
+                          <div className="card-details">
+                            <small className="sku-text"><TagIcon /> {variant.sku || '---'}</small>
+
+                            {/* Mostrar ubicación solo si es Abarrotes/Ferretería y tiene dato */}
+                            {showLocation && variant.displayLocation && (
+                              <small className="location-text"><MapPinIcon /> {variant.displayLocation}</small>
+                            )}
+                          </div>
+
+                          {variant.fefo?.warning && !variant.fefo.warning.blocking && (
+                            <div className="fefo-warning-text">
+                              Hay un lote más próximo a caducar disponible
+                            </div>
+                          )}
+
+                          <div className="card-bottom">
+                            <div className={`stock-pill ${variant.stockState}`}>
+                              {variant.fefo?.availableStock ?? variant.stock} disponibles
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
