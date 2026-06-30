@@ -23,15 +23,19 @@ const IGNORE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 horas
 
 const CLOUD_WASTE_MESSAGES = Object.freeze({
   BATCH_ID_REQUIRED: 'Selecciona un lote para registrar merma.',
-  CLOUD_BATCH_NOT_AVAILABLE: 'Este lote ya no esta disponible en la nube. Actualiza el catalogo.',
-  PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE: 'Este producto aun no esta sincronizado en la nube.',
+  CLOUD_BATCH_NOT_AVAILABLE: 'Este lote ya no está disponible en la nube. Actualiza el catálogo.',
+  PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE: 'Este producto aún no está sincronizado en la nube.',
   NO_AVAILABLE_BATCH_STOCK: 'Este lote no tiene stock disponible para mandar a merma.',
   WASTE_QUANTITY_EXCEEDS_AVAILABLE: 'La cantidad supera el stock disponible del lote.',
-  INVALID_WASTE_QUANTITY: 'Ingresa una cantidad valida para registrar merma.',
-  IDEMPOTENCY_PROCESSING: 'La merma ya esta en proceso. Espera unos segundos.',
+  INVALID_WASTE_QUANTITY: 'Ingresa una cantidad válida para registrar merma.',
+  IDEMPOTENCY_PROCESSING: 'La merma ya está en proceso. Espera unos segundos.',
   PERMISSION_DENIED: 'No tienes permiso para registrar merma. Pide acceso a productos/inventario.',
-  POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar este dispositivo. Vuelve a iniciar sesion o actualiza la licencia.',
-  SUPABASE_NOT_CONFIGURED: 'La nube no esta disponible en este momento.'
+  NO_PERMISSION: 'No tienes permiso para registrar merma. Pide acceso a productos/inventario.',
+  POS_PERMISSION_DENIED: 'No tienes permiso para registrar merma. Pide acceso a productos/inventario.',
+  CLOUD_REQUEST_BACKOFF_ACTIVE: 'La nube está ocupada o recuperándose. Intenta de nuevo en unos segundos.',
+  RATE_LIMITED: 'Hay demasiadas solicitudes en este momento. Intenta de nuevo en unos segundos.',
+  POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar este dispositivo. Vuelve a iniciar sesión o actualiza la licencia.',
+  SUPABASE_NOT_CONFIGURED: 'La nube no está disponible en este momento.'
 });
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -49,19 +53,31 @@ const getCurrentStock = (item = {}) => toSafeNumber(
 const getErrorCode = (errorOrResponse = {}) => (
   errorOrResponse?.code ||
   errorOrResponse?.error_code ||
+  errorOrResponse?.errorCode ||
   errorOrResponse?.details?.code ||
   errorOrResponse?.response?.code ||
+  errorOrResponse?.response?.error_code ||
+  errorOrResponse?.response?.errorCode ||
+  errorOrResponse?.payload?.code ||
+  errorOrResponse?.payload?.error_code ||
+  errorOrResponse?.payload?.errorCode ||
+  errorOrResponse?.cause?.code ||
+  errorOrResponse?.cause?.error_code ||
+  errorOrResponse?.cause?.errorCode ||
   null
 );
 
 const sanitizeCloudWasteError = (errorOrResponse = {}) => {
   const code = getErrorCode(errorOrResponse);
-  if (code && CLOUD_WASTE_MESSAGES[code]) return CLOUD_WASTE_MESSAGES[code];
+  const normalizedCode = typeof code === 'string' ? code.trim().toUpperCase() : code;
+  if (normalizedCode && CLOUD_WASTE_MESSAGES[normalizedCode]) return CLOUD_WASTE_MESSAGES[normalizedCode];
 
   const rawMessage = String(
     errorOrResponse?.message ||
     errorOrResponse?.error ||
     errorOrResponse?.response?.message ||
+    errorOrResponse?.payload?.message ||
+    errorOrResponse?.cause?.message ||
     ''
   );
   const normalized = rawMessage.toLowerCase();
@@ -71,13 +87,25 @@ const sanitizeCloudWasteError = (errorOrResponse = {}) => {
   }
 
   if (
+    normalized.includes('rate limit') ||
+    normalized.includes('too many requests') ||
+    normalized.includes('demasiadas solicitudes')
+  ) {
+    return CLOUD_WASTE_MESSAGES.RATE_LIMITED;
+  }
+
+  if (normalized.includes('backoff')) {
+    return CLOUD_WASTE_MESSAGES.CLOUD_REQUEST_BACKOFF_ACTIVE;
+  }
+
+  if (
     normalized.includes('failed to fetch') ||
     normalized.includes('network') ||
     normalized.includes('timeout') ||
     normalized.includes('offline') ||
     normalized.includes('internet')
   ) {
-    return 'No hay conexion estable para registrar la merma en la nube. Intenta de nuevo cuando tengas internet.';
+    return 'No hay conexión estable para registrar la merma en la nube. Intenta de nuevo cuando tengas internet.';
   }
 
   if (normalized.includes('rpc') || normalized.includes('supabase') || normalized.includes('postgres')) {
@@ -316,14 +344,14 @@ export const useExpirationAlert = () => {
     }
 
     if (processingId === item.id) {
-      return { success: false, error: 'La merma ya esta en proceso. Espera unos segundos.' };
+      return { success: false, error: 'La merma ya está en proceso. Espera unos segundos.' };
     }
 
     const currentStock = getCurrentStock(item);
     const quantity = isPartial ? Number(partialQuantity) : null;
 
     if (isPartial && (!Number.isFinite(quantity) || quantity <= 0)) {
-      return { success: false, error: 'Ingresa una cantidad valida para registrar merma.' };
+      return { success: false, error: 'Ingresa una cantidad válida para registrar merma.' };
     }
 
     if (isPartial && quantity > currentStock) {
@@ -338,7 +366,7 @@ export const useExpirationAlert = () => {
       if (!isOnline()) {
         return {
           success: false,
-          error: 'No hay conexion para registrar la merma en la nube. No se guardo nada local para evitar inconsistencias.'
+          error: 'No hay conexión para registrar la merma en la nube. No se guardó nada local para evitar inconsistencias.'
         };
       }
 
@@ -475,28 +503,28 @@ export const useExpirationAlert = () => {
     if (isPharmacy) {
       return {
         icon: 'pill',
-        title: 'Protocolo Farmaceutico',
-        text: 'Revisa politicas de devolucion y separa antibioticos caducados (SINGREM).'
+        title: 'Protocolo Farmacéutico',
+        text: 'Revisa políticas de devolución y separa antibióticos caducados (SINGREM).'
       };
     }
     if (isFood) {
       return {
         icon: 'chef-hat',
         title: 'Estrategia "Cero Desperdicio"',
-        text: 'Prioriza estos ingredientes en "Especiales del Dia" o procesalos hoy.'
+        text: 'Prioriza estos ingredientes en "Especiales del Día" o procésalos hoy.'
       };
     }
     if (isGrocery) {
       return {
         icon: 'tag',
-        title: 'Liquidacion',
-        text: 'Arma packs de ahorro o 2x1. Mejor recuperar algo hoy que perder todo manana.'
+        title: 'Liquidación',
+        text: 'Arma packs de ahorro o 2x1. Mejor recuperar algo hoy que perder todo mañana.'
       };
     }
     return {
       icon: 'lightbulb',
       title: 'Sugerencia',
-      text: 'Etiqueta con "Ultimas Piezas". Verifica cambios con proveedor.'
+      text: 'Etiqueta con "Últimas Piezas". Verifica cambios con proveedor.'
     };
   }, [businessContext]);
 
