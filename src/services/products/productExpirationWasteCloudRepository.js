@@ -80,7 +80,7 @@ export const registerCloudExpirationWaste = async ({
   }
 
   if (Number.isNaN(normalizedQuantity)) {
-    return { success: false, code: 'INVALID_WASTE_QUANTITY', message: 'La cantidad de merma no es valida.' };
+    return { success: false, code: 'INVALID_WASTE_QUANTITY', message: 'La cantidad de merma no es válida.' };
   }
 
   return callCatalogMutationRpc('pos_register_expiration_waste', licenseKey, {
