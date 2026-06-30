@@ -3,13 +3,18 @@ import { generalRepository } from './general';
 import { productsRepository, searchProductsInDB } from './products';
 import { salesRepository } from './sales';
 import { reportingService } from './reporting';
-import { DatabaseError, DB_ERROR_CODES, getAvailableStock } from './utils';
+import { DatabaseError, DB_ERROR_CODES } from './utils';
 import { fixStockInconsistencies, rebuildDailyStats } from '../maintenance';
 import { layawayRepository } from './layaways';
 import { handleDexieError } from './utils';
 import { CUSTOMER_DEBT_SORT_INDEX, matchesCustomerSnapshot } from './customerDebtIndex';
 import { evaluator } from '../BackupRiskEvaluator';
 import { updateProduct, updateProductSafe, bulkUpdateProducts } from './productUpdates';
+import {
+    isExpiredForPosMenu,
+    isOutOfStockForPosMenu,
+    resolveExpiredProductIdsForPosMenu
+} from '../products/productMenuEligibility';
 
 // ============================================================
 // EXPORTACIÓN DE CONSTANTES Y CLASES (Compatibilidad 100%)
@@ -331,10 +336,10 @@ export const loadCustomersByDebtPaginated = async (options = {}) => {
  *   Complejidad O(k) donde k << n. Es la solución más eficiente posible
  *   sin rediseñar el esquema de IndexedDB.
  *
- * CASO D — outOfStockOnly:
- *   Full scan con .filter(). No existe un índice de stock en el esquema.
+ * CASO D — outOfStockOnly / expiredOnly:
+ *   Full scan con .filter(). No existe un índice completo de estado operacional.
  *   NOTA: Si la tienda tiene miles de productos sería candidato a añadir
- *   un índice `stock` en una futura migración de Dexie.
+ *   índices de stock/caducidad en una futura migración de Dexie.
  *
  * CASO E — outOfStockOnly + categoryId:
  *   Entra por índice `categoryId` y filtra en memoria por stock <= 0.
@@ -346,6 +351,7 @@ export const loadCustomersByDebtPaginated = async (options = {}) => {
  * @param {string}  options.searchTerm    - Texto libre (filtra name_lower y barcode).
  * @param {string|null} options.categoryId - ID de categoría. Null = todas.
  * @param {boolean} options.outOfStockOnly - Si true, solo productos sin stock.
+ * @param {boolean} options.expiredOnly    - Si true, solo productos caducados/no vendibles por fecha.
  * @param {string}  options.status        - Filtro de estado: 'active' | 'inactive' | 'all' (default 'active').
  * @param {string}  options.timeIndex     - Campo de ordenación/cursor (default 'createdAt').
  */
@@ -356,6 +362,7 @@ export const loadDataPaginated = async (storeName, options = {}) => {
         searchTerm = '',
         categoryId = null,
         outOfStockOnly = false,
+        expiredOnly = false,
         status = 'active',
         timeIndex = 'createdAt'
     } = options;
@@ -378,6 +385,12 @@ export const loadDataPaginated = async (storeName, options = {}) => {
         const normalizedTerm = searchTerm.toLowerCase().trim();
         const hasCategoryFilter = categoryId !== null && categoryId !== undefined;
         const hasSearchFilter = normalizedTerm.length > 0;
+        const expiredProductIds = expiredOnly
+            ? await resolveExpiredProductIdsForPosMenu(
+                await db.table(STORES.MENU).filter(matchesStatus).toArray(),
+                { db, STORES }
+            )
+            : new Set();
 
         let collection;
 
@@ -385,7 +398,7 @@ export const loadDataPaginated = async (storeName, options = {}) => {
         // PUNTO DE ENTRADA: Elegir la ruta más eficiente según filtros
         // ─────────────────────────────────────────────────────────────
 
-        if (hasCategoryFilter && !hasSearchFilter && !outOfStockOnly) {
+        if (hasCategoryFilter && !hasSearchFilter && !outOfStockOnly && !expiredOnly) {
             // CASO A: Solo categoryId — entrada por índice nativo.
             // El cursor de tiempo se aplica sobre los resultados del índice.
             const categoryCollection = db.table(STORES.MENU)
@@ -405,7 +418,7 @@ export const loadDataPaginated = async (storeName, options = {}) => {
                     matchesStatus(item)
                 );
 
-        } else if (hasCategoryFilter && (hasSearchFilter || outOfStockOnly)) {
+        } else if (hasCategoryFilter && (hasSearchFilter || outOfStockOnly || expiredOnly)) {
             // CASO C / CASO E: categoryId + texto o stock.
             // Entramos por el índice de categoría y añadimos filtros en memoria
             // sobre el subconjunto reducido.
@@ -418,11 +431,10 @@ export const loadDataPaginated = async (storeName, options = {}) => {
                 if (cursor && item[timeIndex] >= cursor) return false;
 
                 if (outOfStockOnly) {
-                    const gestionaStock = item.trackStock !== false && (
-                        item.trackStock === true || item.batchManagement?.enabled === true
-                    );
-                    // Solo considerar agotados los productos que gestionan stock Y tienen stock <= 0
-                    if (!gestionaStock || getAvailableStock(item) > 0) return false;
+                    if (!isOutOfStockForPosMenu(item)) return false;
+                } else if (expiredOnly) {
+                    if (isOutOfStockForPosMenu(item)) return false;
+                    if (!expiredProductIds.has(item.id) && !isExpiredForPosMenu(item)) return false;
                 }
 
                 if (hasSearchFilter) {
@@ -446,8 +458,8 @@ export const loadDataPaginated = async (storeName, options = {}) => {
                 return true;
             });
 
-        } else if (outOfStockOnly && !hasCategoryFilter) {
-            // CASO D: Solo agotados — full scan necesario.
+        } else if ((outOfStockOnly || expiredOnly) && !hasCategoryFilter) {
+            // CASO D: Solo agotados/caducados — full scan necesario.
             const baseCollection = cursor
                 ? db.table(STORES.MENU).where(timeIndex).below(cursor).reverse()
                 : db.table(STORES.MENU).orderBy(timeIndex).reverse();
@@ -455,11 +467,14 @@ export const loadDataPaginated = async (storeName, options = {}) => {
             collection = baseCollection.filter(item => {
                 if (!matchesStatus(item)) return false;
 
-                const gestionaStock = item.trackStock !== false && (
-                    item.trackStock === true || item.batchManagement?.enabled === true
-                );
-                // Solo considerar agotados los productos que gestionan stock Y tienen stock <= 0
-                if (!gestionaStock || getAvailableStock(item) > 0) return false;
+                if (outOfStockOnly) {
+                    if (!isOutOfStockForPosMenu(item)) return false;
+                }
+
+                if (expiredOnly) {
+                    if (isOutOfStockForPosMenu(item)) return false;
+                    if (!expiredProductIds.has(item.id) && !isExpiredForPosMenu(item)) return false;
+                }
 
                 if (hasSearchFilter) {
                     // 1. Fallback robusto para retrocompatibilidad con productos antiguos
