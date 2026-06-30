@@ -49,7 +49,13 @@ begin
       m.batch_id,
       coalesce(b.sku, nullif(m.metadata->>'batch_sku', ''), nullif(m.metadata->>'batchSku', ''), 'Lote') as batch_sku,
       coalesce(m.quantity, 0) as quantity,
-      'u'::text as unit,
+      coalesce(
+        nullif(p.bulk_data #>> '{purchase,unit}', ''),
+        nullif(p.bulk_data #>> '{sale,unit}', ''),
+        nullif(p.bulk_data #>> '{stock,unit}', ''),
+        nullif(p.bulk_data->>'unit', ''),
+        'u'
+      ) as unit,
       coalesce(m.unit_cost, 0) as cost_at_time,
       coalesce(
         case
