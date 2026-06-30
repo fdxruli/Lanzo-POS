@@ -291,15 +291,15 @@ const ProductCard = memo(function ProductCard({
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleClick = useCallback(() => {
-    if (!isOutOfStock) onCardClick?.(product);
-  }, [isOutOfStock, onCardClick, product]);
+    if (!isOutOfStock && !strictExpiryBlocked) onCardClick?.(product);
+  }, [isOutOfStock, strictExpiryBlocked, onCardClick, product]);
 
   const handleKeyDown = useCallback((e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !isOutOfStock) {
+    if ((e.key === 'Enter' || e.key === ' ') && !isOutOfStock && !strictExpiryBlocked) {
       e.preventDefault();
       onCardClick?.(product);
     }
-  }, [isOutOfStock, onCardClick, product]);
+  }, [isOutOfStock, strictExpiryBlocked, onCardClick, product]);
 
   // ── Clases dinámicas ───────────────────────────────────────────────────────────────────
   const cardClasses = useMemo(() => [
@@ -320,7 +320,7 @@ const ProductCard = memo(function ProductCard({
       className={cardClasses}
       onClick={handleClick}
       role="button"
-      tabIndex={isOutOfStock ? -1 : 0}
+      tabIndex={isOutOfStock || strictExpiryBlocked ? -1 : 0}
       aria-disabled={isOutOfStock || strictExpiryBlocked}
       aria-label={`${product?.name || ''} precio ${product?.price || 0}`}
       onKeyDown={handleKeyDown}

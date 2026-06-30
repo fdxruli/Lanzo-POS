@@ -114,6 +114,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         onSearchChange={ui.setSearchTerm}
                         onOpenScanner={() => ui.openModal('scanner')}
                         showOutofStockCategory={data.hasOutOfStockItems}
+                        showExpiredCategory={data.hasExpiredItems}
                     />
                     <OrderSummary
                         onOpenPayment={actions.handleInitiateCheckout}
@@ -198,6 +199,7 @@ PosPageContent.propTypes = {
         activeCategoryId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
         searchTerm: PropTypes.string.isRequired,
         hasOutOfStockItems: PropTypes.bool.isRequired,
+        hasExpiredItems: PropTypes.bool.isRequired,
         activeTablesCount: PropTypes.number.isRequired,
         kitchenRejectedOpenCount: PropTypes.number.isRequired,
         totalItemsCount: PropTypes.number.isRequired,

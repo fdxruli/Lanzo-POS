@@ -11,6 +11,10 @@ import {
   getStrictExpirySaleGuard,
   STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE
 } from '../../services/products/strictExpirySaleGuards';
+import {
+  CAT_DYNAMIC_EXPIRED,
+  CAT_DYNAMIC_OUT_OF_STOCK
+} from '../../services/products/productMenuEligibility';
 import ProductCard from './ProductCard';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -110,7 +114,8 @@ export default function ProductMenu({
   searchTerm,
   onSearchChange,
   onOpenScanner,
-  showOutofStockCategory
+  showOutofStockCategory,
+  showExpiredCategory
 }) {
   const addSmartItem = useActiveOrders((state) => state.addSmartItem);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -497,10 +502,19 @@ export default function ProductMenu({
           {showOutofStockCategory && (
             <button
               type="button"
-              className={`category-filter-btn category-filter-btn--danger ${selectedCategoryId === 'CAT_DYNAMIC_AGOTADOS' ? 'active' : ''}`}
-              onClick={() => handleCategoryClick('CAT_DYNAMIC_AGOTADOS')}
+              className={`category-filter-btn category-filter-btn--danger ${selectedCategoryId === CAT_DYNAMIC_OUT_OF_STOCK ? 'active' : ''}`}
+              onClick={() => handleCategoryClick(CAT_DYNAMIC_OUT_OF_STOCK)}
             >
               Agotados
+            </button>
+          )}
+          {showExpiredCategory && (
+            <button
+              type="button"
+              className={`category-filter-btn category-filter-btn--danger ${selectedCategoryId === CAT_DYNAMIC_EXPIRED ? 'active' : ''}`}
+              onClick={() => handleCategoryClick(CAT_DYNAMIC_EXPIRED)}
+            >
+              Caducados
             </button>
           )}
         </div>

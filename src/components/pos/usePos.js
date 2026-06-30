@@ -99,6 +99,7 @@ export function usePos() {
             activeCategoryId: search.activeCategoryId,
             searchTerm: search.searchTerm,
             hasOutOfStockItems: search.hasOutOfStockItems,
+            hasExpiredItems: search.hasExpiredItems,
             activeTablesCount: tablesCount.activeTablesCount,
             kitchenRejectedOpenCount: tablesCount.kitchenRejectedOpenCount,
             toastMsg: pos.toastMsg,
