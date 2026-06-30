@@ -5,6 +5,7 @@ import { broadcastDBChange } from '../../store/useProductStore';
 import { showMessageModal } from '../../services/utils';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
+import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
 import {
     isCloudSalesCashierEnabled,
     isCloudSalesCreditEnabled
@@ -150,6 +151,25 @@ export function usePosCheckout({
             return;
         }
 
+        const fefoValidation = await validateFefoSelectionBeforeCheckout(
+            lockedItemsToProcess,
+            posSearch.menuVisual
+        );
+
+        if (fefoValidation.blocked) {
+            await lockedState.unlockOrder(pos.activeOrderId);
+            showMessageModal(
+                fefoValidation.message || 'Hay un lote vencido que no puede venderse.',
+                null,
+                { type: 'error' }
+            );
+            return;
+        }
+
+        if (fefoValidation.warnings?.length > 0) {
+            console.info('[CAD.5 FEFO] Advertencias preventivas de selección:', fefoValidation.warnings);
+        }
+
         checkoutSnapshotRef.current = {
             orderId: pos.activeOrderId,
             order: deepClone(lockedOrder.items),
@@ -175,6 +195,7 @@ export function usePosCheckout({
     }, [
         pos.order,
         pos.activeOrderId,
+        posSearch.menuVisual,
         features?.hasLabFields,
         mobileCart,
         modal,
