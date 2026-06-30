@@ -14,6 +14,7 @@ import LazyImage from '../common/LazyImage';
 import { getProductAlerts } from '../../services/utils';
 import { getAvailableStock } from '../../services/db/utils';
 import { STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL } from '../../services/products/strictExpirySaleGuards';
+import './ProductCardStrictExpiry.css';
 
 /**
  * ProductCard - Componente de presentación puro para items del menú POS.
