@@ -177,8 +177,44 @@ export const getCloudExpirationWasteHistory = async ({
   });
 };
 
+export const getCloudExpirationFefoRecommendations = async ({
+  licenseKey,
+  daysAhead = 30,
+  limit = 100,
+  force = false
+}) => {
+  const rpcName = 'pos_get_expiration_fefo_recommendations';
+  const baseArgs = await buildBaseArgs(licenseKey);
+  const params = {
+    p_days_ahead: toSafeDaysAhead(daysAhead),
+    p_limit: toSafeHistoryLimit(limit)
+  };
+
+  return cloudRequestManager.request({
+    rpcName,
+    key: buildRpcRequestKey(rpcName, {
+      ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
+      params
+    }),
+    ttlMs: CLOUD_REQUEST_TTL.REPORTS,
+    cooldownMs: CLOUD_REQUEST_COOLDOWN.REPORTS,
+    force,
+    tags: [
+      CLOUD_REQUEST_TAGS.PRODUCTS,
+      CLOUD_REQUEST_TAGS.REPORTS,
+      cloudRequestTags.license(licenseKey),
+      cloudRequestTags.rpc(rpcName)
+    ],
+    fn: () => callRpc(rpcName, {
+      ...baseArgs,
+      ...params
+    })
+  });
+};
+
 export default {
   registerCloudExpirationWaste,
   getCloudExpiringBatchesReport,
-  getCloudExpirationWasteHistory
+  getCloudExpirationWasteHistory,
+  getCloudExpirationFefoRecommendations
 };
