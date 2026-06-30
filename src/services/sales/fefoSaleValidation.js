@@ -6,8 +6,13 @@ import {
   isBatchActiveForFefo,
   isBatchExpiredForSale
 } from '../products/fefoUtils';
+import {
+  isStrictExpiryBatchManagedProduct,
+  STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE
+} from '../products/strictExpirySaleGuards';
 
 const getRealProductId = (item) => item?.parentId || item?.id;
+const STRICT_EXPIRED_BATCH_BLOCKED = 'STRICT_EXPIRED_BATCH_BLOCKED';
 
 const loadMissingProducts = async ({ productIds, productMap, db, STORES }) => {
   const missingIds = productIds.filter((productId) => productId && !productMap.has(productId));
@@ -38,7 +43,9 @@ const buildBlockedMessage = (productName) => (
 );
 
 const buildNoCurrentBatchMessage = (productName) => (
-  `No hay lote vigente disponible para ${productName || 'este producto'}. Revisa Caducidad/Merma antes de cobrar.`
+  productName
+    ? `${productName}: ${STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE}`
+    : STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE
 );
 
 export const validateFefoSelectionBeforeCheckout = async (
@@ -92,7 +99,7 @@ export const validateFefoSelectionBeforeCheckout = async (
     if (selectedBatch && isBatchExpiredForSale(selectedBatch, product, now)) {
       return {
         blocked: true,
-        code: 'FEFO_EXPIRED_BATCH_SELECTED',
+        code: STRICT_EXPIRED_BATCH_BLOCKED,
         message: buildBlockedMessage(productName),
         warnings
       };
@@ -100,21 +107,23 @@ export const validateFefoSelectionBeforeCheckout = async (
 
     const recommendedBatch = getRecommendedFefoBatch(productBatches, product, { now });
 
-    if (!selectedBatch && !recommendedBatch) {
-      const hasExpiredStrictStock = productBatches.some((batch) => (
+    if (!selectedBatch && !recommendedBatch && isStrictExpiryBatchManagedProduct(product)) {
+      const hasAvailableBatchStock = productBatches.some((batch) => (
         isBatchActiveForFefo(batch)
         && getAvailableBatchStock(batch) > 0
-        && isBatchExpiredForSale(batch, product, now)
       ));
 
-      if (hasExpiredStrictStock) {
-        return {
-          blocked: true,
-          code: 'FEFO_ONLY_EXPIRED_STRICT_BATCHES',
-          message: buildNoCurrentBatchMessage(productName),
-          warnings
-        };
-      }
+      return {
+        blocked: true,
+        code: STRICT_EXPIRED_BATCH_BLOCKED,
+        message: buildNoCurrentBatchMessage(productName),
+        warnings,
+        metadata: {
+          productId,
+          productName,
+          hasAvailableBatchStock
+        }
+      };
     }
 
     const warning = getFefoWarningForSelection({
