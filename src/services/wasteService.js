@@ -34,7 +34,7 @@ export const registerExpirationWaste = async (batch, product, notes = '') => {
       costAtTime: batchCost,
       lossAmount: totalLoss,
       reason: 'caducidad',
-      notes: `Merma automatica por caducidad. Lote: ${batch.sku || batch.id}. ${notes}`,
+      notes: `Merma automática por caducidad. Lote: ${batch.sku || batch.id}. ${notes}`,
       expiryDate: batch.expiryDate,
       timestamp: new Date().toISOString()
     };
@@ -67,7 +67,7 @@ export const registerExpirationWaste = async (batch, product, notes = '') => {
       throw new Error(result.message || 'Error al sincronizar lote con producto padre');
     }
 
-    Logger.log(`✅ Merma por caducidad registrada: ${batch.sku || batch.id}, Perdida: $${totalLoss}`);
+    Logger.log(`✅ Merma por caducidad registrada: ${batch.sku || batch.id}, Pérdida: $${totalLoss}`);
 
     return {
       success: true,
@@ -101,7 +101,7 @@ export const registerPartialExpirationWaste = async (batch, product, quantityToW
     if (quantityToWriteOff <= 0 || quantityToWriteOff > batchStock) {
       return {
         success: false,
-        error: 'Cantidad invalida para merma parcial'
+        error: 'Cantidad inválida para merma parcial'
       };
     }
 
@@ -138,7 +138,7 @@ export const registerPartialExpirationWaste = async (batch, product, quantityToW
 
     await processBatchDeductions(deductions, { validateStock: true });
 
-    Logger.log(`✅ Merma parcial registrada: ${quantityToWriteOff} de ${batch.sku || batch.id}, Perdida: $${totalLoss}`);
+    Logger.log(`✅ Merma parcial registrada: ${quantityToWriteOff} de ${batch.sku || batch.id}, Pérdida: $${totalLoss}`);
 
     return {
       success: true,
