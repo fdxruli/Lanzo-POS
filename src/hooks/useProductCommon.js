@@ -44,7 +44,8 @@ export function useProductCommon(initialData, config = {}) {
 
     // --- MANEJO DE IMÁGENES ---
     const handleImageChange = async (e) => {
-        const file = e.target.files[0];
+        const input = e.currentTarget;
+        const file = input.files[0];
         if (file) {
             setIsImageProcessing(true);
             try {
@@ -53,10 +54,11 @@ export function useProductCommon(initialData, config = {}) {
                 const newUrl = URL.createObjectURL(compressedFile);
                 setImagePreview(newUrl);
                 setImageData(compressedFile);
-            } catch (error) {
+            } catch {
                 showMessageModal("Error al procesar imagen", null, { type: 'error' });
             } finally {
                 setIsImageProcessing(false);
+                input.value = '';
             }
         }
     };
