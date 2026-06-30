@@ -22,16 +22,20 @@ export function buildBatchPayload({
   const isEditing = Boolean(batchToEdit);
   const { nStock, nCost, nPrice } = parsed;
 
-  let finalExpiryDate = values.expiryDate ? new Date(values.expiryDate).toISOString() : null;
-
-  if (product?.expirationMode === 'SHELF_LIFE') {
-    if (!values.expiryDate) {
-      finalExpiryDate = calculateShelfLifeTargetDate({
-        shelfLifeValue: product.shelfLifeValue,
-        shelfLifeUnit: product.shelfLifeUnit
-      });
-    }
-  }
+  const explicitExpiryDate = values.expiryDate
+    ? new Date(values.expiryDate).toISOString()
+    : null;
+  const shelfLifeGeneratedExpiryDate = !explicitExpiryDate && product?.expirationMode === 'SHELF_LIFE'
+    ? calculateShelfLifeTargetDate({
+      baseDate: new Date(),
+      shelfLifeValue: product.shelfLifeValue,
+      shelfLifeUnit: product.shelfLifeUnit
+    })
+    : null;
+  const finalExpiryDate = explicitExpiryDate || shelfLifeGeneratedExpiryDate;
+  const finalAlertType = finalExpiryDate
+    ? (shelfLifeGeneratedExpiryDate ? 'VIDA_UTIL_ESTIMADA' : 'CADUCIDAD_LEGAL')
+    : null;
 
   if (product?.expirationMode === 'STRICT') {
     if (!values.manufacturerBatchId || !String(values.manufacturerBatchId).trim()) {
@@ -52,7 +56,7 @@ export function buildBatchPayload({
     createdAt: isEditing ? batchToEdit.createdAt : new Date().toISOString(),
     expiryDate: finalExpiryDate,
     alertTargetDate: finalExpiryDate || null,
-    alertType: finalExpiryDate ? 'CADUCIDAD_LEGAL' : null,
+    alertType: finalAlertType,
     sku: finalSku,
     supplier: values.supplier ? String(values.supplier).trim() : null,
     manufacturerBatchId: values.manufacturerBatchId ? String(values.manufacturerBatchId).trim() : null,
