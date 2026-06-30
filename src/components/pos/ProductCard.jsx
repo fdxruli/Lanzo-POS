@@ -13,6 +13,8 @@ import {
 import LazyImage from '../common/LazyImage';
 import { getProductAlerts } from '../../services/utils';
 import { getAvailableStock } from '../../services/db/utils';
+import { STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL } from '../../services/products/strictExpirySaleGuards';
+import './ProductCardStrictExpiry.css';
 
 /**
  * ProductCard - Componente de presentación puro para items del menú POS.
@@ -146,6 +148,7 @@ function buildBadgeDescriptors(features, product, suppress, context = {}) {
  */
 function resolveFooterState({
   isOutOfStock,
+  strictExpiryBlocked,
   isNearingExpiry,
   isLowStock,
   isTracking,
@@ -163,7 +166,17 @@ function resolveFooterState({
     };
   }
 
-  // 2. CADUCIDAD PRÓXIMA — prioridad crítica sobre stock bajo
+  // 2. STRICT SIN LOTE VIGENTE — hay stock físico, pero no vendible.
+  if (strictExpiryBlocked) {
+    return {
+      type: 'strict-expiry-blocked',
+      Icon: Ban,
+      label: STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL,
+      iconAriaLabel: 'Producto sin lote vigente disponible',
+    };
+  }
+
+  // 3. CADUCIDAD PRÓXIMA — prioridad crítica sobre stock bajo
   if (isNearingExpiry) {
     return {
       type: 'nearing-expiry',
@@ -173,7 +186,7 @@ function resolveFooterState({
     };
   }
 
-  // 3. STOCK BAJO
+  // 4. STOCK BAJO
   if (isLowStock) {
     return {
       type: 'low-stock',
@@ -209,7 +222,8 @@ const ProductCard = memo(function ProductCard({
   features,
   onCardClick,
   isLoadingVariant,
-  hasAvailableVariants
+  hasAvailableVariants,
+  strictExpiryBlocked = false
 }) {
   // ── Lógica de negocio visual ──────────────────────────────────────────────
   const isRecipeBased = Array.isArray(product?.recipe) && product.recipe.length > 0;
@@ -237,6 +251,16 @@ const ProductCard = memo(function ProductCard({
   );
   const productLabels = useMemo(() => {
     const labels = [...badgeDescriptors];
+    if (strictExpiryBlocked) {
+      labels.unshift({
+        key: 'strict-expiry-blocked',
+        Icon: Ban,
+        className: 'product-badge product-badge--strict-expiry-blocked',
+        label: STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL,
+        title: 'Producto sin lote vigente disponible',
+        ariaLabel: 'Producto sin lote vigente disponible',
+      });
+    }
     if (product?.saleType === 'bulk') {
       labels.push({
         key: 'bulk',
@@ -248,12 +272,13 @@ const ProductCard = memo(function ProductCard({
       });
     }
     return labels.slice(0, 2);
-  }, [badgeDescriptors, product?.saleType]);
+  }, [badgeDescriptors, product?.saleType, strictExpiryBlocked]);
 
   // ── Descriptor del footer (Zona 4) ────────────────────────────────────────
   const footerState = useMemo(
     () => resolveFooterState({
       isOutOfStock,
+      strictExpiryBlocked,
       isNearingExpiry,
       isLowStock,
       isTracking,
@@ -261,7 +286,7 @@ const ProductCard = memo(function ProductCard({
       unit,
       expiryDate,
     }),
-    [isOutOfStock, isNearingExpiry, isLowStock, isTracking, availableStock, unit, expiryDate]
+    [isOutOfStock, strictExpiryBlocked, isNearingExpiry, isLowStock, isTracking, availableStock, unit, expiryDate]
   );
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -280,8 +305,9 @@ const ProductCard = memo(function ProductCard({
   const cardClasses = useMemo(() => [
     'product-card',
     isOutOfStock ? 'product-card--out-of-stock' : '',
+    strictExpiryBlocked ? 'product-card--strict-expiry-blocked' : '',
     isLoadingVariant ? 'product-card--loading-variant' : '',
-  ].filter(Boolean).join(' '), [isOutOfStock, isLoadingVariant]);
+  ].filter(Boolean).join(' '), [isOutOfStock, strictExpiryBlocked, isLoadingVariant]);
 
   const footerClasses = useMemo(() => [
     'product-card__footer',
@@ -295,7 +321,7 @@ const ProductCard = memo(function ProductCard({
       onClick={handleClick}
       role="button"
       tabIndex={isOutOfStock ? -1 : 0}
-      aria-disabled={isOutOfStock}
+      aria-disabled={isOutOfStock || strictExpiryBlocked}
       aria-label={`${product?.name || ''} precio ${product?.price || 0}`}
       onKeyDown={handleKeyDown}
     >
@@ -376,6 +402,7 @@ export default memo(ProductCard, (prevProps, nextProps) => {
     prevProps.onCardClick === nextProps.onCardClick &&
     prevProps.isLoadingVariant === nextProps.isLoadingVariant &&
     prevProps.hasAvailableVariants === nextProps.hasAvailableVariants &&
+    prevProps.strictExpiryBlocked === nextProps.strictExpiryBlocked &&
     prevProps.features?.hasLabFields === nextProps.features?.hasLabFields &&
     prevProps.features?.hasModifiers === nextProps.features?.hasModifiers &&
     prevProps.features?.hasVariants === nextProps.features?.hasVariants &&

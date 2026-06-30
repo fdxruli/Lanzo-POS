@@ -7,6 +7,10 @@ import {
   isProductReadyForCloudSale,
   resolveProductCloudSyncBadge
 } from '../../services/products/productConstants';
+import {
+  getStrictExpirySaleGuard,
+  STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE
+} from '../../services/products/strictExpirySaleGuards';
 import ProductCard from './ProductCard';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -124,6 +128,7 @@ export default function ProductMenu({
   // ID del producto cuya carga está en curso (para feedback visual en la card)
   const [loadingVariantId, setLoadingVariantId] = useState(null);
   const [variantStatusByProductId, setVariantStatusByProductId] = useState({});
+  const [strictExpiryStatusByProductId, setStrictExpiryStatusByProductId] = useState({});
 
   const { loadBatchesForProduct } = useInventoryMovement();
 
@@ -151,6 +156,48 @@ export default function ProductMenu({
     );
     return false;
   }, [cloudSalesInventoryEnabled]);
+
+  const guardStrictExpirySale = useCallback(async (product) => {
+    if (!product?.batchManagement?.enabled) return true;
+
+    const knownStatus = strictExpiryStatusByProductId[product.id];
+    if (knownStatus?.blocked) {
+      showMessageModal(
+        knownStatus.message || STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE,
+        null,
+        { type: 'error', duration: 4500 }
+      );
+      return false;
+    }
+
+    try {
+      const batches = await loadBatchesForProduct(product.id);
+      const guard = getStrictExpirySaleGuard({ product, batches });
+      setStrictExpiryStatusByProductId((current) => ({
+        ...current,
+        [product.id]: guard
+      }));
+
+      if (guard.blocked) {
+        showMessageModal(
+          guard.message || STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE,
+          null,
+          { type: 'error', duration: 4500 }
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error('[ProductMenu] Error validando lote vigente STRICT:', error);
+      showMessageModal(
+        'No se pudo validar el lote vigente de este producto. Intenta de nuevo.',
+        null,
+        { type: 'warning', duration: 4000 }
+      );
+      return false;
+    }
+
+    return true;
+  }, [loadBatchesForProduct, strictExpiryStatusByProductId]);
 
   // --- EFECTO: Resetear displayLimit cuando cambian filtros de búsqueda ---
   // Reemplaza el anti-patrón de mutación de estado durante renderizado
@@ -184,46 +231,65 @@ export default function ProductMenu({
   useEffect(() => {
     let cancelled = false;
 
-    if (!features.hasVariants) {
+    const productsWithBatchManagement = visibleProducts.filter(
+      (product) => product?.id && product?.batchManagement?.enabled === true
+    );
+
+    if (productsWithBatchManagement.length === 0) {
       setVariantStatusByProductId({});
+      setStrictExpiryStatusByProductId({});
       return () => {
         cancelled = true;
       };
     }
 
-    const productsWithBatchManagement = visibleProducts.filter(
-      (product) => product?.id && product?.batchManagement?.enabled === true
-    );
-
-    const resolveVariantStatuses = async () => {
+    const resolveBatchStatuses = async () => {
       const entries = await Promise.all(
         productsWithBatchManagement.map(async (product) => {
           try {
             const batches = await loadBatchesForProduct(product.id);
-            return [product.id, getAvailableVariantBatches(batches).length > 0];
+            return [
+              product.id,
+              {
+                hasAvailableVariants: getAvailableVariantBatches(batches).length > 0,
+                strictGuard: getStrictExpirySaleGuard({ product, batches })
+              }
+            ];
           } catch (error) {
-            console.error('[ProductMenu] Error resolviendo variantes:', error);
-            return [product.id, false];
+            console.error('[ProductMenu] Error resolviendo lotes POS:', error);
+            return [
+              product.id,
+              {
+                hasAvailableVariants: false,
+                strictGuard: { blocked: false, reason: 'load_error', message: null }
+              }
+            ];
           }
         })
       );
 
       if (!cancelled) {
-        setVariantStatusByProductId(Object.fromEntries(entries));
+        setVariantStatusByProductId(
+          Object.fromEntries(entries.map(([productId, value]) => [productId, value.hasAvailableVariants]))
+        );
+        setStrictExpiryStatusByProductId(
+          Object.fromEntries(entries.map(([productId, value]) => [productId, value.strictGuard]))
+        );
       }
     };
 
-    resolveVariantStatuses();
+    resolveBatchStatuses();
 
     return () => {
       cancelled = true;
     };
-  }, [features.hasVariants, loadBatchesForProduct, visibleProducts]);
+  }, [loadBatchesForProduct, visibleProducts]);
 
   // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (ADAPTABLE POR RUBRO) ---
   // MEMOIZADO: Evita re-renders de ProductCard cuando se escribe en el buscador
   const handleCardClick = useCallback(async (product) => {
     if (!guardCloudSyncedProduct(product)) return;
+    if (!await guardStrictExpirySale(product)) return;
 
     // ---------------------------------------------------------
     // CASO 1: BOUTIQUE / ROPA / ZAPATERÍA
@@ -238,6 +304,21 @@ export default function ProductMenu({
       setLoadingVariantId(product.id);
       try {
         const allBatches = await loadBatchesForProduct(product.id);
+        const strictGuard = getStrictExpirySaleGuard({ product, batches: allBatches });
+        setStrictExpiryStatusByProductId((current) => ({
+          ...current,
+          [product.id]: strictGuard
+        }));
+
+        if (strictGuard.blocked) {
+          showMessageModal(
+            strictGuard.message || STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE,
+            null,
+            { type: 'error', duration: 4500 }
+          );
+          return;
+        }
+
         const activeBatches = getAvailableVariantBatches(allBatches);
         setVariantStatusByProductId((current) => ({
           ...current,
@@ -293,7 +374,7 @@ export default function ProductMenu({
     };
 
     // ACCIÓN INTELIGENTE (Smart Add)
-    // Busca el lote más antiguo (FIFO) automáticamente y agrega.
+    // Busca el lote FEFO vigente automáticamente y agrega.
     addSmartItem(cleanProduct);
 
     // FEEDBACK SONORO (Éxito)
@@ -303,12 +384,12 @@ export default function ProductMenu({
     // Si vendes jamón, queso, clavos o cualquier cosa por peso/medida.
     if (product.saleType === 'bulk') {
       showMessageModal(
-        `⚖️ Producto a Granel: ${product.name}`,
+        `Producto a granel: ${product.name}`,
         null,
         { type: 'warning', duration: 3000 }
       );
     }
-  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem, loadBatchesForProduct, guardCloudSyncedProduct]);
+  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem, loadBatchesForProduct, guardCloudSyncedProduct, guardStrictExpirySale]);
 
   const handleConfirmVariants = useCallback((variantItem) => {
     if (!guardCloudSyncedProduct(selectedProductForVariant || variantItem)) return;
@@ -449,6 +530,7 @@ export default function ProductMenu({
           ) : (
             visibleProducts.map((item) => {
               const syncBadge = buildProductSyncBadge(item);
+              const strictExpiryStatus = strictExpiryStatusByProductId[item.id];
               return (
                 <div className="pos-product-card-shell" style={PRODUCT_CARD_SHELL_STYLE} key={item.id}>
                   {syncBadge && (
@@ -467,6 +549,7 @@ export default function ProductMenu({
                     onCardClick={handleCardClick}
                     isLoadingVariant={loadingVariantId === item.id}
                     hasAvailableVariants={variantStatusByProductId[item.id] === true}
+                    strictExpiryBlocked={strictExpiryStatus?.blocked === true}
                   />
                 </div>
               );
