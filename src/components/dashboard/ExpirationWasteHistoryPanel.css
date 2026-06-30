@@ -1,0 +1,391 @@
+.expiration-history-widget {
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  margin-top: var(--spacing-lg);
+  overflow: hidden;
+}
+
+.expiration-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(90deg, var(--ui-bg-warning-soft) 0%, transparent 100%);
+}
+
+.expiration-history-title {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.expiration-history-title-icon {
+  color: var(--ui-text-warning);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.expiration-history-title h3 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.expiration-history-title p {
+  margin: 3px 0 0 0;
+  color: var(--text-light);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.expiration-history-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.expiration-history-source,
+.expiration-history-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.expiration-history-source {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  background: var(--light-background);
+  color: var(--text-light);
+}
+
+.expiration-history-source--cloud {
+  background: var(--ui-bg-info-soft, var(--light-background));
+  color: var(--secondary-color);
+}
+
+.expiration-history-source--local {
+  background: var(--ui-bg-warning-soft);
+  color: var(--ui-text-warning);
+}
+
+.expiration-history-refresh {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-background-color);
+  color: var(--text-dark);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.expiration-history-refresh:hover:not(:disabled) {
+  border-color: var(--secondary-color);
+  color: var(--secondary-color);
+}
+
+.expiration-history-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.expiration-history-state,
+.expiration-history-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl);
+  color: var(--text-light);
+  text-align: center;
+}
+
+.expiration-history-state strong,
+.expiration-history-empty strong {
+  display: block;
+  color: var(--text-dark);
+  margin-bottom: 4px;
+}
+
+.expiration-history-state p,
+.expiration-history-empty p {
+  margin: 0;
+  color: var(--text-light);
+  line-height: 1.4;
+}
+
+.expiration-history-state--warning {
+  color: var(--ui-text-warning);
+  background: var(--ui-bg-warning-soft);
+}
+
+.expiration-history-state--error {
+  color: var(--ui-text-danger);
+  background: var(--ui-bg-danger-soft);
+}
+
+.expiration-history-spinner {
+  animation: expirationHistorySpin 1s linear infinite;
+}
+
+@keyframes expirationHistorySpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.expiration-history-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+}
+
+.expiration-history-summary-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  min-width: 0;
+}
+
+.expiration-history-summary-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: var(--ui-text-warning);
+  background: var(--ui-bg-warning-soft);
+}
+
+.expiration-history-summary-label {
+  display: block;
+  color: var(--text-light);
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.expiration-history-summary-card strong {
+  display: block;
+  color: var(--text-dark);
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.expiration-history-summary-card small {
+  display: block;
+  color: var(--text-light);
+  font-size: 0.74rem;
+  margin-top: 2px;
+}
+
+.expiration-history-limit-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 var(--spacing-md) var(--spacing-md);
+  padding: 10px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--light-background);
+  color: var(--text-light);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.expiration-history-limit-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--secondary-color);
+}
+
+.expiration-history-empty {
+  border-top: 1px solid var(--border-color);
+  color: var(--success-color);
+}
+
+.expiration-history-table-wrap {
+  display: none;
+  padding: 0 var(--spacing-md) var(--spacing-md);
+  overflow-x: auto;
+}
+
+.expiration-history-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.expiration-history-table th,
+.expiration-history-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: top;
+}
+
+.expiration-history-table th {
+  color: var(--text-light);
+  font-weight: 700;
+  background: var(--light-background);
+}
+
+.expiration-history-table td {
+  color: var(--text-dark);
+}
+
+.expiration-history-loss {
+  color: var(--ui-text-danger) !important;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.expiration-history-type {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  background: var(--light-background);
+  color: var(--text-light);
+  white-space: nowrap;
+}
+
+.expiration-history-type--total {
+  color: var(--ui-text-danger);
+  background: var(--ui-bg-danger-soft);
+}
+
+.expiration-history-type--partial {
+  color: var(--ui-text-warning);
+  background: var(--ui-bg-warning-soft);
+}
+
+.expiration-history-mobile-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-md) var(--spacing-md);
+}
+
+.expiration-history-mobile-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--card-background-color);
+  padding: var(--spacing-md);
+}
+
+.expiration-history-mobile-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.expiration-history-mobile-head h4 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+.expiration-history-mobile-head span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-light);
+  font-size: 0.78rem;
+}
+
+.expiration-history-mobile-head strong {
+  color: var(--ui-text-danger);
+  white-space: nowrap;
+}
+
+.expiration-history-mobile-grid {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) 1fr;
+  gap: 7px var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  font-size: 0.84rem;
+}
+
+.expiration-history-mobile-grid span {
+  color: var(--text-light);
+}
+
+.expiration-history-mobile-grid b {
+  color: var(--text-dark);
+  text-align: right;
+  word-break: break-word;
+}
+
+.expiration-history-mobile-notes {
+  margin: var(--spacing-sm) 0 0 0;
+  padding-top: var(--spacing-sm);
+  border-top: 1px dashed var(--border-color);
+  color: var(--text-light);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+@media (min-width: 720px) {
+  .expiration-history-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 980px) {
+  .expiration-history-table-wrap {
+    display: block;
+  }
+
+  .expiration-history-mobile-list {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .expiration-history-header {
+    flex-direction: column;
+    padding: var(--spacing-md);
+  }
+
+  .expiration-history-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .expiration-history-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .expiration-history-state,
+  .expiration-history-empty {
+    align-items: flex-start;
+    text-align: left;
+    padding: var(--spacing-lg) var(--spacing-md);
+  }
+}

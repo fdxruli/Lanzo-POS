@@ -25,6 +25,18 @@ const toSafeDaysAhead = (daysAhead = 45) => Math.min(
   365
 );
 
+const toSafeHistoryLimit = (limit = 100) => Math.min(
+  Math.max(Number(limit) || 100, 1),
+  500
+);
+
+const normalizeDateParam = (value) => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+};
+
 const normalizeWasteQuantity = (quantity) => {
   if (quantity === null || quantity === undefined || quantity === '') return null;
   const parsed = Number(quantity);
@@ -128,7 +140,45 @@ export const getCloudExpiringBatchesReport = async ({
   });
 };
 
+export const getCloudExpirationWasteHistory = async ({
+  licenseKey,
+  dateFrom = null,
+  dateTo = null,
+  limit = 100,
+  force = false
+}) => {
+  const rpcName = 'pos_get_expiration_waste_history';
+  const baseArgs = await buildBaseArgs(licenseKey);
+  const params = {
+    p_date_from: normalizeDateParam(dateFrom),
+    p_date_to: normalizeDateParam(dateTo),
+    p_limit: toSafeHistoryLimit(limit)
+  };
+
+  return cloudRequestManager.request({
+    rpcName,
+    key: buildRpcRequestKey(rpcName, {
+      ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
+      params
+    }),
+    ttlMs: CLOUD_REQUEST_TTL.REPORTS,
+    cooldownMs: CLOUD_REQUEST_COOLDOWN.REPORTS,
+    force,
+    tags: [
+      CLOUD_REQUEST_TAGS.PRODUCTS,
+      CLOUD_REQUEST_TAGS.REPORTS,
+      cloudRequestTags.license(licenseKey),
+      cloudRequestTags.rpc(rpcName)
+    ],
+    fn: () => callRpc(rpcName, {
+      ...baseArgs,
+      ...params
+    })
+  });
+};
+
 export default {
   registerCloudExpirationWaste,
-  getCloudExpiringBatchesReport
+  getCloudExpiringBatchesReport,
+  getCloudExpirationWasteHistory
 };
