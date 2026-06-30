@@ -1,4 +1,7 @@
-import { getAvailableStock } from '../../services/db/utils';
+import {
+  getAvailableBatchStock,
+  isBatchActiveForFefo
+} from '../../services/products/fefoUtils';
 
 const VARIANT_ATTRIBUTE_KEYS = ['talla', 'color', 'modelo', 'marca'];
 
@@ -17,9 +20,9 @@ export const hasRealVariantAttributes = (batch) => {
 };
 
 export const isAvailableVariantBatch = (batch) => (
-  batch?.isActive === true
+  isBatchActiveForFefo(batch)
   && hasRealVariantAttributes(batch)
-  && getAvailableStock(batch) > 0
+  && getAvailableBatchStock(batch) > 0
 );
 
 export const getAvailableVariantBatches = (batches = []) => (
