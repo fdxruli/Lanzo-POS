@@ -27,6 +27,11 @@ const toSafeNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const toSafeLimit = (value = 100) => Math.min(
+  Math.max(Number(value) || 100, 1),
+  500
+);
+
 const toSafeString = (value, fallback = '') => {
   if (value === null || value === undefined) return fallback;
   const text = String(value).trim();
@@ -146,7 +151,7 @@ const loadLocalExpirationWasteHistory = async ({ limit = 100 } = {}) => {
   return {
     success: true,
     summary: buildSummary(items),
-    items: items.slice(0, Math.max(1, Number(limit) || 100)),
+    items: items.slice(0, toSafeLimit(limit)),
     source: 'local'
   };
 };
@@ -199,6 +204,7 @@ const sanitizeHistoryError = (errorOrResponse = {}) => {
 };
 
 export const useExpirationWasteHistory = ({ limit = 100 } = {}) => {
+  const historyLimit = useMemo(() => toSafeLimit(limit), [limit]);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const canAccess = useAppStore((state) => state.canAccess);
   const licenseKey = useMemo(() => getLicenseKeyFromDetails(licenseDetails), [licenseDetails]);
@@ -245,7 +251,7 @@ export const useExpirationWasteHistory = ({ limit = 100 } = {}) => {
 
         response = await getCloudExpirationWasteHistory({
           licenseKey,
-          limit,
+          limit: historyLimit,
           force
         });
 
@@ -264,7 +270,7 @@ export const useExpirationWasteHistory = ({ limit = 100 } = {}) => {
         return;
       }
 
-      response = await loadLocalExpirationWasteHistory({ limit });
+      response = await loadLocalExpirationWasteHistory({ limit: historyLimit });
       setItems(response.items);
       setSummary(response.summary);
       setSource('local');
@@ -277,13 +283,19 @@ export const useExpirationWasteHistory = ({ limit = 100 } = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [cloudProductsEnabled, hasReportsPermission, licenseKey, limit]);
+  }, [cloudProductsEnabled, hasReportsPermission, historyLimit, licenseKey]);
 
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
 
   const refresh = useCallback(() => loadHistory({ force: true }), [loadHistory]);
+  const visibleRecords = items.length;
+  const totalRecords = toSafeNumber(summary.total_records ?? summary.totalRecords, visibleRecords);
+  const isLimited = visibleRecords > 0 && (
+    totalRecords > visibleRecords ||
+    visibleRecords >= historyLimit
+  );
 
   return {
     items,
@@ -293,6 +305,10 @@ export const useExpirationWasteHistory = ({ limit = 100 } = {}) => {
     source,
     isCloud: cloudProductsEnabled,
     hasReportsPermission,
+    limit: historyLimit,
+    isLimited,
+    visibleRecords,
+    totalRecords,
     refresh
   };
 };
