@@ -67,3 +67,18 @@
   font-weight: 700;
   line-height: 1.35;
 }
+
+.empty-state--strict-expiry {
+  color: var(--ui-text-danger, var(--error-color));
+  background: var(--ui-bg-danger-soft, var(--light-background));
+  border: 1px solid var(--ui-border-danger, var(--error-color));
+  border-radius: var(--ui-radius-md, var(--border-radius));
+}
+
+.empty-state--strict-expiry small {
+  display: block;
+  max-width: 360px;
+  margin: 8px auto 0;
+  color: var(--ui-text-muted, var(--text-light));
+  line-height: 1.45;
+}

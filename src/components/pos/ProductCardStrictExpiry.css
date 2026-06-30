@@ -1,0 +1,16 @@
+.product-card--strict-expiry-blocked {
+  cursor: not-allowed;
+  border-color: var(--ui-border-danger);
+}
+
+.product-badge--strict-expiry-blocked {
+  color: var(--ui-text-danger);
+  background: var(--ui-bg-danger-soft);
+  border: 1px solid var(--ui-border-danger);
+}
+
+.product-card__footer--strict-expiry-blocked {
+  color: var(--ui-text-danger);
+  background: var(--ui-bg-danger-soft);
+  border-top-color: var(--ui-border-danger);
+}

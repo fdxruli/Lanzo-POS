@@ -5,6 +5,7 @@ import {
   getRecommendedFefoBatch,
   sortBatchesByFefo
 } from '../fefoUtils';
+import { getStrictExpirySaleGuard } from '../strictExpirySaleGuards';
 
 describe('fefoUtils', () => {
   const today = new Date(2026, 5, 29);
@@ -55,5 +56,43 @@ describe('fefoUtils', () => {
 
     expect(warning.blocking).toBe(false);
     expect(warning.message).toContain('VIEJO');
+  });
+
+  it('bloquea venta STRICT cuando todo el stock disponible está vencido', () => {
+    const guard = getStrictExpirySaleGuard({
+      product: { expirationMode: 'STRICT', batchManagement: { enabled: true } },
+      batches: [
+        { id: 'expired', isActive: true, stock: 4.5, expiryDate: '2026-06-18' }
+      ],
+      now: today
+    });
+
+    expect(guard.blocked).toBe(true);
+    expect(guard.expiredAvailableStock).toBe(4.5);
+  });
+
+  it('permite venta STRICT si existe lote vigente o que vence hoy', () => {
+    const guard = getStrictExpirySaleGuard({
+      product: { expirationMode: 'STRICT', batchManagement: { enabled: true } },
+      batches: [
+        { id: 'today', isActive: true, stock: 4.5, expiryDate: '2026-06-29' }
+      ],
+      now: today
+    });
+
+    expect(guard.blocked).toBe(false);
+    expect(guard.recommendedBatch.id).toBe('today');
+  });
+
+  it('no convierte SHELF_LIFE vencido en bloqueo obligatorio', () => {
+    const guard = getStrictExpirySaleGuard({
+      product: { expirationMode: 'SHELF_LIFE', batchManagement: { enabled: true } },
+      batches: [
+        { id: 'expired', isActive: true, stock: 4.5, expiryDate: '2026-06-18' }
+      ],
+      now: today
+    });
+
+    expect(guard.blocked).toBe(false);
   });
 });
