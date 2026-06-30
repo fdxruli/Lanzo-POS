@@ -15,6 +15,7 @@ import {
   Barcode,
   AlertCircle
 } from 'lucide-react';
+import ExpirationFefoPanel from './ExpirationFefoPanel';
 import ExpirationWasteHistoryPanel from './ExpirationWasteHistoryPanel';
 import './ExpirationAlert.css';
 
@@ -301,6 +302,7 @@ export default function ExpirationAlert() {
   return (
     <>
       {renderAlertWidget()}
+      <ExpirationFefoPanel />
       <ExpirationWasteHistoryPanel />
     </>
   );
