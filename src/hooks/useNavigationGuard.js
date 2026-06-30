@@ -38,6 +38,12 @@ export function useNavigationGuard({
   }, [enabled]);
 
   useEffect(() => {
+    if (blocker.state === 'unblocked') {
+      promptOpenRef.current = false;
+    }
+  }, [blocker.state]);
+
+  useEffect(() => {
     if (blocker.state !== 'blocked' || promptOpenRef.current) return;
 
     promptOpenRef.current = true;
@@ -45,7 +51,6 @@ export function useNavigationGuard({
     showMessageModal(
       message,
       () => {
-        promptOpenRef.current = false;
         onDiscard?.();
         blocker.proceed();
       },

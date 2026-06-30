@@ -6,6 +6,7 @@ import {
   createMemoryRouter,
   Link,
   RouterProvider,
+  useLocation,
   useNavigate
 } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -46,6 +47,28 @@ function GuardHarness({ enabled = true, onDiscard = vi.fn() }) {
   );
 }
 
+function TabGuardHarness({ onDiscard = vi.fn() }) {
+  const location = useLocation();
+  const enabled = location.search !== '?tab=list';
+
+  useNavigationGuard({
+    enabled,
+    title: 'Â¿Salir del formulario?',
+    message: 'Datos de producto sin guardar.',
+    confirmButtonText: 'SÃ­, salir',
+    cancelButtonText: 'Continuar editando',
+    onDiscard
+  });
+
+  return (
+    <>
+      <Link to="/?tab=list">Ver lista</Link>
+      <div>{enabled ? 'Formulario activo' : 'Lista de productos'}</div>
+      <MessageModal />
+    </>
+  );
+}
+
 function renderGuard(options = {}, routerOptions = {}) {
   const router = createMemoryRouter([
     {
@@ -65,6 +88,23 @@ function renderGuard(options = {}, routerOptions = {}) {
       element: <div>Sección anterior</div>
     }
   ], routerOptions);
+
+  return {
+    router,
+    ...render(<RouterProvider router={router} />)
+  };
+}
+
+function renderTabGuard(options = {}, routerOptions = {}) {
+  const router = createMemoryRouter([
+    {
+      path: '/',
+      element: <TabGuardHarness {...options} />
+    }
+  ], {
+    initialEntries: ['/?tab=add'],
+    ...routerOptions
+  });
 
   return {
     router,
@@ -151,6 +191,22 @@ describe('useNavigationGuard', () => {
 
     expect(router.state.location.search).toBe('');
     expect(screen.getByText('¿Salir del formulario?')).toBeInTheDocument();
+  });
+
+  it('cierra el modal al confirmar salida hacia otra pestaña de la misma ruta', async () => {
+    const user = userEvent.setup();
+    const onDiscard = vi.fn();
+    const { router } = renderTabGuard({ onDiscard });
+
+    await user.click(screen.getByRole('link', { name: 'Ver lista' }));
+    await user.click(screen.getByRole('button', { name: /salir/i }));
+
+    await waitFor(() => {
+      expect(router.state.location.search).toBe('?tab=list');
+    });
+    expect(onDiscard).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Lista de productos')).toBeInTheDocument();
+    expect(screen.queryByText(/Salir del formulario/)).not.toBeInTheDocument();
   });
 
   it('bloquea la navegación hacia atrás del historial', async () => {

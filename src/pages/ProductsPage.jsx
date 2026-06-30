@@ -294,7 +294,7 @@ export default function ProductsPage() {
 
     const handleManageBatches = (productId) => {
         setSelectedBatchProductId(productId);
-        setActiveTab('batches');
+        handleTabChange('batches');
     };
 
     return (
