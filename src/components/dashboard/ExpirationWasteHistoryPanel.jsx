@@ -58,6 +58,10 @@ export default function ExpirationWasteHistoryPanel() {
     error,
     source,
     hasReportsPermission,
+    limit,
+    isLimited,
+    visibleRecords,
+    totalRecords,
     refresh
   } = useExpirationWasteHistory({ limit: 100 });
 
@@ -151,6 +155,16 @@ export default function ExpirationWasteHistoryPanel() {
               value={formatNumber(summary.partial_count)}
             />
           </div>
+
+          {isLimited && (
+            <div className="expiration-history-limit-note">
+              <Info size={16} />
+              <span>
+                Mostrando los últimos {formatNumber(visibleRecords || limit)} registros.
+                {totalRecords > visibleRecords && ` El resumen incluye ${formatNumber(totalRecords)} movimientos del periodo consultado.`}
+              </span>
+            </div>
+          )}
 
           {items.length === 0 ? (
             <div className="expiration-history-empty">
