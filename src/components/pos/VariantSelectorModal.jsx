@@ -10,6 +10,7 @@ import { getAvailableVariantBatches } from './variantUtils';
 import {
   getAvailableBatchStock,
   getBatchExpiryValue,
+  getBatchId,
   getFefoSelectionState,
   getFefoWarningForSelection,
   getRecommendedFefoBatch,
@@ -69,12 +70,21 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
     }
   }, [show, product, preloadedBatches, loadBatchesForProduct]);
 
-  const sortedBatches = useMemo(() => sortBatchesByFefo(batches), [batches]);
-
   const recommendedBatch = useMemo(
     () => getRecommendedFefoBatch(batches, product),
     [batches, product]
   );
+
+  const sortedBatches = useMemo(() => {
+    const sorted = sortBatchesByFefo(batches);
+    const recommendedBatchId = getBatchId(recommendedBatch);
+
+    if (!recommendedBatchId) return sorted;
+
+    const recommended = sorted.filter((batch) => getBatchId(batch) === recommendedBatchId);
+    const rest = sorted.filter((batch) => getBatchId(batch) !== recommendedBatchId);
+    return [...recommended, ...rest];
+  }, [batches, recommendedBatch]);
 
   // --- LÓGICA DE AGRUPACIÓN POR COLOR ---
   const groupedByColor = useMemo(() => {
