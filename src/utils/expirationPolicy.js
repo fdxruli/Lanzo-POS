@@ -82,14 +82,20 @@ export const isPerishableShelfLifeProduct = (product, context = {}) => {
   return PERISHABLE_KEYWORDS.some((keyword) => contextText.includes(keyword));
 };
 
-const addShelfLifeToDate = (baseDate, value, unit = 'days') => {
-  const amount = Number(value) || 0;
+export const calculateShelfLifeTargetDate = ({
+  baseDate = new Date(),
+  shelfLifeValue,
+  shelfLifeUnit = 'days'
+} = {}) => {
+  const amount = Number(shelfLifeValue) || 0;
   if (amount <= 0) return null;
 
   const date = baseDate ? new Date(baseDate) : new Date();
-  if (Number.isNaN(date.getTime())) return null;
+  if (Number.isNaN(date.getTime())) {
+    date.setTime(Date.now());
+  }
 
-  const normalizedUnit = normalizeExpirationPolicyText(unit);
+  const normalizedUnit = normalizeExpirationPolicyText(shelfLifeUnit);
   if (['hour', 'hours', 'hora', 'horas'].includes(normalizedUnit)) {
     date.setHours(date.getHours() + amount);
   } else if (['month', 'months', 'mes', 'meses'].includes(normalizedUnit)) {
@@ -100,6 +106,12 @@ const addShelfLifeToDate = (baseDate, value, unit = 'days') => {
 
   return date.toISOString();
 };
+
+const addShelfLifeToDate = (baseDate, value, unit = 'days') => calculateShelfLifeTargetDate({
+  baseDate,
+  shelfLifeValue: value,
+  shelfLifeUnit: unit
+});
 
 export const getShelfLifeTargetDate = (product, batch = null) => {
   const directDate = batch?.alertTargetDate

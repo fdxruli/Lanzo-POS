@@ -261,7 +261,7 @@ export const getBatchExpiryStatus = (batchOrDate, now = new Date()) => {
  */
 export const isBatchExpiredForSale = (batch, product, now = new Date()) => {
     const expirationMode = product?.expirationMode || product?.expiration_mode || 'NONE';
-    if (expirationMode !== 'STRICT') return false;
+    if (!['STRICT', 'SHELF_LIFE'].includes(expirationMode)) return false;
     return getBatchExpiryStatus(batch, now) === 'expired';
 };
 
