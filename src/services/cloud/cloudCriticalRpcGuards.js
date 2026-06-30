@@ -22,6 +22,7 @@ export const CLOUD_CRITICAL_RPC_NAMES = Object.freeze([
   'pos_upsert_product_batch',
   'pos_delete_product_batch',
   'pos_migrate_local_product_catalog',
+  'pos_register_expiration_waste',
 
   'pos_upsert_customer',
   'pos_delete_customer',
