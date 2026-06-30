@@ -49,6 +49,18 @@ export const getBatchCreatedValue = (batch) => (
   ?? null
 );
 
+const getProductExpirationMode = (product) => (
+  product?.expirationMode || product?.expiration_mode || 'NONE'
+);
+
+const batchHasCurrentExpiryForMode = (batch, product, now = new Date()) => {
+  const expirationMode = getProductExpirationMode(product);
+  if (!['STRICT', 'SHELF_LIFE'].includes(expirationMode)) return true;
+
+  const status = getBatchExpiryStatus({ expiryDate: getBatchExpiryValue(batch) }, now);
+  return status === 'valid' || status === 'expires_today';
+};
+
 export const getAvailableBatchStock = (batch) => getAvailableStock({
   stock: batch?.stock ?? batch?.quantity ?? 0,
   committedStock: batch?.committedStock ?? batch?.committed_stock ?? 0
@@ -102,6 +114,7 @@ export const getRecommendedFefoBatch = (batches = [], product, { now = new Date(
   const eligibleBatches = (Array.isArray(batches) ? batches : []).filter((batch) => (
     isBatchActiveForFefo(batch)
     && getAvailableBatchStock(batch) > 0
+    && batchHasCurrentExpiryForMode(batch, product, now)
     && !isBatchExpiredForSale(batch, product, now)
   ));
 

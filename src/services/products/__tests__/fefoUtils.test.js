@@ -84,6 +84,20 @@ describe('fefoUtils', () => {
     expect(guard.recommendedBatch.id).toBe('today');
   });
 
+  it('bloquea venta STRICT cuando el lote disponible no tiene caducidad', () => {
+    const guard = getStrictExpirySaleGuard({
+      product: { expirationMode: 'STRICT', batchManagement: { enabled: true } },
+      batches: [
+        { id: 'missing-expiry', isActive: true, stock: 4.5 }
+      ],
+      now: today
+    });
+
+    expect(guard.blocked).toBe(true);
+    expect(guard.availableCurrentStock).toBe(0);
+    expect(guard.totalAvailableBatchStock).toBe(4.5);
+  });
+
   it('no convierte SHELF_LIFE vencido en bloqueo obligatorio', () => {
     const guard = getStrictExpirySaleGuard({
       product: { expirationMode: 'SHELF_LIFE', batchManagement: { enabled: true } },

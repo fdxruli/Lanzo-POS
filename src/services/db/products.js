@@ -13,19 +13,7 @@ import { productSchema } from '../../schemas/productSchema';
 import Logger from '../Logger';
 import { collectBatchRestorations, restoreBatchStock } from '../sales/batchRestoration';
 import { searchProductsInTable } from './productSearch';
-
-const addShelfLifeToDate = (baseDate, shelfLifeValue, shelfLifeUnit) => {
-    const expiryDate = new Date(baseDate);
-    const shelfValue = Number(shelfLifeValue) || 0;
-    const unit = String(shelfLifeUnit || 'days').toLowerCase();
-
-    if (shelfValue <= 0) return null;
-    if (unit === 'hours') expiryDate.setHours(expiryDate.getHours() + shelfValue);
-    else if (unit === 'months') expiryDate.setMonth(expiryDate.getMonth() + shelfValue);
-    else expiryDate.setDate(expiryDate.getDate() + shelfValue);
-
-    return expiryDate.toISOString();
-};
+import { calculateShelfLifeTargetDate } from '../../utils/expirationPolicy';
 
 const validateInitialBatchForProduct = (batch, product) => {
     if (!batch?.id) {
@@ -72,7 +60,11 @@ const normalizeInitialBatchForProduct = (batch, product, now) => {
     let expiryDate = batch.expiryDate || null;
 
     if (product.expirationMode === 'SHELF_LIFE' && !expiryDate) {
-        expiryDate = addShelfLifeToDate(now, product.shelfLifeValue, product.shelfLifeUnit);
+        expiryDate = calculateShelfLifeTargetDate({
+            baseDate: now,
+            shelfLifeValue: product.shelfLifeValue,
+            shelfLifeUnit: product.shelfLifeUnit
+        });
         if (!expiryDate) {
             throw new DatabaseError(
                 DB_ERROR_CODES.VALIDATION_ERROR,
@@ -95,7 +87,9 @@ const normalizeInitialBatchForProduct = (batch, product, now) => {
         updatedAt: batch.updatedAt || now,
         expiryDate,
         alertTargetDate: expiryDate || batch.alertTargetDate || null,
-        alertType: expiryDate ? (batch.alertType || 'CADUCIDAD_LEGAL') : (batch.alertType || null),
+        alertType: expiryDate
+            ? (batch.alertType || (product.expirationMode === 'SHELF_LIFE' ? 'VIDA_UTIL_ESTIMADA' : 'CADUCIDAD_LEGAL'))
+            : (batch.alertType || null),
         manufacturerBatchId: batch.manufacturerBatchId ? String(batch.manufacturerBatchId).trim() : null
     };
 

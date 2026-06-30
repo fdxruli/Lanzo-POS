@@ -10,6 +10,7 @@ import {
 } from '../database';
 import { categoriesRepository } from '../db/general';
 import { generateID } from '../utils';
+import { calculateShelfLifeTargetDate } from '../../utils/expirationPolicy';
 import {
   cloudBatchToLocal,
   cloudCategoryToLocal,
@@ -179,20 +180,35 @@ export const productLocalRepository = {
     const batches = [];
 
     if (!editing && !recipe && variants.length === 0 && stock > 0) {
+      const initialCreatedAt = nowIso();
+      const initialExpiryDate = productData.expirationMode === 'NONE'
+        ? null
+        : (productData.expiryDate || (
+          productData.expirationMode === 'SHELF_LIFE'
+            ? calculateShelfLifeTargetDate({
+              baseDate: initialCreatedAt,
+              shelfLifeValue: productData.shelfLifeValue,
+              shelfLifeUnit: productData.shelfLifeUnit
+            })
+            : null
+        ));
+
       batches.push({
         id: `batch-${productId}-initial`,
         productId,
         cost,
         price,
         stock,
-        createdAt: nowIso(),
+        createdAt: initialCreatedAt,
         trackStock: true,
         isActive: true,
         status: 'active',
         notes: 'Stock Inicial',
-        expiryDate: productData.expiryDate || null,
-        alertTargetDate: productData.alertTargetDate || null,
-        alertType: productData.alertType || null,
+        expiryDate: initialExpiryDate,
+        alertTargetDate: initialExpiryDate,
+        alertType: initialExpiryDate
+          ? (productData.expirationMode === 'SHELF_LIFE' ? 'VIDA_UTIL_ESTIMADA' : 'CADUCIDAD_LEGAL')
+          : null,
         manufacturerBatchId: productData.manufacturerBatchId || null,
         sku: null,
         attributes: null

@@ -1,9 +1,9 @@
 import { getAvailableStock } from '../db/utils';
 import {
   getAvailableBatchStock,
+  getBatchExpiryValue,
   isBatchActiveForFefo,
 } from './fefoUtils';
-import { getStrictExpirySaleGuard } from './strictExpirySaleGuards';
 import { getBatchExpiryStatus } from '../../utils/dateUtils';
 
 export const CAT_DYNAMIC_OUT_OF_STOCK = 'CAT_DYNAMIC_AGOTADOS';
@@ -55,56 +55,89 @@ const hasDirectExpiredDate = (product, now) => (
   getBatchExpiryStatus({ expiryDate: getDirectExpiryValue(product) }, now) === 'expired'
 );
 
-const getSellableBatchStatus = (product, batches = [], now = new Date()) => {
+const getBatchExpiryState = (batch, now) => (
+  getBatchExpiryStatus({ expiryDate: getBatchExpiryValue(batch) }, now)
+);
+
+export const getPosMenuExpirationState = (product, batches = [], now = new Date()) => {
+  const defaultState = {
+    expired: false,
+    regularizationRequired: false,
+    noCurrentBatch: false,
+    reason: 'not_expired'
+  };
+
+  if (!product || isRecipeBasedProduct(product)) return defaultState;
+
+  if (hasDirectExpiredDate(product, now)) {
+    return {
+      ...defaultState,
+      expired: true,
+      reason: 'direct_expiry_expired'
+    };
+  }
+
+  if (!productUsesBatchManagement(product)) return defaultState;
+
+  const expirationMode = getExpirationMode(product);
+  const parentHasStock = getAvailableStock(product) > 0;
   const activeAvailableBatches = (Array.isArray(batches) ? batches : []).filter((batch) => (
     isBatchActiveForFefo(batch) && getAvailableBatchStock(batch) > 0
   ));
 
   if (activeAvailableBatches.length === 0) {
+    if (!parentHasStock || !hasExpirationBlockingMode(product)) return defaultState;
+
     return {
-      hasActiveAvailableBatches: false,
-      hasCurrentBatch: false,
+      expired: false,
+      regularizationRequired: true,
+      noCurrentBatch: true,
+      reason: 'stock_without_active_available_batches'
     };
   }
 
-  const expirationMode = getExpirationMode(product);
+  if (!['STRICT', 'SHELF_LIFE'].includes(expirationMode)) return defaultState;
 
-  if (expirationMode === 'STRICT') {
-    const productForGuard = product?.batchManagement
-      ? product
-      : { ...product, batchManagement: product?.batch_management };
-    const strictGuard = getStrictExpirySaleGuard({ product: productForGuard, batches: activeAvailableBatches, now });
+  const batchStates = activeAvailableBatches.map((batch) => getBatchExpiryState(batch, now));
+  const hasCurrentBatch = batchStates.some((status) => status === 'valid' || status === 'expires_today');
+  const hasExpiredBatch = batchStates.some((status) => status === 'expired');
+  const hasIncompleteBatch = batchStates.some((status) => status === 'missing' || status === 'invalid');
+  const noCurrentBatch = !hasCurrentBatch;
+
+  if (hasIncompleteBatch) {
     return {
-      hasActiveAvailableBatches: true,
-      hasCurrentBatch: !strictGuard.blocked,
+      expired: hasExpiredBatch && noCurrentBatch,
+      regularizationRequired: true,
+      noCurrentBatch,
+      reason: expirationMode === 'SHELF_LIFE'
+        ? 'shelf_life_batch_missing_target_date'
+        : 'strict_batch_missing_expiry_date'
     };
   }
 
-  if (expirationMode === 'SHELF_LIFE') {
+  if (hasExpiredBatch && noCurrentBatch) {
     return {
-      hasActiveAvailableBatches: true,
-      hasCurrentBatch: activeAvailableBatches.some(
-        (batch) => getBatchExpiryStatus(batch, now) !== 'expired'
-      ),
+      expired: true,
+      regularizationRequired: false,
+      noCurrentBatch: true,
+      reason: 'all_available_batches_expired'
     };
   }
 
-  return {
-    hasActiveAvailableBatches: true,
-    hasCurrentBatch: true,
-  };
+  if (noCurrentBatch) {
+    return {
+      expired: false,
+      regularizationRequired: parentHasStock,
+      noCurrentBatch: true,
+      reason: 'no_current_batch'
+    };
+  }
+
+  return defaultState;
 };
 
 export const isExpiredForPosMenu = (product, batches = [], now = new Date()) => {
-  if (!product || isRecipeBasedProduct(product)) return false;
-
-  if (hasDirectExpiredDate(product, now)) return true;
-  if (!productUsesBatchManagement(product)) return false;
-
-  const batchStatus = getSellableBatchStatus(product, batches, now);
-  return !batchStatus.hasCurrentBatch && (
-    batchStatus.hasActiveAvailableBatches || hasExpirationBlockingMode(product)
-  );
+  return getPosMenuExpirationState(product, batches, now).expired;
 };
 
 const loadBatchesByProductId = async ({ db, STORES, productIds = [] }) => {

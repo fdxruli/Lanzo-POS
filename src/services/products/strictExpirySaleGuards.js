@@ -1,9 +1,11 @@
 import {
   getAvailableBatchStock,
+  getBatchExpiryValue,
   getRecommendedFefoBatch,
   isBatchActiveForFefo,
   isBatchExpiredForSale
 } from './fefoUtils';
+import { getBatchExpiryStatus } from '../../utils/dateUtils';
 
 export const STRICT_EXPIRY_NO_CURRENT_BATCH_MESSAGE = 'Este producto no tiene lote vigente disponible. Revisa Caducidad/Merma antes de venderlo.';
 export const STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL = 'Sin lote vigente';
@@ -41,7 +43,9 @@ export const getStrictExpirySaleGuard = ({
   const recommendedBatch = getRecommendedFefoBatch(availableBatches, product, { now });
 
   const availableCurrentStock = availableBatches.reduce((sum, batch) => (
-    isBatchExpiredForSale(batch, product, now) ? sum : sum + getAvailableBatchStock(batch)
+    ['valid', 'expires_today'].includes(getBatchExpiryStatus({ expiryDate: getBatchExpiryValue(batch) }, now))
+      ? sum + getAvailableBatchStock(batch)
+      : sum
   ), 0);
 
   const expiredAvailableStock = availableBatches.reduce((sum, batch) => (
