@@ -1,28 +1,45 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useProductStore } from '../../../store/useProductStore';
+import { usePreparationStations } from '../../../hooks/restaurant/usePreparationStations';
+
+const FALLBACK_STATION = { id: 'station_kitchen', code: 'kitchen', name: 'Cocina', isDefault: true, isActive: true };
 
 export default function RestauranteFields({
   productType, setProductType,
   onManageRecipe,
   printStation, setPrintStation,
-  // Nuevos props que necesitaremos pasar desde ProductForm
   prepTime, setPrepTime,
   modifiers, setModifiers,
-  // Propiedad para ocultar el selector si ya viene definido por el Wizard
+  preparationStations = null,
+  preparationStationsLoading = null,
+  preparationStationsError = null,
+  inactivePreparationStationNotice = false,
   hideTypeSelector = false
 }) {
-
-  // Estado local para agregar un nuevo grupo de modificadores rápidamente
   const [newModGroup, setNewModGroup] = useState('');
+  const stationState = usePreparationStations({ includeInactive: false });
+
+  const resolvedStations = preparationStations || stationState.activeStations;
+  const resolvedLoading = preparationStationsLoading ?? stationState.isLoading;
+  const resolvedError = preparationStationsError ?? stationState.error;
+
+  const stationOptions = useMemo(() => {
+    const active = (Array.isArray(resolvedStations) ? resolvedStations : [])
+      .filter((station) => station?.code && station?.name && station.isActive !== false);
+    return active.length > 0 ? active : [FALLBACK_STATION];
+  }, [resolvedStations]);
+
+  const hasSelectedStation = stationOptions.some((station) => station.code === (printStation || 'kitchen'));
+  const selectedStation = hasSelectedStation ? (printStation || 'kitchen') : 'kitchen';
+  const showInactiveStationNotice = inactivePreparationStationNotice || (!hasSelectedStation && (printStation || 'kitchen') !== 'kitchen');
 
   const handleAddModifierGroup = () => {
     if (!newModGroup.trim()) return;
-    // Estructura base de un grupo de modificadores
     const newGroup = {
       id: Date.now(),
       name: newModGroup,
-      required: false, // Por defecto opcional
-      options: [] // Aquí irán las opciones (ej: "Rojo", "Verde")
+      required: false,
+      options: []
     };
     setModifiers([...(modifiers || []), newGroup]);
     setNewModGroup('');
@@ -34,13 +51,12 @@ export default function RestauranteFields({
     setModifiers(updated);
   };
 
-  // Función para agregar una opción a un grupo (ej: "Queso" al grupo "Extras")
   const addOptionToGroup = (groupIndex, optionName, price, ingredientId = null) => {
     const updated = [...(modifiers || [])];
     updated[groupIndex].options.push({
       name: optionName,
       price: parseFloat(price) || 0,
-      ingredientId: ingredientId // Guardamos el ID para descontar inventario
+      ingredientId
     });
     setModifiers(updated);
   };
@@ -51,17 +67,12 @@ export default function RestauranteFields({
     setModifiers(updated);
   };
 
-  // 1. Traemos solo el menú (referencia estable)
   const menu = useProductStore(state => state.menu);
-
-  // 2. Filtramos durante el renderizado (esto no causa bucles)
   const ingredientList = menu.filter(p => p.productType === 'ingredient' && p.isActive !== false);
 
   return (
     <div className="restaurant-fields-container">
 
-      {/* 1. SELECTOR DE TIPO */}
-      {/* Solo se muestra si hideTypeSelector es falso (por defecto) */}
       {!hideTypeSelector && (
         <div className="form-group product-form-option-panel">
           <label className="form-label">Tipo de ítem</label>
@@ -86,11 +97,9 @@ export default function RestauranteFields({
         </div>
       )}
 
-      {/* 2. OPCIONES PARA PLATILLOS */}
       {productType === 'sellable' && (
         <>
           <div className="product-form-grid product-form-grid--2">
-            {/* Botón Receta Destacado */}
             <div className="form-group">
               <label className="form-label">Inventario y costos</label>
               <button
@@ -103,21 +112,31 @@ export default function RestauranteFields({
               <small>Define qué insumos se descuentan.</small>
             </div>
 
-            {/* Estación de Impresión */}
             <div className="form-group">
               <label className="form-label">Enviar comanda a:</label>
               <select
                 className="form-input"
-                /* CORRECCIÓN: Usar 'kitchen' como default si es undefined */
-                value={printStation || 'kitchen'}
+                value={selectedStation}
                 onChange={(e) => setPrintStation(e.target.value)}
               >
-                <option value="kitchen">Cocina</option>
+                {stationOptions.map((station) => (
+                  <option key={station.id || station.code} value={station.code}>{station.name}</option>
+                ))}
               </select>
+              {resolvedLoading && <small>Cargando áreas de preparación...</small>}
+              {resolvedError && (
+                <small className="product-form-inline-badge product-form-inline-badge--warning">
+                  No se pudieron actualizar las áreas. Se usará la última configuración disponible o Cocina.
+                </small>
+              )}
+              {showInactiveStationNotice && (
+                <small className="product-form-inline-badge product-form-inline-badge--warning">
+                  El área anterior ya no está activa; se usará Cocina.
+                </small>
+              )}
             </div>
           </div>
 
-          {/* Tiempo de Preparación */}
           <div className="form-group">
             <label className="form-label">Tiempo promedio de preparación</label>
             <div className="product-form-field-row product-form-field-row--wrap">
@@ -137,14 +156,12 @@ export default function RestauranteFields({
             )}
           </div>
 
-          {/* 3. GESTOR DE MODIFICADORES */}
           <div className="product-form-modifier-panel">
             <label className="product-form-fieldset-title">Modificadores / extras</label>
             <p className="product-form-help">
               Ej: "Elige tu Salsa", "Agrega papas", "Término de carne".
             </p>
 
-            {/* Input para crear grupo */}
             <div className="product-form-field-row" style={{ marginBottom: '15px' }}>
               <input
                 type="text"
@@ -156,7 +173,6 @@ export default function RestauranteFields({
               <button type="button" className="btn btn-save" style={{ width: 'auto' }} onClick={handleAddModifierGroup}>Crear</button>
             </div>
 
-            {/* Lista de Grupos */}
             <div className="modifiers-list">
               {modifiers && modifiers.map((group, idx) => (
                 <div key={idx} className="product-form-modifier-card">
@@ -165,9 +181,7 @@ export default function RestauranteFields({
                     <button type="button" className="product-form-link-danger" onClick={() => removeModifierGroup(idx)}>Eliminar grupo</button>
                   </div>
 
-                  {/* Agregar Opción al Grupo */}
                   <div className="product-form-modifier-option-editor">
-                    {/* Fila 1: Nombre y Precio */}
                     <div className="product-form-field-row">
                       <input
                         id={`opt-name-${idx}`}
@@ -184,10 +198,9 @@ export default function RestauranteFields({
                       />
                     </div>
 
-                    {/* Fila 2: Selector de Insumo (Funcionalidad Restaurada) */}
                     <div className="product-form-field-row">
                       <select
-                        id={`opt-ing-${idx}`} // ID único por grupo
+                        id={`opt-ing-${idx}`}
                         className="form-input product-form-field-grow"
                       >
                         <option value="">-- Solo texto (no descuenta stock) --</option>
@@ -198,29 +211,25 @@ export default function RestauranteFields({
                         ))}
                       </select>
 
-                      {/* Botón de Agregar corregido */}
                       <button
                         type="button"
                         className="btn btn-help"
                         style={{ margin: 0, minHeight: '35px' }}
                         onClick={() => {
-                          // Capturamos los valores por ID
                           const nameInput = document.getElementById(`opt-name-${idx}`);
                           const priceInput = document.getElementById(`opt-price-${idx}`);
                           const ingInput = document.getElementById(`opt-ing-${idx}`);
 
                           if (nameInput.value) {
-                            // Guardamos el ingredientId como string o null
                             const linkedIngredientId = ingInput.value.trim() || '';
 
                             addOptionToGroup(
                               idx,
                               nameInput.value,
                               priceInput.value,
-                              linkedIngredientId  // Ahora pasa correctamente
+                              linkedIngredientId
                             );
 
-                            // Limpiamos los campos
                             nameInput.value = '';
                             priceInput.value = '';
                             ingInput.value = '';
@@ -233,13 +242,11 @@ export default function RestauranteFields({
                     </div>
                   </div>
 
-                  {/* Lista de Opciones del Grupo */}
                   <ul className="product-form-option-list">
                     {group.options.map((opt, optIdx) => (
                       <li key={optIdx} className="product-form-option-item">
                         <span>{opt.name} {opt.price > 0 && <span className="product-form-success-text">(+${opt.price})</span>}</span>
 
-                        {/* Alerta visual si cobra pero no descuenta */}
                         {opt.price > 0 && !opt.ingredientId && (
                           <span title="Cobra precio pero no descuenta inventario" className="product-form-inline-badge product-form-inline-badge--warning">
                             Sin descuento

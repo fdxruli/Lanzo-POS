@@ -1,0 +1,117 @@
+.preparation-stations-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-md, 16px);
+}
+
+.preparation-stations-free-card {
+  align-items: flex-start;
+}
+
+.preparation-station-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--ui-space-sm, 12px);
+  padding: var(--ui-space-md, 16px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius-md, 12px);
+  background: var(--light-background);
+}
+
+.preparation-station-add-button,
+.preparation-station-save-button {
+  width: auto;
+  white-space: nowrap;
+}
+
+.preparation-station-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-sm, 12px);
+}
+
+.preparation-station-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, auto);
+  gap: var(--ui-space-md, 16px);
+  align-items: center;
+  padding: var(--ui-space-md, 16px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius-md, 12px);
+  background: var(--card-background-color);
+}
+
+.preparation-station-row.is-inactive {
+  opacity: 0.72;
+}
+
+.preparation-station-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.preparation-station-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.preparation-station-actions {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.preparation-station-name-input {
+  min-width: 0;
+}
+
+.preparation-station-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-light);
+  background: var(--light-background);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.preparation-station-badge--default {
+  color: var(--ui-text-info);
+  border-color: var(--ui-border-info, var(--border-color));
+  background: var(--ui-bg-info-soft);
+}
+
+.preparation-stations-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border-warning);
+  border-radius: var(--ui-radius-sm, 8px);
+  color: var(--ui-text-warning);
+  background: var(--ui-bg-warning-soft);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 780px) {
+  .preparation-station-editor,
+  .preparation-station-row,
+  .preparation-station-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .preparation-station-add-button,
+  .preparation-station-save-button {
+    width: 100%;
+  }
+
+  .preparation-station-actions .settings-switch {
+    justify-self: end;
+  }
+}

@@ -34,6 +34,7 @@ export const SYNC_ENTITY_TYPES = Object.freeze({
   CATEGORY: 'category',
   PRODUCT: 'product',
   PRODUCT_BATCH: 'product_batch',
+  PREPARATION_STATION: 'preparation_station',
   INVENTORY_MOVEMENT: 'inventory_movement',
   CASH: 'cash',
   CASH_SESSION: 'cash_session',
@@ -210,6 +211,11 @@ export const isCloudSalesReportsFinalEnabled = (licenseDetails = {}) => {
     && isFeatureEnabled(features, 'cloud_cash_sync')
     && isFeatureEnabled(features, 'cloud_sales_cashier')
     && isFeatureEnabled(features, 'cloud_sales_reports_final');
+};
+
+export const isPreparationStationsEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'preparation_stations');
 };
 
 export const getLicenseKeyFromDetails = (licenseDetails = {}) => (

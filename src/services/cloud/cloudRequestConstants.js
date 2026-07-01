@@ -33,7 +33,8 @@ export const CLOUD_REQUEST_TAGS = Object.freeze({
   CUSTOMER_CREDIT: 'customer_credit',
   SALES: 'sales',
   SYNC: 'sync',
-  LICENSE: 'license'
+  LICENSE: 'license',
+  RESTAURANT: 'restaurant'
 });
 
 export const ENABLE_CLOUD_REQUEST_DEBUG = (() => {
