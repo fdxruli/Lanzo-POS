@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Info, Plus, RefreshCcw } from 'lucide-react';
 import { usePreparationStations } from '../../hooks/restaurant/usePreparationStations';
 import { showMessageModal } from '../../services/utils';
+import './PreparationStationsSettings.css';
 
 function StationRow({ station, canManageStations, onRename, onToggle }) {
   const [draftName, setDraftName] = useState(station.name || '');
