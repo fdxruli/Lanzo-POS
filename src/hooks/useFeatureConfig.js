@@ -8,7 +8,7 @@ import { normalizeBusinessType, normalizeBusinessTypes } from '../utils/business
  */
 const RUBRO_FEATURES = {
   // --- GRUPOS NUEVOS ---
-  'food_service': ['recipes', 'modifiers', 'waste', 'kds', 'tables', 'expiry', 'lots'], // Restaurante: No usa 'bulk' de venta directa usualmente
+  'food_service': ['recipes', 'modifiers', 'waste', 'kds', 'tables', 'expiry', 'lots', 'preparation_stations'], // Restaurante: estaciones dinámicas solo PRO; FREE usa Cocina fija
   'apparel': ['variants', 'sku', 'suppliers', 'layaway'], // Ropa: JAMÁS es a granel
   'hardware': ['lots', 'sku', 'suppliers', 'minmax', 'wholesale', 'bulk', 'expiry'], // Ferretería: Clavos/Cables sí pueden ser granel
 
@@ -27,6 +27,7 @@ const FEATURE_TIERS = {
   'suppliers': 'pro',
   'lab_fields': 'pro',
   'daily_pricing': 'pro',
+  'preparation_stations': 'pro'
 };
 
 const EMPTY_ARRAY = [];
@@ -93,6 +94,7 @@ export function useFeatureConfig(specificRubro = null) {
       hasWholesale: enabledFeatures.has('wholesale'),
       hasDailyPricing: enabledFeatures.has('daily_pricing'),
       hasLayaway: enabledFeatures.has('layaway'),
+      hasPreparationStations: enabledFeatures.has('preparation_stations'),
       isRecipesLocked: lockedFeatures.has('recipes'),
       isModifiersLocked: lockedFeatures.has('modifiers'),
       isVariantsLocked: lockedFeatures.has('variants'),
@@ -100,6 +102,7 @@ export function useFeatureConfig(specificRubro = null) {
       isSuppliersLocked: lockedFeatures.has('suppliers'),
       isLabFieldsLocked: lockedFeatures.has('lab_fields'),
       isDailyPricingLocked: lockedFeatures.has('daily_pricing'),
+      isPreparationStationsLocked: lockedFeatures.has('preparation_stations'),
     };
   }, [businessTypes, licenseDetails, specificRubro]);
 
