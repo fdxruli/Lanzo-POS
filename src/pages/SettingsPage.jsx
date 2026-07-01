@@ -25,7 +25,7 @@ export default function SettingsPage() {
 
   const visibleTabs = [
     { key: 'general', allowed: canAccess('settings') },
-    { key: 'restaurant', allowed: hasRestaurantSettings && canAccess('settings') },
+    { key: 'restaurant', allowed: hasRestaurantSettings && (canAccess('settings') || canAccess('products')) },
     { key: 'license', allowed: canAccess('license') },
     { key: 'maintenance', allowed: canAccess('sync') || canAccess('inventory') },
     { key: 'backup', allowed: canAccess('sync') },
