@@ -4,7 +4,7 @@ import CommonProductFields from './CommonProductFields';
 import RecipeBuilderModal from '../RecipeBuilderModal';
 import RestaurantConfigSection from './restaurant/RestaurantConfigSection';
 import RestaurantFormActions from './restaurant/RestaurantFormActions';
-import { useRestaurantProductFormController } from './restaurant/useRestaurantProductFormController';
+import { useRestaurantProductFormController } from './restaurant/useRestaurantProductFormControllerRest1';
 
 export default function RestaurantProductForm({
   onSave,
@@ -65,4 +65,3 @@ export default function RestaurantProductForm({
     </>
   );
 }
-
