@@ -29,9 +29,9 @@ export default function RestauranteFields({
     return active.length > 0 ? active : [FALLBACK_STATION];
   }, [resolvedStations]);
 
-  const selectedStation = stationOptions.some((station) => station.code === (printStation || 'kitchen'))
-    ? (printStation || 'kitchen')
-    : 'kitchen';
+  const hasSelectedStation = stationOptions.some((station) => station.code === (printStation || 'kitchen'));
+  const selectedStation = hasSelectedStation ? (printStation || 'kitchen') : 'kitchen';
+  const showInactiveStationNotice = inactivePreparationStationNotice || (!hasSelectedStation && (printStation || 'kitchen') !== 'kitchen');
 
   const handleAddModifierGroup = () => {
     if (!newModGroup.trim()) return;
@@ -129,7 +129,7 @@ export default function RestauranteFields({
                   No se pudieron actualizar las áreas. Se usará la última configuración disponible o Cocina.
                 </small>
               )}
-              {inactivePreparationStationNotice && (
+              {showInactiveStationNotice && (
                 <small className="product-form-inline-badge product-form-inline-badge--warning">
                   El área anterior ya no está activa; se usará Cocina.
                 </small>
