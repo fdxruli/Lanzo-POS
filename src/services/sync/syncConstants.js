@@ -35,6 +35,8 @@ export const SYNC_ENTITY_TYPES = Object.freeze({
   PRODUCT: 'product',
   PRODUCT_BATCH: 'product_batch',
   PREPARATION_STATION: 'preparation_station',
+  RESTAURANT_ORDER: 'restaurant_order',
+  RESTAURANT_ORDER_ITEM: 'restaurant_order_item',
   INVENTORY_MOVEMENT: 'inventory_movement',
   CASH: 'cash',
   CASH_SESSION: 'cash_session',
@@ -59,6 +61,7 @@ export const SYNC_OPERATIONS = Object.freeze({
   PULL_SNAPSHOT: 'pull_snapshot',
   PULL_CHANGES: 'pull_changes',
   TOGGLE_STATUS: 'toggle_status',
+  STATUS_UPDATE: 'status_update',
   OPEN: 'open',
   CLOSE: 'close',
   MOVEMENT: 'movement',
@@ -164,6 +167,13 @@ export const isCloudCustomerCreditSyncEnabled = (licenseDetails = {}) => {
 export const isCloudSalesBaseSyncEnabled = (licenseDetails = {}) => {
   const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
   return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_sales_sync_base');
+};
+
+export const isRestaurantOrdersCloudEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'cloud_pos_sync')
+    && isFeatureEnabled(features, 'cloud_sales_sync_base')
+    && features?.restaurant_orders_cloud !== false;
 };
 
 export const isCloudSalesCashierEnabled = (licenseDetails = {}) => {
