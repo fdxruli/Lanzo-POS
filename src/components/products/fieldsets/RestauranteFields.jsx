@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useProductStore } from '../../../store/useProductStore';
+import { usePreparationStations } from '../../../hooks/restaurant/usePreparationStations';
 
 const FALLBACK_STATION = { id: 'station_kitchen', code: 'kitchen', name: 'Cocina', isDefault: true, isActive: true };
 
@@ -9,19 +10,24 @@ export default function RestauranteFields({
   printStation, setPrintStation,
   prepTime, setPrepTime,
   modifiers, setModifiers,
-  preparationStations = [],
-  preparationStationsLoading = false,
+  preparationStations = null,
+  preparationStationsLoading = null,
   preparationStationsError = null,
   inactivePreparationStationNotice = false,
   hideTypeSelector = false
 }) {
   const [newModGroup, setNewModGroup] = useState('');
+  const stationState = usePreparationStations({ includeInactive: false });
+
+  const resolvedStations = preparationStations || stationState.activeStations;
+  const resolvedLoading = preparationStationsLoading ?? stationState.isLoading;
+  const resolvedError = preparationStationsError ?? stationState.error;
 
   const stationOptions = useMemo(() => {
-    const active = (Array.isArray(preparationStations) ? preparationStations : [])
+    const active = (Array.isArray(resolvedStations) ? resolvedStations : [])
       .filter((station) => station?.code && station?.name && station.isActive !== false);
     return active.length > 0 ? active : [FALLBACK_STATION];
-  }, [preparationStations]);
+  }, [resolvedStations]);
 
   const selectedStation = stationOptions.some((station) => station.code === (printStation || 'kitchen'))
     ? (printStation || 'kitchen')
@@ -117,8 +123,8 @@ export default function RestauranteFields({
                   <option key={station.id || station.code} value={station.code}>{station.name}</option>
                 ))}
               </select>
-              {preparationStationsLoading && <small>Cargando áreas de preparación...</small>}
-              {preparationStationsError && (
+              {resolvedLoading && <small>Cargando áreas de preparación...</small>}
+              {resolvedError && (
                 <small className="product-form-inline-badge product-form-inline-badge--warning">
                   No se pudieron actualizar las áreas. Se usará la última configuración disponible o Cocina.
                 </small>
