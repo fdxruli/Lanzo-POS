@@ -6,7 +6,9 @@ export default function PermissionRoute({ permission, children }) {
   useAppStore((state) => state.currentDeviceRole);
   useAppStore((state) => state.currentStaffUser);
 
-  if (!permission || canAccess(permission)) {
+  const permissions = Array.isArray(permission) ? permission : [permission];
+
+  if (!permission || permissions.some((item) => canAccess(item))) {
     return children;
   }
 
