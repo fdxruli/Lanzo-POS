@@ -46,6 +46,12 @@ export const invalidateCloudCacheAfterRestaurantConfigMutation = (licenseKey) =>
   CLOUD_REQUEST_TAGS.REPORTS
 ]);
 
+export const invalidateCloudCacheAfterRestaurantOrderMutation = (licenseKey) => invalidateCloudCacheForLicenseTags(licenseKey, [
+  CLOUD_REQUEST_TAGS.RESTAURANT,
+  CLOUD_REQUEST_TAGS.SALES,
+  CLOUD_REQUEST_TAGS.REPORTS
+]);
+
 export const invalidateCloudCacheAfterCustomerMutation = (licenseKey) => invalidateCloudCacheForLicenseTags(licenseKey, [
   CLOUD_REQUEST_TAGS.CUSTOMERS,
   CLOUD_REQUEST_TAGS.CUSTOMER_CREDIT,

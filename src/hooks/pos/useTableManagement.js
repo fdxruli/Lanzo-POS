@@ -8,6 +8,11 @@ import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 import { showInputPromptModal } from '../../components/common/InputPromptModal';
+import { restaurantOrdersRepository } from '../../services/restaurant/restaurantOrdersRepository';
+import {
+    getLicenseKeyFromDetails,
+    isRestaurantOrdersCloudEnabled
+} from '../../services/sync/syncConstants';
 
 const EMPTY_ORDER = [];
 
@@ -32,6 +37,14 @@ export function useTableManagement({
 }) {
     const verifySessionIntegrity = useAppStore((state) => state.verifySessionIntegrity);
     const companyName = useAppStore((state) => state.companyProfile?.name || 'Tu Negocio');
+    const licenseDetails = useAppStore((state) => state.licenseDetails);
+    const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+    const isCloudRestaurantOrdersEnabled = Boolean(
+        features?.hasTables &&
+        licenseKey &&
+        licenseDetails?.valid !== false &&
+        isRestaurantOrdersCloudEnabled(licenseDetails)
+    );
 
     const saveOrderAsOpen = useActiveOrders((state) => state.saveOrderAsOpen);
     const loadOpenOrder = useActiveOrders((state) => state.loadOpenOrder);
@@ -42,6 +55,48 @@ export function useTableManagement({
     const clearSession = useCallback(() => {
         useActiveOrders.getState().cancelCurrentOrder();
     }, []);
+
+    const syncOpenRestaurantOrderToCloud = useCallback(async (orderId) => {
+        if (!isCloudRestaurantOrdersEnabled || !licenseKey) {
+            return { skipped: true };
+        }
+
+        if (!orderId) {
+            return { success: false, message: 'No se encontró la orden guardada.' };
+        }
+
+        try {
+            const sale = await db.table(STORES.SALES).get(orderId);
+            if (!sale) {
+                return {
+                    success: false,
+                    message: 'No se encontró la venta local para enviar a cocina cloud.'
+                };
+            }
+
+            const response = await restaurantOrdersRepository.upsertRestaurantOrderFromLocalSale({
+                licenseKey,
+                sale
+            });
+
+            if (response?.success === false) {
+                return {
+                    success: false,
+                    message: response.message || response.code || 'No se pudo enviar a cocina cloud.',
+                    response
+                };
+            }
+
+            return { success: true, response };
+        } catch (error) {
+            Logger.warn('[REST.2] No se pudo enviar comanda cloud:', error);
+            return {
+                success: false,
+                error,
+                message: error?.message || 'No se pudo enviar a cocina cloud.'
+            };
+        }
+    }, [isCloudRestaurantOrdersEnabled, licenseKey]);
 
     const handleSaveAsOpen = useCallback(async () => {
         if (!features?.hasTables) return;
@@ -66,30 +121,48 @@ export function useTableManagement({
 
         const result = await saveOrderAsOpen();
         if (result.success) {
+            const orderId = useActiveOrders.getState().currentOrderId || result.id;
+            let cloudSyncResult = { skipped: true };
+
             try {
-                const orderId = useActiveOrders.getState().currentOrderId || result.id;
                 await db.table(STORES.SALES).update(orderId, {
                     fulfillmentStatus: 'pending',
                     updatedAt: new Date().toISOString()
                 });
             } catch (err) {
-                console.error('Error actualizando fulfillmentStatus a pending:', err);
+                Logger.error('Error actualizando fulfillmentStatus a pending:', err);
+            }
+
+            if (isCloudRestaurantOrdersEnabled) {
+                cloudSyncResult = await syncOpenRestaurantOrderToCloud(orderId);
             }
 
             try {
-                const currentId = useActiveOrders.getState().currentOrderId || result.id;
-                await useActiveOrders.getState().removeOrder(currentId);
+                await useActiveOrders.getState().removeOrder(orderId);
             } catch (err) {
-                console.error('No se pudo cerrar la pestaña activa:', err);
+                Logger.error('No se pudo cerrar la pestaña activa:', err);
             }
 
-            showMessageModal(isUpdating ? '✅ Mesa actualizada correctamente.' : '✅ Pedido guardado y enviado a cocina.');
+            if (isCloudRestaurantOrdersEnabled) {
+                if (cloudSyncResult?.success) {
+                    showMessageModal(isUpdating ? '✅ Mesa actualizada y enviada a cocina cloud.' : '✅ Pedido guardado y enviado a cocina cloud.');
+                } else {
+                    showMessageModal(
+                        '⚠️ Pedido guardado localmente, pero no se pudo enviar a cocina cloud.',
+                        null,
+                        { type: 'warning' }
+                    );
+                }
+            } else {
+                showMessageModal(isUpdating ? '✅ Mesa actualizada correctamente.' : '✅ Pedido guardado y enviado a cocina.');
+            }
+
             await fetchActiveTablesCount();
             return;
         }
 
         showMessageModal(result.message || 'No se pudo guardar la orden abierta.', null, { type: 'error' });
-    }, [features?.hasTables, saveOrderAsOpen, fetchActiveTablesCount]);
+    }, [features?.hasTables, saveOrderAsOpen, isCloudRestaurantOrdersEnabled, syncOpenRestaurantOrderToCloud, fetchActiveTablesCount]);
 
     const executeLoadOpenOrder = useCallback(async (orderId, silent = false) => {
         const result = await loadOpenOrder(orderId);
