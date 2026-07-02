@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { db, STORES } from '../../services/db';
 import { SALE_STATUS } from '../../services/sales/financialStats';
+import { useRestaurantOrderCloudStatus } from '../../hooks/restaurant/useRestaurantOrderCloudStatus';
 import './TablesView.css';
 
 const getTableLabel = (order) => {
@@ -40,6 +41,8 @@ const filterOrdersBySearch = (orders, searchTerm) => {
   return orders.filter((order) => getTableLabel(order).toLowerCase().includes(lowerSearch));
 };
 
+const getCloudStatusClass = (status) => `table-cloud-status-badge--${String(status || 'pending').replace(/[^a-z0-9_-]/gi, '-')}`;
+
 const TableCard = ({
   order,
   onSelectOrder,
@@ -51,6 +54,16 @@ const TableCard = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const items = Array.isArray(order.items) ? order.items : [];
+  const cloudStatus = useRestaurantOrderCloudStatus({
+    localOrderId: order?.id,
+    enabled: Boolean(order?.id)
+  });
+  const cloudItems = Array.isArray(cloudStatus.items) ? cloudStatus.items : [];
+  const showCloudPanel = cloudStatus.isCloudStatusEnabled && (
+    cloudStatus.isLoading || cloudStatus.error || cloudStatus.cloudOrder
+  );
+  const hasCloudItems = cloudStatus.cloudOrder && cloudItems.length > 0;
+  const showProductsToggle = items.length > 0 || hasCloudItems;
 
   const handleToggleAccordion = (e) => {
     e.stopPropagation();
@@ -62,6 +75,9 @@ const TableCard = ({
       className={[
         'table-card',
         cancelledFromKitchen ? 'table-card--kitchen-cancelled' : '',
+        cloudStatus.isReady ? 'table-card--cloud-ready' : '',
+        cloudStatus.hasCancelledItems ? 'table-card--cloud-cancelled-items' : '',
+        cloudStatus.isCancelled ? 'table-card--cloud-cancelled' : '',
         order.requiresReview ? 'table-card--requires-review' : ''
       ].filter(Boolean).join(' ')}
     >
@@ -92,9 +108,47 @@ const TableCard = ({
             <span className="stat-value total-highlight">${formatCurrency(order.total)}</span>
           </div>
         </div>
+
+        {showCloudPanel && (
+          <div className="table-cloud-status" role={cloudStatus.error ? 'alert' : 'status'}>
+            {cloudStatus.isLoading && !cloudStatus.cloudOrder && (
+              <span className="table-cloud-status-muted">Verificando cocina cloud…</span>
+            )}
+            {cloudStatus.error && (
+              <span className="table-cloud-status-warning">{cloudStatus.error}</span>
+            )}
+            {cloudStatus.cloudOrder && (
+              <>
+                <div className="table-cloud-status-row">
+                  <span className={`table-cloud-status-badge ${getCloudStatusClass(cloudStatus.status)}`}>
+                    {cloudStatus.isCancelled ? 'Comanda cancelada' : cloudStatus.statusLabel}
+                  </span>
+                  {cloudStatus.hasCancelledItems && (
+                    <span className="table-cloud-status-badge table-cloud-status-badge--cancelled-items">
+                      Con items cancelados
+                    </span>
+                  )}
+                </div>
+                {cloudStatus.isReady && !cloudStatus.hasCancelledItems && (
+                  <p className="table-cloud-status-hint">Lista para entregar/cobrar.</p>
+                )}
+                {cloudStatus.hasCancelledItems && (
+                  <p className="table-cloud-status-hint table-cloud-status-hint--warning">
+                    Cocina canceló {cloudStatus.cancelledItems.length} item(s). Ajustar cuenta si aplica.
+                  </p>
+                )}
+                {cloudStatus.isCancelled && (
+                  <p className="table-cloud-status-hint table-cloud-status-hint--danger">
+                    Todos los items activos fueron cancelados en cocina.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {items.length > 0 && (
+      {showProductsToggle && (
         <button
           type="button"
           className="btn-accordion-toggle"
@@ -106,13 +160,48 @@ const TableCard = ({
 
       <div className={`table-card-accordion ${isExpanded ? 'expanded' : ''}`}>
         <div className="accordion-items-list">
-          {items.map((item, idx) => (
-            <div key={`${item.id}-${idx}`} className="accordion-item-row">
-              <span className="item-qty">{item.quantity}x</span>
-              <span className="item-name">{item.name}</span>
-              <span className="item-price">${formatCurrency(item.price * item.quantity)}</span>
+          {items.length > 0 && (
+            <div className="accordion-local-items">
+              {items.map((item, idx) => (
+                <div key={`${item.id}-${idx}`} className="accordion-item-row">
+                  <span className="item-qty">{item.quantity}x</span>
+                  <span className="item-name">{item.name}</span>
+                  <span className="item-price">${formatCurrency(item.price * item.quantity)}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+
+          {hasCloudItems && (
+            <div className="accordion-cloud-items">
+              <div className="accordion-cloud-title">Estado de cocina cloud</div>
+              {cloudItems.map((item, idx) => {
+                const statusLabel = cloudStatus.getItemStatusLabel(item?.status);
+                const itemStatus = String(item?.status || 'pending').toLowerCase();
+                const isCancelledItem = itemStatus === 'cancelled';
+                return (
+                  <div
+                    key={`${item.id || item.localLineId || item.productName}-${idx}`}
+                    className={`accordion-cloud-item-row${isCancelledItem ? ' accordion-cloud-item-row--cancelled' : ''}`}
+                  >
+                    <div className="accordion-cloud-item-main">
+                      <span className="item-qty">{item.quantity}x</span>
+                      <span className="item-name">{item.productName || item.name || 'Producto'}</span>
+                    </div>
+                    <div className="accordion-cloud-item-meta">
+                      <span>{item.stationName || item.station_code || 'Cocina'}</span>
+                      <span className={`table-cloud-item-badge table-cloud-item-badge--${itemStatus}`}>
+                        {statusLabel}
+                      </span>
+                    </div>
+                    {isCancelledItem && (
+                      <div className="accordion-cloud-item-warning">Ajustar cuenta si aplica</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
