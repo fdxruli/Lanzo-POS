@@ -59,6 +59,7 @@ const TableCard = ({
     enabled: Boolean(order?.id)
   });
   const cloudItems = Array.isArray(cloudStatus.items) ? cloudStatus.items : [];
+  const isKitchenCancelled = cancelledFromKitchen || cloudStatus.isCancelled;
   const showCloudPanel = cloudStatus.isCloudStatusEnabled && (
     cloudStatus.isLoading || cloudStatus.error || cloudStatus.cloudOrder
   );
@@ -74,14 +75,14 @@ const TableCard = ({
     <div
       className={[
         'table-card',
-        cancelledFromKitchen ? 'table-card--kitchen-cancelled' : '',
+        isKitchenCancelled ? 'table-card--kitchen-cancelled' : '',
         cloudStatus.isReady ? 'table-card--cloud-ready' : '',
         cloudStatus.hasCancelledItems ? 'table-card--cloud-cancelled-items' : '',
         cloudStatus.isCancelled ? 'table-card--cloud-cancelled' : '',
         order.requiresReview ? 'table-card--requires-review' : ''
       ].filter(Boolean).join(' ')}
     >
-      {cancelledFromKitchen && (
+      {isKitchenCancelled && (
         <div className="table-card-kitchen-banner" role="status">
           Cancelada desde cocina: esta comanda ya no se prepara. Use &quot;Anular venta&quot; para
           cerrarla en sistema o abra en POS si debe ajustar cobro.
@@ -175,13 +176,22 @@ const TableCard = ({
           {hasCloudItems && (
             <div className="accordion-cloud-items">
               <div className="accordion-cloud-title">Estado de cocina cloud</div>
-              {cloudItems.map((item, idx) => {
+              {cloudItems.map((item) => {
                 const statusLabel = cloudStatus.getItemStatusLabel(item?.status);
                 const itemStatus = String(item?.status || 'pending').toLowerCase();
                 const isCancelledItem = itemStatus === 'cancelled';
+                const cloudItemKey = item.id
+                  || item.orderItemId
+                  || item.order_item_id
+                  || item.localLineId
+                  || item.local_line_id
+                  || item.lineId
+                  || item.line_id
+                  || item.cartItemId
+                  || `${item.productName || item.name || 'producto'}-${item.stationName || item.stationId || 'cocina'}-${itemStatus}-${item.quantity || 0}`;
                 return (
                   <div
-                    key={`${item.id || item.localLineId || item.productName}-${idx}`}
+                    key={cloudItemKey}
                     className={`accordion-cloud-item-row${isCancelledItem ? ' accordion-cloud-item-row--cancelled' : ''}`}
                   >
                     <div className="accordion-cloud-item-main">
@@ -206,9 +216,9 @@ const TableCard = ({
       </div>
 
       <div
-        className={`table-card-actions${cancelledFromKitchen ? ' table-card-actions--with-annul' : ''}`}
+        className={`table-card-actions${isKitchenCancelled ? ' table-card-actions--with-annul' : ''}`}
       >
-        {cancelledFromKitchen && onAnnulKitchenRejected && (
+        {isKitchenCancelled && onAnnulKitchenRejected && (
           <button
             type="button"
             className="btn-annull-kitchen"
@@ -232,6 +242,8 @@ const TableCard = ({
           {cancelledFromKitchen ? 'Abrir en POS' : 'Editar / Añadir'}
         </button>
 
+        {!isKitchenCancelled && (
+          <>
         <button
           type="button"
           className="btn-quick-split"
@@ -252,6 +264,8 @@ const TableCard = ({
         >
           Cobrar
         </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -495,6 +509,8 @@ export default function TablesView({
                       onSelectOrder={handleSelectAndClose}
                       onCheckoutOrder={handleCheckoutAndClose}
                       onSplitOrder={handleSplitAndClose}
+                      onAnnulKitchenRejected={handleAnnulKitchenRejected}
+                      annulSubmitting={annullingOrderId === order.id}
                     />
                   ))}
                 </div>
