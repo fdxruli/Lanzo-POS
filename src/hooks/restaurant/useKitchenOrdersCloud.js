@@ -8,6 +8,7 @@ import {
 } from '../../services/sync/syncConstants';
 import usePreparationStations from './usePreparationStations';
 import useRestaurantOrders from './useRestaurantOrders';
+import '../../pages/OrderPageCloud.css';
 
 const CLOUD_KDS_POLL_MS = 10000;
 const RESTAURANT_ORDERS_UPDATED_EVENT = 'lanzo:restaurant-orders-cloud-updated';
@@ -269,7 +270,7 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     }
 
     const normalizedStatus = normalizeStatus(status);
-    if (!restaurantOrderId || KDS_TERMINAL_STATUSES.has(normalizedStatus) === false && !['pending', 'preparing', 'ready'].includes(normalizedStatus)) {
+    if (!restaurantOrderId || (KDS_TERMINAL_STATUSES.has(normalizedStatus) === false && !['pending', 'preparing', 'ready'].includes(normalizedStatus))) {
       const message = 'No se pudo cambiar el estado de la comanda.';
       setActionError(message);
       return { success: false, message };
