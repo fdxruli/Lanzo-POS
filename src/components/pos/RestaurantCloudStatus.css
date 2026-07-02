@@ -233,7 +233,8 @@
   gap: 8px;
 }
 
-.order-cloud-adjust-btn {
+.order-cloud-adjust-btn,
+.table-cloud-adjust-btn {
   align-self: flex-start;
   min-height: 34px;
   padding: 0 11px;
@@ -246,7 +247,8 @@
   font-weight: 850;
 }
 
-.order-cloud-adjust-btn:disabled {
+.order-cloud-adjust-btn:disabled,
+.table-cloud-adjust-btn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
