@@ -62,12 +62,63 @@ const STATUS_LABELS = {
 const TERMINAL_STATUSES = new Set(['delivered', 'cancelled']);
 const CANCELLABLE_ITEM_STATUSES = new Set(['pending', 'preparing']);
 const ACTIVE_ITEM_TERMINAL_STATUSES = new Set(['delivered', 'cancelled']);
+const CANCELLED_ITEM_STATUSES = new Set(['cancelled']);
+
+const getActiveOrderItems = (order = {}) => (
+    getOrderItems(order).filter((item) => !CANCELLED_ITEM_STATUSES.has(getItemStatus(item)))
+);
+
+const getCloudOrderProgress = (order = {}) => {
+    const activeItems = getActiveOrderItems(order);
+    const pendingItems = activeItems.filter((item) => getItemStatus(item) === 'pending');
+    const preparingItems = activeItems.filter((item) => getItemStatus(item) === 'preparing');
+    const readyItems = activeItems.filter((item) => getItemStatus(item) === 'ready');
+
+    return {
+        activeItems,
+        pendingItems,
+        preparingItems,
+        readyItems,
+        hasActiveItems: activeItems.length > 0,
+        hasPendingItems: pendingItems.length > 0,
+        hasPreparingItems: preparingItems.length > 0,
+        allReady: activeItems.length > 0 && readyItems.length === activeItems.length
+    };
+};
+
+const getDisplayOrderStatus = (order = {}) => {
+    const status = getOrderStatus(order);
+    if (TERMINAL_STATUSES.has(status)) return status;
+
+    const progress = getCloudOrderProgress(order);
+    if (!progress.hasActiveItems) return status;
+    if (progress.allReady) return 'ready';
+    if (progress.hasPreparingItems || progress.readyItems.length > 0) return 'preparing';
+    if (progress.hasPendingItems) return 'pending';
+
+    return status;
+};
 
 const getCloudStatusAction = (order) => {
     const status = getOrderStatus(order);
-    if (status === 'pending') return { nextStatus: 'preparing', label: 'Marcar en preparación', className: 'advance' };
-    if (status === 'preparing') return { nextStatus: 'ready', label: 'Marcar listo', className: 'advance' };
-    if (status === 'ready') return { nextStatus: 'delivered', label: 'Marcar entregado', className: 'deliver' };
+    if (TERMINAL_STATUSES.has(status)) return null;
+
+    const progress = getCloudOrderProgress(order);
+    if (status === 'ready' && (!progress.hasActiveItems || progress.allReady)) {
+        return { nextStatus: 'delivered', label: 'Marcar entregado', className: 'deliver' };
+    }
+
+    if (progress.hasPendingItems) {
+        return {
+            nextStatus: 'preparing',
+            label: progress.hasPreparingItems || progress.readyItems.length > 0 ? 'Preparar faltantes' : 'Marcar en preparacion',
+            className: 'advance'
+        };
+    }
+
+    if (progress.hasPreparingItems) return { nextStatus: 'ready', label: 'Marcar listo', className: 'advance' };
+    if (progress.allReady) return { nextStatus: 'ready', label: 'Marcar listo', className: 'advance' };
+
     return null;
 };
 
@@ -83,7 +134,7 @@ const shouldAdvanceItemForOrderStatus = (item, nextStatus) => {
     if (itemStatus === nextStatus || itemStatus === 'cancelled') return false;
 
     if (nextStatus === 'preparing') return itemStatus === 'pending';
-    if (nextStatus === 'ready') return itemStatus === 'pending' || itemStatus === 'preparing';
+    if (nextStatus === 'ready') return itemStatus === 'preparing';
     if (nextStatus === 'delivered') return !ACTIVE_ITEM_TERMINAL_STATUSES.has(itemStatus);
 
     return false;
@@ -263,13 +314,14 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
 
                 {displayedOrders.map((order) => {
                     const status = getOrderStatus(order);
+                    const displayStatus = getDisplayOrderStatus(order);
                     const action = getCloudStatusAction(order);
                     const ticketTotal = formatCurrency(order.total);
                     const isCurrentOrderUpdating = updatingOrderId === order.id;
                     const isTerminal = TERMINAL_STATUSES.has(status);
 
                     return (
-                        <div key={order.id || order.localOrderId || order.saleId} className={`kds-ticket status-${status}`}>
+                        <div key={order.id || order.localOrderId || order.saleId} className={`kds-ticket status-${displayStatus}`}>
                             <div className="ticket-header">
                                 <div className="ticket-info">
                                     <span className="ticket-id">#{getTicketId(order)}</span>
@@ -284,8 +336,8 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
                                     </span>
                                 </div>
                                 <div className="ticket-header-side">
-                                    <span className={`kds-status-badge status-${status}`}>{STATUS_LABELS[status] || status}</span>
-                                    <TicketTimer timestamp={getOrderTimestamp(order)} status={status} />
+                                    <span className={`kds-status-badge status-${displayStatus}`}>{STATUS_LABELS[displayStatus] || displayStatus}</span>
+                                    <TicketTimer timestamp={getOrderTimestamp(order)} status={displayStatus} />
                                 </div>
                             </div>
 
