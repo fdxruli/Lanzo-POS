@@ -61,6 +61,7 @@ const STATUS_LABELS = {
 
 const TERMINAL_STATUSES = new Set(['delivered', 'cancelled']);
 const CANCELLABLE_ITEM_STATUSES = new Set(['pending', 'preparing']);
+const ACTIVE_ITEM_TERMINAL_STATUSES = new Set(['delivered', 'cancelled']);
 
 const getCloudStatusAction = (order) => {
     const status = getOrderStatus(order);
@@ -77,6 +78,21 @@ const getCloudItemStatusAction = (item) => {
     return null;
 };
 
+const shouldAdvanceItemForOrderStatus = (item, nextStatus) => {
+    const itemStatus = getItemStatus(item);
+    if (itemStatus === nextStatus || itemStatus === 'cancelled') return false;
+
+    if (nextStatus === 'preparing') return itemStatus === 'pending';
+    if (nextStatus === 'ready') return itemStatus === 'pending' || itemStatus === 'preparing';
+    if (nextStatus === 'delivered') return !ACTIVE_ITEM_TERMINAL_STATUSES.has(itemStatus);
+
+    return false;
+};
+
+const getItemsToAdvanceForOrderStatus = (order, nextStatus) => (
+    getOrderItems(order).filter((item) => getItemId(item) && shouldAdvanceItemForOrderStatus(item, nextStatus))
+);
+
 const getTicketId = (order = {}) => {
     const id = order.id || order.localOrderId || order.saleId || order.timestamp || '';
     const shortId = String(id).replace(/-/g, '').slice(-4).toUpperCase();
@@ -85,7 +101,8 @@ const getTicketId = (order = {}) => {
 
 const TicketTimer = ({ timestamp, status }) => {
     const [now, setNow] = useState(() => Date.now());
-    const startedAt = new Date(timestamp || Date.now()).getTime();
+    const [fallbackStartedAt] = useState(() => Date.now());
+    const startedAt = useMemo(() => new Date(timestamp || fallbackStartedAt).getTime(), [fallbackStartedAt, timestamp]);
     const elapsed = Number.isFinite(startedAt) ? Math.max(Math.floor((now - startedAt) / 60000), 0) : 0;
 
     useEffect(() => {
@@ -523,6 +540,26 @@ export default function OrdersPage() {
     const handleCloudAdvanceStatus = async (order) => {
         const action = getCloudStatusAction(order);
         if (!action) return;
+
+        const itemsToAdvance = getItemsToAdvanceForOrderStatus(order, action.nextStatus);
+
+        for (const item of itemsToAdvance) {
+            const itemId = getItemId(item);
+            const itemResult = await kitchenCloud.changeOrderItemStatus({
+                restaurantOrderId: order.id,
+                restaurantOrderItemId: itemId,
+                status: action.nextStatus
+            });
+
+            if (itemResult?.success === false) {
+                showMessageModal(
+                    itemResult.message || kitchenCloud.error || 'No pudimos actualizar todos los items de la comanda.',
+                    null,
+                    { type: 'error' }
+                );
+                return;
+            }
+        }
 
         const result = await kitchenCloud.changeOrderStatus({
             restaurantOrderId: order.id,
