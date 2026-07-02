@@ -79,6 +79,19 @@ const TableCard = ({
     enabled: Boolean(order?.id)
   });
   const cloudItems = Array.isArray(cloudStatus.items) ? cloudStatus.items : [];
+  const cancelledKitchenAdjustmentPreview = useMemo(
+    () => applyKitchenCancelledItemsAdjustment({
+      orderId: order?.id,
+      orderItems: items,
+      cloudItems
+    }),
+    [cloudItems, items, order?.id]
+  );
+  const isAccountAdjustedForKitchenCancelledItems = Boolean(
+    cloudStatus.hasCancelledItems
+    && cancelledKitchenAdjustmentPreview.success
+    && !cancelledKitchenAdjustmentPreview.changed
+  );
   const isKitchenCancelled = cancelledFromKitchen || cloudStatus.isCancelled;
   const showCloudPanel = cloudStatus.isCloudStatusEnabled && (
     cloudStatus.isLoading || cloudStatus.error || cloudStatus.cloudOrder
@@ -97,7 +110,7 @@ const TableCard = ({
         'table-card',
         isKitchenCancelled ? 'table-card--kitchen-cancelled' : '',
         cloudStatus.isReady ? 'table-card--cloud-ready' : '',
-        cloudStatus.hasCancelledItems ? 'table-card--cloud-cancelled-items' : '',
+        cloudStatus.hasCancelledItems && !isAccountAdjustedForKitchenCancelledItems ? 'table-card--cloud-cancelled-items' : '',
         cloudStatus.isCancelled ? 'table-card--cloud-cancelled' : '',
         order.requiresReview ? 'table-card--requires-review' : ''
       ].filter(Boolean).join(' ')}
@@ -144,9 +157,14 @@ const TableCard = ({
                   <span className={`table-cloud-status-badge ${getCloudStatusClass(cloudStatus.status)}`}>
                     {cloudStatus.isCancelled ? 'Comanda cancelada' : cloudStatus.statusLabel}
                   </span>
-                  {cloudStatus.hasCancelledItems && (
+                  {cloudStatus.hasCancelledItems && !isAccountAdjustedForKitchenCancelledItems && (
                     <span className="table-cloud-status-badge table-cloud-status-badge--cancelled-items">
                       Con items cancelados
+                    </span>
+                  )}
+                  {isAccountAdjustedForKitchenCancelledItems && (
+                    <span className="table-cloud-status-badge table-cloud-status-badge--ready">
+                      Cuenta ajustada
                     </span>
                   )}
                 </div>
@@ -154,22 +172,28 @@ const TableCard = ({
                   <p className="table-cloud-status-hint">Lista para entregar/cobrar.</p>
                 )}
                 {cloudStatus.hasCancelledItems && (
-                  <>
-                    <p className="table-cloud-status-hint table-cloud-status-hint--warning">
-                      Cocina canceló {cloudStatus.cancelledItems.length} item(s). Puedes retirarlos de la cuenta antes de cobrar.
+                  isAccountAdjustedForKitchenCancelledItems ? (
+                    <p className="table-cloud-status-hint">
+                      Cuenta ajustada: los items cancelados ya fueron retirados de la cuenta local.
                     </p>
-                    <button
-                      type="button"
-                      className="table-cloud-adjust-btn"
-                      disabled={adjustSubmitting}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAdjustKitchenCancelled?.(order);
-                      }}
-                    >
-                      {adjustSubmitting ? 'Ajustando…' : 'Retirar cancelados de la cuenta'}
-                    </button>
-                  </>
+                  ) : (
+                    <>
+                      <p className="table-cloud-status-hint table-cloud-status-hint--warning">
+                        Cocina canceló {cloudStatus.cancelledItems.length} item(s). Puedes retirarlos de la cuenta antes de cobrar.
+                      </p>
+                      <button
+                        type="button"
+                        className="table-cloud-adjust-btn"
+                        disabled={adjustSubmitting}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAdjustKitchenCancelled?.(order);
+                        }}
+                      >
+                        {adjustSubmitting ? 'Ajustando…' : 'Retirar cancelados de la cuenta'}
+                      </button>
+                    </>
+                  )
                 )}
                 {cloudStatus.isCancelled && (
                   <p className="table-cloud-status-hint table-cloud-status-hint--danger">
@@ -238,7 +262,11 @@ const TableCard = ({
                       </span>
                     </div>
                     {isCancelledItem && (
-                      <div className="accordion-cloud-item-warning">Se ajustará la cuenta antes de cobrar.</div>
+                      <div className="accordion-cloud-item-warning">
+                        {isAccountAdjustedForKitchenCancelledItems
+                          ? 'Ya fue retirado de la cuenta local.'
+                          : 'Se ajustará la cuenta antes de cobrar.'}
+                      </div>
                     )}
                   </div>
                 );
@@ -277,26 +305,26 @@ const TableCard = ({
 
         {!isKitchenCancelled && (
           <>
-        <button
-          type="button"
-          className="btn-quick-split"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSplitOrder?.(order);
-          }}
-        >
-          Separar
-        </button>
-        <button
-          type="button"
-          className="btn-quick-checkout"
-          onClick={(e) => {
-            e.stopPropagation();
-            onCheckoutOrder?.(order);
-          }}
-        >
-          Cobrar
-        </button>
+            <button
+              type="button"
+              className="btn-quick-split"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSplitOrder?.(order);
+              }}
+            >
+              Separar
+            </button>
+            <button
+              type="button"
+              className="btn-quick-checkout"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCheckoutOrder?.(order);
+              }}
+            >
+              Cobrar
+            </button>
           </>
         )}
       </div>
