@@ -107,7 +107,7 @@ export function useTableManagement({
     const handleSaveAsOpen = useCallback(async () => {
         if (!features?.hasTables) return;
 
-        const currentOrderState = selectCurrentOrder(useActiveOrders.getState());
+        let currentOrderState = selectCurrentOrder(useActiveOrders.getState());
         const currentTableData = currentOrderState?.tableData;
         const isUpdating = Boolean(currentOrderState?.isSaved);
 
@@ -123,6 +123,66 @@ export function useTableManagement({
 
             if (!promptedName) return;
             useActiveOrders.getState().updateCurrentOrder({ tableData: promptedName });
+        }
+
+        currentOrderState = selectCurrentOrder(useActiveOrders.getState());
+
+        if (isUpdating && isCloudRestaurantOrdersEnabled && currentOrderState?.id) {
+            try {
+                const response = await getRestaurantOrderCloudStatusSnapshot({
+                    licenseDetails,
+                    localOrderId: currentOrderState.id,
+                    force: true
+                });
+                const summary = response?.summary || {};
+
+                if (response?.success !== false && response?.order && summary.hasCancelledItems) {
+                    const reconciliation = reconcileCartWithCancelledRestaurantItems(
+                        currentOrderState.items,
+                        summary.items
+                    );
+
+                    if (reconciliation.hasUnmatchedCancelledItems) {
+                        await showConfirmModal(
+                            'Hay items cancelados en cocina que no se pudieron empatar con el carrito. Revisa la cuenta antes de actualizar la mesa.',
+                            {
+                                title: summary.isCancelled ? 'Comanda cancelada en cocina' : 'Items cancelados en cocina',
+                                type: 'warning',
+                                confirmButtonText: 'Entendido',
+                                showCancel: false
+                            }
+                        );
+                        return;
+                    }
+
+                    if (reconciliation.hasRemovableCancelledItems) {
+                        const confirmed = await showConfirmModal(
+                            `Cocina cancelo ${reconciliation.removedCount} item(s). Se retiraran de la cuenta antes de actualizar la mesa.`,
+                            {
+                                title: 'Ajustar cuenta',
+                                type: 'warning',
+                                confirmButtonText: 'Retirar y actualizar',
+                                cancelButtonText: 'Volver'
+                            }
+                        );
+
+                        if (!confirmed) return;
+
+                        if (countSellableItems(reconciliation.kept) === 0) {
+                            showMessageModal(
+                                'No quedan productos activos para actualizar. Anula la venta si cocina cancelo toda la comanda.',
+                                null,
+                                { type: 'warning' }
+                            );
+                            return;
+                        }
+
+                        useActiveOrders.getState().updateOrderItems(currentOrderState.id, reconciliation.kept);
+                    }
+                }
+            } catch (error) {
+                Logger.warn('[REST.7] No se pudo verificar cocina antes de actualizar mesa:', error);
+            }
         }
 
         const result = await saveOrderAsOpen();
@@ -168,7 +228,14 @@ export function useTableManagement({
         }
 
         showMessageModal(result.message || 'No se pudo guardar la orden abierta.', null, { type: 'error' });
-    }, [features?.hasTables, saveOrderAsOpen, isCloudRestaurantOrdersEnabled, syncOpenRestaurantOrderToCloud, fetchActiveTablesCount]);
+    }, [
+        features?.hasTables,
+        saveOrderAsOpen,
+        isCloudRestaurantOrdersEnabled,
+        syncOpenRestaurantOrderToCloud,
+        fetchActiveTablesCount,
+        licenseDetails
+    ]);
 
     const executeLoadOpenOrder = useCallback(async (orderId, silent = false) => {
         const result = await loadOpenOrder(orderId);
@@ -342,7 +409,29 @@ export function useTableManagement({
         if (!features?.hasTables) return { success: false, message: 'Mesas no disponibles.' };
         if (!targetOrder?.id) return { success: false, message: 'Orden inválida.' };
 
-        if (targetOrder.status !== SALE_STATUS.OPEN || targetOrder.fulfillmentStatus !== 'cancelled') {
+        let isCancelledInKitchen = targetOrder.fulfillmentStatus === 'cancelled';
+
+        if (!isCancelledInKitchen) {
+            try {
+                const response = await getRestaurantOrderCloudStatusSnapshot({
+                    licenseDetails,
+                    localOrderId: targetOrder.id,
+                    force: true
+                });
+                isCancelledInKitchen = Boolean(response?.summary?.isCancelled);
+            } catch (error) {
+                Logger.warn('[REST.6] No se pudo confirmar cancelacion cloud antes de anular:', error);
+            }
+        }
+
+        if (targetOrder.status === SALE_STATUS.OPEN && !isCancelledInKitchen) {
+            return {
+                success: false,
+                message: 'Solo se puede anular desde aqui una comanda cancelada en cocina.'
+            };
+        }
+
+        if (targetOrder.status !== SALE_STATUS.OPEN) {
             return {
                 success: false,
                 message: 'Solo se puede anular desde aquí una comanda abierta y rechazada en cocina.'
@@ -374,7 +463,7 @@ export function useTableManagement({
             showMessageModal(error?.message || 'Error al anular la venta.', null, { type: 'error' });
             return { success: false, message: error?.message };
         }
-    }, [features?.hasTables, fetchActiveTablesCount]);
+    }, [features?.hasTables, fetchActiveTablesCount, licenseDetails]);
 
     const handleOpenSplitBill = useCallback(async () => {
         if (!features?.hasTables) return;
