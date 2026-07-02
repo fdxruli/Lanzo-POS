@@ -8,7 +8,6 @@ import {
 } from '../../services/sync/syncConstants';
 import usePreparationStations from './usePreparationStations';
 import useRestaurantOrders from './useRestaurantOrders';
-import '../../pages/OrderPageCloud.css';
 
 const CLOUD_KDS_POLL_MS = 10000;
 const RESTAURANT_ORDERS_UPDATED_EVENT = 'lanzo:restaurant-orders-cloud-updated';
