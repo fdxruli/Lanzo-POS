@@ -5,6 +5,7 @@ import '../products/productSyncHandler.js';
 import '../cash/cashSyncHandler.js';
 import '../customerCredit/customerCreditSyncHandler.js';
 import '../salesCloud/salesCloudSyncHandler.js';
+import '../restaurant/restaurantOrdersSyncHandler.js';
 import {
   startPosCloudBootstrap,
   stopPosCloudBootstrap
