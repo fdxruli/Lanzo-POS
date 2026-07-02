@@ -7,6 +7,7 @@ import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
+import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
 import {
     isCloudSalesCashierEnabled,
     isCloudSalesCreditEnabled
@@ -44,10 +45,22 @@ const normalizePaymentMethod = (method) => {
 
 const deepClone = (value) => {
     if (typeof structuredClone === 'function') return structuredClone(value);
-    return JSON.parse(JSON.stringify(value));
+    if (!value || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map((item) => deepClone(item));
+
+    return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [key, deepClone(item)])
+    );
 };
 
-const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId }) => {
+const buildKitchenReviewResult = (overrides = {}) => ({
+    canContinue: true,
+    orderItems: null,
+    removedCancelledItems: [],
+    ...overrides
+});
+
+const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId, orderItems = [] }) => {
     try {
         const response = await getRestaurantOrderCloudStatusSnapshot({
             licenseDetails,
@@ -55,10 +68,10 @@ const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId
             force: true
         });
 
-        if (response?.skipped || response?.found === false) return true;
+        if (response?.skipped || response?.found === false) return buildKitchenReviewResult();
 
         if (response?.success === false) {
-            return showConfirmModal(
+            const canContinue = await showConfirmModal(
                 'No se pudo verificar cocina cloud. Revisa antes de cobrar.',
                 {
                     title: 'Verificación de cocina no disponible',
@@ -67,28 +80,42 @@ const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId
                     cancelButtonText: 'Volver a revisar'
                 }
             );
+            return buildKitchenReviewResult({ canContinue });
         }
 
-        if (!response?.order) return true;
+        if (!response?.order) return buildKitchenReviewResult();
 
         const summary = response.summary || {};
 
         if (summary.hasCancelledItems) {
-            return showConfirmModal(
-                summary.isCancelled
-                    ? 'Esta comanda fue cancelada en cocina. Revisa y ajusta la cuenta antes de cobrar.'
-                    : 'Esta mesa tiene items cancelados en cocina. Revisa y ajusta la cuenta antes de cobrar.',
-                {
-                    title: summary.isCancelled ? 'Comanda cancelada en cocina' : 'Items cancelados en cocina',
-                    type: 'warning',
-                    confirmButtonText: 'Continuar de todos modos',
-                    cancelButtonText: 'Volver a revisar'
-                }
-            );
+            const reconciliation = reconcileCartWithCancelledRestaurantItems(orderItems, summary.items);
+
+            if (reconciliation.hasUnmatchedCancelledItems) {
+                await showConfirmModal(
+                    'Hay items cancelados en cocina que no se pudieron empatar con el carrito. Revisa la cuenta antes de cobrar.',
+                    {
+                        title: summary.isCancelled ? 'Comanda cancelada en cocina' : 'Items cancelados en cocina',
+                        type: 'warning',
+                        confirmButtonText: 'Entendido',
+                        showCancel: false
+                    }
+                );
+
+                return buildKitchenReviewResult({ canContinue: false });
+            }
+
+            if (reconciliation.hasRemovableCancelledItems) {
+                return buildKitchenReviewResult({
+                    orderItems: reconciliation.kept,
+                    removedCancelledItems: reconciliation.removed
+                });
+            }
+
+            return buildKitchenReviewResult();
         }
 
         if (summary.hasPendingItems || summary.hasPreparingItems || (!summary.isReady && !summary.isCancelled)) {
-            return showConfirmModal(
+            const canContinue = await showConfirmModal(
                 'La comanda aún no está marcada como lista en cocina.',
                 {
                     title: 'Comanda aún en cocina',
@@ -97,12 +124,13 @@ const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId
                     cancelButtonText: 'Volver a revisar'
                 }
             );
+            return buildKitchenReviewResult({ canContinue });
         }
 
-        return true;
+        return buildKitchenReviewResult();
     } catch (error) {
         console.warn('[REST.5] No se pudo verificar cocina cloud antes de cobrar:', error);
-        return showConfirmModal(
+        const canContinue = await showConfirmModal(
             'No se pudo verificar cocina cloud. Revisa antes de cobrar.',
             {
                 title: 'Verificación de cocina no disponible',
@@ -111,6 +139,7 @@ const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId
                 cancelButtonText: 'Volver a revisar'
             }
         );
+        return buildKitchenReviewResult({ canContinue: Boolean(canContinue) });
     }
 };
 
@@ -173,7 +202,7 @@ export function usePosCheckout({
         const activeOrdersState = useActiveOrders.getState();
         const activeOrderId = activeOrdersState.currentOrderId || pos.activeOrderId;
         const activeOrder = activeOrderId ? activeOrdersState.activeOrders.get(activeOrderId) : null;
-        const orderItems = Array.isArray(activeOrder?.items) ? activeOrder.items : pos.order;
+        let orderItems = Array.isArray(activeOrder?.items) ? activeOrder.items : pos.order;
         const pendingInventoryCount = activeOrdersState.pendingInventoryResolutions?.get(activeOrderId) || 0;
 
         if (pendingInventoryCount > 0) {
@@ -183,6 +212,31 @@ export function usePosCheckout({
                 { type: 'warning' }
             );
             return;
+        }
+
+        if (features?.hasTables) {
+            const kitchenReview = await confirmKitchenStatusBeforeCheckout({
+                licenseDetails,
+                localOrderId: activeOrderId,
+                orderItems
+            });
+
+            if (!kitchenReview.canContinue) {
+                return;
+            }
+
+            if (Array.isArray(kitchenReview.orderItems)) {
+                orderItems = kitchenReview.orderItems;
+                useActiveOrders.getState().updateOrderItems(activeOrderId, orderItems);
+
+                if (kitchenReview.removedCancelledItems.length > 0) {
+                    showMessageModal(
+                        'Se retiraron de la cuenta los items cancelados por cocina.',
+                        null,
+                        { type: 'success' }
+                    );
+                }
+            }
         }
 
         const itemsToProcess = orderItems.filter((item) => item.quantity && item.quantity > 0);
@@ -220,18 +274,6 @@ export function usePosCheckout({
             await lockedState.unlockOrder(activeOrderId);
             showMessageModal('El pedido está vacío.', null, { type: 'warning' });
             return;
-        }
-
-        if (features?.hasTables) {
-            const canContinueAfterKitchenReview = await confirmKitchenStatusBeforeCheckout({
-                licenseDetails,
-                localOrderId: activeOrderId
-            });
-
-            if (!canContinueAfterKitchenReview) {
-                await lockedState.unlockOrder(activeOrderId);
-                return;
-            }
         }
 
         const fefoValidation = await validateFefoSelectionBeforeCheckout(

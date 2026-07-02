@@ -9,10 +9,12 @@ import { SALE_STATUS } from '../../services/sales/financialStats';
 import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 import { showInputPromptModal } from '../../components/common/InputPromptModal';
 import { restaurantOrdersRepository } from '../../services/restaurant/restaurantOrdersRepository';
+import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
 import {
     getLicenseKeyFromDetails,
     isRestaurantOrdersCloudEnabled
 } from '../../services/sync/syncConstants';
+import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 
 const EMPTY_ORDER = [];
 
@@ -23,6 +25,10 @@ const SPLIT_BILL_INTEGRITY_OPTIONS = {
     forceRemote: false,
     allowLocalOnly: true
 };
+
+const countSellableItems = (items = []) => (
+    (Array.isArray(items) ? items : []).filter((item) => Number(item?.quantity) > 0).length
+);
 
 export function useTableManagement({
     openModal,
@@ -181,6 +187,93 @@ export function useTableManagement({
         return result;
     }, [loadOpenOrder, closeModal, fetchActiveTablesCount]);
 
+    const reconcileKitchenCancelledItemsBeforeSplit = useCallback(async () => {
+        const activeOrdersState = useActiveOrders.getState();
+        const targetOrderId = activeOrdersState.currentOrderId || activeOrderId;
+        const targetOrder = targetOrderId ? activeOrdersState.activeOrders.get(targetOrderId) : null;
+        const targetItems = Array.isArray(targetOrder?.items) ? targetOrder.items : order;
+
+        if (!features?.hasTables || !targetOrderId) {
+            return { canContinue: true, orderItems: targetItems, removedCount: 0 };
+        }
+
+        const response = await getRestaurantOrderCloudStatusSnapshot({
+            licenseDetails,
+            localOrderId: targetOrderId,
+            force: true
+        });
+
+        if (response?.skipped || response?.found === false || !response?.order) {
+            return { canContinue: true, orderItems: targetItems, removedCount: 0 };
+        }
+
+        if (response?.success === false) {
+            const canContinue = await showConfirmModal(
+                'No se pudo verificar cocina cloud. Revisa antes de separar/cobrar.',
+                {
+                    title: 'Verificacion de cocina no disponible',
+                    type: 'warning',
+                    confirmButtonText: 'Continuar de todos modos',
+                    cancelButtonText: 'Volver a revisar'
+                }
+            );
+
+            return { canContinue, orderItems: targetItems, removedCount: 0 };
+        }
+
+        const summary = response.summary || {};
+        if (!summary.hasCancelledItems) {
+            return { canContinue: true, orderItems: targetItems, removedCount: 0 };
+        }
+
+        const reconciliation = reconcileCartWithCancelledRestaurantItems(targetItems, summary.items);
+
+        if (reconciliation.hasUnmatchedCancelledItems) {
+            await showConfirmModal(
+                'Hay items cancelados en cocina que no se pudieron empatar con el carrito. Revisa la cuenta antes de separar/cobrar.',
+                {
+                    title: summary.isCancelled ? 'Comanda cancelada en cocina' : 'Items cancelados en cocina',
+                    type: 'warning',
+                    confirmButtonText: 'Entendido',
+                    showCancel: false
+                }
+            );
+
+            return { canContinue: false, orderItems: targetItems, removedCount: 0 };
+        }
+
+        const nextOrderItems = reconciliation.hasRemovableCancelledItems
+            ? reconciliation.kept
+            : targetItems;
+        const removedCount = reconciliation.removedCount;
+
+        if (reconciliation.hasRemovableCancelledItems) {
+            useActiveOrders.getState().updateOrderItems(targetOrderId, nextOrderItems);
+            showMessageModal(
+                'Se retiraron de la cuenta los items cancelados por cocina.',
+                null,
+                { type: 'success' }
+            );
+        }
+
+        const updatedOrder = useActiveOrders.getState().activeOrders.get(targetOrderId);
+        const saveResult = await useActiveOrders.getState().saveOrderAsOpen(targetOrderId, updatedOrder);
+        if (!saveResult?.success) {
+            showMessageModal(
+                saveResult?.message || 'No se pudo actualizar la mesa antes de separar/cobrar.',
+                null,
+                { type: 'error' }
+            );
+            return { canContinue: false, orderItems: nextOrderItems, removedCount };
+        }
+
+        const persistedSale = await db.table(STORES.SALES).get(targetOrderId);
+        const persistedItems = Array.isArray(persistedSale?.items) ? persistedSale.items : nextOrderItems;
+        useActiveOrders.getState().updateOrderItems(targetOrderId, persistedItems);
+
+        return { canContinue: true, orderItems: persistedItems, removedCount };
+    }, [features?.hasTables, activeOrderId, order, licenseDetails]);
+
     const handleLoadOpenOrder = useCallback((orderId) => {
         if (!features?.hasTables) return;
 
@@ -230,12 +323,20 @@ export function useTableManagement({
                     openModal('payment');
                 }
             } else if (actionType === 'split') {
+                const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
+                if (!kitchenReview.canContinue) return;
+
+                if (countSellableItems(kitchenReview.orderItems) === 0) {
+                    showMessageModal('No hay productos en la mesa activa para dividir.');
+                    return;
+                }
+
                 openModal('split');
             }
         } catch (error) {
             console.error('Error al cargar la mesa para acción rápida:', error);
         }
-    }, [order, executeLoadOpenOrder, closeModal, openModal, handleInitiateCheckout]);
+    }, [order, executeLoadOpenOrder, closeModal, openModal, handleInitiateCheckout, reconcileKitchenCancelledItemsBeforeSplit]);
 
     const handleAnnulKitchenRejectedOrder = useCallback(async (targetOrder) => {
         if (!features?.hasTables) return { success: false, message: 'Mesas no disponibles.' };
@@ -275,21 +376,23 @@ export function useTableManagement({
         }
     }, [features?.hasTables, fetchActiveTablesCount]);
 
-    const handleOpenSplitBill = useCallback(() => {
+    const handleOpenSplitBill = useCallback(async () => {
         if (!features?.hasTables) return;
         if (!activeOrderId) {
             showMessageModal('No hay una mesa activa cargada para dividir.');
             return;
         }
 
-        const sellableItems = order.filter((item) => Number(item?.quantity) > 0);
-        if (sellableItems.length === 0) {
+        const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
+        if (!kitchenReview.canContinue) return;
+
+        if (countSellableItems(kitchenReview.orderItems) === 0) {
             showMessageModal('No hay productos en la mesa activa para dividir.');
             return;
         }
 
         openModal('split');
-    }, [features?.hasTables, activeOrderId, order, openModal]);
+    }, [features?.hasTables, activeOrderId, reconcileKitchenCancelledItemsBeforeSplit, openModal]);
 
     const handleConfirmSplitBill = useCallback(async (splitPayload) => {
         const isSessionValid = await verifySessionIntegrity(SPLIT_BILL_INTEGRITY_OPTIONS);
@@ -297,6 +400,25 @@ export function useTableManagement({
             showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
                 window.location.reload();
             });
+            return;
+        }
+
+        const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
+        if (!kitchenReview.canContinue) return;
+
+        if (kitchenReview.removedCount > 0) {
+            closeModal('split');
+            showMessageModal(
+                'La cuenta cambio por items cancelados en cocina. Vuelve a abrir Separar pago para cobrar con los importes actualizados.',
+                null,
+                { type: 'warning' }
+            );
+            return;
+        }
+
+        if (countSellableItems(kitchenReview.orderItems) === 0) {
+            closeModal('split');
+            showMessageModal('No hay productos en la mesa activa para dividir.', null, { type: 'warning' });
             return;
         }
 
@@ -322,7 +444,7 @@ export function useTableManagement({
         try {
             const result = await splitOpenTableOrder({
                 parentOrderId: activeOrderId,
-                orderSnapshot: order,
+                orderSnapshot: kitchenReview.orderItems,
                 mode: splitPayload.mode,
                 tickets: splitPayload.tickets,
                 features,
@@ -351,10 +473,10 @@ export function useTableManagement({
         }
     }, [
         activeOrderId,
-        order,
         features,
         companyName,
         verifySessionIntegrity,
+        reconcileKitchenCancelledItemsBeforeSplit,
         clearSession,
         closeModal,
         refreshData,
