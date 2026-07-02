@@ -93,6 +93,11 @@ export default function OrderSummary({
     }),
     [cloudItems, currentOrderId, order]
   );
+  const isAccountAdjustedForKitchenCancelledItems = Boolean(
+    cloudStatus.hasCancelledItems
+    && cancelledKitchenAdjustmentPreview.success
+    && !cancelledKitchenAdjustmentPreview.changed
+  );
 
   useEffect(() => {
     const fetchEstimatedFolio = async () => {
@@ -340,7 +345,7 @@ export default function OrderSummary({
 
       {showCloudStatusPanel && (
         <section
-          className={`order-cloud-status-panel${cloudStatus.hasCancelledItems ? ' order-cloud-status-panel--warning' : ''}${cloudStatus.isCancelled ? ' order-cloud-status-panel--danger' : ''}${cloudStatus.isReady ? ' order-cloud-status-panel--ready' : ''}`}
+          className={`order-cloud-status-panel${cloudStatus.hasCancelledItems && !isAccountAdjustedForKitchenCancelledItems ? ' order-cloud-status-panel--warning' : ''}${cloudStatus.isCancelled ? ' order-cloud-status-panel--danger' : ''}${cloudStatus.isReady ? ' order-cloud-status-panel--ready' : ''}`}
           aria-label="Estado de cocina cloud"
         >
           <div className="order-cloud-status-header">
@@ -379,31 +384,39 @@ export default function OrderSummary({
               )}
               {cloudStatus.hasCancelledItems && (
                 <div className="order-cloud-status-action-block">
-                  <p className="order-cloud-status-copy order-cloud-status-copy--danger">
-                    Esta mesa tiene items cancelados en cocina. Puedes retirarlos de la cuenta antes de cobrar.
-                  </p>
-                  <button
-                    type="button"
-                    className="order-cloud-adjust-btn"
-                    onClick={handleRemoveKitchenCancelledItems}
-                    disabled={isAdjustingKitchenCancelledItems}
-                  >
-                    {isAdjustingKitchenCancelledItems ? 'Ajustando…' : 'Retirar cancelados'}
-                  </button>
-                  {cancelledKitchenAdjustmentPreview.code === 'KITCHEN_CANCELLED_ITEMS_UNMATCHED' && (
-                    <p className="order-cloud-status-copy order-cloud-status-copy--warning">
-                      Hay cancelaciones de cocina que no coinciden con una línea local. Revisa manualmente.
-                    </p>
-                  )}
-                  {cancelledKitchenAdjustmentPreview.code === 'KITCHEN_CANCELLED_ITEMS_EMPTY_ACCOUNT' && (
-                    <p className="order-cloud-status-copy order-cloud-status-copy--warning">
-                      Si retiras todo, la cuenta quedaría vacía. Anula la venta si cocina canceló toda la comanda.
-                    </p>
-                  )}
-                  {cancelledKitchenAdjustmentPreview.success && !cancelledKitchenAdjustmentPreview.changed && (
-                    <p className="order-cloud-status-copy">
-                      Los items cancelados en cocina ya no están en la cuenta.
-                    </p>
+                  {isAccountAdjustedForKitchenCancelledItems ? (
+                    <>
+                      <p className="order-cloud-status-copy">
+                        Cuenta ajustada: los items cancelados ya fueron retirados de la cuenta local.
+                      </p>
+                      <span className="order-cloud-status-badge order-cloud-status-badge--ready">
+                        Cuenta ajustada
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <p className="order-cloud-status-copy order-cloud-status-copy--danger">
+                        Esta mesa tiene items cancelados en cocina. Puedes retirarlos de la cuenta antes de cobrar.
+                      </p>
+                      <button
+                        type="button"
+                        className="order-cloud-adjust-btn"
+                        onClick={handleRemoveKitchenCancelledItems}
+                        disabled={isAdjustingKitchenCancelledItems}
+                      >
+                        {isAdjustingKitchenCancelledItems ? 'Ajustando…' : 'Retirar cancelados'}
+                      </button>
+                      {cancelledKitchenAdjustmentPreview.code === 'KITCHEN_CANCELLED_ITEMS_UNMATCHED' && (
+                        <p className="order-cloud-status-copy order-cloud-status-copy--warning">
+                          Hay cancelaciones de cocina que no coinciden con una línea local. Revisa manualmente.
+                        </p>
+                      )}
+                      {cancelledKitchenAdjustmentPreview.code === 'KITCHEN_CANCELLED_ITEMS_EMPTY_ACCOUNT' && (
+                        <p className="order-cloud-status-copy order-cloud-status-copy--warning">
+                          Si retiras todo, la cuenta quedaría vacía. Anula la venta si cocina canceló toda la comanda.
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -438,7 +451,11 @@ export default function OrderSummary({
                           </span>
                         </div>
                         {isCancelledItem && (
-                          <div className="order-cloud-item-warning">Ajustar cuenta si aplica</div>
+                          <div className="order-cloud-item-warning">
+                            {isAccountAdjustedForKitchenCancelledItems
+                              ? 'Ya fue retirado de la cuenta local.'
+                              : 'Ajustar cuenta si aplica'}
+                          </div>
                         )}
                       </div>
                     );
