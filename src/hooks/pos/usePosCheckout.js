@@ -171,7 +171,10 @@ export function usePosCheckout({
         }
 
         const activeOrdersState = useActiveOrders.getState();
-        const pendingInventoryCount = activeOrdersState.pendingInventoryResolutions?.get(pos.activeOrderId) || 0;
+        const activeOrderId = activeOrdersState.currentOrderId || pos.activeOrderId;
+        const activeOrder = activeOrderId ? activeOrdersState.activeOrders.get(activeOrderId) : null;
+        const orderItems = Array.isArray(activeOrder?.items) ? activeOrder.items : pos.order;
+        const pendingInventoryCount = activeOrdersState.pendingInventoryResolutions?.get(activeOrderId) || 0;
 
         if (pendingInventoryCount > 0) {
             showMessageModal(
@@ -182,26 +185,26 @@ export function usePosCheckout({
             return;
         }
 
-        const itemsToProcess = pos.order.filter((item) => item.quantity && item.quantity > 0);
+        const itemsToProcess = orderItems.filter((item) => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) {
-            showMessageModal('El pedido está vacío.');
+            showMessageModal('El pedido está vacío.', null, { type: 'warning' });
             return;
         }
 
         mobileCart.closeCart();
 
-        const lockResult = await useActiveOrders.getState().lockOrderForCheckout(pos.activeOrderId);
+        const lockResult = await useActiveOrders.getState().lockOrderForCheckout(activeOrderId);
         if (!lockResult.success) {
             showMessageModal(`⚠️ No se puede iniciar el cobro: ${lockResult.reason}`, null, { type: 'warning' });
             return;
         }
 
         const lockedState = useActiveOrders.getState();
-        const lockedOrder = lockedState.activeOrders.get(pos.activeOrderId);
-        const pendingAfterLock = lockedState.pendingInventoryResolutions?.get(pos.activeOrderId) || 0;
+        const lockedOrder = lockedState.activeOrders.get(activeOrderId);
+        const pendingAfterLock = lockedState.pendingInventoryResolutions?.get(activeOrderId) || 0;
 
         if (pendingAfterLock > 0 || !lockedOrder) {
-            await lockedState.unlockOrder(pos.activeOrderId);
+            await lockedState.unlockOrder(activeOrderId);
             showMessageModal(
                 pendingAfterLock > 0
                     ? 'Espera a que termine la asignación de inventario antes de cobrar.'
@@ -214,19 +217,19 @@ export function usePosCheckout({
 
         const lockedItemsToProcess = lockedOrder.items.filter((item) => item.quantity && item.quantity > 0);
         if (lockedItemsToProcess.length === 0) {
-            await lockedState.unlockOrder(pos.activeOrderId);
-            showMessageModal('El pedido está vacío.');
+            await lockedState.unlockOrder(activeOrderId);
+            showMessageModal('El pedido está vacío.', null, { type: 'warning' });
             return;
         }
 
         if (features?.hasTables) {
             const canContinueAfterKitchenReview = await confirmKitchenStatusBeforeCheckout({
                 licenseDetails,
-                localOrderId: pos.activeOrderId
+                localOrderId: activeOrderId
             });
 
             if (!canContinueAfterKitchenReview) {
-                await lockedState.unlockOrder(pos.activeOrderId);
+                await lockedState.unlockOrder(activeOrderId);
                 return;
             }
         }
@@ -237,7 +240,7 @@ export function usePosCheckout({
         );
 
         if (fefoValidation.blocked) {
-            await lockedState.unlockOrder(pos.activeOrderId);
+            await lockedState.unlockOrder(activeOrderId);
             showMessageModal(
                 fefoValidation.message || 'Hay un lote vencido que no puede venderse.',
                 null,
@@ -251,7 +254,7 @@ export function usePosCheckout({
         }
 
         checkoutSnapshotRef.current = {
-            orderId: pos.activeOrderId,
+            orderId: activeOrderId,
             order: deepClone(lockedOrder.items),
             total: Number(lockedOrder.total),
             tableData: deepClone(lockedOrder.tableData ?? null)
