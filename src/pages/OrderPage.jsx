@@ -60,6 +60,7 @@ const STATUS_LABELS = {
 };
 
 const TERMINAL_STATUSES = new Set(['delivered', 'cancelled']);
+const CANCELLABLE_ITEM_STATUSES = new Set(['pending', 'preparing']);
 
 const getCloudStatusAction = (order) => {
     const status = getOrderStatus(order);
@@ -107,7 +108,7 @@ const TicketTimer = ({ timestamp, status }) => {
     );
 };
 
-const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onChangeItemStatus }) => {
+const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onChangeItemStatus, onCancelItemStatus }) => {
     const {
         displayedOrders,
         orders,
@@ -287,9 +288,10 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
                                     const itemAction = getCloudItemStatusAction(item);
                                     const isCurrentItemUpdating = itemId && updatingItemId === itemId;
                                     const showItemAction = Boolean(itemAction && itemId && hasWritePermission && !isTerminal);
+                                    const showCancelItemAction = Boolean(itemId && hasWritePermission && !isTerminal && CANCELLABLE_ITEM_STATUSES.has(itemStatus));
 
                                     return (
-                                        <div key={itemId || item.localLineId || idx} className={`ticket-item cloud-item status-${itemStatus} ${itemStatus === 'ready' ? 'is-ready' : ''}`}>
+                                        <div key={itemId || item.localLineId || idx} className={`ticket-item cloud-item status-${itemStatus} ${itemStatus === 'ready' ? 'is-ready' : ''} ${itemStatus === 'cancelled' ? 'is-cancelled' : ''}`}>
                                             <div className="item-main">
                                                 <span className="item-qty">{getItemQuantity(item)}</span>
                                                 <span className="item-name">{getItemName(item)}</span>
@@ -327,10 +329,28 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
                                                     </button>
                                                 )}
 
+                                                {showCancelItemAction && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn-kds-item-cancel"
+                                                        onClick={() => onCancelItemStatus(order, item)}
+                                                        disabled={isUpdating || isCurrentItemUpdating}
+                                                        title="Cancelar item en cocina"
+                                                    >
+                                                        ✕ Cancelar item
+                                                    </button>
+                                                )}
+
                                                 {itemStatus === 'ready' && (
                                                     <span className="item-ready-lock">
                                                         <CheckCircle size={14} />
                                                         Ya listo
+                                                    </span>
+                                                )}
+
+                                                {itemStatus === 'cancelled' && (
+                                                    <span className="item-cancelled-lock">
+                                                        Cancelado en cocina
                                                     </span>
                                                 )}
                                             </div>
@@ -532,6 +552,32 @@ export default function OrdersPage() {
         }
     };
 
+    const handleCloudCancelItemStatus = async (order, item) => {
+        const itemId = getItemId(item);
+        if (!order?.id || !itemId) {
+            showMessageModal('No pudimos identificar el item de la comanda. Actualiza cocina e intenta de nuevo.', null, { type: 'error' });
+            return;
+        }
+
+        if (!(await showConfirmModal('¿Cancelar este item en cocina? Esto no cobra, no devuelve dinero y no ajusta inventario. El cajero deberá corregir la cuenta si aplica.', {
+            title: 'Cancelar item',
+            confirmButtonText: 'Sí, cancelar item',
+            cancelButtonText: 'Volver'
+        }))) return;
+
+        const result = await kitchenCloud.changeOrderItemStatus({
+            restaurantOrderId: order.id,
+            restaurantOrderItemId: itemId,
+            status: 'cancelled'
+        });
+
+        if (result?.success === false) {
+            showMessageModal(result.message || kitchenCloud.error || 'No pudimos cancelar el item.', null, { type: 'error' });
+        } else {
+            showMessageModal('Item cancelado en cocina. Recuerda ajustar la cuenta si aplica.', null, { type: 'success' });
+        }
+    };
+
     const handleCloudCancelOrder = async (order) => {
         if (!(await showConfirmModal('¿Cancelar esta comanda en cocina? Esto no cobra ni descuenta inventario.', {
             title: 'Cancelar comanda',
@@ -586,6 +632,7 @@ export default function OrdersPage() {
                     onAdvanceStatus={handleCloudAdvanceStatus}
                     onCancelOrder={handleCloudCancelOrder}
                     onChangeItemStatus={handleCloudItemStatusChange}
+                    onCancelItemStatus={handleCloudCancelItemStatus}
                 />
             </div>
         );
