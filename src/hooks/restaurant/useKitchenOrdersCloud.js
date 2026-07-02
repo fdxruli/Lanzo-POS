@@ -124,6 +124,7 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
   const [selectedStationCode, setSelectedStationCode] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
+  const [updatingItemId, setUpdatingItemId] = useState(null);
   const [isOnline, setIsOnline] = useState(getOnlineState);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
 
@@ -145,7 +146,8 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     isLoading: isLoadingOrders,
     error: ordersError,
     refreshOrders,
-    updateOrderStatus
+    updateOrderStatus,
+    updateOrderItemStatus
   } = useRestaurantOrders({
     autoLoad: isCloudKdsEnabled && hasReadPermission,
     status: null,
@@ -187,8 +189,8 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
   const refreshRef = useRef(refreshKitchenOrders);
 
   useEffect(() => {
-    loadingRef.current = isLoadingOrders || isLoadingStations || Boolean(updatingOrderId);
-  }, [isLoadingOrders, isLoadingStations, updatingOrderId]);
+    loadingRef.current = isLoadingOrders || isLoadingStations || Boolean(updatingOrderId) || Boolean(updatingItemId);
+  }, [isLoadingOrders, isLoadingStations, updatingItemId, updatingOrderId]);
 
   useEffect(() => {
     refreshRef.current = refreshKitchenOrders;
@@ -295,6 +297,48 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     }
   }, [hasWritePermission, isCloudKdsEnabled, updateOrderStatus]);
 
+  const changeOrderItemStatus = useCallback(async ({ restaurantOrderId, restaurantOrderItemId, status }) => {
+    if (!isCloudKdsEnabled) {
+      return { success: false, message: 'Tu plan actual no tiene activo el monitor cloud de cocina.' };
+    }
+
+    if (!hasWritePermission) {
+      const message = 'Tu usuario no tiene permiso para cambiar items de cocina.';
+      setActionError(message);
+      return { success: false, message };
+    }
+
+    const normalizedStatus = normalizeStatus(status);
+    if (!restaurantOrderId || !restaurantOrderItemId || !['pending', 'preparing', 'ready', 'delivered', 'cancelled'].includes(normalizedStatus)) {
+      const message = 'No se pudo cambiar el estado del item.';
+      setActionError(message);
+      return { success: false, message };
+    }
+
+    setUpdatingItemId(restaurantOrderItemId);
+    setActionError(null);
+
+    try {
+      const response = await updateOrderItemStatus({
+        restaurantOrderId,
+        restaurantOrderItemId,
+        status: normalizedStatus
+      });
+      if (response?.success === false) {
+        const message = response.message || response.code || 'No se pudo cambiar el estado del item.';
+        setActionError(message);
+        return { ...response, message };
+      }
+      setLastUpdatedAt(new Date().toISOString());
+      return response;
+    } catch (error) {
+      setActionError(error);
+      return { success: false, error, message: friendlyKitchenError(error) };
+    } finally {
+      setUpdatingItemId(null);
+    }
+  }, [hasWritePermission, isCloudKdsEnabled, updateOrderItemStatus]);
+
   const rawError = !hasReadPermission
     ? 'POS_PERMISSION_DENIED:restaurant_orders_read'
     : (!isOnline ? 'offline' : (actionError || ordersError || (stationsSource === 'fallback' ? null : stationsError)));
@@ -315,13 +359,16 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     hasReadPermission,
     hasWritePermission,
     isLoading: isLoadingOrders || isLoadingStations,
-    isUpdating: Boolean(updatingOrderId),
+    isUpdating: Boolean(updatingOrderId) || Boolean(updatingItemId),
     updatingOrderId,
+    updatingItemId,
+    isUpdatingItem: (itemId) => Boolean(itemId && updatingItemId === itemId),
     error: friendlyKitchenError(rawError),
     lastUpdatedAt,
     includeCompleted,
     refreshKitchenOrders,
-    changeOrderStatus
+    changeOrderStatus,
+    changeOrderItemStatus
   };
 }
 
