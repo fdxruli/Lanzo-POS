@@ -155,6 +155,7 @@ export const getRestaurantOrderCloudStatusSnapshot = async ({ licenseDetails, lo
   const cloudOrder = response?.order || null;
   return {
     ...response,
+    found: response?.success === false ? null : response?.found,
     order: cloudOrder,
     summary: buildRestaurantCloudStatusSummary(cloudOrder)
   };
@@ -238,7 +239,7 @@ export function useRestaurantOrderCloudStatus({ localOrderId, enabled = true } =
   }, [isLoading]);
 
   useEffect(() => {
-    if (!isEnabled || typeof window === 'undefined') return undefined;
+    if (!isEnabled || typeof window === 'undefined' || typeof document === 'undefined') return undefined;
 
     let refreshTimer = null;
 
@@ -249,7 +250,7 @@ export function useRestaurantOrderCloudStatus({ localOrderId, enabled = true } =
     };
 
     const requestRefresh = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (document.visibilityState === 'hidden') return;
       if (loadingRef.current) return;
       clearRefreshTimer();
       refreshTimer = window.setTimeout(() => {
