@@ -341,6 +341,135 @@ export function useTableManagement({
         return { canContinue: true, orderItems: persistedItems, removedCount };
     }, [features?.hasTables, activeOrderId, order, licenseDetails]);
 
+    const reconcileKitchenCancelledItemsBeforeTablePayment = useCallback(async () => {
+        const activeOrdersState = useActiveOrders.getState();
+        const targetOrderId = activeOrdersState.currentOrderId || activeOrderId;
+        const targetOrder = targetOrderId ? activeOrdersState.activeOrders.get(targetOrderId) : null;
+        const targetItems = Array.isArray(targetOrder?.items) ? targetOrder.items : order;
+
+        if (!features?.hasTables || !targetOrderId || !isCloudRestaurantOrdersEnabled) {
+            return { canContinue: true, orderItems: targetItems, removedCount: 0 };
+        }
+
+        let response;
+        try {
+            response = await getRestaurantOrderCloudStatusSnapshot({
+                licenseDetails,
+                localOrderId: targetOrderId,
+                force: true
+            });
+        } catch (error) {
+            Logger.warn('[REST.5.1] No se pudo verificar cocina antes de cobrar mesa:', error);
+            showMessageModal(
+                'No se pudo verificar cocina cloud. Revisa la mesa antes de cobrar.',
+                null,
+                {
+                    title: 'Verificación de cocina no disponible',
+                    type: 'warning',
+                    confirmButtonText: 'Entendido'
+                }
+            );
+            return { canContinue: false, orderItems: targetItems, removedCount: 0 };
+        }
+
+        if (response?.skipped || response?.found === false || !response?.order) {
+            return { canContinue: true, orderItems: targetItems, removedCount: 0 };
+        }
+
+        if (response?.success === false) {
+            showMessageModal(
+                'No se pudo verificar cocina cloud. Revisa la mesa antes de cobrar.',
+                null,
+                {
+                    title: 'Verificación de cocina no disponible',
+                    type: 'warning',
+                    confirmButtonText: 'Entendido'
+                }
+            );
+            return { canContinue: false, orderItems: targetItems, removedCount: 0 };
+        }
+
+        const summary = response.summary || {};
+        if (!summary.hasCancelledItems) {
+            return { canContinue: true, orderItems: targetItems, removedCount: 0 };
+        }
+
+        const reconciliation = reconcileCartWithCancelledRestaurantItems(targetItems, summary.items);
+
+        if (reconciliation.hasUnmatchedCancelledItems) {
+            await showConfirmModal(
+                'Hay items cancelados en cocina que no se pudieron empatar con la cuenta. Abre la mesa y revisa antes de cobrar.',
+                {
+                    title: summary.isCancelled ? 'Comanda cancelada en cocina' : 'Items cancelados en cocina',
+                    type: 'warning',
+                    confirmButtonText: 'Entendido',
+                    showCancel: false
+                }
+            );
+
+            return { canContinue: false, orderItems: targetItems, removedCount: 0 };
+        }
+
+        if (!reconciliation.hasRemovableCancelledItems) {
+            return { canContinue: true, orderItems: targetItems, removedCount: 0 };
+        }
+
+        const confirmed = await showConfirmModal(
+            `Cocina canceló ${reconciliation.removedCount} item(s). Se retirarán de la cuenta antes de cobrar.`,
+            {
+                title: 'Ajustar cuenta antes de cobrar',
+                type: 'warning',
+                confirmButtonText: 'Retirar y cobrar',
+                cancelButtonText: 'Revisar mesa'
+            }
+        );
+
+        if (!confirmed) {
+            return { canContinue: false, orderItems: targetItems, removedCount: 0 };
+        }
+
+        const nextOrderItems = reconciliation.kept;
+        if (countSellableItems(nextOrderItems) === 0) {
+            showMessageModal(
+                'No quedan productos activos para cobrar. Anula la venta si cocina canceló toda la comanda.',
+                null,
+                { type: 'warning' }
+            );
+            return { canContinue: false, orderItems: targetItems, removedCount: reconciliation.removedCount };
+        }
+
+        useActiveOrders.getState().updateOrderItems(targetOrderId, nextOrderItems);
+
+        const updatedOrder = useActiveOrders.getState().activeOrders.get(targetOrderId);
+        const saveResult = await useActiveOrders.getState().saveOrderAsOpen(targetOrderId, updatedOrder);
+        if (!saveResult?.success) {
+            showMessageModal(
+                saveResult?.message || 'No se pudo actualizar la mesa antes de cobrar.',
+                null,
+                { type: 'error' }
+            );
+            return { canContinue: false, orderItems: nextOrderItems, removedCount: reconciliation.removedCount };
+        }
+
+        const persistedSale = await db.table(STORES.SALES).get(targetOrderId);
+        const persistedItems = Array.isArray(persistedSale?.items) ? persistedSale.items : nextOrderItems;
+        useActiveOrders.getState().updateOrderItems(targetOrderId, persistedItems);
+
+        showMessageModal(
+            'Se retiraron de la cuenta los items cancelados por cocina antes de cobrar.',
+            null,
+            { type: 'success' }
+        );
+
+        return { canContinue: true, orderItems: persistedItems, removedCount: reconciliation.removedCount };
+    }, [
+        features?.hasTables,
+        activeOrderId,
+        order,
+        licenseDetails,
+        isCloudRestaurantOrdersEnabled
+    ]);
+
     const handleLoadOpenOrder = useCallback((orderId) => {
         if (!features?.hasTables) return;
 
@@ -383,6 +512,18 @@ export function useTableManagement({
             closeModal('tables');
 
             if (actionType === 'checkout') {
+                const kitchenReview = await reconcileKitchenCancelledItemsBeforeTablePayment();
+                if (!kitchenReview.canContinue) return;
+
+                if (countSellableItems(kitchenReview.orderItems) === 0) {
+                    showMessageModal(
+                        'No quedan productos activos para cobrar. Anula la venta si cocina canceló toda la comanda.',
+                        null,
+                        { type: 'warning' }
+                    );
+                    return;
+                }
+
                 if (typeof handleInitiateCheckout === 'function') {
                     await handleInitiateCheckout();
                 } else {
@@ -403,7 +544,15 @@ export function useTableManagement({
         } catch (error) {
             console.error('Error al cargar la mesa para acción rápida:', error);
         }
-    }, [order, executeLoadOpenOrder, closeModal, openModal, handleInitiateCheckout, reconcileKitchenCancelledItemsBeforeSplit]);
+    }, [
+        order,
+        executeLoadOpenOrder,
+        closeModal,
+        openModal,
+        handleInitiateCheckout,
+        reconcileKitchenCancelledItemsBeforeSplit,
+        reconcileKitchenCancelledItemsBeforeTablePayment
+    ]);
 
     const handleAnnulKitchenRejectedOrder = useCallback(async (targetOrder) => {
         if (!features?.hasTables) return { success: false, message: 'Mesas no disponibles.' };
