@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Clock, Flame, CheckCircle, History, RefreshCw, ChefHat, UtensilsCrossed, User, Store, AlertTriangle, StickyNote } from 'lucide-react';
+import { Clock, Flame, CheckCircle, History, RefreshCw, ChefHat, UtensilsCrossed, User, Store, AlertTriangle, StickyNote, X } from 'lucide-react';
 import { saveDataSafe, STORES, getOrdersSince } from '../services/database';
 import { showConfirmModal, showMessageModal } from '../services/utils';
 import Logger from '../services/Logger';
@@ -150,6 +150,99 @@ const getTicketId = (order = {}) => {
     return shortId || 'KDS';
 };
 
+const countLocalOrderBuckets = (orders = []) => {
+    const counts = { pending: 0, ready: 0, history: 0 };
+    orders.forEach((order) => {
+        const status = normalizeOrderStatus(order.fulfillmentStatus || 'pending');
+        if (status === 'pending') counts.pending += 1;
+        if (status === 'ready') counts.ready += 1;
+        if (status === 'delivered' || status === 'cancelled') counts.history += 1;
+    });
+    return counts;
+};
+
+const countItemsInOrders = (orders = []) => orders.reduce((total, order) => total + getOrderItems(order).length, 0);
+
+const KdsCommandCenter = ({
+    modeLabel,
+    modeTone = 'local',
+    title,
+    statusText,
+    metrics,
+    tabs,
+    onRefresh,
+    isLoading,
+    canRefresh = true
+}) => (
+    <section className={`kds-command-center mode-${modeTone}`}>
+        <div className="kds-command-main">
+            <div className="kds-title-block">
+                <span className={`kds-mode-pill mode-${modeTone}`}>{modeLabel}</span>
+                <h1>{title}</h1>
+                {statusText && <p>{statusText}</p>}
+            </div>
+
+            <button
+                type="button"
+                className={`kds-refresh-btn ${isLoading ? 'loading' : ''}`}
+                onClick={onRefresh}
+                disabled={isLoading || !canRefresh}
+                aria-label="Actualizar cocina"
+                title="Actualizar cocina"
+            >
+                <RefreshCw size={20} strokeWidth={2.2} />
+                <span>Actualizar</span>
+            </button>
+        </div>
+
+        <div className="kds-metrics" aria-label="Resumen de cocina">
+            {metrics.map((metric) => (
+                <div key={metric.label} className={`kds-metric tone-${metric.tone || 'neutral'}`}>
+                    <span>{metric.label}</span>
+                    <strong>{metric.value}</strong>
+                </div>
+            ))}
+        </div>
+
+        <div className="kds-tabs" role="tablist" aria-label="Estados de cocina">
+            {tabs.map(({ key, label, count, Icon, tone, active, onClick }) => (
+                <button
+                    key={key}
+                    type="button"
+                    className={`kds-tab tone-${tone} ${active ? 'active' : ''}`}
+                    onClick={onClick}
+                    aria-pressed={active}
+                >
+                    <Icon size={18} />
+                    <span>{label}</span>
+                    {typeof count !== 'undefined' && <strong>{count}</strong>}
+                </button>
+            ))}
+        </div>
+    </section>
+);
+
+const ProductionSummary = ({ items }) => {
+    if (!items || items.length === 0) return null;
+
+    return (
+        <section className="production-bar" aria-label="Resumen a producir">
+            <div className="prod-heading">
+                <span>Produccion</span>
+                <strong>Ahora</strong>
+            </div>
+            <div className="prod-list">
+                {items.map(([name, count]) => (
+                    <div key={name} className="prod-badge">
+                        <span className="prod-count">{count}</span>
+                        <span className="prod-name">{name}</span>
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+};
+
 const TicketTimer = ({ timestamp, status }) => {
     const [now, setNow] = useState(() => Date.now());
     const [fallbackStartedAt] = useState(() => Date.now());
@@ -216,62 +309,82 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
     }, [displayedOrders, statusFilter]);
 
     const showEmptyState = !isLoading && !error && displayedOrders.length === 0;
+    const stationCount = stationOptions.filter((station) => !station.isAll).length;
+    const selectedStation = stationOptions.find((station) => station.code === selectedStationCode);
+    const commandMetrics = [
+        { label: 'En cocina', value: statusCounts.pending, tone: 'pending' },
+        { label: 'Listas', value: statusCounts.ready, tone: 'ready' },
+        { label: 'Visibles', value: displayedOrders.length, tone: 'active' },
+        { label: 'Estaciones', value: stationCount, tone: 'station' }
+    ];
+    const commandTabs = [
+        {
+            key: 'pending',
+            label: 'Cocina',
+            count: statusCounts.pending,
+            Icon: Flame,
+            tone: 'pending',
+            active: statusFilter === 'pending',
+            onClick: () => setStatusFilter('pending')
+        },
+        {
+            key: 'ready',
+            label: 'Entrega',
+            count: statusCounts.ready,
+            Icon: CheckCircle,
+            tone: 'ready',
+            active: statusFilter === 'ready',
+            onClick: () => setStatusFilter('ready')
+        },
+        {
+            key: 'history',
+            label: 'Historial',
+            Icon: History,
+            tone: 'history',
+            active: statusFilter === 'history',
+            onClick: () => setStatusFilter('history')
+        }
+    ];
 
     return (
         <>
-            <div className="kds-header cloud">
-                <div className="kds-tabs">
-                    <button
-                        className={`kds-tab ${statusFilter === 'pending' ? 'active pending' : ''}`}
-                        onClick={() => setStatusFilter('pending')}
-                    >
-                        <Flame size={18} />
-                        <span>Cocina ({statusCounts.pending})</span>
-                    </button>
-                    <button
-                        className={`kds-tab ${statusFilter === 'ready' ? 'active ready' : ''}`}
-                        onClick={() => setStatusFilter('ready')}
-                    >
-                        <CheckCircle size={18} />
-                        <span>Entrega ({statusCounts.ready})</span>
-                    </button>
-                    <button
-                        className={`kds-tab ${statusFilter === 'history' ? 'active history' : ''}`}
-                        onClick={() => setStatusFilter('history')}
-                    >
-                        <History size={18} />
-                        <span>Historial</span>
-                    </button>
-                </div>
-
-                <button
-                    className={`kds-refresh-btn ${isLoading ? 'loading' : ''}`}
-                    onClick={() => refreshKitchenOrders({ force: true })}
-                    disabled={isLoading || !hasReadPermission}
-                    title="Actualizar cocina"
-                >
-                    <RefreshCw size={24} strokeWidth={2} />
-                </button>
-            </div>
+            <KdsCommandCenter
+                modeLabel={hasWritePermission ? 'PRO cloud' : 'PRO lectura'}
+                modeTone="cloud"
+                title="Monitor de cocina"
+                statusText={lastUpdatedAt ? `Actualizado ${formatTime(lastUpdatedAt)}` : 'Sincronizando cocina'}
+                metrics={commandMetrics}
+                tabs={commandTabs}
+                onRefresh={() => refreshKitchenOrders({ force: true })}
+                isLoading={isLoading}
+                canRefresh={hasReadPermission}
+            />
 
             <div className="kds-cloud-status-bar">
                 <div>
-                    <strong>Monitor cloud de cocina</strong>
-                    <span>Vista operativa por estación. No es venta final ni reporte financiero.</span>
+                    <strong>{hasWritePermission ? 'Cloud activo' : 'Modo consulta'}</strong>
+                    <span>{selectedStation?.name ? `Estacion: ${selectedStation.name}` : 'Estacion: todas'}</span>
                 </div>
-                {lastUpdatedAt && <small>Actualizado {formatTime(lastUpdatedAt)}</small>}
+                <small>{displayedOrders.length} comandas visibles</small>
             </div>
 
-            <div className="kds-station-filter" aria-label="Filtro por estación de preparación">
-                {stationOptions.map((station) => (
-                    <button
-                        key={station.code || 'all'}
-                        className={`kds-station-tab ${selectedStationCode === station.code ? 'active' : ''}`}
-                        onClick={() => setSelectedStationCode(station.code)}
-                    >
-                        {station.name}
-                    </button>
-                ))}
+            <div className="kds-station-shell">
+                <div className="kds-station-heading">
+                    <span>Estaciones</span>
+                    <strong>{selectedStation?.name || 'Todas'}</strong>
+                </div>
+                <div className="kds-station-filter" aria-label="Filtro por estación de preparación">
+                    {stationOptions.map((station) => (
+                        <button
+                            key={station.code || 'all'}
+                            type="button"
+                            className={`kds-station-tab ${selectedStationCode === station.code ? 'active' : ''}`}
+                            onClick={() => setSelectedStationCode(station.code)}
+                        >
+                            {station.name}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {error && (
@@ -281,17 +394,7 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
                 </div>
             )}
 
-            {productionSummary && productionSummary.length > 0 && (
-                <div className="production-bar">
-                    <span className="prod-title">A PRODUCIR:</span>
-                    {productionSummary.map(([name, count]) => (
-                        <div key={name} className="prod-badge">
-                            <span className="prod-count">{count}</span>
-                            <span className="prod-name">{name}</span>
-                        </div>
-                    ))}
-                </div>
-            )}
+            <ProductionSummary items={productionSummary} />
 
             <div className="kds-grid">
                 {isLoading && orders.length === 0 && <div className="kds-loading">Actualizando cocina cloud...</div>}
@@ -319,11 +422,14 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
                     const ticketTotal = formatCurrency(order.total);
                     const isCurrentOrderUpdating = updatingOrderId === order.id;
                     const isTerminal = TERMINAL_STATUSES.has(status);
+                    const progress = getCloudOrderProgress(order);
+                    const totalActiveItems = progress.activeItems.length;
 
                     return (
-                        <div key={order.id || order.localOrderId || order.saleId} className={`kds-ticket status-${displayStatus}`}>
+                        <div key={order.id || order.localOrderId || order.saleId} className={`kds-ticket status-${displayStatus}`} role="article">
                             <div className="ticket-header">
                                 <div className="ticket-info">
+                                    <span className="ticket-kicker">Comanda</span>
                                     <span className="ticket-id">#{getTicketId(order)}</span>
                                     <span className="ticket-customer">
                                         {order.tableLabel ? (
@@ -339,6 +445,12 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
                                     <span className={`kds-status-badge status-${displayStatus}`}>{STATUS_LABELS[displayStatus] || displayStatus}</span>
                                     <TicketTimer timestamp={getOrderTimestamp(order)} status={displayStatus} />
                                 </div>
+                            </div>
+
+                            <div className="ticket-progress-row">
+                                <span>{progress.pendingItems.length} pendientes</span>
+                                <span>{progress.preparingItems.length} preparando</span>
+                                <span>{progress.readyItems.length}/{totalActiveItems || getOrderItems(order).length} listos</span>
                             </div>
 
                             {order.notes && (
@@ -399,16 +511,16 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
                                                 )}
 
                                                 {showCancelItemAction && (
-                                                    <button
-                                                        type="button"
-                                                        className="btn-kds-item-cancel"
-                                                        onClick={() => onCancelItemStatus(order, item)}
-                                                        disabled={isUpdating || isCurrentItemUpdating}
-                                                        title="Cancelar item en cocina"
-                                                    >
-                                                        ✕ Cancelar item
-                                                    </button>
-                                                )}
+                                                <button
+                                                    type="button"
+                                                    className="btn-kds-item-cancel"
+                                                    onClick={() => onCancelItemStatus(order, item)}
+                                                    disabled={isUpdating || isCurrentItemUpdating}
+                                                    title="Cancelar item en cocina"
+                                                >
+                                                        <X size={14} /> Cancelar item
+                                                </button>
+                                            )}
 
                                                 {itemStatus === 'ready' && (
                                                     <span className="item-ready-lock">
@@ -438,17 +550,20 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onC
                                 <div className="ticket-actions">
                                     {!isTerminal && hasWritePermission && (
                                         <button
+                                            type="button"
                                             className="btn-kds-cancel"
                                             onClick={() => onCancelOrder(order)}
                                             title="Cancelar comanda"
+                                            aria-label="Cancelar comanda"
                                             disabled={isUpdating}
                                         >
-                                            ✕
+                                            <X size={18} />
                                         </button>
                                     )}
 
                                     {action && hasWritePermission && (
                                         <button
+                                            type="button"
                                             className={`btn-kds-action ${action.className}`}
                                             onClick={() => onAdvanceStatus(order)}
                                             disabled={isUpdating}
@@ -696,6 +811,9 @@ export default function OrdersPage() {
         });
     }, [orders, filter]);
 
+    const localStatusCounts = useMemo(() => countLocalOrderBuckets(orders), [orders]);
+    const visibleItemsCount = useMemo(() => countItemsInOrders(displayedOrders), [displayedOrders]);
+
     const productionSummary = useMemo(() => {
         if (filter !== 'pending') return null;
 
@@ -712,9 +830,45 @@ export default function OrdersPage() {
             .slice(0, 5);
     }, [displayedOrders, filter]);
 
+    const localMetrics = [
+        { label: 'En cocina', value: localStatusCounts.pending, tone: 'pending' },
+        { label: 'Listas', value: localStatusCounts.ready, tone: 'ready' },
+        { label: 'Visibles', value: displayedOrders.length, tone: 'active' },
+        { label: 'Items', value: visibleItemsCount, tone: 'station' }
+    ];
+    const localTabs = [
+        {
+            key: 'pending',
+            label: 'Cocina',
+            count: localStatusCounts.pending,
+            Icon: Flame,
+            tone: 'pending',
+            active: filter === 'pending',
+            onClick: () => setFilter('pending')
+        },
+        {
+            key: 'ready',
+            label: 'Entrega',
+            count: localStatusCounts.ready,
+            Icon: CheckCircle,
+            tone: 'ready',
+            active: filter === 'ready',
+            onClick: () => setFilter('ready')
+        },
+        {
+            key: 'history',
+            label: 'Historial',
+            count: localStatusCounts.history,
+            Icon: History,
+            tone: 'history',
+            active: filter === 'history',
+            onClick: () => setFilter('history')
+        }
+    ];
+
     if (shouldUseCloudKds) {
         return (
-            <div className="kds-container">
+            <div className="kds-container mode-cloud">
                 <audio ref={audioPlayer} src={NOTIFICATION_SOUND} />
                 <CloudKitchenMonitor
                     kitchenCloud={kitchenCloud}
@@ -728,50 +882,21 @@ export default function OrdersPage() {
     }
 
     return (
-        <div className="kds-container">
+        <div className="kds-container mode-local">
             <audio ref={audioPlayer} src={NOTIFICATION_SOUND} />
 
-            <div className="kds-header">
-                <div className="kds-tabs">
-                    <button
-                        className={`kds-tab ${filter === 'pending' ? 'active pending' : ''}`}
-                        onClick={() => setFilter('pending')}
-                    >
-                        <Flame size={18} />
-                        <span>Cocina ({orders.filter(o => ['pending', 'open'].includes(o.fulfillmentStatus || 'pending')).length})</span>
-                    </button>
-                    <button
-                        className={`kds-tab ${filter === 'ready' ? 'active ready' : ''}`}
-                        onClick={() => setFilter('ready')}
-                    >
-                        <CheckCircle size={18} />
-                        <span>Entrega ({orders.filter(o => o.fulfillmentStatus === 'ready').length})</span>
-                    </button>
-                    <button
-                        className={`kds-tab ${filter === 'history' ? 'active history' : ''}`}
-                        onClick={() => setFilter('history')}
-                    >
-                        <History size={18} />
-                        <span>Historial</span>
-                    </button>
-                </div>
+            <KdsCommandCenter
+                modeLabel="FREE local"
+                modeTone="local"
+                title="Monitor de cocina"
+                statusText="Pedidos locales"
+                metrics={localMetrics}
+                tabs={localTabs}
+                onRefresh={fetchOrders}
+                isLoading={isLoading}
+            />
 
-                <button className="kds-refresh-btn" onClick={fetchOrders}>
-                    <RefreshCw size={24} strokeWidth={2} />
-                </button>
-            </div>
-
-            {productionSummary && productionSummary.length > 0 && (
-                <div className="production-bar">
-                    <span className="prod-title">A PRODUCIR:</span>
-                    {productionSummary.map(([name, count]) => (
-                        <div key={name} className="prod-badge">
-                            <span className="prod-count">{count}</span>
-                            <span className="prod-name">{name}</span>
-                        </div>
-                    ))}
-                </div>
-            )}
+            <ProductionSummary items={productionSummary} />
 
             <div className="kds-grid">
                 {isLoading && <div className="kds-loading">Conectando con meseros...</div>}
@@ -792,10 +917,15 @@ export default function OrdersPage() {
                     </div>
                 )}
 
-                {displayedOrders.map(order => (
-                    <div key={order.id} className={`kds-ticket status-${order.fulfillmentStatus || 'pending'}`}>
+                {displayedOrders.map(order => {
+                    const displayStatus = normalizeOrderStatus(order.fulfillmentStatus || 'pending');
+                    const ticketItems = getOrderItems(order);
+
+                    return (
+                    <div key={order.id || order.timestamp} className={`kds-ticket status-${displayStatus}`} role="article">
                         <div className="ticket-header">
                             <div className="ticket-info">
+                                <span className="ticket-kicker">Comanda</span>
                                 <span className="ticket-id">#{String(order.timestamp || order.id || '').slice(-4)}</span>
                                 <span className="ticket-customer">
                                     {order.tableData ? (
@@ -807,7 +937,15 @@ export default function OrdersPage() {
                                     )}
                                 </span>
                             </div>
-                            <TicketTimer timestamp={order.timestamp} status={order.fulfillmentStatus || 'pending'} />
+                            <div className="ticket-header-side">
+                                <span className={`kds-status-badge status-${displayStatus}`}>{STATUS_LABELS[displayStatus] || displayStatus}</span>
+                                <TicketTimer timestamp={order.timestamp} status={displayStatus} />
+                            </div>
+                        </div>
+
+                        <div className="ticket-progress-row">
+                            <span>{ticketItems.length} productos</span>
+                            <span>{filter === 'pending' ? 'Preparar' : filter === 'ready' ? 'Entregar' : STATUS_LABELS[displayStatus] || displayStatus}</span>
                         </div>
 
                         {order.notes && (
@@ -818,7 +956,7 @@ export default function OrdersPage() {
                         )}
 
                         <div className="ticket-body">
-                            {getOrderItems(order).map((item, idx) => {
+                            {ticketItems.map((item, idx) => {
                                 const modifiers = normalizeModifiers(item.selectedModifiers);
 
                                 return (
@@ -856,13 +994,16 @@ export default function OrdersPage() {
                                 {filter === 'pending' && (
                                     <>
                                         <button
+                                            type="button"
                                             className="btn-kds-cancel"
                                             onClick={() => handleCancelOrder(order)}
                                             title="Rechazar"
+                                            aria-label="Rechazar comanda"
                                         >
-                                            ✕
+                                            <X size={18} />
                                         </button>
                                         <button
+                                            type="button"
                                             className="btn-kds-action advance"
                                             onClick={() => handleAdvanceStatus(order)}
                                         >
@@ -873,6 +1014,7 @@ export default function OrdersPage() {
 
                                 {filter === 'ready' && (
                                     <button
+                                        type="button"
                                         className="btn-kds-action deliver"
                                         onClick={() => handleAdvanceStatus(order)}
                                     >
@@ -882,7 +1024,8 @@ export default function OrdersPage() {
                             </div>
                         </div>
                     </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
