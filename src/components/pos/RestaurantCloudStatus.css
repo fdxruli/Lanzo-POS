@@ -1,0 +1,308 @@
+/* FASE REST.5 — Estado de cocina cloud en Mesas/POS */
+
+.table-card--cloud-ready {
+  border-color: color-mix(in srgb, var(--primary-color, #2e7d32) 64%, var(--border-color, #e5e7eb));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color, #2e7d32) 16%, transparent);
+}
+
+.table-card--cloud-cancelled-items {
+  border-color: var(--ui-color-warning, #f59e0b);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ui-color-warning, #f59e0b) 18%, transparent);
+}
+
+.table-card--cloud-cancelled {
+  border-color: var(--error-color, #dc2626);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--error-color, #dc2626) 18%, transparent);
+}
+
+.table-cloud-status {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  background: var(--background-color, #f9fafb);
+}
+
+.table-cloud-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.table-cloud-status-muted,
+.table-cloud-status-warning,
+.table-cloud-status-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.table-cloud-status-muted {
+  color: var(--text-light, #6b7280);
+}
+
+.table-cloud-status-warning,
+.table-cloud-status-hint--warning {
+  color: var(--ui-text-warning, #92400e);
+}
+
+.table-cloud-status-hint--danger {
+  color: var(--error-color, #b91c1c);
+}
+
+.table-cloud-status-badge,
+.table-cloud-item-badge,
+.order-cloud-status-badge,
+.order-cloud-item-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.table-cloud-status-badge,
+.order-cloud-status-badge {
+  padding: 5px 9px;
+}
+
+.table-cloud-item-badge,
+.order-cloud-item-badge {
+  padding: 4px 8px;
+}
+
+.table-cloud-status-badge--pending,
+.table-cloud-item-badge--pending,
+.order-cloud-status-badge--pending,
+.order-cloud-item-badge--pending {
+  color: #075985;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+}
+
+.table-cloud-status-badge--preparing,
+.table-cloud-item-badge--preparing,
+.order-cloud-status-badge--preparing,
+.order-cloud-item-badge--preparing {
+  color: #7c2d12;
+  background: #ffedd5;
+  border: 1px solid #fed7aa;
+}
+
+.table-cloud-status-badge--ready,
+.table-cloud-item-badge--ready,
+.order-cloud-status-badge--ready,
+.order-cloud-item-badge--ready {
+  color: #14532d;
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+}
+
+.table-cloud-status-badge--cancelled,
+.table-cloud-status-badge--cancelled-items,
+.table-cloud-item-badge--cancelled,
+.order-cloud-status-badge--cancelled,
+.order-cloud-item-badge--cancelled {
+  color: #7f1d1d;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+}
+
+.accordion-cloud-items {
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  background: var(--card-background-color, #fff);
+}
+
+.accordion-cloud-title {
+  padding: 10px 16px 6px;
+  color: var(--text-light, #6b7280);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.accordion-cloud-item-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--border-color-light, #f0f0f0);
+}
+
+.accordion-cloud-item-row--cancelled,
+.order-cloud-item--cancelled {
+  opacity: 0.82;
+  background: color-mix(in srgb, #fee2e2 48%, var(--card-background-color, #fff));
+}
+
+.accordion-cloud-item-row--cancelled .item-name,
+.order-cloud-item--cancelled .order-cloud-item-name {
+  text-decoration: line-through;
+}
+
+.accordion-cloud-item-main,
+.order-cloud-item-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.accordion-cloud-item-meta,
+.order-cloud-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-light, #6b7280);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.accordion-cloud-item-warning,
+.order-cloud-item-warning {
+  color: var(--ui-text-warning, #92400e);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.order-cloud-status-panel {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  background: color-mix(in srgb, var(--primary-color, #2e7d32) 7%, var(--card-background-color, #fff));
+}
+
+.order-cloud-status-panel--warning {
+  background: var(--ui-bg-warning-soft, #fffbeb);
+}
+
+.order-cloud-status-panel--danger {
+  background: color-mix(in srgb, #fee2e2 60%, var(--card-background-color, #fff));
+}
+
+.order-cloud-status-panel--ready {
+  background: color-mix(in srgb, var(--primary-color, #2e7d32) 9%, var(--card-background-color, #fff));
+}
+
+.order-cloud-status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.order-cloud-status-title {
+  color: var(--text-dark, #111827);
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+.order-cloud-status-copy {
+  margin: 0;
+  color: var(--text-light, #6b7280);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.38;
+}
+
+.order-cloud-status-copy--warning {
+  color: var(--ui-text-warning, #92400e);
+}
+
+.order-cloud-status-copy--danger {
+  color: var(--error-color, #b91c1c);
+}
+
+.order-cloud-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 2px;
+}
+
+.order-cloud-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 9px;
+  background: var(--card-background-color, #fff);
+}
+
+.order-cloud-item-qty {
+  flex: 0 0 auto;
+  color: var(--primary-color, #2e7d32);
+  font-weight: 850;
+}
+
+.order-cloud-item-name {
+  min-width: 0;
+  color: var(--text-dark, #111827);
+  font-size: 0.84rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+[data-theme="dark"] .table-cloud-status-badge--pending,
+[data-theme="dark"] .table-cloud-item-badge--pending,
+[data-theme="dark"] .order-cloud-status-badge--pending,
+[data-theme="dark"] .order-cloud-item-badge--pending {
+  color: #bae6fd;
+  background: rgba(12, 74, 110, 0.35);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+[data-theme="dark"] .table-cloud-status-badge--preparing,
+[data-theme="dark"] .table-cloud-item-badge--preparing,
+[data-theme="dark"] .order-cloud-status-badge--preparing,
+[data-theme="dark"] .order-cloud-item-badge--preparing {
+  color: #fed7aa;
+  background: rgba(124, 45, 18, 0.35);
+  border-color: rgba(251, 146, 60, 0.35);
+}
+
+[data-theme="dark"] .table-cloud-status-badge--ready,
+[data-theme="dark"] .table-cloud-item-badge--ready,
+[data-theme="dark"] .order-cloud-status-badge--ready,
+[data-theme="dark"] .order-cloud-item-badge--ready {
+  color: #bbf7d0;
+  background: rgba(20, 83, 45, 0.35);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+[data-theme="dark"] .table-cloud-status-badge--cancelled,
+[data-theme="dark"] .table-cloud-status-badge--cancelled-items,
+[data-theme="dark"] .table-cloud-item-badge--cancelled,
+[data-theme="dark"] .order-cloud-status-badge--cancelled,
+[data-theme="dark"] .order-cloud-item-badge--cancelled {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.36);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+@media (min-width: 768px) {
+  .order-cloud-status-panel {
+    padding-inline: 18px;
+  }
+
+  .order-cloud-items-list {
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+}
