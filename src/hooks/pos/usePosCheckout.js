@@ -2,10 +2,11 @@
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { broadcastDBChange } from '../../store/useProductStore';
-import { showMessageModal } from '../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
+import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 import {
     isCloudSalesCashierEnabled,
     isCloudSalesCreditEnabled
@@ -44,6 +45,73 @@ const normalizePaymentMethod = (method) => {
 const deepClone = (value) => {
     if (typeof structuredClone === 'function') return structuredClone(value);
     return JSON.parse(JSON.stringify(value));
+};
+
+const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId }) => {
+    try {
+        const response = await getRestaurantOrderCloudStatusSnapshot({
+            licenseDetails,
+            localOrderId,
+            force: true
+        });
+
+        if (response?.skipped || response?.found === false) return true;
+
+        if (response?.success === false) {
+            return showConfirmModal(
+                'No se pudo verificar cocina cloud. Revisa antes de cobrar.',
+                {
+                    title: 'Verificación de cocina no disponible',
+                    type: 'warning',
+                    confirmButtonText: 'Continuar de todos modos',
+                    cancelButtonText: 'Volver a revisar'
+                }
+            );
+        }
+
+        if (!response?.order) return true;
+
+        const summary = response.summary || {};
+
+        if (summary.hasCancelledItems) {
+            return showConfirmModal(
+                summary.isCancelled
+                    ? 'Esta comanda fue cancelada en cocina. Revisa y ajusta la cuenta antes de cobrar.'
+                    : 'Esta mesa tiene items cancelados en cocina. Revisa y ajusta la cuenta antes de cobrar.',
+                {
+                    title: summary.isCancelled ? 'Comanda cancelada en cocina' : 'Items cancelados en cocina',
+                    type: 'warning',
+                    confirmButtonText: 'Continuar de todos modos',
+                    cancelButtonText: 'Volver a revisar'
+                }
+            );
+        }
+
+        if (summary.hasPendingItems || summary.hasPreparingItems || (!summary.isReady && !summary.isCancelled)) {
+            return showConfirmModal(
+                'La comanda aún no está marcada como lista en cocina.',
+                {
+                    title: 'Comanda aún en cocina',
+                    type: 'warning',
+                    confirmButtonText: 'Continuar de todos modos',
+                    cancelButtonText: 'Volver a revisar'
+                }
+            );
+        }
+
+        return true;
+    } catch (error) {
+        console.warn('[REST.5] No se pudo verificar cocina cloud antes de cobrar:', error);
+        return showConfirmModal(
+            'No se pudo verificar cocina cloud. Revisa antes de cobrar.',
+            {
+                title: 'Verificación de cocina no disponible',
+                type: 'warning',
+                confirmButtonText: 'Continuar de todos modos',
+                cancelButtonText: 'Volver a revisar'
+            }
+        );
+    }
 };
 
 export function usePosCheckout({
@@ -151,6 +219,18 @@ export function usePosCheckout({
             return;
         }
 
+        if (features?.hasTables) {
+            const canContinueAfterKitchenReview = await confirmKitchenStatusBeforeCheckout({
+                licenseDetails,
+                localOrderId: pos.activeOrderId
+            });
+
+            if (!canContinueAfterKitchenReview) {
+                await lockedState.unlockOrder(pos.activeOrderId);
+                return;
+            }
+        }
+
         const fefoValidation = await validateFefoSelectionBeforeCheckout(
             lockedItemsToProcess,
             posSearch.menuVisual
@@ -197,6 +277,7 @@ export function usePosCheckout({
         pos.activeOrderId,
         posSearch.menuVisual,
         features?.hasLabFields,
+        features?.hasTables,
         mobileCart,
         modal,
         prescription
