@@ -5,6 +5,7 @@ import { showConfirmModal, showMessageModal } from '../services/utils';
 import Logger from '../services/Logger';
 import useKitchenOrdersCloud from '../hooks/restaurant/useKitchenOrdersCloud';
 import './OrderPage.css';
+import './OrderPageCloud.css';
 
 const NOTIFICATION_SOUND = 'https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg';
 
