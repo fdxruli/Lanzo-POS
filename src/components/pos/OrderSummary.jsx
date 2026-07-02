@@ -98,6 +98,7 @@ export default function OrderSummary({
     && cancelledKitchenAdjustmentPreview.success
     && !cancelledKitchenAdjustmentPreview.changed
   );
+  const showDetailedCloudItems = cloudItems.length > 0 && !isAccountAdjustedForKitchenCancelledItems;
 
   useEffect(() => {
     const fetchEstimatedFolio = async () => {
@@ -345,7 +346,7 @@ export default function OrderSummary({
 
       {showCloudStatusPanel && (
         <section
-          className={`order-cloud-status-panel${cloudStatus.hasCancelledItems && !isAccountAdjustedForKitchenCancelledItems ? ' order-cloud-status-panel--warning' : ''}${cloudStatus.isCancelled ? ' order-cloud-status-panel--danger' : ''}${cloudStatus.isReady ? ' order-cloud-status-panel--ready' : ''}`}
+          className={`order-cloud-status-panel${cloudStatus.hasCancelledItems && !isAccountAdjustedForKitchenCancelledItems ? ' order-cloud-status-panel--warning' : ''}${cloudStatus.isCancelled ? ' order-cloud-status-panel--danger' : ''}${cloudStatus.isReady ? ' order-cloud-status-panel--ready' : ''}${isAccountAdjustedForKitchenCancelledItems ? ' order-cloud-status-panel--compact' : ''}`}
           aria-label="Estado de cocina cloud"
         >
           <div className="order-cloud-status-header">
@@ -387,7 +388,7 @@ export default function OrderSummary({
                   {isAccountAdjustedForKitchenCancelledItems ? (
                     <>
                       <p className="order-cloud-status-copy">
-                        Cuenta ajustada: los items cancelados ya fueron retirados de la cuenta local.
+                        Cuenta ajustada: los cancelados ya no están en el carrito a cobrar.
                       </p>
                       <span className="order-cloud-status-badge order-cloud-status-badge--ready">
                         Cuenta ajustada
@@ -421,7 +422,7 @@ export default function OrderSummary({
                 </div>
               )}
 
-              {cloudItems.length > 0 && (
+              {showDetailedCloudItems && (
                 <div className="order-cloud-items-list">
                   {cloudItems.map((item) => {
                     const itemStatus = String(item?.status || 'pending').toLowerCase();
@@ -451,11 +452,7 @@ export default function OrderSummary({
                           </span>
                         </div>
                         {isCancelledItem && (
-                          <div className="order-cloud-item-warning">
-                            {isAccountAdjustedForKitchenCancelledItems
-                              ? 'Ya fue retirado de la cuenta local.'
-                              : 'Ajustar cuenta si aplica'}
-                          </div>
+                          <div className="order-cloud-item-warning">Ajustar cuenta si aplica</div>
                         )}
                       </div>
                     );
