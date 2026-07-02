@@ -135,7 +135,7 @@ const TableCard = ({
                 )}
                 {cloudStatus.hasCancelledItems && (
                   <p className="table-cloud-status-hint table-cloud-status-hint--warning">
-                    Cocina canceló {cloudStatus.cancelledItems.length} item(s). Ajustar cuenta si aplica.
+                    Cocina canceló {cloudStatus.cancelledItems.length} item(s). Se ajustará la cuenta antes de cobrar.
                   </p>
                 )}
                 {cloudStatus.isCancelled && (
@@ -205,7 +205,7 @@ const TableCard = ({
                       </span>
                     </div>
                     {isCancelledItem && (
-                      <div className="accordion-cloud-item-warning">Ajustar cuenta si aplica</div>
+                      <div className="accordion-cloud-item-warning">Se ajustará la cuenta antes de cobrar.</div>
                     )}
                   </div>
                 );
