@@ -21,8 +21,10 @@ const getOrderTimestamp = (order = {}) => order.createdAt || order.timestamp || 
 const getOrderUpdatedTimestamp = (order = {}) => order.updatedAt || order.createdAt || order.timestamp || new Date().toISOString();
 const getOrderItems = (order = {}) => (Array.isArray(order.items) ? order.items : []);
 
+const getItemId = (item = {}) => item.id || item.restaurantOrderItemId || item.restaurant_order_item_id || null;
 const getItemName = (item = {}) => item.productName || item.name || item.product_name || 'Producto';
 const getItemQuantity = (item = {}) => item.quantity ?? item.qty ?? 1;
+const getItemStatus = (item = {}) => normalizeOrderStatus(item.status || item.fulfillmentStatus || item.fulfillment_status || 'pending');
 
 const normalizeModifiers = (modifiers) => {
     if (!Array.isArray(modifiers)) return [];
@@ -58,6 +60,7 @@ const STATUS_LABELS = {
 };
 
 const TERMINAL_STATUSES = new Set(['delivered', 'cancelled']);
+const CANCELLABLE_ITEM_STATUSES = new Set(['pending', 'preparing']);
 
 const getCloudStatusAction = (order) => {
     const status = getOrderStatus(order);
@@ -67,13 +70,19 @@ const getCloudStatusAction = (order) => {
     return null;
 };
 
+const getCloudItemStatusAction = (item) => {
+    const status = getItemStatus(item);
+    if (status === 'pending') return { nextStatus: 'preparing', label: 'Preparar', className: 'prepare' };
+    if (status === 'preparing') return { nextStatus: 'ready', label: 'Listo', className: 'ready' };
+    return null;
+};
+
 const getTicketId = (order = {}) => {
     const id = order.id || order.localOrderId || order.saleId || order.timestamp || '';
     const shortId = String(id).replace(/-/g, '').slice(-4).toUpperCase();
     return shortId || 'KDS';
 };
 
-// Componente para el Temporizador Individual de cada Ticket
 const TicketTimer = ({ timestamp, status }) => {
     const [now, setNow] = useState(() => Date.now());
     const startedAt = new Date(timestamp || Date.now()).getTime();
@@ -99,7 +108,7 @@ const TicketTimer = ({ timestamp, status }) => {
     );
 };
 
-const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder }) => {
+const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder, onChangeItemStatus, onCancelItemStatus }) => {
     const {
         displayedOrders,
         orders,
@@ -112,6 +121,7 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder }) =
         isLoading,
         isUpdating,
         updatingOrderId,
+        updatingItemId,
         error,
         hasReadPermission,
         hasWritePermission,
@@ -125,6 +135,8 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder }) =
         const summary = {};
         displayedOrders.forEach((order) => {
             getOrderItems(order).forEach((item) => {
+                const itemStatus = getItemStatus(item);
+                if (itemStatus === 'ready' || itemStatus === 'delivered' || itemStatus === 'cancelled') return;
                 const key = getItemName(item);
                 summary[key] = (summary[key] || 0) + Number(getItemQuantity(item) || 1);
             });
@@ -271,16 +283,23 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder }) =
                                 {getOrderItems(order).map((item, idx) => {
                                     const modifiers = normalizeModifiers(item.selectedModifiers);
                                     const stationName = item.stationName || item.station_name || 'Cocina';
+                                    const itemId = getItemId(item);
+                                    const itemStatus = getItemStatus(item);
+                                    const itemAction = getCloudItemStatusAction(item);
+                                    const isCurrentItemUpdating = itemId && updatingItemId === itemId;
+                                    const showItemAction = Boolean(itemAction && itemId && hasWritePermission && !isTerminal);
+                                    const showCancelItemAction = Boolean(itemId && hasWritePermission && !isTerminal && CANCELLABLE_ITEM_STATUSES.has(itemStatus));
 
                                     return (
-                                        <div key={item.id || item.localLineId || idx} className="ticket-item">
+                                        <div key={itemId || item.localLineId || idx} className={`ticket-item cloud-item status-${itemStatus} ${itemStatus === 'ready' ? 'is-ready' : ''} ${itemStatus === 'cancelled' ? 'is-cancelled' : ''}`}>
                                             <div className="item-main">
                                                 <span className="item-qty">{getItemQuantity(item)}</span>
                                                 <span className="item-name">{getItemName(item)}</span>
                                             </div>
 
-                                            <div className="item-station-row">
+                                            <div className="item-station-row cloud">
                                                 <span className="item-station-badge">{stationName}</span>
+                                                <span className={`item-status-badge status-${itemStatus}`}>{STATUS_LABELS[itemStatus] || itemStatus}</span>
                                             </div>
 
                                             {modifiers.length > 0 && (
@@ -297,6 +316,44 @@ const CloudKitchenMonitor = ({ kitchenCloud, onAdvanceStatus, onCancelOrder }) =
                                                     <span>{item.notes}</span>
                                                 </div>
                                             )}
+
+                                            <div className="item-actions-row">
+                                                {showItemAction && (
+                                                    <button
+                                                        type="button"
+                                                        className={`btn-kds-item-action ${itemAction.className}`}
+                                                        onClick={() => onChangeItemStatus(order, item, itemAction.nextStatus)}
+                                                        disabled={isUpdating || isCurrentItemUpdating}
+                                                    >
+                                                        {isCurrentItemUpdating ? 'Actualizando...' : itemAction.label}
+                                                    </button>
+                                                )}
+
+                                                {showCancelItemAction && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn-kds-item-cancel"
+                                                        onClick={() => onCancelItemStatus(order, item)}
+                                                        disabled={isUpdating || isCurrentItemUpdating}
+                                                        title="Cancelar item en cocina"
+                                                    >
+                                                        ✕ Cancelar item
+                                                    </button>
+                                                )}
+
+                                                {itemStatus === 'ready' && (
+                                                    <span className="item-ready-lock">
+                                                        <CheckCircle size={14} />
+                                                        Ya listo
+                                                    </span>
+                                                )}
+
+                                                {itemStatus === 'cancelled' && (
+                                                    <span className="item-cancelled-lock">
+                                                        Cancelado en cocina
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -372,7 +429,6 @@ export default function OrdersPage() {
                 const status = o.fulfillmentStatus || 'pending';
                 return status === 'pending' || status === 'open';
             }).length;
-
             const readyCount = activeOrders.filter(o => o.fulfillmentStatus === 'ready').length;
 
             if (pendingCount > prevOrdersLength.current && prevOrdersLength.current !== 0) {
@@ -478,6 +534,50 @@ export default function OrdersPage() {
         }
     };
 
+    const handleCloudItemStatusChange = async (order, item, status) => {
+        const itemId = getItemId(item);
+        if (!order?.id || !itemId) {
+            showMessageModal('No pudimos identificar el item de la comanda. Actualiza cocina e intenta de nuevo.', null, { type: 'error' });
+            return;
+        }
+
+        const result = await kitchenCloud.changeOrderItemStatus({
+            restaurantOrderId: order.id,
+            restaurantOrderItemId: itemId,
+            status
+        });
+
+        if (result?.success === false) {
+            showMessageModal(result.message || kitchenCloud.error || 'No pudimos actualizar el item.', null, { type: 'error' });
+        }
+    };
+
+    const handleCloudCancelItemStatus = async (order, item) => {
+        const itemId = getItemId(item);
+        if (!order?.id || !itemId) {
+            showMessageModal('No pudimos identificar el item de la comanda. Actualiza cocina e intenta de nuevo.', null, { type: 'error' });
+            return;
+        }
+
+        if (!(await showConfirmModal('¿Cancelar este item en cocina? Esto no cobra, no devuelve dinero y no ajusta inventario. El cajero deberá corregir la cuenta si aplica.', {
+            title: 'Cancelar item',
+            confirmButtonText: 'Sí, cancelar item',
+            cancelButtonText: 'Volver'
+        }))) return;
+
+        const result = await kitchenCloud.changeOrderItemStatus({
+            restaurantOrderId: order.id,
+            restaurantOrderItemId: itemId,
+            status: 'cancelled'
+        });
+
+        if (result?.success === false) {
+            showMessageModal(result.message || kitchenCloud.error || 'No pudimos cancelar el item.', null, { type: 'error' });
+        } else {
+            showMessageModal('Item cancelado en cocina. Recuerda ajustar la cuenta si aplica.', null, { type: 'success' });
+        }
+    };
+
     const handleCloudCancelOrder = async (order) => {
         if (!(await showConfirmModal('¿Cancelar esta comanda en cocina? Esto no cobra ni descuenta inventario.', {
             title: 'Cancelar comanda',
@@ -512,9 +612,9 @@ export default function OrdersPage() {
 
         const summary = {};
         displayedOrders.forEach(order => {
-            order.items.forEach(item => {
+            getOrderItems(order).forEach(item => {
                 const key = getItemName(item);
-                summary[key] = (summary[key] || 0) + (item.quantity || 1);
+                summary[key] = (summary[key] || 0) + Number(getItemQuantity(item) || 1);
             });
         });
 
@@ -531,6 +631,8 @@ export default function OrdersPage() {
                     kitchenCloud={kitchenCloud}
                     onAdvanceStatus={handleCloudAdvanceStatus}
                     onCancelOrder={handleCloudCancelOrder}
+                    onChangeItemStatus={handleCloudItemStatusChange}
+                    onCancelItemStatus={handleCloudCancelItemStatus}
                 />
             </div>
         );
@@ -603,10 +705,9 @@ export default function OrdersPage() {
 
                 {displayedOrders.map(order => (
                     <div key={order.id} className={`kds-ticket status-${order.fulfillmentStatus || 'pending'}`}>
-
                         <div className="ticket-header">
                             <div className="ticket-info">
-                                <span className="ticket-id">#{order.timestamp.slice(-4)}</span>
+                                <span className="ticket-id">#{String(order.timestamp || order.id || '').slice(-4)}</span>
                                 <span className="ticket-customer">
                                     {order.tableData ? (
                                         <><UtensilsCrossed size={14} /> {order.tableData}</>
@@ -628,29 +729,33 @@ export default function OrdersPage() {
                         )}
 
                         <div className="ticket-body">
-                            {order.items.map((item, idx) => (
-                                <div key={idx} className="ticket-item">
-                                    <div className="item-main">
-                                        <span className="item-qty">{item.quantity}</span>
-                                        <span className="item-name">{item.name}</span>
+                            {getOrderItems(order).map((item, idx) => {
+                                const modifiers = normalizeModifiers(item.selectedModifiers);
+
+                                return (
+                                    <div key={idx} className="ticket-item">
+                                        <div className="item-main">
+                                            <span className="item-qty">{getItemQuantity(item)}</span>
+                                            <span className="item-name">{getItemName(item)}</span>
+                                        </div>
+
+                                        {modifiers.length > 0 && (
+                                            <div className="item-modifiers">
+                                                {modifiers.map((modifierName, i) => (
+                                                    <span key={`${modifierName}-${i}`} className="modifier-tag">{modifierName}</span>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {item.notes && (
+                                            <div className="item-note">
+                                                <StickyNote size={14} />
+                                                <span>{item.notes}</span>
+                                            </div>
+                                        )}
                                     </div>
-
-                                    {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                                        <div className="item-modifiers">
-                                            {item.selectedModifiers.map((m, i) => (
-                                                <span key={i} className="modifier-tag">{m.name}</span>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {item.notes && (
-                                        <div className="item-note">
-                                            <StickyNote size={14} />
-                                            <span>{item.notes}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                         <div className="ticket-footer">

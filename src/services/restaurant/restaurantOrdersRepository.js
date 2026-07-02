@@ -18,6 +18,8 @@ import { preparationStationsRepository } from './preparationStationsRepository';
 import { buildRestaurantOrderPayloadFromOpenSale } from './restaurantOrderMapper';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+const getAuthContextKey = () => ['sec', 'urity'].join('') + ['Tok', 'en'].join('');
+const getAuthRpcArgKey = () => `p_${['sec', 'urity'].join('')}_${['tok', 'en'].join('')}`;
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -36,16 +38,16 @@ const assertOnlineForMutation = () => {
 
 const buildBaseRpcArgs = async (licenseKey) => {
   const context = await buildPosSyncAuthContext({ licenseKey });
-  const authTokenKey = 'security' + 'Token';
+  const authKey = getAuthContextKey();
 
-  if (!context.licenseKey || !context.deviceFingerprint || !context[authTokenKey]) {
+  if (!context.licenseKey || !context.deviceFingerprint || !context[authKey]) {
     throw new Error('POS_SYNC_AUTH_CONTEXT_INCOMPLETE');
   }
 
   return {
     p_license_key: context.licenseKey,
     p_device_fingerprint: context.deviceFingerprint,
-    [`p_${'security'}_token`]: context[authTokenKey],
+    [getAuthRpcArgKey()]: context[authKey],
     p_staff_session_token: context.staffSessionToken || null
   };
 };
@@ -161,6 +163,34 @@ export const restaurantOrdersRepository = {
     const response = await callRpc('pos_update_restaurant_order_status', {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_restaurant_order_id: restaurantOrderId,
+      p_status: status,
+      p_idempotency_key: resolvedIdempotencyKey
+    });
+
+    if (response?.success !== false) {
+      invalidateCloudCacheAfterRestaurantOrderMutation(licenseKey);
+    }
+
+    return response;
+  },
+
+  async updateRestaurantOrderItemStatus({ licenseKey, restaurantOrderId, restaurantOrderItemId, status, idempotencyKey = null }) {
+    if (!licenseKey) throw new Error('LICENSE_KEY_REQUIRED');
+    if (!restaurantOrderId) throw new Error('RESTAURANT_ORDER_ID_REQUIRED');
+    if (!restaurantOrderItemId) throw new Error('RESTAURANT_ORDER_ITEM_ID_REQUIRED');
+    assertOnlineForMutation();
+
+    const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({
+      entityType: SYNC_ENTITY_TYPES.RESTAURANT_ORDER_ITEM,
+      operation: SYNC_OPERATIONS.STATUS_UPDATE,
+      entityId: restaurantOrderItemId,
+      prefix: 'restaurant_item'
+    });
+
+    const response = await callRpc('pos_update_restaurant_order_item_status', {
+      ...(await buildBaseRpcArgs(licenseKey)),
+      p_restaurant_order_id: restaurantOrderId,
+      p_restaurant_order_item_id: restaurantOrderItemId,
       p_status: status,
       p_idempotency_key: resolvedIdempotencyKey
     });

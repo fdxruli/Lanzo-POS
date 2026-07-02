@@ -81,6 +81,21 @@ export function useRestaurantOrders({ autoLoad = true, status = null, stationCod
     return response;
   }, [isCloudRestaurantOrdersEnabled, licenseKey, refreshOrders]);
 
+  const updateOrderItemStatus = useCallback(async ({ restaurantOrderId, restaurantOrderItemId, status: nextStatus, idempotencyKey = null }) => {
+    if (!isCloudRestaurantOrdersEnabled) {
+      return { success: false, skipped: true, message: 'Las comandas cloud no están disponibles en este plan.' };
+    }
+    const response = await restaurantOrdersRepository.updateRestaurantOrderItemStatus({
+      licenseKey,
+      restaurantOrderId,
+      restaurantOrderItemId,
+      status: nextStatus,
+      idempotencyKey
+    });
+    await refreshOrders({ force: true });
+    return response;
+  }, [isCloudRestaurantOrdersEnabled, licenseKey, refreshOrders]);
+
   return {
     orders,
     isLoading,
@@ -88,6 +103,7 @@ export function useRestaurantOrders({ autoLoad = true, status = null, stationCod
     refreshOrders,
     upsertOrder,
     updateOrderStatus,
+    updateOrderItemStatus,
     isCloudRestaurantOrdersEnabled
   };
 }
