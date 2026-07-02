@@ -14,6 +14,7 @@ import {
 import { useState, useEffect } from 'react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import { useRestaurantOrderCloudStatus } from '../../hooks/restaurant/useRestaurantOrderCloudStatus';
 import { db, STORES } from '../../services/db/dexie';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCartLineId } from '../../utils/cartLineIdentity';
@@ -45,6 +46,7 @@ export default function OrderSummary({
   activeTablesCount = 0,
   kitchenRejectedOpenCount = 0,
 }) {
+  const currentOrderId = useActiveOrders((state) => state.currentOrderId);
   const currentOrderItems = useActiveOrders((state) => (
     state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.items : undefined
   ));
@@ -60,6 +62,14 @@ export default function OrderSummary({
   const getTotalPrice = useActiveOrders((state) => state.getTotalPrice);
   const setTableData = useActiveOrders((state) => state.setTableData);
   const features = useFeatureConfig();
+  const cloudStatus = useRestaurantOrderCloudStatus({
+    localOrderId: currentOrderId,
+    enabled: Boolean(showRestaurantActions && isEditMode && currentOrderId)
+  });
+  const cloudItems = Array.isArray(cloudStatus.items) ? cloudStatus.items : [];
+  const showCloudStatusPanel = cloudStatus.isCloudStatusEnabled && (
+    cloudStatus.isLoading || cloudStatus.error || cloudStatus.cloudOrder
+  );
 
   const [estimatedFolio, setEstimatedFolio] = useState('');
 
@@ -209,6 +219,84 @@ export default function OrderSummary({
             Estás modificando un pedido guardado. Actualiza la mesa para conservar los cambios.
           </span>
         </div>
+      )}
+
+      {showCloudStatusPanel && (
+        <section
+          className={`order-cloud-status-panel${cloudStatus.hasCancelledItems ? ' order-cloud-status-panel--warning' : ''}${cloudStatus.isCancelled ? ' order-cloud-status-panel--danger' : ''}${cloudStatus.isReady ? ' order-cloud-status-panel--ready' : ''}`}
+          aria-label="Estado de cocina cloud"
+        >
+          <div className="order-cloud-status-header">
+            <span className="order-cloud-status-title">Cocina cloud</span>
+            {cloudStatus.cloudOrder && (
+              <span className={`order-cloud-status-badge order-cloud-status-badge--${cloudStatus.status}`}>
+                {cloudStatus.isCancelled ? 'Comanda cancelada' : cloudStatus.statusLabel}
+              </span>
+            )}
+          </div>
+
+          {cloudStatus.isLoading && !cloudStatus.cloudOrder && (
+            <p className="order-cloud-status-copy">Verificando estado operativo…</p>
+          )}
+
+          {cloudStatus.error && (
+            <p className="order-cloud-status-copy order-cloud-status-copy--warning">
+              {cloudStatus.error}
+            </p>
+          )}
+
+          {cloudStatus.cloudOrder && (
+            <>
+              {cloudStatus.isReady && !cloudStatus.hasCancelledItems && (
+                <p className="order-cloud-status-copy">La comanda está lista en cocina.</p>
+              )}
+              {cloudStatus.hasPendingItems && (
+                <p className="order-cloud-status-copy order-cloud-status-copy--warning">
+                  Hay items pendientes en cocina. Confirma antes de cobrar.
+                </p>
+              )}
+              {cloudStatus.hasPreparingItems && (
+                <p className="order-cloud-status-copy order-cloud-status-copy--warning">
+                  Hay items en preparación. La comanda aún no está marcada como lista.
+                </p>
+              )}
+              {cloudStatus.hasCancelledItems && (
+                <p className="order-cloud-status-copy order-cloud-status-copy--danger">
+                  Esta mesa tiene items cancelados en cocina. Revisa y ajusta la cuenta si aplica.
+                </p>
+              )}
+
+              {cloudItems.length > 0 && (
+                <div className="order-cloud-items-list">
+                  {cloudItems.map((item, index) => {
+                    const itemStatus = String(item?.status || 'pending').toLowerCase();
+                    const isCancelledItem = itemStatus === 'cancelled';
+                    return (
+                      <div
+                        key={`${item.id || item.localLineId || item.productName}-${index}`}
+                        className={`order-cloud-item${isCancelledItem ? ' order-cloud-item--cancelled' : ''}`}
+                      >
+                        <div className="order-cloud-item-main">
+                          <span className="order-cloud-item-qty">{item.quantity}x</span>
+                          <span className="order-cloud-item-name">{item.productName || item.name || 'Producto'}</span>
+                        </div>
+                        <div className="order-cloud-item-meta">
+                          <span>{item.stationName || 'Cocina'}</span>
+                          <span className={`order-cloud-item-badge order-cloud-item-badge--${itemStatus}`}>
+                            {cloudStatus.getItemStatusLabel(itemStatus)}
+                          </span>
+                        </div>
+                        {isCancelledItem && (
+                          <div className="order-cloud-item-warning">Ajustar cuenta si aplica</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </section>
       )}
 
       {showRestaurantActions && (

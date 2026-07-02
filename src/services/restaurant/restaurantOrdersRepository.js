@@ -36,6 +36,29 @@ const assertOnlineForMutation = () => {
   }
 };
 
+const friendlyRestaurantOrderLookupError = (error) => {
+  const message = typeof error === 'string' ? error : error?.message || error?.code || String(error || '');
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('sin conexión') || normalized.includes('offline') || normalized.includes('failed to fetch') || normalized.includes('network')) {
+    return 'No se pudo verificar cocina cloud porque el dispositivo está sin conexión.';
+  }
+
+  if (normalized.includes('permission') || normalized.includes('permiso') || normalized.includes('pos_permission_denied')) {
+    return 'Tu usuario no tiene permiso para ver el estado de cocina de esta mesa.';
+  }
+
+  if (normalized.includes('food_service') || normalized.includes('restaurant_orders_food_service_required')) {
+    return 'El estado de cocina cloud solo está disponible para negocios tipo restaurante.';
+  }
+
+  if (normalized.includes('disabled') || normalized.includes('plan')) {
+    return 'Tu plan actual no tiene activo el estado de cocina cloud.';
+  }
+
+  return 'No se pudo verificar cocina cloud en este momento.';
+};
+
 const buildBaseRpcArgs = async (licenseKey) => {
   const context = await buildPosSyncAuthContext({ licenseKey });
   const authKey = getAuthContextKey();
@@ -146,6 +169,57 @@ export const restaurantOrdersRepository = {
       force,
       fn: () => callRpc('pos_get_restaurant_orders', { ...baseArgs, ...params })
     });
+  },
+
+  async getRestaurantOrderByLocalOrder({ licenseKey, localOrderId, force = false } = {}) {
+    if (!licenseKey) throw new Error('LICENSE_KEY_REQUIRED');
+
+    const normalizedLocalOrderId = String(localOrderId || '').trim();
+    if (!normalizedLocalOrderId) {
+      return {
+        success: false,
+        found: false,
+        order: null,
+        code: 'LOCAL_ORDER_ID_REQUIRED',
+        message: 'No se encontró la mesa local para verificar cocina cloud.'
+      };
+    }
+
+    if (!isOnline()) {
+      return {
+        success: false,
+        found: false,
+        order: null,
+        source: 'offline',
+        code: 'OFFLINE',
+        message: 'No se pudo verificar cocina cloud porque el dispositivo está sin conexión.'
+      };
+    }
+
+    try {
+      const baseArgs = await buildBaseRpcArgs(licenseKey);
+      const params = { p_local_order_id: normalizedLocalOrderId };
+
+      return await cachedRestaurantOrdersRpc({
+        rpcName: 'pos_get_restaurant_order_by_local_order',
+        licenseKey,
+        baseArgs,
+        params,
+        force,
+        fn: () => callRpc('pos_get_restaurant_order_by_local_order', { ...baseArgs, ...params })
+      });
+    } catch (error) {
+      const message = friendlyRestaurantOrderLookupError(error);
+      Logger.warn('[RestaurantOrders/REST.5] No se pudo consultar estado cloud por mesa:', error);
+      return {
+        success: false,
+        found: false,
+        order: null,
+        error,
+        message,
+        code: error?.code || error?.message || 'RESTAURANT_ORDER_LOOKUP_FAILED'
+      };
+    }
   },
 
   async updateRestaurantOrderStatus({ licenseKey, restaurantOrderId, status, idempotencyKey = null }) {
