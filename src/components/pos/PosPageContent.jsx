@@ -11,6 +11,7 @@ import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
+import './RestaurantCloudStatus.css';
 
 const ActiveOrderControls = () => {
     const activeOrders = useActiveOrders((state) => state.activeOrders);
