@@ -1,5 +1,5 @@
 // src/hooks/pos/usePosCheckout.js
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { broadcastDBChange } from '../../store/useProductStore';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
@@ -9,6 +9,10 @@ import { Money } from '../../utils/moneyMath';
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
+import {
+    closeRestaurantCloudOrderAfterSuccessfulPayment,
+    retryPendingRestaurantCloudOrderCloses
+} from '../../services/restaurant/restaurantOrderCheckoutClose';
 import {
     isCloudSalesCashierEnabled,
     isCloudSalesCreditEnabled,
@@ -195,6 +199,21 @@ export function usePosCheckout({
     const verifySessionIntegrity = pos.verifySessionIntegrity;
     const abrirCaja = pos.abrirCaja;
     const checkoutSnapshotRef = useRef(null);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined;
+
+        const retryPendingCloses = () => {
+            const licenseDetails = useAppStore.getState().licenseDetails;
+            retryPendingRestaurantCloudOrderCloses({ licenseDetails }).catch((error) => {
+                console.warn('[REST.7] No se pudieron reintentar cierres pendientes de cocina cloud:', error);
+            });
+        };
+
+        retryPendingCloses();
+        window.addEventListener('online', retryPendingCloses);
+        return () => window.removeEventListener('online', retryPendingCloses);
+    }, []);
 
     const handlePaymentModalClose = useCallback(() => {
         const snapshot = checkoutSnapshotRef.current;
@@ -475,6 +494,24 @@ export function usePosCheckout({
             if (result.success) {
                 isSuccess = true;
 
+                let kitchenCloseWarning = null;
+                try {
+                    const closeResult = await closeRestaurantCloudOrderAfterSuccessfulPayment({
+                        localOrderId: snapshot.orderId,
+                        saleResult: result,
+                        paymentData,
+                        licenseDetails,
+                        saleTotal: snapshot.total
+                    });
+
+                    if (closeResult?.success === false && !closeResult?.skipped) {
+                        kitchenCloseWarning = 'La venta se cobró, pero no se pudo cerrar cocina cloud. Revisa conexión y actualiza Mesas/Cocina.';
+                    }
+                } catch (closeError) {
+                    console.warn('[REST.7] Cierre cloud de cocina falló después del cobro:', closeError);
+                    kitchenCloseWarning = 'La venta se cobró, pero no se pudo cerrar cocina cloud. Revisa conexión y actualiza Mesas/Cocina.';
+                }
+
                 try {
                     await useActiveOrders.getState().removeOrder(snapshot.orderId);
                 } catch (closeErr) {
@@ -484,7 +521,16 @@ export function usePosCheckout({
                 prescription.setTempPrescriptionData(null);
                 mobileCart.closeCart();
 
-                showMessageModal('✅ ¡Venta registrada correctamente!');
+                if (kitchenCloseWarning) {
+                    showMessageModal(kitchenCloseWarning, null, {
+                        title: 'Cierre de cocina pendiente',
+                        type: 'warning',
+                        confirmButtonText: 'Entendido'
+                    });
+                } else {
+                    showMessageModal('✅ ¡Venta registrada correctamente!');
+                }
+
                 broadcastDBChange({ action: 'sale-completed', saleId: result.saleId });
                 await posSearch.refreshOutOfStock();
                 await fetchActiveTablesCount();
