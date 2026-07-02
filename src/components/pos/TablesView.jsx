@@ -1,7 +1,19 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { db, STORES } from '../../services/db';
 import { SALE_STATUS } from '../../services/sales/financialStats';
-import { useRestaurantOrderCloudStatus } from '../../hooks/restaurant/useRestaurantOrderCloudStatus';
+import {
+  buildRestaurantCloudStatusSummary,
+  getRestaurantOrderCloudStatusSnapshot,
+  RESTAURANT_CLOUD_STATUS_EVENT,
+  useRestaurantOrderCloudStatus
+} from '../../hooks/restaurant/useRestaurantOrderCloudStatus';
+import {
+  applyKitchenCancelledItemsAdjustment,
+  persistKitchenCancelledItemsAdjustment
+} from '../../services/restaurant/restaurantOrderAccountAdjustment';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 import './TablesView.css';
 
 const getTableLabel = (order) => {
@@ -43,6 +55,12 @@ const filterOrdersBySearch = (orders, searchTerm) => {
 
 const getCloudStatusClass = (status) => `table-cloud-status-badge--${String(status || 'pending').replace(/[^a-z0-9_-]/gi, '-')}`;
 
+const dispatchRestaurantCloudStatusRefresh = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(RESTAURANT_CLOUD_STATUS_EVENT));
+  }
+};
+
 const TableCard = ({
   order,
   onSelectOrder,
@@ -51,6 +69,8 @@ const TableCard = ({
   cancelledFromKitchen = false,
   onAnnulKitchenRejected,
   annulSubmitting = false,
+  onAdjustKitchenCancelled,
+  adjustSubmitting = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const items = Array.isArray(order.items) ? order.items : [];
@@ -134,9 +154,22 @@ const TableCard = ({
                   <p className="table-cloud-status-hint">Lista para entregar/cobrar.</p>
                 )}
                 {cloudStatus.hasCancelledItems && (
-                  <p className="table-cloud-status-hint table-cloud-status-hint--warning">
-                    Cocina canceló {cloudStatus.cancelledItems.length} item(s). Se ajustará la cuenta antes de cobrar.
-                  </p>
+                  <>
+                    <p className="table-cloud-status-hint table-cloud-status-hint--warning">
+                      Cocina canceló {cloudStatus.cancelledItems.length} item(s). Puedes retirarlos de la cuenta antes de cobrar.
+                    </p>
+                    <button
+                      type="button"
+                      className="table-cloud-adjust-btn"
+                      disabled={adjustSubmitting}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAdjustKitchenCancelled?.(order);
+                      }}
+                    >
+                      {adjustSubmitting ? 'Ajustando…' : 'Retirar cancelados de la cuenta'}
+                    </button>
+                  </>
                 )}
                 {cloudStatus.isCancelled && (
                   <p className="table-cloud-status-hint table-cloud-status-hint--danger">
@@ -280,11 +313,13 @@ export default function TablesView({
   onAfterTablesLoad,
   onAnnulKitchenRejectedOrder,
 }) {
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   const [openSalesRows, setOpenSalesRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [annullingOrderId, setAnnullingOrderId] = useState(null);
+  const [adjustingOrderId, setAdjustingOrderId] = useState(null);
 
   const { ordersInService, ordersCancelledInKitchen } = useMemo(() => {
     const inService = [];
@@ -379,6 +414,115 @@ export default function TablesView({
       }
     },
     [onAnnulKitchenRejectedOrder, loadOpenSalesRows]
+  );
+
+  const handleAdjustKitchenCancelled = useCallback(
+    async (order) => {
+      if (!order?.id) return;
+
+      setAdjustingOrderId(order.id);
+      try {
+        const response = await getRestaurantOrderCloudStatusSnapshot({
+          licenseDetails,
+          localOrderId: order.id,
+          force: true
+        });
+
+        if (response?.success === false) {
+          showMessageModal(
+            response.message || 'No se pudo verificar cocina cloud. Intenta de nuevo antes de ajustar la cuenta.',
+            null,
+            { type: 'warning' }
+          );
+          return;
+        }
+
+        const summary = response?.summary || buildRestaurantCloudStatusSummary(response?.order || null);
+        if (!summary.hasCancelledItems) {
+          showMessageModal('Cocina ya no reporta items cancelados para esta mesa.', null, { type: 'success' });
+          dispatchRestaurantCloudStatusRefresh();
+          return;
+        }
+
+        const confirmed = await showConfirmModal(
+          `Cocina canceló ${summary.cancelledItems.length} item(s). ¿Quieres retirarlos de la cuenta local?`,
+          {
+            title: 'Retirar cancelados de la cuenta',
+            type: 'warning',
+            confirmButtonText: 'Sí, retirar',
+            cancelButtonText: 'Volver'
+          }
+        );
+
+        if (!confirmed) return;
+
+        const sale = await db.table(STORES.SALES).get(order.id);
+        if (!sale || sale.status !== SALE_STATUS.OPEN) {
+          showMessageModal('La mesa ya no está abierta. Recarga Mesas antes de ajustar.', null, { type: 'warning' });
+          await loadOpenSalesRows(false);
+          return;
+        }
+
+        const adjustment = applyKitchenCancelledItemsAdjustment({
+          orderId: order.id,
+          orderItems: Array.isArray(sale.items) ? sale.items : order.items,
+          cloudItems: summary.items
+        });
+
+        if (!adjustment.success) {
+          showMessageModal(adjustment.message, null, { type: 'warning' });
+          return;
+        }
+
+        if (!adjustment.changed) {
+          showMessageModal('Los items cancelados por cocina ya no están en la cuenta.', null, { type: 'success' });
+          await loadOpenSalesRows(false);
+          dispatchRestaurantCloudStatusRefresh();
+          return;
+        }
+
+        const saveResult = await useActiveOrders.getState().saveOrderAsOpen(order.id, {
+          ...sale,
+          id: order.id,
+          items: adjustment.kept,
+          isSaved: true
+        });
+
+        if (!saveResult?.success) {
+          showMessageModal(saveResult?.message || 'No se pudo guardar la mesa ajustada.', null, { type: 'error' });
+          return;
+        }
+
+        const auditResult = await persistKitchenCancelledItemsAdjustment({
+          orderId: order.id,
+          audit: adjustment.audit
+        });
+        if (auditResult?.success === false) {
+          console.warn('[REST.6] No se pudo guardar auditoría local de ajuste:', auditResult.message);
+        }
+
+        const persistedSale = await db.table(STORES.SALES).get(order.id);
+        const persistedItems = Array.isArray(persistedSale?.items) ? persistedSale.items : adjustment.kept;
+        const activeOrdersState = useActiveOrders.getState();
+        if (activeOrdersState.activeOrders.has(order.id)) {
+          activeOrdersState.updateOrderItems(order.id, persistedItems);
+        }
+
+        await loadOpenSalesRows(false);
+        dispatchRestaurantCloudStatusRefresh();
+        showMessageModal(
+          `Cuenta actualizada. Se retiraron ${adjustment.removedCount} item(s) cancelados por cocina.`,
+          null,
+          { type: 'success' }
+        );
+      } catch (error) {
+        console.error('[REST.6] Error ajustando cancelados desde Mesas:', error);
+        showMessageModal(error?.message || 'No se pudo ajustar la cuenta.', null, { type: 'error' });
+      } finally {
+        setAdjustingOrderId(null);
+      }
+    },
+    [licenseDetails, loadOpenSalesRows]
   );
 
   const handleSelectAndClose = useCallback(
@@ -490,6 +634,8 @@ export default function TablesView({
                       onSplitOrder={handleSplitAndClose}
                       onAnnulKitchenRejected={handleAnnulKitchenRejected}
                       annulSubmitting={annullingOrderId === order.id}
+                      onAdjustKitchenCancelled={handleAdjustKitchenCancelled}
+                      adjustSubmitting={adjustingOrderId === order.id}
                     />
                   ))}
                 </div>
@@ -511,6 +657,8 @@ export default function TablesView({
                       onSplitOrder={handleSplitAndClose}
                       onAnnulKitchenRejected={handleAnnulKitchenRejected}
                       annulSubmitting={annullingOrderId === order.id}
+                      onAdjustKitchenCancelled={handleAdjustKitchenCancelled}
+                      adjustSubmitting={adjustingOrderId === order.id}
                     />
                   ))}
                 </div>
