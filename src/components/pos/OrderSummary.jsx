@@ -67,7 +67,6 @@ export default function OrderSummary({
     state.currentOrderId ? Boolean(state.activeOrders.get(state.currentOrderId)?.isSaved) : false
   ));
   const updateItemQuantity = useActiveOrders((state) => state.updateItemQuantity);
-  const updateCurrentOrderItems = useActiveOrders((state) => state.updateCurrentOrderItems);
   const removeItem = useActiveOrders((state) => state.removeItem);
   const getTotalPrice = useActiveOrders((state) => state.getTotalPrice);
   const setTableData = useActiveOrders((state) => state.setTableData);
@@ -191,15 +190,14 @@ export default function OrderSummary({
 
       if (!confirmed) return;
 
-      updateCurrentOrderItems(adjustment.kept);
-
       const activeOrderState = useActiveOrders.getState().activeOrders.get(currentOrderId);
-      const saveResult = await useActiveOrders.getState().saveOrderAsOpen(currentOrderId, {
+      const adjustedOrderSnapshot = {
         ...activeOrderState,
         id: currentOrderId,
         items: adjustment.kept,
         isSaved: true
-      });
+      };
+      const saveResult = await useActiveOrders.getState().saveOrderAsOpen(currentOrderId, adjustedOrderSnapshot);
 
       if (!saveResult?.success) {
         showMessageModal(saveResult?.message || 'No se pudo guardar la mesa ajustada.', null, { type: 'error' });
