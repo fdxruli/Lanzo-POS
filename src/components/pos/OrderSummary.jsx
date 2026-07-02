@@ -11,11 +11,15 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useRestaurantOrderCloudStatus } from '../../hooks/restaurant/useRestaurantOrderCloudStatus';
 import { db, STORES } from '../../services/db/dexie';
+import {
+  isCartItemCancelledByKitchen,
+  reconcileCartWithCancelledRestaurantItems
+} from '../../services/restaurant/restaurantOrderReconciliation';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
@@ -50,7 +54,7 @@ export default function OrderSummary({
   const currentOrderItems = useActiveOrders((state) => (
     state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.items : undefined
   ));
-  const order = currentOrderItems || [];
+  const order = useMemo(() => currentOrderItems || [], [currentOrderItems]);
   const tableData = useActiveOrders((state) => (
     state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.tableData || '' : ''
   ));
@@ -58,6 +62,7 @@ export default function OrderSummary({
     state.currentOrderId ? Boolean(state.activeOrders.get(state.currentOrderId)?.isSaved) : false
   ));
   const updateItemQuantity = useActiveOrders((state) => state.updateItemQuantity);
+  const updateCurrentOrderItems = useActiveOrders((state) => state.updateCurrentOrderItems);
   const removeItem = useActiveOrders((state) => state.removeItem);
   const getTotalPrice = useActiveOrders((state) => state.getTotalPrice);
   const setTableData = useActiveOrders((state) => state.setTableData);
@@ -66,12 +71,19 @@ export default function OrderSummary({
     localOrderId: currentOrderId,
     enabled: Boolean(showRestaurantActions && isEditMode && currentOrderId)
   });
-  const cloudItems = Array.isArray(cloudStatus.items) ? cloudStatus.items : [];
+  const cloudItems = useMemo(
+    () => (Array.isArray(cloudStatus.items) ? cloudStatus.items : []),
+    [cloudStatus.items]
+  );
   const showCloudStatusPanel = cloudStatus.isCloudStatusEnabled && (
     cloudStatus.isLoading || cloudStatus.error || cloudStatus.cloudOrder
   );
 
   const [estimatedFolio, setEstimatedFolio] = useState('');
+  const cancelledKitchenReconciliation = useMemo(
+    () => reconcileCartWithCancelledRestaurantItems(order, cloudItems),
+    [cloudItems, order]
+  );
 
   useEffect(() => {
     const fetchEstimatedFolio = async () => {
@@ -115,6 +127,32 @@ export default function OrderSummary({
       if (newQuantity <= 0) removeItem(lineId);
       else updateItemQuantity(lineId, newQuantity);
     }
+  };
+
+  const handleRemoveKitchenCancelledItems = async () => {
+    if (!cancelledKitchenReconciliation.hasRemovableCancelledItems) {
+      showMessageModal(
+        'Cocina reporta items cancelados, pero no pudimos relacionarlos con una linea actual del carrito.',
+        null,
+        { type: 'warning' }
+      );
+      return;
+    }
+
+    const confirmed = await showConfirmModal(
+      `Quitar ${cancelledKitchenReconciliation.removedCount} item(s) cancelado(s) por cocina de la cuenta?`,
+      {
+        title: 'Ajustar cuenta',
+        type: 'warning',
+        confirmButtonText: 'Quitar de la cuenta',
+        cancelButtonText: 'Volver'
+      }
+    );
+
+    if (!confirmed) return;
+
+    updateCurrentOrderItems(cancelledKitchenReconciliation.kept);
+    showMessageModal('Items cancelados por cocina retirados de la cuenta.', null, { type: 'success' });
   };
 
   const handleBulkInputChange = (lineId, value) => {
@@ -261,19 +299,50 @@ export default function OrderSummary({
                 </p>
               )}
               {cloudStatus.hasCancelledItems && (
-                <p className="order-cloud-status-copy order-cloud-status-copy--danger">
-                  Esta mesa tiene items cancelados en cocina. Revisa y ajusta la cuenta si aplica.
-                </p>
+                <div className="order-cloud-status-action-block">
+                  {cancelledKitchenReconciliation.hasRemovableCancelledItems ? (
+                    <>
+                      <p className="order-cloud-status-copy order-cloud-status-copy--danger">
+                        Esta mesa tiene items cancelados en cocina. Retiralos de la cuenta antes de cobrar.
+                      </p>
+                      <button
+                        type="button"
+                        className="order-cloud-adjust-btn"
+                        onClick={handleRemoveKitchenCancelledItems}
+                      >
+                        Quitar cancelados de la cuenta
+                      </button>
+                    </>
+                  ) : !cancelledKitchenReconciliation.hasUnmatchedCancelledItems ? (
+                    <p className="order-cloud-status-copy">
+                      Los items cancelados en cocina ya no estan en la cuenta.
+                    </p>
+                  ) : null}
+                  {cancelledKitchenReconciliation.hasUnmatchedCancelledItems && (
+                    <p className="order-cloud-status-copy order-cloud-status-copy--warning">
+                      Hay cancelaciones de cocina que no coinciden con una linea local. Revisa manualmente.
+                    </p>
+                  )}
+                </div>
               )}
 
               {cloudItems.length > 0 && (
                 <div className="order-cloud-items-list">
-                  {cloudItems.map((item, index) => {
+                  {cloudItems.map((item) => {
                     const itemStatus = String(item?.status || 'pending').toLowerCase();
                     const isCancelledItem = itemStatus === 'cancelled';
+                    const cloudItemKey = item.id
+                      || item.orderItemId
+                      || item.order_item_id
+                      || item.localLineId
+                      || item.local_line_id
+                      || item.lineId
+                      || item.line_id
+                      || item.cartItemId
+                      || `${item.productName || item.name || 'producto'}-${item.stationName || item.stationId || 'cocina'}-${itemStatus}-${item.quantity || 0}`;
                     return (
                       <div
-                        key={`${item.id || item.localLineId || item.productName}-${index}`}
+                        key={cloudItemKey}
                         className={`order-cloud-item${isCancelledItem ? ' order-cloud-item--cancelled' : ''}`}
                       >
                         <div className="order-cloud-item-main">
@@ -321,6 +390,7 @@ export default function OrderSummary({
             {order.map((item, index) => {
               const lineId = getCartLineId(item, index);
               const itemClasses = `order-item${item.exceedsStock ? ' exceeds-stock' : ''}`;
+              const isKitchenCancelled = isCartItemCancelledByKitchen(item, index, cloudItems);
               const hasModifiers = item.selectedModifiers && item.selectedModifiers.length > 0;
               const quantity = item.quantity || 1;
               const lineTotal = item.price * quantity;
@@ -328,7 +398,7 @@ export default function OrderSummary({
               const quantityInputProps = getOrderQuantityInputProps(item);
 
               return (
-                <div key={lineId} className={itemClasses}>
+                <div key={lineId} className={`${itemClasses}${isKitchenCancelled ? ' order-item--kitchen-cancelled' : ''}`}>
                   <div className="order-item-info">
                     <div className="order-item-header">
                       <span className="order-item-name">
@@ -383,6 +453,13 @@ export default function OrderSummary({
                         >
                           Ajustar a {item.stock}
                         </button>
+                      </div>
+                    )}
+
+                    {isKitchenCancelled && (
+                      <div className="order-item-kitchen-cancelled">
+                        <AlertTriangle size={15} aria-hidden="true" />
+                        Cancelado por cocina. Quitar de la cuenta antes de cobrar.
                       </div>
                     )}
                   </div>
