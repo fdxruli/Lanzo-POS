@@ -3,6 +3,7 @@ import { useCallback, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { broadcastDBChange } from '../../store/useProductStore';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
+import { db, STORES } from '../../services/db/dexie';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
@@ -10,7 +11,8 @@ import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaura
 import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
 import {
     isCloudSalesCashierEnabled,
-    isCloudSalesCreditEnabled
+    isCloudSalesCreditEnabled,
+    isRestaurantOrdersCloudEnabled
 } from '../../services/sync/syncConstants';
 
 const CLOUD_TURN_REQUIRED_PAYMENT_METHODS = new Set(['cash', 'card', 'transfer', 'credit', 'mixed']);
@@ -22,6 +24,10 @@ const CHECKOUT_INTEGRITY_OPTIONS = {
     forceRemote: false,
     allowLocalOnly: true
 };
+
+const countSellableItems = (items = []) => (
+    (Array.isArray(items) ? items : []).filter((item) => Number(item?.quantity) > 0).length
+);
 
 const shouldRequireOpenCashSessionForCloudSale = (licenseDetails) => Boolean(
     licenseDetails?.valid &&
@@ -57,10 +63,20 @@ const buildKitchenReviewResult = (overrides = {}) => ({
     canContinue: true,
     orderItems: null,
     removedCancelledItems: [],
+    removedCount: 0,
     ...overrides
 });
 
-const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId, orderItems = [] }) => {
+const confirmKitchenStatusBeforeCheckout = async ({
+    licenseDetails,
+    localOrderId,
+    orderItems = [],
+    shouldVerifyCloudKitchen = false
+}) => {
+    if (!shouldVerifyCloudKitchen || !localOrderId) {
+        return buildKitchenReviewResult();
+    }
+
     try {
         const response = await getRestaurantOrderCloudStatusSnapshot({
             licenseDetails,
@@ -68,22 +84,22 @@ const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId
             force: true
         });
 
-        if (response?.skipped || response?.found === false) return buildKitchenReviewResult();
+        if (response?.skipped || response?.found === false || !response?.order) {
+            return buildKitchenReviewResult();
+        }
 
         if (response?.success === false) {
-            const canContinue = await showConfirmModal(
-                'No se pudo verificar cocina cloud. Revisa antes de cobrar.',
+            showMessageModal(
+                'No se pudo verificar cocina cloud. Revisa la mesa antes de cobrar.',
+                null,
                 {
                     title: 'Verificación de cocina no disponible',
                     type: 'warning',
-                    confirmButtonText: 'Continuar de todos modos',
-                    cancelButtonText: 'Volver a revisar'
+                    confirmButtonText: 'Entendido'
                 }
             );
-            return buildKitchenReviewResult({ canContinue });
+            return buildKitchenReviewResult({ canContinue: false });
         }
-
-        if (!response?.order) return buildKitchenReviewResult();
 
         const summary = response.summary || {};
 
@@ -92,7 +108,7 @@ const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId
 
             if (reconciliation.hasUnmatchedCancelledItems) {
                 await showConfirmModal(
-                    'Hay items cancelados en cocina que no se pudieron empatar con el carrito. Revisa la cuenta antes de cobrar.',
+                    'Hay items cancelados en cocina que no se pudieron empatar con la cuenta. Abre la mesa y revisa antes de cobrar.',
                     {
                         title: summary.isCancelled ? 'Comanda cancelada en cocina' : 'Items cancelados en cocina',
                         type: 'warning',
@@ -105,9 +121,33 @@ const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId
             }
 
             if (reconciliation.hasRemovableCancelledItems) {
+                const confirmed = await showConfirmModal(
+                    `Cocina canceló ${reconciliation.removedCount} item(s). Se retirarán de la cuenta antes de cobrar.`,
+                    {
+                        title: 'Ajustar cuenta antes de cobrar',
+                        type: 'warning',
+                        confirmButtonText: 'Retirar y cobrar',
+                        cancelButtonText: 'Revisar mesa'
+                    }
+                );
+
+                if (!confirmed) {
+                    return buildKitchenReviewResult({ canContinue: false });
+                }
+
+                if (countSellableItems(reconciliation.kept) === 0) {
+                    showMessageModal(
+                        'No quedan productos activos para cobrar. Anula la venta si cocina canceló toda la comanda.',
+                        null,
+                        { type: 'warning' }
+                    );
+                    return buildKitchenReviewResult({ canContinue: false });
+                }
+
                 return buildKitchenReviewResult({
                     orderItems: reconciliation.kept,
-                    removedCancelledItems: reconciliation.removed
+                    removedCancelledItems: reconciliation.removed,
+                    removedCount: reconciliation.removedCount
                 });
             }
 
@@ -129,17 +169,17 @@ const confirmKitchenStatusBeforeCheckout = async ({ licenseDetails, localOrderId
 
         return buildKitchenReviewResult();
     } catch (error) {
-        console.warn('[REST.5] No se pudo verificar cocina cloud antes de cobrar:', error);
-        const canContinue = await showConfirmModal(
-            'No se pudo verificar cocina cloud. Revisa antes de cobrar.',
+        console.warn('[REST.5.1] No se pudo verificar cocina cloud antes de cobrar:', error);
+        showMessageModal(
+            'No se pudo verificar cocina cloud. Revisa la mesa antes de cobrar.',
+            null,
             {
                 title: 'Verificación de cocina no disponible',
                 type: 'warning',
-                confirmButtonText: 'Continuar de todos modos',
-                cancelButtonText: 'Volver a revisar'
+                confirmButtonText: 'Entendido'
             }
         );
-        return buildKitchenReviewResult({ canContinue: Boolean(canContinue) });
+        return buildKitchenReviewResult({ canContinue: false });
     }
 };
 
@@ -214,11 +254,18 @@ export function usePosCheckout({
             return;
         }
 
+        const shouldVerifyCloudKitchen = Boolean(
+            features?.hasTables &&
+            activeOrder?.isSaved &&
+            isRestaurantOrdersCloudEnabled(licenseDetails)
+        );
+
         if (features?.hasTables) {
             const kitchenReview = await confirmKitchenStatusBeforeCheckout({
                 licenseDetails,
                 localOrderId: activeOrderId,
-                orderItems
+                orderItems,
+                shouldVerifyCloudKitchen
             });
 
             if (!kitchenReview.canContinue) {
@@ -227,11 +274,28 @@ export function usePosCheckout({
 
             if (Array.isArray(kitchenReview.orderItems)) {
                 orderItems = kitchenReview.orderItems;
-                useActiveOrders.getState().updateOrderItems(activeOrderId, orderItems);
+                const activeOrdersApi = useActiveOrders.getState();
+                activeOrdersApi.updateOrderItems(activeOrderId, orderItems);
 
-                if (kitchenReview.removedCancelledItems.length > 0) {
+                const updatedOrder = useActiveOrders.getState().activeOrders.get(activeOrderId);
+                const saveResult = await useActiveOrders.getState().saveOrderAsOpen(activeOrderId, updatedOrder);
+                if (!saveResult?.success) {
                     showMessageModal(
-                        'Se retiraron de la cuenta los items cancelados por cocina.',
+                        saveResult?.message || 'No se pudo actualizar la mesa antes de cobrar.',
+                        null,
+                        { type: 'error' }
+                    );
+                    return;
+                }
+
+                const persistedSale = await db.table(STORES.SALES).get(activeOrderId);
+                const persistedItems = Array.isArray(persistedSale?.items) ? persistedSale.items : orderItems;
+                useActiveOrders.getState().updateOrderItems(activeOrderId, persistedItems);
+                orderItems = persistedItems;
+
+                if (kitchenReview.removedCount > 0) {
+                    showMessageModal(
+                        'Se retiraron de la cuenta los items cancelados por cocina antes de cobrar.',
                         null,
                         { type: 'success' }
                     );
