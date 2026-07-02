@@ -14,12 +14,17 @@ import {
 import { useState, useEffect, useMemo } from 'react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
-import { useRestaurantOrderCloudStatus } from '../../hooks/restaurant/useRestaurantOrderCloudStatus';
-import { db, STORES } from '../../services/db/dexie';
 import {
-  isCartItemCancelledByKitchen,
-  reconcileCartWithCancelledRestaurantItems
-} from '../../services/restaurant/restaurantOrderReconciliation';
+  buildRestaurantCloudStatusSummary,
+  RESTAURANT_CLOUD_STATUS_EVENT,
+  useRestaurantOrderCloudStatus
+} from '../../hooks/restaurant/useRestaurantOrderCloudStatus';
+import { db, STORES } from '../../services/db/dexie';
+import { isCartItemCancelledByKitchen } from '../../services/restaurant/restaurantOrderReconciliation';
+import {
+  applyKitchenCancelledItemsAdjustment,
+  persistKitchenCancelledItemsAdjustment
+} from '../../services/restaurant/restaurantOrderAccountAdjustment';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
@@ -80,9 +85,14 @@ export default function OrderSummary({
   );
 
   const [estimatedFolio, setEstimatedFolio] = useState('');
-  const cancelledKitchenReconciliation = useMemo(
-    () => reconcileCartWithCancelledRestaurantItems(order, cloudItems),
-    [cloudItems, order]
+  const [isAdjustingKitchenCancelledItems, setIsAdjustingKitchenCancelledItems] = useState(false);
+  const cancelledKitchenAdjustmentPreview = useMemo(
+    () => applyKitchenCancelledItemsAdjustment({
+      orderId: currentOrderId,
+      orderItems: order,
+      cloudItems
+    }),
+    [cloudItems, currentOrderId, order]
   );
 
   useEffect(() => {
@@ -130,29 +140,100 @@ export default function OrderSummary({
   };
 
   const handleRemoveKitchenCancelledItems = async () => {
-    if (!cancelledKitchenReconciliation.hasRemovableCancelledItems) {
-      showMessageModal(
-        'Cocina reporta items cancelados, pero no pudimos relacionarlos con una linea actual del carrito.',
-        null,
-        { type: 'warning' }
-      );
+    if (!currentOrderId || !isEditMode) {
+      showMessageModal('Primero carga una mesa guardada para ajustar cancelaciones de cocina.', null, { type: 'warning' });
       return;
     }
 
-    const confirmed = await showConfirmModal(
-      `Quitar ${cancelledKitchenReconciliation.removedCount} item(s) cancelado(s) por cocina de la cuenta?`,
-      {
-        title: 'Ajustar cuenta',
-        type: 'warning',
-        confirmButtonText: 'Quitar de la cuenta',
-        cancelButtonText: 'Volver'
+    setIsAdjustingKitchenCancelledItems(true);
+    try {
+      const refreshed = await cloudStatus.refresh({ force: true });
+      if (refreshed?.success === false) {
+        showMessageModal(
+          refreshed.message || 'No se pudo verificar cocina cloud. Intenta de nuevo antes de ajustar la cuenta.',
+          null,
+          { type: 'warning' }
+        );
+        return;
       }
-    );
 
-    if (!confirmed) return;
+      const latestSummary = buildRestaurantCloudStatusSummary(refreshed?.order || cloudStatus.cloudOrder);
+      if (!latestSummary.hasCancelledItems) {
+        showMessageModal('Cocina ya no reporta items cancelados para esta mesa.', null, { type: 'success' });
+        return;
+      }
 
-    updateCurrentOrderItems(cancelledKitchenReconciliation.kept);
-    showMessageModal('Items cancelados por cocina retirados de la cuenta.', null, { type: 'success' });
+      const adjustment = applyKitchenCancelledItemsAdjustment({
+        orderId: currentOrderId,
+        orderItems: order,
+        cloudItems: latestSummary.items
+      });
+
+      if (!adjustment.success) {
+        showMessageModal(adjustment.message, null, { type: 'warning' });
+        return;
+      }
+
+      if (!adjustment.changed) {
+        showMessageModal('Los items cancelados por cocina ya no están en la cuenta.', null, { type: 'success' });
+        return;
+      }
+
+      const confirmed = await showConfirmModal(
+        `Cocina canceló ${latestSummary.cancelledItems.length} item(s). ¿Quieres retirarlos de la cuenta local?`,
+        {
+          title: 'Retirar cancelados de la cuenta',
+          type: 'warning',
+          confirmButtonText: 'Sí, retirar',
+          cancelButtonText: 'Volver'
+        }
+      );
+
+      if (!confirmed) return;
+
+      updateCurrentOrderItems(adjustment.kept);
+
+      const activeOrderState = useActiveOrders.getState().activeOrders.get(currentOrderId);
+      const saveResult = await useActiveOrders.getState().saveOrderAsOpen(currentOrderId, {
+        ...activeOrderState,
+        id: currentOrderId,
+        items: adjustment.kept,
+        isSaved: true
+      });
+
+      if (!saveResult?.success) {
+        showMessageModal(saveResult?.message || 'No se pudo guardar la mesa ajustada.', null, { type: 'error' });
+        return;
+      }
+
+      const auditResult = await persistKitchenCancelledItemsAdjustment({
+        orderId: currentOrderId,
+        audit: adjustment.audit
+      });
+      if (auditResult?.success === false) {
+        console.warn('[REST.6] No se pudo guardar auditoría local de ajuste:', auditResult.message);
+      }
+
+      const persistedSale = await db.table(STORES.SALES).get(currentOrderId);
+      const persistedItems = Array.isArray(persistedSale?.items) ? persistedSale.items : adjustment.kept;
+      useActiveOrders.getState().updateOrderItems(currentOrderId, persistedItems);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(RESTAURANT_CLOUD_STATUS_EVENT));
+      }
+      await cloudStatus.refresh({ force: true });
+
+      showMessageModal(
+        `Cuenta actualizada. Se retiraron ${adjustment.removedCount} item(s) cancelados por cocina.`,
+        null,
+        { type: 'success' }
+      );
+    } catch (error) {
+      console.error('[REST.6] Error ajustando cancelados en OrderSummary:', error);
+      showMessageModal(error?.message || 'No se pudo ajustar la cuenta.', null, { type: 'error' });
+    } finally {
+      setIsAdjustingKitchenCancelledItems(false);
+    }
   };
 
   const handleBulkInputChange = (lineId, value) => {
@@ -300,27 +381,30 @@ export default function OrderSummary({
               )}
               {cloudStatus.hasCancelledItems && (
                 <div className="order-cloud-status-action-block">
-                  {cancelledKitchenReconciliation.hasRemovableCancelledItems ? (
-                    <>
-                      <p className="order-cloud-status-copy order-cloud-status-copy--danger">
-                        Esta mesa tiene items cancelados en cocina. Retiralos de la cuenta antes de cobrar.
-                      </p>
-                      <button
-                        type="button"
-                        className="order-cloud-adjust-btn"
-                        onClick={handleRemoveKitchenCancelledItems}
-                      >
-                        Quitar cancelados de la cuenta
-                      </button>
-                    </>
-                  ) : !cancelledKitchenReconciliation.hasUnmatchedCancelledItems ? (
-                    <p className="order-cloud-status-copy">
-                      Los items cancelados en cocina ya no estan en la cuenta.
-                    </p>
-                  ) : null}
-                  {cancelledKitchenReconciliation.hasUnmatchedCancelledItems && (
+                  <p className="order-cloud-status-copy order-cloud-status-copy--danger">
+                    Esta mesa tiene items cancelados en cocina. Puedes retirarlos de la cuenta antes de cobrar.
+                  </p>
+                  <button
+                    type="button"
+                    className="order-cloud-adjust-btn"
+                    onClick={handleRemoveKitchenCancelledItems}
+                    disabled={isAdjustingKitchenCancelledItems}
+                  >
+                    {isAdjustingKitchenCancelledItems ? 'Ajustando…' : 'Retirar cancelados'}
+                  </button>
+                  {cancelledKitchenAdjustmentPreview.code === 'KITCHEN_CANCELLED_ITEMS_UNMATCHED' && (
                     <p className="order-cloud-status-copy order-cloud-status-copy--warning">
-                      Hay cancelaciones de cocina que no coinciden con una linea local. Revisa manualmente.
+                      Hay cancelaciones de cocina que no coinciden con una línea local. Revisa manualmente.
+                    </p>
+                  )}
+                  {cancelledKitchenAdjustmentPreview.code === 'KITCHEN_CANCELLED_ITEMS_EMPTY_ACCOUNT' && (
+                    <p className="order-cloud-status-copy order-cloud-status-copy--warning">
+                      Si retiras todo, la cuenta quedaría vacía. Anula la venta si cocina canceló toda la comanda.
+                    </p>
+                  )}
+                  {cancelledKitchenAdjustmentPreview.success && !cancelledKitchenAdjustmentPreview.changed && (
+                    <p className="order-cloud-status-copy">
+                      Los items cancelados en cocina ya no están en la cuenta.
                     </p>
                   )}
                 </div>
