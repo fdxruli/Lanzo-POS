@@ -33,7 +33,7 @@ declare
   v_offset integer;
   v_orders jsonb;
 begin
-  v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, $body$ || v_auth_arg || $body$, p_staff_session_token);
+  v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, $fn$ || v_auth_arg || $fn$, p_staff_session_token);
   perform private.assert_cloud_sales_sync_base_enabled(v_context);
   perform private.assert_restaurant_order_read_permission(v_context);
 
@@ -103,7 +103,7 @@ declare
   v_idem public.pos_idempotency_keys;
   v_inserted_idem boolean;
 begin
-  v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, $body$ || v_auth_arg || $body$, p_staff_session_token);
+  v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, $fn$ || v_auth_arg || $fn$, p_staff_session_token);
   perform private.assert_cloud_sales_sync_base_enabled(v_context);
   perform private.assert_restaurant_order_write_permission(v_context);
 
