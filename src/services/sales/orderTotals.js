@@ -87,3 +87,57 @@ export const orderTotalsForSave = (order = {}) => {
   const normalized = withOrderTotals(order);
   return { subtotal: normalized.subtotal, grossSubtotal: normalized.grossSubtotal, subtotalAfterLineDiscounts: normalized.subtotalAfterLineDiscounts, lineDiscountTotal: normalized.lineDiscountTotal, saleDiscount: normalized.saleDiscount || null, discountTotal: normalized.discountTotal || 0, discount_total: normalized.discount_total || 0, total: normalized.total || 0 };
 };
+
+const discountSignature = (discount = null) => {
+  if (!discount) return null;
+  return {
+    type: discount.type || null,
+    value: money(discount.value),
+    amount: money(discount.amount),
+    reason: String(discount.reason ?? ''),
+    scope: discount.scope || null,
+    appliedAt: discount.appliedAt || discount.applied_at || null,
+    appliedByRole: discount.appliedByRole || discount.applied_by_role || null,
+    appliedByStaffUserId: discount.appliedByStaffUserId || discount.applied_by_staff_user_id || null,
+    appliedByDeviceId: discount.appliedByDeviceId || discount.applied_by_device_id || null
+  };
+};
+
+const sameDiscount = (current, next) => JSON.stringify(discountSignature(current)) === JSON.stringify(discountSignature(next));
+
+const lineFinancialSignature = (item = {}, index = 0) => {
+  const subtotal = grossLineSubtotal(item);
+  const discountAmount = money(item.discountAmount ?? item.discount_amount ?? item.discount?.amount ?? 0);
+  const fallbackLineTotal = Math.max(0, money(subtotal - discountAmount));
+
+  return {
+    key: getLineKey(item, index),
+    subtotal,
+    lineSubtotal: money(item.lineSubtotal ?? item.exactTotal ?? item.subtotal ?? subtotal),
+    exactTotal: money(item.exactTotal ?? item.lineSubtotal ?? item.subtotal ?? subtotal),
+    discountAmount,
+    lineTotal: money(item.lineTotal ?? item.line_total ?? fallbackLineTotal),
+    discount: discountSignature(item.discount || null)
+  };
+};
+
+const hasSameLineFinancials = (currentItems = [], nextItems = []) => {
+  const current = Array.isArray(currentItems) ? currentItems : [];
+  const next = Array.isArray(nextItems) ? nextItems : [];
+  if (current.length !== next.length) return false;
+
+  return current.every((item, index) => (
+    JSON.stringify(lineFinancialSignature(item, index)) === JSON.stringify(lineFinancialSignature(next[index], index))
+  ));
+};
+
+export const hasSameFinancialTotals = (current = {}, next = {}) => (
+  money(current.subtotal) === money(next.subtotal)
+  && money(current.grossSubtotal ?? current.subtotal) === money(next.grossSubtotal ?? next.subtotal)
+  && money(current.subtotalAfterLineDiscounts) === money(next.subtotalAfterLineDiscounts)
+  && money(current.lineDiscountTotal) === money(next.lineDiscountTotal)
+  && money(current.discountTotal ?? current.discount_total) === money(next.discountTotal ?? next.discount_total)
+  && money(current.total) === money(next.total)
+  && sameDiscount(current.saleDiscount, next.saleDiscount)
+  && hasSameLineFinancials(current.items, next.items)
+);
