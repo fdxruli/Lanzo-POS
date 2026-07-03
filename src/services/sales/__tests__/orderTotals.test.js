@@ -62,4 +62,13 @@ describe('orderTotals', () => {
     expect(totals.discountTotal).toBe(38);
     expect(totals.total).toBe(162);
   });
+
+  it('recalculates line subtotal when quantity changes after discount', () => {
+    const discountedItems = withLineDiscount(items, 'line-1', { type: 'percent', value: 10, reason: 'line manual' });
+    const changed = [{ ...discountedItems[0], quantity: 3 }];
+    const totals = orderTotals({ items: changed });
+    expect(totals.subtotal).toBe(300);
+    expect(totals.lineDiscountTotal).toBe(30);
+    expect(totals.total).toBe(270);
+  });
 });
