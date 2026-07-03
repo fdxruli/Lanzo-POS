@@ -9,8 +9,31 @@ const toNumber = (value) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const toPositiveNumberOrNull = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const uniqueTruthy = (values = []) => Array.from(new Set(values.filter(Boolean)));
+
+const getModifierIdentityCandidates = (modifier = {}) => {
+    const stableIdentities = uniqueTruthy([
+        modifier.id,
+        modifier.optionId,
+        modifier.option_id,
+        modifier.name
+    ]);
+
+    if (stableIdentities.length > 0) return stableIdentities;
+
+    return uniqueTruthy([
+        modifier.ingredientId,
+        modifier.ingredient_id
+    ]);
+};
+
 const getModifierIdentity = (modifier = {}) => (
-    modifier.ingredientId || modifier.id || modifier.optionId || modifier.name || ''
+    getModifierIdentityCandidates(modifier)[0] || ''
 );
 
 const flattenProductModifierOptions = (product = {}) => {
@@ -35,16 +58,16 @@ const resolveAuthoritativeModifiers = (dbProduct, item) => {
     const catalogByIdentity = new Map();
 
     catalogOptions.forEach((option) => {
-        const identity = getModifierIdentity(option);
-        if (!identity) return;
-        if (!catalogByIdentity.has(identity)) catalogByIdentity.set(identity, option);
+        getModifierIdentityCandidates(option).forEach((identity) => {
+            if (!catalogByIdentity.has(identity)) catalogByIdentity.set(identity, option);
+        });
     });
 
-    const selectedIdentities = new Set(selectedModifiers.map(getModifierIdentity).filter(Boolean));
+    const selectedIdentities = new Set(selectedModifiers.flatMap(getModifierIdentityCandidates));
     const missingRequiredGroup = (dbProduct.modifiers || []).find((group) => (
         group?.required &&
         Array.isArray(group.options) &&
-        !group.options.some((option) => selectedIdentities.has(getModifierIdentity(option)))
+        !group.options.some((option) => getModifierIdentityCandidates(option).some((identity) => selectedIdentities.has(identity)))
     ));
 
     if (missingRequiredGroup) {
@@ -67,12 +90,35 @@ const resolveAuthoritativeModifiers = (dbProduct, item) => {
         const authoritativePrice = toNumber(catalogOption.price);
         unitTotal += authoritativePrice;
 
+        const ingredientId = catalogOption.ingredientId || catalogOption.ingredient_id || null;
+        const ingredientQuantity = toPositiveNumberOrNull(
+            catalogOption.ingredientQuantity
+            ?? catalogOption.ingredient_quantity
+            ?? catalogOption.quantity
+            ?? modifier.ingredientQuantity
+            ?? modifier.ingredient_quantity
+            ?? modifier.quantity
+        );
+        const ingredientUnit = catalogOption.ingredientUnit
+            ?? catalogOption.ingredient_unit
+            ?? catalogOption.unit
+            ?? modifier.ingredientUnit
+            ?? modifier.ingredient_unit
+            ?? modifier.unit
+            ?? null;
+        const tracksInventory = Boolean(ingredientId && ingredientQuantity > 0);
+
         return {
             ...modifier,
+            id: catalogOption.id || modifier.id,
+            optionId: catalogOption.optionId || catalogOption.option_id || modifier.optionId || modifier.option_id,
             name: catalogOption.name || modifier.name,
             price: authoritativePrice,
-            ingredientId: catalogOption.ingredientId || modifier.ingredientId || null,
-            quantity: modifier.quantity || catalogOption.quantity || 1
+            ingredientId: tracksInventory ? ingredientId : null,
+            ingredientQuantity: tracksInventory ? ingredientQuantity : null,
+            ingredientUnit: tracksInventory ? ingredientUnit : null,
+            tracksInventory,
+            ...(tracksInventory ? { quantity: ingredientQuantity } : {})
         };
     });
 

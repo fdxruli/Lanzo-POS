@@ -6,9 +6,10 @@ import {
   buildRestaurantPayload,
   calculateRecipeCost,
   findInvalidModifierGroup,
-  hasEmptyModifierOption
+  findInvalidModifierOption
 } from './restaurantFormUtils';
 import { updateProduct } from '../../../../services/db/productUpdates';
+import { normalizeModifierGroups } from '../../../../utils/restaurantModifiers';
 
 const getRestaurantMeta = (product) => product?.metadata?.restaurant || {};
 const getStationCode = (product) => product?.printStation || getRestaurantMeta(product).printStation || 'kitchen';
@@ -27,7 +28,7 @@ export function useRestaurantProductFormController({
   const [printStationName, setPrintStationName] = useState(getStationName(productToEdit));
   const [inactivePreparationStationNotice, setInactivePreparationStationNotice] = useState(false);
   const [prepTime, setPrepTime] = useState(toPrepTime(productToEdit?.prepTime ?? getRestaurantMeta(productToEdit).prepTime));
-  const [modifiers, setModifiers] = useState(productToEdit?.modifiers || []);
+  const [modifiers, setModifiers] = useState(() => normalizeModifierGroups(productToEdit?.modifiers || []));
   const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
   const stationState = usePreparationStations({ includeInactive: false });
   const setDoesTrackStock = common.setDoesTrackStock;
@@ -140,10 +141,16 @@ export function useRestaurantProductFormController({
       return;
     }
 
-    if (hasEmptyModifierOption(modifiers)) {
+    const invalidModifierOption = findInvalidModifierOption(modifiers);
+    if (invalidModifierOption) {
+      const optionName = invalidModifierOption.option?.name || 'sin nombre';
+      const detail = invalidModifierOption.reason === 'missing_ingredient_quantity'
+        ? `La opción "${optionName}" tiene un ingrediente ligado, pero no tiene una cantidad válida para descontar inventario.`
+        : invalidModifierOption.message || 'Una de las opciones de tus modificadores no es válida.';
+
       showMessageModal(
-        'Opción vacía',
-        'Una de las opciones de tus modificadores no tiene nombre. Por favor revísalo.',
+        'Opción incompleta',
+        detail,
         { type: 'error' }
       );
       return;

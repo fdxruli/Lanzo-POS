@@ -1,4 +1,5 @@
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
+import { normalizeModifierGroups } from '../../utils/restaurantModifiers';
 
 const nowIso = () => new Date().toISOString();
 const text = (value) => String(value ?? '').trim();
@@ -9,11 +10,26 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source || {}, key);
+
 const pick = (source, snakeKey, camelKey, fallback = null) => {
   if (!source) return fallback;
   if (source[camelKey] !== undefined) return source[camelKey];
   if (source[snakeKey] !== undefined) return source[snakeKey];
   return fallback;
+};
+
+const normalizeProductModifiersForStorage = (modifiers) => {
+  const normalized = normalizeModifierGroups(modifiers);
+  return normalized.length > 0 ? normalized : null;
+};
+
+const resolveCloudModifiersForLocal = (product = {}, existing = null) => {
+  if (hasOwn(product, 'modifiers')) {
+    return normalizeProductModifiersForStorage(product.modifiers) || [];
+  }
+
+  return normalizeProductModifiersForStorage(existing?.modifiers ?? []) || [];
 };
 
 export const normalizeNameKey = (value) => text(value).toLowerCase().replace(/\s+/g, ' ');
@@ -82,7 +98,7 @@ export const productToCloudPayload = (product = {}) => ({
   conversion_factor: product.conversionFactor ?? product.conversion_factor ?? null,
   batch_management: product.batchManagement ?? product.batch_management ?? null,
   recipe: product.recipe ?? null,
-  modifiers: product.modifiers ?? null,
+  modifiers: normalizeProductModifiersForStorage(product.modifiers),
   wholesale_tiers: product.wholesaleTiers ?? product.wholesale_tiers ?? null,
   prescription_type: optionalText(product.prescriptionType ?? product.prescription_type),
   active_substance: optionalText(product.activeSubstance ?? product.active_substance ?? product.sustancia),
@@ -137,7 +153,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     conversionFactor: product.conversion_factor ?? product.conversionFactor ?? null,
     batchManagement: product.batch_management ?? product.batchManagement ?? null,
     recipe: product.recipe ?? null,
-    modifiers: product.modifiers ?? null,
+    modifiers: resolveCloudModifiersForLocal(product, existing),
     wholesaleTiers: product.wholesale_tiers ?? product.wholesaleTiers ?? null,
     prescriptionType: product.prescription_type ?? product.prescriptionType ?? undefined,
     activeSubstance: product.active_substance ?? product.activeSubstance ?? undefined,
