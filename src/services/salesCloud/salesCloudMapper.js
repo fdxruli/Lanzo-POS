@@ -28,6 +28,55 @@ const getLineTotal = (item = {}) => {
   return toNumber(item.price, 0) * toNumber(item.quantity, 0);
 };
 
+export const normalizeSelectedModifierForCloudShadow = (modifier = {}) => {
+  const id = firstText(
+    modifier.id,
+    modifier.modifierId,
+    modifier.modifier_id,
+    modifier.optionId,
+    modifier.option_id
+  );
+  const optionId = firstText(modifier.optionId, modifier.option_id, id);
+  const ingredientId = firstText(modifier.ingredientId, modifier.ingredient_id);
+  const hasIngredientQuantity = modifier.ingredientQuantity !== undefined || modifier.ingredient_quantity !== undefined;
+  const hasLegacyQuantity = modifier.quantity !== undefined;
+
+  return compactObject({
+    id,
+    optionId,
+    option_id: optionId,
+    name: firstText(modifier.name, modifier.label, modifier.optionName, modifier.option_name),
+    price: modifier.price === undefined ? undefined : toNumber(modifier.price, 0),
+    ingredientId,
+    ingredient_id: ingredientId,
+    ingredientQuantity: hasIngredientQuantity
+      ? toNumber(modifier.ingredientQuantity ?? modifier.ingredient_quantity, null)
+      : undefined,
+    ingredient_quantity: hasIngredientQuantity
+      ? toNumber(modifier.ingredientQuantity ?? modifier.ingredient_quantity, null)
+      : undefined,
+    ingredientUnit: firstText(modifier.ingredientUnit, modifier.ingredient_unit, modifier.unit),
+    ingredient_unit: firstText(modifier.ingredientUnit, modifier.ingredient_unit, modifier.unit),
+    tracksInventory: modifier.tracksInventory ?? modifier.tracks_inventory,
+    tracks_inventory: modifier.tracksInventory ?? modifier.tracks_inventory,
+    quantity: hasLegacyQuantity ? toNumber(modifier.quantity, null) : undefined
+  });
+};
+
+const getSelectedModifiers = (item = {}) => {
+  const selectedModifiers = item.selectedModifiers ||
+    item.selected_modifiers ||
+    item.modifiersSelected ||
+    item.metadata?.selectedModifiers ||
+    item.metadata?.selected_modifiers;
+
+  if (!Array.isArray(selectedModifiers) || selectedModifiers.length === 0) {
+    return null;
+  }
+
+  return selectedModifiers.map(normalizeSelectedModifierForCloudShadow);
+};
+
 const normalizePaymentMethod = (method) => String(method || 'unknown').trim().toLowerCase() || 'unknown';
 
 const mapItem = (item = {}, index = 0) => {
@@ -37,6 +86,7 @@ const mapItem = (item = {}, index = 0) => {
   const unitCost = item.cost === undefined && item.unitCost === undefined
     ? null
     : toNumber(item.cost ?? item.unitCost, 0);
+  const selectedModifiers = getSelectedModifiers(item);
 
   return compactObject({
     id: firstText(item.lineId, item.cartLineId) || (productId ? `${productId}:${index + 1}` : null),
@@ -56,10 +106,12 @@ const mapItem = (item = {}, index = 0) => {
     batch_sku: firstText(item.batchSku, item.batch_sku),
     batch_expiry_date: firstText(item.batchExpiryDate, item.expiryDate),
     rubro: firstText(item.rubro, item.categoryName, item.category),
+    selected_modifiers: selectedModifiers || undefined,
     metadata: compactObject({
       parentId: item.parentId || null,
       lineId: item.lineId || null,
       cartLineId: item.cartLineId || null,
+      selectedModifiers: selectedModifiers || undefined,
       batchesUsed: item.batchesUsed || null,
       stockDeducted: item.stockDeducted ?? null,
       requiresPrescription: item.requiresPrescription || false,
@@ -210,5 +262,6 @@ export const cloudSaleToLocalSyncPatch = (cloudSale = {}, response = {}) => ({
 
 export default {
   localSaleToCloudShadowPayload,
-  cloudSaleToLocalSyncPatch
+  cloudSaleToLocalSyncPatch,
+  normalizeSelectedModifierForCloudShadow
 };
