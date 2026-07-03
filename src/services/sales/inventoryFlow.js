@@ -1,12 +1,15 @@
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/utils';
 import { withUnifiedTimestamp, parseDateStrict, isBatchExpiredForSale } from '../../utils/dateUtils';
+import {
+    buildIngredientRequirementsForItem,
+    getRealProductId,
+    hasProductRecipe as hasRecipe,
+    shouldTrackInventoryForItem
+} from './inventoryRequirements';
 
 const TABLE_RESERVATION_SOURCE = 'table';
 const EPSILON = 0.00001;
 
-const getRealProductId = (item) => item?.parentId || item?.id;
-const hasRecipe = (product) => Array.isArray(product?.recipe) && product.recipe.length > 0;
-const shouldTrackInventory = (product) => Boolean(product?.trackStock) || hasRecipe(product);
 const isTableReservation = (item) => item?.inventoryReservation?.source === TABLE_RESERVATION_SOURCE;
 
 const getProductMap = async ({ itemsToProcess, allProducts = [], db, STORES }) => {
@@ -25,17 +28,18 @@ const getProductMap = async ({ itemsToProcess, allProducts = [], db, STORES }) =
         const product = productMap.get(getRealProductId(item));
         if (!product) return;
 
-        if (hasRecipe(product)) {
-            product.recipe.forEach((ingredient) => {
-                if (ingredient?.ingredientId) ingredientIds.add(ingredient.ingredientId);
-            });
-        }
+        const { requirements } = buildIngredientRequirementsForItem(item, product);
+        requirements.forEach((requirement) => {
+            if (requirement?.targetId) ingredientIds.add(requirement.targetId);
+        });
 
-        if (Array.isArray(item?.selectedModifiers)) {
-            item.selectedModifiers.forEach((modifier) => {
-                if (modifier?.ingredientId) ingredientIds.add(modifier.ingredientId);
-            });
-        }
+        const committedComponents = Array.isArray(item?.inventoryReservation?.committedComponents)
+            ? item.inventoryReservation.committedComponents
+            : [];
+        committedComponents.forEach((component) => {
+            const targetId = component?.ingredientId || component?.productId;
+            if (targetId) ingredientIds.add(targetId);
+        });
     });
 
     const missingIngredientIds = Array.from(ingredientIds).filter((id) => !productMap.has(id));
@@ -71,57 +75,6 @@ export const getSortedBatchesForProduct = (batches = [], product) => {
         const rightCrtMs = right._crtMs || (right._crtMs = parseDateStrict(right?.createdAt)?.getTime() || 0);
         return leftCrtMs - rightCrtMs;
     });
-};
-
-const getQuantityToDeduct = (orderItem, product) => {
-    let quantityToDeduct = Number(orderItem?.quantity) || 0;
-
-    if (product?.conversionFactor?.enabled) {
-        const factor = parseFloat(product.conversionFactor.factor);
-
-        if (!Number.isNaN(factor) && factor > 1) {
-            quantityToDeduct = quantityToDeduct / factor;
-        }
-    }
-
-    return normalizeStock(quantityToDeduct);
-};
-
-const buildIngredientRequirements = (orderItem, product) => {
-    const requirements = new Map();
-    const quantityToDeduct = getQuantityToDeduct(orderItem, product);
-
-    const addRequirement = (productId, qty) => {
-        if (!productId) return;
-        requirements.set(productId, normalizeStock((requirements.get(productId) || 0) + qty));
-    };
-
-    if (hasRecipe(product)) {
-        product.recipe.forEach((ingredient) => {
-            addRequirement(ingredient.ingredientId, normalizeStock((ingredient.quantity || 0) * quantityToDeduct));
-        });
-    } else if (product?.trackStock !== false) {
-        addRequirement(getRealProductId(orderItem), quantityToDeduct);
-    }
-
-    if (Array.isArray(orderItem?.selectedModifiers)) {
-        orderItem.selectedModifiers.forEach((modifier) => {
-            if (modifier?.ingredientId) {
-                addRequirement(
-                    modifier.ingredientId,
-                    normalizeStock((modifier.quantity || 1) * quantityToDeduct)
-                );
-            }
-        });
-    }
-
-    return {
-        quantityToDeduct,
-        requirements: Array.from(requirements.entries()).map(([targetId, neededQty]) => ({
-            targetId,
-            neededQty
-        }))
-    };
 };
 
 const assertProductExists = (product, orderItem) => {
@@ -186,7 +139,13 @@ const sumExpiredStrictAvailable = (batches = [], product, now) => normalizeStock
         .reduce((sum, batch) => sum + getBatchAvailableForSale(batch), 0)
 );
 
-const createInventoryReservation = (orderItem, quantityToDeduct, committedBatches, unifiedTimestamp) => ({
+const createInventoryReservation = (
+    orderItem,
+    quantityToDeduct,
+    committedBatches,
+    committedComponents,
+    unifiedTimestamp
+) => ({
     source: TABLE_RESERVATION_SOURCE,
     committedQuantity: normalizeStock(quantityToDeduct),
     committedBatches: committedBatches.map((batch) => ({
@@ -196,6 +155,11 @@ const createInventoryReservation = (orderItem, quantityToDeduct, committedBatche
         cost: Number(batch.cost) || 0,
         expiryDate: batch.expiryDate || null,
         batchSku: batch.batchSku || null
+    })),
+    committedComponents: committedComponents.map((component) => ({
+        ingredientId: component.ingredientId,
+        quantity: normalizeStock(component.quantity),
+        cost: Number(component.cost) || 0
     })),
     committedAt: unifiedTimestamp,
     ...(orderItem?.inventoryReservation?.reservationId
@@ -267,21 +231,10 @@ export const loadRelevantBatches = async ({
 
         assertProductExists(product, orderItem);
 
-        if (!shouldTrackInventory(product)) continue;
-
-        if (hasRecipe(product)) {
-            product.recipe.forEach((component) => {
-                if (component?.ingredientId) uniqueProductIds.add(component.ingredientId);
-            });
-
-            if (Array.isArray(orderItem?.selectedModifiers)) {
-                orderItem.selectedModifiers.forEach((modifier) => {
-                    if (modifier?.ingredientId) uniqueProductIds.add(modifier.ingredientId);
-                });
-            }
-        } else {
-            uniqueProductIds.add(realProductId);
-        }
+        const { requirements } = buildIngredientRequirementsForItem(orderItem, product);
+        requirements.forEach((component) => {
+            if (component?.targetId) uniqueProductIds.add(component.targetId);
+        });
     }
 
     const batchesMap = new Map();
@@ -330,26 +283,18 @@ export const buildProcessedItemsAndDeductions = ({
 
         assertProductExists(product, orderItem);
 
-        const { quantityToDeduct, requirements } = buildIngredientRequirements(orderItem, product);
-
-        if (product.trackStock === false && !hasRecipe(product)) {
-            processedItems.push({
-                ...orderItem,
-                image: null,
-                base64: null,
-                cost: parseFloat(product.cost) || 0,
-                batchesUsed: [],
-                stockDeducted: 0
-            });
-            continue;
-        }
+        const { quantityToDeduct, requirements } = buildIngredientRequirementsForItem(orderItem, product);
 
         if (isTableReservation(orderItem)) {
             const committedReservation = orderItem.inventoryReservation;
             const committedBatches = Array.isArray(committedReservation?.committedBatches)
                 ? committedReservation.committedBatches
                 : [];
+            const committedComponents = Array.isArray(committedReservation?.committedComponents)
+                ? committedReservation.committedComponents
+                : [];
             const itemBatchesUsed = [];
+            const itemComponentsUsed = [];
             let itemTotalCost = 0;
 
             for (const batchUsage of committedBatches) {
@@ -384,7 +329,23 @@ export const buildProcessedItemsAndDeductions = ({
                 itemTotalCost += roundCurrency((Number(batchUsage.cost) || 0) * normalizedQty);
             }
 
-            if (committedBatches.length === 0) {
+            for (const componentUsage of committedComponents) {
+                const targetId = componentUsage.ingredientId || componentUsage.productId;
+                const normalizedQty = normalizeStock(componentUsage.quantity);
+                if (!targetId || normalizedQty <= 0) continue;
+
+                const componentCost = Number(componentUsage.cost) || 0;
+                itemComponentsUsed.push({
+                    ingredientId: targetId,
+                    quantity: normalizedQty,
+                    cost: componentCost,
+                    fromCommittedStock: true
+                });
+
+                itemTotalCost += roundCurrency(componentCost * normalizedQty);
+            }
+
+            if (committedBatches.length === 0 && committedComponents.length === 0) {
                 const authoritativeCost = parseFloat(product.cost) || 0;
                 itemTotalCost = roundCurrency(authoritativeCost * quantityToDeduct);
             }
@@ -399,13 +360,28 @@ export const buildProcessedItemsAndDeductions = ({
                 base64: null,
                 cost: calculatedAvgCost,
                 batchesUsed: itemBatchesUsed,
+                inventoryComponentsUsed: itemComponentsUsed,
                 stockDeducted: normalizeStock(committedReservation?.committedQuantity ?? quantityToDeduct)
+            });
+            continue;
+        }
+
+        if (requirements.length === 0) {
+            processedItems.push({
+                ...orderItem,
+                image: null,
+                base64: null,
+                cost: parseFloat(product.cost) || 0,
+                batchesUsed: [],
+                inventoryComponentsUsed: [],
+                stockDeducted: 0
             });
             continue;
         }
 
         let itemTotalCost = 0;
         const itemBatchesUsed = [];
+        const itemComponentsUsed = [];
 
         for (const component of requirements) {
             let requiredQty = normalizeStock(component.neededQty);
@@ -415,53 +391,72 @@ export const buildProcessedItemsAndDeductions = ({
             const batches = filterBatchesEligibleForSale(rawBatches, targetProduct, { enforceExpiryStrict, now });
             const requiredStart = requiredQty;
 
-            for (const batch of batches) {
-                if (requiredQty <= 0) break;
+            if (targetProduct?.batchManagement?.enabled) {
+                for (const batch of batches) {
+                    if (requiredQty <= 0) break;
 
-                const alreadyConsumed = virtualConsumptionTracker.get(batch.id) || 0;
-                const virtualAvailableStock = normalizeStock(getAvailableStock(batch) - alreadyConsumed);
+                    const alreadyConsumed = virtualConsumptionTracker.get(batch.id) || 0;
+                    const virtualAvailableStock = normalizeStock(getAvailableStock(batch) - alreadyConsumed);
 
-                if (virtualAvailableStock <= 0) continue;
+                    if (virtualAvailableStock <= 0) continue;
 
-                const toDeduct = normalizeStock(Math.min(requiredQty, virtualAvailableStock));
+                    const toDeduct = normalizeStock(Math.min(requiredQty, virtualAvailableStock));
 
-                batchesToDeduct.push({
-                    batchId: batch.id,
-                    quantity: toDeduct,
-                    productId: targetId,
+                    batchesToDeduct.push({
+                        batchId: batch.id,
+                        quantity: toDeduct,
+                        productId: targetId,
+                        fromCommittedStock: false
+                    });
+
+                    virtualConsumptionTracker.set(batch.id, normalizeStock(alreadyConsumed + toDeduct));
+
+                    itemBatchesUsed.push({
+                        batchId: batch.id,
+                        ingredientId: targetId,
+                        quantity: toDeduct,
+                        cost: batch.cost,
+                        expiryDate: batch.expiryDate || null,
+                        batchSku: batch.sku || null
+                    });
+
+                    itemTotalCost += roundCurrency((Number(batch.cost) || 0) * toDeduct);
+                    requiredQty = normalizeStock(requiredQty - toDeduct);
+                }
+
+                if (requiredQty > EPSILON) {
+                    const expiredAvailableQuantity = sumExpiredStrictAvailable(rawBatches, targetProduct, now);
+                    if (enforceExpiryStrict && expiredAvailableQuantity > 0) {
+                        throw createExpiryBlockedError({
+                            product: targetProduct,
+                            requestedQuantity: requiredStart,
+                            availableQuantity: sumAvailable(batches),
+                            expiredAvailableQuantity
+                        });
+                    }
+
+                    throw new Error(
+                        `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${targetProduct?.name || targetId}. ` +
+                        `Disponible ${sumAvailable(batches)}, requerido ${requiredStart}.`
+                    );
+                }
+
+                continue;
+            }
+
+            if (targetProduct?.trackStock !== false) {
+                const componentQty = normalizeStock(requiredQty);
+                const componentCost = Number(targetProduct?.cost) || 0;
+
+                itemComponentsUsed.push({
+                    ingredientId: targetId,
+                    quantity: componentQty,
+                    cost: componentCost,
                     fromCommittedStock: false
                 });
 
-                virtualConsumptionTracker.set(batch.id, normalizeStock(alreadyConsumed + toDeduct));
-
-                itemBatchesUsed.push({
-                    batchId: batch.id,
-                    ingredientId: targetId,
-                    quantity: toDeduct,
-                    cost: batch.cost,
-                    expiryDate: batch.expiryDate || null,
-                    batchSku: batch.sku || null
-                });
-
-                itemTotalCost += roundCurrency((Number(batch.cost) || 0) * toDeduct);
-                requiredQty = normalizeStock(requiredQty - toDeduct);
-            }
-
-            if (requiredQty > EPSILON && targetProduct?.batchManagement?.enabled) {
-                const expiredAvailableQuantity = sumExpiredStrictAvailable(rawBatches, targetProduct, now);
-                if (enforceExpiryStrict && expiredAvailableQuantity > 0) {
-                    throw createExpiryBlockedError({
-                        product: targetProduct,
-                        requestedQuantity: requiredStart,
-                        availableQuantity: sumAvailable(batches),
-                        expiredAvailableQuantity
-                    });
-                }
-
-                throw new Error(
-                    `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${targetProduct?.name || targetId}. ` +
-                    `Disponible ${sumAvailable(batches)}, requerido ${requiredStart}.`
-                );
+                itemTotalCost += roundCurrency(componentCost * componentQty);
+                continue;
             }
 
             if (requiredQty > 0) {
@@ -479,6 +474,7 @@ export const buildProcessedItemsAndDeductions = ({
             base64: null,
             cost: calculatedAvgCost,
             batchesUsed: itemBatchesUsed,
+            inventoryComponentsUsed: itemComponentsUsed,
             stockDeducted: quantityToDeduct
         });
     }
@@ -516,13 +512,14 @@ export const commitStock = async (items, deps = {}) => {
                 const product = productMap.get(getRealProductId(orderItem));
                 assertProductExists(product, orderItem);
 
-                if (!shouldTrackInventory(product)) {
+                if (!shouldTrackInventoryForItem(orderItem, product)) {
                     reservedItems.push(orderItem);
                     continue;
                 }
 
-                const { quantityToDeduct, requirements } = buildIngredientRequirements(orderItem, product);
+                const { quantityToDeduct, requirements } = buildIngredientRequirementsForItem(orderItem, product);
                 const committedBatches = [];
+                const committedComponents = [];
 
                 for (const component of requirements) {
                     const componentProduct = productMap.get(component.targetId)
@@ -595,16 +592,23 @@ export const commitStock = async (items, deps = {}) => {
                             throw new Error(`CRITICAL_PRODUCT_NOT_FOUND: No existe el producto ${component.targetId}.`);
                         }
 
+                        const neededQty = normalizeStock(component.neededQty);
                         const availableStock = getAvailableStock(productState);
-                        if (availableStock < component.neededQty) {
+                        if (availableStock < neededQty) {
                             throw new Error(
                                 `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${productState.name}. ` +
-                                `Disponible ${availableStock}, requerido ${component.neededQty}.`
+                                `Disponible ${availableStock}, requerido ${neededQty}.`
                             );
                         }
 
-                        productState.committedStock = normalizeStock(getCommittedStock(productState) + component.neededQty);
+                        productState.committedStock = normalizeStock(getCommittedStock(productState) + neededQty);
                         productState.updatedAt = unifiedTimestamp;
+
+                        committedComponents.push({
+                            ingredientId: component.targetId,
+                            quantity: neededQty,
+                            cost: Number(productState.cost) || 0
+                        });
 
                         updatedProducts.set(component.targetId, productState);
                         productMap.set(component.targetId, productState);
@@ -613,7 +617,13 @@ export const commitStock = async (items, deps = {}) => {
 
                 reservedItems.push({
                     ...orderItem,
-                    inventoryReservation: createInventoryReservation(orderItem, quantityToDeduct, committedBatches, unifiedTimestamp)
+                    inventoryReservation: createInventoryReservation(
+                        orderItem,
+                        quantityToDeduct,
+                        committedBatches,
+                        committedComponents,
+                        unifiedTimestamp
+                    )
                 });
             }
 
@@ -681,6 +691,9 @@ export const releaseCommittedStock = async (items, deps = {}) => {
                 const committedBatches = Array.isArray(committedReservation?.committedBatches)
                     ? committedReservation.committedBatches
                     : [];
+                const committedComponents = Array.isArray(committedReservation?.committedComponents)
+                    ? committedReservation.committedComponents
+                    : [];
 
                 if (committedBatches.length > 0) {
                     for (const batchUsage of committedBatches) {
@@ -701,7 +714,41 @@ export const releaseCommittedStock = async (items, deps = {}) => {
 
                         batchManagedProductIds.add(batch.productId);
                     }
+                }
 
+                if (committedComponents.length > 0) {
+                    for (const componentUsage of committedComponents) {
+                        const componentId = componentUsage.ingredientId || componentUsage.productId;
+                        const quantityToRelease = normalizeStock(componentUsage.quantity);
+                        if (!componentId || quantityToRelease <= 0) continue;
+
+                        const currentProduct = updatedProducts.get(componentId)
+                            || productMap.get(componentId)
+                            || await db.table(STORES.MENU).get(componentId);
+
+                        if (!currentProduct) {
+                            throw new Error(`CRITICAL_PRODUCT_NOT_FOUND: No existe el producto ${componentId}.`);
+                        }
+
+                        const currentCommitted = getCommittedStock(currentProduct);
+                        if (currentCommitted < quantityToRelease) {
+                            throw new Error(
+                                `CRITICAL_COMMITTED_UNDERFLOW: El producto ${currentProduct.name} intenta liberar ${quantityToRelease}, ` +
+                                `pero solo tiene ${currentCommitted} comprometido.`
+                            );
+                        }
+
+                        currentProduct.committedStock = normalizeStock(currentCommitted - quantityToRelease);
+                        currentProduct.updatedAt = unifiedTimestamp;
+
+                        updatedProducts.set(currentProduct.id, currentProduct);
+                        productMap.set(currentProduct.id, currentProduct);
+                    }
+
+                    continue;
+                }
+
+                if (committedBatches.length > 0) {
                     continue;
                 }
 
