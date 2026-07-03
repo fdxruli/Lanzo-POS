@@ -1,0 +1,118 @@
+.kds-history-filters {
+  display: grid;
+  gap: 12px;
+  padding: 1rem;
+  background: var(--ui-bg-surface, var(--card-background-color));
+  border: 1px solid var(--ui-border-color, var(--border-color));
+  border-radius: var(--ui-radius-md, var(--border-radius));
+}
+
+.kds-history-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kds-history-filter > span {
+  color: var(--ui-text-muted, var(--text-light));
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.kds-history-filter > div,
+.ticket-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kds-history-filter button,
+.btn-kds-archive {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--ui-border-color, var(--border-color));
+  border-radius: 999px;
+  background: var(--ui-bg-muted, var(--light-background));
+  color: var(--ui-text-strong, var(--text-dark));
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.kds-history-filter button.active {
+  color: var(--ui-text-info, var(--primary-color));
+  border-color: var(--ui-border-info, var(--primary-color));
+  background: var(--ui-bg-info-soft, rgba(59, 130, 246, 0.12));
+}
+
+.kds-payment-badge,
+.kds-archive-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.kds-payment-badge {
+  color: var(--ui-text-success, var(--success-color));
+  border: 1px solid var(--ui-border-success, var(--success-color));
+  background: var(--ui-bg-success-soft, rgba(16, 185, 129, 0.12));
+}
+
+.kds-payment-badge.pending {
+  color: var(--ui-text-warning, var(--warning-color));
+  border-color: var(--ui-border-warning, var(--warning-color));
+  background: var(--ui-bg-warning-soft, rgba(255, 184, 0, 0.14));
+}
+
+.kds-archive-badge {
+  color: var(--ui-text-muted, var(--text-light));
+  border: 1px solid var(--ui-border-color, var(--border-color));
+  background: var(--ui-bg-muted, var(--light-background));
+}
+
+.ticket-history-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px dashed var(--ui-border-color, var(--border-color));
+  border-radius: 10px;
+  background: var(--ui-bg-muted, var(--light-background));
+}
+
+.ticket-history-details span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ticket-history-details small {
+  color: var(--ui-text-muted, var(--text-light));
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.ticket-history-details strong {
+  color: var(--ui-text-strong, var(--text-dark));
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.btn-kds-archive {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+@media (max-width: 420px) {
+  .btn-kds-archive {
+    width: 100%;
+  }
+}

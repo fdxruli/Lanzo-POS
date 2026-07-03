@@ -8,12 +8,13 @@ import {
 } from '../../services/sync/syncConstants';
 import usePreparationStations from './usePreparationStations';
 import useRestaurantOrders from './useRestaurantOrders';
+import useRestaurantOrdersHistory from './useRestaurantOrdersHistory';
 
 const CLOUD_KDS_POLL_MS = 10000;
 const RESTAURANT_ORDERS_UPDATED_EVENT = 'lanzo:restaurant-orders-cloud-updated';
 
-const KDS_ACTIVE_STATUSES = new Set(['pending', 'preparing', 'open']);
-const KDS_READY_STATUSES = new Set(['ready']);
+const KDS_ACTIVE_STATUSES = new Set(['pending', 'preparing', 'ready']);
+const KDS_PAID_PENDING_STATUSES = new Set(['pending', 'preparing']);
 const KDS_TERMINAL_STATUSES = new Set(['delivered', 'cancelled', 'completed']);
 
 const getOnlineState = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -29,6 +30,15 @@ const normalizeStatus = (status) => {
   return normalized || 'pending';
 };
 
+const getPaymentStatus = (order = {}) => String(order.paymentStatus || 'unpaid').trim().toLowerCase();
+const isArchivedOrder = (order = {}) => Boolean(order.archivedAt);
+const isActiveKitchenOrder = (order = {}) => !isArchivedOrder(order) && KDS_ACTIVE_STATUSES.has(normalizeStatus(order.fulfillmentStatus || order.status));
+const isPaidPendingKitchenOrder = (order = {}) => (
+  !isArchivedOrder(order) &&
+  getPaymentStatus(order) === 'paid' &&
+  KDS_PAID_PENDING_STATUSES.has(normalizeStatus(order.fulfillmentStatus || order.status))
+);
+
 const friendlyKitchenError = (error) => {
   if (!error) return null;
   const message = typeof error === 'string' ? error : error?.message || error?.code || String(error);
@@ -36,6 +46,10 @@ const friendlyKitchenError = (error) => {
 
   if (normalized.includes('sin conexión') || normalized.includes('offline') || normalized.includes('failed to fetch') || normalized.includes('network')) {
     return 'No se pudieron actualizar las comandas porque el dispositivo está sin conexión.';
+  }
+
+  if (normalized.includes('archive_not_terminal') || normalized.includes('solo se pueden archivar')) {
+    return 'Solo se pueden archivar comandas entregadas o canceladas.';
   }
 
   if (normalized.includes('permission') || normalized.includes('permiso') || normalized.includes('pos_permission_denied')) {
@@ -80,24 +94,34 @@ const buildStationOptions = (activeStations = []) => {
   return options;
 };
 
-const filterOrdersByBucket = (orders = [], statusFilter = 'pending') => (
-  (Array.isArray(orders) ? orders : []).filter((order) => {
-    const status = normalizeStatus(order?.fulfillmentStatus || order?.status);
-    if (statusFilter === 'pending') return KDS_ACTIVE_STATUSES.has(status);
-    if (statusFilter === 'ready') return KDS_READY_STATUSES.has(status);
-    if (statusFilter === 'history') return KDS_TERMINAL_STATUSES.has(status);
-    return true;
-  })
-);
+const filterOrdersByBucket = (orders = [], historyOrders = [], statusFilter = 'active') => {
+  if (statusFilter === 'history') return Array.isArray(historyOrders) ? historyOrders : [];
 
-const countByBucket = (orders = []) => {
-  const counts = { pending: 0, ready: 0, history: 0 };
+  return (Array.isArray(orders) ? orders : []).filter((order) => {
+    if (statusFilter === 'paid_pending') return isPaidPendingKitchenOrder(order);
+    return isActiveKitchenOrder(order);
+  });
+};
+
+const countByBucket = (orders = [], historyOrders = []) => {
+  const counts = {
+    active: 0,
+    paid_pending: 0,
+    history: Array.isArray(historyOrders) ? historyOrders.length : 0,
+    pending: 0,
+    ready: 0
+  };
+
   (Array.isArray(orders) ? orders : []).forEach((order) => {
     const status = normalizeStatus(order?.fulfillmentStatus || order?.status);
-    if (KDS_ACTIVE_STATUSES.has(status)) counts.pending += 1;
-    if (KDS_READY_STATUSES.has(status)) counts.ready += 1;
-    if (KDS_TERMINAL_STATUSES.has(status)) counts.history += 1;
+    if (isActiveKitchenOrder(order)) {
+      counts.active += 1;
+      if (status === 'ready') counts.ready += 1;
+      if (status === 'pending' || status === 'preparing') counts.pending += 1;
+    }
+    if (isPaidPendingKitchenOrder(order)) counts.paid_pending += 1;
   });
+
   return counts;
 };
 
@@ -120,7 +144,7 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
   const hasReadPermission = currentDeviceRole !== 'staff' || hasStaffPermission(canAccess, ['orders', 'pos', 'kitchen', 'kds']);
   const hasWritePermission = currentDeviceRole !== 'staff' || hasStaffPermission(canAccess, ['orders', 'pos']);
 
-  const [statusFilter, setStatusFilter] = useState('pending');
+  const [statusFilter, setStatusFilter] = useState('active');
   const [selectedStationCode, setSelectedStationCode] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
@@ -128,7 +152,7 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
   const [isOnline, setIsOnline] = useState(getOnlineState);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
 
-  const includeCompleted = statusFilter === 'history';
+  const includeCompleted = false;
 
   const {
     activeStations,
@@ -155,6 +179,20 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     includeCompleted
   });
 
+  const {
+    orders: historyOrders,
+    isLoading: isLoadingHistory,
+    isArchiving,
+    archivingOrderId,
+    error: historyError,
+    refresh: refreshHistory,
+    archiveOrder: archiveHistoryOrder,
+    filters: historyFilters,
+    setFilters: setHistoryFilters
+  } = useRestaurantOrdersHistory({
+    autoLoad: isCloudKdsEnabled && hasReadPermission
+  });
+
   const stationOptions = useMemo(() => buildStationOptions(activeStations), [activeStations]);
 
   useEffect(() => {
@@ -171,26 +209,31 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     setActionError(null);
     setIsOnline(getOnlineState());
 
-    const [stationsResult, ordersResult] = await Promise.allSettled([
+    const tasks = [
       refreshStations({ force }),
       refreshOrders({ force })
-    ]);
+    ];
+
+    if (statusFilter === 'history') tasks.push(refreshHistory({ force }));
+
+    const [stationsResult, ordersResult, historyResult] = await Promise.allSettled(tasks);
 
     if (ordersResult.status === 'fulfilled') {
       setLastUpdatedAt(new Date().toISOString());
+      if (statusFilter === 'history' && historyResult?.status === 'rejected') setActionError(historyResult.reason);
       return ordersResult.value;
     }
 
     setActionError(ordersResult.reason);
-    return { success: false, error: ordersResult.reason, stationsResult };
-  }, [hasReadPermission, isCloudKdsEnabled, refreshOrders, refreshStations]);
+    return { success: false, error: ordersResult.reason, stationsResult, historyResult };
+  }, [hasReadPermission, isCloudKdsEnabled, refreshHistory, refreshOrders, refreshStations, statusFilter]);
 
   const loadingRef = useRef(false);
   const refreshRef = useRef(refreshKitchenOrders);
 
   useEffect(() => {
-    loadingRef.current = isLoadingOrders || isLoadingStations || Boolean(updatingOrderId) || Boolean(updatingItemId);
-  }, [isLoadingOrders, isLoadingStations, updatingItemId, updatingOrderId]);
+    loadingRef.current = isLoadingOrders || isLoadingStations || isLoadingHistory || isArchiving || Boolean(updatingOrderId) || Boolean(updatingItemId);
+  }, [isArchiving, isLoadingHistory, isLoadingOrders, isLoadingStations, updatingItemId, updatingOrderId]);
 
   useEffect(() => {
     refreshRef.current = refreshKitchenOrders;
@@ -252,12 +295,16 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     if (Array.isArray(orders)) setLastUpdatedAt(new Date().toISOString());
   }, [orders]);
 
+  useEffect(() => {
+    if (Array.isArray(historyOrders) && statusFilter === 'history') setLastUpdatedAt(new Date().toISOString());
+  }, [historyOrders, statusFilter]);
+
   const displayedOrders = useMemo(
-    () => filterOrdersByBucket(orders, statusFilter),
-    [orders, statusFilter]
+    () => filterOrdersByBucket(orders, historyOrders, statusFilter),
+    [historyOrders, orders, statusFilter]
   );
 
-  const statusCounts = useMemo(() => countByBucket(orders), [orders]);
+  const statusCounts = useMemo(() => countByBucket(orders, historyOrders), [historyOrders, orders]);
 
   const changeOrderStatus = useCallback(async ({ restaurantOrderId, status }) => {
     if (!isCloudKdsEnabled) {
@@ -287,6 +334,7 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
         setActionError(message);
         return { ...response, message };
       }
+      await refreshHistory({ force: true }).catch(() => {});
       setLastUpdatedAt(new Date().toISOString());
       return response;
     } catch (error) {
@@ -295,7 +343,7 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     } finally {
       setUpdatingOrderId(null);
     }
-  }, [hasWritePermission, isCloudKdsEnabled, updateOrderStatus]);
+  }, [hasWritePermission, isCloudKdsEnabled, refreshHistory, updateOrderStatus]);
 
   const changeOrderItemStatus = useCallback(async ({ restaurantOrderId, restaurantOrderItemId, status }) => {
     if (!isCloudKdsEnabled) {
@@ -329,6 +377,7 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
         setActionError(message);
         return { ...response, message };
       }
+      await refreshHistory({ force: true }).catch(() => {});
       setLastUpdatedAt(new Date().toISOString());
       return response;
     } catch (error) {
@@ -337,14 +386,62 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     } finally {
       setUpdatingItemId(null);
     }
-  }, [hasWritePermission, isCloudKdsEnabled, updateOrderItemStatus]);
+  }, [hasWritePermission, isCloudKdsEnabled, refreshHistory, updateOrderItemStatus]);
 
+  const archiveOrder = useCallback(async (orderOrId) => {
+    if (!isCloudKdsEnabled) {
+      return { success: false, message: 'Tu plan actual no tiene activo el monitor cloud de cocina.' };
+    }
+
+    if (!hasWritePermission) {
+      const message = 'Tu usuario no tiene permiso para archivar comandas.';
+      setActionError(message);
+      return { success: false, message };
+    }
+
+    const restaurantOrderId = typeof orderOrId === 'string' ? orderOrId : orderOrId?.id;
+    const status = typeof orderOrId === 'object' ? normalizeStatus(orderOrId?.fulfillmentStatus || orderOrId?.status) : null;
+    if (status && !KDS_TERMINAL_STATUSES.has(status)) {
+      const message = 'Solo se pueden archivar comandas entregadas o canceladas.';
+      setActionError(message);
+      return { success: false, message, code: 'RESTAURANT_ORDER_ARCHIVE_NOT_TERMINAL' };
+    }
+
+    setActionError(null);
+
+    const response = await archiveHistoryOrder({
+      restaurantOrderId,
+      reason: 'manual_archive',
+      metadata: {
+        source: 'kds_history_tab',
+        phase: 'REST.8'
+      }
+    });
+
+    if (response?.success === false) {
+      const message = response.message || 'No se pudo archivar la comanda.';
+      setActionError(message);
+      return { ...response, message };
+    }
+
+    await Promise.allSettled([
+      refreshOrders({ force: true }),
+      refreshHistory({ force: true })
+    ]);
+    setLastUpdatedAt(new Date().toISOString());
+    return response;
+  }, [archiveHistoryOrder, hasWritePermission, isCloudKdsEnabled, refreshHistory, refreshOrders]);
+
+  const historyVisibleError = statusFilter === 'history' ? historyError : null;
   const rawError = !hasReadPermission
     ? 'POS_PERMISSION_DENIED:restaurant_orders_read'
-    : (!isOnline ? 'offline' : (actionError || ordersError || (stationsSource === 'fallback' ? null : stationsError)));
+    : (!isOnline ? 'offline' : (actionError || historyVisibleError || ordersError || (stationsSource === 'fallback' ? null : stationsError)));
+
+  const isHistoryView = statusFilter === 'history';
 
   return {
     orders,
+    historyOrders,
     displayedOrders,
     statusFilter,
     setStatusFilter,
@@ -352,14 +449,18 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     setSelectedStationCode,
     stationOptions,
     statusCounts,
+    historyFilters,
+    setHistoryFilters,
     isCloudKdsEnabled,
     isCloudRestaurantOrdersEnabled,
     isFoodServiceBusiness,
     hasKitchenSurface,
     hasReadPermission,
     hasWritePermission,
-    isLoading: isLoadingOrders || isLoadingStations,
-    isUpdating: Boolean(updatingOrderId) || Boolean(updatingItemId),
+    isLoading: isLoadingOrders || isLoadingStations || (isHistoryView && isLoadingHistory),
+    isUpdating: Boolean(updatingOrderId) || Boolean(updatingItemId) || isArchiving,
+    isArchiving,
+    archivingOrderId,
     updatingOrderId,
     updatingItemId,
     isUpdatingItem: (itemId) => Boolean(itemId && updatingItemId === itemId),
@@ -367,6 +468,8 @@ export function useKitchenOrdersCloud({ pollMs = CLOUD_KDS_POLL_MS } = {}) {
     lastUpdatedAt,
     includeCompleted,
     refreshKitchenOrders,
+    refreshHistory,
+    archiveOrder,
     changeOrderStatus,
     changeOrderItemStatus
   };
