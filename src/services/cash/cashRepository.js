@@ -95,7 +95,7 @@ const getCachedScope = async (mode, { limit = 50 } = {}) => {
 export const cashRepository = {
   getMode: getCashMode,
 
-  async getCurrentCashSession() {
+  async getCurrentCashSession({ force = false } = {}) {
     const mode = getCashMode();
 
     if (!mode.cloudEnabled) {
@@ -109,7 +109,7 @@ export const cashRepository = {
     assertCanUseCashRegister();
 
     try {
-      const response = await cashCloudRepository.getCurrentCashSession({ licenseKey: mode.licenseKey });
+      const response = await cashCloudRepository.getCurrentCashSession({ licenseKey: mode.licenseKey, force });
       if (response?.success === false) {
         return fail(response.message || 'No se pudo cargar la caja cloud.', response.code || 'CASH_CURRENT_FAILED', { response });
       }
@@ -122,7 +122,7 @@ export const cashRepository = {
 
       let cashSessions = [];
       try {
-        const snapshot = await this.pullCashSnapshot({ scope: mode.actor.isStaff ? 'mine' : 'all', includeClosed: true, limit: 50 });
+        const snapshot = await this.pullCashSnapshot({ scope: mode.actor.isStaff ? 'mine' : 'all', includeClosed: true, limit: 50, force });
         cashSessions = snapshot.cashSessions || [];
       } catch (snapshotError) {
         Logger.warn('[Cash] Snapshot posterior a current fallo:', snapshotError);
@@ -346,7 +346,7 @@ export const cashRepository = {
     };
   },
 
-  async pullCashSnapshot({ scope = 'mine', includeClosed = true, limit = 100, offset = 0 } = {}) {
+  async pullCashSnapshot({ scope = 'mine', includeClosed = true, limit = 100, offset = 0, force = false } = {}) {
     const mode = getCashMode();
 
     if (!mode.cloudEnabled || !mode.online) {
@@ -364,7 +364,8 @@ export const cashRepository = {
       scope,
       includeClosed,
       limit,
-      offset
+      offset,
+      force
     });
 
     if (response?.success === false) {
