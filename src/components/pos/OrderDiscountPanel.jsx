@@ -23,7 +23,8 @@ export default function OrderDiscountPanel({ compact = false }) {
   const items = useMemo(() => (Array.isArray(order?.items) ? order.items : []), [order?.items]);
   const totals = useMemo(() => orderTotals(order || { items }), [order, items]);
   const hasItems = items.some((item) => Number(item?.quantity) > 0);
-  const hasDiscount = Number(totals.discountTotal || 0) > 0;
+  const hasAnyDiscount = Number(totals.discountTotal || 0) > 0;
+  const hasSaleDiscount = Number(totals.saleDiscountAmount || 0) > 0;
   const locked = Boolean(order?.isLockedForCheckout);
 
   useEffect(() => {
@@ -67,7 +68,7 @@ export default function OrderDiscountPanel({ compact = false }) {
     <section className={`order-discount-panel${compact ? ' order-discount-panel--compact' : ''}`}>
       <div className="order-discount-totals">
         <div className="order-discount-row"><span>Subtotal</span><strong>{money(totals.subtotal)}</strong></div>
-        {hasDiscount && <div className="order-discount-row order-discount-row--discount"><span>Descuento</span><strong>-{money(totals.discountTotal)}</strong></div>}
+        {hasAnyDiscount && <div className="order-discount-row order-discount-row--discount"><span>Descuento</span><strong>-{money(totals.discountTotal)}</strong></div>}
         <div className="order-discount-row order-discount-row--total"><span>Total</span><strong>{money(totals.total)}</strong></div>
       </div>
 
@@ -93,7 +94,7 @@ export default function OrderDiscountPanel({ compact = false }) {
         ) : (
           <button type="button" className="order-discount-btn" onClick={() => setOpen(true)} disabled={locked}>Descuento general</button>
         )}
-        {hasDiscount && !open && <button type="button" className="order-discount-btn order-discount-btn--danger" onClick={removeDiscount} disabled={locked}>Quitar descuento general</button>}
+        {hasSaleDiscount && !open && <button type="button" className="order-discount-btn order-discount-btn--danger" onClick={removeDiscount} disabled={locked}>Quitar descuento general</button>}
       </div>
 
       <OrderLineDiscountList />
