@@ -14,6 +14,7 @@ const REFRESH_DEBOUNCE_MS = 700;
 const ACTIVE_PENDING_STATUSES = new Set(['pending', 'open', 'sent', 'sent_to_kitchen']);
 const PREPARING_STATUSES = new Set(['preparing']);
 const READY_STATUSES = new Set(['ready']);
+const DONE_STATUSES = new Set(['ready', 'delivered']);
 const CANCELLED_STATUSES = new Set(['cancelled']);
 const PAID_STATUSES = new Set(['paid']);
 
@@ -90,6 +91,7 @@ export const buildRestaurantCloudStatusSummary = (cloudOrder) => {
   const pendingItems = items.filter((item) => ACTIVE_PENDING_STATUSES.has(normalizeRestaurantCloudStatus(item?.status)));
   const preparingItems = items.filter((item) => PREPARING_STATUSES.has(normalizeRestaurantCloudStatus(item?.status)));
   const readyItems = items.filter((item) => READY_STATUSES.has(normalizeRestaurantCloudStatus(item?.status)));
+  const doneItems = items.filter((item) => DONE_STATUSES.has(normalizeRestaurantCloudStatus(item?.status)));
   const activeItems = items.filter((item) => !CANCELLED_STATUSES.has(normalizeRestaurantCloudStatus(item?.status)));
 
   const hasCancelledItems = cancelledItems.length > 0;
@@ -98,7 +100,8 @@ export const buildRestaurantCloudStatusSummary = (cloudOrder) => {
   const isCancelled = normalizedOrderStatus === 'cancelled' || (items.length > 0 && activeItems.length === 0);
   const isReady = !isCancelled && (
     normalizedOrderStatus === 'ready' ||
-    (activeItems.length > 0 && readyItems.length === activeItems.length)
+    normalizedOrderStatus === 'delivered' ||
+    (activeItems.length > 0 && doneItems.length === activeItems.length)
   );
   const isPaidPendingKitchen = isPaid && !isCancelled && !isReady && (hasPendingItems || hasPreparingItems || normalizedOrderStatus === 'pending' || normalizedOrderStatus === 'preparing');
 
@@ -121,6 +124,7 @@ export const buildRestaurantCloudStatusSummary = (cloudOrder) => {
     hasPreparingItems,
     preparingItems,
     readyItems,
+    doneItems,
     activeItems,
     isReady,
     isCancelled
@@ -304,6 +308,7 @@ export function useRestaurantOrderCloudStatus({ localOrderId, enabled = true } =
     hasPreparingItems: summary.hasPreparingItems,
     preparingItems: summary.preparingItems,
     readyItems: summary.readyItems,
+    doneItems: summary.doneItems,
     activeItems: summary.activeItems,
     items: summary.items,
     status: summary.status,
