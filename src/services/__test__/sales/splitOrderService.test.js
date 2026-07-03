@@ -141,6 +141,165 @@ describe('splitOpenTableOrderCore', () => {
     expect(deps.executeSplitOpenTableOrderTransactionSafe).not.toHaveBeenCalled();
   });
 
+  it('preserves normalized selectedModifiers when splitting a table order', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      total: '300',
+      items: [
+        {
+          id: 'prod-1',
+          name: 'Hamburguesa',
+          quantity: 2,
+          price: 150,
+          selectedModifiers: [
+            {
+              id: 'opt_queso_extra',
+              optionId: 'opt_queso_extra',
+              name: 'Queso extra',
+              price: 10,
+              ingredientId: 'ing_queso',
+              ingredientQuantity: 30,
+              ingredientUnit: 'g',
+              tracksInventory: true
+            }
+          ],
+          inventoryReservation: {
+            source: 'table',
+            committedQuantity: 2,
+            committedBatches: []
+          }
+        }
+      ]
+    };
+    const deps = makeDeps(parentSale);
+
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, {
+        tickets: [
+          { label: 'A', paymentData: { paymentMethod: 'efectivo', amountPaid: '150', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] },
+          { label: 'B', paymentData: { paymentMethod: 'efectivo', amountPaid: '150', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] }
+        ]
+      }),
+      deps
+    );
+
+    expect(result.success).toBe(true);
+
+    const payload = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0];
+    const childModifier = payload.childPayloads[0].sale.items[0].selectedModifiers[0];
+
+    expect(childModifier).toMatchObject({
+      id: 'opt_queso_extra',
+      optionId: 'opt_queso_extra',
+      name: 'Queso extra',
+      price: 10,
+      ingredientId: 'ing_queso',
+      ingredientQuantity: 30,
+      ingredientUnit: 'g',
+      tracksInventory: true
+    });
+  });
+
+  it('does not treat same ingredient modifiers with different identity as the same snapshot', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      items: [
+        {
+          ...buildParentSale().items[0],
+          selectedModifiers: [
+            {
+              id: 'opt_doble_queso',
+              name: 'Queso extra',
+              price: 18,
+              ingredientId: 'ing_queso',
+              ingredientQuantity: 60,
+              ingredientUnit: 'g',
+              tracksInventory: true
+            }
+          ]
+        }
+      ]
+    };
+    const deps = makeDeps(parentSale);
+    const staleSnapshot = structuredClone(parentSale.items);
+    staleSnapshot[0].selectedModifiers = [
+      {
+        id: 'opt_queso_extra',
+        name: 'Queso extra',
+        price: 10,
+        ingredientId: 'ing_queso',
+        ingredientQuantity: 30,
+        ingredientUnit: 'g',
+        tracksInventory: true
+      }
+    ];
+
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, { orderSnapshot: staleSnapshot }),
+      deps
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      errorType: 'DIRTY_ORDER'
+    });
+    expect(deps.executeSplitOpenTableOrderTransactionSafe).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy quantity compatible while deriving ingredientQuantity in split children', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      total: '300',
+      items: [
+        {
+          id: 'prod-1',
+          name: 'Hamburguesa',
+          quantity: 2,
+          price: 150,
+          selectedModifiers: [
+            {
+              name: 'Tocino extra',
+              ingredientId: 'ing_tocino',
+              quantity: 25,
+              unit: 'g'
+            }
+          ],
+          inventoryReservation: {
+            source: 'table',
+            committedQuantity: 2,
+            committedBatches: []
+          }
+        }
+      ]
+    };
+    const deps = makeDeps(parentSale);
+
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, {
+        tickets: [
+          { label: 'A', paymentData: { paymentMethod: 'efectivo', amountPaid: '150', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] },
+          { label: 'B', paymentData: { paymentMethod: 'efectivo', amountPaid: '150', sendReceipt: false }, lines: [{ lineIndex: 0, quantity: 1 }] }
+        ]
+      }),
+      deps
+    );
+
+    expect(result.success).toBe(true);
+
+    const payload = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0];
+    const childModifier = payload.childPayloads[0].sale.items[0].selectedModifiers[0];
+
+    expect(childModifier).toMatchObject({
+      name: 'Tocino extra',
+      ingredientId: 'ing_tocino',
+      ingredientQuantity: 25,
+      ingredientUnit: 'g',
+      quantity: 25,
+      unit: 'g',
+      tracksInventory: true
+    });
+  });
+
   it('applies rounding adjustment in equal mode for odd cents', async () => {
     const parentSale = {
       ...buildParentSale(),
