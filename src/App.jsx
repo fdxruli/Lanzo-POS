@@ -21,6 +21,7 @@ import BackupReminder from './components/common/BackupReminder';
 import BackupRuntime from './components/common/BackupRuntime';
 import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
+import { isCloudPosSyncEnabled } from './services/sync/syncConstants';
 import { AlertTriangle, XCircle } from 'lucide-react';
 
 const MAX_RETRIES = 3;
@@ -152,12 +153,15 @@ function App() {
   const appStatus = useAppStore((state) => state.appStatus);
   const initializeApp = useAppStore((state) => state.initializeApp);
   const pendingTermsUpdate = useAppStore((state) => state.pendingTermsUpdate);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   const clearTermsNotification = () => {
     useAppStore.setState({ pendingTermsUpdate: null });
   };
 
   const startLicenseSync = useAppStore((state) => state.startLicenseSync);
   const stopLicenseSync = useAppStore((state) => state.stopLicenseSync);
+  const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
+  const shouldMountLocalBackupRuntime = !isCloudLicense;
 
   useEffect(() => {
     initializeApp();
@@ -305,8 +309,8 @@ function App() {
       return (
         <>
           <PersistenceWarningBanner />
-          <BackupRuntime />
-          <BackupReminder />
+          {shouldMountLocalBackupRuntime && <BackupRuntime />}
+          {shouldMountLocalBackupRuntime && <BackupReminder />}
           <ServerStatusBanner />
           <UpdatePrompt />
           <InstallPrompt />

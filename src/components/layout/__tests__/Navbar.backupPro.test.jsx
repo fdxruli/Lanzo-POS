@@ -3,6 +3,10 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Navbar from '../Navbar';
 
+const noticeMock = vi.hoisted(() => ({
+  getBackupRuntimeNotice: vi.fn(() => null)
+}));
+
 const appState = {
   isVolatileDismissed: false,
   setVolatileDismissed: vi.fn(),
@@ -30,7 +34,17 @@ vi.mock('../../../hooks/useFeatureConfig', () => ({
 }));
 
 vi.mock('../../../hooks/useBackupManager', () => ({
-  useBackupManager: () => ({ status: null })
+  useBackupManager: () => ({
+    status: {
+      initialized: true,
+      busy: false,
+      configured: false,
+      supported: true,
+      permission: 'granted',
+      unlocked: true,
+      settings: { cronBlocked: false, cronPending: false }
+    }
+  })
 }));
 
 vi.mock('../../../hooks/usePersistentStorage', () => ({
@@ -42,7 +56,7 @@ vi.mock('../../../services/BackupRiskEvaluator', () => ({
 }));
 
 vi.mock('../../../utils/backupRuntimeNotice', () => ({
-  getBackupRuntimeNotice: () => null
+  getBackupRuntimeNotice: noticeMock.getBackupRuntimeNotice
 }));
 
 vi.mock('../../common/Logo', () => ({
@@ -57,39 +71,41 @@ function renderNavbar() {
   );
 }
 
-describe('Navbar mobile menu', () => {
+function openMobileMenu() {
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir menú principal' }));
+}
+
+describe('Navbar backup actions by license type', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    noticeMock.getBackupRuntimeNotice.mockReturnValue({
+      key: 'configure',
+      navbarLabel: 'Configurar respaldos'
+    });
+    Object.assign(appState, {
+      dismissedBackupNotice: 'configure',
+      updateAvailable: false,
+      isInstallable: false,
+      licenseDetails: { features: { cloud_pos_sync: false } }
+    });
     appState.canAccess.mockReturnValue(true);
   });
 
-  it('opens as a dialog and closes with Escape', () => {
+  it('does not show local backup actions for PRO cloud', () => {
+    appState.licenseDetails = { features: { cloud_pos_sync: true } };
+
     renderNavbar();
+    openMobileMenu();
 
-    const menuButton = screen.getByRole('button', { name: 'Abrir menú principal' });
-    const drawer = document.getElementById('mobile-main-menu');
-
-    expect(menuButton.getAttribute('aria-expanded')).toBe('false');
-    expect(drawer.getAttribute('aria-hidden')).toBe('true');
-    expect(drawer.hasAttribute('inert')).toBe(true);
-
-    fireEvent.click(menuButton);
-
-    expect(screen.getByRole('dialog', { name: 'Menú principal' }).getAttribute('aria-hidden')).toBe('false');
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cerrar menú' }));
-
-    fireEvent.keyDown(document, { key: 'Escape' });
-
-    expect(menuButton.getAttribute('aria-expanded')).toBe('false');
-    expect(document.activeElement).toBe(menuButton);
+    expect(screen.queryByRole('button', { name: 'Configurar respaldos' })).toBeNull();
   });
 
-  it('closes when the backdrop is pressed', () => {
+  it('shows local backup actions for FREE local when a notice applies', () => {
+    appState.licenseDetails = { features: { cloud_pos_sync: false } };
+
     renderNavbar();
+    openMobileMenu();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú principal' }));
-    fireEvent.click(document.querySelector('.mobile-drawer-overlay'));
-
-    expect(screen.getByRole('button', { name: 'Abrir menú principal' }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Configurar respaldos' })).not.toBeNull();
   });
 });

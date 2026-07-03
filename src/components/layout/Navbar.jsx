@@ -5,6 +5,7 @@ import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useBackupManager } from '../../hooks/useBackupManager';
 import usePersistentStorage from '../../hooks/usePersistentStorage';
 import { useBackupRiskStore } from '../../services/BackupRiskEvaluator';
+import { isCloudPosSyncEnabled } from '../../services/sync/syncConstants';
 import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
 import Logo from '../common/Logo';
 import {
@@ -51,6 +52,7 @@ function Navbar() {
   const dismissedBackupNotice = useAppStore((state) => state.dismissedBackupNotice);
   const showBackupNotice = useAppStore((state) => state.showBackupNotice);
   const canAccess = useAppStore((state) => state.canAccess);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   useAppStore((state) => state.currentDeviceRole);
   useAppStore((state) => state.currentStaffUser);
 
@@ -160,8 +162,11 @@ function Navbar() {
   const visibleDrawerLinks = drawerLinks.filter((link) => isRouteAllowed(link.to));
 
   const isSectionFromMenu = visibleDrawerLinks.some((link) => location.pathname.startsWith(link.to));
-  const backupNotice = getBackupRuntimeNotice(backupStatus, needsDriveReauth);
-  const hasDismissedBackupNotice = backupNotice?.key === dismissedBackupNotice;
+  const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
+  const showLocalBackupIndicators = !isCloudLicense;
+  const effectiveBackupRiskLevel = showLocalBackupIndicators ? backupRiskLevel : 0;
+  const backupNotice = showLocalBackupIndicators ? getBackupRuntimeNotice(backupStatus, needsDriveReauth) : null;
+  const hasDismissedBackupNotice = showLocalBackupIndicators && backupNotice?.key === dismissedBackupNotice;
   const hasMenuAction = updateAvailable || isInstallable || hasDismissedBackupNotice;
   const installButtonLabel = isIOS ? 'Instalar App (iOS)' : 'Instalar App';
 
@@ -347,7 +352,7 @@ function Navbar() {
                   <span className="drawer-link-label">{link.label}</span>
                   <span className="drawer-link-description">{link.description}</span>
                 </span>
-                {link.to === '/configuracion' && backupRiskLevel === 1 && (
+                {link.to === '/configuracion' && effectiveBackupRiskLevel === 1 && (
                   <span className="drawer-link-alert" title="Respaldo recomendado">
                     <AlertCircle size={19} />
                     <span className="sr-only">Respaldo recomendado</span>
@@ -355,7 +360,7 @@ function Navbar() {
                 )}
               </NavLink>
 
-              {link.to === '/configuracion' && isVolatile && isVolatileDismissed && (
+              {link.to === '/configuracion' && showLocalBackupIndicators && isVolatile && isVolatileDismissed && (
                 <button
                   type="button"
                   className="drawer-warning-action"
@@ -511,8 +516,8 @@ function Navbar() {
               <Settings size={20} /> Configuracion
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              {backupRiskLevel === 1 && <span title="Respaldo recomendado" style={{ display: 'flex', alignItems: 'center' }}><AlertCircle size={18} color="#ff4444" /></span>}
-              {isVolatile && isVolatileDismissed && (
+              {effectiveBackupRiskLevel === 1 && <span title="Respaldo recomendado" style={{ display: 'flex', alignItems: 'center' }}><AlertCircle size={18} color="#ff4444" /></span>}
+              {showLocalBackupIndicators && isVolatile && isVolatileDismissed && (
                 <button
                   onClick={(e) => { e.preventDefault(); setVolatileDismissed(false); }}
                   title="Riesgo de pérdida de datos"

@@ -27,7 +27,7 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? 'Nunca' : date.toLocaleString();
 }
 
-function LocalBackupSettings() {
+function LocalBackupSettings({ isCloudLicense = false }) {
   const { status, backupManager } = useBackupManager();
   const driveAccessToken = useAppStore((state) => state.driveAccessToken);
   const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
@@ -44,6 +44,23 @@ function LocalBackupSettings() {
   const [restoreFile, setRestoreFile] = useState(null);
   const [error, setError] = useState('');
   const [manualBackupPhase, setManualBackupPhase] = useState('idle');
+
+  const initialTitle = isCloudLicense ? 'Copia local cifrada opcional' : 'Respaldos Locales Cifrados';
+  const configuredTitle = isCloudLicense ? 'Copia local cifrada adicional' : 'Respaldos Locales Cifrados';
+  const initialDescription = isCloudLicense
+    ? 'Tus datos principales se sincronizan en la nube. Puedes configurar un PIN solo si deseas generar copias locales cifradas adicionales.'
+    : 'Configura un PIN de al menos 8 dígitos y la carpeta donde se guardarán las copias.';
+  const configuredDescription = isCloudLicense
+    ? 'Esta copia es complementaria a la sincronización en la nube. Úsala para exportar o resguardar archivos locales cuando lo necesites.'
+    : 'Archivos AES-GCM por fragmentos, con rotación automática de siete copias.';
+  const configureSuccessMessage = isCloudLicense
+    ? 'Copia local cifrada configurada.'
+    : 'Respaldos cifrados configurados.';
+  const configureButtonLabel = isCloudLicense ? 'Configurar copia opcional' : 'Configurar respaldos';
+  const manualBackupLabel = isCloudLicense ? 'Generar copia local' : 'Respaldar ahora';
+  const restoreDescription = isCloudLicense
+    ? 'Usa esta opción con cuidado: una copia local puede actualizar información local o caché de este dispositivo.'
+    : 'Usa esta opción con cuidado. Antes de continuar se creará una copia preventiva.';
 
   const run = async (action, successMessage) => {
     setError('');
@@ -77,7 +94,7 @@ function LocalBackupSettings() {
     }
     const result = await run(
       () => backupManager.configure(pin, selectedDirectory),
-      'Respaldos cifrados configurados.'
+      configureSuccessMessage
     );
     if (result) {
       setPin('');
@@ -152,10 +169,10 @@ function LocalBackupSettings() {
   const executeRestore = async () => {
     if (!restoreFile || !restorePin) return;
     const confirmed = await showConfirmModal(
-      'La restauración reemplazará completamente la base actual. Antes se creará un respaldo preventivo. ¿Continuar?',
+      'La restauración aplicará el archivo seleccionado en este dispositivo. Antes se creará una copia preventiva. ¿Continuar?',
       {
         title: 'Restaurar respaldo',
-        confirmButtonText: 'Si, restaurar',
+        confirmButtonText: 'Sí, restaurar',
         cancelButtonText: 'Cancelar'
       }
     );
@@ -196,8 +213,8 @@ function LocalBackupSettings() {
         <div className="backup-settings-card__heading">
           <DatabaseBackup size={24} />
           <div>
-            <h4>Respaldos Locales Cifrados</h4>
-            <p>Configura un PIN de al menos 8 dígitos y la carpeta donde se guardarán las copias.</p>
+            <h4>{initialTitle}</h4>
+            <p>{initialDescription}</p>
           </div>
         </div>
 
@@ -225,7 +242,7 @@ function LocalBackupSettings() {
         )}
         {error && <p className="backup-settings-error">{error}</p>}
         <button type="button" className="btn btn-primary" onClick={configure} disabled={status.busy || pin.length < 8 || pin !== pinConfirm}>
-          {status.busy ? <><Loader2 size={17} className="animate-spin" /> Configurando...</> : 'Configurar respaldos'}
+          {status.busy ? <><Loader2 size={17} className="animate-spin" /> Configurando...</> : configureButtonLabel}
         </button>
       </section>
     );
@@ -236,8 +253,8 @@ function LocalBackupSettings() {
       <div className="backup-settings-card__heading">
         <DatabaseBackup size={24} />
         <div>
-          <h4>Respaldos Locales Cifrados</h4>
-          <p>Archivos AES-GCM por fragmentos, con rotación automática de siete copias.</p>
+          <h4>{configuredTitle}</h4>
+          <p>{configuredDescription}</p>
         </div>
       </div>
 
@@ -316,13 +333,13 @@ function LocalBackupSettings() {
               ? <Loader2 size={17} className="animate-spin" />
               : <RefreshCw size={17} />}
           </span>
-          <span>{MANUAL_BACKUP_LABELS[manualBackupPhase] || 'Respaldar ahora'}</span>
+          <span>{MANUAL_BACKUP_LABELS[manualBackupPhase] || manualBackupLabel}</span>
         </button>
       </div>
 
       <div className="backup-settings-danger">
         <h5>Restaurar respaldo</h5>
-        <p>Reemplaza todas las tablas después de crear una copia preventiva obligatoria.</p>
+        <p>{restoreDescription}</p>
 
         <div className="backup-settings-inline">
           <button type="button" className="btn btn-secondary" onClick={() => restoreInputRef.current?.click()} disabled={status.busy || !status.unlocked}>
@@ -369,11 +386,11 @@ function LocalBackupSettings() {
   );
 }
 
-export default function BackupSettings() {
+export default function BackupSettings({ isCloudLicense = false }) {
   return (
     <>
       <GoogleDriveSettings />
-      <LocalBackupSettings />
+      <LocalBackupSettings isCloudLicense={isCloudLicense} />
     </>
   );
 }
