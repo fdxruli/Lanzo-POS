@@ -2,6 +2,7 @@
 import PropTypes from 'prop-types';
 import ProductMenu from './ProductMenu';
 import OrderSummary from './OrderSummary';
+import OrderDiscountPanel from './OrderDiscountPanel';
 import MobilePosCart from './MobilePosCart';
 import PosModals from './PosModals';
 import PosToast from './PosToast';
@@ -22,10 +23,7 @@ const ActiveOrderControls = () => {
     const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
     const [isPausing, setIsPausing] = useState(false);
 
-    const handleCreateOrder = (name) => {
-        createOrder(null, name || null);
-    };
-
+    const handleCreateOrder = (name) => createOrder(null, name || null);
     const handleDeleteOrder = async (id) => {
         try {
             setIsPausing(true);
@@ -38,23 +36,18 @@ const ActiveOrderControls = () => {
         }
     };
 
-    const ordersCount = activeOrders.size;
-
     return (
         <>
-            {ordersCount === 0 && (
+            {activeOrders.size === 0 && (
                 <div style={{ padding: '12px', background: '#fff3cd', color: '#856404', textAlign: 'center' }}>
                     <span>No hay órdenes activas.</span>
-                    <button
-                        onClick={() => handleCreateOrder()}
-                        style={{ marginLeft: '12px', padding: '4px 12px', background: 'var(--primary-color, #2e7d32)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                    >
+                    <button onClick={() => handleCreateOrder()} style={{ marginLeft: '12px', padding: '4px 12px', background: 'var(--primary-color, #2e7d32)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
                         + Crear Orden
                     </button>
                 </div>
             )}
 
-            {ordersCount >= 1 && enableMultipleOrders && (
+            {activeOrders.size >= 1 && enableMultipleOrders && (
                 <OrderTabs
                     activeOrders={activeOrders}
                     currentOrderId={currentOrderId}
@@ -117,17 +110,20 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         showOutofStockCategory={data.hasOutOfStockItems}
                         showExpiredCategory={data.hasExpiredItems}
                     />
-                    <OrderSummary
-                        onOpenPayment={actions.handleInitiateCheckout}
-                        onOpenSplit={actions.handleOpenSplitBill}
-                        onOpenLayaway={actions.handleInitiateLayaway}
-                        showRestaurantActions={features.hasTables}
-                        canSplitOrder={features.hasTables && !!data.activeOrderId}
-                        onSaveOpenOrder={features.hasTables ? actions.handleSaveAsOpen : undefined}
-                        onOpenTables={() => ui.openModal('tables')}
-                        activeTablesCount={data.activeTablesCount}
-                        kitchenRejectedOpenCount={data.kitchenRejectedOpenCount}
-                    />
+                    <div className="pos-summary-stack">
+                        <OrderSummary
+                            onOpenPayment={actions.handleInitiateCheckout}
+                            onOpenSplit={actions.handleOpenSplitBill}
+                            onOpenLayaway={actions.handleInitiateLayaway}
+                            showRestaurantActions={features.hasTables}
+                            canSplitOrder={features.hasTables && !!data.activeOrderId}
+                            onSaveOpenOrder={features.hasTables ? actions.handleSaveAsOpen : undefined}
+                            onOpenTables={() => ui.openModal('tables')}
+                            activeTablesCount={data.activeTablesCount}
+                            kitchenRejectedOpenCount={data.kitchenRejectedOpenCount}
+                        />
+                        <OrderDiscountPanel />
+                    </div>
                 </div>
             </div>
 
@@ -156,7 +152,6 @@ const PosPageContent = ({ data, ui, actions, features }) => {
             />
 
             <PosToast message={data.toastMsg} />
-
             <PosModals
                 activeModal={ui.activeModal}
                 onClose={ui.closeModal}
@@ -192,64 +187,11 @@ const PosPageContent = ({ data, ui, actions, features }) => {
 };
 
 PosPageContent.displayName = 'PosPageContent';
-
 PosPageContent.propTypes = {
-    data: PropTypes.shape({
-        menuVisual: PropTypes.array.isRequired,
-        categories: PropTypes.array.isRequired,
-        activeCategoryId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-        searchTerm: PropTypes.string.isRequired,
-        hasOutOfStockItems: PropTypes.bool.isRequired,
-        hasExpiredItems: PropTypes.bool.isRequired,
-        activeTablesCount: PropTypes.number.isRequired,
-        kitchenRejectedOpenCount: PropTypes.number.isRequired,
-        totalItemsCount: PropTypes.number.isRequired,
-        total: PropTypes.number.isRequired,
-        toastMsg: PropTypes.string,
-        order: PropTypes.array.isRequired,
-        customer: PropTypes.object,
-        prescriptionItems: PropTypes.array.isRequired,
-        cajaActual: PropTypes.object,
-        aperturaPendiente: PropTypes.shape({
-            montoSugerido: PropTypes.string
-        }),
-        cashActor: PropTypes.object,
-        isCloudCash: PropTypes.bool,
-        isCloudCashReadOnly: PropTypes.bool,
-        activeOrderId: PropTypes.string
-    }).isRequired,
-    ui: PropTypes.shape({
-        handleSelectCategory: PropTypes.func.isRequired,
-        setSearchTerm: PropTypes.func.isRequired,
-        openModal: PropTypes.func.isRequired,
-        closeModal: PropTypes.func.isRequired,
-        openMobileCart: PropTypes.func.isRequired,
-        closeMobileCart: PropTypes.func.isRequired,
-        isMobileCartOpen: PropTypes.bool.isRequired,
-        activeModal: PropTypes.oneOf(['scanner', 'payment', 'quickCaja', 'prescription', 'layaway', 'tables', 'split', null])
-    }).isRequired,
-    actions: PropTypes.shape({
-        handleInitiateCheckout: PropTypes.func.isRequired,
-        handleOpenSplitBill: PropTypes.func.isRequired,
-        handleInitiateLayaway: PropTypes.func.isRequired,
-        handleSaveAsOpen: PropTypes.func.isRequired,
-        handleProcessOrder: PropTypes.func.isRequired,
-        handlePaymentModalClose: PropTypes.func.isRequired,
-        handleConfirmSplitBill: PropTypes.func.isRequired,
-        handleQuickCajaSubmit: PropTypes.func.isRequired,
-        handleQuickCajaClose: PropTypes.func.isRequired,
-        handlePrescriptionConfirm: PropTypes.func.isRequired,
-        handleConfirmLayaway: PropTypes.func.isRequired,
-        handleLoadOpenOrder: PropTypes.func.isRequired,
-        handleQuickTableAction: PropTypes.func.isRequired,
-        fetchActiveTablesCount: PropTypes.func,
-        handleAnnulKitchenRejectedOrder: PropTypes.func
-    }).isRequired,
-    features: PropTypes.shape({
-        hasTables: PropTypes.bool.isRequired,
-        hasLabFields: PropTypes.bool.isRequired,
-        hasLayaway: PropTypes.bool.isRequired
-    }).isRequired
+    data: PropTypes.object.isRequired,
+    ui: PropTypes.object.isRequired,
+    actions: PropTypes.object.isRequired,
+    features: PropTypes.object.isRequired
 };
 
 export default PosPageContent;
