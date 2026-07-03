@@ -14,8 +14,26 @@ const toPositiveNumberOrNull = (value) => {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
+const uniqueTruthy = (values = []) => Array.from(new Set(values.filter(Boolean)));
+
+const getModifierIdentityCandidates = (modifier = {}) => {
+    const stableIdentities = uniqueTruthy([
+        modifier.id,
+        modifier.optionId,
+        modifier.option_id,
+        modifier.name
+    ]);
+
+    if (stableIdentities.length > 0) return stableIdentities;
+
+    return uniqueTruthy([
+        modifier.ingredientId,
+        modifier.ingredient_id
+    ]);
+};
+
 const getModifierIdentity = (modifier = {}) => (
-    modifier.id || modifier.optionId || modifier.option_id || modifier.name || modifier.ingredientId || modifier.ingredient_id || ''
+    getModifierIdentityCandidates(modifier)[0] || ''
 );
 
 const flattenProductModifierOptions = (product = {}) => {
@@ -40,16 +58,16 @@ const resolveAuthoritativeModifiers = (dbProduct, item) => {
     const catalogByIdentity = new Map();
 
     catalogOptions.forEach((option) => {
-        const identity = getModifierIdentity(option);
-        if (!identity) return;
-        if (!catalogByIdentity.has(identity)) catalogByIdentity.set(identity, option);
+        getModifierIdentityCandidates(option).forEach((identity) => {
+            if (!catalogByIdentity.has(identity)) catalogByIdentity.set(identity, option);
+        });
     });
 
-    const selectedIdentities = new Set(selectedModifiers.map(getModifierIdentity).filter(Boolean));
+    const selectedIdentities = new Set(selectedModifiers.flatMap(getModifierIdentityCandidates));
     const missingRequiredGroup = (dbProduct.modifiers || []).find((group) => (
         group?.required &&
         Array.isArray(group.options) &&
-        !group.options.some((option) => selectedIdentities.has(getModifierIdentity(option)))
+        !group.options.some((option) => getModifierIdentityCandidates(option).some((identity) => selectedIdentities.has(identity)))
     ));
 
     if (missingRequiredGroup) {
