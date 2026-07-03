@@ -3,6 +3,7 @@ import {
     TOTAL_DRIFT_TOLERANCE
 } from './constants';
 import { getCartLineId } from '../../utils/cartLineIdentity';
+import { calculateDiscountedTotals } from './discounts';
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -134,7 +135,6 @@ const resolveAuthoritativePricing = (dbProduct, item, calculatePricingDetails) =
     }
 
     const selectedBatch = (dbProduct.activeBatches || []).find((batch) => batch.id === item.batchId);
-
     if (!selectedBatch) {
         throw new Error(`SEGURIDAD: El lote/variante "${item.batchId}" del producto "${item.name}" no existe o no esta activo.`);
     }
@@ -158,6 +158,7 @@ const resolveAuthoritativePricing = (dbProduct, item, calculatePricingDetails) =
 export const normalizeAndValidatePricing = async ({
     itemsToProcess,
     total,
+    saleDiscount = null,
     loadData,
     queryBatchesByProductIdAndActive,
     STORES,
@@ -183,8 +184,9 @@ export const normalizeAndValidatePricing = async ({
     await Promise.all(uniqueIds.map(id => ensureProductInCache(id)));
 
     let securityViolation = false;
-    let calculatedRealTotal = 0;
+    let calculatedGrossTotal = 0;
     const authorizedValues = new Map();
+    const authoritativeItems = [];
 
     itemsToProcess.forEach((item, index) => {
         const lineId = getCartLineId(item, index);
@@ -201,16 +203,23 @@ export const normalizeAndValidatePricing = async ({
         const exactLineTotal = pricing.exactTotal + (authoritativeModifiers.unitTotal * toNumber(item.quantity));
 
         const priceDifference = Math.abs(authoritativePrice - toNumber(item.price));
-
         if (priceDifference > PRICE_DRIFT_TOLERANCE) {
             Logger?.warn(`ATAQUE DETECTADO: "${item.name}" venia con $${item.price}, real es $${authoritativePrice}.`);
             securityViolation = true;
         }
 
         const authoritativeCost = pricing.cost;
+        calculatedGrossTotal += exactLineTotal;
 
-        calculatedRealTotal += exactLineTotal;
+        const authoritativeItem = {
+            ...item,
+            price: authoritativePrice,
+            cost: authoritativeCost,
+            exactTotal: exactLineTotal,
+            selectedModifiers: authoritativeModifiers.modifiers
+        };
 
+        authoritativeItems.push(authoritativeItem);
         authorizedValues.set(lineId, {
             price: authoritativePrice,
             cost: authoritativeCost,
@@ -219,18 +228,26 @@ export const normalizeAndValidatePricing = async ({
         });
     });
 
-    const totalDifference = Math.abs(calculatedRealTotal - toNumber(total));
+    const discountedTotals = calculateDiscountedTotals(authoritativeItems, saleDiscount);
+    const expectedFinancialTotal = discountedTotals.total;
+    const totalDifference = Math.abs(expectedFinancialTotal - toNumber(total));
 
     if (securityViolation || totalDifference > TOTAL_DRIFT_TOLERANCE) {
-        throw new Error(`ALERTA DE SEGURIDAD CRITICA\n\nSe detecto una inconsistencia en los precios (Posible manipulacion).\n\nTotal Esperado: $${total}\nTotal Real Calculado: $${calculatedRealTotal.toFixed(2)}\n\nLa venta ha sido bloqueada por seguridad. Por favor recarga el carrito.`);
+        throw new Error(`ALERTA DE SEGURIDAD CRITICA\n\nSe detecto una inconsistencia en los precios o descuentos.\n\nSubtotal Real: $${calculatedGrossTotal.toFixed(2)}\nTotal Esperado: $${expectedFinancialTotal.toFixed(2)}\nTotal Recibido: $${toNumber(total).toFixed(2)}\n\nLa venta ha sido bloqueada por seguridad. Por favor recarga el carrito.`);
     }
 
     itemsToProcess.forEach((item, index) => {
         const safeData = authorizedValues.get(getCartLineId(item, index));
+        const discountedItem = discountedTotals.items[index];
         if (safeData) {
             item.price = safeData.price;
             item.cost = safeData.cost;
             item.exactTotal = safeData.exactTotal;
+            item.discount = discountedItem?.discount || null;
+            item.discountAmount = discountedItem?.discountAmount || 0;
+            item.discount_amount = discountedItem?.discountAmount || 0;
+            item.lineSubtotal = discountedItem?.lineSubtotal ?? safeData.exactTotal;
+            item.lineTotal = discountedItem?.lineTotal ?? safeData.exactTotal;
             if (safeData.selectedModifiers.length > 0) {
                 item.selectedModifiers = safeData.selectedModifiers;
             }
