@@ -1,3 +1,5 @@
+import { normalizeSelectedModifiersForPersistence } from './restaurantModifierIdentity';
+
 const getEntropy = () => Math.random().toString(36).slice(2, 8);
 
 export const createCartLineId = (item = {}) => {
@@ -18,12 +20,23 @@ export const getCartLineId = (item, index = null) => {
   );
 };
 
-export const ensureCartLineId = (item) => {
-  if (!item || typeof item !== 'object') return item;
-  if (item.lineId) return item;
+const normalizeCartLineModifiers = (item) => {
+  if (!Array.isArray(item?.selectedModifiers)) return item;
 
   return {
     ...item,
+    selectedModifiers: normalizeSelectedModifiersForPersistence(item.selectedModifiers)
+  };
+};
+
+export const ensureCartLineId = (item) => {
+  if (!item || typeof item !== 'object') return item;
+
+  const normalizedItem = normalizeCartLineModifiers(item);
+  if (normalizedItem.lineId) return normalizedItem;
+
+  return {
+    ...normalizedItem,
     lineId: item.cartItemId || item.orderItemId || item.uniqueLineId || createCartLineId(item)
   };
 };
