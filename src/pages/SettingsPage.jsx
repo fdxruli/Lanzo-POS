@@ -96,7 +96,7 @@ export default function SettingsPage() {
                 </p>
               </div>
             )}
-            <BackupSettings />
+            <BackupSettings isCloudLicense={isCloudLicense} />
           </>
         )}
         {activeTab === 'debug' && (
