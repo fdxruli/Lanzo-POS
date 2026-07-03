@@ -1,8 +1,32 @@
 import React, { useMemo, useState } from 'react';
 import { useProductStore } from '../../../store/useProductStore';
 import { usePreparationStations } from '../../../hooks/restaurant/usePreparationStations';
+import {
+  getModifierOptionLabel,
+  normalizeModifierGroup,
+  normalizeModifierGroups,
+  normalizeModifierOption,
+  RESTAURANT_MODIFIER_UNITS
+} from '../../../utils/restaurantModifiers';
 
 const FALLBACK_STATION = { id: 'station_kitchen', code: 'kitchen', name: 'Cocina', isDefault: true, isActive: true };
+const EMPTY_OPTION_DRAFT = {
+  name: '',
+  price: '',
+  ingredientId: '',
+  ingredientQuantity: '',
+  ingredientUnit: 'pza'
+};
+
+const getIngredientDefaultUnit = (ingredient) => {
+  if (!ingredient) return 'pza';
+  return ingredient.unit
+    || ingredient.bulkData?.purchase?.unit
+    || ingredient.bulkData?.unit
+    || ingredient.measurementUnit
+    || ingredient.saleUnit
+    || 'pza';
+};
 
 export default function RestauranteFields({
   productType, setProductType,
@@ -17,6 +41,8 @@ export default function RestauranteFields({
   hideTypeSelector = false
 }) {
   const [newModGroup, setNewModGroup] = useState('');
+  const [optionDrafts, setOptionDrafts] = useState({});
+  const [optionDraftErrors, setOptionDraftErrors] = useState({});
   const stationState = usePreparationStations({ includeInactive: false });
 
   const resolvedStations = preparationStations || stationState.activeStations;
@@ -29,46 +55,111 @@ export default function RestauranteFields({
     return active.length > 0 ? active : [FALLBACK_STATION];
   }, [resolvedStations]);
 
+  const normalizedModifiers = useMemo(() => normalizeModifierGroups(modifiers), [modifiers]);
+
   const hasSelectedStation = stationOptions.some((station) => station.code === (printStation || 'kitchen'));
   const selectedStation = hasSelectedStation ? (printStation || 'kitchen') : 'kitchen';
   const showInactiveStationNotice = inactivePreparationStationNotice || (!hasSelectedStation && (printStation || 'kitchen') !== 'kitchen');
 
+  const menu = useProductStore(state => state.menu);
+  const ingredientList = useMemo(() => (
+    (menu || []).filter(p => p.productType === 'ingredient' && p.isActive !== false)
+  ), [menu]);
+
+  const unitOptions = useMemo(() => {
+    const ingredientUnits = ingredientList.map(getIngredientDefaultUnit).filter(Boolean);
+    return Array.from(new Set([...RESTAURANT_MODIFIER_UNITS, ...ingredientUnits]));
+  }, [ingredientList]);
+
+  const getOptionDraft = (groupIndex) => optionDrafts[groupIndex] || EMPTY_OPTION_DRAFT;
+
+  const updateOptionDraft = (groupIndex, patch) => {
+    setOptionDrafts((prev) => ({
+      ...prev,
+      [groupIndex]: {
+        ...(prev[groupIndex] || EMPTY_OPTION_DRAFT),
+        ...patch
+      }
+    }));
+    setOptionDraftErrors((prev) => ({ ...prev, [groupIndex]: '' }));
+  };
+
+  const resetOptionDraft = (groupIndex) => {
+    setOptionDrafts((prev) => ({ ...prev, [groupIndex]: EMPTY_OPTION_DRAFT }));
+    setOptionDraftErrors((prev) => ({ ...prev, [groupIndex]: '' }));
+  };
+
+  const handleIngredientDraftChange = (groupIndex, ingredientId) => {
+    const ingredient = ingredientList.find((item) => item.id === ingredientId);
+    updateOptionDraft(groupIndex, {
+      ingredientId,
+      ingredientQuantity: ingredientId ? getOptionDraft(groupIndex).ingredientQuantity : '',
+      ingredientUnit: ingredientId ? getIngredientDefaultUnit(ingredient) : 'pza'
+    });
+  };
+
   const handleAddModifierGroup = () => {
     if (!newModGroup.trim()) return;
-    const newGroup = {
+    const newGroup = normalizeModifierGroup({
       id: Date.now(),
       name: newModGroup,
       required: false,
       options: []
-    };
+    }, { groupIndex: normalizedModifiers.length });
     setModifiers([...(modifiers || []), newGroup]);
     setNewModGroup('');
   };
 
   const removeModifierGroup = (index) => {
-    const updated = [...modifiers];
+    const updated = [...(modifiers || [])];
     updated.splice(index, 1);
     setModifiers(updated);
   };
 
-  const addOptionToGroup = (groupIndex, optionName, price, ingredientId = null) => {
+  const addOptionToGroup = (groupIndex) => {
+    const draft = getOptionDraft(groupIndex);
+    const normalizedOption = normalizeModifierOption({
+      id: `modopt_${Date.now()}`,
+      name: draft.name,
+      price: draft.price,
+      ingredientId: draft.ingredientId || null,
+      ingredientQuantity: draft.ingredientId ? draft.ingredientQuantity : null,
+      ingredientUnit: draft.ingredientId ? draft.ingredientUnit : null
+    }, { optionIndex: (normalizedModifiers[groupIndex]?.options || []).length });
+
+    if (!normalizedOption.name) {
+      setOptionDraftErrors((prev) => ({ ...prev, [groupIndex]: 'Escribe el nombre de la opción.' }));
+      return;
+    }
+
+    if (normalizedOption.ingredientId && !normalizedOption.tracksInventory) {
+      setOptionDraftErrors((prev) => ({
+        ...prev,
+        [groupIndex]: 'Indica una cantidad válida del ingrediente para poder descontar inventario.'
+      }));
+      return;
+    }
+
     const updated = [...(modifiers || [])];
-    updated[groupIndex].options.push({
-      name: optionName,
-      price: parseFloat(price) || 0,
-      ingredientId
-    });
+    const currentGroup = updated[groupIndex] || normalizedModifiers[groupIndex];
+    updated[groupIndex] = {
+      ...currentGroup,
+      options: [...(currentGroup?.options || []), normalizedOption]
+    };
     setModifiers(updated);
+    resetOptionDraft(groupIndex);
   };
 
   const removeOptionFromGroup = (groupIndex, optionIndex) => {
     const updated = [...(modifiers || [])];
+    const currentGroup = updated[groupIndex] || {};
+    updated[groupIndex] = {
+      ...currentGroup,
+      options: [...(currentGroup.options || [])]
+    };
     updated[groupIndex].options.splice(optionIndex, 1);
     setModifiers(updated);
   };
-
-  const menu = useProductStore(state => state.menu);
-  const ingredientList = menu.filter(p => p.productType === 'ingredient' && p.isActive !== false);
 
   return (
     <div className="restaurant-fields-container">
@@ -159,14 +250,14 @@ export default function RestauranteFields({
           <div className="product-form-modifier-panel">
             <label className="product-form-fieldset-title">Modificadores / extras</label>
             <p className="product-form-help">
-              Ej: "Elige tu Salsa", "Agrega papas", "Término de carne".
+              Define si cada opción solo agrega texto, cobra extra, descuenta inventario o hace ambas cosas.
             </p>
 
             <div className="product-form-field-row" style={{ marginBottom: '15px' }}>
               <input
                 type="text"
                 className="form-input product-form-field-grow"
-                placeholder="Nuevo grupo (Ej: Salsas)"
+                placeholder="Nuevo grupo (Ej: Extras)"
                 value={newModGroup}
                 onChange={(e) => setNewModGroup(e.target.value)}
               />
@@ -174,91 +265,130 @@ export default function RestauranteFields({
             </div>
 
             <div className="modifiers-list">
-              {modifiers && modifiers.map((group, idx) => (
-                <div key={idx} className="product-form-modifier-card">
-                  <div className="product-form-modifier-card__header">
-                    <strong>{group.name}</strong>
-                    <button type="button" className="product-form-link-danger" onClick={() => removeModifierGroup(idx)}>Eliminar grupo</button>
-                  </div>
+              {normalizedModifiers.map((group, idx) => {
+                const draft = getOptionDraft(idx);
+                const selectedIngredient = ingredientList.find((item) => item.id === draft.ingredientId);
+                const canAddOption = Boolean(draft.name.trim())
+                  && (!draft.ingredientId || Number(draft.ingredientQuantity) > 0);
 
-                  <div className="product-form-modifier-option-editor">
-                    <div className="product-form-field-row">
-                      <input
-                        id={`opt-name-${idx}`}
-                        type="text"
-                        className="form-input product-form-field-grow"
-                        placeholder="Opción (ej: Queso extra)"
-                      />
-                      <input
-                        id={`opt-price-${idx}`}
-                        type="number"
-                        className="form-input"
-                        placeholder="$ Extra"
-                        style={{ width: '90px' }}
-                      />
+                return (
+                  <div key={group.id || idx} className="product-form-modifier-card">
+                    <div className="product-form-modifier-card__header">
+                      <strong>{group.name}</strong>
+                      <button type="button" className="product-form-link-danger" onClick={() => removeModifierGroup(idx)}>Eliminar grupo</button>
                     </div>
 
-                    <div className="product-form-field-row">
-                      <select
-                        id={`opt-ing-${idx}`}
-                        className="form-input product-form-field-grow"
-                      >
-                        <option value="">-- Solo texto (no descuenta stock) --</option>
-                        {ingredientList.map(ing => (
-                          <option key={ing.id} value={ing.id}>
-                            {ing.name} (Stock: {ing.stock})
-                          </option>
-                        ))}
-                      </select>
+                    <div className="product-form-modifier-option-editor">
+                      <div className="product-form-field-row">
+                        <input
+                          type="text"
+                          className="form-input product-form-field-grow"
+                          placeholder="Opción (ej: Queso extra)"
+                          value={draft.name}
+                          onChange={(event) => updateOptionDraft(idx, { name: event.target.value })}
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="form-input"
+                          placeholder="$ Extra"
+                          value={draft.price}
+                          onChange={(event) => updateOptionDraft(idx, { price: event.target.value })}
+                          style={{ width: '100px' }}
+                        />
+                      </div>
 
-                      <button
-                        type="button"
-                        className="btn btn-help"
-                        style={{ margin: 0, minHeight: '35px' }}
-                        onClick={() => {
-                          const nameInput = document.getElementById(`opt-name-${idx}`);
-                          const priceInput = document.getElementById(`opt-price-${idx}`);
-                          const ingInput = document.getElementById(`opt-ing-${idx}`);
+                      <div className="product-form-field-row product-form-field-row--wrap">
+                        <select
+                          className="form-input product-form-field-grow"
+                          value={draft.ingredientId}
+                          onChange={(event) => handleIngredientDraftChange(idx, event.target.value)}
+                        >
+                          <option value="">Solo texto / no descuenta inventario</option>
+                          {ingredientList.map(ing => (
+                            <option key={ing.id} value={ing.id}>
+                              {ing.name} (Stock: {ing.stock})
+                            </option>
+                          ))}
+                        </select>
 
-                          if (nameInput.value) {
-                            const linkedIngredientId = ingInput.value.trim() || '';
-
-                            addOptionToGroup(
-                              idx,
-                              nameInput.value,
-                              priceInput.value,
-                              linkedIngredientId
-                            );
-
-                            nameInput.value = '';
-                            priceInput.value = '';
-                            ingInput.value = '';
-                            nameInput.focus();
-                          }
-                        }}
-                      >
-                        + Agregar
-                      </button>
-                    </div>
-                  </div>
-
-                  <ul className="product-form-option-list">
-                    {group.options.map((opt, optIdx) => (
-                      <li key={optIdx} className="product-form-option-item">
-                        <span>{opt.name} {opt.price > 0 && <span className="product-form-success-text">(+${opt.price})</span>}</span>
-
-                        {opt.price > 0 && !opt.ingredientId && (
-                          <span title="Cobra precio pero no descuenta inventario" className="product-form-inline-badge product-form-inline-badge--warning">
-                            Sin descuento
-                          </span>
+                        {draft.ingredientId && (
+                          <>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.001"
+                              className="form-input"
+                              placeholder="Cantidad"
+                              value={draft.ingredientQuantity}
+                              onChange={(event) => updateOptionDraft(idx, { ingredientQuantity: event.target.value })}
+                              style={{ width: '110px' }}
+                            />
+                            <select
+                              className="form-input"
+                              value={draft.ingredientUnit || getIngredientDefaultUnit(selectedIngredient)}
+                              onChange={(event) => updateOptionDraft(idx, { ingredientUnit: event.target.value })}
+                              style={{ width: '90px' }}
+                            >
+                              {unitOptions.map((unit) => (
+                                <option key={unit} value={unit}>{unit}</option>
+                              ))}
+                            </select>
+                          </>
                         )}
 
-                        <button type="button" className="product-form-delete-inline" onClick={() => removeOptionFromGroup(idx, optIdx)}>×</button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+                        <button
+                          type="button"
+                          className={`btn btn-help ${!canAddOption ? 'disabled' : ''}`}
+                          style={{ margin: 0, minHeight: '35px' }}
+                          onClick={() => addOptionToGroup(idx)}
+                          disabled={!canAddOption}
+                        >
+                          + Agregar
+                        </button>
+                      </div>
+                      {optionDraftErrors[idx] && (
+                        <small className="product-form-inline-badge product-form-inline-badge--warning">
+                          {optionDraftErrors[idx]}
+                        </small>
+                      )}
+                    </div>
+
+                    <ul className="product-form-option-list">
+                      {group.options.map((opt, optIdx) => {
+                        const optionLabel = getModifierOptionLabel(opt);
+                        const badgeClass = opt.isLegacyIncomplete || optionLabel === 'Cobra extra'
+                          ? 'product-form-inline-badge product-form-inline-badge--warning'
+                          : 'product-form-inline-badge';
+
+                        return (
+                          <li key={opt.id || optIdx} className="product-form-option-item">
+                            <span>
+                              {opt.name} {opt.price > 0 && <span className="product-form-success-text">(+${opt.price})</span>}
+                              {opt.tracksInventory && (
+                                <small className="product-form-help"> · descuenta {opt.ingredientQuantity} {opt.ingredientUnit || ''}</small>
+                              )}
+                            </span>
+
+                            <span title={opt.isLegacyIncomplete ? 'Tiene ingrediente legacy, pero falta cantidad real.' : ''} className={badgeClass}>
+                              {optionLabel}
+                            </span>
+
+                            {opt.legacyQuantityMapped && (
+                              <span title="Se normalizó desde el campo legacy quantity." className="product-form-inline-badge">
+                                Legacy normalizado
+                              </span>
+                            )}
+
+                            <button type="button" className="product-form-delete-inline" onClick={() => removeOptionFromGroup(idx, optIdx)}>×</button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </>
