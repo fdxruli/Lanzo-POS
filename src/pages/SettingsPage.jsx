@@ -9,6 +9,7 @@ import DbMigrationTester from '../components/debug/DbMigrationTester';
 import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
+import { isCloudPosSyncEnabled } from '../services/sync/syncConstants';
 import { normalizeBusinessTypes } from '../utils/businessType';
 
 export default function SettingsPage() {
@@ -16,12 +17,15 @@ export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const canAccess = useAppStore((state) => state.canAccess);
   const businessTypes = useAppStore((state) => state.companyProfile?.business_type);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   useAppStore((state) => state.currentDeviceRole);
   useAppStore((state) => state.currentStaffUser);
 
   const hasRestaurantSettings = useMemo(() => (
     normalizeBusinessTypes(businessTypes || []).includes('food_service')
   ), [businessTypes]);
+
+  const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
 
   const visibleTabs = [
     { key: 'general', allowed: canAccess('settings') },
@@ -81,7 +85,20 @@ export default function SettingsPage() {
         {activeTab === 'restaurant' && <PreparationStationsSettings />}
         {activeTab === 'license' && <LicenseSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}
-        {activeTab === 'backup' && <BackupSettings />}
+        {activeTab === 'backup' && (
+          <>
+            {isCloudLicense && (
+              <div className="ui-card" role="note">
+                <h3>Respaldo adicional opcional</h3>
+                <p>
+                  Tus datos principales se sincronizan en la nube. Puedes generar una copia local cifrada solo como respaldo adicional,
+                  pero no es un requisito operativo para licencias PRO/cloud.
+                </p>
+              </div>
+            )}
+            <BackupSettings />
+          </>
+        )}
         {activeTab === 'debug' && (
           <div className="ui-card debug-section">
             <h3>Pruebas de datos</h3>
