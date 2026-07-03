@@ -1,4 +1,5 @@
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
+import { normalizeModifierGroups } from '../../utils/restaurantModifiers';
 
 const nowIso = () => new Date().toISOString();
 const text = (value) => String(value ?? '').trim();
@@ -14,6 +15,11 @@ const pick = (source, snakeKey, camelKey, fallback = null) => {
   if (source[camelKey] !== undefined) return source[camelKey];
   if (source[snakeKey] !== undefined) return source[snakeKey];
   return fallback;
+};
+
+const normalizeProductModifiersForStorage = (modifiers) => {
+  const normalized = normalizeModifierGroups(modifiers);
+  return normalized.length > 0 ? normalized : null;
 };
 
 export const normalizeNameKey = (value) => text(value).toLowerCase().replace(/\s+/g, ' ');
@@ -43,7 +49,7 @@ export const cloudCategoryToLocal = (category = {}, existing = null, overrides =
     sortOrder: toNumber(category.sort_order ?? category.sortOrder, existing?.sortOrder || 0),
     isActive: deletedAt ? false : (category.is_active ?? category.isActive ?? existing?.isActive ?? true),
     createdAt: pick(category, 'created_at', 'createdAt', existing?.createdAt || nowIso()),
-    updatedAt: pick(category, 'updated_at', 'updatedAt', nowIso()),
+    updatedAt: pick(category, 'updated_at', 'cloudUpdatedAt', nowIso()),
     deletedAt,
     serverVersion: toNumber(category.server_version ?? category.serverVersion, existing?.serverVersion || null),
     cloudUpdatedAt: pick(category, 'updated_at', 'cloudUpdatedAt', existing?.cloudUpdatedAt || null),
@@ -82,7 +88,7 @@ export const productToCloudPayload = (product = {}) => ({
   conversion_factor: product.conversionFactor ?? product.conversion_factor ?? null,
   batch_management: product.batchManagement ?? product.batch_management ?? null,
   recipe: product.recipe ?? null,
-  modifiers: product.modifiers ?? null,
+  modifiers: normalizeProductModifiersForStorage(product.modifiers),
   wholesale_tiers: product.wholesaleTiers ?? product.wholesale_tiers ?? null,
   prescription_type: optionalText(product.prescriptionType ?? product.prescription_type),
   active_substance: optionalText(product.activeSubstance ?? product.active_substance ?? product.sustancia),
@@ -137,7 +143,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     conversionFactor: product.conversion_factor ?? product.conversionFactor ?? null,
     batchManagement: product.batch_management ?? product.batchManagement ?? null,
     recipe: product.recipe ?? null,
-    modifiers: product.modifiers ?? null,
+    modifiers: normalizeProductModifiersForStorage(product.modifiers ?? existing?.modifiers ?? []) || [],
     wholesaleTiers: product.wholesale_tiers ?? product.wholesaleTiers ?? null,
     prescriptionType: product.prescription_type ?? product.prescriptionType ?? undefined,
     activeSubstance: product.active_substance ?? product.activeSubstance ?? undefined,
@@ -146,11 +152,11 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     presentation: product.presentation ?? null,
     expirationMode: product.expiration_mode || product.expirationMode || 'NONE',
     shelfLifeValue: product.shelf_life_value ?? product.shelfLifeValue ?? null,
-    shelfLifeUnit: product.shelf_life_unit ?? product.shelfLifeUnit ?? null,
+    shelfLifeUnit: product.shelf_life_unit || product.shelfLifeUnit || null,
     lowStockAlertStatus: product.low_stock_alert_status ?? product.lowStockAlertStatus ?? null,
     activeStockStatus: toNumber(product.active_stock_status ?? product.activeStockStatus),
     createdAt: pick(product, 'created_at', 'createdAt', existing?.createdAt || nowIso()),
-    updatedAt: pick(product, 'updated_at', 'updatedAt', nowIso()),
+    updatedAt: pick(product, 'updated_at', 'createdAt', nowIso()),
     deletedAt,
     serverVersion: toNumber(product.server_version ?? product.serverVersion, existing?.serverVersion || null),
     cloudUpdatedAt: pick(product, 'updated_at', 'cloudUpdatedAt', existing?.cloudUpdatedAt || null),
@@ -216,7 +222,7 @@ export const cloudBatchToLocal = (batch = {}, existing = null, overrides = {}) =
     notes: batch.notes || null,
     updateGlobalPrice: batch.update_global_price === true || batch.updateGlobalPrice === true,
     createdAt: pick(batch, 'created_at', 'createdAt', existing?.createdAt || nowIso()),
-    updatedAt: pick(batch, 'updated_at', 'updatedAt', nowIso()),
+    updatedAt: pick(batch, 'updated_at', 'cloudUpdatedAt', nowIso()),
     deletedAt,
     serverVersion: toNumber(batch.server_version ?? batch.serverVersion, existing?.serverVersion || null),
     cloudUpdatedAt: pick(batch, 'updated_at', 'cloudUpdatedAt', existing?.cloudUpdatedAt || null),
