@@ -29,10 +29,37 @@ const saleHasCashComponent = (sale = {}) => {
     );
 };
 
+const getInventoryComponentsUsed = (item = {}) => (
+    Array.isArray(item?.inventoryComponentsUsed)
+        ? item.inventoryComponentsUsed
+            .map((component) => ({
+                ingredientId: component?.ingredientId || component?.productId || null,
+                quantity: normalizeStock(component?.quantity ?? component?.stockDeducted ?? 0),
+                fromCommittedStock: component?.fromCommittedStock === true
+            }))
+            .filter((component) => component.ingredientId && component.quantity > 0)
+        : []
+);
+
 const buildNonBatchSalesMap = (saleItems = []) => {
     const summary = new Map();
 
     (saleItems || []).forEach((item) => {
+        const componentDeductions = getInventoryComponentsUsed(item);
+        if (componentDeductions.length > 0) {
+            componentDeductions.forEach((component) => {
+                const current = summary.get(component.ingredientId) || { totalSold: 0, committedSold: 0 };
+                current.totalSold = normalizeStock(current.totalSold + component.quantity);
+
+                if (component.fromCommittedStock) {
+                    current.committedSold = normalizeStock(current.committedSold + component.quantity);
+                }
+
+                summary.set(component.ingredientId, current);
+            });
+            return;
+        }
+
         if (hasBatchDeductions(item)) return;
 
         const productId = getRealProductId(item);
@@ -76,6 +103,10 @@ const collectAffectedProductIds = (sale, deductions = []) => {
 
     if (Array.isArray(sale?.items)) {
         sale.items.forEach((item) => {
+            getInventoryComponentsUsed(item).forEach((component) => {
+                if (component.ingredientId) affectedProductIds.add(component.ingredientId);
+            });
+
             const productId = getRealProductId(item);
             if (productId) affectedProductIds.add(productId);
         });
