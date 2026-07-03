@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Check, AlertCircle, Info } from 'lucide-react'; 
 import { createCartLineId } from '../../utils/cartLineIdentity';
+import { getModifierOptionLabel, normalizeModifierGroups, normalizeModifierOption } from '../../utils/restaurantModifiers';
 import './ProductModifiersModal.css';
 
 export default function ProductModifiersModal({ show, onClose, product, onConfirm }) {
     // 1. TODOS los Hooks deben ir al principio
     const [selectedOptions, setSelectedOptions] = useState({}); 
     const [note, setNote] = useState('');
+
+    const normalizedModifierGroups = useMemo(() => (
+        normalizeModifierGroups(product?.modifiers || [])
+    ), [product]);
 
     useEffect(() => {
         if (show) {
@@ -28,9 +33,9 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
         setSelectedOptions(prev => {
             const currentSelections = prev[groupName] || [];
             if (isMultiSelect) {
-                const exists = currentSelections.find(opt => opt.name === option.name);
+                const exists = currentSelections.find(opt => (opt.id || opt.name) === (option.id || option.name));
                 if (exists) {
-                    return { ...prev, [groupName]: currentSelections.filter(opt => opt.name !== option.name) };
+                    return { ...prev, [groupName]: currentSelections.filter(opt => (opt.id || opt.name) !== (option.id || option.name)) };
                 } else {
                     return { ...prev, [groupName]: [...currentSelections, option] };
                 }
@@ -41,23 +46,34 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
     };
 
     const basePrice = product.price || 0;
-    const modifiersTotal = allSelectedModifiers.reduce((sum, opt) => sum + (opt.price || 0), 0);
+    const modifiersTotal = allSelectedModifiers.reduce((sum, opt) => sum + (Number(opt.price) || 0), 0);
     const finalPrice = basePrice + modifiersTotal;
 
     // Validación de grupos requeridos
-    const missingRequiredGroups = product.modifiers?.filter(group => {
+    const missingRequiredGroups = normalizedModifierGroups.filter(group => {
         return group.required && (!selectedOptions[group.name] || selectedOptions[group.name].length === 0);
     }).map(g => g.name);
 
     const isValid = !missingRequiredGroups || missingRequiredGroups.length === 0;
 
     const handleConfirm = () => {
-        const cleanedModifiers = allSelectedModifiers.map(mod => ({
-            name: mod.name,
-            price: mod.price,
-            ingredientId: mod.ingredientId || null,
-            quantity: mod.quantity || 1
-        }));
+        const cleanedModifiers = allSelectedModifiers.map((mod, index) => {
+            const normalized = normalizeModifierOption(mod, { optionIndex: index });
+            const inventoryQuantity = normalized.tracksInventory ? normalized.ingredientQuantity : null;
+
+            return {
+                id: normalized.id,
+                name: normalized.name,
+                price: normalized.price,
+                ingredientId: normalized.tracksInventory ? normalized.ingredientId : null,
+                ingredientQuantity: inventoryQuantity,
+                ingredientUnit: normalized.tracksInventory ? normalized.ingredientUnit : null,
+                tracksInventory: normalized.tracksInventory,
+                ...(normalized.tracksInventory ? { quantity: inventoryQuantity } : {}),
+                ...(normalized.legacyQuantityMapped ? { legacyQuantityMapped: true } : {}),
+                ...(normalized.isLegacyIncomplete ? { isLegacyIncomplete: true } : {})
+            };
+        });
 
         const modifiedProduct = {
             ...product,
@@ -92,12 +108,12 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
                 </div>
 
                 <div className="modifiers-body">
-                    {product.modifiers && product.modifiers.map((group, idx) => {
+                    {normalizedModifierGroups.map((group, idx) => {
                         const currentGroupSelection = selectedOptions[group.name] || [];
                         const isSatisfied = !group.required || currentGroupSelection.length > 0;
                         
                         return (
-                            <div key={idx} className={`modifier-group ${!isSatisfied ? 'group-pending' : 'group-completed'}`}>
+                            <div key={group.id || idx} className={`modifier-group ${!isSatisfied ? 'group-pending' : 'group-completed'}`}>
                                 <div className="modifier-group-header">
                                     <h4 className="group-title">
                                         {group.name}
@@ -116,11 +132,12 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
 
                                 <div className="modifier-options-grid">
                                     {group.options.map((opt, optIdx) => {
-                                        const isSelected = currentGroupSelection.some(s => s.name === opt.name);
+                                        const isSelected = currentGroupSelection.some(s => (s.id || s.name) === (opt.id || opt.name));
                                         const inputType = group.required ? 'radio' : 'checkbox';
+                                        const optionLabel = getModifierOptionLabel(opt);
 
                                         return (
-                                            <label key={optIdx} className={`modifier-option-card ${isSelected ? 'selected' : ''}`}>
+                                            <label key={opt.id || optIdx} className={`modifier-option-card ${isSelected ? 'selected' : ''}`}>
                                                 <input
                                                     type={inputType}
                                                     name={`group-${idx}`}
@@ -138,6 +155,10 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
                                                     <span className={`opt-price ${opt.price === 0 ? 'free' : ''}`}>
                                                         {opt.price > 0 ? `+$${opt.price.toFixed(2)}` : 'Gratis'}
                                                     </span>
+                                                    <small className="product-form-help">
+                                                        {optionLabel}
+                                                        {opt.tracksInventory && ` · ${opt.ingredientQuantity} ${opt.ingredientUnit || ''}`}
+                                                    </small>
                                                 </div>
                                             </label>
                                         );
@@ -166,7 +187,7 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
                             <span className="summary-label">Incluye:</span>
                             <div className="summary-tags">
                                 {allSelectedModifiers.map((mod, i) => (
-                                    <span key={i} className="summary-tag">
+                                    <span key={mod.id || i} className="summary-tag">
                                         {mod.name} 
                                         {mod.price > 0 && <span className="tiny-price">+${mod.price}</span>}
                                     </span>
