@@ -1,15 +1,23 @@
+import {
+  findInvalidModifierGroupForSave,
+  findInvalidModifierOptionForSave,
+  normalizeModifierGroups
+} from '../../../../utils/restaurantModifiers';
+
 export const calculateRecipeCost = (recipe = []) => (
   recipe.reduce((acc, item) => acc + (item.estimatedCost || 0), 0)
 );
 
 export const findInvalidModifierGroup = (modifiers = []) => (
-  modifiers.find((modifier) => (modifier.options || []).length === 0)
+  findInvalidModifierGroupForSave(modifiers)
+);
+
+export const findInvalidModifierOption = (modifiers = []) => (
+  findInvalidModifierOptionForSave(modifiers)
 );
 
 export const hasEmptyModifierOption = (modifiers = []) => (
-  modifiers.some((modifier) => (
-    (modifier.options || []).some((option) => !option.name || option.name.trim() === '')
-  ))
+  Boolean(findInvalidModifierOption(modifiers))
 );
 
 export function buildRestaurantPayload({
@@ -24,6 +32,7 @@ export function buildRestaurantPayload({
   productToEdit
 }) {
   const finalRecipe = productType === 'ingredient' ? [] : recipe;
+  const finalModifiers = productType === 'ingredient' ? [] : normalizeModifierGroups(modifiers);
   const hasRecipe = finalRecipe.length > 0; // Agregamos esta validación
 
   const finalStock = productType === 'ingredient'
@@ -41,7 +50,7 @@ export function buildRestaurantPayload({
     recipe: finalRecipe,
     printStation,
     prepTime,
-    modifiers,
+    modifiers: finalModifiers,
     saleType: productType === 'sellable' ? 'unit' : (commonData.saleType || 'unit'),
     batchManagement: productType === 'ingredient' ? { enabled: true } : { enabled: false },
     ...(productToEdit ? {} : { createdAt: new Date().toISOString() })
