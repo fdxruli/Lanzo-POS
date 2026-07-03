@@ -17,7 +17,21 @@ import {
 const zeroTotals = { ventasContado: '0', abonosFiado: '0' };
 const CACHE_TTL_MS = 5000;
 
-const isOpenCashSession = (cashSession) => cashSession?.estado === 'abierta';
+const isOpenCashSession = (cashSession) => (
+  cashSession?.estado === 'abierta' || cashSession?.status === 'open'
+);
+
+const createCajaNeedsOpeningError = (message = 'La caja requiere apertura manual. Confirma el fondo inicial.') => {
+  const error = new Error(message);
+  error.code = 'CAJA_NEEDS_OPENING';
+  return error;
+};
+
+const createCloudCashOfflineError = () => {
+  const error = new Error(CASH_CLOUD_OFFLINE_MESSAGE);
+  error.code = 'CLOUD_CASH_OFFLINE';
+  return error;
+};
 
 const getNextOpeningSuggestion = (sessions = []) => {
   const lastClosed = sessions.find((cashSession) => cashSession.estado === 'cerrada');
@@ -216,23 +230,40 @@ export function useCaja() {
   }, [aperturaPendiente, ensureMutableCloudCash, sincronizarEstadoCaja]);
 
   const asegurarCajaAbierta = useCallback(async () => {
-    if (cajaActual && isOpenCashSession(cajaActual)) return cajaActual;
+    if (isOpenCashSession(cajaActual)) return cajaActual;
 
     const mode = cashRepository.getMode();
+    setCashMode(mode);
+    setCashActor(mode.actor);
+
     if (mode.cloudEnabled) {
-      await sincronizarEstadoCaja();
-      const errorOpening = new Error(mode.online
-        ? 'La caja requiere apertura manual. Confirma el fondo inicial.'
-        : CASH_CLOUD_OFFLINE_MESSAGE);
-      errorOpening.code = mode.online ? 'CAJA_NEEDS_OPENING' : 'CLOUD_CASH_OFFLINE';
-      throw errorOpening;
+      if (!mode.online) {
+        throw createCloudCashOfflineError();
+      }
+
+      const result = await cashRepository.getCurrentCashSession({ force: true });
+
+      if (result?.success === false) {
+        const error = new Error(result.message || 'No se pudo verificar la caja cloud.');
+        error.code = result.code || 'CASH_CURRENT_FAILED';
+        throw error;
+      }
+
+      if (result?.readOnly) {
+        throw createCloudCashOfflineError();
+      }
+
+      applyCashState(result);
+
+      const current = result.cashSession || result.cash_session || null;
+      if (isOpenCashSession(current)) return current;
+
+      throw createCajaNeedsOpeningError();
     }
 
     if (getCashOpeningPolicy() !== CASH_OPENING_POLICY.AUTOMATIC) {
       await sincronizarEstadoCaja();
-      const openingRequiredError = new Error('La caja requiere apertura manual. Confirma el fondo, el conteo y el empleado responsable.');
-      openingRequiredError.code = 'CAJA_NEEDS_OPENING';
-      throw openingRequiredError;
+      throw createCajaNeedsOpeningError('La caja requiere apertura manual. Confirma el fondo, el conteo y el empleado responsable.');
     }
 
     const suggestedAmount = aperturaPendiente?.montoSugerido || '0';
@@ -241,7 +272,7 @@ export function useCaja() {
     await sincronizarEstadoCaja();
     if (response?.success === false) throw new Error(response.message || 'No se pudo abrir caja automaticamente.');
     return response.cashSession || null;
-  }, [aperturaPendiente, cajaActual, sincronizarEstadoCaja]);
+  }, [aperturaPendiente, applyCashState, cajaActual, sincronizarEstadoCaja]);
 
   const registrarMovimiento = useCallback(async (tipo, monto, concepto) => {
     if (!cajaActual) {

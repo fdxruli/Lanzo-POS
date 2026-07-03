@@ -41,6 +41,15 @@ const shouldRequireOpenCashSessionForCloudSale = (licenseDetails) => Boolean(
     )
 );
 
+const hasOpenCashSession = (session) => (
+    session?.estado === 'abierta' || session?.status === 'open'
+);
+
+const buildCashNeedsOpeningError = () => Object.assign(
+    new Error('La caja requiere apertura manual. Confirma el fondo inicial.'),
+    { code: 'CAJA_NEEDS_OPENING' }
+);
+
 const normalizePaymentMethod = (method) => {
     const raw = String(method || '').trim().toLowerCase();
 
@@ -198,6 +207,7 @@ export function usePosCheckout({
 }) {
     const verifySessionIntegrity = pos.verifySessionIntegrity;
     const abrirCaja = pos.abrirCaja;
+    const asegurarCajaAbierta = pos.asegurarCajaAbierta;
     const checkoutSnapshotRef = useRef(null);
 
     useEffect(() => {
@@ -465,10 +475,31 @@ export function usePosCheckout({
             ? CLOUD_TURN_REQUIRED_PAYMENT_METHODS.has(paymentMethod)
             : hasCashComponent;
 
-        if (requiresOpenCashSession && (!pos.cajaActual || pos.cajaActual.estado !== 'abierta')) {
-            modal.closeModal('payment');
-            modal.openModal('quickCaja');
-            return;
+        if (requiresOpenCashSession && !hasOpenCashSession(pos.cajaActual)) {
+            try {
+                const ensuredCashSession = await asegurarCajaAbierta?.();
+
+                if (!hasOpenCashSession(ensuredCashSession)) {
+                    throw buildCashNeedsOpeningError();
+                }
+            } catch (cashError) {
+                if (cashError?.code === 'CAJA_NEEDS_OPENING') {
+                    modal.closeModal('payment');
+                    modal.openModal('quickCaja');
+                    return;
+                }
+
+                showMessageModal(
+                    cashError?.message || 'No se pudo verificar la caja abierta. Intenta de nuevo.',
+                    null,
+                    {
+                        title: 'Caja requerida',
+                        type: 'warning',
+                        confirmButtonText: 'Entendido'
+                    }
+                );
+                return;
+            }
         }
 
         checkoutSnapshotRef.current = null;
@@ -573,6 +604,7 @@ export function usePosCheckout({
     }, [
         verifySessionIntegrity,
         pos.cajaActual,
+        asegurarCajaAbierta,
         posSearch,
         features,
         prescription,
@@ -584,11 +616,29 @@ export function usePosCheckout({
     const handleQuickCajaSubmit = useCallback(async (openingData) => {
         const success = await abrirCaja(openingData);
         if (success) {
+            try {
+                const ensuredCashSession = await asegurarCajaAbierta?.();
+                if (!hasOpenCashSession(ensuredCashSession)) {
+                    throw buildCashNeedsOpeningError();
+                }
+            } catch (cashError) {
+                showMessageModal(
+                    cashError?.message || 'La caja se abrió, pero no se pudo confirmar la sesión abierta. Intenta de nuevo.',
+                    null,
+                    {
+                        title: 'Verificación de caja pendiente',
+                        type: 'warning',
+                        confirmButtonText: 'Entendido'
+                    }
+                );
+                return false;
+            }
+
             modal.closeModal('quickCaja');
             modal.openModal('payment');
         }
         return success;
-    }, [abrirCaja, modal]);
+    }, [abrirCaja, asegurarCajaAbierta, modal]);
 
     return {
         handleInitiateCheckout,
