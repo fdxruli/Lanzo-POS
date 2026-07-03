@@ -1,0 +1,143 @@
+.pos-summary-stack,
+.mobile-pos-cart-stack {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 8px;
+}
+
+.pos-summary-stack > .pos-order-container,
+.mobile-pos-cart-stack > .pos-order-container {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.order-discount-panel {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  color: var(--text-dark);
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.order-discount-panel--compact {
+  margin: 8px 10px 10px;
+}
+
+.order-discount-totals {
+  display: grid;
+  gap: 5px;
+}
+
+.order-discount-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.82rem;
+}
+
+.order-discount-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.order-discount-row--discount {
+  color: var(--ui-text-warning, #a16207);
+}
+
+.order-discount-row--total {
+  padding-top: 5px;
+  border-top: 1px dashed var(--border-color);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.order-discount-row--total strong {
+  color: var(--primary-hover, #4f46e5);
+}
+
+.order-discount-note {
+  margin: 6px 0 0;
+  color: var(--text-light);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.order-discount-form {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.order-discount-form input,
+.order-discount-form select {
+  min-height: 38px;
+  padding: 8px 10px;
+  color: var(--text-dark);
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.84rem;
+}
+
+.order-discount-form input[type="text"] {
+  grid-column: 1 / -1;
+}
+
+.order-discount-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.order-discount-btn {
+  min-height: 38px;
+  padding: 7px 10px;
+  color: var(--primary-hover, #4f46e5);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.order-discount-btn--primary {
+  color: #fff;
+  background: var(--primary-color, #3b82f6);
+  border-color: var(--primary-color, #3b82f6);
+}
+
+.order-discount-btn--danger {
+  color: var(--error-color, #ef4444);
+}
+
+.order-discount-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1023px) {
+  .pos-grid > .pos-summary-stack {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pos-grid > .pos-summary-stack {
+    height: 100%;
+    max-height: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .pos-grid > .pos-summary-stack > .pos-order-container {
+    display: flex;
+  }
+}
