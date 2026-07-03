@@ -1,0 +1,31 @@
+.order-item-modifiers-label,
+.order-cloud-item-detail-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  color: var(--text-light);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.order-cloud-item-modifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.order-cloud-item-note {
+  margin-top: 5px;
+  color: var(--order-primary-hover, var(--primary-color));
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.order-item-modifiers .modifier-tag,
+.order-cloud-item-modifiers .modifier-tag {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
