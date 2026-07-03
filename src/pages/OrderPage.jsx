@@ -1,5 +1,5 @@
 import useKitchenOrdersCloud from '../hooks/restaurant/useKitchenOrdersCloud';
-import CloudKitchenMonitorRest8Container from '../components/restaurant/CloudKitchenMonitorRest8Container';
+import CloudKitchenMonitorRest8Container from '../components/restaurant/CloudKitchenMonitorRest8ContainerFixed';
 import LocalKitchenMonitor from '../components/restaurant/LocalKitchenMonitor';
 import './OrderPage.css';
 import './OrderPageCloud.css';
