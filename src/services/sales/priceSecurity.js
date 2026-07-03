@@ -9,8 +9,13 @@ const toNumber = (value) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const toPositiveNumberOrNull = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
 const getModifierIdentity = (modifier = {}) => (
-    modifier.ingredientId || modifier.id || modifier.optionId || modifier.name || ''
+    modifier.id || modifier.optionId || modifier.option_id || modifier.name || modifier.ingredientId || modifier.ingredient_id || ''
 );
 
 const flattenProductModifierOptions = (product = {}) => {
@@ -67,12 +72,35 @@ const resolveAuthoritativeModifiers = (dbProduct, item) => {
         const authoritativePrice = toNumber(catalogOption.price);
         unitTotal += authoritativePrice;
 
+        const ingredientId = catalogOption.ingredientId || catalogOption.ingredient_id || null;
+        const ingredientQuantity = toPositiveNumberOrNull(
+            catalogOption.ingredientQuantity
+            ?? catalogOption.ingredient_quantity
+            ?? catalogOption.quantity
+            ?? modifier.ingredientQuantity
+            ?? modifier.ingredient_quantity
+            ?? modifier.quantity
+        );
+        const ingredientUnit = catalogOption.ingredientUnit
+            ?? catalogOption.ingredient_unit
+            ?? catalogOption.unit
+            ?? modifier.ingredientUnit
+            ?? modifier.ingredient_unit
+            ?? modifier.unit
+            ?? null;
+        const tracksInventory = Boolean(ingredientId && ingredientQuantity > 0);
+
         return {
             ...modifier,
+            id: catalogOption.id || modifier.id,
+            optionId: catalogOption.optionId || catalogOption.option_id || modifier.optionId || modifier.option_id,
             name: catalogOption.name || modifier.name,
             price: authoritativePrice,
-            ingredientId: catalogOption.ingredientId || modifier.ingredientId || null,
-            quantity: modifier.quantity || catalogOption.quantity || 1
+            ingredientId: tracksInventory ? ingredientId : null,
+            ingredientQuantity: tracksInventory ? ingredientQuantity : null,
+            ingredientUnit: tracksInventory ? ingredientUnit : null,
+            tracksInventory,
+            ...(tracksInventory ? { quantity: ingredientQuantity } : {})
         };
     });
 
