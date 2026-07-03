@@ -58,6 +58,11 @@ const refreshLoadedOrderFromDb = async (orderId) => {
   useActiveOrders.setState({ activeOrders: nextOrders });
 };
 
+const persistOrderFinancials = async (orderId, order) => {
+  if (!orderId || !order) return;
+  await db.table(STORES.SALES).update(orderId, orderTotalsForSave(normalizeOrder(order)));
+};
+
 const patchActiveOrders = () => {
   if (patched) return;
   const state = useActiveOrders.getState();
@@ -69,6 +74,8 @@ const patchActiveOrders = () => {
   const originalLoadOpenOrder = state.loadOpenOrder;
   const originalLoadOrdersFromDB = state.loadOrdersFromDB;
   const originalLockOrderForCheckout = state.lockOrderForCheckout;
+  const originalPauseOrder = state.pauseOrder;
+  const originalCloseOrder = state.closeOrder;
 
   useActiveOrders.setState({
     __restDiscOrderTotalsPatched: true,
@@ -88,9 +95,16 @@ const patchActiveOrders = () => {
       const order = snapshot || (orderId ? useActiveOrders.getState().activeOrders.get(orderId) : null);
       const normalized = order ? normalizeOrder(order) : snapshot;
       const result = await originalSaveOrderAsOpen(orderId, normalized);
-      if (result?.success && (result.id || orderId) && normalized) await db.table(STORES.SALES).update(result.id || orderId, orderTotalsForSave(normalized));
+      if (result?.success) await persistOrderFinancials(result.id || orderId, normalized);
       return result;
     },
+    pauseOrder: async (orderId) => {
+      const snapshot = normalizeOrder(useActiveOrders.getState().activeOrders.get(orderId) || {});
+      const result = await originalPauseOrder(orderId);
+      await persistOrderFinancials(orderId, snapshot);
+      return result;
+    },
+    closeOrder: async (orderId, paymentData) => originalCloseOrder(orderId, { ...paymentData, ...orderTotalsForSave(useActiveOrders.getState().activeOrders.get(orderId) || {}) }),
     loadOpenOrder: async (orderId) => { const result = await originalLoadOpenOrder(orderId); if (result?.success) await refreshLoadedOrderFromDb(orderId); return result; },
     loadOrdersFromDB: async () => { const result = await originalLoadOrdersFromDB(); await Promise.all(Array.from(useActiveOrders.getState().activeOrders.keys()).map(refreshLoadedOrderFromDb)); return result; },
     lockOrderForCheckout: async (orderId) => { setOrderTotalsInState(orderId); return originalLockOrderForCheckout(orderId); }
