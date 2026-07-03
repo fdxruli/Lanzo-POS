@@ -214,7 +214,7 @@ export const cloudBatchToLocal = (batch = {}, existing = null, overrides = {}) =
     activeStockStatus: toNumber(batch.active_stock_status ?? batch.activeStockStatus),
     expiryDate: batch.expiry_date || batch.expiryDate || null,
     alertTargetDate: batch.alert_target_date || batch.alertTargetDate || null,
-    alertType: batch.alert_type || batchAlertType || null,
+    alertType: batch.alert_type || batch.alertType || null,
     manufacturerBatchId: batch.manufacturer_batch_id || batch.manufacturerBatchId || null,
     supplier: batch.supplier || null,
     attributes: batch.attributes || null,
