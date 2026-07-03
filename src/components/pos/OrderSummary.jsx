@@ -28,7 +28,9 @@ import {
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
+import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
 import './OrderSummary.css';
+import './OrderSummaryRestInv2.css';
 
 const generateStoreCode = (companyName) => {
   if (!companyName || typeof companyName !== 'string') return 'LZ';
@@ -41,6 +43,16 @@ const generateStoreCode = (companyName) => {
   const word = nameParts[0];
   return word.length === 1 ? `${word}X` : word.substring(0, 2);
 };
+
+const getItemNotes = (item = {}) => item.notes || item.kitchenNotes || item.kitchen_notes || null;
+
+const renderModifierTags = (labels = [], keyPrefix = 'modifier') => (
+  labels.map((label, index) => (
+    <span key={`${keyPrefix}-modifier-${index}`} className="modifier-tag">
+      {label}
+    </span>
+  ))
+);
 
 export default function OrderSummary({
   onOpenPayment,
@@ -373,16 +385,19 @@ export default function OrderSummary({
               {cloudStatus.isReady && !cloudStatus.hasCancelledItems && (
                 <p className="order-cloud-status-copy">La comanda está lista en cocina.</p>
               )}
+
               {cloudStatus.hasPendingItems && (
                 <p className="order-cloud-status-copy order-cloud-status-copy--warning">
                   Hay items pendientes en cocina. Confirma antes de cobrar.
                 </p>
               )}
+
               {cloudStatus.hasPreparingItems && (
                 <p className="order-cloud-status-copy order-cloud-status-copy--warning">
                   Hay items en preparación. La comanda aún no está marcada como lista.
                 </p>
               )}
+
               {cloudStatus.hasCancelledItems && (
                 <div className="order-cloud-status-action-block">
                   {isAccountAdjustedForKitchenCancelledItems ? (
@@ -427,6 +442,8 @@ export default function OrderSummary({
                   {cloudItems.map((item) => {
                     const itemStatus = String(item?.status || 'pending').toLowerCase();
                     const isCancelledItem = itemStatus === 'cancelled';
+                    const modifierLabels = formatSelectedModifiersForDisplay(item.selectedModifiers);
+                    const itemNotes = getItemNotes(item);
                     const cloudItemKey = item.id
                       || item.orderItemId
                       || item.order_item_id
@@ -436,6 +453,7 @@ export default function OrderSummary({
                       || item.line_id
                       || item.cartItemId
                       || `${item.productName || item.name || 'producto'}-${item.stationName || item.stationId || 'cocina'}-${itemStatus}-${item.quantity || 0}`;
+
                     return (
                       <div
                         key={cloudItemKey}
@@ -445,12 +463,25 @@ export default function OrderSummary({
                           <span className="order-cloud-item-qty">{item.quantity}x</span>
                           <span className="order-cloud-item-name">{item.productName || item.name || 'Producto'}</span>
                         </div>
+
+                        {modifierLabels.length > 0 && (
+                          <div className="order-cloud-item-modifiers">
+                            <span className="order-cloud-item-detail-label">Extras:</span>
+                            {renderModifierTags(modifierLabels, cloudItemKey)}
+                          </div>
+                        )}
+
+                        {itemNotes && (
+                          <div className="order-cloud-item-note">Nota: {itemNotes}</div>
+                        )}
+
                         <div className="order-cloud-item-meta">
                           <span>{item.stationName || 'Cocina'}</span>
                           <span className={`order-cloud-item-badge order-cloud-item-badge--${itemStatus}`}>
                             {cloudStatus.getItemStatusLabel(itemStatus)}
                           </span>
                         </div>
+
                         {isCancelledItem && (
                           <div className="order-cloud-item-warning">Ajustar cuenta si aplica</div>
                         )}
@@ -487,7 +518,7 @@ export default function OrderSummary({
               const lineId = getCartLineId(item, index);
               const itemClasses = `order-item${item.exceedsStock ? ' exceeds-stock' : ''}`;
               const isKitchenCancelled = isCartItemCancelledByKitchen(item, index, cloudItems);
-              const hasModifiers = item.selectedModifiers && item.selectedModifiers.length > 0;
+              const modifierLabels = formatSelectedModifiersForDisplay(item.selectedModifiers);
               const quantity = item.quantity || 1;
               const lineTotal = item.price * quantity;
               const isUnitSale = item.saleType === 'unit' || !item.saleType;
@@ -514,13 +545,10 @@ export default function OrderSummary({
                       </strong>
                     </div>
 
-                    {hasModifiers && (
-                      <div className="order-item-modifiers">
-                        {item.selectedModifiers.map((modifier) => (
-                          <span key={modifier.id || modifier.name} className="modifier-tag">
-                            + {modifier.name}
-                          </span>
-                        ))}
+                    {modifierLabels.length > 0 && (
+                      <div className="order-item-modifiers" aria-label="Extras seleccionados">
+                        <span className="order-item-modifiers-label">Extras:</span>
+                        {renderModifierTags(modifierLabels, lineId)}
                       </div>
                     )}
 
