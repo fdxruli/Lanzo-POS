@@ -1,3 +1,5 @@
+import { normalizeSelectedModifiersForPersistence } from '../../utils/restaurantModifierIdentity';
+
 const DEFAULT_STATION = Object.freeze({
   code: 'kitchen',
   name: 'Cocina'
@@ -121,7 +123,7 @@ export const buildRestaurantOrderPayloadFromOpenSale = ({
         unitPrice,
         lineTotal: toNumber(item.lineTotal, unitPrice * quantity),
         notes: normalizeText(item.notes || item.kitchenNotes, null),
-        selectedModifiers: Array.isArray(item.selectedModifiers) ? item.selectedModifiers : [],
+        selectedModifiers: normalizeSelectedModifiersForPersistence(item.selectedModifiers),
         stationCode: station.code,
         stationName: station.name,
         sortOrder: index,
