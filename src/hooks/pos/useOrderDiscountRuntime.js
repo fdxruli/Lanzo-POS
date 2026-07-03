@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { db, STORES } from '../../services/db/dexie';
-import { makeSaleDiscount, orderTotalsForSave, withLineDiscount, withoutLineDiscount, withOrderTotals } from '../../services/sales/orderTotals';
+import { hasSameFinancialTotals, makeSaleDiscount, orderTotalsForSave, withLineDiscount, withoutLineDiscount, withOrderTotals } from '../../services/sales/orderTotals';
 import { useActiveOrders } from './useActiveOrders';
 
 let patched = false;
@@ -34,8 +34,12 @@ const setOrderTotalsInState = (orderId) => {
   const state = useActiveOrders.getState();
   const order = orderId ? state.activeOrders.get(orderId) : null;
   if (!order || order.isLockedForCheckout) return;
+
+  const normalized = normalizeOrder(order);
+  if (hasSameFinancialTotals(order, normalized)) return;
+
   const nextOrders = new Map(state.activeOrders);
-  nextOrders.set(orderId, normalizeOrder(order));
+  nextOrders.set(orderId, normalized);
   useActiveOrders.setState({ activeOrders: nextOrders });
 };
 
@@ -43,8 +47,12 @@ const writeOrder = (orderId, builder) => {
   const state = useActiveOrders.getState();
   const order = orderId ? state.activeOrders.get(orderId) : null;
   if (!order || order.isLockedForCheckout) return;
+
+  const normalized = normalizeOrder(builder(order));
+  if (hasSameFinancialTotals(order, normalized)) return;
+
   const nextOrders = new Map(state.activeOrders);
-  nextOrders.set(orderId, normalizeOrder(builder(order)));
+  nextOrders.set(orderId, normalized);
   useActiveOrders.setState({ activeOrders: nextOrders });
 };
 
@@ -52,9 +60,16 @@ const refreshLoadedOrderFromDb = async (orderId) => {
   if (!orderId) return;
   const sale = await db.table(STORES.SALES).get(orderId);
   if (!sale) { setOrderTotalsInState(orderId); return; }
+
   const state = useActiveOrders.getState();
+  const current = state.activeOrders.get(orderId);
+  if (current?.isLockedForCheckout) return;
+
+  const normalized = normalizeLoadedSale(sale, current || {});
+  if (current && hasSameFinancialTotals(current, normalized)) return;
+
   const nextOrders = new Map(state.activeOrders);
-  nextOrders.set(orderId, normalizeLoadedSale(sale, state.activeOrders.get(orderId)));
+  nextOrders.set(orderId, normalized);
   useActiveOrders.setState({ activeOrders: nextOrders });
 };
 
@@ -112,6 +127,10 @@ const patchActiveOrders = () => {
   patched = true;
 };
 
-export const useOrderDiscountRuntime = () => { patchActiveOrders(); useEffect(() => { patchActiveOrders(); }, []); };
+export const useOrderDiscountRuntime = () => {
+  useEffect(() => {
+    patchActiveOrders();
+  }, []);
+};
 export const syncOrderTotalsNow = setOrderTotalsInState;
 export const ensureOrderDiscountRuntime = patchActiveOrders;
