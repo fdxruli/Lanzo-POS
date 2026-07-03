@@ -10,6 +10,8 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source || {}, key);
+
 const pick = (source, snakeKey, camelKey, fallback = null) => {
   if (!source) return fallback;
   if (source[camelKey] !== undefined) return source[camelKey];
@@ -20,6 +22,14 @@ const pick = (source, snakeKey, camelKey, fallback = null) => {
 const normalizeProductModifiersForStorage = (modifiers) => {
   const normalized = normalizeModifierGroups(modifiers);
   return normalized.length > 0 ? normalized : null;
+};
+
+const resolveCloudModifiersForLocal = (product = {}, existing = null) => {
+  if (hasOwn(product, 'modifiers')) {
+    return normalizeProductModifiersForStorage(product.modifiers) || [];
+  }
+
+  return normalizeProductModifiersForStorage(existing?.modifiers ?? []) || [];
 };
 
 export const normalizeNameKey = (value) => text(value).toLowerCase().replace(/\s+/g, ' ');
@@ -143,7 +153,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     conversionFactor: product.conversion_factor ?? product.conversionFactor ?? null,
     batchManagement: product.batch_management ?? product.batchManagement ?? null,
     recipe: product.recipe ?? null,
-    modifiers: normalizeProductModifiersForStorage(product.modifiers ?? existing?.modifiers ?? []) || [],
+    modifiers: resolveCloudModifiersForLocal(product, existing),
     wholesaleTiers: product.wholesale_tiers ?? product.wholesaleTiers ?? null,
     prescriptionType: product.prescription_type ?? product.prescriptionType ?? undefined,
     activeSubstance: product.active_substance ?? product.activeSubstance ?? undefined,
@@ -201,7 +211,7 @@ export const cloudBatchToLocal = (batch = {}, existing = null, overrides = {}) =
   return {
     ...existing,
     id: batch.id,
-    productId: batch.product_id || batch.productId,
+    productId: batch.product_id || batchProductId,
     sku: batch.sku || '',
     skuKey: batch.sku_key || batch.skuKey || '',
     stock: toNumber(batch.stock),
