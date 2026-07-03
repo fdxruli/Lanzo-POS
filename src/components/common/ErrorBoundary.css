@@ -136,8 +136,35 @@
   color: #ffd166 !important;
 }
 
+.error-boundary__update-recovery {
+  order: 1;
+  margin: 0 0 18px !important;
+  padding: 18px !important;
+  border: 1px solid rgba(99, 230, 190, 0.45) !important;
+  border-left: 4px solid #22c55e !important;
+  border-radius: 12px !important;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.16), rgba(20, 83, 45, 0.2)) !important;
+  color: #d9fbe9 !important;
+  text-align: left;
+}
+
+.error-boundary__update-recovery p {
+  color: #d9fbe9 !important;
+}
+
+.error-boundary__button--update {
+  background: #22c55e !important;
+  color: #052e16 !important;
+  box-shadow: none !important;
+}
+
+.error-boundary__button--update:disabled {
+  cursor: wait !important;
+  opacity: 0.78 !important;
+}
+
 .error-boundary__continuity {
-  order: 2;
+  order: 3;
   margin: 0 0 18px !important;
   padding: 18px !important;
   border: 0 !important;
@@ -168,7 +195,7 @@
 }
 
 .error-boundary__safe-data {
-  order: 1;
+  order: 2;
   justify-content: flex-start !important;
   margin: 0 0 20px !important;
   padding: 15px 0 !important;
@@ -181,7 +208,7 @@
 }
 
 .error-boundary__diagnostics {
-  order: 4;
+  order: 5;
   margin: 18px 0 0 !important;
   padding: 20px 0 0;
   border-top: 1px solid var(--incident-line);
@@ -228,7 +255,7 @@
 }
 
 .error-boundary__actions {
-  order: 3;
+  order: 4;
   display: grid !important;
   gap: 10px !important;
 }
@@ -299,6 +326,10 @@
     background: #d93649 !important;
   }
 
+  .error-boundary__button--update:hover {
+    background: #4ade80 !important;
+  }
+
   .error-boundary__button--whatsapp:hover {
     background: #20bd5a !important;
   }
@@ -342,7 +373,7 @@
   .error-boundary__console {
     display: grid !important;
     grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
-    grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr);
     column-gap: 48px;
     row-gap: 0;
     align-content: start;
@@ -367,6 +398,7 @@
   .error-boundary__incident-meta,
   .error-boundary__summary,
   .error-boundary__network,
+  .error-boundary__update-recovery,
   .error-boundary__safe-data,
   .error-boundary__continuity,
   .error-boundary__actions {
@@ -393,23 +425,36 @@
     color: #fff !important;
   }
 
-  .error-boundary__safe-data {
+  .error-boundary__update-recovery {
     grid-row: 4;
     align-self: start;
     margin-top: 0 !important;
   }
 
-  .error-boundary__continuity {
+  .error-boundary__safe-data {
     grid-row: 5;
+    align-self: start;
+    margin-top: 0 !important;
+  }
+
+  .error-boundary__continuity {
+    grid-row: 6;
     align-self: start;
     margin-top: 18px !important;
   }
 
   .error-boundary__actions {
-    grid-row: 6;
+    grid-row: 7;
     align-self: start;
     grid-template-columns: 1fr 1fr;
     margin-top: 18px;
+  }
+
+  .error-boundary__update-recovery,
+  .error-boundary__safe-data,
+  .error-boundary__continuity,
+  .error-boundary__actions {
+    max-width: 620px;
   }
 
   .error-boundary__secondary-actions {
