@@ -61,6 +61,14 @@ function formatTimestamp(isoString) {
   }
 }
 
+const isRecoverableAppShellCache = (cacheName = '') => (
+  cacheName.includes('workbox') ||
+  cacheName.includes('precache') ||
+  cacheName.includes('runtime') ||
+  cacheName.includes('vite') ||
+  cacheName.includes('lanzo')
+);
+
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 class ErrorBoundary extends React.Component {
@@ -72,6 +80,7 @@ class ErrorBoundary extends React.Component {
       errorInfo: null,
       crashTimestamp: null,   // ISO string del momento exacto del crash
       copied: false,          // Estado del botón "Copiar reporte"
+      isRecoveryUpdating: false,
     };
     this._copyTimeout = null;
   }
@@ -102,14 +111,64 @@ class ErrorBoundary extends React.Component {
 
   // ── Acciones de Recuperación ─────────────────────────────────────────────
 
+  clearAppShellAndReload = async () => {
+    try {
+      if ('caches' in window) {
+        const cacheNames = await window.caches.keys();
+        await Promise.all(
+          cacheNames
+            .filter(isRecoverableAppShellCache)
+            .map((cacheName) => window.caches.delete(cacheName))
+        );
+      }
+
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(
+          registrations.map(async (registration) => {
+            try {
+              registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+              await registration.update().catch(() => {});
+            } catch {
+              // No bloquear la recuperación por un SW específico.
+            }
+          })
+        );
+      }
+    } catch (error) {
+      Logger.warn('No se pudo limpiar caché PWA desde ErrorBoundary:', error);
+    } finally {
+      window.location.reload();
+    }
+  }
+
+  handleForceUpdateApp = async () => {
+    if (this.state.isRecoveryUpdating) return;
+    this.setState({ isRecoveryUpdating: true });
+
+    try {
+      const appState = useAppStore.getState();
+
+      if (typeof appState.runUpdate === 'function' && appState.updateAvailable) {
+        await appState.runUpdate();
+        return;
+      }
+
+      await this.clearAppShellAndReload();
+    } catch (error) {
+      Logger.warn('No se pudo aplicar actualización desde ErrorBoundary:', error);
+      await this.clearAppShellAndReload();
+    }
+  }
+
   handleReload = () => {
-    window.location.reload();
+    this.clearAppShellAndReload();
   }
 
   handleReset = () => {
     localStorage.removeItem('lanzo-cart-storage');
     sessionStorage.clear();
-    this.setState({ hasError: false, error: null, errorInfo: null, crashTimestamp: null, copied: false });
+    this.setState({ hasError: false, error: null, errorInfo: null, crashTimestamp: null, copied: false, isRecoveryUpdating: false });
   }
 
   handleGoToPos = () => {
@@ -224,10 +283,13 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
   render() {
     if (!this.state.hasError) return this.props.children;
 
-    const { error, crashTimestamp, copied } = this.state;
+    const { error, crashTimestamp, copied, isRecoveryUpdating } = this.state;
     const currentPath = window.location.pathname;
     const isPosPage   = currentPath === '/' || currentPath === '';
     const isOnline    = navigator.onLine;
+    const appState = useAppStore.getState();
+    const updateAvailable = Boolean(appState.updateAvailable);
+    const isUpdating = Boolean(appState.isUpdating || isRecoveryUpdating);
 
     // Mostramos las primeras 6 líneas del stack en la UI
     const stackPreview = cleanStack(error?.stack, 6);
@@ -315,6 +377,41 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
               ? <><Wifi size={14} /> Conexión activa</>
               : <><WifiOff size={14} /> Sin conexión — esto puede ser la causa</>
             }
+          </div>
+
+          {/* Recuperación PWA */}
+          <div className="error-boundary__update-recovery" style={{
+            backgroundColor: '#ecfdf5',
+            border: '1px solid #86efac',
+            borderRadius: '12px',
+            padding: '16px',
+            marginBottom: '18px',
+            textAlign: 'left',
+          }}>
+            <p style={{ margin: '0 0 12px 0', color: '#166534', fontSize: '0.94rem', lineHeight: '1.45' }}>
+              <strong>Ya puede existir una corrección disponible.</strong>{' '}
+              {updateAvailable
+                ? 'Hay una actualización disponible que puede corregir este problema.'
+                : 'Intentaremos limpiar la versión guardada y cargar la más reciente.'}
+              {' '}Actualiza la aplicación antes de reportar.
+            </p>
+            <button
+              className="error-boundary__button error-boundary__button--update"
+              onClick={this.handleForceUpdateApp}
+              disabled={isUpdating}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                padding: '14px 24px', borderRadius: '10px',
+                backgroundColor: '#16a34a', color: 'white',
+                border: 'none', cursor: isUpdating ? 'wait' : 'pointer',
+                fontWeight: '800', fontSize: '1rem',
+                boxShadow: '0 4px 10px -2px rgba(22,163,74,0.35)',
+                opacity: isUpdating ? 0.78 : 1,
+              }}
+            >
+              <RefreshCw size={20} />
+              {isUpdating ? 'Actualizando aplicación...' : 'Actualizar aplicación'}
+            </button>
           </div>
 
           {/* Sugerencia de ir al POS */}
@@ -461,7 +558,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
                 }}
               >
                 <RefreshCw size={17} />
-                Recargar Página
+                Recargar versión limpia
               </button>
 
               <button
