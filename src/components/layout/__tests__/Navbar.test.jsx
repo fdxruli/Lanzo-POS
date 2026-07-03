@@ -16,7 +16,9 @@ const appState = {
   requestInstall: vi.fn(),
   needsDriveReauth: false,
   dismissedBackupNotice: null,
-  showBackupNotice: vi.fn()
+  showBackupNotice: vi.fn(),
+  canAccess: vi.fn(() => true),
+  licenseDetails: { features: { cloud_pos_sync: false } }
 };
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -58,6 +60,7 @@ function renderNavbar() {
 describe('Navbar mobile menu', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    appState.canAccess.mockReturnValue(true);
   });
 
   it('opens as a dialog and closes with Escape', () => {
