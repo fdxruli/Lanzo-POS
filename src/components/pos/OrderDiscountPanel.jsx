@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { makeSaleDiscount, orderTotals, withOrderTotals } from '../../services/sales/orderTotals';
 import { showMessageModal } from '../../services/utils';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
-import { syncOrderTotalsNow, useOrderDiscountRuntime } from '../../hooks/pos/useOrderDiscountRuntime';
+import { useOrderDiscountRuntime } from '../../hooks/pos/useOrderDiscountRuntime';
 import OrderLineDiscountList from './OrderLineDiscountList';
 import './OrderDiscountPanel.css';
 
@@ -12,7 +12,6 @@ const currentOrderSelector = (state) => (state.currentOrderId ? state.activeOrde
 export default function OrderDiscountPanel({ compact = false }) {
   useOrderDiscountRuntime();
 
-  const orderId = useActiveOrders((state) => state.currentOrderId);
   const order = useActiveOrders(currentOrderSelector);
   const updateCurrentOrder = useActiveOrders((state) => state.updateCurrentOrder);
   const [open, setOpen] = useState(false);
@@ -26,10 +25,6 @@ export default function OrderDiscountPanel({ compact = false }) {
   const hasAnyDiscount = Number(totals.discountTotal || 0) > 0;
   const hasSaleDiscount = Number(totals.saleDiscountAmount || 0) > 0;
   const locked = Boolean(order?.isLockedForCheckout);
-
-  useEffect(() => {
-    if (orderId && !locked) syncOrderTotalsNow(orderId);
-  }, [orderId, items, order?.saleDiscount, locked]);
 
   const closeForm = () => {
     setOpen(false);
