@@ -211,7 +211,7 @@ export const cloudBatchToLocal = (batch = {}, existing = null, overrides = {}) =
   return {
     ...existing,
     id: batch.id,
-    productId: batch.product_id || batchProductId,
+    productId: batch.product_id || batch.productId,
     sku: batch.sku || '',
     skuKey: batch.sku_key || batch.skuKey || '',
     stock: toNumber(batch.stock),
