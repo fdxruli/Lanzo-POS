@@ -184,6 +184,81 @@ describe('restaurantModifierIdentity', () => {
     });
   });
 
+  it('corrige tracksInventory false cuando hay ingrediente y cantidad válida', () => {
+    const [modifier] = normalizeSelectedModifiersForPersistence([
+      {
+        name: 'Queso extra',
+        ingredientId: 'ing_queso',
+        ingredientQuantity: 30,
+        ingredientUnit: 'g',
+        tracksInventory: false
+      }
+    ]);
+
+    expect(modifier).toMatchObject({
+      ingredientId: 'ing_queso',
+      ingredientQuantity: 30,
+      ingredientUnit: 'g',
+      tracksInventory: true
+    });
+  });
+
+  it('corrige tracksInventory true cuando falta ingrediente', () => {
+    const [modifier] = normalizeSelectedModifiersForPersistence([
+      {
+        name: 'Extra raro',
+        price: 10,
+        tracksInventory: true
+      }
+    ]);
+
+    expect(modifier).toMatchObject({
+      ingredientId: null,
+      ingredientQuantity: null,
+      ingredientUnit: null,
+      tracksInventory: false
+    });
+  });
+
+  it('corrige tracksInventory true cuando falta cantidad válida', () => {
+    const [modifier] = normalizeSelectedModifiersForPersistence([
+      {
+        name: 'Queso extra',
+        ingredientId: 'ing_queso',
+        ingredientUnit: 'g',
+        tracksInventory: true
+      }
+    ]);
+
+    expect(modifier).toMatchObject({
+      ingredientId: 'ing_queso',
+      ingredientQuantity: null,
+      ingredientUnit: 'g',
+      tracksInventory: false
+    });
+  });
+
+  it('corrige legacy quantity aunque tracksInventory venga false', () => {
+    const [modifier] = normalizeSelectedModifiersForPersistence([
+      {
+        name: 'Tocino extra',
+        ingredientId: 'ing_tocino',
+        quantity: 25,
+        unit: 'g',
+        tracksInventory: false
+      }
+    ]);
+
+    expect(modifier).toMatchObject({
+      ingredientId: 'ing_tocino',
+      ingredientQuantity: 25,
+      ingredientUnit: 'g',
+      quantity: 25,
+      unit: 'g',
+      tracksInventory: true
+    });
+  });
+
   it('normaliza líneas de carrito sin perder selectedModifiers al guardar/reabrir mesa', () => {
     const [line] = normalizeCartItems([
       {
