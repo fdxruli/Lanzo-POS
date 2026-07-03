@@ -4,6 +4,10 @@ import { normalizeStock } from '../db/utils';
 import { SALE_STATUS } from './financialStats';
 import { buildProcessedItemsAndDeductions } from './inventoryFlow';
 import { runPostSaleEffects } from './postSaleEffects';
+import {
+    normalizeSelectedModifiersForPersistence,
+    normalizeSelectedModifiersForSnapshot
+} from '../../utils/restaurantModifierIdentity';
 
 const TABLE_ORDER_TYPE = 'table';
 const OPEN_STATUS = SALE_STATUS.OPEN;
@@ -14,12 +18,6 @@ const toFiniteNumber = (value, fallback = 0) => {
 };
 
 const normalizeQuantity = (value) => normalizeStock(toFiniteNumber(value, 0));
-
-const normalizeModifier = (modifier = {}) => ({
-    ingredientId: modifier.ingredientId || null,
-    name: modifier.name || '',
-    quantity: normalizeQuantity(modifier.quantity || 0)
-});
 
 const normalizeReservation = (reservation = null) => {
     if (!reservation || reservation.source !== 'table') return null;
@@ -48,6 +46,7 @@ const normalizeOrderSnapshotItems = (items = []) => (
     (Array.isArray(items) ? items : [])
         .map((item, index) => ({
             lineIndex: index,
+            lineId: item.lineId || item.cartItemId || item.orderItemId || item.uniqueLineId || null,
             id: item.id || null,
             parentId: item.parentId || null,
             batchId: item.batchId || null,
@@ -55,13 +54,7 @@ const normalizeOrderSnapshotItems = (items = []) => (
             quantity: normalizeQuantity(item.quantity || 0),
             price: Money.toExactString(item.price || 0),
             notes: item.notes || '',
-            selectedModifiers: Array.isArray(item.selectedModifiers)
-                ? item.selectedModifiers.map(normalizeModifier).sort((left, right) => {
-                    const leftKey = `${left.ingredientId}:${left.name}:${left.quantity}`;
-                    const rightKey = `${right.ingredientId}:${right.name}:${right.quantity}`;
-                    return leftKey.localeCompare(rightKey);
-                })
-                : [],
+            selectedModifiers: normalizeSelectedModifiersForSnapshot(item.selectedModifiers),
             inventoryReservation: normalizeReservation(item.inventoryReservation)
         }))
 );
@@ -252,7 +245,7 @@ const buildChildItemsFromAllocation = ({ parentItems, allocationMap, ticketLabel
             if (quantity > 0) {
                 const childItem = {
                     ...item,
-                    selectedModifiers: Array.isArray(item.selectedModifiers) ? [...item.selectedModifiers] : [],
+                    selectedModifiers: normalizeSelectedModifiersForPersistence(item.selectedModifiers),
                     quantity,
                     inventoryReservation: splitReservations[idx]
                 };

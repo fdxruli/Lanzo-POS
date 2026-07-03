@@ -12,6 +12,12 @@ import {
   getSelectedModifiersTotal,
   hasInventoryTrackedModifiers
 } from '../restaurantModifierDisplay';
+import {
+  normalizeRestaurantModifierForSnapshot,
+  normalizeSelectedModifiersForPersistence,
+  normalizeSelectedModifiersForSnapshot
+} from '../restaurantModifierIdentity';
+import { normalizeCartItems } from '../cartLineIdentity';
 
 describe('restaurantModifiers', () => {
   it('normaliza una opción solo texto sin inventario', () => {
@@ -98,6 +104,192 @@ describe('restaurantModifiers', () => {
     expect(option.ingredientUnit).toBe('g');
     expect(option.tracksInventory).toBe(true);
     expect(option.legacyQuantityMapped).toBe(true);
+  });
+});
+
+describe('restaurantModifierIdentity', () => {
+  it('normaliza snapshot conservando identidad completa del extra', () => {
+    const modifier = normalizeRestaurantModifierForSnapshot({
+      id: 'opt_queso_extra',
+      optionId: 'opt_queso_extra',
+      name: 'Queso extra',
+      price: 10,
+      ingredientId: 'ing_queso',
+      ingredientQuantity: 30,
+      ingredientUnit: 'g',
+      tracksInventory: true
+    });
+
+    expect(modifier).toEqual({
+      id: 'opt_queso_extra',
+      optionId: 'opt_queso_extra',
+      name: 'Queso extra',
+      price: 10,
+      ingredientId: 'ing_queso',
+      ingredientQuantity: 30,
+      ingredientUnit: 'g',
+      tracksInventory: true,
+      quantity: null,
+      unit: null
+    });
+  });
+
+  it('diferencia extras con mismo ingrediente pero distinta cantidad/precio', () => {
+    const modifiers = normalizeSelectedModifiersForSnapshot([
+      {
+        id: 'opt_doble_queso',
+        name: 'Queso extra',
+        price: 18,
+        ingredientId: 'ing_queso',
+        ingredientQuantity: 60,
+        ingredientUnit: 'g',
+        tracksInventory: true
+      },
+      {
+        id: 'opt_queso_extra',
+        name: 'Queso extra',
+        price: 10,
+        ingredientId: 'ing_queso',
+        ingredientQuantity: 30,
+        ingredientUnit: 'g',
+        tracksInventory: true
+      }
+    ]);
+
+    expect(new Set(modifiers.map((modifier) => JSON.stringify(modifier))).size).toBe(2);
+    expect(modifiers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'opt_queso_extra', ingredientQuantity: 30, price: 10 }),
+      expect.objectContaining({ id: 'opt_doble_queso', ingredientQuantity: 60, price: 18 })
+    ]));
+  });
+
+  it('mantiene quantity legacy y lo deriva a ingredientQuantity para compatibilidad', () => {
+    const [modifier] = normalizeSelectedModifiersForPersistence([
+      {
+        name: 'Tocino extra',
+        ingredientId: 'ing_tocino',
+        quantity: 25,
+        unit: 'g'
+      }
+    ]);
+
+    expect(modifier).toMatchObject({
+      name: 'Tocino extra',
+      ingredientId: 'ing_tocino',
+      ingredientQuantity: 25,
+      ingredientUnit: 'g',
+      quantity: 25,
+      unit: 'g',
+      tracksInventory: true
+    });
+  });
+
+  it('corrige tracksInventory false cuando hay ingrediente y cantidad válida', () => {
+    const [modifier] = normalizeSelectedModifiersForPersistence([
+      {
+        name: 'Queso extra',
+        ingredientId: 'ing_queso',
+        ingredientQuantity: 30,
+        ingredientUnit: 'g',
+        tracksInventory: false
+      }
+    ]);
+
+    expect(modifier).toMatchObject({
+      ingredientId: 'ing_queso',
+      ingredientQuantity: 30,
+      ingredientUnit: 'g',
+      tracksInventory: true
+    });
+  });
+
+  it('corrige tracksInventory true cuando falta ingrediente', () => {
+    const [modifier] = normalizeSelectedModifiersForPersistence([
+      {
+        name: 'Extra raro',
+        price: 10,
+        tracksInventory: true
+      }
+    ]);
+
+    expect(modifier).toMatchObject({
+      ingredientId: null,
+      ingredientQuantity: null,
+      ingredientUnit: null,
+      tracksInventory: false
+    });
+  });
+
+  it('corrige tracksInventory true cuando falta cantidad válida', () => {
+    const [modifier] = normalizeSelectedModifiersForPersistence([
+      {
+        name: 'Queso extra',
+        ingredientId: 'ing_queso',
+        ingredientUnit: 'g',
+        tracksInventory: true
+      }
+    ]);
+
+    expect(modifier).toMatchObject({
+      ingredientId: 'ing_queso',
+      ingredientQuantity: null,
+      ingredientUnit: 'g',
+      tracksInventory: false
+    });
+  });
+
+  it('corrige legacy quantity aunque tracksInventory venga false', () => {
+    const [modifier] = normalizeSelectedModifiersForPersistence([
+      {
+        name: 'Tocino extra',
+        ingredientId: 'ing_tocino',
+        quantity: 25,
+        unit: 'g',
+        tracksInventory: false
+      }
+    ]);
+
+    expect(modifier).toMatchObject({
+      ingredientId: 'ing_tocino',
+      ingredientQuantity: 25,
+      ingredientUnit: 'g',
+      quantity: 25,
+      unit: 'g',
+      tracksInventory: true
+    });
+  });
+
+  it('normaliza líneas de carrito sin perder selectedModifiers al guardar/reabrir mesa', () => {
+    const [line] = normalizeCartItems([
+      {
+        id: 'prod_hamburguesa',
+        lineId: 'line_hamb_1',
+        name: 'Hamburguesa',
+        quantity: 1,
+        selectedModifiers: [
+          {
+            id: 'opt_queso_extra',
+            name: 'Queso extra',
+            price: 10,
+            ingredientId: 'ing_queso',
+            ingredientQuantity: 30,
+            ingredientUnit: 'g',
+            tracksInventory: true
+          }
+        ]
+      }
+    ]);
+
+    expect(line.lineId).toBe('line_hamb_1');
+    expect(line.selectedModifiers[0]).toMatchObject({
+      id: 'opt_queso_extra',
+      name: 'Queso extra',
+      price: 10,
+      ingredientId: 'ing_queso',
+      ingredientQuantity: 30,
+      ingredientUnit: 'g',
+      tracksInventory: true
+    });
   });
 });
 
