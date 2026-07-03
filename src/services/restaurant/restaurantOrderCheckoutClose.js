@@ -1,5 +1,6 @@
 import { getLicenseKeyFromDetails, isRestaurantOrdersCloudEnabled } from '../sync/syncConstants';
 import { restaurantOrdersRepository } from './restaurantOrdersRepository';
+import { CANONICAL_BUSINESS_TYPES } from '../../utils/businessType';
 
 const STORAGE_KEY = 'lanzo:restaurant-order-close-pending:v1';
 const MAX_RETRY_COUNT = 5;
@@ -45,11 +46,33 @@ const clearPending = (localOrderId) => {
 
 export const buildRestaurantCheckoutCloseIdempotencyKey = ({ localOrderId, paidSaleId, paidSaleFolio } = {}) => `restaurant:checkout-close:${safe(localOrderId)}:${safe(paidSaleId || paidSaleFolio || 'sale')}`;
 
-const isEnabled = ({ licenseDetails, localOrderId }) => {
+const hasRestaurantRuntime = (features = {}) => {
+  const activeRubros = Array.isArray(features?.activeRubros) ? features.activeRubros : [];
+  const hasFoodServiceRubro = activeRubros.includes(CANONICAL_BUSINESS_TYPES.FOOD_SERVICE);
+  const hasRestaurantSurface = Boolean(
+    features?.hasTables === true ||
+    features?.hasKDS === true ||
+    features?.tables === true ||
+    features?.kds === true
+  );
+
+  return Boolean(hasFoodServiceRubro && hasRestaurantSurface);
+};
+
+const isEnabled = ({ licenseDetails, localOrderId, features }) => {
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+  const licenseEnabled = Boolean(
+    licenseKey &&
+    localOrderId &&
+    licenseDetails?.valid !== false &&
+    isRestaurantOrdersCloudEnabled(licenseDetails)
+  );
+  const runtimeEnabled = hasRestaurantRuntime(features);
+
   return {
     licenseKey,
-    enabled: Boolean(licenseKey && localOrderId && licenseDetails?.valid !== false && isRestaurantOrdersCloudEnabled(licenseDetails))
+    enabled: Boolean(licenseEnabled && runtimeEnabled),
+    reason: licenseEnabled ? (runtimeEnabled ? null : 'restaurant_runtime_disabled') : 'restaurant_cloud_close_not_applicable'
   };
 };
 
@@ -71,11 +94,11 @@ const buildPayload = ({ localOrderId, saleResult = {}, paymentData = {}, saleTot
   };
 };
 
-export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrderId, saleResult = {}, paymentData = {}, licenseDetails = null, saleTotal = null } = {}) => {
-  const { licenseKey, enabled } = isEnabled({ licenseDetails, localOrderId });
+export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrderId, saleResult = {}, paymentData = {}, licenseDetails = null, saleTotal = null, features = null } = {}) => {
+  const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId, features });
 
   if (!enabled) {
-    return { success: true, skipped: true };
+    return { success: true, skipped: true, reason };
   }
 
   const payload = buildPayload({ localOrderId, saleResult, paymentData, saleTotal });
@@ -105,9 +128,9 @@ export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrd
   }
 };
 
-export const retryPendingRestaurantCloudOrderCloses = async ({ licenseDetails = null, maxRetries = 3 } = {}) => {
-  const { licenseKey, enabled } = isEnabled({ licenseDetails, localOrderId: 'retry' });
-  if (!enabled || !isOnline()) return { success: true, skipped: true };
+export const retryPendingRestaurantCloudOrderCloses = async ({ licenseDetails = null, features = null, maxRetries = 3 } = {}) => {
+  const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId: 'retry', features });
+  if (!enabled || !isOnline()) return { success: true, skipped: true, reason };
 
   const rows = readPending().slice(0, Math.max(1, Number(maxRetries) || 3));
   let closed = 0;
