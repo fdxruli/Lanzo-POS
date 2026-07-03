@@ -21,11 +21,34 @@ const firstText = (...values) => {
   return null;
 };
 
-const getLineTotal = (item = {}) => {
+const getDiscountMetadata = (item = {}) => (
+  item.discount && typeof item.discount === 'object'
+    ? item.discount
+    : null
+);
+
+const getDiscountAmount = (item = {}) => {
+  const metadata = getDiscountMetadata(item);
+  const amount = item.discountAmount
+    ?? item.discount_amount
+    ?? metadata?.amount
+    ?? (typeof item.discount === 'object' ? undefined : item.discount)
+    ?? 0;
+
+  return Math.max(toNumber(amount, 0), 0);
+};
+
+const getLineSubtotal = (item = {}) => {
   if (item.exactTotal !== undefined) return toNumber(item.exactTotal, 0);
-  if (item.lineTotal !== undefined) return toNumber(item.lineTotal, 0);
-  if (item.total !== undefined) return toNumber(item.total, 0);
+  if (item.lineSubtotal !== undefined) return toNumber(item.lineSubtotal, 0);
+  if (item.subtotal !== undefined) return toNumber(item.subtotal, 0);
   return toNumber(item.price, 0) * toNumber(item.quantity, 0);
+};
+
+const getLineTotal = (item = {}) => {
+  if (item.lineTotal !== undefined) return Math.max(toNumber(item.lineTotal, 0), 0);
+  if (item.line_total !== undefined) return Math.max(toNumber(item.line_total, 0), 0);
+  return Math.max(getLineSubtotal(item) - getDiscountAmount(item), 0);
 };
 
 const normalizePaymentMethod = (method) => String(method || 'unknown').trim().toLowerCase() || 'unknown';
@@ -37,6 +60,8 @@ const mapItem = (item = {}, index = 0) => {
   const unitCost = item.cost === undefined && item.unitCost === undefined
     ? null
     : toNumber(item.cost ?? item.unitCost, 0);
+  const discountMetadata = getDiscountMetadata(item);
+  const discountAmount = getDiscountAmount(item);
 
   return compactObject({
     id: firstText(item.lineId, item.cartLineId) || (productId ? `${productId}:${index + 1}` : null),
@@ -49,7 +74,7 @@ const mapItem = (item = {}, index = 0) => {
     quantity,
     unit_price: unitPrice,
     unit_cost: unitCost,
-    discount_amount: toNumber(item.discountAmount ?? item.discount, 0),
+    discount_amount: discountAmount,
     tax_amount: toNumber(item.taxAmount ?? item.tax, 0),
     line_total: getLineTotal(item),
     batch_id: firstText(item.batchId, item.batch_id),
@@ -64,6 +89,8 @@ const mapItem = (item = {}, index = 0) => {
       stockDeducted: item.stockDeducted ?? null,
       requiresPrescription: item.requiresPrescription || false,
       inventoryReservation: item.inventoryReservation || null,
+      discount: discountMetadata,
+      discountReason: discountMetadata?.reason || item.discountReason || item.discount_reason || null,
       snapshotOnly: true
     })
   });
@@ -127,6 +154,7 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
   const total = toNumber(localSale.total, 0);
   const amountPaid = toNumber(localSale.abono ?? localSale.amountPaid, localSale.paymentMethod === 'fiado' ? 0 : total);
   const balanceDue = toNumber(localSale.saldoPendiente ?? localSale.balanceDue, 0);
+  const discountTotal = toNumber(localSale.discountTotal ?? localSale.discount_total ?? localSale.discount, 0);
 
   const sale = compactObject({
     id: localSale.id,
@@ -142,8 +170,8 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
     customer_id: firstText(localSale.customerId, localSale.customer_id),
     customer_name: firstText(localSale.customerName, localSale.customer?.name, localSale.customerSnapshot?.name),
     customer_phone: firstText(localSale.customerPhone, localSale.customer?.phone, localSale.customerSnapshot?.phone),
-    subtotal: toNumber(localSale.subtotal, total),
-    discount_total: toNumber(localSale.discountTotal ?? localSale.discount_total, 0),
+    subtotal: toNumber(localSale.subtotal, total + discountTotal),
+    discount_total: discountTotal,
     tax_total: toNumber(localSale.taxTotal ?? localSale.tax_total, 0),
     total,
     amount_paid: amountPaid,
@@ -163,6 +191,8 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
       splitChildIds: localSale.splitChildIds || null,
       prescriptionDetails: localSale.prescriptionDetails || null,
       dueDate: localSale.dueDate || null,
+      discount: localSale.saleDiscount || localSale.discountMetadata || null,
+      discountTotal,
       postEffectsCompleted: localSale.postEffectsCompleted ?? null,
       postEffectsFailed: options.postEffectsFailed || false,
       syncedFrom: 'salesCloudShadowService',
@@ -196,6 +226,8 @@ export const cloudSaleToLocalSyncPatch = (cloudSale = {}, response = {}) => ({
   cloudFolio: cloudSale.cloud_folio || undefined,
   abono: cloudSale.amount_paid === undefined ? undefined : String(cloudSale.amount_paid),
   saldoPendiente: cloudSale.balance_due === undefined ? undefined : String(cloudSale.balance_due),
+  discountTotal: cloudSale.discount_total === undefined ? undefined : String(cloudSale.discount_total),
+  subtotal: cloudSale.subtotal === undefined ? undefined : String(cloudSale.subtotal),
   cashSessionId: cloudSale.cash_session_id || response.cash_session?.id || undefined,
   cashMovementId: cloudSale.cash_movement_id || response.cash_movement?.id || undefined,
   cashEffectStatus: cloudSale.cash_effect_status || undefined,

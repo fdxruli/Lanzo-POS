@@ -1,58 +1,30 @@
 // src/components/pos/MobilePosCart.jsx
 import PropTypes from 'prop-types';
 import OrderSummary from './OrderSummary';
+import OrderDiscountPanel from './OrderDiscountPanel';
 
-/**
- * Componente para el modal móvil del carrito en el POS.
- * Maneja la navegación por historial para el botón "Atrás".
- */
-export default function MobilePosCart({
-    isOpen,
-    onClose,
-    onOpenPayment,
-    onOpenSplit,
-    onOpenLayaway,
-    onSaveOpenOrder,
-    onOpenTables,
-    showRestaurantActions,
-    canSplitOrder,
-    activeTablesCount,
-    kitchenRejectedOpenCount
-}) {
-    if (!isOpen) return null;
+export default function MobilePosCart(props) {
+    if (!props.isOpen) return null;
 
     return (
-        <div 
-            className="modal mobile-pos-cart-modal" 
-            style={{ display: 'flex', zIndex: 'var(--z-modal-base)', alignItems: 'flex-end' }}
-            onClick={onClose}
-        >
-            <div
-                className="modal-content"
-                style={{
-                    borderRadius: '20px 20px 0 0',
-                    width: '100%',
-                    height: '85vh',
-                    maxWidth: '100%',
-                    padding: '0',
-                    animation: 'slideUp 0.3s ease-out',
-                    overflow: 'hidden',
-                }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <OrderSummary
-                    onOpenPayment={onOpenPayment}
-                    onOpenSplit={onOpenSplit}
-                    isMobileModal={true}
-                    onClose={onClose}
-                    onOpenLayaway={onOpenLayaway}
-                    showRestaurantActions={showRestaurantActions}
-                    canSplitOrder={canSplitOrder}
-                    onSaveOpenOrder={onSaveOpenOrder}
-                    onOpenTables={onOpenTables}
-                    activeTablesCount={activeTablesCount}
-                    kitchenRejectedOpenCount={kitchenRejectedOpenCount}
-                />
+        <div className="modal mobile-pos-cart-modal" style={{ display: 'flex', zIndex: 'var(--z-modal-base)', alignItems: 'flex-end' }} onClick={props.onClose}>
+            <div className="modal-content" style={{ borderRadius: '20px 20px 0 0', width: '100%', height: '85vh', maxWidth: '100%', padding: '0', animation: 'slideUp 0.3s ease-out', overflow: 'hidden' }} onClick={(event) => event.stopPropagation()}>
+                <div className="mobile-pos-cart-stack">
+                    <OrderSummary
+                        onOpenPayment={props.onOpenPayment}
+                        onOpenSplit={props.onOpenSplit}
+                        isMobileModal={true}
+                        onClose={props.onClose}
+                        onOpenLayaway={props.onOpenLayaway}
+                        showRestaurantActions={props.showRestaurantActions}
+                        canSplitOrder={props.canSplitOrder}
+                        onSaveOpenOrder={props.onSaveOpenOrder}
+                        onOpenTables={props.onOpenTables}
+                        activeTablesCount={props.activeTablesCount}
+                        kitchenRejectedOpenCount={props.kitchenRejectedOpenCount}
+                    />
+                    <OrderDiscountPanel compact />
+                </div>
             </div>
         </div>
     );
