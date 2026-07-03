@@ -17,6 +17,14 @@ const saleDiscountOf = (orderOrItems, givenDiscount) => {
   return orderOrItems.saleDiscount || null;
 };
 
+export const getLineKey = (item = {}, index = 0) => (
+  item.lineId || item.cartLineId || item.uniqueLineId || `${item.id || item.productId || 'item'}-${index}`
+);
+
+export const getLineSubtotalNumber = (item = {}) => money(
+  item.lineSubtotal ?? item.exactTotal ?? item.subtotal ?? ((item.price || 0) * (item.quantity || 0))
+);
+
 export const orderTotals = (orderOrItems = {}, givenDiscount = undefined) => {
   const items = itemsOf(orderOrItems);
   if (!items.some((item) => Number(item && item.quantity) > 0)) {
@@ -39,6 +47,48 @@ export const makeSaleDiscount = (orderOrItems = {}, input = {}, options = {}) =>
     actor: options.actor || {}
   });
 };
+
+export const makeLineDiscount = (item = {}, input = {}, options = {}) => validateDiscount(input, {
+  subtotal: getLineSubtotalNumber(item),
+  scope: 'line',
+  now: options.now || new Date().toISOString(),
+  actor: options.actor || {}
+});
+
+export const withLineDiscount = (items = [], lineId, input = {}, options = {}) => (
+  (Array.isArray(items) ? items : []).map((item, index) => {
+    if (![getLineKey(item, index), item.lineId, item.cartLineId, item.uniqueLineId].includes(lineId)) return item;
+    const discount = makeLineDiscount(item, input, options);
+    const subtotal = getLineSubtotalNumber(item);
+    const amount = money(discount?.amount || 0);
+    const lineTotal = Math.max(0, money(subtotal - amount));
+    return {
+      ...item,
+      discount,
+      discountAmount: amount,
+      discount_amount: amount,
+      lineSubtotal: subtotal,
+      lineTotal,
+      line_total: lineTotal
+    };
+  })
+);
+
+export const withoutLineDiscount = (items = [], lineId) => (
+  (Array.isArray(items) ? items : []).map((item, index) => {
+    if (![getLineKey(item, index), item.lineId, item.cartLineId, item.uniqueLineId].includes(lineId)) return item;
+    const subtotal = getLineSubtotalNumber(item);
+    return {
+      ...item,
+      discount: null,
+      discountAmount: 0,
+      discount_amount: 0,
+      lineSubtotal: subtotal,
+      lineTotal: subtotal,
+      line_total: subtotal
+    };
+  })
+);
 
 export const withOrderTotals = (order = {}, givenDiscount = undefined) => {
   const totals = orderTotals(order, givenDiscount);
