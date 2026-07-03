@@ -15,6 +15,7 @@ const ACTIVE_PENDING_STATUSES = new Set(['pending', 'open', 'sent', 'sent_to_kit
 const PREPARING_STATUSES = new Set(['preparing']);
 const READY_STATUSES = new Set(['ready']);
 const CANCELLED_STATUSES = new Set(['cancelled']);
+const PAID_STATUSES = new Set(['paid']);
 
 export const RESTAURANT_ORDER_STATUS_LABELS = Object.freeze({
   pending: 'En cocina',
@@ -38,6 +39,8 @@ export const normalizeRestaurantCloudStatus = (status) => {
   if (normalized === 'completed') return 'delivered';
   return normalized || 'pending';
 };
+
+const normalizePaymentStatus = (status) => String(status || 'unpaid').trim().toLowerCase() || 'unpaid';
 
 const hasStaffPermission = (canAccess, permissions = []) => (
   typeof canAccess === 'function' && permissions.some((permission) => canAccess(permission))
@@ -80,6 +83,8 @@ export const buildRestaurantCloudStatusSummary = (cloudOrder) => {
   const normalizedOrderStatus = normalizeRestaurantCloudStatus(
     cloudOrder?.fulfillmentStatus || cloudOrder?.status
   );
+  const paymentStatus = normalizePaymentStatus(cloudOrder?.paymentStatus || cloudOrder?.payment_status);
+  const isPaid = PAID_STATUSES.has(paymentStatus);
 
   const cancelledItems = items.filter((item) => CANCELLED_STATUSES.has(normalizeRestaurantCloudStatus(item?.status)));
   const pendingItems = items.filter((item) => ACTIVE_PENDING_STATUSES.has(normalizeRestaurantCloudStatus(item?.status)));
@@ -95,11 +100,20 @@ export const buildRestaurantCloudStatusSummary = (cloudOrder) => {
     normalizedOrderStatus === 'ready' ||
     (activeItems.length > 0 && readyItems.length === activeItems.length)
   );
+  const isPaidPendingKitchen = isPaid && !isCancelled && !isReady && (hasPendingItems || hasPreparingItems || normalizedOrderStatus === 'pending' || normalizedOrderStatus === 'preparing');
 
   return {
     items,
     status: normalizedOrderStatus,
-    statusLabel: getStatusLabel(normalizedOrderStatus),
+    statusLabel: isPaidPendingKitchen ? 'Pagada, pendiente de cocina' : getStatusLabel(normalizedOrderStatus),
+    paymentStatus,
+    isPaid,
+    isPaidPendingKitchen,
+    paidAt: cloudOrder?.paidAt || cloudOrder?.paid_at || null,
+    paidSaleId: cloudOrder?.paidSaleId || cloudOrder?.paid_sale_id || null,
+    paidSaleFolio: cloudOrder?.paidSaleFolio || cloudOrder?.paid_sale_folio || null,
+    paidTotal: cloudOrder?.paidTotal ?? cloudOrder?.paid_total ?? null,
+    checkoutClosedAt: cloudOrder?.checkoutClosedAt || cloudOrder?.checkout_closed_at || null,
     hasCancelledItems,
     cancelledItems,
     hasPendingItems,
@@ -294,6 +308,14 @@ export function useRestaurantOrderCloudStatus({ localOrderId, enabled = true } =
     items: summary.items,
     status: summary.status,
     statusLabel: summary.statusLabel,
+    paymentStatus: summary.paymentStatus,
+    isPaid: summary.isPaid,
+    isPaidPendingKitchen: summary.isPaidPendingKitchen,
+    paidAt: summary.paidAt,
+    paidSaleId: summary.paidSaleId,
+    paidSaleFolio: summary.paidSaleFolio,
+    paidTotal: summary.paidTotal,
+    checkoutClosedAt: summary.checkoutClosedAt,
     isReady: summary.isReady,
     isCancelled: summary.isCancelled,
     isCloudStatusEnabled: isEnabled,

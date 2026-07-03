@@ -89,6 +89,23 @@ export const restaurantOrdersRepository = {
     if (response?.success !== false) invalidateCloudCacheAfterRestaurantOrderMutation(licenseKey);
     return response;
   },
+  async closeRestaurantOrderAfterCheckout({ licenseKey, localOrderId, paidSaleId = null, paidSaleFolio = null, paidTotal = null, paymentSummary = {}, idempotencyKey = null } = {}) {
+    if (!licenseKey) throw new Error('LICENSE_KEY_REQUIRED');
+    const normalizedLocalOrderId = String(localOrderId || '').trim();
+    if (!normalizedLocalOrderId) return { success: true, skipped: true, code: 'LOCAL_ORDER_ID_REQUIRED', message: 'No se encontro la mesa local para cerrar cocina cloud.' };
+    assertOnlineForMutation();
+    const response = await callRpc('pos_close_restaurant_order_after_checkout', {
+      ...(await buildBaseRpcArgs(licenseKey)),
+      p_local_order_id: normalizedLocalOrderId,
+      p_paid_sale_id: paidSaleId || null,
+      p_paid_sale_folio: paidSaleFolio || null,
+      p_paid_total: paidTotal ?? null,
+      p_payment_summary: paymentSummary && typeof paymentSummary === 'object' ? paymentSummary : {},
+      p_idempotency_key: idempotencyKey || `restaurant:checkout-close:${normalizedLocalOrderId}:${paidSaleId || paidSaleFolio || 'sale'}`
+    });
+    if (response?.success !== false) invalidateCloudCacheAfterRestaurantOrderMutation(licenseKey);
+    return response;
+  },
   async upsertRestaurantOrderFromLocalSale({ licenseKey, sale, idempotencyKey = null }) {
     if (!sale?.id) throw new Error('RESTAURANT_ORDER_SALE_REQUIRED');
     const [stationsResult, productsById] = await Promise.all([preparationStationsRepository.getPreparationStations({ licenseKey, includeInactive: false, force: false, useCloud: Boolean(licenseKey) }), getProductsById()]);
