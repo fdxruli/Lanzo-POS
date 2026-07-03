@@ -80,13 +80,9 @@ const getIngredientUnit = (modifier = {}) => toText(
     ?? modifier.measurement_unit
 ) || null;
 
-const getTracksInventory = ({ modifier = {}, ingredientId, ingredientQuantity }) => {
-  if (modifier.tracksInventory !== undefined || modifier.tracks_inventory !== undefined) {
-    return Boolean(modifier.tracksInventory ?? modifier.tracks_inventory);
-  }
-
-  return Boolean(ingredientId && ingredientQuantity > 0);
-};
+const getTracksInventory = ({ ingredientId, ingredientQuantity }) => (
+  Boolean(ingredientId && ingredientQuantity > 0)
+);
 
 export const normalizeRestaurantModifierIdentity = (modifier = {}) => {
   if (typeof modifier === 'string') {
@@ -122,7 +118,7 @@ export const normalizeRestaurantModifierIdentity = (modifier = {}) => {
   const ingredientId = getIngredientId(modifier);
   const ingredientQuantity = getIngredientQuantity(modifier);
   const ingredientUnit = ingredientId ? getIngredientUnit(modifier) : null;
-  const tracksInventory = getTracksInventory({ modifier, ingredientId, ingredientQuantity });
+  const tracksInventory = getTracksInventory({ ingredientId, ingredientQuantity });
 
   return {
     ...modifier,
