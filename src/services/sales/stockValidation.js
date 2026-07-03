@@ -1,55 +1,8 @@
 import { getAvailableStock } from '../db/utils';
-
-const hasRecipe = (product) => Array.isArray(product?.recipe) && product.recipe.length > 0;
-const shouldTrackDirectStock = (product) => Boolean(product?.trackStock);
-const getRealProductId = (item) => item?.parentId || item?.id;
-
-const normalizeQuantity = (value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-};
-
-const getQuantityToDeduct = (orderItem, product) => {
-    let quantityToDeduct = normalizeQuantity(orderItem?.quantity);
-
-    if (product?.conversionFactor?.enabled) {
-        const factor = parseFloat(product.conversionFactor.factor);
-
-        if (!Number.isNaN(factor) && factor > 1) {
-            quantityToDeduct = quantityToDeduct / factor;
-        }
-    }
-
-    return quantityToDeduct;
-};
-
-const addRequirement = (requirements, id, qty) => {
-    if (!id) return;
-    const safeQty = normalizeQuantity(qty);
-    if (safeQty <= 0) return;
-    requirements.set(id, (requirements.get(id) || 0) + safeQty);
-};
-
-const buildRequirementsForItem = (item, productDef) => {
-    const itemRequirements = new Map();
-    const quantityToDeduct = getQuantityToDeduct(item, productDef);
-
-    if (hasRecipe(productDef)) {
-        productDef.recipe.forEach((ing) => {
-            addRequirement(itemRequirements, ing.ingredientId, (ing.quantity || 0) * quantityToDeduct);
-        });
-    } else if (shouldTrackDirectStock(productDef)) {
-        addRequirement(itemRequirements, getRealProductId(item), quantityToDeduct);
-    }
-
-    if (Array.isArray(item.selectedModifiers)) {
-        item.selectedModifiers.forEach((mod) => {
-            addRequirement(itemRequirements, mod.ingredientId, (mod.quantity || 1) * quantityToDeduct);
-        });
-    }
-
-    return itemRequirements;
-};
+import {
+    buildIngredientRequirementsForItem,
+    getRealProductId
+} from './inventoryRequirements';
 
 const loadFreshProducts = async ({ idsArray, loadData, loadMultipleData, STORES }) => {
     if (idsArray.length === 0) return [];
@@ -129,7 +82,10 @@ export const validateStockBeforeSale = async ({
 
     itemsToProcess.forEach((item, index) => {
         const productDef = productMap.get(getRealProductId(item));
-        const itemRequirements = buildRequirementsForItem(item, productDef);
+        const { requirements } = buildIngredientRequirementsForItem(item, productDef);
+        const itemRequirements = new Map(
+            requirements.map(({ targetId, neededQty }) => [targetId, neededQty])
+        );
 
         requirementsByItem.set(index, itemRequirements);
         itemRequirements.forEach((_qty, targetId) => uniqueStockIds.add(targetId));
