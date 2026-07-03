@@ -3,6 +3,7 @@ import { makeSaleDiscount, orderTotals, withOrderTotals } from '../../services/s
 import { showMessageModal } from '../../services/utils';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { syncOrderTotalsNow, useOrderDiscountRuntime } from '../../hooks/pos/useOrderDiscountRuntime';
+import OrderLineDiscountList from './OrderLineDiscountList';
 import './OrderDiscountPanel.css';
 
 const money = (value) => `$${Number(value || 0).toFixed(2)}`;
@@ -90,10 +91,12 @@ export default function OrderDiscountPanel({ compact = false }) {
             <button type="button" className="order-discount-btn" onClick={closeForm}>Cancelar</button>
           </>
         ) : (
-          <button type="button" className="order-discount-btn" onClick={() => setOpen(true)} disabled={locked}>Descuento</button>
+          <button type="button" className="order-discount-btn" onClick={() => setOpen(true)} disabled={locked}>Descuento general</button>
         )}
-        {hasDiscount && !open && <button type="button" className="order-discount-btn order-discount-btn--danger" onClick={removeDiscount} disabled={locked}>Quitar descuento</button>}
+        {hasDiscount && !open && <button type="button" className="order-discount-btn order-discount-btn--danger" onClick={removeDiscount} disabled={locked}>Quitar descuento general</button>}
       </div>
+
+      <OrderLineDiscountList />
     </section>
   );
 }
