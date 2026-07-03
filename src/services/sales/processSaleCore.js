@@ -12,6 +12,7 @@ import { evaluator } from '../BackupRiskEvaluator';
 import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
+import { calculateDiscountedTotals } from './discounts';
 
 const requiresPrescriptionControl = (product = {}) => (
     product?.requiresPrescription === true ||
@@ -54,6 +55,7 @@ export const processSaleCore = async ({
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
         const productMap = new Map(allProducts.map(p => [p.id, p]));
+        const saleDiscount = paymentData.saleDiscount || paymentData.discount || null;
 
         if (features.hasLabFields) {
             const restrictedItem = itemsToProcess.find(item => {
@@ -113,6 +115,7 @@ export const processSaleCore = async ({
         await normalizeAndValidatePricing({
             itemsToProcess,
             total,
+            saleDiscount,
             loadData,
             queryBatchesByProductIdAndActive,
             STORES,
@@ -120,29 +123,23 @@ export const processSaleCore = async ({
             Logger
         });
 
-        // 🔥 CORRECCIÓN ESTRUCTURAL: SOBERANÍA DEL TOTAL Y MAYOREO
-        // Recalcular la verdad absoluta usando los exactTotals inyectados por priceSecurity
+        // REST.DISC.1 — soberanía financiera con descuentos monetarios.
+        // El subtotal bruto sale de precios/cantidades seguros; los descuentos solo afectan dinero.
         let totalNum;
+        let financialTotals;
         try {
-            const totalRealNum = itemsToProcess.reduce((sum, item) => {
-                if (item.exactTotal !== undefined) {
-                    return Money.add(sum, Money.init(item.exactTotal));
-                }
-                const price = Money.init(item.price || 0);
-                const qty = Money.init(item.quantity || 0);
-                return Money.add(sum, Money.mul(price, qty));
-            }, Money.init(0));
-
+            financialTotals = calculateDiscountedTotals(itemsToProcess, saleDiscount);
+            totalNum = Money.init(financialTotals.total);
             const totalFrontendNum = Money.init(total);
 
-            if (totalFrontendNum.lt(0) || totalRealNum.lt(0)) {
+            if (totalFrontendNum.lt(0) || totalNum.lt(0)) {
                 throw new Error('El total de la venta no puede ser negativo.');
             }
 
-            // La discrepancia severa ya se validó en priceSecurity.js
-            // Imponemos la verdad absoluta del backend para la base de datos
-            totalNum = totalRealNum;
-
+            const totalDiff = Math.abs(Number(Money.subtract(totalFrontendNum, totalNum)));
+            if (totalDiff > 0.05) {
+                throw new Error(`El total final no cuadra con los descuentos aplicados. Total esperado: $${Money.toNumber(totalNum).toFixed(2)}.`);
+            }
         } catch (e) {
             throw new Error(e.message || 'Error al auditar el total financiero de la venta.');
         }
@@ -165,7 +162,7 @@ export const processSaleCore = async ({
             // Ecuación de balance: Abono + Saldo DEBE ser igual al Total exacto
             const balanceDiff = Math.abs(Number(Money.add(abonoSeguro, saldoSeguro)) - Number(totalNum));
             if (balanceDiff > 0.05) {
-                throw new Error(`Inconsistencia financiera: El abono y el saldo no cuadran con el total exacto de los productos ($${Number(totalNum).toFixed(2)}).`);
+                throw new Error(`Inconsistencia financiera: El abono y el saldo no cuadran con el total exacto de la venta ($${Number(totalNum).toFixed(2)}).`);
             }
             // Forzamos el saldo para evitar discrepancias de fracciones de centavo
             saldoSeguro = Money.sub(totalNum, abonoSeguro);
@@ -192,11 +189,19 @@ export const processSaleCore = async ({
         });
 
         const currentIsoTime = new Date().toISOString();
+        const discountTotal = Money.toExactString(financialTotals.discountTotal);
+        const subtotal = Money.toExactString(financialTotals.subtotal);
+        const saleDiscountAudit = financialTotals.saleDiscount || null;
 
         const sale = {
             id: activeOrderId || generateID('sal'),
             timestamp: currentIsoTime,
             items: processedItems,
+            subtotal,
+            discount: discountTotal,
+            discountTotal,
+            discount_total: discountTotal,
+            saleDiscount: saleDiscountAudit,
             total: Money.toExactString(totalNum),
             customerId: paymentData.customerId,
             paymentMethod: paymentData.paymentMethod,
@@ -207,6 +212,13 @@ export const processSaleCore = async ({
             status: SALE_STATUS.CLOSED,
             fulfillmentStatus: features.hasKDS ? 'pending' : 'completed',
             prescriptionDetails: tempPrescriptionData || null,
+            metadata: {
+                discount: saleDiscountAudit,
+                discountTotal,
+                lineDiscountTotal: Money.toExactString(financialTotals.lineDiscountTotal),
+                subtotalAfterLineDiscounts: Money.toExactString(financialTotals.subtotalAfterLineDiscounts),
+                discountScope: saleDiscountAudit ? 'sale' : null
+            },
             postEffectsCompleted: false,
             syncStatus: 'PENDING'
         };
@@ -222,7 +234,7 @@ export const processSaleCore = async ({
                 cloudResult = await salesCloudCashierService.processCloudCashierSale({
                     sale,
                     processedItems,
-                    paymentData,
+                    paymentData: { ...paymentData, saleDiscount: saleDiscountAudit },
                     total: Money.toExactString(totalNum)
                 });
             } catch (cloudCashierError) {
@@ -245,7 +257,7 @@ export const processSaleCore = async ({
                     sale: cloudSale,
                     processedItems,
                     paymentData,
-                    total,
+                    total: Money.toExactString(totalNum),
                     companyName,
                     features,
                     loadData,
@@ -317,7 +329,7 @@ export const processSaleCore = async ({
                 sale,
                 processedItems,
                 paymentData,
-                total,
+                total: Money.toExactString(totalNum),
                 companyName,
                 features,
                 loadData,
