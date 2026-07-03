@@ -35,10 +35,25 @@ const normalizeReservation = (reservation = null) => {
         })
         : [];
 
+    const committedComponents = Array.isArray(reservation.committedComponents)
+        ? reservation.committedComponents.map((component) => ({
+            ingredientId: component.ingredientId || component.productId || null,
+            quantity: normalizeQuantity(component.quantity),
+            cost: toFiniteNumber(component.cost, 0)
+        }))
+            .filter((component) => component.ingredientId && component.quantity > 0)
+            .sort((left, right) => {
+                const leftKey = `${left.ingredientId}`;
+                const rightKey = `${right.ingredientId}`;
+                return leftKey.localeCompare(rightKey);
+            })
+        : [];
+
     return {
         source: 'table',
         committedQuantity: normalizeQuantity(reservation.committedQuantity || 0),
-        committedBatches
+        committedBatches,
+        committedComponents
     };
 };
 
@@ -74,6 +89,21 @@ const splitStockByRatio = (totalQuantity, partQuantity, wholeQuantity) => {
     return normalizeQuantity(ratioValue.toString());
 };
 
+const adjustSplitRemainder = (splitQuantities = [], totalQuantity = 0) => {
+    const sumSplit = splitQuantities.reduce((a, b) => a + b, 0);
+    const remainder = normalizeQuantity(totalQuantity - sumSplit);
+    if (remainder !== 0 && splitQuantities.length > 0) {
+        const firstNonZeroIdx = splitQuantities.findIndex((q) => q > 0);
+        if (firstNonZeroIdx !== -1) {
+            splitQuantities[firstNonZeroIdx] = normalizeQuantity(
+                splitQuantities[firstNonZeroIdx] + remainder
+            );
+        }
+    }
+
+    return splitQuantities;
+};
+
 /**
  * Split inventory reservation into N parts based on quantities per ticket.
  * @param {Object} params
@@ -91,52 +121,26 @@ const splitInventoryReservationByQuantity = ({ reservation, quantitiesPerTicket,
     const committedBatches = Array.isArray(reservation.committedBatches)
         ? reservation.committedBatches
         : [];
+    const committedComponents = Array.isArray(reservation.committedComponents)
+        ? reservation.committedComponents
+        : [];
 
     const total = normalizeQuantity(totalQuantity);
-    const n = quantitiesPerTicket.length;
 
-    // Split committedQuantity proportionally
-    const splitCommittedQuantities = quantitiesPerTicket.map((qty) =>
-        splitStockByRatio(committedQuantity, qty, total)
+    const splitCommittedQuantities = adjustSplitRemainder(
+        quantitiesPerTicket.map((qty) => splitStockByRatio(committedQuantity, qty, total)),
+        committedQuantity
     );
 
-    // Adjust for rounding errors: ensure sum equals original
-    const sumSplit = splitCommittedQuantities.reduce((a, b) => a + b, 0);
-    const remainder = normalizeQuantity(committedQuantity - sumSplit);
-    if (remainder !== 0 && splitCommittedQuantities.length > 0) {
-        // Add remainder to first non-zero ticket
-        const firstNonZeroIdx = splitCommittedQuantities.findIndex((q) => q > 0);
-        if (firstNonZeroIdx !== -1) {
-            splitCommittedQuantities[firstNonZeroIdx] = normalizeQuantity(
-                splitCommittedQuantities[firstNonZeroIdx] + remainder
-            );
-        }
-    }
-
-    // Split batches for each ticket
     const splitBatchesPerTicket = quantitiesPerTicket.map(() => []);
 
     committedBatches.forEach((batchUsage) => {
         const batchTotal = normalizeQuantity(batchUsage.quantity || 0);
-
-        // Split batch across tickets proportionally
-        const batchSplits = quantitiesPerTicket.map((qty) =>
-            splitStockByRatio(batchTotal, qty, total)
+        const batchSplits = adjustSplitRemainder(
+            quantitiesPerTicket.map((qty) => splitStockByRatio(batchTotal, qty, total)),
+            batchTotal
         );
 
-        // Adjust batch remainder
-        const sumBatchSplits = batchSplits.reduce((a, b) => a + b, 0);
-        const batchRemainder = normalizeQuantity(batchTotal - sumBatchSplits);
-        if (batchRemainder !== 0 && batchSplits.length > 0) {
-            const firstNonZeroIdx = batchSplits.findIndex((q) => q > 0);
-            if (firstNonZeroIdx !== -1) {
-                batchSplits[firstNonZeroIdx] = normalizeQuantity(
-                    batchSplits[firstNonZeroIdx] + batchRemainder
-                );
-            }
-        }
-
-        // Assign splits to tickets
         batchSplits.forEach((splitQty, ticketIdx) => {
             if (splitQty > 0) {
                 splitBatchesPerTicket[ticketIdx].push({
@@ -149,11 +153,31 @@ const splitInventoryReservationByQuantity = ({ reservation, quantitiesPerTicket,
         });
     });
 
-    // Build reservation objects for each ticket
+    const splitComponentsPerTicket = quantitiesPerTicket.map(() => []);
+
+    committedComponents.forEach((componentUsage) => {
+        const componentTotal = normalizeQuantity(componentUsage.quantity || 0);
+        const componentSplits = adjustSplitRemainder(
+            quantitiesPerTicket.map((qty) => splitStockByRatio(componentTotal, qty, total)),
+            componentTotal
+        );
+
+        componentSplits.forEach((splitQty, ticketIdx) => {
+            if (splitQty > 0) {
+                splitComponentsPerTicket[ticketIdx].push({
+                    ingredientId: componentUsage.ingredientId || componentUsage.productId,
+                    quantity: splitQty,
+                    cost: toFiniteNumber(componentUsage.cost, 0)
+                });
+            }
+        });
+    });
+
     return quantitiesPerTicket.map((_, idx) => ({
         source: 'table',
         committedQuantity: splitCommittedQuantities[idx],
-        committedBatches: splitBatchesPerTicket[idx]
+        committedBatches: splitBatchesPerTicket[idx],
+        committedComponents: splitComponentsPerTicket[idx]
     }));
 };
 
