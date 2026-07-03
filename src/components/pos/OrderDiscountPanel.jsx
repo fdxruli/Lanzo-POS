@@ -1,0 +1,99 @@
+import { useEffect, useMemo, useState } from 'react';
+import { makeSaleDiscount, orderTotals, withOrderTotals } from '../../services/sales/orderTotals';
+import { showMessageModal } from '../../services/utils';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import { syncOrderTotalsNow, useOrderDiscountRuntime } from '../../hooks/pos/useOrderDiscountRuntime';
+import './OrderDiscountPanel.css';
+
+const money = (value) => `$${Number(value || 0).toFixed(2)}`;
+const currentOrderSelector = (state) => (state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null);
+
+export default function OrderDiscountPanel({ compact = false }) {
+  useOrderDiscountRuntime();
+
+  const orderId = useActiveOrders((state) => state.currentOrderId);
+  const order = useActiveOrders(currentOrderSelector);
+  const updateCurrentOrder = useActiveOrders((state) => state.updateCurrentOrder);
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState('amount');
+  const [value, setValue] = useState('');
+  const [reason, setReason] = useState('');
+
+  const items = useMemo(() => (Array.isArray(order?.items) ? order.items : []), [order?.items]);
+  const totals = useMemo(() => orderTotals(order || { items }), [order, items]);
+  const hasItems = items.some((item) => Number(item?.quantity) > 0);
+  const hasDiscount = Number(totals.discountTotal || 0) > 0;
+  const locked = Boolean(order?.isLockedForCheckout);
+
+  useEffect(() => {
+    if (orderId && !locked) syncOrderTotalsNow(orderId);
+  }, [orderId, items, order?.saleDiscount, locked]);
+
+  const closeForm = () => {
+    setOpen(false);
+    setType('amount');
+    setValue('');
+    setReason('');
+  };
+
+  const applyDiscount = () => {
+    if (!order || locked) return;
+    if (!hasItems) {
+      showMessageModal('Agrega productos antes de aplicar un descuento.', null, { type: 'warning' });
+      return;
+    }
+
+    try {
+      const saleDiscount = makeSaleDiscount(order, { type, value, reason });
+      updateCurrentOrder(withOrderTotals({ ...order, saleDiscount }));
+      closeForm();
+      showMessageModal('Descuento aplicado.', null, { type: 'success' });
+    } catch (error) {
+      showMessageModal(error?.message || 'No se pudo aplicar el descuento.', null, { type: 'warning' });
+    }
+  };
+
+  const removeDiscount = () => {
+    if (!order || locked) return;
+    updateCurrentOrder(withOrderTotals({ ...order, saleDiscount: null }, null));
+    closeForm();
+    showMessageModal('Descuento quitado.', null, { type: 'success' });
+  };
+
+  if (!hasItems) return null;
+
+  return (
+    <section className={`order-discount-panel${compact ? ' order-discount-panel--compact' : ''}`}>
+      <div className="order-discount-totals">
+        <div className="order-discount-row"><span>Subtotal</span><strong>{money(totals.subtotal)}</strong></div>
+        {hasDiscount && <div className="order-discount-row order-discount-row--discount"><span>Descuento</span><strong>-{money(totals.discountTotal)}</strong></div>}
+        <div className="order-discount-row order-discount-row--total"><span>Total</span><strong>{money(totals.total)}</strong></div>
+      </div>
+
+      {totals.saleDiscount && <p className="order-discount-note">Descuento aplicado: {totals.saleDiscount.reason}</p>}
+
+      {open && !locked && (
+        <div className="order-discount-form">
+          <select value={type} onChange={(event) => setType(event.target.value)} aria-label="Tipo de descuento">
+            <option value="amount">Monto fijo</option>
+            <option value="percent">Porcentaje</option>
+          </select>
+          <input type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} placeholder="Valor" />
+          <input type="text" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo del descuento" />
+        </div>
+      )}
+
+      <div className="order-discount-actions">
+        {open ? (
+          <>
+            <button type="button" className="order-discount-btn order-discount-btn--primary" onClick={applyDiscount} disabled={locked}>Aplicar descuento</button>
+            <button type="button" className="order-discount-btn" onClick={closeForm}>Cancelar</button>
+          </>
+        ) : (
+          <button type="button" className="order-discount-btn" onClick={() => setOpen(true)} disabled={locked}>Descuento</button>
+        )}
+        {hasDiscount && !open && <button type="button" className="order-discount-btn order-discount-btn--danger" onClick={removeDiscount} disabled={locked}>Quitar descuento</button>}
+      </div>
+    </section>
+  );
+}
