@@ -205,7 +205,7 @@ export function usePosCheckout({
 
         const retryPendingCloses = () => {
             const licenseDetails = useAppStore.getState().licenseDetails;
-            retryPendingRestaurantCloudOrderCloses({ licenseDetails }).catch((error) => {
+            retryPendingRestaurantCloudOrderCloses({ licenseDetails, features }).catch((error) => {
                 console.warn('[REST.7] No se pudieron reintentar cierres pendientes de cocina cloud:', error);
             });
         };
@@ -213,7 +213,7 @@ export function usePosCheckout({
         retryPendingCloses();
         window.addEventListener('online', retryPendingCloses);
         return () => window.removeEventListener('online', retryPendingCloses);
-    }, []);
+    }, [features]);
 
     const handlePaymentModalClose = useCallback(() => {
         const snapshot = checkoutSnapshotRef.current;
@@ -501,7 +501,8 @@ export function usePosCheckout({
                         saleResult: result,
                         paymentData,
                         licenseDetails,
-                        saleTotal: snapshot.total
+                        saleTotal: snapshot.total,
+                        features
                     });
 
                     if (closeResult?.success === false && !closeResult?.skipped) {
