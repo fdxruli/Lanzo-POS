@@ -1,12 +1,14 @@
 // src/hooks/usePosSearch.js
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDebounce } from '../useDebounce';
 import { useProductStore } from '../../store/useProductStore';
 import { db, searchProductsInDB, STORES } from '../../services/database';
 import {
     CAT_DYNAMIC_EXPIRED,
     CAT_DYNAMIC_OUT_OF_STOCK,
+    getAssignedCategoryIdsForPosMenu,
     isExpiredForPosMenu,
+    isDynamicPosCategory,
     isOutOfStockForPosMenu,
     resolveExpiredProductIdsForPosMenu
 } from '../../services/products/productMenuEligibility';
@@ -44,6 +46,7 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
     const [menuVisual, setMenuVisual] = useState([]);
     const [hasOutOfStockItems, setHasOutOfStockItems] = useState(false);
     const [hasExpiredItems, setHasExpiredItems] = useState(false);
+    const [assignedCategoryIds, setAssignedCategoryIds] = useState(null);
 
     const applyActiveFilters = useCallback(async (items = []) => {
         const expiredProductIds = await resolveExpiredProductIdsForPosMenu(items, { db, STORES });
@@ -111,6 +114,49 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
     ]);
 
     useEffect(() => {
+        let isActive = true;
+
+        const syncAssignedCategories = async () => {
+            if (!Array.isArray(categories) || categories.length === 0) {
+                setAssignedCategoryIds(new Set());
+                return;
+            }
+
+            try {
+                const products = await db.table(STORES.MENU).toArray();
+                if (isActive) {
+                    setAssignedCategoryIds(getAssignedCategoryIdsForPosMenu(products));
+                }
+            } catch (error) {
+                Logger.error('Error resolviendo categorias con productos en POS:', error);
+                if (isActive) {
+                    setAssignedCategoryIds(getAssignedCategoryIdsForPosMenu(menu));
+                }
+            }
+        };
+
+        syncAssignedCategories();
+
+        return () => {
+            isActive = false;
+        };
+    }, [categories, menu]);
+
+    const visibleCategories = useMemo(() => {
+        if (!assignedCategoryIds) return categories;
+        return categories.filter((category) => assignedCategoryIds.has(String(category?.id || '').trim()));
+    }, [assignedCategoryIds, categories]);
+
+    useEffect(() => {
+        const selectedCategoryId = activeFilters.categoryId;
+        if (!assignedCategoryIds || !selectedCategoryId || isDynamicPosCategory(selectedCategoryId)) return;
+
+        if (!assignedCategoryIds.has(String(selectedCategoryId).trim())) {
+            setFilters({ categoryId: null });
+        }
+    }, [activeFilters.categoryId, assignedCategoryIds, setFilters]);
+
+    useEffect(() => {
         const initialize = async () => {
             const [hasAgotados, hasCaducados] = await Promise.all([
                 checkHasOutOfStockProducts(),
@@ -146,7 +192,7 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         searchTerm,
         setSearchTerm,
         menuVisual,
-        categories,
+        categories: visibleCategories,
         activeCategoryId,
         handleSelectCategory,
         hasOutOfStockItems,
