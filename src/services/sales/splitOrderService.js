@@ -4,6 +4,7 @@ import { normalizeStock } from '../db/utils';
 import { SALE_STATUS } from './financialStats';
 import { buildProcessedItemsAndDeductions } from './inventoryFlow';
 import { runPostSaleEffects } from './postSaleEffects';
+import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 
 const TABLE_ORDER_TYPE = 'table';
 const OPEN_STATUS = SALE_STATUS.OPEN;
@@ -472,8 +473,46 @@ const buildChildSaleRecord = ({
     splitGroupId,
     splitParentId: parentSale.id,
     splitLabel: label,
-    roundingAdjustment: centsToMoneyString(ticketAdjustmentCents)
+    roundingAdjustment: centsToMoneyString(ticketAdjustmentCents),
+    sourceMode: 'shadow',
+    syncStatus: 'PENDING',
+    metadata: {
+        source: 'split_bill_child',
+        orderType: parentSale.orderType || TABLE_ORDER_TYPE,
+        splitGroupId,
+        splitParentId: parentSale.id,
+        splitLabel: label
+    }
 });
+
+const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, childDefinitions = [], totalChildrenCents }) => {
+    const tickets = childDefinitions.map((child) => ({
+        label: child.label,
+        saleId: child.sale.id,
+        paymentMethod: child.paymentData.paymentMethod,
+        amountPaid: child.paymentData.amountPaid,
+        saldoPendiente: child.paymentData.saldoPendiente,
+        customerId: child.paymentData.customerId || null,
+        total: child.sale.total
+    }));
+
+    const methodSet = new Set(tickets.map((ticket) => ticket.paymentMethod).filter(Boolean));
+    const amountPaidTotal = tickets.reduce((acc, ticket) => Money.add(acc, ticket.amountPaid || 0), Money.init(0));
+    const balanceDueTotal = tickets.reduce((acc, ticket) => Money.add(acc, ticket.saldoPendiente || 0), Money.init(0));
+
+    return {
+        source: 'split_bill',
+        splitGroupId,
+        parentOrderId,
+        childSaleIds: childDefinitions.map((child) => child.sale.id),
+        tickets,
+        methods: Array.from(methodSet),
+        amountPaidTotal: Money.toExactString(amountPaidTotal),
+        balanceDueTotal: Money.toExactString(balanceDueTotal),
+        total: centsToMoneyString(totalChildrenCents),
+        sourceMode: 'shadow/local_applied'
+    };
+};
 
 export const splitOpenTableOrderCore = async ({
     parentOrderId,
@@ -668,28 +707,72 @@ export const splitOpenTableOrderCore = async ({
             };
         }
 
-        // Ejecución en paralelo de los efectos post-venta
-        await Promise.all(childDefinitions.map(child => runPostSaleEffects({
-            sale: child.sale,
-            processedItems: child.processedItems,
-            paymentData: child.paymentData,
-            total: child.sale.total,
-            companyName,
-            features,
-            loadData,
-            saveData: async () => true,
-            STORES,
-            useStatsStore,
-            roundCurrency,
-            sendReceiptWhatsApp,
-            Logger
-        })));
+        const postEffectsBySaleId = new Map();
+
+        // Ejecución en paralelo de los efectos post-venta. La venta local ya está segura.
+        await Promise.all(childDefinitions.map(async (child) => {
+            try {
+                await runPostSaleEffects({
+                    sale: child.sale,
+                    processedItems: child.processedItems,
+                    paymentData: child.paymentData,
+                    total: child.sale.total,
+                    companyName,
+                    features,
+                    loadData,
+                    saveData: async () => true,
+                    STORES,
+                    useStatsStore,
+                    roundCurrency,
+                    sendReceiptWhatsApp,
+                    Logger
+                });
+                postEffectsBySaleId.set(child.sale.id, { postEffectsFailed: false, postEffectsError: null });
+            } catch (postError) {
+                const postEffectsError = {
+                    message: postError.message || 'Error desconocido en efectos posteriores',
+                    stack: postError.stack || null,
+                    timestamp: new Date().toISOString()
+                };
+                postEffectsBySaleId.set(child.sale.id, { postEffectsFailed: true, postEffectsError });
+                Logger.warn('Post-Sale Effects Failed in Split Bill (Non-Blocking):', postEffectsError);
+            }
+        }));
+
+        const paymentSummary = buildSplitPaymentSummary({
+            splitGroupId,
+            parentOrderId,
+            childDefinitions,
+            totalChildrenCents
+        });
+
+        // REST.SPLIT.1 — Shadow sync post-commit. No bloquea ni revierte el split local.
+        childDefinitions.forEach((child) => {
+            const postEffects = postEffectsBySaleId.get(child.sale.id) || {};
+            salesCloudShadowService.syncSaleShadowAfterLocalCommit(child.sale, {
+                reason: 'split_bill_child',
+                source: 'split_bill_child',
+                splitGroupId,
+                splitParentId: parentOrderId,
+                splitLabel: child.label,
+                paymentData: child.paymentData,
+                processedItems: child.processedItems,
+                paymentSummary,
+                postEffectsFailed: Boolean(postEffects.postEffectsFailed),
+                postEffectsError: postEffects.postEffectsError || null
+            }).catch((cloudSyncError) => {
+                Logger.warn('Sales Cloud Shadow Sync Failed for split child (Non-Blocking):', cloudSyncError);
+            });
+        });
 
         return {
             success: true,
             splitGroupId,
             parentOrderId,
-            childSaleIds: childDefinitions.map((child) => child.sale.id)
+            childSaleIds: childDefinitions.map((child) => child.sale.id),
+            childSales: childDefinitions.map((child) => child.sale),
+            total: centsToMoneyString(totalChildrenCents),
+            paymentSummary
         };
     } catch (error) {
         Logger.error('SplitOrder Service Error:', error);
