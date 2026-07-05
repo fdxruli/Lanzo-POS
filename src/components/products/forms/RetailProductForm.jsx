@@ -1,4 +1,3 @@
-import React from 'react';
 import { useProductCommon } from '../../../hooks/useProductCommon';
 import CommonProductFields from './CommonProductFields';
 import WholesaleManagerModal from '../WholesaleManagerModal';
@@ -45,8 +44,6 @@ export default function RetailProductForm({
           setSaleType={controller.setSaleType}
           unit={controller.unit}
           setUnit={controller.setUnit}
-          isPerishable={controller.isPerishable}
-          setIsPerishable={controller.setIsPerishable}
           minStock={controller.minStock}
           setMinStock={controller.setMinStock}
           maxStock={controller.maxStock}

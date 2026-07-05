@@ -137,6 +137,17 @@ export function useRetailProductFormController({
       return false;
     }
 
+    const shelfLifeValue = Number.parseFloat(common.shelfLifeValue);
+    if (
+      features.hasExpiry
+      && common.doesTrackStock
+      && common.expirationMode === 'SHELF_LIFE'
+      && (!Number.isFinite(shelfLifeValue) || shelfLifeValue <= 0)
+    ) {
+      showMessageModal('Datos Incompletos', 'Debes especificar un valor valido para la vida util.');
+      return false;
+    }
+
     if (isApparel && features.hasVariants) {
       if (hasActiveVariants) {
         const incompleteVariants = quickVariants.filter((variant) => (
@@ -186,6 +197,7 @@ export function useRetailProductFormController({
   }, [
     common,
     conversionFactor,
+    features.hasExpiry,
     features.hasVariants,
     features.hasWholesale,
     hasActiveVariants,

@@ -1,7 +1,7 @@
-import React from 'react';
 import AbarrotesFields from '../../fieldsets/AbarrotesFields';
 import FruteriaFields from '../../fieldsets/FruteriaFields';
 import QuickVariantEntry from '../../QuickVariantEntry';
+import RetailExpirationSection from './RetailExpirationSection';
 
 export default function RetailModules({
   features,
@@ -23,6 +23,10 @@ export default function RetailModules({
   setQuickVariants,
   onOpenWholesaleModal
 }) {
+  const shouldShowExpirationControl = features.hasExpiry
+    && common.doesTrackStock
+    && !features.hasDailyPricing;
+
   return (
     <>
       {features.hasDailyPricing && (
@@ -78,6 +82,10 @@ export default function RetailModules({
 
           />
         </section>
+      )}
+
+      {shouldShowExpirationControl && (
+        <RetailExpirationSection common={common} />
       )}
 
       {isApparel && features.hasVariants && (
