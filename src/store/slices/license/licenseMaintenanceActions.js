@@ -128,28 +128,43 @@ export const createLicenseMaintenanceActions = ({
         if (!licenseDetails?.license_key) {
             return {
                 success: false,
-                message: 'No hay licencia para renovar'
+                message: 'No hay licencia para revisar'
             };
         }
 
-        Logger.log('Solicitando renovación de licencia...');
+        Logger.log('Solicitando revisión de licencia...');
 
         const result = await renewLicenseService(licenseDetails.license_key);
 
         if (result.success) {
-            Logger.log('Renovación exitosa. Actualizando estado local...');
+            Logger.log('Licencia revisada correctamente. Actualizando estado local...');
+
+            const rpcDetails = result.licenseDetails || {};
+            const hasExpiryPayload = Object.prototype.hasOwnProperty.call(rpcDetails, 'expires_at') ||
+                Object.prototype.hasOwnProperty.call(result, 'expiresAt') ||
+                Object.prototype.hasOwnProperty.call(result, 'newExpiry');
 
             const updatedLicense = {
                 ...licenseDetails,
-                expires_at: result.newExpiry,
-                status: result.status,
+                ...rpcDetails,
+                expires_at: hasExpiryPayload
+                    ? (rpcDetails.expires_at ?? result.expiresAt ?? result.newExpiry ?? null)
+                    : licenseDetails.expires_at,
+                duration_months: rpcDetails.duration_months ?? result.durationMonths ?? licenseDetails.duration_months,
+                is_lifetime: rpcDetails.is_lifetime ?? result.isLifetime ?? licenseDetails.is_lifetime,
+                license_type: rpcDetails.license_type ?? result.licenseType ?? licenseDetails.license_type,
+                product_name: rpcDetails.product_name ?? result.productName ?? licenseDetails.product_name,
+                plan_code: rpcDetails.plan_code ?? result.planCode ?? licenseDetails.plan_code,
+                plan_name: rpcDetails.plan_name ?? result.planName ?? licenseDetails.plan_name,
+                status: result.status || rpcDetails.status || 'active',
                 valid: true,
+                grace_period_ends: null,
                 localExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
             };
 
             set({
                 licenseDetails: updatedLicense,
-                licenseStatus: result.status,
+                licenseStatus: updatedLicense.status,
                 appStatus: 'ready',
                 gracePeriodEnds: null
             });
@@ -158,14 +173,16 @@ export const createLicenseMaintenanceActions = ({
 
             return {
                 success: true,
+                code: result.code,
                 message: result.message
             };
         }
 
-        Logger.warn('Falló la renovación:', result.message);
+        Logger.warn('Falló la revisión de licencia:', result.message);
 
         return {
             success: false,
+            code: result.code,
             message: result.message
         };
     }
