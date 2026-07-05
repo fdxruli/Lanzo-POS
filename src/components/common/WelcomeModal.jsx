@@ -285,7 +285,7 @@ DESCRIBE TU PROBLEMA:
             <div className="trial-zone">
               <ul className="trial-benefits">
                 <li><CheckCircle2 size={16} aria-hidden="true" /> Sin tarjeta de crédito</li>
-                <li><CheckCircle2 size={16} aria-hidden="true" /> Sin renovaciones</li>
+                <li><CheckCircle2 size={16} aria-hidden="true" /> 1 dispositivo local</li>
                 <li><CheckCircle2 size={16} aria-hidden="true" /> Uso local gratuito</li>
               </ul>
 
