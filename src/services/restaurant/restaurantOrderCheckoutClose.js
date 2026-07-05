@@ -36,7 +36,7 @@ const savePending = (payload, error = null) => {
   const next = {
     ...existing,
     ...payload,
-    retryCount: Number(existing.retryCount || payload.retryCount || 0),
+    retryCount: Number(payload.retryCount ?? existing.retryCount ?? 0),
     failedAt: new Date().toISOString(),
     lastError: error?.message || error?.code || String(error || 'REST_7_CLOSE_PENDING')
   };
