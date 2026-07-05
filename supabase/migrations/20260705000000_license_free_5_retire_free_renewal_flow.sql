@@ -1,16 +1,324 @@
 -- FASE LICENSE.FREE.5
 -- Retira la renovacion FREE como flujo principal.
--- La definicion de la RPC se aplica por SQL dinamico para conservar la firma
--- public.renew_license_free(text,text) sin depender de quoting externo.
+-- Mantiene public.renew_license_free(text,text) como RPC de compatibilidad
+-- sin extender vencimientos ni registrar renovaciones de 3 meses.
 
-do $license_free_5$
+create or replace function public.renew_license_free(
+  license_key_param text,
+  device_fingerprint_param text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path to ''
+as $function$
+declare
+  v_license record;
+  v_updated_license record;
+  v_device_authorized boolean := false;
+  v_now timestamptz := now();
+  v_period_id uuid;
+  v_previous_license_type text;
+  v_previous_expires_at timestamptz;
+  v_previous_duration_months integer;
+  v_previous_is_lifetime boolean;
+  v_product_name_corrected boolean := false;
 begin
-  execute convert_from(
-    decode(
-      'Y3JlYXRlIG9yIHJlcGxhY2UgZnVuY3Rpb24gcHVibGljLnJlbmV3X2xpY2Vuc2VfZnJlZSgKICBsaWNlbnNlX2tleV9wYXJhbSB0ZXh0LAogIGRldmljZV9maW5nZXJwcmludF9wYXJhbSB0ZXh0CikKcmV0dXJucyBqc29uYgpsYW5ndWFnZSBwbHBnc3FsCnNlY3VyaXR5IGRlZmluZXIKc2V0IHNlYXJjaF9wYXRoIHRvICcnCmFzICRmdW5jdGlvbiQKZGVjbGFyZQogIHZfbGljZW5zZSByZWNvcmQ7CiAgdl9kZXZpY2VfYXV0aG9yaXplZCBib29sZWFuIDo9IGZhbHNlOwogIHZfbm93IHRpbWVzdGFtcHR6IDo9IG5vdygpOwogIHZfcGVyaW9kX2lkIHV1aWQ7CiAgdl9wcmV2aW91c19saWNlbnNlX3R5cGUgdGV4dDsKICB2X3ByZXZpb3VzX2V4cGlyZXNfYXQgdGltZXN0YW1wdHo7CiAgdl9wcmV2aW91c19kdXJhdGlvbl9tb250aHMgaW50ZWdlcjsKYmVnaW4KICBzZWxlY3QgbC5pZCwgbC5saWNlbnNlX2tleSwgbC5wbGFuX2lkLCBsLnN0YXR1cywgbC5saWNlbnNlX3R5cGUsIGwuZHVyYXRpb25fbW9udGhzLCBsLmV4cGlyZXNfYXQsIGNvYWxlc2NlKGwuaXNfbGlmZXRpbWUsIGZhbHNlKSBhcyBpc19saWZldGltZSwgbC5wcm9kdWN0X25hbWUsIGwuZmVhdHVyZXMsIHAuY29kZSBhcyBwbGFuX2NvZGUsIHAubmFtZSBhcyBwbGFuX25hbWUKICBpbnRvIHZfbGljZW5zZQogIGZyb20gcHVibGljLmxpY2Vuc2VzIGwKICBsZWZ0IGpvaW4gcHVibGljLnBsYW5zIHAgb24gcC5pZCA9IGwucGxhbl9pZAogIHdoZXJlIGwubGljZW5zZV9rZXkgPSBsaWNlbnNlX2tleV9wYXJhbTsKCiAgaWYgdl9saWNlbnNlLmlkIGlzIG51bGwgdGhlbgogICAgcmV0dXJuIGpzb25iX2J1aWxkX29iamVjdCgnc3VjY2VzcycsIGZhbHNlLCAnY29kZScsICdMSUNFTlNFX05PVF9GT1VORCcsICdtZXNzYWdlJywgJ0xpY2VuY2lhIG5vIGVuY29udHJhZGEuJyk7CiAgZW5kIGlmOwoKICBzZWxlY3QgZXhpc3RzICgKICAgIHNlbGVjdCAxIGZyb20gcHVibGljLmxpY2Vuc2VfZGV2aWNlcyBkCiAgICB3aGVyZSBkLmxpY2Vuc2VfaWQgPSB2X2xpY2Vuc2UuaWQgYW5kIGQuZGV2aWNlX2ZpbmdlcnByaW50ID0gZGV2aWNlX2ZpbmdlcnByaW50X3BhcmFtIGFuZCBkLmlzX2FjdGl2ZSA9IHRydWUKICApIGludG8gdl9kZXZpY2VfYXV0aG9yaXplZDsKCiAgaWYgbm90IHZfZGV2aWNlX2F1dGhvcml6ZWQgdGhlbgogICAgcmV0dXJuIGpzb25iX2J1aWxkX29iamVjdCgnc3VjY2VzcycsIGZhbHNlLCAnY29kZScsICdERVZJQ0VfTk9UX0FVVEhPUklaRUQnLCAnbWVzc2FnZScsICdEaXNwb3NpdGl2byBubyBhdXRvcml6YWRvIHBhcmEgZXN0YSBsaWNlbmNpYS4nKTsKICBlbmQgaWY7CgogIGlmIGxvd2VyKGNvYWxlc2NlKHZfbGljZW5zZS5zdGF0dXMsICcnKSkgaW4gKCdzdXNwZW5kZWQnLCAnY2FuY2VsbGVkJywgJ3Jldm9rZWQnLCAnYmxvY2tlZCcpIHRoZW4KICAgIHJldHVybiBqc29uYl9idWlsZF9vYmplY3QoJ3N1Y2Nlc3MnLCBmYWxzZSwgJ2NvZGUnLCAnTElDRU5TRV9OT1RfQUNUSVZFJywgJ21lc3NhZ2UnLCAnTGEgbGljZW5jaWEgbm8gZXN0w6EgYWN0aXZhLicpOwogIGVuZCBpZjsKCiAgaWYgY29hbGVzY2Uodl9saWNlbnNlLnBsYW5fY29kZSwgJycpIGluICgncHJvX21vbnRobHknLCAnYmFzaWNfbW9udGhseScpIHRoZW4KICAgIHJldHVybiBqc29uYl9idWlsZF9vYmplY3QoJ3N1Y2Nlc3MnLCBmYWxzZSwgJ2NvZGUnLCAnUkVORVdBTF9OT1RfQVBQTElDQUJMRScsICdtZXNzYWdlJywgJ0VzdGEgbGljZW5jaWEgbm8gdXNhIHJlbm92YWNpw7NuIEZSRUUuJyk7CiAgZW5kIGlmOwoKICBpZiBjb2FsZXNjZSh2X2xpY2Vuc2UucGxhbl9jb2RlLCAnJykgPD4gJ2ZyZWVfdHJpYWwnIHRoZW4KICAgIHJldHVybiBqc29uYl9idWlsZF9vYmplY3QoJ3N1Y2Nlc3MnLCBmYWxzZSwgJ2NvZGUnLCAnUkVORVdBTF9OT1RfQVBQTElDQUJMRScsICdtZXNzYWdlJywgJ0VzdGEgbGljZW5jaWEgbm8gdXNhIHJlbm92YWNpw7NuIEZSRUUuJyk7CiAgZW5kIGlmOwoKICBpZiBsb3dlcihjb2FsZXNjZSh2X2xpY2Vuc2Uuc3RhdHVzLCAnJykpIG5vdCBpbiAoJ2FjdGl2ZScsICdleHBpcmVkJykgdGhlbgogICAgcmV0dXJuIGpzb25iX2J1aWxkX29iamVjdCgnc3VjY2VzcycsIGZhbHNlLCAnY29kZScsICdMSUNFTlNFX05PVF9BQ1RJVkUnLCAnbWVzc2FnZScsICdMYSBsaWNlbmNpYSBubyBlc3TDoSBhY3RpdmEuJyk7CiAgZW5kIGlmOwoKICBpZiBsb3dlcihjb2FsZXNjZSh2X2xpY2Vuc2UubGljZW5zZV90eXBlLCAnJykpID0gJ2ZyZWUnIGFuZCB2X2xpY2Vuc2UuaXNfbGlmZXRpbWUgPSB0cnVlIGFuZCB2X2xpY2Vuc2UuZXhwaXJlc19hdCBpcyBudWxsIHRoZW4KICAgIHJldHVybiBqc29uYl9idWlsZF9vYmplY3QoJ3N1Y2Nlc3MnLCB0cnVlLCAnY29kZScsICdGUkVFX0FMUkVBRFlfTElGRVRJTUUnLCAnbWVzc2FnZScsICdUdSBsaWNlbmNpYSBGUkVFIHlhIGVzIHBlcm1hbmVudGUuJywgJ3N0YXR1cycsICdhY3RpdmUnLCAnZXhwaXJlc19hdCcsIG51bGwsICduZXdfZXhwaXJ5JywgbnVsbCwgJ25ld0V4cGlyeScsIG51bGwsICdkdXJhdGlvbl9tb250aHMnLCBudWxsLCAnaXNfbGlmZXRpbWUnLCB0cnVlLCAnbGljZW5zZV90eXBlJywgJ2ZyZWUnLCAncHJvZHVjdF9uYW1lJywgY29hbGVzY2Uodl9saWNlbnNlLnByb2R1Y3RfbmFtZSwgJ0xhbnpvIFBPUyBGcmVlJyksICdwbGFuX2NvZGUnLCB2X2xpY2Vuc2UucGxhbl9jb2RlLCAncGxhbl9uYW1lJywgdl9saWNlbnNlLnBsYW5fbmFtZSwgJ2RldGFpbHMnLCBqc29uYl9idWlsZF9vYmplY3QoJ2xpY2Vuc2Vfa2V5Jywgdl9saWNlbnNlLmxpY2Vuc2Vfa2V5LCAnc3RhdHVzJywgJ2FjdGl2ZScsICdleHBpcmVzX2F0JywgbnVsbCwgJ2R1cmF0aW9uX21vbnRocycsIG51bGwsICdpc19saWZldGltZScsIHRydWUsICdsaWNlbnNlX3R5cGUnLCAnZnJlZScsICdwcm9kdWN0X25hbWUnLCBjb2FsZXNjZSh2X2xpY2Vuc2UucHJvZHVjdF9uYW1lLCAnTGFuem8gUE9TIEZyZWUnKSwgJ3BsYW5fY29kZScsIHZfbGljZW5zZS5wbGFuX2NvZGUsICdwbGFuX25hbWUnLCB2X2xpY2Vuc2UucGxhbl9uYW1lLCAnZmVhdHVyZXMnLCBjb2FsZXNjZSh2X2xpY2Vuc2UuZmVhdHVyZXMsICd7fSc6Ompzb25iKSkpOwogIGVuZCBpZjsKCiAgdl9wcmV2aW91c19saWNlbnNlX3R5cGUgOj0gdl9saWNlbnNlLmxpY2Vuc2VfdHlwZTsKICB2X3ByZXZpb3VzX2V4cGlyZXNfYXQgOj0gdl9saWNlbnNlLmV4cGlyZXNfYXQ7CiAgdl9wcmV2aW91c19kdXJhdGlvbl9tb250aHMgOj0gdl9saWNlbnNlLmR1cmF0aW9uX21vbnRoczsKCiAgdXBkYXRlIHB1YmxpYy5saWNlbnNlcwogIHNldCBsaWNlbnNlX3R5cGUgPSAnZnJlZScsIGR1cmF0aW9uX21vbnRocyA9IG51bGwsIGV4cGlyZXNfYXQgPSBudWxsLCBpc19saWZldGltZSA9IHRydWUsIHByb2R1Y3RfbmFtZSA9ICdMYW56byBQT1MgRnJlZScsIHN0YXR1cyA9ICdhY3RpdmUnCiAgd2hlcmUgaWQgPSB2X2xpY2Vuc2UuaWQ7CgogIHNlbGVjdCBscC5pZCBpbnRvIHZfcGVyaW9kX2lkIGZyb20gcHVibGljLmxpY2Vuc2VfcGVyaW9kcyBscCB3aGVyZSBscC5saWNlbnNlX2lkID0gdl9saWNlbnNlLmlkIG9yZGVyIGJ5IGxwLnN0YXJ0c19hdCBkZXNjLCBscC5jcmVhdGVkX2F0IGRlc2MgbGltaXQgMTsKCiAgaWYgdl9wZXJpb2RfaWQgaXMgbm90IG51bGwgdGhlbgogICAgdXBkYXRlIHB1YmxpYy5saWNlbnNlX3BlcmlvZHMKICAgIHNldCBwbGFuX2lkID0gdl9saWNlbnNlLnBsYW5faWQsIHBsYW5fY29kZV9zbmFwc2hvdCA9IHZfbGljZW5zZS5wbGFuX2NvZGUsIHBsYW5fbmFtZV9zbmFwc2hvdCA9IGNvYWxlc2NlKHZfbGljZW5zZS5wbGFuX25hbWUsICdQbGFuIEZyZWUnKSwgcGVyaW9kX3R5cGUgPSAndHJpYWwnLCBzdGF0dXMgPSAnYWN0aXZlJywgZW5kc19hdCA9IG51bGwsIGNsb3NlZF9hdCA9IG51bGwsIGFpX2FnZW50X2xpbWl0ID0gMCwgbWV0YWRhdGEgPSBjb2FsZXNjZShtZXRhZGF0YSwgJ3t9Jzo6anNvbmIpIHx8IGpzb25iX2J1aWxkX29iamVjdCgnc291cmNlJywgJ3JlbmV3X2xpY2Vuc2VfZnJlZV9jb21wYXQnLCAnbGljZW5zZV9raW5kJywgJ2ZyZWVfbGlmZXRpbWUnLCAnbGljZW5zZV90eXBlJywgJ2ZyZWUnLCAnaXNfbGlmZXRpbWUnLCB0cnVlLCAnZXhwaXJlc19hdCcsIG51bGwpCiAgICB3aGVyZSBpZCA9IHZfcGVyaW9kX2lkOwogIGVsc2UKICAgIGluc2VydCBpbnRvIHB1YmxpYy5saWNlbnNlX3BlcmlvZHMgKGxpY2Vuc2VfaWQsIHBsYW5faWQsIHBsYW5fY29kZV9zbmFwc2hvdCwgcGxhbl9uYW1lX3NuYXBzaG90LCBwZXJpb2RfdHlwZSwgc3RhdHVzLCBzdGFydHNfYXQsIGVuZHNfYXQsIGFpX2FnZW50X2xpbWl0LCBtZXRhZGF0YSkKICAgIHZhbHVlcyAodl9saWNlbnNlLmlkLCB2X2xpY2Vuc2UucGxhbl9pZCwgdl9saWNlbnNlLnBsYW5fY29kZSwgY29hbGVzY2Uodl9saWNlbnNlLnBsYW5fbmFtZSwgJ1BsYW4gRnJlZScpLCAndHJpYWwnLCAnYWN0aXZlJywgdl9ub3csIG51bGwsIDAsIGpzb25iX2J1aWxkX29iamVjdCgnc291cmNlJywgJ3JlbmV3X2xpY2Vuc2VfZnJlZV9jb21wYXQnLCAnbGljZW5zZV9raW5kJywgJ2ZyZWVfbGlmZXRpbWUnLCAnbGljZW5zZV90eXBlJywgJ2ZyZWUnLCAnaXNfbGlmZXRpbWUnLCB0cnVlLCAnZXhwaXJlc19hdCcsIG51bGwpKQogICAgcmV0dXJuaW5nIGlkIGludG8gdl9wZXJpb2RfaWQ7CiAgZW5kIGlmOwoKICB1cGRhdGUgcHVibGljLmxpY2Vuc2VfcGVyaW9kcyBzZXQgc3RhdHVzID0gJ2Nsb3NlZCcsIGNsb3NlZF9hdCA9IHZfbm93IHdoZXJlIGxpY2Vuc2VfaWQgPSB2X2xpY2Vuc2UuaWQgYW5kIGlkIDw+IHZfcGVyaW9kX2lkIGFuZCBzdGF0dXMgPSAnYWN0aXZlJzsKCiAgaW5zZXJ0IGludG8gcHVibGljLmxpY2Vuc2VfZXZlbnRzIChsaWNlbnNlX2tleSwgZXZlbnRfdHlwZSwgbWV0YWRhdGEpCiAgdmFsdWVzICh2X2xpY2Vuc2UubGljZW5zZV9rZXksICdGUkVFX0xJQ0VOU0VfTUlHUkFURURfTElGRVRJTUVfRlJPTV9SRU5FV0FMJywganNvbmJfYnVpbGRfb2JqZWN0KCdzb3VyY2UnLCAncmVuZXdfbGljZW5zZV9mcmVlX2NvbXBhdCcsICdmaW5nZXJwcmludCcsIGRldmljZV9maW5nZXJwcmludF9wYXJhbSwgJ3ByZXZpb3VzX2xpY2Vuc2VfdHlwZScsIHZfcHJldmlvdXNfbGljZW5zZV90eXBlLCAnbmV3X2xpY2Vuc2VfdHlwZScsICdmcmVlJywgJ3ByZXZpb3VzX2V4cGlyZXNfYXQnLCB2X3ByZXZpb3VzX2V4cGlyZXNfYXQsICduZXdfZXhwaXJlc19hdCcsIG51bGwsICdwcmV2aW91c19kdXJhdGlvbl9tb250aHMnLCB2X3ByZXZpb3VzX2R1cmF0aW9uX21vbnRocywgJ25ld19kdXJhdGlvbl9tb250aHMnLCBudWxsLCAnaXNfbGlmZXRpbWUnLCB0cnVlLCAncGVyaW9kX2lkJywgdl9wZXJpb2RfaWQsICdtaWdyYXRlZF9hdCcsIHZfbm93KSk7CgogIHJldHVybiBqc29uYl9idWlsZF9vYmplY3QoJ3N1Y2Nlc3MnLCB0cnVlLCAnY29kZScsICdGUkVFX01JR1JBVEVEX1RPX0xJRkVUSU1FJywgJ21lc3NhZ2UnLCAnVHUgbGljZW5jaWEgRlJFRSBhaG9yYSBlcyBwZXJtYW5lbnRlLicsICdzdGF0dXMnLCAnYWN0aXZlJywgJ2V4cGlyZXNfYXQnLCBudWxsLCAnbmV3X2V4cGlyeScsIG51bGwsICduZXdFeHBpcnknLCBudWxsLCAnZHVyYXRpb25fbW9udGhzJywgbnVsbCwgJ2lzX2xpZmV0aW1lJywgdHJ1ZSwgJ2xpY2Vuc2VfdHlwZScsICdmcmVlJywgJ3Byb2R1Y3RfbmFtZScsICdMYW56byBQT1MgRnJlZScsICdwbGFuX2NvZGUnLCB2X2xpY2Vuc2UucGxhbl9jb2RlLCAncGxhbl9uYW1lJywgdl9saWNlbnNlLnBsYW5fbmFtZSwgJ3BlcmlvZF9pZCcsIHZfcGVyaW9kX2lkLCAnZGV0YWlscycsIGpzb25iX2J1aWxkX29iamVjdCgnbGljZW5zZV9rZXknLCB2X2xpY2Vuc2UubGljZW5zZV9rZXksICdzdGF0dXMnLCAnYWN0aXZlJywgJ2V4cGlyZXNfYXQnLCBudWxsLCAnZHVyYXRpb25fbW9udGhzJywgbnVsbCwgJ2lzX2xpZmV0aW1lJywgdHJ1ZSwgJ2xpY2Vuc2VfdHlwZScsICdmcmVlJywgJ3Byb2R1Y3RfbmFtZScsICdMYW56byBQT1MgRnJlZScsICdwbGFuX2NvZGUnLCB2X2xpY2Vuc2UucGxhbl9jb2RlLCAncGxhbl9uYW1lJywgdl9saWNlbnNlLnBsYW5fbmFtZSwgJ3BlcmlvZF9pZCcsIHZfcGVyaW9kX2lkLCAnZmVhdHVyZXMnLCBjb2FsZXNjZSh2X2xpY2Vuc2UuZmVhdHVyZXMsICd7fSc6Ompzb25iKSkpOwpleGNlcHRpb24gd2hlbiBvdGhlcnMgdGhlbgogIHJldHVybiBqc29uYl9idWlsZF9vYmplY3QoJ3N1Y2Nlc3MnLCBmYWxzZSwgJ2NvZGUnLCAnRlJFRV9SRU5FV0FMX0NPTVBBVF9GQUlMRUQnLCAnbWVzc2FnZScsICdObyBzZSBwdWRvIHJldmlzYXIgbGEgbGljZW5jaWEgRlJFRS4nKTsKZW5kOwokZnVuY3Rpb24kOwo=',
-      'base64'
-    ),
-    'UTF8'
+  select
+    l.id,
+    l.license_key,
+    l.plan_id,
+    l.status,
+    l.license_type,
+    l.duration_months,
+    l.expires_at,
+    coalesce(l.is_lifetime, false) as is_lifetime,
+    l.product_name,
+    l.features,
+    p.code as plan_code,
+    p.name as plan_name
+  into v_license
+  from public.licenses l
+  left join public.plans p on p.id = l.plan_id
+  where l.license_key = license_key_param;
+
+  if v_license.id is null then
+    return jsonb_build_object(
+      'success', false,
+      'code', 'LICENSE_NOT_FOUND',
+      'message', 'Licencia no encontrada.'
+    );
+  end if;
+
+  select exists (
+    select 1
+    from public.license_devices d
+    where d.license_id = v_license.id
+      and d.device_fingerprint = device_fingerprint_param
+      and d.is_active = true
+  ) into v_device_authorized;
+
+  if not v_device_authorized then
+    return jsonb_build_object(
+      'success', false,
+      'code', 'DEVICE_NOT_AUTHORIZED',
+      'message', 'Dispositivo no autorizado para esta licencia.'
+    );
+  end if;
+
+  if lower(coalesce(v_license.status, '')) in ('suspended', 'cancelled', 'revoked', 'blocked', 'banned') then
+    return jsonb_build_object(
+      'success', false,
+      'code', 'LICENSE_NOT_ACTIVE',
+      'message', 'La licencia no está activa.'
+    );
+  end if;
+
+  if coalesce(v_license.plan_code, '') <> 'free_trial' then
+    return jsonb_build_object(
+      'success', false,
+      'code', 'RENEWAL_NOT_APPLICABLE',
+      'message', 'Esta licencia no usa renovación FREE.'
+    );
+  end if;
+
+  if lower(coalesce(v_license.status, '')) not in ('active', 'expired') then
+    return jsonb_build_object(
+      'success', false,
+      'code', 'LICENSE_NOT_ACTIVE',
+      'message', 'La licencia no está activa.'
+    );
+  end if;
+
+  if lower(coalesce(v_license.license_type, '')) = 'free'
+     and v_license.is_lifetime = true
+     and v_license.expires_at is null
+     and v_license.duration_months is null then
+    if coalesce(v_license.product_name, '') <> 'Lanzo POS Free' then
+      update public.licenses
+      set product_name = 'Lanzo POS Free'
+      where id = v_license.id;
+
+      v_product_name_corrected := true;
+    end if;
+
+    return jsonb_build_object(
+      'success', true,
+      'code', 'FREE_ALREADY_LIFETIME',
+      'message', 'Tu licencia FREE ya es permanente.',
+      'status', 'active',
+      'expires_at', null,
+      'new_expiry', null,
+      'newExpiry', null,
+      'duration_months', null,
+      'is_lifetime', true,
+      'license_type', 'free',
+      'product_name', 'Lanzo POS Free',
+      'plan_code', v_license.plan_code,
+      'plan_name', coalesce(v_license.plan_name, 'Plan Free'),
+      'product_name_corrected', v_product_name_corrected,
+      'details', jsonb_build_object(
+        'license_key', v_license.license_key,
+        'status', 'active',
+        'expires_at', null,
+        'duration_months', null,
+        'is_lifetime', true,
+        'license_type', 'free',
+        'product_name', 'Lanzo POS Free',
+        'plan_code', v_license.plan_code,
+        'plan_name', coalesce(v_license.plan_name, 'Plan Free'),
+        'features', coalesce(v_license.features, '{}'::jsonb)
+      )
+    );
+  end if;
+
+  v_previous_license_type := v_license.license_type;
+  v_previous_expires_at := v_license.expires_at;
+  v_previous_duration_months := v_license.duration_months;
+  v_previous_is_lifetime := v_license.is_lifetime;
+
+  update public.licenses
+  set
+    license_type = 'free',
+    duration_months = null,
+    expires_at = null,
+    is_lifetime = true,
+    product_name = 'Lanzo POS Free',
+    status = 'active'
+  where id = v_license.id;
+
+  select
+    l.id,
+    l.license_key,
+    l.plan_id,
+    l.status,
+    l.license_type,
+    l.duration_months,
+    l.expires_at,
+    coalesce(l.is_lifetime, false) as is_lifetime,
+    l.product_name,
+    l.features,
+    p.code as plan_code,
+    p.name as plan_name
+  into v_updated_license
+  from public.licenses l
+  left join public.plans p on p.id = l.plan_id
+  where l.id = v_license.id;
+
+  if lower(coalesce(v_updated_license.license_type, '')) <> 'free'
+     or v_updated_license.duration_months is not null
+     or v_updated_license.expires_at is not null
+     or v_updated_license.is_lifetime is not true
+     or coalesce(v_updated_license.product_name, '') <> 'Lanzo POS Free'
+     or lower(coalesce(v_updated_license.status, '')) <> 'active' then
+    update public.licenses
+    set
+      license_type = 'free',
+      duration_months = null,
+      expires_at = null,
+      is_lifetime = true,
+      product_name = 'Lanzo POS Free',
+      status = 'active'
+    where id = v_license.id;
+  end if;
+
+  select lp.id
+  into v_period_id
+  from public.license_periods lp
+  where lp.license_id = v_license.id
+    and lp.status = 'active'
+  order by lp.starts_at desc, lp.created_at desc
+  limit 1;
+
+  if v_period_id is null then
+    select lp.id
+    into v_period_id
+    from public.license_periods lp
+    where lp.license_id = v_license.id
+    order by lp.starts_at desc, lp.created_at desc
+    limit 1;
+  end if;
+
+  if v_period_id is not null then
+    update public.license_periods
+    set
+      plan_id = v_license.plan_id,
+      plan_code_snapshot = v_license.plan_code,
+      plan_name_snapshot = coalesce(v_license.plan_name, 'Plan Free'),
+      period_type = 'trial',
+      status = 'active',
+      ends_at = null,
+      closed_at = null,
+      ai_agent_limit = 0,
+      metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+        'source', 'renew_license_free_compat',
+        'license_kind', 'free_lifetime',
+        'license_type', 'free',
+        'is_lifetime', true,
+        'expires_at', null,
+        'previous_license_type', v_previous_license_type,
+        'previous_expires_at', v_previous_expires_at,
+        'previous_duration_months', v_previous_duration_months,
+        'previous_is_lifetime', v_previous_is_lifetime
+      )
+    where id = v_period_id;
+  else
+    insert into public.license_periods (
+      license_id,
+      plan_id,
+      plan_code_snapshot,
+      plan_name_snapshot,
+      period_type,
+      status,
+      starts_at,
+      ends_at,
+      ai_agent_limit,
+      metadata
+    )
+    values (
+      v_license.id,
+      v_license.plan_id,
+      v_license.plan_code,
+      coalesce(v_license.plan_name, 'Plan Free'),
+      'trial',
+      'active',
+      v_now,
+      null,
+      0,
+      jsonb_build_object(
+        'source', 'renew_license_free_compat',
+        'license_kind', 'free_lifetime',
+        'license_type', 'free',
+        'is_lifetime', true,
+        'expires_at', null,
+        'previous_active_period_missing', true
+      )
+    )
+    returning id into v_period_id;
+  end if;
+
+  update public.license_periods
+  set
+    status = 'closed',
+    closed_at = coalesce(closed_at, v_now)
+  where license_id = v_license.id
+    and id <> v_period_id
+    and status = 'active';
+
+  insert into public.license_events (license_key, event_type, metadata)
+  values (
+    v_license.license_key,
+    'FREE_LICENSE_MIGRATED_LIFETIME_FROM_RENEWAL',
+    jsonb_build_object(
+      'source', 'renew_license_free_compat',
+      'previous_license_type', v_previous_license_type,
+      'new_license_type', 'free',
+      'previous_expires_at', v_previous_expires_at,
+      'new_expires_at', null,
+      'previous_duration_months', v_previous_duration_months,
+      'new_duration_months', null,
+      'previous_is_lifetime', v_previous_is_lifetime,
+      'is_lifetime', true,
+      'device_fingerprint', device_fingerprint_param,
+      'migrated_at', v_now,
+      'period_id', v_period_id
+    )
+  );
+
+  return jsonb_build_object(
+    'success', true,
+    'code', 'FREE_MIGRATED_TO_LIFETIME',
+    'message', 'Tu licencia FREE ahora es permanente.',
+    'status', 'active',
+    'expires_at', null,
+    'new_expiry', null,
+    'newExpiry', null,
+    'duration_months', null,
+    'is_lifetime', true,
+    'license_type', 'free',
+    'product_name', 'Lanzo POS Free',
+    'plan_code', v_license.plan_code,
+    'plan_name', coalesce(v_license.plan_name, 'Plan Free'),
+    'period_id', v_period_id,
+    'details', jsonb_build_object(
+      'license_key', v_license.license_key,
+      'status', 'active',
+      'expires_at', null,
+      'duration_months', null,
+      'is_lifetime', true,
+      'license_type', 'free',
+      'product_name', 'Lanzo POS Free',
+      'plan_code', v_license.plan_code,
+      'plan_name', coalesce(v_license.plan_name, 'Plan Free'),
+      'period_id', v_period_id,
+      'features', coalesce(v_license.features, '{}'::jsonb)
+    )
+  );
+exception when others then
+  return jsonb_build_object(
+    'success', false,
+    'code', 'FREE_RENEWAL_COMPAT_FAILED',
+    'message', 'No se pudo revisar la licencia FREE.'
   );
 end;
-$license_free_5$;
+$function$;
