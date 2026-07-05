@@ -233,11 +233,11 @@
 
   /* Layout que ocupa toda la pantalla disponible */
   .pos-page-layout {
-    /* Descontamos Header + Ticker + márgenes para evitar scroll global */
-    height: calc(100vh - 130px);
-    height: calc(100dvh - 130px);
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
     overflow: hidden;
     padding: 0;
     margin: 0;
@@ -253,14 +253,12 @@
   /* Grid de dos columnas - OCUPA TODO EL ESPACIO */
   .pos-grid {
     display: grid;
-    grid-template-columns: 1fr 440px;
-    /* Resumen más ancho */
-    gap: 20px;
+    grid-template-columns: minmax(0, 1fr) clamp(390px, 31vw, 540px);
+    gap: 8px;
     flex: 1;
     min-height: 0;
     height: 100%;
-    padding: 0 24px 24px 24px;
-    /* Solo padding lateral y abajo */
+    padding: 0;
     overflow: hidden;
   }
 
@@ -287,8 +285,7 @@
 
 @media (min-width: 1440px) {
   .pos-page-layout {
-    height: calc(100vh - 130px);
-    height: calc(100dvh - 130px);
+    height: 100%;
   }
 
   .section-title {
@@ -297,10 +294,9 @@
   }
 
   .pos-grid {
-    grid-template-columns: 1fr 500px;
-    /* Resumen aún más ancho */
-    gap: 24px;
-    padding: 0 32px 32px 32px;
+    grid-template-columns: minmax(0, 1fr) clamp(430px, 30vw, 600px);
+    gap: 10px;
+    padding: 0;
   }
 }
 
