@@ -3,13 +3,18 @@ import {
   AlertTriangle,
   Bookmark,
   ChevronDown,
+  CheckCircle2,
+  CircleDot,
+  Clock,
   Columns2,
   CreditCard,
+  MapPin,
   Save,
   ShieldAlert,
   Table2,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -20,7 +25,10 @@ import {
   useRestaurantOrderCloudStatus
 } from '../../hooks/restaurant/useRestaurantOrderCloudStatus';
 import { db, STORES } from '../../services/db/dexie';
-import { isCartItemCancelledByKitchen } from '../../services/restaurant/restaurantOrderReconciliation';
+import {
+  getRestaurantCloudItemLocalLineId,
+  isCartItemCancelledByKitchen
+} from '../../services/restaurant/restaurantOrderReconciliation';
 import {
   applyKitchenCancelledItemsAdjustment,
   persistKitchenCancelledItemsAdjustment
@@ -29,6 +37,7 @@ import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
 import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
+import OrderDiscountPanel from './OrderDiscountPanel';
 import './OrderSummary.css';
 import './OrderSummaryRestInv2.css';
 
@@ -44,7 +53,36 @@ const generateStoreCode = (companyName) => {
   return word.length === 1 ? `${word}X` : word.substring(0, 2);
 };
 
-const getItemNotes = (item = {}) => item.notes || item.kitchenNotes || item.kitchen_notes || null;
+const normalizeRestaurantItemStatus = (status) => {
+  const normalized = String(status || 'pending').trim().toLowerCase();
+  if (normalized === 'open' || normalized === 'sent' || normalized === 'sent_to_kitchen') return 'pending';
+  if (normalized === 'completed') return 'delivered';
+  return normalized || 'pending';
+};
+
+const RESTAURANT_ITEM_STATUS_META = {
+  pending: { Icon: Clock, fallbackLabel: 'Pendiente' },
+  preparing: { Icon: CircleDot, fallbackLabel: 'Preparando' },
+  ready: { Icon: CheckCircle2, fallbackLabel: 'Listo' },
+  delivered: { Icon: CheckCircle2, fallbackLabel: 'Entregado' },
+  cancelled: { Icon: XCircle, fallbackLabel: 'Cancelado' },
+};
+
+const getRestaurantItemStatusMeta = (status) => (
+  RESTAURANT_ITEM_STATUS_META[status] || RESTAURANT_ITEM_STATUS_META.pending
+);
+
+const getRestaurantItemAreaName = (item = {}) => (
+  item.stationName
+  || item.station_name
+  || item.areaName
+  || item.area_name
+  || item.preparationAreaName
+  || item.preparation_area_name
+  || item.stationId
+  || item.station_id
+  || 'Cocina'
+);
 
 const renderModifierTags = (labels = [], keyPrefix = 'modifier') => (
   labels.map((label, index) => (
@@ -91,12 +129,20 @@ export default function OrderSummary({
     () => (Array.isArray(cloudStatus.items) ? cloudStatus.items : []),
     [cloudStatus.items]
   );
-  const showCloudStatusPanel = cloudStatus.isCloudStatusEnabled && (
-    cloudStatus.isLoading || cloudStatus.error || cloudStatus.cloudOrder
-  );
+  const cloudItemsByLineId = useMemo(() => {
+    const itemsByLineId = new Map();
+    cloudItems.forEach((item) => {
+      const lineId = getRestaurantCloudItemLocalLineId(item);
+      if (lineId && !itemsByLineId.has(lineId)) {
+        itemsByLineId.set(lineId, item);
+      }
+    });
+    return itemsByLineId;
+  }, [cloudItems]);
 
   const [estimatedFolio, setEstimatedFolio] = useState('');
   const [isAdjustingKitchenCancelledItems, setIsAdjustingKitchenCancelledItems] = useState(false);
+  const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false);
   const cancelledKitchenAdjustmentPreview = useMemo(
     () => applyKitchenCancelledItemsAdjustment({
       orderId: currentOrderId,
@@ -110,8 +156,6 @@ export default function OrderSummary({
     && cancelledKitchenAdjustmentPreview.success
     && !cancelledKitchenAdjustmentPreview.changed
   );
-  const showDetailedCloudItems = cloudItems.length > 0 && !isAccountAdjustedForKitchenCancelledItems;
-
   useEffect(() => {
     const fetchEstimatedFolio = async () => {
       try {
@@ -293,7 +337,7 @@ export default function OrderSummary({
 
   return (
     <div
-      className={`pos-order-container${isMobileModal ? ' pos-order-container--mobile' : ''}${isEditMode && showRestaurantActions ? ' pos-order-container--editing' : ''}`}
+      className={`pos-order-container${isMobileModal ? ' pos-order-container--mobile' : ''}${showRestaurantActions ? ' pos-order-container--restaurant' : ''}${isEditMode && showRestaurantActions ? ' pos-order-container--editing' : ''}`}
     >
       <header className="summary-header">
         <div className="summary-header-copy">
@@ -345,8 +389,23 @@ export default function OrderSummary({
             </button>
           )}
         </div>
+
+        {showRestaurantActions && (
+          <div className="table-identifier-field">
+            <label htmlFor="order-table-identifier">Mesa o identificador</label>
+            <input
+              id="order-table-identifier"
+              type="text"
+              className="table-identifier-input"
+              placeholder="Ej. Mesa 4, Barra o Juan"
+              value={tableData || ''}
+              onChange={(event) => setTableData(event.target.value)}
+            />
+          </div>
+        )}
       </header>
 
+      <div className={showRestaurantActions ? 'restaurant-order-scroll' : 'order-summary-main'}>
       {isEditMode && showRestaurantActions && (
         <div className="order-edit-notice" role="status">
           <AlertTriangle size={18} aria-hidden="true" />
@@ -356,168 +415,35 @@ export default function OrderSummary({
         </div>
       )}
 
-      {showCloudStatusPanel && (
-        <section
-          className={`order-cloud-status-panel${cloudStatus.hasCancelledItems && !isAccountAdjustedForKitchenCancelledItems ? ' order-cloud-status-panel--warning' : ''}${cloudStatus.isCancelled ? ' order-cloud-status-panel--danger' : ''}${cloudStatus.isReady ? ' order-cloud-status-panel--ready' : ''}${isAccountAdjustedForKitchenCancelledItems ? ' order-cloud-status-panel--compact' : ''}`}
-          aria-label="Estado de cocina cloud"
-        >
-          <div className="order-cloud-status-header">
-            <span className="order-cloud-status-title">Cocina cloud</span>
-            {cloudStatus.cloudOrder && (
-              <span className={`order-cloud-status-badge order-cloud-status-badge--${cloudStatus.status}`}>
-                {cloudStatus.isCancelled ? 'Comanda cancelada' : cloudStatus.statusLabel}
-              </span>
-            )}
-          </div>
-
-          {cloudStatus.isLoading && !cloudStatus.cloudOrder && (
-            <p className="order-cloud-status-copy">Verificando estado operativo…</p>
-          )}
-
-          {cloudStatus.error && (
-            <p className="order-cloud-status-copy order-cloud-status-copy--warning">
-              {cloudStatus.error}
-            </p>
-          )}
-
-          {cloudStatus.cloudOrder && (
-            <>
-              {cloudStatus.isReady && !cloudStatus.hasCancelledItems && (
-                <p className="order-cloud-status-copy">La comanda está lista en cocina.</p>
-              )}
-
-              {cloudStatus.hasPendingItems && (
-                <p className="order-cloud-status-copy order-cloud-status-copy--warning">
-                  Hay items pendientes en cocina. Confirma antes de cobrar.
-                </p>
-              )}
-
-              {cloudStatus.hasPreparingItems && (
-                <p className="order-cloud-status-copy order-cloud-status-copy--warning">
-                  Hay items en preparación. La comanda aún no está marcada como lista.
-                </p>
-              )}
-
-              {cloudStatus.hasCancelledItems && (
-                <div className="order-cloud-status-action-block">
-                  {isAccountAdjustedForKitchenCancelledItems ? (
-                    <>
-                      <p className="order-cloud-status-copy">
-                        Cuenta ajustada: los cancelados ya no están en el carrito a cobrar.
-                      </p>
-                      <span className="order-cloud-status-badge order-cloud-status-badge--ready">
-                        Cuenta ajustada
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <p className="order-cloud-status-copy order-cloud-status-copy--danger">
-                        Esta mesa tiene items cancelados en cocina. Puedes retirarlos de la cuenta antes de cobrar.
-                      </p>
-                      <button
-                        type="button"
-                        className="order-cloud-adjust-btn"
-                        onClick={handleRemoveKitchenCancelledItems}
-                        disabled={isAdjustingKitchenCancelledItems}
-                      >
-                        {isAdjustingKitchenCancelledItems ? 'Ajustando…' : 'Retirar cancelados'}
-                      </button>
-                      {cancelledKitchenAdjustmentPreview.code === 'KITCHEN_CANCELLED_ITEMS_UNMATCHED' && (
-                        <p className="order-cloud-status-copy order-cloud-status-copy--warning">
-                          Hay cancelaciones de cocina que no coinciden con una línea local. Revisa manualmente.
-                        </p>
-                      )}
-                      {cancelledKitchenAdjustmentPreview.code === 'KITCHEN_CANCELLED_ITEMS_EMPTY_ACCOUNT' && (
-                        <p className="order-cloud-status-copy order-cloud-status-copy--warning">
-                          Si retiras todo, la cuenta quedaría vacía. Anula la venta si cocina canceló toda la comanda.
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-
-              {showDetailedCloudItems && (
-                <div className="order-cloud-items-list">
-                  {cloudItems.map((item) => {
-                    const itemStatus = String(item?.status || 'pending').toLowerCase();
-                    const isCancelledItem = itemStatus === 'cancelled';
-                    const modifierLabels = formatSelectedModifiersForDisplay(item.selectedModifiers);
-                    const itemNotes = getItemNotes(item);
-                    const cloudItemKey = item.id
-                      || item.orderItemId
-                      || item.order_item_id
-                      || item.localLineId
-                      || item.local_line_id
-                      || item.lineId
-                      || item.line_id
-                      || item.cartItemId
-                      || `${item.productName || item.name || 'producto'}-${item.stationName || item.stationId || 'cocina'}-${itemStatus}-${item.quantity || 0}`;
-
-                    return (
-                      <div
-                        key={cloudItemKey}
-                        className={`order-cloud-item${isCancelledItem ? ' order-cloud-item--cancelled' : ''}`}
-                      >
-                        <div className="order-cloud-item-main">
-                          <span className="order-cloud-item-qty">{item.quantity}x</span>
-                          <span className="order-cloud-item-name">{item.productName || item.name || 'Producto'}</span>
-                        </div>
-
-                        {modifierLabels.length > 0 && (
-                          <div className="order-cloud-item-modifiers">
-                            <span className="order-cloud-item-detail-label">Extras:</span>
-                            {renderModifierTags(modifierLabels, cloudItemKey)}
-                          </div>
-                        )}
-
-                        {itemNotes && (
-                          <div className="order-cloud-item-note">Nota: {itemNotes}</div>
-                        )}
-
-                        <div className="order-cloud-item-meta">
-                          <span>{item.stationName || 'Cocina'}</span>
-                          <span className={`order-cloud-item-badge order-cloud-item-badge--${itemStatus}`}>
-                            {cloudStatus.getItemStatusLabel(itemStatus)}
-                          </span>
-                        </div>
-
-                        {isCancelledItem && (
-                          <div className="order-cloud-item-warning">Ajustar cuenta si aplica</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </section>
-      )}
-
-      {showRestaurantActions && (
-        <div className="table-identifier-field">
-          <label htmlFor="order-table-identifier">Mesa o identificador</label>
-          <input
-            id="order-table-identifier"
-            type="text"
-            className="table-identifier-input"
-            placeholder="Ej. Mesa 4, Barra o Juan"
-            value={tableData || ''}
-            onChange={(event) => setTableData(event.target.value)}
-          />
-        </div>
-      )}
 
       {order.length === 0 ? (
         <p className="empty-message">No hay productos en el pedido</p>
       ) : (
-        <>
           <div className="order-list">
             {order.map((item, index) => {
               const lineId = getCartLineId(item, index);
               const itemClasses = `order-item${item.exceedsStock ? ' exceeds-stock' : ''}`;
-              const isKitchenCancelled = isCartItemCancelledByKitchen(item, index, cloudItems);
+              const cloudItem = cloudItemsByLineId.get(String(lineId || '').trim()) || null;
+              const kitchenMetaItem = cloudItem || item;
+              const cloudItemStatus = normalizeRestaurantItemStatus(cloudItem?.status);
+              const statusMeta = getRestaurantItemStatusMeta(cloudItemStatus);
+              const StatusIcon = statusMeta.Icon;
+              const stationName = getRestaurantItemAreaName(kitchenMetaItem);
+              const statusLabel = cloudItem
+                ? cloudStatus.getItemStatusLabel(cloudItemStatus) || statusMeta.fallbackLabel
+                : statusMeta.fallbackLabel;
+              const hasKitchenArea = showRestaurantActions && Boolean(
+                cloudItem
+                || item.stationName
+                || item.station_name
+                || item.areaName
+                || item.area_name
+                || item.preparationAreaName
+                || item.preparation_area_name
+                || item.stationId
+                || item.station_id
+              );
+              const isKitchenCancelled = cloudItemStatus === 'cancelled' || isCartItemCancelledByKitchen(item, index, cloudItems);
               const modifierLabels = formatSelectedModifiersForDisplay(item.selectedModifiers);
               const quantity = item.quantity || 1;
               const lineTotal = item.price * quantity;
@@ -560,6 +486,23 @@ export default function OrderSummary({
                       ${item.price.toFixed(2)} {isUnitSale ? 'c/u' : 'por unidad'}
                     </div>
 
+                    {showRestaurantActions && (cloudItem || hasKitchenArea) && (
+                      <div className="order-item-kitchen-tags" aria-label="Estado de cocina">
+                        {hasKitchenArea && (
+                          <span className="order-item-kitchen-tag order-item-kitchen-tag--area">
+                            <MapPin size={13} aria-hidden="true" />
+                            {stationName}
+                          </span>
+                        )}
+                        {cloudItem && (
+                          <span className={`order-item-kitchen-tag order-item-kitchen-tag--${cloudItemStatus}`}>
+                            <StatusIcon size={13} aria-hidden="true" />
+                            {statusLabel}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {item.exceedsStock && (
                       <div className="stock-error-container">
                         <div className="stock-error-text">
@@ -582,8 +525,20 @@ export default function OrderSummary({
 
                     {isKitchenCancelled && (
                       <div className="order-item-kitchen-cancelled">
-                        <AlertTriangle size={15} aria-hidden="true" />
-                        Cancelado por cocina. Quitar de la cuenta antes de cobrar.
+                        <div className="order-item-kitchen-cancelled-copy">
+                          <AlertTriangle size={15} aria-hidden="true" />
+                          <span>Cancelado por cocina. Quitar de la cuenta antes de cobrar.</span>
+                        </div>
+                        {!isAccountAdjustedForKitchenCancelledItems && (
+                          <button
+                            type="button"
+                            className="order-item-kitchen-adjust-btn"
+                            onClick={handleRemoveKitchenCancelledItems}
+                            disabled={isAdjustingKitchenCancelledItems}
+                          >
+                            {isAdjustingKitchenCancelledItems ? 'Ajustando...' : 'Retirar'}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -639,12 +594,60 @@ export default function OrderSummary({
               );
             })}
           </div>
+      )}
 
+      </div>
+
+      {showRestaurantActions && order.length > 0 && isDiscountModalOpen && (
+        <div
+          className="order-discount-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="order-discount-modal-title"
+          onClick={() => setIsDiscountModalOpen(false)}
+        >
+          <div className="order-discount-modal-sheet" onClick={(event) => event.stopPropagation()}>
+            <header className="order-discount-modal-header">
+              <h3 id="order-discount-modal-title">Descuentos</h3>
+              <button
+                type="button"
+                className="order-discount-modal-close"
+                onClick={() => setIsDiscountModalOpen(false)}
+                aria-label="Cerrar descuentos"
+              >
+                <X size={22} aria-hidden="true" />
+              </button>
+            </header>
+
+            <OrderDiscountPanel compact restaurant embedded defaultExpanded />
+          </div>
+        </div>
+      )}
+
+      {order.length > 0 && (
           <footer className="order-checkout">
             <div className="order-total">
-              <span>Total</span>
+              <div className="order-total-copy">
+                <span>Total</span>
+                {showRestaurantActions && (
+                  <div className="order-discount-mobile-slot">
+                    <OrderDiscountPanel
+                      compact
+                      restaurant
+                      triggerOnly
+                      onOpen={() => setIsDiscountModalOpen(true)}
+                    />
+                  </div>
+                )}
+              </div>
               <span className="total-price">${total.toFixed(2)}</span>
             </div>
+
+            {showRestaurantActions && (
+              <div className="order-discount-desktop-slot">
+                <OrderDiscountPanel compact restaurant embedded />
+              </div>
+            )}
 
             <div className={`order-actions${showRestaurantActions ? ' order-actions--restaurant' : ''}`}>
               <button
@@ -702,7 +705,6 @@ export default function OrderSummary({
               </button>
             </div>
           </footer>
-        </>
       )}
     </div>
   );

@@ -1,6 +1,19 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import {
+  Ban,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  CreditCard,
+  Pencil,
+  ReceiptText,
+  Search,
+  Split,
+  UtensilsCrossed,
+  X
+} from 'lucide-react';
 import { db, STORES } from '../../services/db';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import {
@@ -14,6 +27,7 @@ import {
   persistKitchenCancelledItemsAdjustment
 } from '../../services/restaurant/restaurantOrderAccountAdjustment';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
+import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
 import './TablesView.css';
 
 const getTableLabel = (order) => {
@@ -55,6 +69,117 @@ const filterOrdersBySearch = (orders, searchTerm) => {
 
 const getCloudStatusClass = (status) => `table-cloud-status-badge--${String(status || 'pending').replace(/[^a-z0-9_-]/gi, '-')}`;
 
+const getLocalItemIdentity = (item = {}) => String(
+  item.lineId
+  || item.line_id
+  || item.cartItemId
+  || item.cart_item_id
+  || item.id
+  || item.productId
+  || item.product_id
+  || ''
+);
+
+const getCloudItemIdentity = (item = {}) => String(
+  item.orderItemId
+  || item.order_item_id
+  || item.localLineId
+  || item.local_line_id
+  || item.lineId
+  || item.line_id
+  || item.cartItemId
+  || item.cart_item_id
+  || item.productId
+  || item.product_id
+  || item.id
+  || ''
+);
+
+const normalizeItemName = (value) => String(value || '').trim().toLowerCase();
+
+const getItemQuantity = (item = {}) => Number(item.quantity ?? item.qty ?? 0) || 0;
+
+const getCloudItemName = (item = {}) => item.productName || item.product_name || item.name || 'Producto';
+
+const getCloudItemStation = (item = {}) => item.stationName || item.station_name || item.stationCode || item.station_code || 'Cocina';
+
+const getItemLineTotal = (item = {}) => {
+  const quantity = getItemQuantity(item);
+  const unitPrice = Number(item.price ?? item.unitPrice ?? item.unit_price ?? 0);
+  return unitPrice * quantity;
+};
+
+const getItemSelectedModifiers = (item = {}) => {
+  if (!item || typeof item !== 'object') return [];
+
+  const modifiers = item.selectedModifiers
+    || item.selected_modifiers
+    || item.metadata?.selectedModifiers
+    || item.metadata?.selected_modifiers;
+
+  return Array.isArray(modifiers) ? modifiers : [];
+};
+
+const getItemNotes = (item = {}) => String(
+  item && typeof item === 'object' ? (
+  item.notes
+  || item.kitchenNotes
+  || item.kitchen_notes
+  || item.specifications
+  || item.especificaciones
+  || ''
+  ) : ''
+).trim();
+
+const getRowModifierLabels = (item, cloudItem) => {
+  const localModifiers = getItemSelectedModifiers(item);
+  const cloudModifiers = getItemSelectedModifiers(cloudItem);
+  const selectedModifiers = localModifiers.length > 0 ? localModifiers : cloudModifiers;
+  return formatSelectedModifiersForDisplay(selectedModifiers);
+};
+
+const getRowNotes = (item, cloudItem) => getItemNotes(item) || getItemNotes(cloudItem);
+
+const mergeOrderItemsWithCloudStatus = (items, cloudItems) => {
+  const usedCloudIndexes = new Set();
+
+  const rows = items.map((item, index) => {
+    const localIdentity = getLocalItemIdentity(item);
+    const localName = normalizeItemName(item.name);
+    const localQty = getItemQuantity(item);
+    const cloudIndex = cloudItems.findIndex((cloudItem, candidateIndex) => {
+      if (usedCloudIndexes.has(candidateIndex)) return false;
+      const cloudIdentity = getCloudItemIdentity(cloudItem);
+      if (localIdentity && cloudIdentity && localIdentity === cloudIdentity) return true;
+      return localName
+        && normalizeItemName(getCloudItemName(cloudItem)) === localName
+        && getItemQuantity(cloudItem) === localQty;
+    });
+
+    const cloudItem = cloudIndex >= 0 ? cloudItems[cloudIndex] : null;
+    if (cloudIndex >= 0) usedCloudIndexes.add(cloudIndex);
+
+    return {
+      key: localIdentity || `${item.name || 'item'}-${index}`,
+      type: 'local',
+      item,
+      cloudItem
+    };
+  });
+
+  cloudItems.forEach((cloudItem, index) => {
+    if (usedCloudIndexes.has(index)) return;
+    rows.push({
+      key: getCloudItemIdentity(cloudItem) || `${getCloudItemName(cloudItem)}-cloud-${index}`,
+      type: 'cloud-only',
+      item: null,
+      cloudItem
+    });
+  });
+
+  return rows;
+};
+
 const dispatchRestaurantCloudStatusRefresh = () => {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(RESTAURANT_CLOUD_STATUS_EVENT));
@@ -73,19 +198,32 @@ const TableCard = ({
   adjustSubmitting = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const items = Array.isArray(order.items) ? order.items : [];
+  const orderId = order?.id;
+  const rawItems = order?.items;
+  const items = useMemo(
+    () => (Array.isArray(rawItems) ? rawItems : []),
+    [rawItems]
+  );
   const cloudStatus = useRestaurantOrderCloudStatus({
-    localOrderId: order?.id,
-    enabled: Boolean(order?.id)
+    localOrderId: orderId,
+    enabled: Boolean(orderId)
   });
-  const cloudItems = Array.isArray(cloudStatus.items) ? cloudStatus.items : [];
+  const rawCloudItems = cloudStatus.items;
+  const cloudItems = useMemo(
+    () => (Array.isArray(rawCloudItems) ? rawCloudItems : []),
+    [rawCloudItems]
+  );
+  const mergedOrderItems = useMemo(
+    () => mergeOrderItemsWithCloudStatus(items, cloudItems),
+    [cloudItems, items]
+  );
   const cancelledKitchenAdjustmentPreview = useMemo(
     () => applyKitchenCancelledItemsAdjustment({
-      orderId: order?.id,
+      orderId,
       orderItems: items,
       cloudItems
     }),
-    [cloudItems, items, order?.id]
+    [cloudItems, items, orderId]
   );
   const isAccountAdjustedForKitchenCancelledItems = Boolean(
     cloudStatus.hasCancelledItems
@@ -94,10 +232,11 @@ const TableCard = ({
   );
   const isKitchenCancelled = cancelledFromKitchen || cloudStatus.isCancelled;
   const showCloudPanel = cloudStatus.isCloudStatusEnabled && (
-    cloudStatus.isLoading || cloudStatus.error || cloudStatus.cloudOrder
+    (cloudStatus.isLoading && !cloudStatus.cloudOrder)
+    || cloudStatus.error
+    || (cloudStatus.hasCancelledItems && !isAccountAdjustedForKitchenCancelledItems)
   );
-  const hasCloudItems = cloudStatus.cloudOrder && cloudItems.length > 0;
-  const showProductsToggle = items.length > 0 || hasCloudItems;
+  const showProductsToggle = mergedOrderItems.length > 0;
 
   const handleToggleAccordion = (e) => {
     e.stopPropagation();
@@ -115,152 +254,116 @@ const TableCard = ({
         order.requiresReview ? 'table-card--requires-review' : ''
       ].filter(Boolean).join(' ')}
     >
-      {isKitchenCancelled && (
-        <div className="table-card-kitchen-banner" role="status">
-          Cancelada desde cocina: esta comanda ya no se prepara. Use &quot;Anular venta&quot; para
-          cerrarla en sistema o abra en POS si debe ajustar cobro.
-        </div>
-      )}
-      {order.requiresReview && !cancelledFromKitchen && (
-        <div className="table-card-review-banner" role="status">
-          {order.reviewReason || 'Orden inactiva. Revise si debe cobrarse o anularse.'}
-        </div>
-      )}
-      {/* ERROR CORREGIDO: Se eliminó el onClick del body para evitar toques accidentales al hacer scroll en móvil */}
       <div className="table-card-body">
+        <div className="table-card-topline">
+          <span className="table-card-kicker">
+            <UtensilsCrossed size={14} aria-hidden="true" />
+            Mesa activa
+          </span>
+          <span className="table-time">
+            <Clock3 size={13} aria-hidden="true" />
+            {formatOrderDate(order.updatedAt || order.timestamp)}
+          </span>
+        </div>
+
         <div className="table-card-title">
           <h3>{getTableLabel(order)}</h3>
-          <span className="table-time">{formatOrderDate(order.updatedAt || order.timestamp)}</span>
-        </div>
-        <div className="table-card-stats">
-          <div className="stat-item">
-            <span className="stat-label">Items</span>
-            <span className="stat-value">{getItemsCount(order.items)}</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-label">Total</span>
-            <span className="stat-value total-highlight">${formatCurrency(order.total)}</span>
-          </div>
-        </div>
-
-        {showCloudPanel && (
-          <div className="table-cloud-status" role={cloudStatus.error ? 'alert' : 'status'}>
-            {cloudStatus.isLoading && !cloudStatus.cloudOrder && (
-              <span className="table-cloud-status-muted">Verificando cocina cloud…</span>
-            )}
-            {cloudStatus.error && (
-              <span className="table-cloud-status-warning">{cloudStatus.error}</span>
-            )}
-            {cloudStatus.cloudOrder && (
-              <>
-                <div className="table-cloud-status-row">
-                  <span className={`table-cloud-status-badge ${getCloudStatusClass(cloudStatus.status)}`}>
-                    {cloudStatus.isCancelled ? 'Comanda cancelada' : cloudStatus.statusLabel}
-                  </span>
-                  {cloudStatus.hasCancelledItems && !isAccountAdjustedForKitchenCancelledItems && (
-                    <span className="table-cloud-status-badge table-cloud-status-badge--cancelled-items">
-                      Con items cancelados
-                    </span>
-                  )}
-                  {isAccountAdjustedForKitchenCancelledItems && (
-                    <span className="table-cloud-status-badge table-cloud-status-badge--ready">
-                      Cuenta ajustada
-                    </span>
-                  )}
-                </div>
-                {cloudStatus.isReady && !cloudStatus.hasCancelledItems && (
-                  <p className="table-cloud-status-hint">Lista para entregar/cobrar.</p>
-                )}
-                {cloudStatus.hasCancelledItems && (
-                  isAccountAdjustedForKitchenCancelledItems ? (
-                    <p className="table-cloud-status-hint">
-                      Cuenta ajustada: los items cancelados ya fueron retirados de la cuenta local.
-                    </p>
-                  ) : (
-                    <>
-                      <p className="table-cloud-status-hint table-cloud-status-hint--warning">
-                        Cocina canceló {cloudStatus.cancelledItems.length} item(s). Puedes retirarlos de la cuenta antes de cobrar.
-                      </p>
-                      <button
-                        type="button"
-                        className="table-cloud-adjust-btn"
-                        disabled={adjustSubmitting}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAdjustKitchenCancelled?.(order);
-                        }}
-                      >
-                        {adjustSubmitting ? 'Ajustando…' : 'Retirar cancelados de la cuenta'}
-                      </button>
-                    </>
-                  )
-                )}
-                {cloudStatus.isCancelled && (
-                  <p className="table-cloud-status-hint table-cloud-status-hint--danger">
-                    Todos los items activos fueron cancelados en cocina.
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      {showProductsToggle && (
-        <button
-          type="button"
-          className="btn-accordion-toggle"
-          onClick={handleToggleAccordion}
-        >
-          {isExpanded ? 'Ocultar productos ▲' : 'Ver productos ▼'}
-        </button>
-      )}
-
-      <div className={`table-card-accordion ${isExpanded ? 'expanded' : ''}`}>
-        <div className="accordion-items-list">
-          {items.length > 0 && (
-            <div className="accordion-local-items">
-              {items.map((item, idx) => (
-                <div key={`${item.id}-${idx}`} className="accordion-item-row">
-                  <span className="item-qty">{item.quantity}x</span>
-                  <span className="item-name">{item.name}</span>
-                  <span className="item-price">${formatCurrency(item.price * item.quantity)}</span>
-                </div>
-              ))}
-            </div>
+          {cloudStatus.cloudOrder && (
+            <span className={`table-cloud-status-badge ${getCloudStatusClass(cloudStatus.status)}`}>
+              {cloudStatus.isCancelled ? 'Cancelada' : cloudStatus.statusLabel}
+            </span>
           )}
+        </div>
 
-          {hasCloudItems && (
-            <div className="accordion-cloud-items">
-              <div className="accordion-cloud-title">Estado de cocina cloud</div>
-              {cloudItems.map((item) => {
-                const statusLabel = cloudStatus.getItemStatusLabel(item?.status);
-                const itemStatus = String(item?.status || 'pending').toLowerCase();
+        <div className="table-card-command-panel">
+          <div className="table-card-stats">
+            <div className="stat-item">
+              <span className="stat-label">Productos</span>
+              <span className="stat-value">{getItemsCount(order.items)}</span>
+            </div>
+            <div className="stat-item stat-item--total">
+              <span className="stat-label">Total</span>
+              <span className="stat-value total-highlight">${formatCurrency(order.total)}</span>
+            </div>
+            {showProductsToggle && (
+              <button
+                type="button"
+                className="btn-accordion-toggle btn-accordion-toggle--stats"
+                onClick={handleToggleAccordion}
+                aria-expanded={isExpanded}
+              >
+                <ReceiptText size={16} aria-hidden="true" />
+                <span>{isExpanded ? 'Ocultar comanda' : 'Ver comanda'}</span>
+                {isExpanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+              </button>
+            )}
+          </div>
+
+          <div className={`table-card-accordion ${isExpanded ? 'expanded' : ''}`}>
+            <div className="accordion-items-list">
+              {mergedOrderItems.map((row, index) => {
+                const displayItem = row.item || row.cloudItem || {};
+                const cloudItem = row.cloudItem;
+                const itemStatus = cloudItem ? String(cloudItem?.status || 'pending').toLowerCase() : 'local';
+                const statusLabel = cloudItem ? cloudStatus.getItemStatusLabel(cloudItem?.status) : 'En cuenta';
                 const isCancelledItem = itemStatus === 'cancelled';
-                const cloudItemKey = item.id
-                  || item.orderItemId
-                  || item.order_item_id
-                  || item.localLineId
-                  || item.local_line_id
-                  || item.lineId
-                  || item.line_id
-                  || item.cartItemId
-                  || `${item.productName || item.name || 'producto'}-${item.stationName || item.stationId || 'cocina'}-${itemStatus}-${item.quantity || 0}`;
+                const quantity = getItemQuantity(displayItem);
+                const itemName = row.item?.name || getCloudItemName(cloudItem);
+                const lineTotal = row.item ? getItemLineTotal(row.item) : null;
+                const modifierLabels = getRowModifierLabels(row.item, cloudItem);
+                const itemNotes = getRowNotes(row.item, cloudItem);
+
                 return (
                   <div
-                    key={cloudItemKey}
-                    className={`accordion-cloud-item-row${isCancelledItem ? ' accordion-cloud-item-row--cancelled' : ''}`}
+                    key={row.key || index}
+                    className={[
+                      'accordion-item-row',
+                      row.type === 'cloud-only' ? 'accordion-item-row--cloud-only' : '',
+                      isCancelledItem ? 'accordion-item-row--cancelled' : ''
+                    ].filter(Boolean).join(' ')}
                   >
-                    <div className="accordion-cloud-item-main">
-                      <span className="item-qty">{item.quantity}x</span>
-                      <span className="item-name">{item.productName || item.name || 'Producto'}</span>
+                    <div className="accordion-item-main">
+                      <span className="item-qty">{quantity || 1}x</span>
+                      <span className="item-name">{itemName}</span>
+                      {lineTotal !== null && (
+                        <span className="item-price">${formatCurrency(lineTotal)}</span>
+                      )}
                     </div>
-                    <div className="accordion-cloud-item-meta">
-                      <span>{item.stationName || item.station_code || 'Cocina'}</span>
+
+                    {(modifierLabels.length > 0 || itemNotes) && (
+                      <div className="accordion-item-details">
+                        {modifierLabels.length > 0 && (
+                          <div className="accordion-item-modifiers" aria-label="Extras seleccionados">
+                            <span className="accordion-item-details-label">Extras</span>
+                            <div className="accordion-item-modifier-tags">
+                              {modifierLabels.map((label, modifierIndex) => (
+                                <span
+                                  key={`${row.key || index}-modifier-${label}-${modifierIndex}`}
+                                  className="accordion-item-modifier-tag"
+                                >
+                                  {label}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {itemNotes && (
+                          <div className="accordion-item-note">
+                            <span className="accordion-item-details-label">Nota</span>
+                            <span>{itemNotes}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="accordion-item-meta">
+                      {cloudItem && <span className="item-station">{getCloudItemStation(cloudItem)}</span>}
                       <span className={`table-cloud-item-badge table-cloud-item-badge--${itemStatus}`}>
                         {statusLabel}
                       </span>
                     </div>
+
                     {isCancelledItem && (
                       <div className="accordion-cloud-item-warning">
                         {isAccountAdjustedForKitchenCancelledItems
@@ -272,8 +375,51 @@ const TableCard = ({
                 );
               })}
             </div>
-          )}
+          </div>
         </div>
+
+        {isKitchenCancelled && (
+          <div className="table-card-kitchen-banner" role="status">
+            <Ban size={16} aria-hidden="true" />
+            <span>Cancelada desde cocina. Anula la venta o abre POS para corregir cobro.</span>
+          </div>
+        )}
+        {order.requiresReview && !cancelledFromKitchen && (
+          <div className="table-card-review-banner" role="status">
+            <Ban size={16} aria-hidden="true" />
+            <span>{order.reviewReason || 'Orden inactiva. Revise si debe cobrarse o anularse.'}</span>
+          </div>
+        )}
+
+        {showCloudPanel && (
+          <div className="table-cloud-status table-cloud-status--compact" role={cloudStatus.error ? 'alert' : 'status'}>
+            {cloudStatus.isLoading && !cloudStatus.cloudOrder && (
+              <span className="table-cloud-status-muted">Sincronizando cocina cloud...</span>
+            )}
+            {cloudStatus.error && (
+              <span className="table-cloud-status-warning">{cloudStatus.error}</span>
+            )}
+            {cloudStatus.hasCancelledItems && !isAccountAdjustedForKitchenCancelledItems && (
+              <>
+                <p className="table-cloud-status-hint table-cloud-status-hint--warning">
+                  Cocina canceló {cloudStatus.cancelledItems.length} item(s). Puedes retirarlos de la cuenta antes de cobrar.
+                </p>
+                <button
+                  type="button"
+                  className="table-cloud-adjust-btn"
+                  disabled={adjustSubmitting}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAdjustKitchenCancelled?.(order);
+                  }}
+                >
+                  {adjustSubmitting ? 'Ajustando...' : 'Retirar cancelados'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
       </div>
 
       <div
@@ -289,7 +435,8 @@ const TableCard = ({
               onAnnulKitchenRejected(order);
             }}
           >
-            {annulSubmitting ? 'Anulando…' : 'Anular venta'}
+            <Ban size={16} aria-hidden="true" />
+            {annulSubmitting ? 'Anulando...' : 'Anular venta'}
           </button>
         )}
         <button
@@ -300,6 +447,7 @@ const TableCard = ({
             onSelectOrder?.(order.id);
           }}
         >
+          <Pencil size={16} aria-hidden="true" />
           {cancelledFromKitchen ? 'Abrir en POS' : 'Editar / Añadir'}
         </button>
 
@@ -313,6 +461,7 @@ const TableCard = ({
                 onSplitOrder?.(order);
               }}
             >
+              <Split size={16} aria-hidden="true" />
               Separar
             </button>
             <button
@@ -323,6 +472,7 @@ const TableCard = ({
                 onCheckoutOrder?.(order);
               }}
             >
+              <CreditCard size={16} aria-hidden="true" />
               Cobrar
             </button>
           </>
@@ -592,21 +742,27 @@ export default function TablesView({
         aria-labelledby="tables-modal-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="tables-modal-handle" aria-hidden="true" />
         <div className="tables-modal-shell">
           <header className="tables-header">
             <div className="tables-header-info">
-              <h2 id="tables-modal-title">Mesas</h2>
-              <p className="tables-header-summary">
-                En servicio: {filteredInService.length}
+              <div className="tables-title-block">
+                <span className="tables-header-kicker">Restaurante</span>
+                <h2 id="tables-modal-title">Mesas activas</h2>
+              </div>
+              <div className="tables-header-summary" aria-label="Resumen de mesas">
+                <span className="tables-summary-chip tables-summary-chip--active">
+                  <UtensilsCrossed size={15} aria-hidden="true" />
+                  {filteredInService.length} en servicio
+                </span>
                 {ordersCancelledInKitchen.length > 0 && (
-                  <>
-                    {' '}
-                    · Rechazadas en cocina: {filteredCancelledKitchen.length}
-                  </>
+                  <span className="tables-summary-chip tables-summary-chip--danger">
+                    <Ban size={15} aria-hidden="true" />
+                    {filteredCancelledKitchen.length} rechazadas
+                  </span>
                 )}
-              </p>
+              </div>
               <div className="tables-search-container">
+                <Search size={17} aria-hidden="true" />
                 <input
                   type="search"
                   enterKeyHint="search"
@@ -621,9 +777,10 @@ export default function TablesView({
             <button
               type="button"
               className="btn-cancel tables-modal-close"
+              aria-label="Cerrar mesas"
               onClick={onClose}
             >
-              Cerrar
+              <X size={18} aria-hidden="true" />
             </button>
           </header>
 

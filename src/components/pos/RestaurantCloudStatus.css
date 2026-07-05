@@ -332,3 +332,29 @@
     padding-right: 2px;
   }
 }
+
+.pos-order-container--restaurant .order-cloud-status-panel {
+  margin: 10px 12px 0;
+  padding: 10px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+}
+
+.pos-order-container--restaurant .order-cloud-status-header {
+  align-items: flex-start;
+}
+
+.pos-order-container--restaurant .order-cloud-status-copy {
+  font-size: 0.76rem;
+}
+
+.pos-order-container--restaurant .order-cloud-items-list {
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
+
+.pos-order-container--restaurant .order-cloud-item {
+  padding: 8px 9px;
+  border-radius: 8px;
+}

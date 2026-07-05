@@ -1,6 +1,8 @@
 .pos-summary-stack,
 .mobile-pos-cart-stack {
   display: flex;
+  width: 100%;
+  min-width: 0;
   flex-direction: column;
   min-height: 0;
   height: 100%;
@@ -11,6 +13,16 @@
 .mobile-pos-cart-stack > .pos-order-container {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.order-discount-desktop-slot {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.order-discount-mobile-slot {
+  display: none;
 }
 
 .order-discount-panel {
@@ -24,6 +36,197 @@
 
 .order-discount-panel--compact {
   margin: 8px 10px 10px;
+}
+
+.order-discount-panel--restaurant {
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.order-discount-panel--embedded {
+  flex: 0 0 auto;
+  margin: 10px 12px 12px;
+  max-height: none;
+  overflow: visible;
+}
+
+.order-checkout > .order-discount-desktop-slot {
+  padding: 0 12px 8px;
+}
+
+.order-checkout > .order-discount-desktop-slot .order-discount-panel--embedded {
+  margin: 0;
+  padding: 7px 9px;
+  background: color-mix(in srgb, var(--card-background-color) 88%, var(--order-primary-soft, #eef2ff));
+  border-color: color-mix(in srgb, var(--border-color) 78%, transparent);
+  box-shadow: none;
+}
+
+.order-checkout > .order-discount-desktop-slot .order-discount-accordion-trigger {
+  min-height: 30px;
+}
+
+.order-checkout > .order-discount-desktop-slot .order-discount-accordion-trigger strong {
+  font-size: 0.78rem;
+}
+
+.order-checkout > .order-discount-desktop-slot .order-discount-accordion-trigger small {
+  font-size: 0.7rem;
+}
+
+.order-checkout > .order-discount-desktop-slot .order-discount-content {
+  max-height: min(32vh, 260px);
+  overflow-y: auto;
+  padding-top: 6px;
+}
+
+.order-discount-mobile-trigger {
+  display: inline-flex;
+  width: auto;
+  min-height: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0;
+  color: var(--order-primary-hover, var(--primary-hover, #4f46e5));
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: left;
+}
+
+.order-discount-mobile-trigger small {
+  color: var(--ui-text-warning, #a16207);
+  font-size: 0.76rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-discount-modal {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal-base, 1000) + 6);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.order-discount-modal-sheet {
+  display: flex;
+  width: 100%;
+  max-height: min(78vh, 620px);
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-dark);
+  background: var(--card-background-color);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -18px 36px rgba(15, 23, 42, 0.22);
+}
+
+.order-discount-modal-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.order-discount-modal-header h3 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 1rem;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.order-discount-modal-close {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  color: var(--text-dark);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.order-discount-modal-sheet .order-discount-panel {
+  min-height: 0;
+  margin: 0;
+  padding: 12px 14px 16px;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.order-discount-modal-sheet .order-discount-accordion-trigger {
+  display: none;
+}
+
+.order-discount-modal-sheet .order-discount-content {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.order-discount-accordion-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  color: var(--text-dark);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.order-discount-accordion-trigger span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.order-discount-accordion-trigger strong {
+  font-size: 0.9rem;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.order-discount-accordion-trigger small {
+  color: var(--text-light);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.order-discount-accordion-trigger svg {
+  flex: 0 0 auto;
+  color: var(--text-light);
+  transition: transform 0.16s ease;
+}
+
+.order-discount-panel--expanded .order-discount-accordion-trigger svg {
+  transform: rotate(180deg);
+}
+
+.order-discount-content {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
 }
 
 .order-discount-totals,
@@ -170,9 +373,74 @@
   flex: 1 1 100%;
 }
 
+.order-discount-panel--restaurant .order-discount-row,
+.order-discount-panel--restaurant .order-line-discount-item {
+  font-size: 0.78rem;
+}
+
+.order-discount-panel--restaurant .order-discount-accordion-trigger {
+  min-height: 36px;
+}
+
+.order-discount-panel--restaurant .order-discount-accordion-trigger strong {
+  font-size: 0.82rem;
+}
+
+.order-discount-panel--restaurant .order-discount-content {
+  padding-top: 7px;
+}
+
+.order-discount-panel--restaurant .order-discount-row--total {
+  font-size: 0.9rem;
+}
+
+.order-discount-panel--restaurant .order-discount-actions,
+.order-discount-panel--restaurant .order-line-discount-actions {
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.order-discount-panel--restaurant .order-discount-btn {
+  min-height: 34px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  font-size: 0.76rem;
+}
+
+.order-discount-panel--restaurant .order-line-discounts-title {
+  letter-spacing: 0;
+}
+
+.order-discount-panel--restaurant .order-line-discount-form {
+  gap: 6px;
+}
+
+.order-discount-panel--restaurant .order-discount-form input,
+.order-discount-panel--restaurant .order-discount-form select,
+.order-discount-panel--restaurant .order-line-discount-form input,
+.order-discount-panel--restaurant .order-line-discount-form select {
+  min-height: 34px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+}
+
 @media (max-width: 1023px) {
   .pos-grid > .pos-summary-stack {
     display: none;
+  }
+
+  .pos-order-container--restaurant .order-discount-desktop-slot {
+    display: none;
+  }
+
+  .pos-order-container--restaurant .order-discount-mobile-slot {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .order-discount-modal {
+    display: flex;
   }
 }
 

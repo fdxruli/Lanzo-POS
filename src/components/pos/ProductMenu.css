@@ -615,6 +615,11 @@
 }
 
 @media (min-width: 1024px) {
+  .pos-menu-container {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
   .pos-menu-heading {
     margin-bottom: 10px;
   }

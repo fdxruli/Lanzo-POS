@@ -110,7 +110,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         showOutofStockCategory={data.hasOutOfStockItems}
                         showExpiredCategory={data.hasExpiredItems}
                     />
-                    <div className="pos-summary-stack">
+                    <div className={`pos-summary-stack${features.hasTables ? ' pos-summary-stack--restaurant' : ''}`}>
                         <OrderSummary
                             onOpenPayment={actions.handleInitiateCheckout}
                             onOpenSplit={actions.handleOpenSplitBill}
@@ -122,7 +122,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                             activeTablesCount={data.activeTablesCount}
                             kitchenRejectedOpenCount={data.kitchenRejectedOpenCount}
                         />
-                        <OrderDiscountPanel />
+                        {!features.hasTables && <OrderDiscountPanel />}
                     </div>
                 </div>
             </div>

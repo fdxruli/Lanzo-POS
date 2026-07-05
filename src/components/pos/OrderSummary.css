@@ -31,9 +31,24 @@
   box-shadow: none;
 }
 
+.order-summary-main {
+  display: contents;
+}
+
+.restaurant-order-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .summary-header {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -42,6 +57,7 @@
 }
 
 .summary-header-copy {
+  flex: 1 1 190px;
   min-width: 0;
 }
 
@@ -157,9 +173,15 @@
 }
 
 .table-identifier-field {
-  flex: 0 0 auto;
+  flex: 1 1 100%;
+  width: 100%;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
+}
+
+.summary-header .table-identifier-field {
+  padding: 0;
+  border: 0;
 }
 
 .table-identifier-field label {
@@ -300,6 +322,61 @@
   font-variant-numeric: tabular-nums;
 }
 
+.order-item-kitchen-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.order-item-kitchen-tag {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 26px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  color: var(--text-light);
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.order-item-kitchen-tag--area {
+  color: var(--order-primary-hover);
+  background: color-mix(in srgb, var(--order-primary) 8%, var(--card-background-color));
+  border-color: color-mix(in srgb, var(--order-primary) 28%, var(--border-color));
+}
+
+.order-item-kitchen-tag--pending {
+  color: #075985;
+  background: #e0f2fe;
+  border-color: #bae6fd;
+}
+
+.order-item-kitchen-tag--preparing {
+  color: #7c2d12;
+  background: #ffedd5;
+  border-color: #fed7aa;
+}
+
+.order-item-kitchen-tag--ready,
+.order-item-kitchen-tag--delivered {
+  color: #14532d;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+
+.order-item-kitchen-tag--cancelled {
+  color: #7f1d1d;
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+
 .order-item-controls {
   display: grid;
   grid-template-columns: 44px minmax(42px, auto) 44px;
@@ -429,7 +506,9 @@
 
 .order-item-kitchen-cancelled {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   margin-top: 10px;
   padding: 8px 10px;
@@ -440,6 +519,37 @@
   font-size: 0.74rem;
   font-weight: 800;
   line-height: 1.3;
+}
+
+.order-item-kitchen-cancelled-copy {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 170px;
+  align-items: center;
+  gap: 6px;
+}
+
+.order-item-kitchen-cancelled-copy svg {
+  flex: 0 0 auto;
+}
+
+.order-item-kitchen-adjust-btn {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 10px;
+  color: #991b1b;
+  background: var(--card-background-color);
+  border: 1px solid #fca5a5;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.order-item-kitchen-adjust-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .order-checkout {
@@ -461,7 +571,15 @@
   min-width: 0;
 }
 
+.order-total-copy {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 3px;
+}
+
 .total-price {
+  flex: 0 0 auto;
   min-width: 0;
   color: var(--order-primary-hover);
   font-size: 1.55rem;
@@ -630,7 +748,8 @@
 /* Desktop adopts the denser "Panel de Caja" direction. */
 @media (min-width: 1024px) {
   .pos-order-container {
-    border-radius: 10px;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .summary-header {
@@ -758,6 +877,204 @@
   .quantity-btn:hover,
   .btn-remove-item:hover {
     background: color-mix(in srgb, var(--order-primary) 8%, var(--card-background-color));
+  }
+}
+
+.pos-order-container--restaurant {
+  min-height: 0;
+}
+
+.pos-order-container--restaurant .summary-header {
+  padding: 14px 14px 12px;
+}
+
+.pos-order-container--restaurant .summary-title {
+  font-size: 1.08rem;
+}
+
+.pos-order-container--restaurant .order-edit-notice {
+  margin: 10px 12px 0;
+  padding: 9px 10px;
+  border: 1px solid var(--ui-border-warning);
+  border-radius: 8px;
+}
+
+.pos-order-container--restaurant .table-identifier-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.pos-order-container--restaurant .table-identifier-input {
+  min-height: 40px;
+}
+
+.pos-order-container--restaurant .order-list {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding: 4px 12px 0;
+}
+
+.pos-order-container--restaurant .order-item {
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.pos-order-container--restaurant .order-item-name {
+  font-size: 0.9rem;
+}
+
+.pos-order-container--restaurant .order-item-line-total {
+  font-size: 0.92rem;
+}
+
+.pos-order-container--restaurant .order-item-controls {
+  grid-template-columns: 38px minmax(34px, auto) 38px;
+  min-height: 38px;
+  border-radius: 8px;
+}
+
+.pos-order-container--restaurant .quantity-btn,
+.pos-order-container--restaurant .btn-remove-item {
+  width: 38px;
+  height: 38px;
+}
+
+.pos-order-container--restaurant .quantity-display {
+  min-width: 34px;
+  font-size: 0.9rem;
+}
+
+.pos-order-container--restaurant .order-item-controls--bulk {
+  grid-template-columns: 38px 72px auto;
+}
+
+.pos-order-container--restaurant .bulk-input {
+  width: 72px;
+  height: 38px;
+  font-size: 0.9rem;
+}
+
+.pos-order-container--restaurant .empty-message {
+  flex: 1 0 auto;
+  min-height: 180px;
+}
+
+.pos-order-container--restaurant .order-checkout {
+  position: relative;
+  z-index: 2;
+  border-top: 1px solid var(--border-color);
+  box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.pos-order-container--restaurant .order-total {
+  padding: 9px 12px 7px;
+  font-size: 0.95rem;
+}
+
+.pos-order-container--restaurant .total-price {
+  font-size: 1.28rem;
+}
+
+.pos-order-container--restaurant .order-actions--restaurant {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 12px calc(12px + env(safe-area-inset-bottom));
+}
+
+.pos-order-container--restaurant .order-actions--restaurant .order-action-btn {
+  min-height: 40px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  gap: 6px;
+}
+
+.pos-order-container--restaurant .order-actions--restaurant .order-action-btn--primary {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  font-size: 0.88rem;
+}
+
+.pos-order-container--restaurant .order-actions--restaurant .order-action-btn--danger,
+.pos-order-container--restaurant .order-actions--restaurant .order-action-btn:nth-last-child(2):nth-child(even) {
+  grid-column: auto;
+}
+
+@media (min-width: 1024px) {
+  .pos-order-container--restaurant .summary-header {
+    padding: 13px 14px 11px;
+  }
+
+  .pos-order-container--restaurant .order-list {
+    padding-inline: 12px;
+  }
+
+  .pos-order-container--restaurant .order-actions--restaurant {
+    padding-bottom: 12px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .pos-order-container--mobile.pos-order-container--restaurant .summary-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: start;
+    gap: 10px 12px;
+    padding: 16px 14px 12px;
+  }
+
+  .pos-order-container--mobile.pos-order-container--restaurant .summary-header-copy {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .pos-order-container--mobile.pos-order-container--restaurant .summary-title {
+    font-size: 1.08rem;
+    line-height: 1.18;
+  }
+
+  .pos-order-container--mobile.pos-order-container--restaurant .summary-folio {
+    margin-top: 4px;
+  }
+
+  .pos-order-container--mobile.pos-order-container--restaurant .summary-header-actions {
+    display: contents;
+  }
+
+  .pos-order-container--mobile.pos-order-container--restaurant .summary-close-btn {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    width: 44px;
+    min-height: 44px;
+  }
+
+  .pos-order-container--mobile.pos-order-container--restaurant .table-identifier-field {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .pos-order-container--mobile.pos-order-container--restaurant .table-identifier-field label {
+    margin-bottom: 5px;
+    font-size: 0.74rem;
+  }
+
+  .pos-order-container--mobile.pos-order-container--restaurant .table-identifier-input {
+    min-height: 42px;
+    padding: 9px 11px;
+    font-size: 0.92rem;
+  }
+
+  .pos-order-container--mobile.pos-order-container--restaurant .btn-mesas-header {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+    padding-inline: 12px;
   }
 }
 

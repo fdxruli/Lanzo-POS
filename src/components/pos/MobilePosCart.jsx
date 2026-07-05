@@ -9,7 +9,7 @@ export default function MobilePosCart(props) {
     return (
         <div className="modal mobile-pos-cart-modal" style={{ display: 'flex', zIndex: 'var(--z-modal-base)', alignItems: 'flex-end' }} onClick={props.onClose}>
             <div className="modal-content" style={{ borderRadius: '20px 20px 0 0', width: '100%', height: '85vh', maxWidth: '100%', padding: '0', animation: 'slideUp 0.3s ease-out', overflow: 'hidden' }} onClick={(event) => event.stopPropagation()}>
-                <div className="mobile-pos-cart-stack">
+                <div className={`mobile-pos-cart-stack${props.showRestaurantActions ? ' mobile-pos-cart-stack--restaurant' : ''}`}>
                     <OrderSummary
                         onOpenPayment={props.onOpenPayment}
                         onOpenSplit={props.onOpenSplit}
@@ -23,7 +23,7 @@ export default function MobilePosCart(props) {
                         activeTablesCount={props.activeTablesCount}
                         kitchenRejectedOpenCount={props.kitchenRejectedOpenCount}
                     />
-                    <OrderDiscountPanel compact />
+                    {!props.showRestaurantActions && <OrderDiscountPanel compact />}
                 </div>
             </div>
         </div>
