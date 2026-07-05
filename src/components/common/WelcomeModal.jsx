@@ -94,7 +94,7 @@ export default function WelcomeModal() {
 
   const handleTrialClick = async () => {
     if (!isOnline) {
-      setErrorMessage('Se requiere conexión a internet para activar la prueba gratuita.');
+      setErrorMessage('Se requiere conexión a internet para crear tu licencia gratuita.');
       return;
     }
 
@@ -105,10 +105,10 @@ export default function WelcomeModal() {
       const result = await handleFreeTrial();
 
       if (!result.success) {
-        setErrorMessage(result.message || 'No se pudo activar la prueba.');
+        setErrorMessage(result.message || 'No se pudo crear la licencia FREE.');
       }
     } catch (error) {
-      Logger.error("Error en activación de prueba:", error);
+      Logger.error("Error al crear licencia FREE:", error);
 
       if (error.message?.includes('fetch') || error.message?.includes('Network')) {
         setErrorMessage('Error de red. Verifica tu conexión.');
@@ -231,7 +231,7 @@ DESCRIBE TU PROBLEMA:
 
           <div className="form-header">
             <h2>Comienza ahora</h2>
-            <p>Ingresa tu licencia o inicia gratis</p>
+            <p>Ingresa tu licencia o crea una gratis</p>
           </div>
 
           {!isOnline && (
@@ -239,7 +239,7 @@ DESCRIBE TU PROBLEMA:
               <WifiOff size={18} aria-hidden="true" />
               <div className="alert-text">
                 <strong>Sin conexión a internet</strong>
-                <span>Requerida para iniciar sesión o activar prueba</span>
+                <span>Requerida para iniciar sesión o crear licencia gratuita</span>
               </div>
             </div>
           )}
@@ -285,8 +285,8 @@ DESCRIBE TU PROBLEMA:
             <div className="trial-zone">
               <ul className="trial-benefits">
                 <li><CheckCircle2 size={16} aria-hidden="true" /> Sin tarjeta de crédito</li>
-                <li><CheckCircle2 size={16} aria-hidden="true" /> Acceso total a funciones</li>
-                <li><CheckCircle2 size={16} aria-hidden="true" /> Renovable gratis</li>
+                <li><CheckCircle2 size={16} aria-hidden="true" /> Sin renovaciones</li>
+                <li><CheckCircle2 size={16} aria-hidden="true" /> Uso local gratuito</li>
               </ul>
 
               <button
@@ -295,7 +295,7 @@ DESCRIBE TU PROBLEMA:
                 onClick={handleTrialClick}
                 disabled={isLoading || !isOnline}
               >
-                Iniciar Prueba de 3 Meses
+                Crear licencia FREE
               </button>
             </div>
           </form>
