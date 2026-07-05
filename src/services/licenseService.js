@@ -115,7 +115,7 @@ export const renewLicenseService = async (licenseKey) => {
         if (!isOnline) {
             return {
                 success: false,
-                message: 'No tienes conexion a internet. Conectate para renovar.'
+                message: 'No tienes conexion a internet. Conectate para revisar la licencia.'
             };
         }
 
@@ -131,21 +131,31 @@ export const renewLicenseService = async (licenseKey) => {
         if (data && data.success) {
             return {
                 success: true,
+                code: data.code,
                 message: data.message,
-                newExpiry: data.new_expiry,
-                status: data.status
+                newExpiry: data.new_expiry ?? data.newExpiry ?? data.expires_at ?? null,
+                expiresAt: data.expires_at ?? null,
+                durationMonths: data.duration_months ?? null,
+                isLifetime: data.is_lifetime === true,
+                licenseType: data.license_type || null,
+                productName: data.product_name || null,
+                planCode: data.plan_code || null,
+                planName: data.plan_name || null,
+                status: data.status || 'active',
+                licenseDetails: data.details || null
             };
         }
 
         return {
             success: false,
-            message: data.message || 'No se pudo renovar la licencia.'
+            code: data?.code,
+            message: data?.message || 'No se pudo revisar la licencia.'
         };
     } catch (error) {
-        Logger.error('Error renovando licencia:', error);
+        Logger.error('Error revisando licencia:', error);
         return {
             success: false,
-            message: error.message || 'Error de conexion al renovar.'
+            message: error.message || 'Error de conexion al revisar la licencia.'
         };
     }
 };
