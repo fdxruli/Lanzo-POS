@@ -183,7 +183,7 @@ export const createLicenseActivationActions = ({
                 const licenseDataToSave = {
                     ...rawData,
                     valid: true,
-                    product_name: rawData.product_name || 'Lanzo Trial',
+                    product_name: rawData.product_name || 'Plan Free',
                     max_devices: rawData.max_devices || 1
                 };
 
@@ -199,7 +199,7 @@ export const createLicenseActivationActions = ({
 
             return {
                 success: false,
-                message: result.error || 'No se pudo crear prueba.'
+                message: result.error || 'No se pudo crear la licencia FREE.'
             };
         } catch (error) {
             return {
