@@ -1,1 +1,11 @@
-select 1;
+create or replace function public.renew_license_free(
+  license_key_param text,
+  device_fingerprint_param text
+)
+returns jsonb
+language plpgsql
+as $$
+begin
+  return jsonb_build_object('success', true);
+end;
+$$;
