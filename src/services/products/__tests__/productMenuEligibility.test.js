@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getAssignedCategoryIdsForPosMenu,
   getPosMenuExpirationState,
   isExpiredForPosMenu,
   isOutOfStockForPosMenu,
@@ -8,6 +9,18 @@ import {
 const now = new Date('2026-06-30T12:00:00.000Z');
 
 describe('productMenuEligibility', () => {
+  it('obtiene solo categorias con productos activos asignados al POS', () => {
+    const assignedCategoryIds = getAssignedCategoryIdsForPosMenu([
+      { id: 'p-1', categoryId: 'cat-a', isActive: true, productType: 'sellable' },
+      { id: 'p-2', categoryId: 'cat-b', isActive: false, productType: 'sellable' },
+      { id: 'p-3', categoryId: 'cat-c', isActive: true, productType: 'ingredient' },
+      { id: 'p-4', categoryId: '' },
+      { id: 'p-5', category_id: 'cat-legacy', isActive: true, product_type: 'sellable' },
+    ]);
+
+    expect(assignedCategoryIds).toEqual(new Set(['cat-a', 'cat-legacy']));
+  });
+
   it('marca como agotado un producto simple sin stock disponible', () => {
     expect(isOutOfStockForPosMenu({
       id: 'simple-1',

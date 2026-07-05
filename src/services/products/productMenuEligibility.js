@@ -13,6 +13,29 @@ export const isDynamicPosCategory = (categoryId) => (
   categoryId === CAT_DYNAMIC_OUT_OF_STOCK || categoryId === CAT_DYNAMIC_EXPIRED
 );
 
+const normalizeCategoryId = (product) => {
+  const categoryId = product?.categoryId ?? product?.category_id ?? '';
+  return String(categoryId || '').trim();
+};
+
+export const getAssignedCategoryIdsForPosMenu = (products = []) => {
+  const assignedCategoryIds = new Set();
+
+  if (!Array.isArray(products)) return assignedCategoryIds;
+
+  for (const product of products) {
+    if (product?.isActive === false) continue;
+    if (product?.productType === 'ingredient' || product?.product_type === 'ingredient') continue;
+
+    const categoryId = normalizeCategoryId(product);
+    if (categoryId) {
+      assignedCategoryIds.add(categoryId);
+    }
+  }
+
+  return assignedCategoryIds;
+};
+
 const getExpirationMode = (product) => (
   product?.expirationMode || product?.expiration_mode || 'NONE'
 );
