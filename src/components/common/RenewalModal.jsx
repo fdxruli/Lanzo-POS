@@ -1,8 +1,40 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useNavigate } from 'react-router-dom';
 import Logger from '../../services/Logger';
 import './RenewalModal.css';
+
+const normalizePlanCode = (licenseDetails = {}) => (
+  licenseDetails?.plan_code ||
+  licenseDetails?.plan ||
+  licenseDetails?.subscription_plan ||
+  licenseDetails?.product_code ||
+  ''
+).toString().trim().toLowerCase();
+
+const getLicenseContext = (licenseDetails = {}) => {
+  const planCode = normalizePlanCode(licenseDetails);
+  const licenseType = String(licenseDetails?.license_type || '').trim().toLowerCase();
+  const isPaidPlan = planCode.includes('pro') || planCode.includes('basic');
+  const isFreePlan = !isPaidPlan && (
+    planCode === 'free_trial' ||
+    planCode.includes('free') ||
+    planCode.includes('trial') ||
+    licenseType === 'free'
+  );
+  const isFreeLifetime = isFreePlan && (
+    licenseDetails?.is_lifetime === true ||
+    licenseDetails?.expires_at == null ||
+    licenseType === 'free'
+  );
+
+  return {
+    isPaidPlan,
+    isFreePlan,
+    isFreeLifetime,
+    canRunFreeCompatFlow: isFreePlan && !isFreeLifetime
+  };
+};
 
 export default function RenewalModal() {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -15,20 +47,31 @@ export default function RenewalModal() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
+  const licenseContext = useMemo(() => getLicenseContext(licenseDetails), [licenseDetails]);
+
+  if (licenseContext.isFreeLifetime) {
+    return null;
+  }
+
   const handleRenewal = async () => {
+    if (!licenseContext.canRunFreeCompatFlow) {
+      setErrorMessage('Esta licencia no usa actualización FREE. Cambia de licencia o contacta a soporte.');
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage('');
     
     try {
       const result = await renewLicense();
       if (!result.success) {
-        setErrorMessage(result.message || 'Error al renovar.');
+        setErrorMessage(result.message || 'No se pudo revisar la licencia.');
       } else {
-        Logger.log("Renovación exitosa:", result);
+        Logger.log('Licencia FREE revisada:', result);
         navigate('/');
       }
     } catch (error) {
-      Logger.error("Error en renovación:", error);
+      Logger.error('Error revisando licencia FREE:', error);
       setErrorMessage('Ocurrió un error inesperado. Intenta de nuevo.');
     } finally {
       setIsLoading(false);
@@ -51,8 +94,12 @@ export default function RenewalModal() {
           <div className="status-icon-container">
             <span className="lock-icon">🔒</span>
           </div>
-          <h2>Licencia Expirada</h2>
-          <p>Tu periodo de servicio ha finalizado. Renueva para continuar operando sin interrupciones.</p>
+          <h2>Licencia requiere revisión</h2>
+          <p>
+            {licenseContext.canRunFreeCompatFlow
+              ? 'Detectamos una licencia FREE anterior con vencimiento técnico. Al continuar se actualizará a FREE permanente.'
+              : 'Esta licencia tiene vencimiento técnico. Cambia de licencia o contacta a soporte para continuar.'}
+          </p>
         </div>
 
         {/* Info Box - Datos de la cuenta */}
@@ -66,7 +113,7 @@ export default function RenewalModal() {
             <span className="detail-value mono">{licenseDetails?.license_key || '----'}</span>
           </div>
           <div className="detail-row error">
-            <span className="detail-label">Venció el</span>
+            <span className="detail-label">Vencimiento técnico</span>
             <span className="detail-value">{formatDate(licenseDetails?.expires_at)}</span>
           </div>
         </div>
@@ -81,27 +128,31 @@ export default function RenewalModal() {
         {/* Acciones */}
         <div className="renewal-actions">
           <p className="promo-text">
-            Renueva ahora y obtén <strong>3 meses más gratis</strong>
+            {licenseContext.canRunFreeCompatFlow
+              ? 'Tu licencia FREE se actualizará a permanente.'
+              : 'Este flujo no aplica a licencias PRO/BASIC.'}
           </p>
 
-          <button 
-            className="btn-primary btn-full" 
-            onClick={handleRenewal} 
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <>
-                <span className="spinner"></span> 
-              </>
-            ) : '🔄 Reactivar Servicio'}
-          </button>
+          {licenseContext.canRunFreeCompatFlow && (
+            <button 
+              className="btn-primary btn-full" 
+              onClick={handleRenewal} 
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <span className="spinner"></span> 
+                </>
+              ) : 'Actualizar a FREE permanente'}
+            </button>
+          )}
           
           <button 
               className="btn-link-subtle" 
               onClick={logout}
               disabled={isLoading}
           >
-            Cerrar sesión / Cambiar cuenta
+            Cerrar sesión / Cambiar licencia
           </button>
         </div>
       </div>
