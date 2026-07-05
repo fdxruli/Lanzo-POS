@@ -15,6 +15,7 @@ import {
     isRestaurantOrdersCloudEnabled
 } from '../../services/sync/syncConstants';
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
+import { closeRestaurantCloudOrderAfterSuccessfulSplitPayment } from '../../services/restaurant/restaurantOrderCheckoutClose';
 
 const EMPTY_ORDER = [];
 
@@ -690,9 +691,42 @@ export function useTableManagement({
             });
 
             if (result.success) {
+                let cloudCloseResult = { success: true, skipped: true };
+
+                if (isCloudRestaurantOrdersEnabled) {
+                    try {
+                        cloudCloseResult = await closeRestaurantCloudOrderAfterSuccessfulSplitPayment({
+                            localOrderId: activeOrderId,
+                            splitResult: result,
+                            licenseDetails,
+                            saleTotal: result.total,
+                            features
+                        });
+                    } catch (cloudCloseError) {
+                        Logger.warn('[REST.SPLIT.1] No se pudo cerrar cocina cloud después del split:', cloudCloseError);
+                        cloudCloseResult = {
+                            success: false,
+                            retryable: true,
+                            pendingSaved: false,
+                            error: cloudCloseError,
+                            message: cloudCloseError?.message || 'La cuenta se cobró, pero no se pudo cerrar cocina cloud.'
+                        };
+                    }
+                }
+
                 clearSession();
                 closeModal('split');
-                showMessageModal('✅ Split bill aplicado y cobro registrado correctamente.');
+
+                if (isCloudRestaurantOrdersEnabled && cloudCloseResult?.success === false) {
+                    showMessageModal(
+                        '⚠️ La cuenta se cobró, pero no se pudo cerrar cocina cloud. Se reintentará cuando haya conexión.',
+                        null,
+                        { type: 'warning' }
+                    );
+                } else {
+                    showMessageModal('✅ Split bill aplicado y cobro registrado correctamente.');
+                }
+
                 await refreshData();
                 await fetchActiveTablesCount();
                 return;
@@ -720,7 +754,9 @@ export function useTableManagement({
         refreshData,
         fetchActiveTablesCount,
         cajaActual,
-        asegurarCajaAbierta
+        asegurarCajaAbierta,
+        isCloudRestaurantOrdersEnabled,
+        licenseDetails
     ]);
 
     return {
