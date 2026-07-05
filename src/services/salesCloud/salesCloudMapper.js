@@ -96,7 +96,30 @@ const mapItem = (item = {}, index = 0) => {
   });
 };
 
-const buildSyntheticPayment = (sale = {}) => {
+const buildShadowMetadata = (sale = {}, options = {}) => compactObject({
+  origin: 'local_device',
+  sourceMode: 'shadow',
+  effectsStatus: 'local_applied',
+  orderType: sale.orderType || options.orderType || null,
+  source: options.source || options.reason || sale.source || sale.metadata?.source || null,
+  reason: options.reason || null,
+  splitGroupId: options.splitGroupId || sale.splitGroupId || null,
+  splitParentId: options.splitParentId || sale.splitParentId || null,
+  splitLabel: options.splitLabel || sale.splitLabel || null,
+  splitChildIds: sale.splitChildIds || options.splitChildIds || null,
+  prescriptionDetails: sale.prescriptionDetails || null,
+  dueDate: sale.dueDate || null,
+  discount: sale.saleDiscount || sale.discountMetadata || null,
+  discountTotal: toNumber(sale.discountTotal ?? sale.discount_total ?? sale.discount, 0),
+  postEffectsCompleted: sale.postEffectsCompleted ?? null,
+  postEffectsFailed: options.postEffectsFailed || false,
+  postEffectsError: options.postEffectsError || null,
+  paymentSummary: options.paymentSummary || null,
+  syncedFrom: 'salesCloudShadowService',
+  snapshotOnly: true
+});
+
+const buildSyntheticPayment = (sale = {}, options = {}) => {
   const method = normalizePaymentMethod(sale.paymentMethod);
   const total = toNumber(sale.total, 0);
   const amountPaid = toNumber(sale.abono ?? sale.amountPaid, method === 'fiado' ? 0 : total);
@@ -113,7 +136,10 @@ const buildSyntheticPayment = (sale = {}) => {
     cash_movement_id: firstText(sale.cash_movement_id, sale.cashMovementId),
     customer_ledger_id: firstText(sale.customer_ledger_id, sale.customerLedgerId),
     metadata: compactObject({
-      source: 'synthetic_from_local_sale',
+      source: options.reason || 'synthetic_from_local_sale',
+      splitGroupId: options.splitGroupId || sale.splitGroupId || null,
+      splitParentId: options.splitParentId || sale.splitParentId || null,
+      splitLabel: options.splitLabel || sale.splitLabel || null,
       snapshotOnly: true
     })
   });
@@ -139,13 +165,13 @@ const mapPayment = (payment = {}, sale = {}, index = 0) => compactObject({
   })
 });
 
-const extractPayments = (sale = {}) => {
+const extractPayments = (sale = {}, options = {}) => {
   const explicitPayments = sale.payments || sale.paymentBreakdown || sale.paymentDetails?.payments;
   if (Array.isArray(explicitPayments) && explicitPayments.length > 0) {
     return explicitPayments.map((payment, index) => mapPayment(payment, sale, index));
   }
 
-  return [buildSyntheticPayment(sale)].filter((payment) => toNumber(payment.amount, 0) >= 0);
+  return [buildSyntheticPayment(sale, options)].filter((payment) => toNumber(payment.amount, 0) >= 0);
 };
 
 export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
@@ -181,27 +207,11 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
     cash_session_id: firstText(localSale.cash_session_id, localSale.cashSessionId),
     cash_movement_id: firstText(localSale.cash_movement_id, localSale.cashMovementId),
     customer_ledger_id: firstText(localSale.customer_ledger_id, localSale.customerLedgerId),
-    metadata: compactObject({
-      origin: 'local_device',
-      sourceMode: 'shadow',
-      effectsStatus: 'local_applied',
-      orderType: localSale.orderType || null,
-      splitGroupId: localSale.splitGroupId || null,
-      splitParentId: localSale.splitParentId || null,
-      splitChildIds: localSale.splitChildIds || null,
-      prescriptionDetails: localSale.prescriptionDetails || null,
-      dueDate: localSale.dueDate || null,
-      discount: localSale.saleDiscount || localSale.discountMetadata || null,
-      discountTotal,
-      postEffectsCompleted: localSale.postEffectsCompleted ?? null,
-      postEffectsFailed: options.postEffectsFailed || false,
-      syncedFrom: 'salesCloudShadowService',
-      snapshotOnly: true
-    })
+    metadata: buildShadowMetadata(localSale, options)
   });
 
   const items = (Array.isArray(localSale.items) ? localSale.items : []).map(mapItem);
-  const payments = extractPayments(localSale);
+  const payments = extractPayments(localSale, options);
   const idempotencyKey = `sales.shadow_upsert:${localSale.id}:${options.deviceId || 'device'}`;
 
   return {

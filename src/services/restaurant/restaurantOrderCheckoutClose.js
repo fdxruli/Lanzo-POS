@@ -9,6 +9,8 @@ const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== 
 const canUseStorage = () => typeof window !== 'undefined' && Boolean(window.localStorage);
 const safe = (value) => String(value || 'x').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
 const numeric = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+const arrayOf = (value) => (Array.isArray(value) ? value : []);
+const sumNumbers = (values = []) => values.reduce((sum, value) => sum + (numeric(value) || 0), 0);
 
 const readPending = () => {
   if (!canUseStorage()) return [];
@@ -25,26 +27,33 @@ const writePending = (rows = []) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rows.slice(-50)));
 };
 
+const getPendingRowKey = (payload = {}) => safe(payload.idempotencyKey || payload.localOrderId);
+
 const savePending = (payload, error = null) => {
   const rows = readPending();
-  const key = safe(payload.localOrderId);
-  const existing = rows.find((row) => safe(row.localOrderId) === key) || {};
+  const key = getPendingRowKey(payload);
+  const existing = rows.find((row) => getPendingRowKey(row) === key) || {};
   const next = {
     ...existing,
     ...payload,
-    retryCount: Number(existing.retryCount || 0),
+    retryCount: Number(payload.retryCount ?? existing.retryCount ?? 0),
     failedAt: new Date().toISOString(),
     lastError: error?.message || error?.code || String(error || 'REST_7_CLOSE_PENDING')
   };
-  writePending([...rows.filter((row) => safe(row.localOrderId) !== key), next]);
+  writePending([...rows.filter((row) => getPendingRowKey(row) !== key), next]);
 };
 
-const clearPending = (localOrderId) => {
-  const key = safe(localOrderId);
-  writePending(readPending().filter((row) => safe(row.localOrderId) !== key));
+const clearPending = (localOrderIdOrKey) => {
+  const key = safe(localOrderIdOrKey);
+  writePending(readPending().filter((row) => (
+    safe(row.idempotencyKey) !== key &&
+    safe(row.localOrderId) !== key
+  )));
 };
 
 export const buildRestaurantCheckoutCloseIdempotencyKey = ({ localOrderId, paidSaleId, paidSaleFolio } = {}) => `restaurant:checkout-close:${safe(localOrderId)}:${safe(paidSaleId || paidSaleFolio || 'sale')}`;
+
+export const buildRestaurantSplitCheckoutCloseIdempotencyKey = ({ localOrderId, splitGroupId } = {}) => `restaurant:checkout-close:split:${safe(localOrderId)}:${safe(splitGroupId)}`;
 
 const hasRestaurantRuntime = (features = {}) => {
   const activeRubros = Array.isArray(features?.activeRubros) ? features.activeRubros : [];
@@ -94,15 +103,62 @@ const buildPayload = ({ localOrderId, saleResult = {}, paymentData = {}, saleTot
   };
 };
 
-export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrderId, saleResult = {}, paymentData = {}, licenseDetails = null, saleTotal = null, features = null } = {}) => {
-  const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId, features });
+export const buildSplitPaymentSummary = ({ splitResult = {}, saleTotal = null } = {}) => {
+  const childSales = arrayOf(splitResult.childSales);
+  const childSaleIds = arrayOf(splitResult.childSaleIds).length > 0
+    ? arrayOf(splitResult.childSaleIds)
+    : childSales.map((sale) => sale?.id).filter(Boolean);
 
-  if (!enabled) {
-    return { success: true, skipped: true, reason };
-  }
+  const tickets = arrayOf(splitResult.paymentSummary?.tickets).length > 0
+    ? arrayOf(splitResult.paymentSummary.tickets)
+    : childSales.map((sale) => ({
+      label: sale?.splitLabel || null,
+      saleId: sale?.id || null,
+      paymentMethod: sale?.paymentMethod || null,
+      amountPaid: numeric(sale?.abono),
+      saldoPendiente: numeric(sale?.saldoPendiente),
+      customerId: sale?.customerId || null,
+      total: numeric(sale?.total)
+    }));
 
-  const payload = buildPayload({ localOrderId, saleResult, paymentData, saleTotal });
+  const methodSet = new Set(tickets.map((ticket) => ticket.paymentMethod).filter(Boolean));
+  const amountPaidTotal = sumNumbers(tickets.map((ticket) => ticket.amountPaid));
+  const balanceDueTotal = sumNumbers(tickets.map((ticket) => ticket.saldoPendiente));
+  const total = numeric(saleTotal ?? splitResult.total) ?? sumNumbers(tickets.map((ticket) => ticket.total));
 
+  return {
+    ...(splitResult.paymentSummary || {}),
+    source: 'split_bill',
+    splitGroupId: splitResult.splitGroupId || splitResult.paymentSummary?.splitGroupId || null,
+    parentOrderId: splitResult.parentOrderId || splitResult.paymentSummary?.parentOrderId || null,
+    childSaleIds,
+    tickets,
+    methods: Array.from(methodSet),
+    amountPaidTotal,
+    balanceDueTotal,
+    total,
+    sourceMode: splitResult.sourceMode || 'shadow/local_applied'
+  };
+};
+
+export const buildSplitCheckoutClosePayload = ({ localOrderId, splitResult = {}, saleTotal = null } = {}) => {
+  const paymentSummary = buildSplitPaymentSummary({ splitResult, saleTotal });
+  const splitGroupId = splitResult.splitGroupId || paymentSummary.splitGroupId;
+  const childSaleIds = arrayOf(splitResult.childSaleIds).length > 0
+    ? arrayOf(splitResult.childSaleIds)
+    : arrayOf(paymentSummary.childSaleIds);
+
+  return {
+    localOrderId,
+    paidSaleId: splitGroupId || childSaleIds[0] || null,
+    paidSaleFolio: splitGroupId ? `SPLIT-${splitGroupId}` : null,
+    paidTotal: numeric(saleTotal ?? splitResult.total ?? paymentSummary.total),
+    paymentSummary,
+    idempotencyKey: buildRestaurantSplitCheckoutCloseIdempotencyKey({ localOrderId, splitGroupId: splitGroupId || childSaleIds[0] })
+  };
+};
+
+const closeWithPayload = async ({ payload, licenseKey }) => {
   if (!isOnline()) {
     savePending(payload, new Error('OFFLINE'));
     return { success: false, retryable: true, pendingSaved: true, code: 'RESTAURANT_CLOUD_CLOSE_OFFLINE' };
@@ -114,7 +170,7 @@ export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrd
       savePending(payload, response);
       return { ...response, retryable: true, pendingSaved: true };
     }
-    clearPending(localOrderId);
+    clearPending(payload.idempotencyKey || payload.localOrderId);
     return response;
   } catch (error) {
     savePending(payload, error);
@@ -126,6 +182,28 @@ export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrd
       message: error?.message || 'La venta se cobro, pero no se pudo cerrar cocina cloud.'
     };
   }
+};
+
+export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrderId, saleResult = {}, paymentData = {}, licenseDetails = null, saleTotal = null, features = null } = {}) => {
+  const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId, features });
+
+  if (!enabled) {
+    return { success: true, skipped: true, reason };
+  }
+
+  const payload = buildPayload({ localOrderId, saleResult, paymentData, saleTotal });
+  return closeWithPayload({ payload, licenseKey });
+};
+
+export const closeRestaurantCloudOrderAfterSuccessfulSplitPayment = async ({ localOrderId, splitResult = {}, licenseDetails = null, saleTotal = null, features = null } = {}) => {
+  const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId, features });
+
+  if (!enabled) {
+    return { success: true, skipped: true, reason };
+  }
+
+  const payload = buildSplitCheckoutClosePayload({ localOrderId, splitResult, saleTotal });
+  return closeWithPayload({ payload, licenseKey });
 };
 
 export const retryPendingRestaurantCloudOrderCloses = async ({ licenseDetails = null, features = null, maxRetries = 3 } = {}) => {
@@ -149,7 +227,7 @@ export const retryPendingRestaurantCloudOrderCloses = async ({ licenseDetails = 
         idempotencyKey: row.idempotencyKey
       });
       if (response?.success === false) throw new Error(response.message || response.code || 'RESTAURANT_CLOUD_CLOSE_RETRY_FAILED');
-      clearPending(row.localOrderId);
+      clearPending(row.idempotencyKey || row.localOrderId);
       closed += 1;
     } catch (error) {
       failed += 1;
@@ -160,4 +238,8 @@ export const retryPendingRestaurantCloudOrderCloses = async ({ licenseDetails = 
   return { success: failed === 0, closed, failed, total: rows.length };
 };
 
-export default { closeRestaurantCloudOrderAfterSuccessfulPayment, retryPendingRestaurantCloudOrderCloses };
+export default {
+  closeRestaurantCloudOrderAfterSuccessfulPayment,
+  closeRestaurantCloudOrderAfterSuccessfulSplitPayment,
+  retryPendingRestaurantCloudOrderCloses
+};
