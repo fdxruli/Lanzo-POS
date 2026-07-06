@@ -159,7 +159,7 @@ export default function BackupReminder() {
           Un respaldo es tu única red de seguridad.
         </p>
 
-        <button
+        <button type="button"
           id="backup-reminder-download-btn"
           className="btn btn-save"
           onClick={handleBackup}
@@ -171,7 +171,7 @@ export default function BackupReminder() {
 
         {/* Solo se puede posponer si no está en modo urgente o si ya tiene algún respaldo */}
         {(!isUrgent || daysSince > 0) && (
-          <button
+          <button type="button"
             id="backup-reminder-postpone-btn"
             onClick={handlePostpone}
             disabled={isBackupLoading}

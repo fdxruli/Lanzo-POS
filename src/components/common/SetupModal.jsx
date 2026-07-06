@@ -36,6 +36,21 @@ const BUSINESS_RUBROS = [
   { id: 'hardware', label: 'Ferretería', Icon: Hammer },
 ];
 
+const normalizeCandidateTypes = (candidate) => {
+  const types = candidate?.business_type;
+  if (Array.isArray(types)) return types.filter(Boolean);
+  if (typeof types === 'string') {
+    return types
+      .replace(/[{}"]/g, '')
+      .split(',')
+      .flatMap((item) => {
+        const trimmedItem = item.trim();
+        return trimmedItem ? [trimmedItem] : [];
+      });
+  }
+  return [];
+};
+
 export default function SetupModal() {
   const handleSetup = useAppStore((state) => state.handleSetup);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -73,19 +88,6 @@ export default function SetupModal() {
       setSelectedTypes([rubroForzado]);
     }
   }, [licenseDetails, isAllAllowed, allowedRubrosList]);
-
-  const normalizeCandidateTypes = (candidate) => {
-    const types = candidate?.business_type;
-    if (Array.isArray(types)) return types.filter(Boolean);
-    if (typeof types === 'string') {
-      return types
-        .replace(/[{}"]/g, '')
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-    return [];
-  };
 
   const handleImportCandidate = () => {
     if (!profileImportCandidate) return;
@@ -363,7 +365,7 @@ export default function SetupModal() {
                         />
                       </div>
                       <div className="form-group logo-group">
-                        <label className="form-label text-center">Logo</label>
+                        <label className="form-label text-center" htmlFor="logo-upload">Logo</label>
                         <div className="mini-logo-upload">
                           <label htmlFor="logo-upload" className={`logo-preview-wrapper ${isSubmitting ? 'disabled' : ''}`}>
                             <LazyImage src={logoPreview} alt="Logo del negocio" />

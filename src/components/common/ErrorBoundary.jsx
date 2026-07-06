@@ -116,9 +116,12 @@ class ErrorBoundary extends React.Component {
       if ('caches' in window) {
         const cacheNames = await window.caches.keys();
         await Promise.all(
-          cacheNames
-            .filter(isRecoverableAppShellCache)
-            .map((cacheName) => window.caches.delete(cacheName))
+          cacheNames.reduce((deletePromises, cacheName) => {
+            if (isRecoverableAppShellCache(cacheName)) {
+              deletePromises.push(window.caches.delete(cacheName));
+            }
+            return deletePromises;
+          }, [])
         );
       }
 
@@ -395,7 +398,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
                 : 'Intentaremos limpiar la versión guardada y cargar la más reciente.'}
               {' '}Actualiza la aplicación antes de reportar.
             </p>
-            <button
+            <button type="button"
               className="error-boundary__button error-boundary__button--update"
               onClick={this.handleForceUpdateApp}
               disabled={isUpdating}
@@ -434,7 +437,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
                   </p>
                 </div>
               </div>
-              <button
+              <button type="button"
                 className="error-boundary__button error-boundary__button--pos"
                 onClick={this.handleGoToPos}
                 style={{
@@ -465,9 +468,9 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
           {/* ── Caja de detalle técnico ── */}
           <div className="error-boundary__diagnostics" style={{ textAlign: 'left', marginBottom: '28px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b', letterSpacing: '0.05em' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b', letterSpacing: '0.05em' }}>
                 DETALLE TÉCNICO (Para soporte):
-              </label>
+              </span>
               <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                 {window.location.pathname}
               </span>
@@ -507,7 +510,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
           <div className="error-boundary__actions" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
 
             {/* Reportar por WhatsApp */}
-            <button
+            <button type="button"
               className="error-boundary__button error-boundary__button--whatsapp"
               onClick={this.handleReport}
               style={{
@@ -525,7 +528,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
             </button>
 
             {/* Copiar reporte al portapapeles */}
-            <button
+            <button type="button"
               className={`error-boundary__button error-boundary__button--copy ${copied ? 'is-copied' : ''}`}
               onClick={this.handleCopy}
               style={{
@@ -546,7 +549,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
 
             {/* Recarga y reset */}
             <div className="error-boundary__secondary-actions" style={{ display: 'flex', gap: '10px' }}>
-              <button
+              <button type="button"
                 className="error-boundary__button error-boundary__button--reload"
                 onClick={this.handleReload}
                 style={{
@@ -561,7 +564,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
                 Recargar versión limpia
               </button>
 
-              <button
+              <button type="button"
                 className="error-boundary__button error-boundary__button--recover"
                 onClick={this.handleReset}
                 style={{

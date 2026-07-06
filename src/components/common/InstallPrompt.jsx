@@ -35,6 +35,48 @@ const checkIsStandalone = () => {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 };
 
+const overlayStyle = {
+  position: 'fixed',
+  bottom: '20px',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  width: '90%',
+  maxWidth: '400px',
+  backgroundColor: 'var(--card-background-color)',
+  borderRadius: 'var(--border-radius)',
+  padding: 'var(--spacing-lg)',
+  boxShadow: 'var(--box-shadow-lg)',
+  zIndex: 'var(--z-toast)',
+  border: '1px solid var(--border-color)',
+  animation: 'slideUp 0.5s ease-out'
+};
+
+const titleStyle = {
+  fontSize: '1.1rem',
+  fontWeight: '700',
+  marginBottom: 'var(--spacing-xs)',
+  color: 'var(--text-dark)'
+};
+
+const textStyle = {
+  fontSize: '0.95rem',
+  color: 'var(--text-color)',
+  marginBottom: 'var(--spacing-md)',
+  lineHeight: '1.5'
+};
+
+const closeBtnStyle = {
+  position: 'absolute',
+  top: '12px',
+  right: '15px',
+  background: 'none',
+  border: 'none',
+  fontSize: '18px',
+  color: 'var(--text-light)',
+  cursor: 'pointer',
+  padding: '4px'
+};
+
 const InstallPrompt = () => {
   const isIOS = useAppStore((state) => state.isIOS);
   const showInstallModal = useAppStore((state) => state.showInstallModal);
@@ -121,51 +163,9 @@ const InstallPrompt = () => {
   // y verificamos si ya se descartó este modal.
   if (!showInstallModal || isDismissed || showUpdateModal) return null;
 
-  const overlayStyle = {
-    position: 'fixed',
-    bottom: '20px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: '90%',
-    maxWidth: '400px',
-    backgroundColor: 'var(--card-background-color)',
-    borderRadius: 'var(--border-radius)',
-    padding: 'var(--spacing-lg)',
-    boxShadow: 'var(--box-shadow-lg)',
-    zIndex: 'var(--z-toast)',
-    border: '1px solid var(--border-color)',
-    animation: 'slideUp 0.5s ease-out'
-  };
-
-  const titleStyle = {
-    fontSize: '1.1rem',
-    fontWeight: '700',
-    marginBottom: 'var(--spacing-xs)',
-    color: 'var(--text-dark)'
-  };
-
-  const textStyle = {
-    fontSize: '0.95rem',
-    color: 'var(--text-color)',
-    marginBottom: 'var(--spacing-md)',
-    lineHeight: '1.5'
-  };
-
-  const closeBtnStyle = {
-    position: 'absolute',
-    top: '12px',
-    right: '15px',
-    background: 'none',
-    border: 'none',
-    fontSize: '18px',
-    color: 'var(--text-light)',
-    cursor: 'pointer',
-    padding: '4px'
-  };
-
   return (
     <div style={overlayStyle}>
-      <button style={closeBtnStyle} onClick={handleClose} aria-label="Cerrar aviso de instalacion">
+      <button type="button" style={closeBtnStyle} onClick={handleClose} aria-label="Cerrar aviso de instalacion">
         x
       </button>
 
@@ -193,7 +193,7 @@ const InstallPrompt = () => {
           <div style={textStyle}>
             Instala nuestra app para una mejor experiencia y operacion mas rapida.
           </div>
-          <button
+          <button type="button"
             className="btn-primary"
             style={{ width: '100%', padding: '12px' }}
             onClick={requestInstall}

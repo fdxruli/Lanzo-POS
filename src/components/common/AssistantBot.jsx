@@ -5,7 +5,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { getSmartContext, getQuickActions, GLOBAL_ALERT, getCriticalAlert, initializeGlobalAlert } from '../../config/botContext';
 import {
   X, Wrench, AlertTriangle, ExternalLink, Send,
-  Sparkles, HelpCircle, Lightbulb,
+  Sparkles, HelpCircle, Lightbulb, MapPin, MessageSquareText,
+  ShoppingCart, Package, BarChart3, Users, Settings, ClipboardList,
+  WalletCards,
 } from 'lucide-react';
 import './AssistantBot.css';
 
@@ -41,6 +43,185 @@ const selectLowStockCount = (state) =>
   state.menu.filter(
     (p) => p.trackStock && p.isActive && p.stock <= (p.minStock || 0)
   ).length;
+
+const selectProductCount = (state) => state.menu.filter((p) => p.isActive).length;
+
+const BUSINESS_LABELS = {
+  abarrotes: 'Abarrotes',
+  farmacia: 'Farmacia',
+  'food_service': 'Restaurante',
+  'verduleria/fruteria': 'Frutas y verduras',
+  apparel: 'Ropa y calzado',
+  hardware: 'Ferreteria',
+};
+
+const MXN_FORMATTER = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+  maximumFractionDigits: 2,
+});
+
+const PAGE_CONTEXTS = [
+  {
+    match: (path) => path === '/' || path.startsWith('/pos'),
+    key: 'pos',
+    label: 'Punto de venta',
+    icon: ShoppingCart,
+  },
+  {
+    match: (path) => path.startsWith('/productos'),
+    key: 'productos',
+    label: 'Productos e inventario',
+    icon: Package,
+  },
+  {
+    match: (path) => path.startsWith('/ventas'),
+    key: 'ventas',
+    label: 'Reportes del negocio',
+    icon: BarChart3,
+  },
+  {
+    match: (path) => path.startsWith('/clientes'),
+    key: 'clientes',
+    label: 'Clientes y cuentas',
+    icon: Users,
+  },
+  {
+    match: (path) => path.startsWith('/caja'),
+    key: 'caja',
+    label: 'Caja',
+    icon: WalletCards,
+  },
+  {
+    match: (path) => path.startsWith('/pedidos'),
+    key: 'pedidos',
+    label: 'Pedidos y cocina',
+    icon: ClipboardList,
+  },
+  {
+    match: (path) => path.startsWith('/configuracion'),
+    key: 'configuracion',
+    label: 'Configuracion',
+    icon: Settings,
+  },
+];
+
+const formatCurrency = (value = 0) => MXN_FORMATTER.format(Number(value) || 0);
+
+const getPrimaryBusinessType = (businessType) => (
+  Array.isArray(businessType) ? businessType[0] : businessType
+) || 'abarrotes';
+
+const getPageContext = (pathname) => (
+  PAGE_CONTEXTS.find((item) => item.match(pathname)) || {
+    key: 'default',
+    label: 'Sistema Lanzo POS',
+    icon: HelpCircle,
+  }
+);
+
+const buildBusinessInsights = ({ pageKey, botData, productCount }) => {
+  const insights = [];
+
+  if (pageKey === 'pos') {
+    if (botData.cartCount > 0) {
+      insights.push(`${botData.cartCount} articulo${botData.cartCount === 1 ? '' : 's'} en venta: ${formatCurrency(botData.cartTotal)}`);
+    } else {
+      insights.push('Caja lista para escanear, buscar productos o iniciar una venta');
+    }
+  }
+
+  if (pageKey === 'productos') {
+    insights.push(`${productCount} producto${productCount === 1 ? '' : 's'} activo${productCount === 1 ? '' : 's'} en catalogo`);
+  }
+
+  if (botData.lowStockCount > 0) {
+    insights.push(`${botData.lowStockCount} producto${botData.lowStockCount === 1 ? '' : 's'} con stock bajo`);
+  }
+
+  if (pageKey === 'ventas' && botData.stats?.topProduct) {
+    insights.push(`Producto mas vendido: ${botData.stats.topProduct}`);
+  }
+
+  if (botData.stats?.totalDebt > 0) {
+    insights.push(`Cuentas por cobrar: ${formatCurrency(botData.stats.totalDebt)}`);
+  }
+
+  if (botData.licenseDays <= 7) {
+    insights.push(`Licencia por vencer en ${botData.licenseDays} dia${botData.licenseDays === 1 ? '' : 's'}`);
+  }
+
+  return insights.slice(0, 3);
+};
+
+const getContextualQuestions = ({ pageKey, businessLabel, botData }) => {
+  const baseQuestions = {
+    pos: [
+      botData.cartCount > 0 ? 'Ayudame a revisar esta venta' : 'Como hago una venta rapida?',
+      'Que productos se estan agotando?',
+      'Cuanto vendi hoy?',
+    ],
+    productos: [
+      'Como agrego un producto correctamente?',
+      'Que productos tienen stock bajo?',
+      businessLabel === 'Farmacia' ? 'Que productos estan por caducar?' : 'Como agrego stock?',
+    ],
+    ventas: [
+      'Cuanto vendi hoy?',
+      'Cual fue mi ganancia esta semana?',
+      'Que se vende mas este mes?',
+    ],
+    clientes: [
+      'Quien me debe dinero?',
+      'Como registro un abono?',
+      'Como veo el historial de un cliente?',
+    ],
+    caja: [
+      'Como hago el corte de caja?',
+      'Que hago si la caja no cuadra?',
+      'Como registro una entrada o salida?',
+    ],
+    pedidos: [
+      'Como reviso pedidos pendientes?',
+      'Como marco un pedido como listo?',
+      'Como uso cocina en restaurante?',
+    ],
+    configuracion: [
+      'Como respaldo mis datos?',
+      'Como sincronizo informacion?',
+      'Como cambio datos del negocio?',
+    ],
+    default: [
+      'Que puedo hacer aqui?',
+      'Cuanto vendi hoy?',
+      'Que productos debo revisar?',
+    ],
+  };
+
+  return baseQuestions[pageKey] || baseQuestions.default;
+};
+
+const getContextualShortcuts = ({ pageKey, botData }) => {
+  const shortcuts = [];
+
+  if (botData.lowStockCount > 0) {
+    shortcuts.push({ label: 'Stock bajo', path: '/ventas?tab=restock', icon: '', highlight: true });
+  }
+
+  if (botData.stats?.totalDebt > 0) {
+    shortcuts.push({ label: 'Cobrar deudas', path: '/clientes', icon: '' });
+  }
+
+  if (pageKey !== 'pos') {
+    shortcuts.push({ label: 'Ir a vender', path: '/', icon: '' });
+  }
+
+  if (pageKey !== 'caja') {
+    shortcuts.push({ label: 'Abrir caja', path: '/caja', icon: '' });
+  }
+
+  return shortcuts;
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -79,6 +260,7 @@ const AssistantBot = () => {
   const cartOrder = useActiveOrders(selectOrder) || [];
   const cartTotal = useActiveOrders(selectCartTotal);
   const lowStockCount = useProductStore(selectLowStockCount);
+  const productCount = useProductStore(selectProductCount);
   const stats = useStatsStore(selectStats);
   const licenseDetails = useAppStore(selectLicense);
   const companyProfile = useAppStore(selectCompanyProfile);
@@ -98,18 +280,43 @@ const AssistantBot = () => {
     cartCount: cartOrder.length,
     cartTotal,
     lowStockCount,
+    productCount,
     licenseDays,
     license: { daysRemaining: licenseDays },
     businessType: normalizeBusinessTypes(companyProfile?.business_type, 'abarrotes'),
+    businessName: companyProfile?.business_name || companyProfile?.name || '',
     stats,
   }), [
     cartOrder.length, // Solo la longitud, no el array completo
     cartTotal,
     lowStockCount,
+    productCount,
     licenseDays,
     companyProfile?.business_type,
+    companyProfile?.business_name,
+    companyProfile?.name,
     stats,
   ]);
+
+  const pageContext = useMemo(
+    () => getPageContext(location.pathname),
+    [location.pathname]
+  );
+
+  const businessLabel = useMemo(() => {
+    const primaryType = getPrimaryBusinessType(botData.businessType);
+    return BUSINESS_LABELS[primaryType] || 'Negocio';
+  }, [botData.businessType]);
+
+  const businessInsights = useMemo(
+    () => buildBusinessInsights({ pageKey: pageContext.key, botData, productCount }),
+    [pageContext.key, botData, productCount]
+  );
+
+  const suggestedQuestions = useMemo(
+    () => getContextualQuestions({ pageKey: pageContext.key, businessLabel, botData }),
+    [pageContext.key, businessLabel, botData]
+  );
 
   // context y criticalAlert: dependen de botData y location
   const context = useMemo(
@@ -129,6 +336,23 @@ const AssistantBot = () => {
       : 'abarrotes';
     return getQuickActions(location.pathname, rubroType);
   }, [context, location.pathname, botData.businessType]);
+
+  const contextualShortcuts = useMemo(
+    () => getContextualShortcuts({ pageKey: pageContext.key, botData }),
+    [pageContext.key, botData]
+  );
+
+  const visibleActions = useMemo(() => {
+    const seenTargets = new Set();
+    return [...contextualShortcuts, ...quickActions]
+      .filter((action) => {
+        const target = action.path || action.route || action.label;
+        if (seenTargets.has(target)) return false;
+        seenTargets.add(target);
+        return true;
+      })
+      .slice(0, 5);
+  }, [contextualShortcuts, quickActions]);
 
   // ─── EFECTOS ────────────────────────────────────────────────────────────────
 
@@ -186,10 +410,10 @@ const AssistantBot = () => {
    * Handler de envío de mensajes usando el Web Worker
    * REEMPLAZA la llamada síncrona anterior por procesamiento asíncrono
    */
-  const handleSendMessage = useCallback(async () => {
-    if (!userInput.trim()) return;
+  const sendMessageToBot = useCallback(async (rawInput) => {
+    const currentInput = (rawInput ?? userInput).trim();
+    if (!currentInput) return;
 
-    const currentInput = userInput;
     setMessages((prev) => [
       ...prev,
       { type: 'user', text: currentInput, timestamp: Date.now() },
@@ -199,7 +423,13 @@ const AssistantBot = () => {
 
     try {
       // USAR EL WEB WORKER: Llamada asíncrona sin bloquear el Event Loop
-      const response = await askBot(currentInput, botData);
+      const response = await askBot(currentInput, {
+        ...botData,
+        page: pageContext,
+        currentPath: location.pathname,
+        businessLabel,
+        businessInsights,
+      });
 
       setMessages((prev) => [
         ...prev,
@@ -242,12 +472,36 @@ const AssistantBot = () => {
     } finally {
       setIsTyping(false);
     }
-  }, [userInput, botData, askBot, isReady, workerError]);
+  }, [
+    userInput,
+    botData,
+    pageContext,
+    location.pathname,
+    businessLabel,
+    businessInsights,
+    askBot,
+    isReady,
+    workerError,
+  ]);
+
+  const handleSendMessage = useCallback(() => {
+    sendMessageToBot();
+  }, [sendMessageToBot]);
+
+  const handleSuggestedQuestion = useCallback((question) => {
+    setChatMode(true);
+    if (!isReady || isTyping) {
+      setUserInput(question);
+      return;
+    }
+    sendMessageToBot(question);
+  }, [isReady, isTyping, sendMessageToBot]);
 
   // ─── VALORES DERIVADOS SIMPLES (sin memo, son baratos) ──────────────────────
   const hasActiveAlert =
     showGlobalAlert || criticalAlert?.severity === 'critical';
   const hasItemsInCart = cartOrder.length > 0;
+  const PageIcon = pageContext.icon;
 
   // ─── RENDER ─────────────────────────────────────────────────────────────────
   return (
@@ -258,16 +512,24 @@ const AssistantBot = () => {
       {isOpen && (
         <div className="lanzo-bot-card animate-pop-in">
           <div className="bot-header">
+            <div className="bot-heading">
             <span className="bot-title">
               {chatMode ? (
-                <><Sparkles size={16} style={{ marginRight: '6px' }} />Asistente IA {isReady ? '' : '(cargando...)'}</>
+                <><Sparkles size={16} style={{ marginRight: '6px' }} />Asistente del sistema {isReady ? '' : '(cargando...)'}</>
               ) : showGlobalAlert ? '⚠️ Importante'
                 : criticalAlert ? 'Atención Requerida'
                 : (context?.title || 'Lanzo Bot')}
             </span>
+              {!showGlobalAlert && (
+                <span className="bot-subtitle">
+                  <MapPin size={12} />
+                  {pageContext.label} - {businessLabel}
+                </span>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               {!showGlobalAlert && (
-                <button
+                <button type="button"
                   onClick={() => setChatMode(!chatMode)}
                   className="mode-toggle-btn"
                   title={chatMode ? 'Ver Contexto' : 'Preguntar al Asistente'}
@@ -275,7 +537,7 @@ const AssistantBot = () => {
                   {chatMode ? <HelpCircle size={16} /> : <Sparkles size={16} />}
                 </button>
               )}
-              <button
+              <button type="button"
                 onClick={() => { if (!showGlobalAlert) setIsOpen(false); }}
                 className="close-btn"
                 style={showGlobalAlert ? { opacity: 0.3, cursor: 'not-allowed' } : {}}
@@ -287,11 +549,23 @@ const AssistantBot = () => {
           </div>
 
           <div className="bot-body">
+            {!showGlobalAlert && (
+              <div className="bot-context-strip" aria-label="Contexto actual del asistente">
+                <div className="context-chip">
+                  <PageIcon size={14} />
+                  <span>{pageContext.label}</span>
+                </div>
+                <div className="context-chip">
+                  <Package size={14} />
+                  <span>{businessLabel}</span>
+                </div>
+              </div>
+            )}
             {showGlobalAlert ? (
               <div className="alert-content">
                 <p className="alert-text">{GLOBAL_ALERT.message}</p>
                 {GLOBAL_ALERT.actionLink && (
-                  <button
+                  <button type="button"
                     onClick={() => {
                       navigate(GLOBAL_ALERT.actionLink);
                       handleDismissAlert();
@@ -302,7 +576,7 @@ const AssistantBot = () => {
                     Ir Ahora
                   </button>
                 )}
-                <button onClick={handleDismissAlert} className="dismiss-link">
+                <button type="button" onClick={handleDismissAlert} className="dismiss-link">
                   Entendido
                 </button>
               </div>
@@ -312,12 +586,23 @@ const AssistantBot = () => {
                   {messages.length === 0 ? (
                     <div className="chat-welcome">
                       <Sparkles size={32} style={{ color: 'var(--primary-color)' }} />
-                      <h4>¡Hola! Soy tu asistente inteligente</h4>
-                      <p>Puedo analizar tus ventas, inventario y más. Intenta con:</p>
+                      <h4>Asistente del sistema</h4>
+                      <p>Puedo ayudarte con acciones, reportes y dudas de esta pantalla.</p>
+                      <p className="chat-context-note">
+                        Contexto actual: {pageContext.label} - {businessLabel}.
+                      </p>
                       <div className="suggested-questions">
-                        <button onClick={() => setUserInput('¿Cuánto he vendido hoy?')}>¿Cuánto he vendido hoy?</button>
-                        <button onClick={() => setUserInput('¿Qué productos tienen stock bajo?')}>¿Qué productos tienen stock bajo?</button>
-                        <button onClick={() => setUserInput('¿Quién me debe dinero?')}>¿Quién me debe dinero?</button>
+                        {suggestedQuestions.map((question, index) => (
+                          <button
+                            type="button"
+                            key={question}
+                            className={index === 0 ? 'recommended' : ''}
+                            onClick={() => handleSuggestedQuestion(question)}
+                          >
+                            <MessageSquareText size={14} />
+                            {question}
+                          </button>
+                        ))}
                       </div>
                       {!isReady && (
                         <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#666' }}>
@@ -327,8 +612,8 @@ const AssistantBot = () => {
                     </div>
                   ) : (
                     <>
-                      {messages.map((msg, idx) => (
-                        <div key={idx} className={`chat-message ${msg.type}`}>
+                      {messages.map((msg) => (
+                        <div key={`${msg.timestamp}-${msg.type}-${msg.title || msg.text || msg.message}`} className={`chat-message ${msg.type}`}>
                           {msg.type === 'bot' && (
                             <div className="message-avatar"><Sparkles size={14} /></div>
                           )}
@@ -343,8 +628,8 @@ const AssistantBot = () => {
                             </p>
                             {msg.tips?.length > 0 && (
                               <div className="message-tips" style={{ marginTop: '8px', fontSize: '0.9em', color: '#666', background: 'rgba(0,0,0,0.03)', padding: '8px', borderRadius: '4px' }}>
-                                {msg.tips.map((tip, tIdx) => (
-                                  <div key={tIdx} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
+                                {msg.tips.map((tip) => (
+                                  <div key={tip} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
                                     <Lightbulb size={12} style={{ minWidth: '12px', marginTop: '2px' }} />
                                     <span>{tip}</span>
                                   </div>
@@ -353,9 +638,9 @@ const AssistantBot = () => {
                             )}
                             {msg.actions?.length > 0 && (
                               <div className="message-actions" style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                                {msg.actions.map((act, aIdx) => (
-                                  <button
-                                    key={aIdx}
+                                {msg.actions.map((act) => (
+                                  <button type="button"
+                                    key={act.path || act.route || act.label}
                                     className={`inline-action-btn ${act.highlight ? 'highlight' : ''}`}
                                     onClick={() => handleQuickAction(act)}
                                   >
@@ -366,8 +651,8 @@ const AssistantBot = () => {
                             )}
                             {msg.options?.length > 0 && (
                               <div className="message-options">
-                                {msg.options.map((opt, i) => (
-                                  <button key={i} className="option-btn" onClick={() => setUserInput(opt.query)}>
+                                {msg.options.map((opt) => (
+                                  <button type="button" key={opt.query || opt.label} className="option-btn" onClick={() => setUserInput(opt.query)}>
                                     {opt.label}
                                   </button>
                                 ))}
@@ -393,12 +678,13 @@ const AssistantBot = () => {
                     type="text"
                     className="chat-input"
                     placeholder={isReady ? "Escribe tu pregunta..." : "Cargando asistente..."}
+                    aria-label="Pregunta para el asistente"
                     value={userInput}
                     onChange={(e) => setUserInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                     disabled={!isReady || isTyping}
                   />
-                  <button
+                  <button type="button"
                     className="send-btn"
                     onClick={handleSendMessage}
                     disabled={!userInput.trim() || !isReady || isTyping}
@@ -423,9 +709,9 @@ const AssistantBot = () => {
                       {criticalAlert.message}
                     </p>
                     {criticalAlert.action && (
-                      <button
+                      <button type="button"
                         onClick={() => handleQuickAction({ path: criticalAlert.action.route || criticalAlert.action.path })}
-                        style={{ background: 'white', border: '1px solid #ddd', padding: '4px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500' }}
+                        className="critical-alert-action-btn"
                       >
                         {criticalAlert.action.label} <ExternalLink size={10} />
                       </button>
@@ -433,10 +719,20 @@ const AssistantBot = () => {
                   </div>
                 ) : null}
                 <p className="bot-message">{context?.message || '¿En qué puedo ayudarte hoy?'}</p>
+                {businessInsights.length > 0 && (
+                  <div className="business-insights" aria-label="Resumen rapido del negocio">
+                    {businessInsights.map((insight) => (
+                      <div key={insight} className="business-insight">
+                        <Lightbulb size={13} />
+                        <span>{insight}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {context?.tips?.length > 0 && (
                   <div className="bot-tips">
-                    {context.tips.map((tip, i) => (
-                      <div key={i} className="tip-item">
+                    {context.tips.map((tip) => (
+                      <div key={tip} className="tip-item">
                         <Lightbulb size={14} />
                         <span>{tip}</span>
                       </div>
@@ -447,11 +743,12 @@ const AssistantBot = () => {
             )}
           </div>
 
-          {!chatMode && !showGlobalAlert && quickActions.length > 0 && (
+          {!chatMode && !showGlobalAlert && visibleActions.length > 0 && (
             <div className="bot-actions">
-              {quickActions.slice(0, 4).map((action, idx) => (
-                <button
-                  key={idx}
+              <div className="bot-actions-header">Atajos utiles aqui</div>
+              {visibleActions.map((action) => (
+                <button type="button"
+                  key={action.path || action.route || action.label}
                   className="quick-action-btn"
                   onClick={() => handleQuickAction(action)}
                 >
@@ -465,7 +762,7 @@ const AssistantBot = () => {
       )}
 
       {!isOpen && (
-        <button
+        <button type="button"
           onClick={() => setIsOpen(true)}
           className={`lanzo-bot-fab ${hasActiveAlert ? 'pulse' : ''}`}
           title={hasActiveAlert ? 'Tienes una alerta importante' : 'Abrir asistente'}

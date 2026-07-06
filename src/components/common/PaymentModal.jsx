@@ -174,8 +174,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   {Number(activeTotals.discountTotal || 0) > 0 && <p className="payment-label">Incluye descuento: -${Number(activeTotals.discountTotal || 0).toFixed(2)}</p>}
 
                   <div className="form-group">
-                    <label className="form-label">Método de Pago:</label>
-                    <div className="payment-method-selector">
+                    <div id="payment-method-label" className="form-label">Método de Pago:</div>
+                    <div className="payment-method-selector" role="group" aria-labelledby="payment-method-label">
                       <button type="button" className={`btn-method ${isEfectivo ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('efectivo')}>Efectivo</button>
                       <button type="button" className={`btn-method ${isFiado ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('fiado')}>Fiado</button>
                     </div>

@@ -106,7 +106,7 @@ export default function DeviceManager({ licenseKey }) {
         <p className="device-list-error" style={{ color: '#b91c1c', margin: 0, fontSize: '0.9rem' }}>
           {error}
         </p>
-        <button onClick={() => fetchDevices()} style={{ marginTop: '10px', background: 'white', border: '1px solid #b91c1c', color: '#b91c1c', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>
+        <button type="button" onClick={() => fetchDevices()} style={{ marginTop: '10px', background: 'white', border: '1px solid #b91c1c', color: '#b91c1c', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>
           Reintentar
         </button>
       </div>
@@ -168,7 +168,7 @@ export default function DeviceManager({ licenseKey }) {
               </div>
 
               {device.is_active && (
-                <button
+                <button type="button"
                   className="btn btn-cancel btn-deactivate-device"
                   onClick={() => handleRelease(device)}
                   disabled={isOfflineData || currentDeviceRole === 'staff'}

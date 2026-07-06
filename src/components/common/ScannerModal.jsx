@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useZxing } from 'react-zxing';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
+import { useZxingScanner } from '../../hooks/scanner/useZxingScanner';
 import {
   useOrderStore,
   summarizeScannedProducts,
@@ -238,7 +238,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     scannedItems,
   ]);
 
-  const { ref: videoRef } = useZxing({
+  const { ref: videoRef } = useZxingScanner({
     paused: !show || !isScanning || isConfirming,
     onDecodeResult(result) {
       const code = result.getText();
@@ -331,7 +331,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
             {cameraError ? (
               <div className="camera-error-feedback">
                 <p>{cameraError}</p>
-                <button
+                <button type="button"
                   onClick={() => {
                     setCameraError(null);
                     setIsScanning(true);
@@ -410,7 +410,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                 <div className="scanner-error-banner">
                   <div className="scanner-error-header">
                     <p>⚠️ Productos no registrados:</p>
-                    <button className="btn-clear-errors" onClick={() => setUnknownCodes([])}>
+                    <button type="button" className="btn-clear-errors" onClick={() => setUnknownCodes([])}>
                       Descartar fallos
                     </button>
                   </div>
@@ -488,7 +488,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
 
         <div className="scanner-actions">
           {mode === 'pos' && (
-            <button
+            <button type="button"
               className="btn btn-process"
               onClick={handleConfirmScan}
               disabled={scannedItems.length === 0 || isConfirming}
@@ -498,7 +498,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
                 : `Confirmar (${scannedItems.length})`}
             </button>
           )}
-          <button
+          <button type="button"
             className="btn btn-cancel"
             onClick={handleClose}
             disabled={isConfirming}

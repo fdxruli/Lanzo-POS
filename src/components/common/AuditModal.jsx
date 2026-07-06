@@ -118,7 +118,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
             </p>
 
             <div className="form-group">
-              <label className="form-label">
+              <label className="form-label" htmlFor="audit-physical-total">
                 <span style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Monto Físico Total ($)</span>
                   <span style={{ color: 'var(--text-light)', fontSize: '0.85rem' }}>
@@ -127,6 +127,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
                 </span>
               </label>
               <input
+                id="audit-physical-total"
                 type="number"
                 className="form-input"
                 style={{ fontSize: '1.2rem', textAlign: 'center', fontWeight: 'bold' }}
@@ -141,7 +142,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
             </div>
 
             <div className="form-group">
-              <label className="form-label">
+              <label className="form-label" htmlFor="audit-next-shift-fund">
                 <span style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Monto Fondo Siguiente Turno ($)</span>
                   <span style={{ color: 'var(--text-light)', fontSize: '0.85rem' }}>
@@ -150,6 +151,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
                 </span>
               </label>
               <input
+                id="audit-next-shift-fund"
                 type="number"
                 className="form-input"
                 style={{ fontSize: '1.2rem', textAlign: 'center', fontWeight: 'bold' }}
@@ -263,7 +265,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
 
             {hayDiferenciaSignificativa && (
               <div className="form-group">
-                <label className="form-label">
+                <label className="form-label" htmlFor="audit-difference-comment">
                   <span style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>Comentario de Diferencia (Requerido)</span>
                     <span style={{ color: 'var(--text-light)', fontSize: '0.85rem' }}>
@@ -272,6 +274,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
                   </span>
                 </label>
                 <textarea
+                  id="audit-difference-comment"
                   className="form-textarea"
                   placeholder="Describe la causa de la diferencia (ej: 'Diferencia por cambio mal dado en venta #123, ya notificado al cajero')"
                   value={comentarios}

@@ -3,15 +3,15 @@ import Logger from '../../services/Logger';
 import { checkInternetConnection, showConfirmModal, showMessageModal } from '../../services/utils';
 import './ReconnectionBanner.css';
 
+const refreshActivity = () => {
+  sessionStorage.setItem('lanzo_last_active', Date.now().toString());
+};
+
 export default function ReconnectionBanner() {
   const [showBanner, setShowBanner] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   
   const errorCountRef = useRef(0);
-
-  const refreshActivity = () => {
-    sessionStorage.setItem('lanzo_last_active', Date.now().toString());
-  };
 
   useEffect(() => {
     const handleError = (event) => {
@@ -130,7 +130,7 @@ export default function ReconnectionBanner() {
       </div>
 
       <div className="banner-actions">
-        <button
+        <button type="button"
           onClick={handleReconnect}
           disabled={isReconnecting}
           className="btn-reconnect"
@@ -142,7 +142,7 @@ export default function ReconnectionBanner() {
           )}
         </button>
 
-        <button
+        <button type="button"
           onClick={handleDismiss}
           disabled={isReconnecting}
           className="btn-dismiss"

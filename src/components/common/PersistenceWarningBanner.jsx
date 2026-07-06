@@ -77,7 +77,7 @@ const CriticalStorageLockScreen = () => {
           Por favor, libera espacio en el disco duro o haz un respaldo inmediato desde la configuración, luego recarga la página.
         </p>
       </div>
-      <button
+      <button type="button"
         onClick={handleEmergencyBackup}
         disabled={isBackupLoading}
         style={{ marginTop: '1rem', padding: '1rem 2rem', fontSize: '1.2rem', background: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
@@ -162,7 +162,7 @@ export const PersistenceWarningBanner = () => {
 
       <div className="banner-actions">
         {deferredPrompt && (
-          <button
+          <button type="button"
             className="banner-btn banner-btn--secondary"
             onClick={handleInstall}
             title="Instalar como aplicación para proteger datos"
@@ -172,7 +172,7 @@ export const PersistenceWarningBanner = () => {
         )}
 
         {canRetry && !isRequestingPersistence && (
-          <button
+          <button type="button"
             className="banner-btn banner-btn--secondary"
             onClick={handleRequestPersistence}
             title="Solicitar permiso de almacenamiento persistente"
@@ -188,7 +188,7 @@ export const PersistenceWarningBanner = () => {
           </span>
         )}
 
-        <button
+        <button type="button"
           className="banner-btn banner-btn--dismiss"
           onClick={() => setVolatileDismissed(true)}
           title="Cerrar"

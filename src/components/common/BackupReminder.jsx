@@ -107,14 +107,14 @@ export default function BackupReminder() {
           <span>Tienes un volumen considerable de ventas ({totalMutations} regs) sin respaldar. Se recomienda descargar una copia.</span>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button 
+          <button type="button" 
             onClick={handlePostpone}
             disabled={isBackupLoading}
             style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid #b45309', borderRadius: '4px', color: '#b45309', cursor: 'pointer' }}
           >
             Cerrar por ahora
           </button>
-          <button 
+          <button type="button" 
             onClick={handleBackup}
             disabled={isBackupLoading}
             style={{ padding: '0.5rem 1rem', background: '#b45309', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -156,7 +156,7 @@ export default function BackupReminder() {
             Toda la información vive <strong>solo en este dispositivo</strong>. Un respaldo es tu única red de seguridad.
           </p>
 
-          <button
+          <button type="button"
             onClick={handleBackup}
             disabled={isBackupLoading}
             style={{ width: '100%', padding: '14px', fontWeight: 'bold', fontSize: '1rem', background: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
@@ -164,7 +164,7 @@ export default function BackupReminder() {
             {isBackupLoading ? <><Loader size={20} className="animate-spin" /> Generando respaldo...</> : <><Download size={20} /> Descargar respaldo ahora</>}
           </button>
 
-          <button
+          <button type="button"
             onClick={handlePostpone}
             disabled={isBackupLoading}
             style={{

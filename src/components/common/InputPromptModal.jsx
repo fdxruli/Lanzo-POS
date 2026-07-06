@@ -81,6 +81,7 @@ function InputPromptModal({
             ref={inputRef}
             className="form-input"
             type="text"
+            aria-label={title}
             value={value}
             placeholder={placeholder}
             onChange={(event) => {

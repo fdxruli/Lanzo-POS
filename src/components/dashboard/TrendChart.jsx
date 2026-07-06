@@ -44,17 +44,19 @@ const CustomTooltip = ({ active, payload, formatter = defaultValueFormatter }) =
 class ChartErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, resetKey: props.resetKey };
   }
 
   static getDerivedStateFromError() {
     return { hasError: true };
   }
 
-  componentDidUpdate(prevProps) {
-    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
-      this.setState({ hasError: false });
+  static getDerivedStateFromProps(props, state) {
+    if (props.resetKey !== state.resetKey) {
+      return { hasError: false, resetKey: props.resetKey };
     }
+
+    return null;
   }
 
   render() {

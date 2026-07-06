@@ -15,6 +15,7 @@ import Logger from '../../services/Logger';
 import { getStableDeviceId } from '../../services/supabase';
 import { showMessageModal } from '../../services/utils';
 
+
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);

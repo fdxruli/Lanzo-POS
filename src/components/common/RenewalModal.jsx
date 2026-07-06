@@ -36,6 +36,13 @@ const getLicenseContext = (licenseDetails = {}) => {
   };
 };
 
+const formatDate = (dateString) => {
+  if (!dateString) return '---';
+  return new Date(dateString).toLocaleDateString('es-MX', {
+    year: 'numeric', month: 'long', day: 'numeric'
+  });
+};
+
 export default function RenewalModal() {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const companyProfile = useAppStore((state) => state.companyProfile);
@@ -76,13 +83,6 @@ export default function RenewalModal() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '---';
-    return new Date(dateString).toLocaleDateString('es-MX', {
-      year: 'numeric', month: 'long', day: 'numeric'
-    });
   };
 
   return (
@@ -134,7 +134,7 @@ export default function RenewalModal() {
           </p>
 
           {licenseContext.canRunFreeCompatFlow && (
-            <button 
+            <button type="button" 
               className="btn-primary btn-full" 
               onClick={handleRenewal} 
               disabled={isLoading}
@@ -147,7 +147,7 @@ export default function RenewalModal() {
             </button>
           )}
           
-          <button 
+          <button type="button" 
               className="btn-link-subtle" 
               onClick={logout}
               disabled={isLoading}

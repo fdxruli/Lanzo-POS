@@ -76,25 +76,25 @@ export default function MessageModal() {
         
         <div className="ui-modal__actions modal-buttons">
           {options.extraButton && (
-            <button className="ui-button ui-button--secondary btn-secondary" onClick={handleExtraAction}>
+            <button type="button" className="ui-button ui-button--secondary btn-secondary" onClick={handleExtraAction}>
               {options.extraButton.text}
             </button>
           )}
 
           {confirmMode ? (
             <>
-              <button className="ui-button ui-button--primary btn-confirm" onClick={handleConfirm}>
+              <button type="button" className="ui-button ui-button--primary btn-confirm" onClick={handleConfirm}>
                 {options.confirmButtonText || 'Sí, continuar'}
               </button>
 
               {showCancel && (
-                <button className="ui-button ui-button--ghost btn-cancel" onClick={handleCancel}>
+                <button type="button" className="ui-button ui-button--ghost btn-cancel" onClick={handleCancel}>
                   {options.cancelButtonText || 'Cancelar'}
                 </button>
               )}
             </>
           ) : (
-            <button className="ui-button ui-button--primary btn-modal" onClick={hide}>
+            <button type="button" className="ui-button ui-button--primary btn-modal" onClick={hide}>
               Aceptar
             </button>
           )}
