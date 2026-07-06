@@ -2,9 +2,12 @@ import { loadData, saveData, STORES } from '../../services/database';
 import Logger from '../../services/Logger';
 import {
   getBusinessProfile,
-  saveBusinessProfile,
-  uploadFile
+  saveBusinessProfile
 } from '../../services/supabase';
+import {
+  IMAGE_UPLOAD_PURPOSES,
+  uploadImageFile
+} from '../../services/storage/imageUploadService';
 import { normalizeBusinessTypes as normalizeCanonicalBusinessTypes } from '../../utils/businessType';
 import {
   PROFILE_LAST_LICENSE_KEY,
@@ -241,7 +244,12 @@ export const createProfileSlice = (set, get) => ({
       let logoUrl = setupData.logo_url || setupData.logo || null;
 
       if (setupData.logo instanceof File) {
-        logoUrl = await uploadFile(setupData.logo, 'logo');
+        const uploadResult = await uploadImageFile({
+          file: setupData.logo,
+          licenseKey,
+          purpose: IMAGE_UPLOAD_PURPOSES.BUSINESS_LOGO
+        });
+        logoUrl = uploadResult.publicUrl;
       }
 
       const profileData = {
@@ -283,8 +291,12 @@ export const createProfileSlice = (set, get) => ({
       const nextCompanyData = { ...companyData };
 
       if (nextCompanyData.logo instanceof File) {
-        const logoUrl = await uploadFile(nextCompanyData.logo, 'logo');
-        nextCompanyData.logo = logoUrl;
+        const uploadResult = await uploadImageFile({
+          file: nextCompanyData.logo,
+          licenseKey,
+          purpose: IMAGE_UPLOAD_PURPOSES.BUSINESS_LOGO
+        });
+        nextCompanyData.logo = uploadResult.publicUrl;
       }
 
       nextCompanyData.business_type = normalizeBusinessTypes(nextCompanyData.business_type);
