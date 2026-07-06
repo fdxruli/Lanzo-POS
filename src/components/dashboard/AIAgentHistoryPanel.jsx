@@ -1,5 +1,5 @@
 import React from 'react';
-import { Archive, Clock, Eye, History, Loader2, Sparkles } from 'lucide-react';
+import { CheckCircle, Clock, Eye, History, Loader2, Sparkles } from 'lucide-react';
 import './AIAgentHistoryPanel.css';
 
 const formatToolSummary = (toolRunSummary = {}) => {
@@ -17,7 +17,6 @@ export default function AIAgentHistoryPanel({
   message = null,
   error = null,
   onOpen,
-  onArchive,
   selectedAgent = null
 }) {
   return (
@@ -29,7 +28,10 @@ export default function AIAgentHistoryPanel({
             Análisis guardados en este dispositivo
           </h3>
           <p>
-            Puedes consultar estos análisis sin consumir una nueva consulta IA. Se guardan solo en este dispositivo.
+            Tus análisis se guardan automáticamente en este dispositivo. Puedes consultarlos después sin consumir una nueva consulta IA.
+          </p>
+          <p className="ai-analysis-history-helper">
+            Si limpias los datos del navegador o cambias de dispositivo, este historial local puede perderse.
           </p>
         </div>
         {selectedAgent && (
@@ -48,7 +50,7 @@ export default function AIAgentHistoryPanel({
 
       {error && (
         <div className="ai-analysis-history-alert error" role="alert">
-          <Archive size={16} />
+          <History size={16} />
           <span>{error}</span>
         </div>
       )}
@@ -64,7 +66,8 @@ export default function AIAgentHistoryPanel({
         <div className="ai-analysis-history-empty">
           <History size={28} />
           <p>
-            Aún no hay análisis guardados en este dispositivo. Cuando generes un análisis IA, se guardará aquí automáticamente.
+            Aún no hay análisis guardados en este dispositivo.
+            Cuando generes un análisis IA, se guardará aquí automáticamente.
           </p>
         </div>
       )}
@@ -91,6 +94,11 @@ export default function AIAgentHistoryPanel({
                   Generado: {analysis.generatedAtLabel}
                 </p>
 
+                <span className="ai-analysis-history-saved-badge">
+                  <CheckCircle size={14} />
+                  Guardado automáticamente
+                </span>
+
                 <p className="ai-analysis-history-summary">
                   {analysis.resultSummary}
                 </p>
@@ -105,10 +113,6 @@ export default function AIAgentHistoryPanel({
                   <button type="button" className="history-primary-action" onClick={() => onOpen?.(analysis.id)}>
                     <Eye size={16} />
                     Ver análisis
-                  </button>
-                  <button type="button" className="history-secondary-action" onClick={() => onArchive?.(analysis.id)}>
-                    <Archive size={16} />
-                    Archivar
                   </button>
                 </div>
               </article>
