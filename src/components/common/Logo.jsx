@@ -29,8 +29,8 @@ export default function Logo({
             >
                 <rect width="260" height="110" rx="16" fill="var(--light-background)" />
 
-                <path d="M20 20H33L27 60H14L20 20Z" fill="#60A5FA" />
-                <path d="M25 60H55L47 46H29L25 60Z" fill="#3B82F6" />
+                <path d="M20 20H33L27 60H14L20 20Z" fill="var(--brand-accent)" />
+                <path d="M25 60H55L47 46H29L25 60Z" fill="var(--brand-accent-hover)" />
 
                 <text
                     x="65"
@@ -46,14 +46,14 @@ export default function Logo({
                         <>
                             {' '}
                             <tspan fontSize="17" fontWeight="400" fill="var(--text-light)">x</tspan>
-                            <tspan x="65" dy="30" fontSize="17" fill="var(--primary-color)">
+                            <tspan x="65" dy="30" fontSize="17" fill="var(--brand-accent-text)">
                                 {rawName.length > 18 ? `${rawName.substring(0, 16)}..` : rawName}
                             </tspan>
                         </>
                     )}
                 </text>
 
-                {showBusinessName && <circle cx="240" cy="20" r="5" fill="#10B981" />}
+                {showBusinessName && <circle cx="240" cy="20" r="5" fill="var(--brand-accent)" />}
             </svg>
         );
     }
@@ -68,8 +68,8 @@ export default function Logo({
         >
             <rect width={finalWidth} height="80" rx="40" fill="var(--light-background)" />
 
-            <path d="M25 20H38L32 60H19L25 20Z" fill="#60A5FA" />
-            <path d="M30 60H60L52 46H34L30 60Z" fill="#3B82F6" />
+            <path d="M25 20H38L32 60H19L25 20Z" fill="var(--brand-accent)" />
+            <path d="M30 60H60L52 46H34L30 60Z" fill="var(--brand-accent-hover)" />
 
             <text
                 x="85"
@@ -84,13 +84,13 @@ export default function Logo({
                 {showBusinessName && (
                     <>
                         <tspan fontSize="18" fontWeight="400" fill="var(--text-light)" dx="8">x</tspan>
-                        <tspan fill="var(--primary-color)" dx="8">{displayHorizontalName}</tspan>
+                        <tspan fill="var(--brand-accent-text)" dx="8">{displayHorizontalName}</tspan>
                     </>
                 )}
             </text>
 
             {showBusinessName && (
-                <circle cx={finalWidth - 25} cy="40" r="6" fill="#10B981" />
+                <circle cx={finalWidth - 25} cy="40" r="6" fill="var(--brand-accent)" />
             )}
         </svg>
     );
