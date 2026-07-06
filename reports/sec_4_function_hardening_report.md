@@ -34,6 +34,30 @@ Applied in Supabase project `odlrhijtfyavryeqivaa`:
 - Preserved approved public RPC grants for active frontend contracts.
 - Added `private.sec4_security_surface_audit()` as a service-role-only audit helper.
 
+## SEC.4.1 — Versionado de auditoría refinada
+
+Durante la verificación se detectó que producción ya tenía aplicada la migración:
+
+- `20260706082349_sec_4_1_refine_security_surface_audit`
+
+Esa migración refinó `private.sec4_security_surface_audit()` para devolver hallazgos detallados con:
+
+- `check_name`
+- `severity`
+- `schema_name`
+- `object_type`
+- `object_name`
+- `identity_args`
+- `detail`
+
+La corrección SEC.4.1 agrega el archivo versionado:
+
+```txt
+supabase/migrations/20260709000001_sec_4_1_refine_security_surface_audit.sql
+```
+
+para evitar drift entre GitHub `main` y Supabase producción.
+
 ## Production verification
 
 Final audit result:
@@ -54,6 +78,17 @@ exposed_helper_named_count             = 0
 non_postgres_app_owner_count           = 0
 ```
 
+Function signature and permissions:
+
+```txt
+result_type                  = TABLE(check_name text, severity text, schema_name text, object_type text, object_name text, identity_args text, detail jsonb)
+proconfig                    = search_path=""
+public_execute               = false
+anon_execute                 = false
+authenticated_execute        = false
+service_role_execute         = true
+```
+
 Contract preservation checks:
 
 ```txt
@@ -64,12 +99,18 @@ verify_device_license_unified authenticated  = true
 save_business_profile_secure anon            = true
 ```
 
+## Files
+
+- `supabase/migrations/20260709000000_sec_4_function_definer_search_path_ownership_grants.sql`
+- `supabase/migrations/20260709000001_sec_4_1_refine_security_surface_audit.sql`
+- `reports/sec_4_function_hardening_report.md`
+
 ## Non-goals / exclusions
 
 - Did not modify Supabase-managed internal `realtime` functions.
-- Did not rewrite admin function bodies or expose embedded administrative secrets in repository migrations.
 - Did not alter approved frontend RPC contracts for `anon`/`authenticated`.
+- Did not apply new DDL to production for SEC.4.1 during this correction; production already matched the refined state.
 
 ## Status
 
-SEC.4 is applied and verified in Supabase production.
+SEC.4 is applied and verified in Supabase production. SEC.4.1 versioning drift is corrected in PR #72.
