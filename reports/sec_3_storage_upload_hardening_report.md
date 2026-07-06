@@ -16,20 +16,38 @@ Riesgo principal: cualquier cliente con anon key podía intentar escribir rutas 
 
 ## 2. Usos Storage encontrados en frontend
 
-Términos auditados: `supabase.storage`, `storage.from`, `images`, `public_uploads`, `upload`, `remove`, `getPublicUrl`, `createSignedUrl`, `logo`, `avatar`, `product image`, `business image`.
+Términos auditados:
 
-Uso confirmado en `main`:
+```txt
+storage.from('images').upload
+storage.from("images").upload
+.from('images').upload
+.from("images").upload
+uploadFile(
+public_uploads/
+uploadToSignedUrl
+```
+
+Uso confirmado y tratamiento SEC.3:
 
 | Archivo | Uso previo | Cambio SEC.3 |
 | --- | --- | --- |
-| `src/services/supabase.js` | `uploadFile(file, type)` subía directo a `storage.from('images').upload(...)` con ruta `public_uploads/{type}-{timestamp}-{random}.{ext}`. | El flujo activo de perfil deja de usarlo. |
+| `src/services/supabase.js` | `uploadFile(file, type)` subía directo a `storage.from('images').upload(...)` con ruta `public_uploads/{type}-{timestamp}-{random}.{ext}`. | SEC.3.2 bloquea explícitamente el helper legacy con error `SECURE_UPLOAD_REQUIRED`. |
 | `src/store/slices/createProfileSlice.js` | Setup y actualización de perfil llamaban `uploadFile(..., 'logo')`. | Ahora usan `uploadImageFile(...)` con purpose `business-logo`. |
 | `src/services/storage/imageUploadService.js` | No existía. | Servicio centralizado para autorización, upload firmado y URL pública. |
+
+Resultado de cierre SEC.3.2:
+
+- No queda fallback a `.storage.from('images').upload(...)` en `uploadFile(...)`.
+- `uploadFile(...)` permanece exportado solo como helper legacy bloqueado para detectar usos residuales durante pruebas.
+- `uploadToSignedUrl(...)` queda limitado al servicio seguro `src/services/storage/imageUploadService.js`.
+- `public_uploads/` puede aparecer como prefijo legacy o contrato de path, pero no como destino libre de upload directo desde frontend.
 
 ## 3. Riesgos cerrados
 
 - Escrituras directas amplias sobre `images/public_uploads/%`.
 - Rutas elegidas libremente por cliente.
+- Helper legacy `uploadFile(...)` reutilizable por módulos nuevos o código antiguo.
 - Traversal, doble slash, separadores manuales, `%2f`, `%5c`, `%00`, espacios y caracteres de control.
 - Extensiones peligrosas como `svg`, `html`, `js`, `json`, `pdf`, `exe`, `php`, `sql`, `xml`, `heic`, `avif`.
 - Mimetypes peligrosos como `image/svg+xml`, `text/html`, `application/javascript`, `application/json`, `application/pdf`, `application/octet-stream`.
@@ -148,7 +166,48 @@ Responsabilidades:
 6. Registrar auditoría sin datos sensibles planos.
 7. Devolver `bucket`, `path`, `token`, `public_url_path`, `max_size_bytes`, `mime_type`.
 
-## 10. Frontend
+La lectura del service role key quedó explícita para claridad operativa:
+
+```ts
+const serverKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+```
+
+## 10. Despliegue requerido de Edge Function
+
+La función `authorize-image-upload` debe desplegarse después del merge.
+
+Comando sugerido:
+
+```bash
+supabase functions deploy authorize-image-upload
+```
+
+Secrets requeridos:
+
+```txt
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+```
+
+Configurar service role key:
+
+```bash
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+Notas de seguridad:
+
+- `SUPABASE_SERVICE_ROLE_KEY` solo debe existir como secret de Supabase Edge Functions.
+- No debe existir como variable `VITE_*`.
+- No debe exponerse en frontend.
+- No agregar `VITE_SUPABASE_SERVICE_ROLE_KEY`.
+- La función usa service role porque necesita:
+  - validar licencia/dispositivo/staff,
+  - aplicar rate limit,
+  - escribir auditoría,
+  - generar signed upload URL.
+
+## 11. Frontend
 
 Archivo:
 
@@ -176,7 +235,30 @@ Errores implementados:
 | `STORAGE_UPLOAD_NOT_ALLOWED` | No tienes permiso para subir esta imagen. |
 | `STORAGE_UPLOAD_FAILED` | No se pudo subir la imagen. Revisa tu conexión e intenta de nuevo. |
 
-## 11. Compatibilidad legacy
+## 12. Helper legacy bloqueado
+
+Archivo:
+
+```txt
+src/services/supabase.js
+```
+
+`uploadFile(...)` queda bloqueado de forma explícita:
+
+```js
+export const uploadFile = async function uploadFileLegacyBlocked() {
+    const error = new Error(
+        'SECURE_UPLOAD_REQUIRED: image uploads must use uploadImageFile from src/services/storage/imageUploadService.js'
+    );
+    error.code = 'SECURE_UPLOAD_REQUIRED';
+    Logger.error('[SEC.3] uploadFile legacy bloqueado. Usar uploadImageFile(...).');
+    throw error;
+};
+```
+
+Decisión: lanzar excepción en lugar de retornar `null` para detectar usos residuales durante pruebas pre-merge.
+
+## 13. Compatibilidad legacy
 
 SEC.3 no borra ni migra objetos existentes.
 
@@ -188,9 +270,9 @@ Diferencia clave:
 - Legacy: nuevos uploads directos bloqueados.
 - Nuevo flujo: autorización server-side + signed upload URL.
 
-## 12. Queries de verificación
+## 14. Queries de verificación post-merge
 
-### Policies del bucket `images`
+### 14.1 Policies del bucket `images`
 
 ```sql
 select schemaname, tablename, policyname, roles, cmd, qual, with_check
@@ -210,10 +292,14 @@ order by policyname;
 
 Esperado: solo `SELECT` público controlado. Ningún `INSERT`, `UPDATE` o `DELETE` público sobre `images`.
 
-### No INSERT amplio sobre `images`
+### 14.2 No INSERT público sobre images
 
 ```sql
-select policyname, roles, cmd, with_check
+select
+  policyname,
+  roles,
+  cmd,
+  with_check
 from pg_policies
 where schemaname = 'storage'
   and tablename = 'objects'
@@ -225,9 +311,25 @@ where schemaname = 'storage'
 order by policyname;
 ```
 
-Esperado: `0 filas`.
+Esperado:
 
-### Auditoría cerrada a cliente
+```txt
+0 rows
+```
+
+### 14.3 Auditoría existe
+
+```sql
+select to_regclass('public.storage_upload_audit') as storage_upload_audit_table;
+```
+
+Esperado:
+
+```txt
+storage_upload_audit
+```
+
+### 14.4 Auditoría cerrada a cliente
 
 ```sql
 select
@@ -237,24 +339,38 @@ select
   has_table_privilege('authenticated', 'public.storage_upload_audit', 'INSERT') as authenticated_insert;
 ```
 
-Esperado: `false / false / false / false`.
+Esperado:
 
-### Helpers cerrados
+```txt
+false / false / false / false
+```
+
+### 14.5 Helpers SEC.3 cerrados
 
 ```sql
-select n.nspname, p.proname,
-       has_function_privilege('anon', p.oid, 'EXECUTE') as anon_execute,
-       has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated_execute
+select
+  n.nspname,
+  p.proname,
+  pg_get_function_identity_arguments(p.oid) as args,
+  has_function_privilege('public', p.oid, 'EXECUTE') as public_execute,
+  has_function_privilege('anon', p.oid, 'EXECUTE') as anon_execute,
+  has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated_execute
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
-where n.nspname in ('public','private')
-  and p.proname ilike '%storage%'
+where n.nspname in ('private','public')
+  and p.proname ilike 'sec3_storage_image_%'
 order by n.nspname, p.proname;
 ```
 
-Esperado: helpers internos `private.sec3_storage_image_*` cerrados a roles cliente.
+Esperado:
 
-### Lectura pública controlada
+```txt
+public_execute = false
+anon_execute = false
+authenticated_execute = false
+```
+
+### 14.6 Lectura pública controlada
 
 ```sql
 select policyname, roles, cmd, qual
@@ -271,7 +387,50 @@ order by policyname;
 
 Esperado: lectura solo para `images/public_uploads/%`, no todo el bucket.
 
-## 13. Pruebas manuales pendientes post-deploy
+## 15. Checklist post-merge obligatorio
+
+1. Aplicar migración:
+
+```txt
+supabase/migrations/20260708000000_sec_3_storage_upload_hardening.sql
+```
+
+2. Desplegar Edge Function:
+
+```txt
+authorize-image-upload
+```
+
+3. Confirmar secrets:
+
+```txt
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+```
+
+4. Verificar que desapareció la policy antigua:
+
+```txt
+Permitir subir imágenes anónimamente a public_uploads
+```
+
+5. Verificar que no existe `INSERT public` sobre `images`.
+
+6. Verificar que existe:
+
+```txt
+public.storage_upload_audit
+```
+
+7. Verificar que helpers `private.sec3_storage_image_*` existen y están cerrados a cliente.
+
+8. Probar upload real de logo `.png`.
+
+9. Probar rechazo de `.svg`, `.pdf`, archivo grande y filename con `../`.
+
+10. Confirmar que imágenes legacy bajo `public_uploads/%` siguen visibles.
+
+## 16. Pruebas manuales pendientes post-deploy
 
 1. Subir logo `.png` válido.
 2. Subir imagen `.jpg` en flujos futuros de producto/restaurante que usen el servicio centralizado.
@@ -285,9 +444,8 @@ Esperado: lectura solo para `images/public_uploads/%`, no todo el bucket.
 10. Confirmar que staff sin sesión activa no autoriza upload.
 11. Confirmar rate limit `STORAGE_UPLOAD_RATE_LIMITED`.
 
-## 14. Riesgos residuales / SEC.4
+## 17. Riesgos residuales / SEC.4
 
 - Implementar `authorize-image-delete` si alguna UI necesita borrar/reemplazar imágenes.
-- Retirar o convertir cualquier helper legacy que todavía permita upload directo si se reutiliza en nuevos módulos.
 - Añadir permisos finos por purpose para staff: settings/productos/restaurante.
 - Añadir limpieza de auditoría antigua y objetos huérfanos autorizados pero no referenciados.
