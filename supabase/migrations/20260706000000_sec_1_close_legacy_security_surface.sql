@@ -70,30 +70,25 @@ to anon, authenticated;
 grant execute on function realtime.lanzo_can_access_pos_realtime_topic(text)
 to anon, authenticated;
 
-do $$
-begin
-  if to_regclass('realtime.messages') is not null then
-    drop policy if exists "Lanzo private license broadcast receive" on realtime.messages;
-    create policy "Lanzo private license broadcast receive"
-    on realtime.messages
-    for select
-    to public
-    using (
-      extension = 'broadcast'
-      and realtime.lanzo_can_access_license_realtime_topic((select realtime.topic()))
-    );
+drop policy if exists "Lanzo private license broadcast receive" on realtime.messages;
+create policy "Lanzo private license broadcast receive"
+on realtime.messages
+for select
+to public
+using (
+  extension = 'broadcast'
+  and realtime.lanzo_can_access_license_realtime_topic((select realtime.topic()))
+);
 
-    drop policy if exists "Lanzo private POS broadcast receive" on realtime.messages;
-    create policy "Lanzo private POS broadcast receive"
-    on realtime.messages
-    for select
-    to public
-    using (
-      extension = 'broadcast'
-      and realtime.lanzo_can_access_pos_realtime_topic((select realtime.topic()))
-    );
-  end if;
-end $$;
+drop policy if exists "Lanzo private POS broadcast receive" on realtime.messages;
+create policy "Lanzo private POS broadcast receive"
+on realtime.messages
+for select
+to public
+using (
+  extension = 'broadcast'
+  and realtime.lanzo_can_access_pos_realtime_topic((select realtime.topic()))
+);
 
 revoke all on schema private from public, anon, authenticated;
 revoke all on all functions in schema private from public, anon, authenticated;
@@ -108,43 +103,38 @@ drop view if exists public.pos_fase6f_smoke_view;
 --
 -- Se elimina la policy SELECT global bucket_id='images' y se conserva lectura
 -- pública solo para la ruta usada por el frontend: public_uploads/*.
-do $$
-begin
-  if to_regclass('storage.objects') is not null then
-    drop policy if exists "Permitir ver imágenes públicamente" on storage.objects;
-    drop policy if exists "Permitir ver imágenes públicas en public_uploads" on storage.objects;
+drop policy if exists "Permitir ver imágenes públicamente" on storage.objects;
+drop policy if exists "Permitir ver imágenes públicas en public_uploads" on storage.objects;
 
-    create policy "Permitir ver imágenes públicas en public_uploads"
-    on storage.objects
-    for select
-    to public
-    using (
-      bucket_id = 'images'
-      and name like 'public_uploads/%'
-    );
+create policy "Permitir ver imágenes públicas en public_uploads"
+on storage.objects
+for select
+to public
+using (
+  bucket_id = 'images'
+  and name like 'public_uploads/%'
+);
 
-    drop policy if exists "Permitir subir imágenes anónimamente a public_uploads" on storage.objects;
+drop policy if exists "Permitir subir imágenes anónimamente a public_uploads" on storage.objects;
 
-    create policy "Permitir subir imágenes anónimamente a public_uploads"
-    on storage.objects
-    for insert
-    to public
-    with check (
-      bucket_id = 'images'
-      and name like 'public_uploads/%'
-      and lower(name) ~ '\.(png|jpg|jpeg|webp|gif)$'
-      and (
-        coalesce(lower(metadata->>'mimetype'), '') = ''
-        or lower(metadata->>'mimetype') in (
-          'image/png',
-          'image/jpeg',
-          'image/webp',
-          'image/gif'
-        )
-      )
-    );
-  end if;
-end $$;
+create policy "Permitir subir imágenes anónimamente a public_uploads"
+on storage.objects
+for insert
+to public
+with check (
+  bucket_id = 'images'
+  and name like 'public_uploads/%'
+  and lower(name) ~ '\.(png|jpg|jpeg|webp|gif)$'
+  and (
+    coalesce(lower(metadata->>'mimetype'), '') = ''
+    or lower(metadata->>'mimetype') in (
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'image/gif'
+    )
+  )
+);
 
 -- SEC.1.5 Revoke direct table/sequence grants
 --
