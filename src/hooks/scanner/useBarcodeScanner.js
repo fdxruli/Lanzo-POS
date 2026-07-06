@@ -1,7 +1,7 @@
 // src/hooks/scanner/useBarcodeScanner.js
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { useZxing } from 'react-zxing';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
+import { useZxingScanner } from './useZxingScanner';
 import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import Logger from '../../services/Logger';
 
@@ -104,7 +104,7 @@ export function useBarcodeScanner({ isActive, isConfirming, onValidCode, mode, o
     Logger.warn('Advertencia ZXing:', error.message);
   }, []);
 
-  const { ref: videoRef } = useZxing({
+  const { ref: videoRef } = useZxingScanner({
     paused: !isActive || isConfirming,
     onDecodeResult: handleDecode,
     onError: handleError,

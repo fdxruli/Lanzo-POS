@@ -4,7 +4,7 @@
  * @module hooks/useBotWorker
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 
 /**
  * @typedef {Object} BotResponse
@@ -36,15 +36,22 @@ const generateMessageId = () => {
  */
 export const useBotWorker = () => {
   const workerRef = useRef(null);
-  const pendingPromisesRef = useRef(new Map());
+  const pendingPromisesRef = useRef(null);
   const isReadyRef = useRef(false);
   const errorRef = useRef(null);
+  const [isReadyState, setIsReadyState] = useState(false);
+  const [errorState, setErrorState] = useState(null);
+
+  if (pendingPromisesRef.current === null) {
+    pendingPromisesRef.current = new Map();
+  }
 
   // ============================================================
   // INICIALIZACIÓN DEL WORKER
   // ============================================================
 
   useEffect(() => {
+    let isMounted = true;
     // Instanciar worker con sintaxis de módulos de Vite
     const worker = new Worker(
       new URL('../workers/bot.worker.js', import.meta.url),
@@ -99,6 +106,8 @@ export const useBotWorker = () => {
        
       console.error('[useBotWorker] Error del Worker:', errorEvent);
       errorRef.current = errorEvent.message;
+      setErrorState(errorEvent.message);
+      setIsReadyState(false);
 
       // Rechazar todas las promesas pendientes
       pendingPromisesRef.current.forEach((pending) => {
@@ -144,9 +153,15 @@ export const useBotWorker = () => {
 
     // Verificar que el worker esté listo
     pingWorker().then((ready) => {
+      if (!isMounted) return;
       isReadyRef.current = ready;
+      setIsReadyState(ready);
       if (!ready) {
         errorRef.current = 'Worker no respondió al health check';
+        setErrorState('Worker no respondió al health check');
+      } else {
+        errorRef.current = null;
+        setErrorState(null);
       }
     });
 
@@ -155,8 +170,9 @@ export const useBotWorker = () => {
     // ============================================================
 
     return () => {
+      isMounted = false;
       // Rechazar todas las promesas pendientes
-      pendingPromisesRef.current.forEach((pending, id) => {
+      pendingPromisesRef.current.forEach((pending) => {
         const error = new Error('Worker terminado antes de recibir respuesta');
         error.code = 'WORKER_TERMINATED';
         pending.reject(error);
@@ -256,8 +272,8 @@ export const useBotWorker = () => {
   return {
     askBot,
     getSuggestions,
-    get isReady() { return isReadyRef.current; },
-    get error() { return errorRef.current; }
+    isReady: isReadyState,
+    error: errorState
   };
 };
 

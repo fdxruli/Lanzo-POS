@@ -6,6 +6,29 @@ import {
 } from '../../services/cashOpeningPolicyService.js';
 
 const BACKUP_NOTICE_DISMISSED_KEY = 'lanzo_backup_notice_dismissed';
+const SHOW_ASSISTANT_BOT_KEY = 'lanzo_show_bot:v1';
+const SHOW_ASSISTANT_BOT_LEGACY_KEY = 'lanzo_show_bot';
+const SHOW_TICKER_KEY = 'lanzo_show_ticker:v1';
+const SHOW_TICKER_LEGACY_KEY = 'lanzo_show_ticker';
+const ENABLE_MULTIPLE_ORDERS_KEY = 'lanzo_enable_multiple_orders:v1';
+const ENABLE_MULTIPLE_ORDERS_LEGACY_KEY = 'lanzo_enable_multiple_orders';
+
+function readBooleanPreference(key, legacyKey, fallback) {
+  try {
+    const saved = localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
+    return saved !== null ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function persistBooleanPreference(key, value, errorMessage) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    Logger.error(errorMessage);
+  }
+}
 
 function readDismissedBackupNotice() {
   try {
@@ -47,22 +70,8 @@ export const createUISlice = (set, get) => ({
   serverStatusUpdatedAt: null,
 
   isBackupLoading: false,
-  showAssistantBot: (() => {
-    try {
-      const saved = localStorage.getItem('lanzo_show_bot');
-      return saved !== null ? JSON.parse(saved) : true;
-    } catch {
-      return true;
-    }
-  })(),
-  showTicker: (() => {
-    try {
-      const saved = localStorage.getItem('lanzo_show_ticker');
-      return saved !== null ? JSON.parse(saved) : true;
-    } catch {
-      return true;
-    }
-  })(),
+  showAssistantBot: readBooleanPreference(SHOW_ASSISTANT_BOT_KEY, SHOW_ASSISTANT_BOT_LEGACY_KEY, true),
+  showTicker: readBooleanPreference(SHOW_TICKER_KEY, SHOW_TICKER_LEGACY_KEY, true),
 
   shouldShowServerStatusBanner: () => {
     const state = get();
@@ -142,38 +151,23 @@ export const createUISlice = (set, get) => ({
   },
 
   setShowAssistantBot: (value) => {
-    try {
-      localStorage.setItem('lanzo_show_bot', JSON.stringify(value));
-    } catch {
-      Logger.error('Error al guardar la preferencia del asistente:');
-    }
+    persistBooleanPreference(SHOW_ASSISTANT_BOT_KEY, value, 'Error al guardar la preferencia del asistente:');
     set({ showAssistantBot: value });
   },
 
   setShowTicker: (value) => {
-    try {
-      localStorage.setItem('lanzo_show_ticker', JSON.stringify(value));
-    } catch {
-      Logger.error('Error al guardar la preferencia del ticker:');
-    }
+    persistBooleanPreference(SHOW_TICKER_KEY, value, 'Error al guardar la preferencia del ticker:');
     set({ showTicker: value });
   },
 
-  enableMultipleOrders: (() => {
-    try {
-      const saved = localStorage.getItem('lanzo_enable_multiple_orders');
-      return saved !== null ? JSON.parse(saved) : false;
-    } catch {
-      return false;
-    }
-  })(),
+  enableMultipleOrders: readBooleanPreference(
+    ENABLE_MULTIPLE_ORDERS_KEY,
+    ENABLE_MULTIPLE_ORDERS_LEGACY_KEY,
+    false
+  ),
 
   setEnableMultipleOrders: (value) => {
-    try {
-      localStorage.setItem('lanzo_enable_multiple_orders', JSON.stringify(value));
-    } catch {
-      Logger.error('Error al guardar la preferencia de multiples ordenes:');
-    }
+    persistBooleanPreference(ENABLE_MULTIPLE_ORDERS_KEY, value, 'Error al guardar la preferencia de multiples ordenes:');
     set({ enableMultipleOrders: value });
   },
 
