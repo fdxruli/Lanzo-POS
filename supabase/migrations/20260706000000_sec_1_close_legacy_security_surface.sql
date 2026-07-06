@@ -74,7 +74,7 @@ drop policy if exists "Lanzo private license broadcast receive" on realtime.mess
 create policy "Lanzo private license broadcast receive"
 on realtime.messages
 for select
-to public
+to anon, authenticated
 using (
   extension = 'broadcast'
   and realtime.lanzo_can_access_license_realtime_topic((select realtime.topic()))
@@ -84,7 +84,7 @@ drop policy if exists "Lanzo private POS broadcast receive" on realtime.messages
 create policy "Lanzo private POS broadcast receive"
 on realtime.messages
 for select
-to public
+to anon, authenticated
 using (
   extension = 'broadcast'
   and realtime.lanzo_can_access_pos_realtime_topic((select realtime.topic()))
@@ -190,12 +190,13 @@ end $$;
 
 -- SEC.1.6 Preserve required public RPC execute grants
 --
--- No se hace reset masivo de funciones public.*. Solo se asegura que las RPCs
--- usadas por frontend sigan ejecutables por clientes. La validación real queda
--- dentro de cada RPC SECURITY DEFINER.
+-- No se revoca masivamente EXECUTE sobre public.* en SEC.1. Solo se asegura
+-- que las RPCs usadas por frontend sigan ejecutables por clientes. La validación
+-- real queda dentro de cada RPC SECURITY DEFINER.
 do $$
 declare
   required_functions text[] := array[
+    -- licencia / staff / perfil
     'activate_license_on_device',
     'verify_device_license_unified',
     'staff_login_on_device',
@@ -203,6 +204,7 @@ declare
     'staff_logout_session',
     'get_license_devices_anon',
     'release_device_anon',
+    'deactivate_device_anon',
     'save_business_profile_secure',
     'get_business_profile_anon',
     'get_active_legal_terms',
@@ -210,27 +212,39 @@ declare
     'create_free_trial_license',
     'renew_license_free',
 
+    -- IA
+    'get_ai_agent_usage',
+
+    -- clientes / productos / catálogo
     'pos_upsert_customer',
     'pos_delete_customer',
     'pos_pull_customers_snapshot',
     'pos_pull_customer_changes',
-
+    'pos_upsert_category',
+    'pos_delete_category',
     'pos_upsert_product',
     'pos_delete_product',
     'pos_toggle_product_status',
     'pos_upsert_product_batch',
     'pos_delete_product_batch',
+    'pos_create_product_batch_from_parent_stock',
+    'pos_adjust_product_stock_without_batch_zero',
     'pos_pull_product_catalog_snapshot',
     'pos_pull_product_catalog_changes',
 
+    -- caja
     'pos_open_cash_session',
     'pos_close_cash_session',
     'pos_register_cash_movement',
     'pos_adjust_initial_cash_fund',
     'pos_get_current_cash_session',
+    'pos_admin_list_cash_sessions',
+    'pos_admin_get_cash_session_detail',
+    'pos_get_cash_report',
     'pos_pull_cash_snapshot',
     'pos_pull_cash_changes',
 
+    -- ventas / reportes
     'pos_upsert_sale_shadow',
     'pos_create_cloud_sale_cashier',
     'pos_create_cloud_sale_cashier_inventory',
@@ -238,23 +252,53 @@ declare
     'pos_cancel_cloud_sale',
     'pos_preview_cloud_sale_cancellation',
     'pos_validate_cloud_sale_integrity',
+    'pos_validate_sales_consistency',
     'pos_get_sale',
     'pos_pull_sales_snapshot',
     'pos_pull_sales_changes',
+    'pos_get_reports_overview',
+    'pos_get_reports_credit_overview',
+    'pos_get_report_timeseries',
+    'pos_export_report_data',
+    'pos_export_sales_shadow',
+    'pos_export_sales_final',
+    'pos_get_sales_final_overview',
+    'pos_get_sales_final_timeseries',
+    'pos_get_sales_final_history',
+    'pos_get_sales_profit_report',
+    'pos_get_sales_audit_report',
 
+    -- restaurante
     'pos_upsert_restaurant_order',
     'pos_get_restaurant_orders',
     'pos_get_restaurant_order_by_local_order',
+    'pos_get_restaurant_orders_history',
     'pos_update_restaurant_order_status',
     'pos_update_restaurant_order_item_status',
     'pos_close_restaurant_order_after_checkout',
     'pos_archive_restaurant_order',
+    'pos_get_preparation_stations',
+    'pos_upsert_preparation_station',
+    'pos_toggle_preparation_station',
 
+    -- crédito
     'pos_record_customer_payment',
     'pos_get_customer_credit_summary',
     'pos_get_customer_credit_report',
     'pos_pull_customer_credit_snapshot',
-    'pos_pull_customer_credit_changes'
+    'pos_pull_customer_credit_changes',
+
+    -- migraciones / sync
+    'pos_migrate_local_customers',
+    'pos_migrate_local_product_catalog',
+    'pos_migrate_local_customer_credit',
+    'pos_pull_sync_events',
+
+    -- caducidades / inventario avanzado
+    'pos_get_expiring_batches_report',
+    'pos_get_expiration_fefo_recommendations',
+    'pos_get_expiration_waste_history',
+    'pos_register_expiration_waste'
   ];
   target_fn record;
 begin
