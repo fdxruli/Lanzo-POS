@@ -2,7 +2,6 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const BUCKET = 'images';
 const PUBLIC_PREFIX = 'public_uploads';
-const SERVER_KEY_ENV = ['SUPABASE', 'SERVICE', 'ROLE', 'KEY'].join('_');
 
 const PURPOSE_LIMITS: Record<string, number> = {
   'business-logo': 2 * 1024 * 1024,
@@ -173,7 +172,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return fail('INVALID_REQUEST', 405);
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serverKey = Deno.env.get(SERVER_KEY_ENV);
+  const serverKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serverKey) return fail('STORAGE_UPLOAD_FAILED', 500);
 
