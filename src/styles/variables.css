@@ -3,6 +3,11 @@
     --primary-color: #334155;
     --primary-hover: #1F2937;
     --secondary-color: #0EA5A4;
+    --brand-accent: #0EA5A4;
+    --brand-accent-hover: #0F766E;
+    --brand-accent-text: #0F766E;
+    --brand-accent-soft: rgba(14, 165, 164, 0.12);
+    --brand-accent-border: rgba(14, 165, 164, 0.32);
     --text-on-primary: #FFFFFF;
 
     /* --- ESTADOS --- */
@@ -61,6 +66,11 @@
     --primary-color: #CBD5E1;
     --primary-hover: #E2E8F0;
     --secondary-color: #2DD4BF;
+    --brand-accent: #2DD4BF;
+    --brand-accent-hover: #5EEAD4;
+    --brand-accent-text: #5EEAD4;
+    --brand-accent-soft: rgba(45, 212, 191, 0.14);
+    --brand-accent-border: rgba(45, 212, 191, 0.38);
     --text-on-primary: #0E1116;
     --success-color: #32D583;
     --warning-color: #FDBA74;

@@ -77,14 +77,14 @@
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--ui-color-primary) 12%, var(--ui-bg-surface)) 0%,
-      color-mix(in srgb, var(--ui-color-primary) 7%, var(--ui-bg-surface)) 100%
+      color-mix(in srgb, var(--ui-color-brand) 12%, var(--ui-bg-surface)) 0%,
+      color-mix(in srgb, var(--ui-color-brand) 7%, var(--ui-bg-surface)) 100%
     );
-  border-color: color-mix(in srgb, var(--ui-color-primary) 28%, transparent);
-  color: var(--ui-color-primary);
+  border-color: var(--ui-border-brand);
+  color: var(--ui-text-brand);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--ui-color-primary) 12%, transparent),
-    0 8px 18px -16px color-mix(in srgb, var(--ui-color-primary) 70%, transparent);
+    inset 0 0 0 1px color-mix(in srgb, var(--ui-color-brand) 12%, transparent),
+    0 8px 18px -16px color-mix(in srgb, var(--ui-color-brand) 70%, transparent);
   transform: none;
 }
 
@@ -107,7 +107,7 @@
 .dashboard-page .tab-btn:focus-visible,
 .settings-page-wrapper .tab-btn.tab-btn:focus-visible {
   outline: none;
-  box-shadow: var(--ui-shadow-focus-primary);
+  box-shadow: var(--ui-shadow-focus-brand);
 }
 
 .dashboard-page .tab-btn.dashboard-tab-danger.active,
@@ -163,11 +163,11 @@
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--ui-color-primary) 20%, var(--ui-bg-surface)) 0%,
-      color-mix(in srgb, var(--ui-color-primary) 12%, var(--ui-bg-surface)) 100%
+      color-mix(in srgb, var(--ui-color-brand) 20%, var(--ui-bg-surface)) 0%,
+      color-mix(in srgb, var(--ui-color-brand) 12%, var(--ui-bg-surface)) 100%
     );
-  border-color: color-mix(in srgb, var(--ui-color-primary) 38%, transparent);
-  color: color-mix(in srgb, var(--ui-color-primary) 74%, white 26%);
+  border-color: var(--ui-border-brand);
+  color: var(--ui-text-brand);
 }
 
 [data-theme="dark"] .dashboard-page .tab-btn.dashboard-tab-danger.active,

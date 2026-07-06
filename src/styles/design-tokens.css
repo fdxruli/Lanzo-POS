@@ -2,6 +2,8 @@
   /* UI palette aliases */
   --ui-color-primary: var(--primary-color);
   --ui-color-primary-hover: var(--primary-hover);
+  --ui-color-brand: var(--brand-accent);
+  --ui-color-brand-hover: var(--brand-accent-hover);
   --ui-color-secondary: var(--secondary-color);
   --ui-color-success: var(--success-color);
   --ui-color-warning: var(--warning-color);
@@ -19,7 +21,9 @@
   --ui-bg-warning-soft: rgba(255, 184, 0, 0.14);
   --ui-bg-danger-soft: rgba(239, 68, 68, 0.12);
   --ui-bg-info-soft: rgba(59, 130, 246, 0.12);
+  --ui-bg-brand-soft: var(--brand-accent-soft);
   --ui-border-color: var(--border-color);
+  --ui-border-brand: var(--brand-accent-border);
   --ui-border-success: color-mix(in srgb, var(--ui-color-success) 45%, transparent);
   --ui-border-warning: color-mix(in srgb, var(--ui-color-warning) 45%, transparent);
   --ui-border-danger: color-mix(in srgb, var(--ui-color-danger) 45%, transparent);
@@ -29,6 +33,7 @@
   --ui-text-strong: var(--text-dark);
   --ui-text: var(--text-color);
   --ui-text-muted: var(--text-light);
+  --ui-text-brand: var(--brand-accent-text);
   --ui-text-success: color-mix(in srgb, var(--ui-color-success) 70%, #064e3b);
   --ui-text-warning: color-mix(in srgb, var(--ui-color-warning) 68%, #78350f);
   --ui-text-danger: color-mix(in srgb, var(--ui-color-danger) 78%, #7f1d1d);
@@ -57,6 +62,7 @@
   --ui-shadow-md: 0 10px 20px -12px rgba(15, 23, 42, 0.28);
   --ui-shadow-lg: var(--box-shadow-lg);
   --ui-shadow-focus-primary: 0 0 0 3px color-mix(in srgb, var(--ui-color-primary) 28%, transparent);
+  --ui-shadow-focus-brand: 0 0 0 3px color-mix(in srgb, var(--ui-color-brand) 28%, transparent);
   --ui-shadow-focus-danger: 0 0 0 3px color-mix(in srgb, var(--ui-color-danger) 24%, transparent);
   --ui-shadow-focus-success: 0 0 0 3px color-mix(in srgb, var(--ui-color-success) 24%, transparent);
 
