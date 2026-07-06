@@ -1,9 +1,14 @@
 # FASE SEC.2 — Rate limit server-side para RPCs críticas
 
 Fecha de preparación: 2026-07-05  
+Corrección SEC.2.1: 2026-07-05  
 Repositorio: `fdxruli/Lanzo-POS`  
-Proyecto Supabase auditado: `odlrhijtfyavryeqivaa`  
-Migración: `supabase/migrations/20260707000000_sec_2_rpc_rate_limits.sql`
+Proyecto Supabase auditado: `odlrhijtfyavryeqivaa`
+
+Migraciones del PR:
+
+- `supabase/migrations/20260707000000_sec_2_rpc_rate_limits.sql`
+- `supabase/migrations/20260707000001_sec_2_1_fix_license_contract_and_rpc_coverage.sql`
 
 ## 1. Infraestructura encontrada
 
@@ -46,161 +51,122 @@ Secretos:
 - `staff_login_on_device` usa `username_hash` derivado con SHA-256 para evitar guardar el username plano en metadata/scope.
 - `activate_license_on_device` usa sentinel de activación por dispositivo para cubrir abuso con licencias inválidas o aleatorias antes de validar licencia.
 
-Storage:
+## 2. Corrección SEC.2.1: contrato de `verify_device_license_unified`
 
-- Uploads de `storage.objects` quedan documentados para SEC.3/SEC.4.
-- SEC.2 no implementa validación avanzada de uploads ni cambia policies de storage.
+La RPC `verify_device_license_unified` no usa el contrato genérico de `success`. El frontend espera principalmente:
 
-IA / Edge Function:
+- `data.valid`
+- `data.reason`
 
-- El frontend invoca la Edge Function `lanzo-ai-agent` para `usage` y generación.
-- En el repositorio no se encontró carpeta visible de Edge Functions para auditar rate limit interno de `lanzo-ai-agent`.
-- SEC.2 agrega rate limit a `get_ai_agent_usage` si existe como RPC pública.
-- La generación IA conserva su límite funcional de usos por periodo/licencia; SEC.2 solo agrega defensa anti-abuso de endpoint/usage cuando la RPC está presente.
+Por eso SEC.2.1 agrega:
 
-## 2. Diseño aplicado
+```sql
+public.build_license_validation_rate_limited_response(p_rate_limit jsonb)
+```
 
-SEC.2 agrega `public.enforce_pos_rpc_rate_limit_v2(...)` con:
+Cuando `verify_device_license_unified` es rate-limited, el wrapper devuelve:
 
-- Scope explícito por categoría.
-- Bloqueo temporal con `blocked_until`.
-- Respuestas controladas con códigos como:
-  - `RPC_RATE_LIMITED`
-  - `AUTH_RATE_LIMITED`
-  - `STAFF_LOGIN_RATE_LIMITED`
-  - `LICENSE_ACTIVATION_RATE_LIMITED`
-  - `REPORT_RATE_LIMITED`
-  - `AI_RATE_LIMITED`
-- Metadata defensiva no sensible.
-- Fallback cerrado con sentinels `__missing_license__` y `__missing_device__` para que contexto incompleto no omita el rate limit.
+```json
+{
+  "valid": false,
+  "success": false,
+  "reason": "AUTH_RATE_LIMITED",
+  "code": "AUTH_RATE_LIMITED",
+  "message": "Demasiados intentos. Espera unos minutos e intenta de nuevo.",
+  "retry_after_seconds": 300,
+  "is_rate_limited": true
+}
+```
 
-Patrón de wrappers:
+`AUTH_RATE_LIMITED` no equivale a licencia inválida permanente. No debe tratarse como `DEVICE_NOT_ALLOWED`, `CLONING_DETECTED`, `LICENSE_EXPIRED`, `DEVICE_TOKEN_INVALID` ni ningún rechazo real de licencia. Es un bloqueo temporal defensivo por volumen.
 
-1. Si `public.<rpc>_unlimited` no existe, se renombra la RPC actual a `public.<rpc>_unlimited`.
-2. Se crea/reemplaza `public.<rpc>` con la misma firma, retorno y `SECURITY DEFINER`.
-3. El wrapper aplica rate limit.
-4. Si excede límite, devuelve JSON/JSONB controlado sin stack trace.
-5. Si está permitido, delega a `public.<rpc>_unlimited(...)`.
-6. Se revoca ejecución directa de `*_unlimited` a `PUBLIC`, `anon` y `authenticated`.
-7. Se concede `EXECUTE` al wrapper público para `anon` y `authenticated`.
+## 3. Cobertura adicional SEC.2.1
 
-## 3. Matriz RPC
+Supabase confirmó que las siguientes RPCs existen activas en `public` y retornan `jsonb`; SEC.2.1 las agrega a la cobertura de wrappers con `enforce_pos_rpc_rate_limit_v2(...)` si existen en el ambiente donde corre la migración:
 
-| RPC | Categoría | Límite | Scope | Validación contexto | Idempotencia | Rate limit antes | Estado SEC.2 |
-|---|---:|---:|---|---|---|---:|---|
-| `activate_license_on_device` | AUTH_LICENSE | 10 / 10 min; bloqueo 15 min | device_fingerprint + rpc_name (sentinel de activación para cubrir licencias inválidas) | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `verify_device_license_unified` | AUTH_LICENSE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + rpc_name + scope | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `create_free_trial_license` | AUTH_LICENSE | 3 / 1440 min; bloqueo 1440 min | device_fingerprint + rpc_name | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `renew_license_free` | AUTH_LICENSE | 5 / 60 min; bloqueo 60 min | license_key + device_fingerprint + rpc_name + scope | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `staff_login_on_device` | STAFF_AUTH | 10 / 10 min; bloqueo 15 min | license_key + device_fingerprint + username_hash + rpc_name | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `verify_staff_session` | STAFF_AUTH | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `staff_logout_session` | STAFF_AUTH | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `save_business_profile_secure` | PROFILE | 30 / 10 min; bloqueo 10 min | license_key + device_fingerprint + rpc_name + scope | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `get_business_profile_anon` | PROFILE | 60 / 10 min; bloqueo 5 min | license_key + sentinel profile_read + rpc_name | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `register_term_acceptance` | PROFILE | 20 / 10 min; bloqueo 10 min | license_key + device_fingerprint + rpc_name + scope | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `get_license_devices_anon` | DEVICE_ADMIN | 30 / 10 min; bloqueo 10 min | license_key + device_fingerprint + rpc_name + scope | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `release_device_anon` | DEVICE_ADMIN | 10 / 10 min; bloqueo 10 min | license_key + device_fingerprint + rpc_name + scope | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `deactivate_device_anon` | DEVICE_ADMIN | 10 / 10 min; bloqueo 10 min | license_key + device_fingerprint + rpc_name + scope | Sí, validación propia existente | No aplica | No | Agregado en SEC.2 |
-| `pos_upsert_customer` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_delete_customer` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_upsert_category` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_delete_category` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_upsert_product` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_delete_product` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_toggle_product_status` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_upsert_product_batch` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_delete_product_batch` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_create_product_batch_from_parent_stock` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_adjust_product_stock_without_batch_zero` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_upsert_restaurant_order` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_update_restaurant_order_status` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_update_restaurant_order_item_status` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_archive_restaurant_order` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_register_expiration_waste` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_upsert_preparation_station` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_toggle_preparation_station` | POS_WRITE | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_open_cash_session` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_close_cash_session` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_register_cash_movement` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_adjust_initial_cash_fund` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_upsert_sale_shadow` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_create_cloud_sale_cashier` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_create_cloud_sale_cashier_inventory` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_create_cloud_sale_credit` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_cancel_cloud_sale` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_close_restaurant_order_after_checkout` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_record_customer_payment` | POS_WRITE | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | Sí, p_idempotency_key cuando existe | No | Agregado en SEC.2 |
-| `pos_get_reports_overview` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_reports_credit_overview` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_report_timeseries` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_sales_final_overview` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_sales_final_timeseries` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_cash_report` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_product_catalog_report` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_expiring_batches_report` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_get_expiration_fefo_recommendations` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_get_expiration_waste_history` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_preview_cloud_sale_cancellation` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_validate_cloud_sale_integrity` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_get_sales_final_history` | POS_READ_HEAVY | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_sales_profit_report` | POS_READ_HEAVY | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_sales_audit_report` | POS_READ_HEAVY | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_customer_credit_report` | POS_READ_HEAVY | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_get_restaurant_orders_history` | POS_READ_HEAVY | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_export_report_data` | REPORT_EXPORT | 10 / 10 min; bloqueo 15 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_export_sales_final` | REPORT_EXPORT | 10 / 10 min; bloqueo 15 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_export_sales_shadow` | REPORT_EXPORT | 10 / 10 min; bloqueo 15 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_pull_customers_snapshot` | SYNC_PULL | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_pull_product_catalog_snapshot` | SYNC_PULL | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_pull_cash_snapshot` | SYNC_PULL | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_pull_sales_snapshot` | SYNC_PULL | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_pull_customer_credit_snapshot` | SYNC_PULL | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | Sí | Re-envuelto con SEC.2/v2 |
-| `pos_pull_customer_changes` | SYNC_PULL | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_pull_product_catalog_changes` | SYNC_PULL | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_pull_cash_changes` | SYNC_PULL | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_pull_sales_changes` | SYNC_PULL | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_pull_customer_credit_changes` | SYNC_PULL | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `pos_pull_sync_events` | SYNC_PULL | 120 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
-| `get_ai_agent_usage` | AI_USAGE | 30 / 10 min; bloqueo 5 min | license_key + device_fingerprint + staff_session_hash/null + rpc_name + scope | Sí, contexto RPC existente | No aplica | No | Agregado en SEC.2 |
+| RPC | Categoría | Límite | Código | Estado SEC.2.1 |
+|---|---:|---:|---|---|
+| `pos_get_current_cash_session` | POS_READ_HEAVY | 120 / 10 min; bloqueo 5 min | `RPC_RATE_LIMITED` | Agregado |
+| `pos_admin_list_cash_sessions` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | `REPORT_RATE_LIMITED` | Agregado |
+| `pos_admin_get_cash_session_detail` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | `REPORT_RATE_LIMITED` | Agregado |
+| `pos_validate_sales_consistency` | POS_READ_HEAVY | 30 / 10 min; bloqueo 5 min | `REPORT_RATE_LIMITED` | Agregado |
+| `pos_get_restaurant_orders` | POS_READ_HEAVY | 120 / 10 min; bloqueo 5 min | `RPC_RATE_LIMITED` | Agregado |
+| `pos_get_restaurant_order_by_local_order` | POS_READ_HEAVY | 120 / 10 min; bloqueo 5 min | `RPC_RATE_LIMITED` | Agregado |
+| `pos_get_preparation_stations` | POS_READ_HEAVY | 120 / 10 min; bloqueo 5 min | `RPC_RATE_LIMITED` | Agregado |
+| `pos_get_customer_credit_summary` | POS_READ_HEAVY | 60 / 10 min; bloqueo 5 min | `REPORT_RATE_LIMITED` | Agregado |
+| `pos_get_sale` | POS_READ_HEAVY | 120 / 10 min; bloqueo 5 min | `RPC_RATE_LIMITED` | Agregado |
+| `pos_migrate_local_customers` | SYNC_PULL | 10 / 10 min; bloqueo 15 min | `RPC_RATE_LIMITED` | Agregado |
+| `pos_migrate_local_product_catalog` | SYNC_PULL | 10 / 10 min; bloqueo 15 min | `RPC_RATE_LIMITED` | Agregado |
+| `pos_migrate_local_customer_credit` | SYNC_PULL | 10 / 10 min; bloqueo 15 min | `RPC_RATE_LIMITED` | Agregado |
 
-## 4. Queries de verificación
+## 4. Matriz resumida de cobertura SEC.2
 
-### Funciones objetivo con rate limit
+| Grupo | RPCs cubiertas | Límite base |
+|---|---|---|
+| AUTH_LICENSE | `activate_license_on_device`, `verify_device_license_unified`, `create_free_trial_license`, `renew_license_free` | 3–60 por ventana según riesgo |
+| STAFF_AUTH | `staff_login_on_device`, `verify_staff_session`, `staff_logout_session` | 10–60 por 10 min |
+| PROFILE | `save_business_profile_secure`, `get_business_profile_anon`, `register_term_acceptance` | 20–60 por 10 min |
+| DEVICE_ADMIN | `get_license_devices_anon`, `release_device_anon`, `deactivate_device_anon` | 10–30 por 10 min |
+| POS_WRITE | clientes, productos, lotes, caja monetaria, ventas, restaurante, crédito, caducidad y preparación | 60–120 por 10 min |
+| POS_READ_HEAVY | reportes, históricos, caja actual/admin, restaurante activo, venta individual, preparación y crédito | 30–120 por 10 min |
+| REPORT_EXPORT | exportaciones | 10 por 10 min |
+| SYNC_PULL | snapshots, pulls incrementales y migraciones locales | 10–120 por 10 min |
+| AI_USAGE | `get_ai_agent_usage` si existe | 30 por 10 min |
+
+## 5. Queries de verificación
+
+### Contrato especial de `verify_device_license_unified`
 
 ```sql
 select
-  n.nspname as schema,
-  p.proname as function_name,
-  pg_get_function_identity_arguments(p.oid) as args,
-  case
-    when pg_get_functiondef(p.oid) ilike '%enforce_pos_rpc_rate_limit_v2%'
-      or pg_get_functiondef(p.oid) ilike '%enforce_pos_rpc_rate_limit%'
-      or pg_get_functiondef(p.oid) ilike '%check_pos_rpc_rate_limit%'
-    then true
-    else false
-  end as has_rate_limit
+  p.proname,
+  pg_get_functiondef(p.oid) ilike '%build_license_validation_rate_limited_response%' as uses_license_rate_limited_contract,
+  pg_get_functiondef(p.oid) ilike '%AUTH_RATE_LIMITED%' as returns_auth_rate_limited,
+  pg_get_functiondef(p.oid) ilike '%verify_device_license_unified_unlimited%' as delegates_to_unlimited
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname = 'verify_device_license_unified';
+```
+
+Resultado esperado:
+
+- `uses_license_rate_limited_contract = true`
+- `returns_auth_rate_limited = true`
+- `delegates_to_unlimited = true`
+
+### Cobertura SEC.2.1
+
+```sql
+select
+  p.proname,
+  pg_get_functiondef(p.oid) ilike '%enforce_pos_rpc_rate_limit_v2%' as has_sec2_rate_limit,
+  pg_get_functiondef(p.oid) ilike '%_unlimited%' as delegates_to_unlimited
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public'
   and p.proname = any(array[
-    'activate_license_on_device',
     'verify_device_license_unified',
-    'staff_login_on_device',
-    'verify_staff_session',
-    'create_free_trial_license',
-    'renew_license_free',
-    'save_business_profile_secure',
-    'get_license_devices_anon',
-    'release_device_anon',
-    'pos_create_cloud_sale_cashier',
-    'pos_open_cash_session',
-    'pos_register_cash_movement',
-    'pos_get_reports_overview',
-    'pos_export_sales_final',
-    'get_ai_agent_usage'
+    'pos_get_current_cash_session',
+    'pos_admin_list_cash_sessions',
+    'pos_admin_get_cash_session_detail',
+    'pos_validate_sales_consistency',
+    'pos_get_restaurant_orders',
+    'pos_get_restaurant_order_by_local_order',
+    'pos_get_preparation_stations',
+    'pos_get_customer_credit_summary',
+    'pos_get_sale',
+    'pos_migrate_local_customers',
+    'pos_migrate_local_product_catalog',
+    'pos_migrate_local_customer_credit'
   ])
 order by p.proname;
 ```
+
+Resultado esperado para RPCs existentes:
+
+- `has_sec2_rate_limit = true`
+- `delegates_to_unlimited = true`
 
 ### Rate limit table/indexes
 
@@ -279,7 +245,20 @@ Resultado esperado:
 - `private.*` sigue cerrado.
 - `*_unlimited` sigue cerrado.
 
-## 5. Pruebas manuales
+## 6. Pruebas manuales obligatorias
+
+### Contrato de licencia y caché seguro
+
+- [ ] Forzar rate limit de `verify_device_license_unified`.
+- [ ] Confirmar respuesta:
+  - `valid = false`
+  - `success = false`
+  - `reason = 'AUTH_RATE_LIMITED'`
+  - `code = 'AUTH_RATE_LIMITED'`
+  - `is_rate_limited = true`
+- [ ] Confirmar que `AUTH_RATE_LIMITED` no se muestra como licencia inválida permanente.
+- [ ] Confirmar que el usuario no queda expulsado como si fuera `DEVICE_NOT_ALLOWED`, `CLONING_DETECTED`, `LICENSE_EXPIRED` o `DEVICE_TOKEN_INVALID`.
+- [ ] Confirmar que `last_valid_license_state` no se borra por un rate limit temporal.
 
 ### Licencia/auth
 
@@ -313,17 +292,25 @@ Resultado esperado:
 - [ ] Crear venta cloud con retry legítimo usando la misma idempotency key.
 - [ ] Confirmar que idempotencia sigue evitando duplicados.
 - [ ] Abrir caja.
+- [ ] Consultar caja actual con `pos_get_current_cash_session`.
 - [ ] Registrar movimiento de caja.
+- [ ] Consultar caja admin con `pos_admin_list_cash_sessions` y `pos_admin_get_cash_session_detail`.
 - [ ] Cerrar caja.
+- [ ] Consultar pedidos restaurante activos.
 - [ ] Actualizar pedido restaurante.
 - [ ] Cerrar pedido restaurante después de checkout.
+- [ ] Consultar estaciones de preparación.
+- [ ] Consultar venta individual con `pos_get_sale`.
+- [ ] Consultar resumen de crédito cliente.
 
 ### Reportes/exportaciones/sync
 
 - [ ] Ejecutar dashboard/reportes normales.
+- [ ] Ejecutar `pos_validate_sales_consistency`.
 - [ ] Ejecutar exportación normal.
 - [ ] Ejecutar snapshot inicial en dispositivo PRO.
 - [ ] Ejecutar pull incremental después de cambios.
+- [ ] Ejecutar migraciones locales de clientes/productos/crédito en escenario controlado.
 - [ ] Confirmar que bootstrap/reconexión móvil no queda bloqueado.
 - [ ] Repetir exportación hasta recibir `REPORT_RATE_LIMITED`.
 
@@ -334,22 +321,30 @@ Resultado esperado:
 - [ ] Confirmar que el cupo funcional IA por periodo sigue intacto.
 - [ ] Documentar en SEC.3/SEC.4 si `lanzo-ai-agent` necesita rate limit interno adicional dentro de la Edge Function.
 
-## 6. Restricciones verificadas por diseño
+## 7. Restricciones verificadas por diseño
 
 - No cambia comportamiento FREE/PRO.
 - No rediseña autenticación.
-- No cambia contratos de frontend salvo códigos controlados de rate limit.
+- No cambia contratos de respuestas válidas.
 - No reabre `save_business_profile_anon`.
-- No concede `private.*` a clientes.
+- No concede `private.*`.
 - No elimina idempotencia.
 - No guarda tokens planos.
 - No toca precios, descuentos, split bill, inventario ni restaurante salvo wrappers de RPC.
 - No modifica storage upload; queda para SEC.3/SEC.4.
-- No aplica DDL directamente en producción desde este PR; la migración queda versionada para despliegue controlado.
+- No aplica DDL directamente en producción desde este PR; las migraciones quedan versionadas para despliegue controlado.
 
-## 7. Checklist de aceptación
+## 8. Checklist de aceptación SEC.2 + SEC.2.1
 
 - [ ] Auth/licencia/staff tienen rate limit server-side.
+- [ ] `verify_device_license_unified` rate-limited devuelve `valid:false`, `reason:'AUTH_RATE_LIMITED'`, `code:'AUTH_RATE_LIMITED'`, `is_rate_limited:true`.
+- [ ] `AUTH_RATE_LIMITED` no se trata como licencia inválida permanente.
+- [ ] `last_valid_license_state` no se borra por rate limit temporal.
+- [ ] `pos_get_current_cash_session` queda cubierto.
+- [ ] `pos_admin_list_cash_sessions` queda cubierto.
+- [ ] `pos_admin_get_cash_session_detail` queda cubierto.
+- [ ] `pos_validate_sales_consistency` queda cubierto.
+- [ ] RPCs activas adicionales de restaurante/preparación/crédito/venta/migraciones quedan cubiertas.
 - [ ] POS cloud escrituras críticas tienen rate limit server-side o notice si alguna RPC no existe en el ambiente.
 - [ ] Reportes/exportaciones pesadas tienen rate limit.
 - [ ] Pull/snapshot cloud tienen límites razonables.
