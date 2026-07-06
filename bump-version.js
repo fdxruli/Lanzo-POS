@@ -1,39 +1,101 @@
-name: Auto Bump Version
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
 
-on:
-  push:
-    branches:
-      - main        # Asegúrate de que tu rama principal se llame 'main' o 'master'
-    paths-ignore:
-      - 'package.json' # IMPORTANTE: Evita un bucle infinito. Si solo cambia el package.json, no se ejecuta de nuevo.
+const rootDir = process.cwd();
+const packagePath = path.join(rootDir, 'package.json');
+const lockPath = path.join(rootDir, 'package-lock.json');
+const validBumps = new Set(['major', 'minor', 'patch']);
 
-jobs:
-  bump-version:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write  # Necesario para poder hacer el 'git push' de vuelta
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
+const writeJson = (filePath, data) => {
+  fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`);
+};
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+const parseVersion = (version) => {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(version);
+  if (!match) {
+    throw new Error(`Version invalida: ${version}. Usa semver, por ejemplo 4.1.0.`);
+  }
 
-      - name: Run Bump Version Script
-        # Ejecuta tu script actual. Asegúrate de que bump-version.js esté en la raíz.
-        # Si está en una carpeta, usa: node carpeta/bump-version.js
-        run: node bump-version.js
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: match[4] || ''
+  };
+};
 
-      - name: Commit and Push Changes
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add package.json
-          # El mensaje del commit incluirá la nueva versión
-          git commit -m "chore: release version $(node -p "require('./package.json').version")"
-          git push
+const formatVersion = ({ major, minor, patch, prerelease }) => (
+  `${major}.${minor}.${patch}${prerelease ? `-${prerelease}` : ''}`
+);
+
+const bumpVersion = (current, type) => {
+  const next = parseVersion(current);
+
+  if (type === 'major') {
+    next.major += 1;
+    next.minor = 0;
+    next.patch = 0;
+  }
+
+  if (type === 'minor') {
+    next.minor += 1;
+    next.patch = 0;
+  }
+
+  if (type === 'patch') {
+    next.patch += 1;
+  }
+
+  next.prerelease = '';
+  return formatVersion(next);
+};
+
+const updateLockVersion = (nextVersion) => {
+  if (!fs.existsSync(lockPath)) return;
+
+  const lock = readJson(lockPath);
+  lock.version = nextVersion;
+
+  if (lock.packages?.['']) {
+    lock.packages[''].version = nextVersion;
+  }
+
+  writeJson(lockPath, lock);
+};
+
+const setVersion = (nextVersion) => {
+  parseVersion(nextVersion);
+
+  const pkg = readJson(packagePath);
+  const previousVersion = pkg.version;
+  pkg.version = nextVersion;
+  writeJson(packagePath, pkg);
+  updateLockVersion(nextVersion);
+
+  console.log(`Lanzo POS ${previousVersion} -> ${nextVersion}`);
+};
+
+const printStatus = () => {
+  const pkg = readJson(packagePath);
+  console.log(`Lanzo POS v${pkg.version}`);
+  console.log('Fuente de verdad: package.json');
+  console.log('Build expone: VITE_APP_VERSION, VITE_BUILD_DATE, VITE_BUILD_COMMIT');
+};
+
+const [command = 'status', value] = process.argv.slice(2);
+const pkg = readJson(packagePath);
+
+if (command === 'status') {
+  printStatus();
+} else if (validBumps.has(command)) {
+  setVersion(bumpVersion(pkg.version, command));
+} else if (command === 'set') {
+  if (!value) {
+    throw new Error('Indica la version: npm run version:set -- 4.1.0');
+  }
+  setVersion(value);
+} else {
+  throw new Error(`Comando desconocido: ${command}. Usa status, patch, minor, major o set.`);
+}

@@ -9,7 +9,12 @@
     "lint": "eslint src/**/*.{js,jsx}",
     "preview": "vite preview",
     "test": "vitest",
-    "test:ci": "vitest run --maxWorkers=4"
+    "test:ci": "vitest run --maxWorkers=4",
+    "version:status": "node bump-version.js status",
+    "version:patch": "node bump-version.js patch",
+    "version:minor": "node bump-version.js minor",
+    "version:major": "node bump-version.js major",
+    "version:set": "node bump-version.js set"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.0.1",

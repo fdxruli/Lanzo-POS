@@ -1,9 +1,23 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'node:child_process';
 import packageJson from './package.json';
 
-export default defineConfig({
+const getGitCommit = () => {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+  } catch {
+    return 'local';
+  }
+};
+
+const buildDate = new Date().toISOString();
+const buildCommit = getGitCommit();
+
+export default defineConfig(() => ({
   plugins: [
     react(),
     VitePWA({
@@ -11,7 +25,7 @@ export default defineConfig({
       injectRegister: 'auto',
       includeAssets: ['log.svg', 'logIcon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
       devOptions: {
-        enabled: true,
+        enabled: false,
         type: 'module',
         navigateFallback: 'index.html',
       },
@@ -44,8 +58,14 @@ export default defineConfig({
     })
   ],
 
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
+
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
+    'import.meta.env.VITE_BUILD_DATE': JSON.stringify(buildDate),
+    'import.meta.env.VITE_BUILD_COMMIT': JSON.stringify(buildCommit),
   },
 
   build: {
@@ -67,4 +87,4 @@ export default defineConfig({
       }
     }
   }
-});
+}));
