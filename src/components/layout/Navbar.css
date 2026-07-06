@@ -77,8 +77,8 @@
 }
 
 .bottom-nav-item.active {
-  color: var(--primary-color);
-  background-color: rgba(0, 0, 0, 0.02);
+  color: var(--brand-accent-text);
+  background-color: var(--brand-accent-soft);
 }
 
 .bottom-nav-item.active svg {
@@ -110,13 +110,13 @@
 
 /* ESTADO SELECCIONADO (ACTIVE) */
 .nav-item.active {
-  background-color: #e0e7ff;
+  background-color: var(--brand-accent-soft);
   /* Un fondo suave (ajústalo a tu color de marca) */
-  color: #3730a3;
+  color: var(--brand-accent-text);
   /* Un texto más oscuro o del color de tu marca */
   font-weight: 600;
   /* Opcional: una barra lateral para destacar más */
-  border-left: 4px solid #3730a3;
+  border-left: 4px solid var(--brand-accent);
 }
 
 /* Efecto Hover (opcional pero recomendado) */
@@ -131,13 +131,13 @@
   width: 65px;
   height: 65px;
   /* Gradiente usando tus variables */
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+  background: linear-gradient(135deg, var(--brand-accent) 0%, var(--brand-accent-hover) 100%);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  box-shadow: 0 8px 20px rgba(255, 59, 92, 0.4);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--brand-accent) 34%, transparent);
   /* Borde del color de fondo para simular recorte */
   border: 5px solid var(--background-color);
   transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -300,7 +300,7 @@
   width: 40px;
   height: 40px;
   border-radius: 11px;
-  color: var(--secondary-color);
+  color: var(--brand-accent-text);
   background-color: var(--card-background-color);
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
 }
@@ -333,9 +333,9 @@
 }
 
 .drawer-link.active {
-  background-color: rgba(123, 97, 255, 0.15);
-  color: var(--secondary-color);
-  border: 1px solid var(--secondary-color);
+  background-color: var(--brand-accent-soft);
+  color: var(--brand-accent-text);
+  border: 1px solid var(--brand-accent-border);
 }
 
 .drawer-link.active .drawer-link-description {
@@ -401,7 +401,7 @@
 }
 
 .drawer-system-action--install {
-  background-color: var(--secondary-color);
+  background-color: var(--brand-accent);
 }
 
 .bottom-nav-item:focus-visible,
@@ -409,7 +409,7 @@
 .drawer-warning-action:focus-visible,
 .drawer-system-action:focus-visible,
 .btn-close-drawer:focus-visible {
-  outline: 3px solid rgba(6, 182, 212, 0.38);
+  outline: 3px solid color-mix(in srgb, var(--brand-accent) 38%, transparent);
   outline-offset: 2px;
 }
 
@@ -523,6 +523,7 @@
     padding: 12px 16px;
     color: var(--text-light);
     font-weight: 600;
+    border: 1px solid transparent;
     border-radius: 10px;
     transition: all 0.2s;
     text-decoration: none;
@@ -535,9 +536,14 @@
   }
 
   .nav-link.active {
-    background: linear-gradient(90deg, var(--primary-color) 0%, var(--primary-hover) 100%);
-    color: white;
-    box-shadow: 0 4px 12px rgba(255, 59, 92, 0.2);
+    background: linear-gradient(
+      90deg,
+      var(--brand-accent-soft) 0%,
+      color-mix(in srgb, var(--brand-accent-soft) 58%, transparent) 100%
+    );
+    color: var(--brand-accent-text);
+    border: 1px solid var(--brand-accent-border);
+    box-shadow: inset 4px 0 0 var(--brand-accent);
   }
 
   .sidebar-divider {
