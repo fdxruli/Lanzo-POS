@@ -1,12 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { compressImage, showMessageModal } from '../../services/utils';
 import Logger from '../../services/Logger';
-// Se importaron nuevos iconos de lucide-react (Store, Phone, MapPin, Image, Sun, Moon, Monitor)
-import { Lock, Info, FileText, Bot, Bell, Store, Phone, MapPin, Image as ImageIcon, Sun, Moon, Monitor, ShieldCheck } from 'lucide-react';
+import { Lock, Info, FileText, Store, Phone, MapPin, Image as ImageIcon, Sun, Moon, Monitor } from 'lucide-react';
 import TermsAndConditionsModal from '../common/TermsAndConditionsModal';
-import { CASH_OPENING_POLICY } from '../../services/cashOpeningPolicyService.js';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -33,19 +30,6 @@ const getInitialTheme = () => localStorage.getItem('theme-preference') || 'syste
 export default function GeneralSettings() {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
-
-  const showAssistantBot = useAppStore((state) => state.showAssistantBot);
-  const setShowAssistantBot = useAppStore((state) => state.setShowAssistantBot);
-
-  const showTicker = useAppStore((state) => state.showTicker);
-  const setShowTicker = useAppStore((state) => state.setShowTicker);
-
-  const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
-  const setEnableMultipleOrders = useAppStore((state) => state.setEnableMultipleOrders);
-  const cashOpeningPolicy = useAppStore((state) => state.cashOpeningPolicy);
-  const setCashOpeningPolicy = useAppStore((state) => state.setCashOpeningPolicy);
-  
-  const activeOrdersCount = useActiveOrders((state) => state.activeOrders.size);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -303,126 +287,6 @@ export default function GeneralSettings() {
         </div>
       </div>
 
-      {/* SECCIÓN BARRA DE ANUNCIOS (TICKER) */}
-      <div className="settings-subsection">
-        <h3 className="subtitle">Barra de Anuncios (Ticker)</h3>
-
-        <div className="settings-option-row">
-          <div className="settings-option-main settings-option-main--center">
-            <div className={`settings-icon-bubble ${showTicker ? 'settings-icon-bubble--info' : 'settings-icon-bubble--muted'}`}>
-              <Bell size={24} />
-            </div>
-            <div className="settings-option-copy">
-              <span className="settings-option-title">Cinta de Notificaciones Superior</span>
-              <p>Muestra alertas dinámicas en la parte superior de la pantalla.</p>
-              <span className="settings-warning-text">
-                ⚠️ Al desactivar esta barra dejarás de ver notificaciones críticas de stock bajo y caducidad.
-              </span>
-              <span className="settings-warning-text">
-                Nota: Activar y desactivar este control reiniciará la animación de los mensajes en cola.
-              </span>
-              <br />
-              <span className="settings-option-meta">
-                {showTicker ? 'La barra de anuncios está activa.' : 'La barra de anuncios está oculta.'}
-              </span>
-            </div>
-          </div>
-
-          {/* Toggle Switch Personalizado */}
-          <label className="settings-switch">
-            <input
-              className="settings-switch__input"
-              type="checkbox"
-              checked={!!showTicker}
-              onChange={(e) => setShowTicker(e.target.checked)}
-            />
-
-            <span className={`settings-switch__track ${showTicker ? 'is-on' : ''}`}></span>
-
-            <span className={`settings-switch__thumb ${showTicker ? 'is-on' : ''}`}></span>
-          </label>
-        </div>
-      </div>
-
-      {/* SECCIÓN ASISTENTE VIRTUAL */}
-      <div className="settings-subsection">
-        <h3 className="subtitle">Asistente Virtual</h3>
-
-        <div className="settings-option-row">
-          <div className="settings-option-main settings-option-main--center">
-            <div className={`settings-icon-bubble ${showAssistantBot ? 'settings-icon-bubble--info' : 'settings-icon-bubble--muted'}`}>
-              <Bot size={24} />
-            </div>
-            <div className="settings-option-copy">
-              <span className="settings-option-title">Lanzo Bot (experimental)</span>
-              <p>Estamos enseñando a nuestro BOT a ser mejor. <br/>Mientras puedes utilizarlo pero revisa los movimientos</p>
-              <br />
-              <span className="settings-option-meta">
-                {showAssistantBot ? 'El asistente está activo y te dará sugerencias.' : 'El asistente está desactivado.'}
-              </span>
-            </div>
-          </div>
-
-          {/* Toggle Switch Personalizado */}
-          <label className="settings-switch">
-            <input
-              className="settings-switch__input"
-              type="checkbox"
-              checked={!!showAssistantBot}
-              onChange={(e) => setShowAssistantBot(e.target.checked)}
-            />
-
-            <span className={`settings-switch__track ${showAssistantBot ? 'is-on' : ''}`}></span>
-
-            <span className={`settings-switch__thumb ${showAssistantBot ? 'is-on' : ''}`}></span>
-          </label>
-        </div>
-      </div>
-
-      {/* SECCIÓN MÚLTIPLES ÓRDENES */}
-      <div className="settings-subsection">
-        <h3 className="subtitle">Múltiples Órdenes</h3>
-
-        <div className={`settings-option-row ${activeOrdersCount > 1 ? 'settings-option-row--disabled' : ''}`}>
-          <div className="settings-option-main settings-option-main--center">
-            <div className={`settings-icon-bubble ${enableMultipleOrders ? 'settings-icon-bubble--info' : 'settings-icon-bubble--muted'}`}>
-              <FileText size={24} />
-            </div>
-            <div className="settings-option-copy">
-              <span className="settings-option-title">Pestañas de Órdenes Simultáneas</span>
-              <p>Permite atender a múltiples clientes a la vez usando pestañas (tabs).</p>
-              <p> Aún en desarrollo. Revisa tus ventas despues de cerrarlas</p>
-              <br />
-              <span className="settings-option-meta">
-                {enableMultipleOrders ? 'Múltiples órdenes activadas.' : 'Solo se permite una orden a la vez.'}
-              </span>
-              {activeOrdersCount > 1 && (
-                <span className="settings-warning-text">
-                  Debes cerrar, cobrar o cancelar todas las órdenes secundarias en el POS antes de desactivar esta función.
-                </span>
-              )}
-            </div>
-          </div>
-
-          <label className={`settings-switch ${activeOrdersCount > 1 ? 'is-disabled' : ''}`}>
-            <input
-              className="settings-switch__input"
-              type="checkbox"
-              checked={!!enableMultipleOrders}
-              onChange={(e) => {
-                if (activeOrdersCount > 1) return;
-                setEnableMultipleOrders(e.target.checked);
-              }}
-              disabled={activeOrdersCount > 1}
-            />
-
-            <span className={`settings-switch__track ${enableMultipleOrders ? 'is-on' : ''} ${activeOrdersCount > 1 ? 'is-disabled' : ''}`}></span>
-
-            <span className={`settings-switch__thumb ${enableMultipleOrders ? 'is-on' : ''}`}></span>
-          </label>
-        </div>
-      </div>
-
       {/* SECCIÓN LEGAL */}
       <div className="settings-subsection">
         <h3 className="subtitle">Legal y Privacidad</h3>
@@ -438,47 +302,6 @@ export default function GeneralSettings() {
             <span className="settings-option-title">Términos y Condiciones de Uso</span>
             <span className="settings-option-meta">Consulta nuestras políticas de manejo de datos y privacidad.</span>
           </div>
-        </div>
-      </div>
-
-      <div className="settings-subsection">
-        <h3 className="subtitle">Política de Caja</h3>
-
-        <div className={`settings-option-row ${cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? 'settings-option-row--warning' : ''}`}>
-          <div className="settings-option-main">
-            <div className={`settings-icon-bubble ${cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? 'settings-icon-bubble--warning' : 'settings-icon-bubble--success'}`}>
-              <ShieldCheck size={24} />
-            </div>
-            <div className="settings-option-copy">
-              <span className="settings-option-title">
-                Autoapertura de caja
-              </span>
-              <p>
-                Desactivada, exige fondo confirmado, conteo físico y empleado responsable en cada turno.
-              </p>
-              <span className="settings-option-meta">
-                {cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC
-                  ? 'Activa: el sistema heredará el fondo y registrará al sistema como responsable.'
-                  : 'Recomendada: ninguna caja se abre sin confirmación del operador.'}
-              </span>
-            </div>
-          </div>
-
-          <label className="settings-switch">
-            <input
-              className="settings-switch__input"
-              type="checkbox"
-              checked={cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC}
-              onChange={(event) => setCashOpeningPolicy(
-                event.target.checked
-                  ? CASH_OPENING_POLICY.AUTOMATIC
-                  : CASH_OPENING_POLICY.MANUAL
-              )}
-              aria-label="Permitir autoapertura de caja"
-            />
-            <span className={`settings-switch__track ${cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? 'is-on is-warning' : ''}`} />
-            <span className={`settings-switch__thumb ${cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC ? 'is-on' : ''}`} />
-          </label>
         </div>
       </div>
 
