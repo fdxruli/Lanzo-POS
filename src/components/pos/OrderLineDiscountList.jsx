@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
 import { getLineKey } from '../../services/sales/orderTotals';
 import { showMessageModal } from '../../services/utils';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
@@ -10,13 +11,18 @@ export default function OrderLineDiscountList() {
   const order = useActiveOrders(selectCurrentOrder);
   const applyLineDiscount = useActiveOrders((state) => state.applyLineDiscount);
   const removeLineDiscount = useActiveOrders((state) => state.removeLineDiscount);
+  const canAccess = useAppStore((state) => state.canAccess);
+  useAppStore((state) => state.currentDeviceRole);
+  useAppStore((state) => state.currentStaffUser);
+
   const [editingLineId, setEditingLineId] = useState(null);
   const [type, setType] = useState('amount');
   const [value, setValue] = useState('');
   const [reason, setReason] = useState('');
 
+  const canManageDiscounts = canAccess('discounts');
   const items = Array.isArray(order?.items) ? order.items.filter((item) => Number(item?.quantity) > 0) : [];
-  if (items.length === 0) return null;
+  if (items.length === 0 || !canManageDiscounts) return null;
 
   const reset = () => {
     setEditingLineId(null);
@@ -26,6 +32,8 @@ export default function OrderLineDiscountList() {
   };
 
   const apply = (lineId) => {
+    if (!canManageDiscounts) return;
+
     try {
       applyLineDiscount(lineId, { type, value, reason });
       reset();
@@ -36,6 +44,7 @@ export default function OrderLineDiscountList() {
   };
 
   const remove = (lineId) => {
+    if (!canManageDiscounts) return;
     removeLineDiscount(lineId);
     showMessageModal('Descuento por producto quitado.', null, { type: 'success' });
   };

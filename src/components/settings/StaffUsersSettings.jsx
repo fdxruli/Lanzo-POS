@@ -13,6 +13,7 @@ const PERMISSION_LABELS = {
   products: 'Productos',
   customers: 'Clientes',
   reports: 'Reportes',
+  ai_agents: 'Agentes IA',
   settings: 'Configuracion',
   devices: 'Dispositivos',
   license: 'Licencia',
@@ -40,7 +41,7 @@ const ROLE_DESCRIPTIONS = {
   staff: 'Acceso básico al punto de venta.',
   cashier: 'Puede vender, cobrar y aplicar descuentos.',
   waiter: 'Pensado para tomar pedidos.',
-  supervisor: 'Puede operar y revisar reportes, inventario y caja.',
+  supervisor: 'Puede operar, revisar reportes, inventario, caja y agentes IA.',
   custom: 'Permisos configurados manualmente.'
 };
 
@@ -62,6 +63,7 @@ const ROLE_TEMPLATES = {
     products: true,
     customers: true,
     reports: true,
+    ai_agents: true,
     inventory: true,
     cash_register: true,
     discounts: true,
@@ -264,6 +266,9 @@ export default function StaffUsersSettings({ licenseKey }) {
                 </option>
               ))}
             </select>
+            {ROLE_DESCRIPTIONS[form.role_name] && (
+              <small className="form-help-text">{ROLE_DESCRIPTIONS[form.role_name]}</small>
+            )}
           </div>
           <div className="form-group">
             <label className="form-label" htmlFor="staff-password">
