@@ -12,7 +12,8 @@
 
   <link rel="manifest" href="/manifest.webmanifest">
 
-  <meta name="theme-color" content="#FF3B5C" />
+  <meta name="theme-color" content="#FFFFFF" />
+  <meta name="color-scheme" content="light dark" />
 
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
@@ -22,6 +23,17 @@
 
   <script>
     (function () {
+
+      var lightThemeColor = '#FFFFFF';
+      var darkThemeColor = '#171B22';
+
+      function updateThemeColor(theme) {
+        var themeColorMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeColorMeta) {
+          themeColorMeta.setAttribute('content', theme === 'dark' ? darkThemeColor : lightThemeColor);
+        }
+      }
+      
       // Función para aplicar el tema en el <html>
       function applyTheme(theme) {
         if (theme === 'dark') {
@@ -29,6 +41,7 @@
         } else {
           document.documentElement.removeAttribute('data-theme');
         }
+        updateThemeColor(theme);
       }
 
       // 1. Obtener la preferencia guardada por el usuario
@@ -46,6 +59,15 @@
           applyTheme('light');
         }
       }
+
+      var observer = new MutationObserver(function () {
+        updateThemeColor(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+      });
+
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme']
+      });
     })();
   </script>
 
