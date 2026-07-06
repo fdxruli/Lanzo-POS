@@ -121,7 +121,7 @@ const CajaStatusCard = ({
 
         {/* Botones de acción - Grid 2x2 en móvil, 4 en línea en desktop */}
         <div className="status-actions">
-          <button
+          <button type="button"
             className="btn"
             onClick={onBackup}
             disabled={isBackupLoading}
@@ -139,7 +139,7 @@ const CajaStatusCard = ({
             )}
           </button>
 
-          <button
+          <button type="button"
             className="btn"
             onClick={onReporte}
             disabled={isBackupLoading || !onReporte}
@@ -153,7 +153,7 @@ const CajaStatusCard = ({
             📊 Reporte
           </button>
 
-          <button
+          <button type="button"
             className="btn"
             onClick={onResumen}
             disabled={isBackupLoading || !onResumen}
@@ -167,7 +167,7 @@ const CajaStatusCard = ({
             📈 Resumen
           </button>
 
-          <button
+          <button type="button"
             className="btn"
             onClick={onImprimir}
             disabled={isBackupLoading}
@@ -187,7 +187,7 @@ const CajaStatusCard = ({
         <div className="info-row">
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             Fondo Inicial
-            <button
+            <button type="button"
               className="btn-icon-small"
               onClick={onEditarFondoInicial}
               style={{

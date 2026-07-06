@@ -96,15 +96,14 @@ const getStatusLabel = (session = {}) => {
 const buildStaffOptions = (sessions = []) => {
   const seen = new Set();
   return sessions
-    .map((session) => {
+    .flatMap((session) => {
       const staffUserId = getStaffUserId(session);
       const label = getStaffLabel(session) || getResponsibleName(session);
       const value = staffUserId || label;
-      if (!value || seen.has(value)) return null;
+      if (!value || seen.has(value)) return [];
       seen.add(value);
-      return { value, label, staffUserId };
-    })
-    .filter(Boolean);
+      return [{ value, label, staffUserId }];
+    });
 };
 
 const matchesStaffFilter = (session, staffFilter) => {

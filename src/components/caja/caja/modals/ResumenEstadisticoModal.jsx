@@ -240,7 +240,7 @@ const ResumenEstadisticoModal = ({
         </div>
 
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-          <button
+          <button type="button"
             className="btn"
             onClick={dismissModal}
             disabled={isDisabled}

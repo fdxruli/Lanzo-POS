@@ -124,8 +124,9 @@ const CashAdjustmentModal = ({
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">Monto Físico Real ($)</label>
+            <label className="form-label" htmlFor="cash-adjustment-physical-amount">Monto Físico Real ($)</label>
             <input
+              id="cash-adjustment-physical-amount"
               type="number"
               className="form-input"
               value={montoFisicoReal}
@@ -143,8 +144,9 @@ const CashAdjustmentModal = ({
           </div>
 
           <div className="form-group">
-            <label className="form-label">Comentario (obligatorio)</label>
+            <label className="form-label" htmlFor="cash-adjustment-comment">Comentario (obligatorio)</label>
             <textarea
+              id="cash-adjustment-comment"
               className="form-textarea"
               value={comentario}
               onChange={(e) => setComentario(e.target.value)}

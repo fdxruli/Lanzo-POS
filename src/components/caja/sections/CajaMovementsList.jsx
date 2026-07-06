@@ -126,7 +126,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
         </label>
 
         {hayFiltrosActivos && (
-          <button onClick={handleLimpiarFiltros} className="ui-button ui-button--ghost ui-button--sm btn-clear-filters">
+          <button type="button" onClick={handleLimpiarFiltros} className="ui-button ui-button--ghost ui-button--sm btn-clear-filters">
             <SlidersHorizontal size={16} aria-hidden="true" />
             Limpiar
           </button>

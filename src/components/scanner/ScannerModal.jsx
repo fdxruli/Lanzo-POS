@@ -2,7 +2,6 @@
 import {
   useCallback,
   useEffect,
-  useEffectEvent,
   useRef,
   useState,
 } from 'react';
@@ -11,7 +10,7 @@ import { resolveWithCache } from '../../services/barcodeCache';
 import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import Logger from '../../services/Logger';
 import { useScannerCart } from '../../hooks/scanner/useScannerCart';
-import { useZxing } from 'react-zxing';
+import { useZxingScanner } from '../../hooks/scanner/useZxingScanner';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { CameraViewport } from './CameraViewport';
 import { ScannerCartList } from './ScannerCartList';
@@ -66,6 +65,20 @@ const CloseIcon = () => (
  * Aísla las actualizaciones de feedback para evitar re-renders del modal completo
  */
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
+  if (!show) {
+    return null;
+  }
+
+  return (
+    <ScannerModalContent
+      show={show}
+      onClose={onClose}
+      onScanSuccess={onScanSuccess}
+    />
+  );
+}
+
+function ScannerModalContent({ show, onClose, onScanSuccess }) {
   const addMultipleScannedProducts = useActiveOrders(
     (state) => state.addMultipleScannedProducts
   );
@@ -110,11 +123,11 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     };
   }, []);
 
-  const clearFeedback = useEffectEvent(() => {
+  const clearFeedback = useCallback(() => {
     if (isMountedRef.current) {
       setScanFeedback('');
     }
-  });
+  }, []);
 
   // El feedback ya se muestra dentro del viewport; aqui solo controlamos su expiracion.
   useEffect(() => {
@@ -127,7 +140,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     }, FEEDBACK_CLEAR_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [scanFeedback]);
+  }, [clearFeedback, scanFeedback]);
 
   // Reactivar escaneo lógico después del delay (sin pausar video)
   const scheduleReactivation = useCallback(() => {
@@ -247,9 +260,9 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     Logger.warn('Advertencia ZXing:', error.message);
   }, []);
 
-  // Hook useZxing - SIEMPRE activo cuando show=true e isConfirming=false
+  // Hook de escaneo - SIEMPRE activo cuando show=true e isConfirming=false
   // La pausa lógica se maneja via processingLockRef, NO via paused
-  const { ref: videoRef } = useZxing({
+  const { ref: videoRef } = useZxingScanner({
     paused: !show || isConfirming, // Solo pausar por condiciones de UI, no por lógica
     onDecodeResult: handleDecodeResult,
     onError: handleError,
@@ -373,10 +386,6 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
       setIsConfirming(false);
     }
   }, [show, clearCart, setIsConfirming]);
-
-  if (!show) {
-    return null;
-  }
 
   return (
     <div id="scanner-modal" className="modal" style={{ display: 'flex' }}>

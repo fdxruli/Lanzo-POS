@@ -107,7 +107,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos' }) => {
 
         {/* Botón limpiar filtros */}
         {hayFiltrosActivos && (
-          <button
+          <button type="button"
             onClick={handleLimpiarFiltros}
             className="btn-clear-filters"
           >

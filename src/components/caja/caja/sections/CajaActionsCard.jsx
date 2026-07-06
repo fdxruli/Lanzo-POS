@@ -23,7 +23,7 @@ const CajaActionsCard = ({
       <h3 className="actions-title">Control de Efectivo</h3>
       <div className="actions-grid">
         {/* Botón Corte - destacado, ocupa todo el ancho */}
-        <button
+        <button type="button"
           className="btn btn-audit"
           onClick={onCorte}
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
@@ -33,14 +33,14 @@ const CajaActionsCard = ({
 
         {/* Fila de Entrada y Salida - lado a lado */}
         <div className="actions-row">
-          <button
+          <button type="button"
             className="btn btn-entry"
             onClick={onEntrada}
             style={{ gap: '6px' }}
           >
             <TrendingUp size={18} /> <span>Entrada</span>
           </button>
-          <button
+          <button type="button"
             className="btn btn-exit"
             onClick={onSalida}
             style={{ gap: '6px' }}
@@ -50,7 +50,7 @@ const CajaActionsCard = ({
         </div>
 
         {/* Botón Ajuste - secundario */}
-        <button
+        <button type="button"
           className="btn btn-adjust"
           onClick={onAjuste}
           disabled={isBackupLoading}

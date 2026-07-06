@@ -128,7 +128,7 @@ const ResumenEstadisticoModal = ({
           )}
 
           <footer className="caja-modal__actions">
-            <button
+            <button type="button"
               className="caja-modal__button caja-modal__button--primary"
               onClick={onClose}
               disabled={isDisabled}

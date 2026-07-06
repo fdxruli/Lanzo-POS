@@ -114,12 +114,12 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
 
       {totalPaginas > 1 && (
         <div className="pagination">
-          <button className="ui-button ui-button--ghost ui-button--sm" onClick={handlePaginaAnterior} disabled={paginaActual === 1} aria-label="Página anterior">
+          <button type="button" className="ui-button ui-button--ghost ui-button--sm" onClick={handlePaginaAnterior} disabled={paginaActual === 1} aria-label="Página anterior">
             <ChevronLeft size={16} aria-hidden="true" />
             Anterior
           </button>
           <span>Página {paginaActual} de {totalPaginas}</span>
-          <button className="ui-button ui-button--ghost ui-button--sm" onClick={handlePaginaSiguiente} disabled={paginaActual === totalPaginas} aria-label="Página siguiente">
+          <button type="button" className="ui-button ui-button--ghost ui-button--sm" onClick={handlePaginaSiguiente} disabled={paginaActual === totalPaginas} aria-label="Página siguiente">
             Siguiente
             <ChevronRight size={16} aria-hidden="true" />
           </button>

@@ -85,7 +85,7 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
       {/* Paginación */}
       {totalPaginas > 1 && (
         <div className="pagination">
-          <button
+          <button type="button"
             onClick={handlePaginaAnterior}
             disabled={paginaActual === 1}
             aria-label="Página anterior"
@@ -97,7 +97,7 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10 }) => {
             Página {paginaActual} de {totalPaginas}
           </span>
 
-          <button
+          <button type="button"
             onClick={handlePaginaSiguiente}
             disabled={paginaActual === totalPaginas}
             aria-label="Página siguiente"

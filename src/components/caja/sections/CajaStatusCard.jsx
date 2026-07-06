@@ -117,7 +117,7 @@ const CajaStatusCard = ({
         </div>
 
         <div className="status-utilities" aria-label="Utilidades de caja">
-          <button
+          <button type="button"
             className="ui-button ui-button--primary utility-button utility-button-primary"
             onClick={onBackup}
             disabled={isBackupLoading}
@@ -129,7 +129,7 @@ const CajaStatusCard = ({
               <><Save size={17} aria-hidden="true" /><span>Respaldo</span></>
             )}
           </button>
-          <button
+          <button type="button"
             className="ui-button ui-button--neutral utility-button"
             onClick={onReporte}
             disabled={isBackupLoading || !onReporte}
@@ -138,7 +138,7 @@ const CajaStatusCard = ({
             <FileDown size={17} aria-hidden="true" />
             <span>Reporte</span>
           </button>
-          <button
+          <button type="button"
             className="ui-button ui-button--neutral utility-button"
             onClick={onResumen}
             disabled={isBackupLoading || !onResumen}
@@ -147,7 +147,7 @@ const CajaStatusCard = ({
             <BarChart3 size={17} aria-hidden="true" />
             <span>Resumen</span>
           </button>
-          <button
+          <button type="button"
             className="ui-button ui-button--neutral utility-button"
             onClick={onImprimir}
             disabled={isBackupLoading}
@@ -204,7 +204,7 @@ const CajaStatusCard = ({
         <div className="cash-metric">
           <div className="cash-metric-label">
             <span>Fondo inicial</span>
-            <button
+            <button type="button"
               className="btn-icon-small"
               onClick={onEditarFondoInicial}
               title="Corregir fondo inicial calculado"

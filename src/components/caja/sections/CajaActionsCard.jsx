@@ -65,7 +65,7 @@ const CajaActionsCard = ({
       )}
 
       <div className="actions-grid">
-        <button className="ui-button ui-button--primary btn btn-audit" onClick={onCorte} disabled={disabled}>
+        <button type="button" className="ui-button ui-button--primary btn btn-audit" onClick={onCorte} disabled={disabled}>
           <span className="action-button-icon" aria-hidden="true">
             <LockKeyhole size={21} />
           </span>
@@ -76,17 +76,17 @@ const CajaActionsCard = ({
         </button>
 
         <div className="actions-row">
-          <button className="ui-button ui-button--success btn btn-entry" onClick={onEntrada} disabled={disabled}>
+          <button type="button" className="ui-button ui-button--success btn btn-entry" onClick={onEntrada} disabled={disabled}>
             <ArrowDownToLine size={20} aria-hidden="true" />
             <span>Entrada</span>
           </button>
-          <button className="ui-button ui-button--danger btn btn-exit" onClick={onSalida} disabled={disabled}>
+          <button type="button" className="ui-button ui-button--danger btn btn-exit" onClick={onSalida} disabled={disabled}>
             <ArrowUpFromLine size={20} aria-hidden="true" />
             <span>Salida</span>
           </button>
         </div>
 
-        <button
+        <button type="button"
           className="ui-button ui-button--neutral btn btn-adjust"
           onClick={onAjuste}
           disabled={disabled}
