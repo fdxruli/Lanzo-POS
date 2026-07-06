@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Activity,
   AlertCircle,
-  Archive,
   BrainCircuit,
   Calendar,
   CheckCircle,
@@ -20,7 +19,6 @@ import { buildAgentPayload, DATE_RANGES, formatDateRangeLabel } from '../../util
 import { buildPrompt, validateAgentData } from '../../utils/aiPromptBuilder';
 import { analyzeWithAI, AIApiError, validateAIConnection, getAIConfigStatus } from '../../services/aiService';
 import {
-  archiveLocalAIAnalysis,
   getLocalAIAnalysisDetail,
   getLocalAIAnalysisHistory,
   saveLocalAIAnalysis
@@ -263,20 +261,6 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
     }
   }, []);
 
-  const handleArchiveSavedAnalysis = useCallback(async (analysisId) => {
-    setHistoryError(null);
-    setHistoryMessage(null);
-    try {
-      await archiveLocalAIAnalysis(analysisId);
-      setSelectedSavedAnalysis(prev => (prev?.id === analysisId ? null : prev));
-      setHistoryMessage('Análisis archivado.');
-      await loadLocalHistory();
-    } catch (error) {
-      console.warn('No se pudo archivar el análisis guardado:', error);
-      setHistoryError('No se pudo archivar el análisis guardado.');
-    }
-  }, [loadLocalHistory]);
-
   const handleOpenGuidedAction = useCallback((action) => setPendingGuidedAction(resolveAgentAction(action)), []);
   const handleConfirmGuidedAction = useCallback(() => {
     if (!pendingGuidedAction) return;
@@ -328,7 +312,7 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
         </section>
       )}
 
-      <AIAgentHistoryPanel analyses={savedAnalyses} isLoading={isHistoryLoading} message={historyMessage} error={historyError} selectedAgent={selectedAgent} onOpen={handleOpenSavedAnalysis} onArchive={handleArchiveSavedAnalysis} />
+      <AIAgentHistoryPanel analyses={savedAnalyses} isLoading={isHistoryLoading} message={historyMessage} error={historyError} selectedAgent={selectedAgent} onOpen={handleOpenSavedAnalysis} />
 
       {isAnalyzing && <section className="analysis-state"><div className="state-indicator"><div className="pulse-ring" /><BrainCircuit size={32} className="analyzing-icon" /></div><p className="state-text">Procesando herramientas internas y preparando acciones guiadas...</p></section>}
       {analysisError && <section className="analysis-error"><AlertCircle size={24} /><div className="error-content"><h4>Error en Análisis</h4><p>{analysisError}</p></div><button className="retry-button" onClick={handleAnalyze} disabled={isAnalyzing || !connectionStatus.isApiReady || connectionStatus.isChecking} type="button">Reintentar</button></section>}
@@ -339,10 +323,9 @@ export default function AIAgentDashboard({ sales = [], menu = [], customers = []
             <div><span className="ai-saved-analysis-kicker"><History size={16} />Análisis guardado</span><h3>{selectedSavedAnalysis.agentName || 'Agente IA'}</h3><p className="ai-saved-analysis-meta">Generado el: {selectedSavedAnalysis.generatedAtLabel}{selectedSavedAnalysis.dateRangeLabel ? ` • ${selectedSavedAnalysis.dateRangeLabel}` : ''}</p></div>
             <button className="ai-history-secondary-button" type="button" onClick={() => setSelectedSavedAnalysis(null)}>Volver al historial</button>
           </div>
-          <div className="ai-saved-analysis-notice">Este análisis corresponde a los datos disponibles cuando fue generado. Consultarlo no consume una nueva consulta IA.</div>
+          <div className="ai-saved-analysis-notice">Este análisis corresponde a los datos disponibles cuando fue generado. Consultarlo no consume una nueva consulta IA. Este análisis está guardado automáticamente en este dispositivo.</div>
           <div className="ai-saved-analysis-actions">
             <button className="ai-history-primary-button" type="button" onClick={handleGenerateCurrentFromSaved}><Sparkles size={16} />Generar nuevo análisis con datos actuales</button>
-            <button className="ai-history-secondary-button" type="button" onClick={() => handleArchiveSavedAnalysis(selectedSavedAnalysis.id)}><Archive size={16} />Archivar análisis</button>
           </div>
           <StructuredAnalysisResult result={selectedSavedAnalysis.resultContent} onAction={handleOpenGuidedAction} />
         </section>
