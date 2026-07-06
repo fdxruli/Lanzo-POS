@@ -273,3 +273,9 @@
     gap: var(--spacing-sm);
   }
 }
+
+@media (min-width: 1024px) {
+  .dashboard-page {
+    padding-bottom: var(--ui-space-lg);
+  }
+}

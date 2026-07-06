@@ -197,6 +197,12 @@
   }
 }
 
+@media (min-width: 1024px) {
+  .customers-page {
+    padding-bottom: var(--ui-space-lg);
+  }
+}
+
 [data-theme="dark"] .customers-page {
   --customers-navy: #071a2c;
   --customers-navy-light: #123957;

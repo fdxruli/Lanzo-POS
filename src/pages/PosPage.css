@@ -43,11 +43,11 @@
 
 @media (max-width: 1023px) {
   .pos-page-layout {
-    --pos-menu-bottom-clearance: calc(96px + env(safe-area-inset-bottom));
+    --pos-menu-bottom-clearance: calc(88px + env(safe-area-inset-bottom));
   }
 
   .pos-page-layout.pos-page-layout--with-floating-bar {
-    --pos-menu-bottom-clearance: calc(176px + env(safe-area-inset-bottom));
+    --pos-menu-bottom-clearance: calc(144px + env(safe-area-inset-bottom));
   }
 
   .pos-grid {

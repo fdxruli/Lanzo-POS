@@ -65,7 +65,6 @@ export default function CajaPage() {
     aperturaPendiente,
     error,
     totalesTurno,
-    cashMode,
     isCloudCash,
     isCloudCashReadOnly,
     cashActor,
@@ -453,9 +452,6 @@ export default function CajaPage() {
       <main className="ui-page caja-page" aria-label="Caja">
         <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
           <div className="ui-section__actions">
-            <span className={`ui-badge ${isCloudCash ? 'ui-badge--success' : 'ui-badge--neutral'}`}>
-              {isCloudCash ? 'Cloud PRO' : 'Local'}
-            </span>
             <span className="ui-badge ui-badge--warning">Requiere apertura</span>
           </div>
         </header>
@@ -485,17 +481,13 @@ export default function CajaPage() {
   // ============================================================
   return (
     <main className="ui-page caja-page" aria-label="Caja">
-      <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
-        <div className="ui-section__actions">
-          <span className={`ui-badge ${cajaActual?.estado === 'abierta' ? 'ui-badge--success' : 'ui-badge--warning'}`}>
-            {cajaActual?.estado === 'abierta' ? 'Caja abierta' : estadoCaja}
-          </span>
-          <span className={`ui-badge ${isCloudCash ? 'ui-badge--success' : 'ui-badge--neutral'}`}>
-            {isCloudCash ? 'Cloud PRO' : 'Local'}
-          </span>
-          {isCloudCashReadOnly && <span className="ui-badge ui-badge--warning">Solo consulta</span>}
-        </div>
-      </header>
+      {isCloudCashReadOnly && (
+        <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
+          <div className="ui-section__actions">
+            <span className="ui-badge ui-badge--warning">Solo consulta</span>
+          </div>
+        </header>
+      )}
     <section className="ui-section caja-grid" role="main" aria-label="Gestion de Caja">
       {/* 1. TARJETA DE ESTADO */}
       <CajaStatusCard
@@ -511,7 +503,6 @@ export default function CajaPage() {
         isCloudCash={isCloudCash}
         isReadOnly={isCloudCashReadOnly}
         cashActor={cashActor}
-        cashMode={cashMode}
         onEditarFondoInicial={editInitialModal.open}
         onBackup={handleBackup}
         onReporte={descargarReporteCaja}
@@ -521,8 +512,6 @@ export default function CajaPage() {
 
       {/* 2. TARJETA DE ACCIONES */}
       <CajaActionsCard
-        cajaActual={cajaActual}
-        estadoCaja={estadoCaja}
         isBackupLoading={isBackupLoading}
         isCloudCash={isCloudCash}
         isReadOnly={isCloudCashReadOnly}

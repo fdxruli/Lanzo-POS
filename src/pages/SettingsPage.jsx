@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import './SettingsPage.css';
 import GeneralSettings from '../components/settings/GeneralSettings';
+import OperationalSettings from '../components/settings/OperationalSettings';
 import LicenseSettings from '../components/settings/LicenseSettings';
 import MaintenanceSettings from '../components/settings/MaintenanceSettings';
 import BackupSettings from '../components/settings/BackupSettings';
@@ -29,6 +30,7 @@ export default function SettingsPage() {
 
   const visibleTabs = [
     { key: 'general', allowed: canAccess('settings') },
+    { key: 'controls', allowed: canAccess('settings') },
     { key: 'restaurant', allowed: hasRestaurantSettings && (canAccess('settings') || canAccess('products')) },
     { key: 'license', allowed: canAccess('license') },
     { key: 'maintenance', allowed: canAccess('sync') || canAccess('inventory') },
@@ -41,6 +43,7 @@ export default function SettingsPage() {
     const tabParam = searchParams.get('tab');
     const tabMap = {
       general: 'general',
+      controls: 'controls',
       restaurant: 'restaurant',
       license: 'license',
       maintenance: 'maintenance',
@@ -71,6 +74,7 @@ export default function SettingsPage() {
       <section className="ui-section settings-tabs-section" aria-label="Secciones de configuracion">
         <div className="tabs-container settings-tabs">
           <button className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`} onClick={() => handleTabChange('general')} hidden={!tabIsVisible('general')}>Datos y Apariencia</button>
+          <button className={`tab-btn ${activeTab === 'controls' ? 'active' : ''}`} onClick={() => handleTabChange('controls')} hidden={!tabIsVisible('controls')}>Controles</button>
           <button className={`tab-btn ${activeTab === 'restaurant' ? 'active' : ''}`} onClick={() => handleTabChange('restaurant')} hidden={!tabIsVisible('restaurant')}>Restaurante</button>
           <button className={`tab-btn ${activeTab === 'license' ? 'active' : ''}`} onClick={() => handleTabChange('license')} hidden={!tabIsVisible('license')}>Licencia y Rubros</button>
           <button className={`tab-btn ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => handleTabChange('maintenance')} hidden={!tabIsVisible('maintenance')}>Datos y Mantenimiento</button>
@@ -82,6 +86,7 @@ export default function SettingsPage() {
 
       <section className="ui-section settings-content">
         {activeTab === 'general' && <GeneralSettings />}
+        {activeTab === 'controls' && <OperationalSettings />}
         {activeTab === 'restaurant' && <PreparationStationsSettings />}
         {activeTab === 'license' && <LicenseSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}

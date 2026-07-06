@@ -356,3 +356,9 @@
     padding-inline: var(--ui-space-sm);
   }
 }
+
+@media (min-width: 1024px) {
+  .products-page {
+    padding-bottom: var(--ui-space-lg);
+  }
+}
