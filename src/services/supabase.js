@@ -967,35 +967,13 @@ export const getBusinessProfile = async function (licenseKey) {
     }
 };
 
-export const uploadFile = async function (file, type = 'product') {
-    if (!file) return null;
-
-    try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${type}-${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
-        const filePath = `public_uploads/${fileName}`;
-
-        const { error: uploadError } = await supabaseClient
-            .storage
-            .from('images')
-            .upload(filePath, file, {
-                cacheControl: '3600',
-                upsert: false
-            });
-
-        if (uploadError) throw uploadError;
-
-        const { data } = supabaseClient
-            .storage
-            .from('images')
-            .getPublicUrl(filePath);
-
-        return data.publicUrl;
-
-    } catch (error) {
-        Logger.error('Error subiendo archivo:', error);
-        return null;
-    }
+export const uploadFile = async function uploadFileLegacyBlocked() {
+    const error = new Error(
+        'SECURE_UPLOAD_REQUIRED: image uploads must use uploadImageFile from src/services/storage/imageUploadService.js'
+    );
+    error.code = 'SECURE_UPLOAD_REQUIRED';
+    Logger.error('[SEC.3] uploadFile legacy bloqueado. Usar uploadImageFile(...).');
+    throw error;
 };
 
 export const deactivateCurrentDevice = async (licenseKey) => {
