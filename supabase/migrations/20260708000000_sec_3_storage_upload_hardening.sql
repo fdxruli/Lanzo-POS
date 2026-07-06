@@ -44,7 +44,6 @@ CREATE INDEX IF NOT EXISTS idx_storage_upload_audit_object_path
 ON public.storage_upload_audit (object_path);
 
 REVOKE ALL ON TABLE public.storage_upload_audit FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON SEQUENCE public.storage_upload_audit_id_seq FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.storage_upload_audit TO service_role;
 
 COMMENT ON TABLE public.storage_upload_audit IS
