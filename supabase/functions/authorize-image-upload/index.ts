@@ -233,6 +233,15 @@ Deno.serve(async (req: Request) => {
     return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
   }
 
+  if (licenseValidation.data?.device_role === 'staff' && !validation.staffSessionToken) {
+    await writeAudit(supabase, body, {
+      status: 'rejected',
+      code: 'STORAGE_UPLOAD_NOT_ALLOWED',
+      metadata: { reason: 'STAFF_SESSION_REQUIRED' }
+    });
+    return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
+  }
+
   if (validation.staffSessionToken) {
     const staffValidation = await supabase.rpc('verify_staff_session', {
       p_license_key: validation.licenseKey,
