@@ -40,6 +40,7 @@ function Navbar() {
   const setVolatileDismissed = useAppStore(state => state.setVolatileDismissed);
   const backupRiskLevel = useBackupRiskStore(state => state.riskLevel);
 
+  const companyName = useAppStore(state => state.companyProfile?.name);
   const updateAvailable = useAppStore((state) => state.updateAvailable);
   const isInstallable = useAppStore((state) => state.isInstallable);
   const isIOS = useAppStore((state) => state.isIOS);
@@ -428,8 +429,16 @@ function Navbar() {
       </div>
 
       <nav className="desktop-sidebar">
-        <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <Logo style={{ width: '100%', height: 'auto', maxHeight: '120px' }} vertical={true} />
+        <div className="sidebar-header">
+          <div className="sidebar-brand" title={companyName || 'Tu negocio'}>
+            <span className="sidebar-brand-mark">
+              <Logo markOnly />
+            </span>
+            <span className="sidebar-brand-copy">
+              <span className="sidebar-brand-product">Lanzo POS</span>
+              <strong className="sidebar-business-name">{companyName || 'Tu negocio'}</strong>
+            </span>
+          </div>
         </div>
 
         <div className="sidebar-links">
