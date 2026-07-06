@@ -27,7 +27,6 @@ const CajaStatusCard = ({
   isCloudCash = false,
   isReadOnly = false,
   cashActor = null,
-  cashMode = null,
   onEditarFondoInicial,
   onBackup,
   onReporte,
@@ -51,12 +50,10 @@ const CajaStatusCard = ({
       ? 'warning'
       : 'safe';
   const maxCashThreshold = CAJA_CONFIG?.MAX_CASH_THRESHOLD || 0;
-  const isStaffCash = cajaActual?.deviceRole === 'staff' || cashActor?.isStaff || cajaActual?.staffUserId || cajaActual?.staff_user_id;
-  const actorLabel = isStaffCash ? 'Staff' : 'Admin';
-  const responsibleName = cajaActual?.responsable_apertura || cajaActual?.responsibleName || cashActor?.responsibleName;
-  const actorName = cashActor?.displayName || cashActor?.responsibleName || responsibleName;
-  const staffId = cajaActual?.staffUserId || cajaActual?.staff_user_id || cashActor?.staffUserId;
-  const isOfflineCloud = Boolean(isCloudCash && (isReadOnly || cashMode?.online === false));
+  const responsibleName = cajaActual?.responsable_apertura
+    || cajaActual?.responsibleName
+    || cashActor?.responsibleName
+    || cashActor?.displayName;
 
   return (
     <section className="ui-card ui-card--compact caja-card status-card" aria-labelledby="cash-total-title">
@@ -67,20 +64,12 @@ const CajaStatusCard = ({
               <span className="status-badge-dot" aria-hidden="true" />
               Turno activo
             </span>
-            <span className={`ui-badge ${isCloudCash ? 'ui-badge--success' : 'ui-badge--neutral'} status-badge ${isCloudCash ? 'success' : 'neutral'}`}>
-              <ShieldCheck size={14} aria-hidden="true" />
-              {isCloudCash ? 'Cloud PRO' : 'Local'}
-            </span>
             {isReadOnly && (
               <span className="ui-badge ui-badge--warning status-badge warning">
                 <ShieldCheck size={14} aria-hidden="true" />
                 Solo consulta
               </span>
             )}
-            <span className={`ui-badge ${isStaffCash ? 'ui-badge--warning' : 'ui-badge--success'} status-badge ${isStaffCash ? 'warning' : 'success'}`}>
-              <UserRound size={14} aria-hidden="true" />
-              {actorLabel}
-            </span>
             {excesoLiquidez && (
               <span
                 className="ui-badge ui-badge--danger status-badge danger"
@@ -110,21 +99,6 @@ const CajaStatusCard = ({
               <span>
                 <UserRound size={14} aria-hidden="true" />
                 Responsable: {responsibleName}
-              </span>
-            )}
-            {isCloudCash && (
-              <span>
-                Caja: {isStaffCash ? 'Caja de staff' : 'Caja admin'}{staffId ? ` - staff ${String(staffId).slice(0, 8)}` : ''}
-              </span>
-            )}
-            {actorName && (
-              <span>
-                Actor actual: {actorName}
-              </span>
-            )}
-            {isOfflineCloud && (
-              <span>
-                Cloud PRO offline: solo consulta
               </span>
             )}
             {lastSyncTime && (
