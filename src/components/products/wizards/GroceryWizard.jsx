@@ -1,5 +1,5 @@
 // src/components/products/wizards/GroceryWizard.jsx
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useProductLogic } from '../../../hooks/useProductLogic';
 import { useFeatureConfig } from '../../../hooks/useFeatureConfig';
 import {
@@ -174,7 +174,7 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                         onKeyDown={(e) => e.key === 'Enter' && setStep(2)}
                         autoFocus
                     />
-                    <button className="btn-scan-inline" onClick={() => setIsScannerOpen(true)}>📷</button>
+                    <button type="button" className="btn-scan-inline" onClick={() => setIsScannerOpen(true)}>📷</button>
                 </div>
             </div>
 
@@ -323,8 +323,9 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
             {hasWholesale && (
                 <div className="wholesale-section-wizard mt-4 border border-indigo-100 rounded-lg overflow-hidden">
                     <button
+                        type="button"
                         className="w-full flex items-center justify-between p-3 bg-indigo-50 text-indigo-700"
-                        onClick={() => setShowWholesale(!showWholesale)}
+                        onClick={() => setShowWholesale((current) => !current)}
                     >
                         <div className="flex items-center gap-2 font-medium">
                             <Users size={18} />
@@ -351,12 +352,12 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
                                                 onChange={e => updateWholesaleTier(idx, 'price', e.target.value)}
                                             />
                                         </div>
-                                        <button className="text-red-400 hover:text-red-600" onClick={() => removeWholesaleTier(idx)}><Trash2 size={16} /></button>
+                                        <button type="button" className="text-red-400 hover:text-red-600" onClick={() => removeWholesaleTier(idx)}><Trash2 size={16} /></button>
                                         {isBelowCost && <AlertTriangle size={16} className="text-red-500" title="Precio menor al costo" />}
                                     </div>
                                 );
                             })}
-                            <button className="mt-2 w-full py-2 border border-dashed border-indigo-300 text-indigo-500 rounded text-sm hover:bg-indigo-50" onClick={addWholesaleTier}>
+                            <button type="button" className="mt-2 w-full py-2 border border-dashed border-indigo-300 text-indigo-500 rounded text-sm hover:bg-indigo-50" onClick={addWholesaleTier}>
                                 + Agregar Rango
                             </button>
                         </div>
@@ -439,19 +440,19 @@ export default function GroceryWizard({ onSave, onCancel, categories, mainRubro 
 
             <div className="wizard-actions">
                 {step > 1 ? (
-                    <button className="btn btn-secondary" onClick={() => setStep(step - 1)}><ArrowLeft size={16} /> Atrás</button>
+                    <button type="button" className="btn btn-secondary" onClick={() => setStep((currentStep) => currentStep - 1)}><ArrowLeft size={16} /> Atrás</button>
                 ) : (
-                    <button className="btn btn-cancel" onClick={onCancel}>Cancelar</button>
+                    <button type="button" className="btn btn-cancel" onClick={onCancel}>Cancelar</button>
                 )}
 
                 {step < 4 ? (
-                    <button className="btn btn-primary bg-blue-600 hover:bg-blue-700" onClick={async () => {
-                        if (await validateStep(step)) setStep(step + 1);
+                    <button type="button" className="btn btn-primary bg-blue-600 hover:bg-blue-700" onClick={async () => {
+                        if (await validateStep(step)) setStep((currentStep) => currentStep + 1);
                     }}>
                         Siguiente <ChevronRight size={16} />
                     </button>
                 ) : (
-                    <button className="btn btn-save pulse bg-green-600" onClick={() => onSave(data)}>✅ Guardar</button>
+                    <button type="button" className="btn btn-save pulse bg-green-600" onClick={() => onSave(data)}>✅ Guardar</button>
                 )}
             </div>
 

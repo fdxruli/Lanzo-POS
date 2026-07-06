@@ -397,21 +397,21 @@ export default function RestaurantWizard({ onSave, onCancel, categories }) {
 
             <div className="wizard-actions">
                 {step > 1 ? (
-                    <button className="btn btn-secondary" onClick={() => setStep(step - 1)}>
+                    <button type="button" className="btn btn-secondary" onClick={() => setStep((currentStep) => currentStep - 1)}>
                         <ArrowLeft size={16} /> Atrás
                     </button>
                 ) : (
-                    <button className="btn btn-cancel" onClick={onCancel}>Cancelar</button>
+                    <button type="button" className="btn btn-cancel" onClick={onCancel}>Cancelar</button>
                 )}
 
                 {step < 4 ? (
-                    <button className="btn btn-primary bg-orange-600 hover:bg-orange-700" onClick={async () => {
-                        if (await validateStep(step)) setStep(step + 1);
+                    <button type="button" className="btn btn-primary bg-orange-600 hover:bg-orange-700" onClick={async () => {
+                        if (await validateStep(step)) setStep((currentStep) => currentStep + 1);
                     }}>
                         Siguiente <ChevronRight size={16} />
                     </button>
                 ) : (
-                    <button className="btn btn-save pulse bg-green-600" onClick={() => onSave(data)}>
+                    <button type="button" className="btn btn-save pulse bg-green-600" onClick={() => onSave(data)}>
                         ✅ Confirmar y Crear
                     </button>
                 )}
