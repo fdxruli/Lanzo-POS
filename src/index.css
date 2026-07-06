@@ -3,38 +3,37 @@
 /* ===== VARIABLES GLOBALES ===== */
 :root {
   /* --- PALETA PRINCIPAL --- */
-  --primary-color: #3B82F6;
-  --primary-hover: #4F46E5;
-  --secondary-color: #06B6D4;
+  --primary-color: #334155;
+  --primary-hover: #1F2937;
+  --secondary-color: #0EA5A4;
+  --text-on-primary: #FFFFFF;
 
   /* --- ESTADOS --- */
-  --success-color: #00C48C;
-  --warning-color: #FFB800;
-  --error-color: #FF3B5C;
+  --success-color: #218A5A;
+  --warning-color: #D97706;
+  --error-color: #D14343;
 
-  /* --- FONDOS (Modo Claro - SOFT / AMIGABLE) --- */
-  --background-color: #e3e4e6;
-  /* Antes era muy blanco, ahora es gris descanso */
+  /* --- FONDOS (Modo Claro - Minimal Premium) --- */
+  --background-color: #F7F8FA;
 
-  /* 2. Fondo de Tarjetas: Blanco puro o ligeramente 'crema' para contraste */
+  /* 2. Fondo de tarjetas */
   --card-background-color: #FFFFFF;
 
-  /* 3. Fondos secundarios: Un gris un poco más oscuro que el fondo general */
-  --light-background: #F1F5F9;
-  /* Para inputs y hovers */
+  /* 3. Fondos secundarios para inputs, estados suaves y hovers */
+  --light-background: #EFF1F5;
 
-  /* 4. Bordes: Un poco más oscuros para definir bien sin forzar la vista */
-  --border-color: #E2E8F0;
+  /* 4. Bordes */
+  --border-color: #D9DEE7;
 
   /* --- TEXTOS --- */
-  --text-dark: #0F172A;
-  --text-color: #334155;
-  --text-light: #64748B;
+  --text-dark: #171A1F;
+  --text-color: #3F4652;
+  --text-light: #68707D;
 
   /* --- SCROLLBAR --- */
-  --scrollbar-track: rgba(15, 23, 42, 0.06);
-  --scrollbar-thumb: #94A3B8;
-  --scrollbar-thumb-hover: #64748B;
+  --scrollbar-track: rgba(23, 26, 31, 0.06);
+  --scrollbar-thumb: #A7AFBC;
+  --scrollbar-thumb-hover: #68707D;
   --scrollbar-thumb-active: var(--primary-color);
 
   /* --- ESPACIADO Y BORDES --- */
@@ -46,9 +45,9 @@
   --border-radius: 12px;
   --border-radius-sm: 8px;
 
-  /* --- SOMBRAS (Más suaves para el tema soft) --- */
-  --box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 8px rgba(0, 0, 0, 0.02);
-  --box-shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.08);
+  /* --- SOMBRAS --- */
+  --box-shadow: 0 2px 8px rgba(17, 24, 39, 0.05);
+  --box-shadow-lg: 0 18px 36px -18px rgba(17, 24, 39, 0.22);
 
   /* --- ARQUITECTURA DE Z-INDEX (SISTEMA DE CAPAS CORREGIDO) --- */
   --z-normal: 1;
@@ -96,22 +95,30 @@
    MODO OSCURO (Dark Mode)
 ====================================================== */
 [data-theme="dark"] {
-  --background-color: #0B0F19;
-  --card-background-color: #111827;
-  --light-background: #1F2937;
-  --border-color: #374151;
+  --primary-color: #CBD5E1;
+  --primary-hover: #E2E8F0;
+  --secondary-color: #2DD4BF;
+  --text-on-primary: #0E1116;
+  --success-color: #32D583;
+  --warning-color: #FDBA74;
+  --error-color: #F97066;
 
-  --text-dark: #F9FAFB;
-  --text-color: #D1D5DB;
-  --text-light: #9CA3AF;
+  --background-color: #0E1116;
+  --card-background-color: #171B22;
+  --light-background: #202630;
+  --border-color: #2E3541;
 
-  --scrollbar-track: rgba(148, 163, 184, 0.1);
-  --scrollbar-thumb: #475569;
-  --scrollbar-thumb-hover: #64748B;
-  --scrollbar-thumb-active: #60A5FA;
+  --text-dark: #F4F6F8;
+  --text-color: #D5DAE1;
+  --text-light: #9BA3AF;
 
-  --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
-  --box-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6);
+  --scrollbar-track: rgba(155, 163, 175, 0.1);
+  --scrollbar-thumb: #3A4350;
+  --scrollbar-thumb-hover: #586272;
+  --scrollbar-thumb-active: var(--secondary-color);
+
+  --box-shadow: 0 10px 24px -18px rgba(0, 0, 0, 0.8);
+  --box-shadow-lg: 0 22px 48px -28px rgba(0, 0, 0, 0.92);
 }
 
 /* ===== ESTILOS GENERALES ===== */
@@ -258,7 +265,7 @@ textarea:focus,
 select:focus {
   outline: none;
   border-color: var(--secondary-color);
-  box-shadow: 0 0 0 3px rgba(123, 97, 255, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--secondary-color) 22%, transparent);
 }
 
 input:disabled {
@@ -291,14 +298,14 @@ button:active {
 .btn-confirm,
 .btn-primary {
   background-color: var(--primary-color);
-  color: white;
+  color: var(--text-on-primary);
 }
 
 .btn-save:hover,
 .btn-confirm:hover,
 .btn-primary:hover {
   background-color: var(--primary-hover);
-  box-shadow: 0 4px 12px rgba(255, 59, 92, 0.25);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--primary-color) 24%, transparent);
 }
 
 .btn-save:disabled {

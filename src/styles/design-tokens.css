@@ -35,7 +35,7 @@
   --ui-text-info: color-mix(in srgb, var(--ui-color-info) 72%, #1e3a8a);
   --ui-text-warning-on-dark: #ffd166;
   --ui-text-danger-on-dark: #ff8ca0;
-  --ui-text-on-primary: #ffffff;
+  --ui-text-on-primary: var(--text-on-primary);
   --ui-text-on-danger: #ffffff;
 
   /* UI spacing */

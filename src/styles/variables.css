@@ -1,24 +1,25 @@
 :root {
     /* --- PALETA PRINCIPAL --- */
-    --primary-color: #FF3B5C;
-    --primary-hover: #E02041;
-    --secondary-color: #7B61FF;
+    --primary-color: #334155;
+    --primary-hover: #1F2937;
+    --secondary-color: #0EA5A4;
+    --text-on-primary: #FFFFFF;
 
     /* --- ESTADOS --- */
-    --success-color: #00C48C;
-    --warning-color: #FFB800;
-    --error-color: #FF3B5C;
+    --success-color: #218A5A;
+    --warning-color: #D97706;
+    --error-color: #D14343;
 
     /* --- NEUTROS & FONDOS (Modo Claro por defecto) --- */
-    --background-color: #E8EAED;
+    --background-color: #F7F8FA;
     --card-background-color: #FFFFFF;
-    --light-background: #DCE0E5;
-    --border-color: #BCC3CD;
+    --light-background: #EFF1F5;
+    --border-color: #D9DEE7;
 
     /* --- TEXTOS --- */
-    --text-dark: #1F2937;
-    --text-color: #4B5563;
-    --text-light: #6B7280;
+    --text-dark: #171A1F;
+    --text-color: #3F4652;
+    --text-light: #68707D;
 
     /* --- ESPACIADO --- */
     --spacing-xs: 4px;
@@ -29,8 +30,8 @@
     /* --- UI TOKENS --- */
     --border-radius: 12px;
     --border-radius-sm: 8px;
-    --box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 8px rgba(0, 0, 0, 0.02);
-    --box-shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.08);
+    --box-shadow: 0 2px 8px rgba(17, 24, 39, 0.05);
+    --box-shadow-lg: 0 18px 36px -18px rgba(17, 24, 39, 0.22);
 
     /* --- Z-INDEX --- */
     --z-normal: 1;
@@ -57,12 +58,20 @@
 
 /* MODO OSCURO */
 [data-theme="dark"] {
-    --background-color: #0F172A;
-    --card-background-color: #1E293B;
-    --light-background: #334155;
-    --border-color: #475569;
-    --text-dark: #F8FAFC;
-    --text-color: #CBD5E1;
-    --text-light: #94A3B8;
-    --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+    --primary-color: #CBD5E1;
+    --primary-hover: #E2E8F0;
+    --secondary-color: #2DD4BF;
+    --text-on-primary: #0E1116;
+    --success-color: #32D583;
+    --warning-color: #FDBA74;
+    --error-color: #F97066;
+    --background-color: #0E1116;
+    --card-background-color: #171B22;
+    --light-background: #202630;
+    --border-color: #2E3541;
+    --text-dark: #F4F6F8;
+    --text-color: #D5DAE1;
+    --text-light: #9BA3AF;
+    --box-shadow: 0 10px 24px -18px rgba(0, 0, 0, 0.8);
+    --box-shadow-lg: 0 22px 48px -28px rgba(0, 0, 0, 0.92);
 }
