@@ -4,7 +4,8 @@ export default function Logo({
     className,
     style,
     vertical = false,
-    showBusinessName = true
+    showBusinessName = true,
+    markOnly = false
 }) {
     const companyName = useAppStore(state => state.companyProfile?.name);
     const rawName = companyName ? companyName.toUpperCase() : 'TU NEGOCIO';
@@ -17,6 +18,22 @@ export default function Logo({
     const totalChars = 8 + displayHorizontalName.length;
     const estimatedWidth = (totalChars * 16) + 130;
     const finalWidth = showBusinessName ? Math.max(260, estimatedWidth) : 180;
+
+    if (markOnly) {
+        return (
+            <svg
+                viewBox="0 0 64 64"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className={className}
+                style={style}
+                aria-hidden="true"
+            >
+                <path d="M20 12H34L27 52H13L20 12Z" fill="var(--brand-accent)" />
+                <path d="M27 52H54L46 38H30L27 52Z" fill="var(--brand-accent-hover)" />
+            </svg>
+        );
+    }
 
     if (vertical) {
         return (
