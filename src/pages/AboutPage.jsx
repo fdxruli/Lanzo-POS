@@ -1,14 +1,18 @@
 import { useState } from 'react';
 import {
+  BarChart2,
   Bug,
   CheckCircle2,
   Clock,
+  Cloud,
   Lightbulb,
   Mail,
   Map,
+  Package,
   ShieldCheck,
+  Sparkles,
+  Store,
   TrendingUp,
-  Zap
 } from 'lucide-react';
 import { useProductStore } from '../store/useProductStore';
 import ContactModal from '../components/common/ContactModal';
@@ -26,57 +30,104 @@ const EMPTY_CONTACT_MODAL = {
   description: ''
 };
 
+const HERO_CAPABILITIES = [
+  {
+    label: 'Operación híbrida',
+    value: 'Local + Cloud PRO',
+    icon: Cloud
+  },
+  {
+    label: 'Venta diaria',
+    value: 'Caja, productos y turnos',
+    icon: Store
+  },
+  {
+    label: 'Lectura del negocio',
+    value: 'Reportes y trazabilidad',
+    icon: BarChart2
+  }
+];
+
 const BENEFIT_PILLARS = [
   {
     number: '01',
-    title: 'Vende sin fricción',
-    description: 'Rapidez en cada venta y funcionamiento sin internet para que nunca te detengas.',
-    tags: ['Rapidez', 'Sin internet'],
-    icon: Zap,
-    tone: 'primary'
+    title: 'Local cuando importa, Cloud PRO cuando creces',
+    description: 'Lanzo sigue vendiendo en el dispositivo y suma sincronización en la nube para operar con más control cuando el negocio lo pide.',
+    tags: ['Modo local', 'Cloud PRO'],
+    icon: Cloud,
+    tone: 'brand'
   },
   {
     number: '02',
-    title: 'Tu negocio bajo control',
-    description: 'Privacidad local de tus datos y copias de seguridad para operar con tranquilidad.',
-    tags: ['Privacidad local', 'Seguridad'],
+    title: 'Caja y ventas con trazabilidad',
+    description: 'Cada turno, movimiento y venta queda más claro para saber quién operó, qué pasó y cómo cerró el día.',
+    tags: ['Caja', 'Auditoría'],
     icon: ShieldCheck,
     tone: 'success'
   },
   {
     number: '03',
-    title: 'Decide con datos',
-    description: 'Reportes inteligentes y gestión profesional para tomar mejores decisiones.',
-    tags: ['Reportes inteligentes', 'Gestión profesional'],
+    title: 'Inventario que acompaña la operación',
+    description: 'Productos, recetas, códigos de barras y existencias trabajan juntos para reducir errores en venta y reposición.',
+    tags: ['Inventario', 'Recetas'],
+    icon: Package,
+    tone: 'warning'
+  },
+  {
+    number: '04',
+    title: 'Decisiones visibles, no escondidas',
+    description: 'Reportes y actividad reciente convierten el movimiento diario en señales útiles para ajustar precios, compras y atención.',
+    tags: ['Reportes', 'Lectura diaria'],
     icon: TrendingUp,
     tone: 'primary'
   }
 ];
 
+const ROADMAP_STAGES = [
+  { label: 'Base local', isComplete: true },
+  { label: 'Caja y KDS', isComplete: true },
+  { label: 'Cloud PRO', isActive: true },
+  { label: 'Clientes 360', isComplete: false },
+  { label: 'IA operativa', isComplete: false }
+];
+
 const ROADMAP_GROUPS = [
   {
-    id: 'completed',
-    title: 'Completadas',
-    summary: '3 listas',
+    id: 'foundation',
+    title: 'Base lista',
+    summary: 'Operación diaria',
     icon: CheckCircle2,
     items: [
-      'Modo oscuro automático',
-      'Escáner de códigos de barras',
-      'Sistema de recetas (KDS)'
+      'Punto de venta rápido con caja y cortes',
+      'Productos, recetas, códigos de barras y KDS',
+      'Modo claro/oscuro integrado al nuevo sistema visual'
     ]
   },
   {
-    id: 'upcoming',
-    title: 'Próximas',
-    summary: '3 próximas',
+    id: 'in-progress',
+    title: 'En camino',
+    summary: 'Cloud PRO',
     icon: Clock,
     items: [
-      'Envío de cotizaciones por Email/WhatsApp',
-      'Sincronización multi-dispositivo',
-      'Módulo de empleados y turnos'
+      'Sincronización multi-dispositivo con Cloud PRO',
+      'Empleados, turnos, permisos y auditoría más profunda',
+      'Cotizaciones, resúmenes y reportes listos para compartir'
+    ]
+  },
+  {
+    id: 'next',
+    title: 'Siguiente salto',
+    summary: 'Nivel POS global',
+    icon: Sparkles,
+    items: [
+      'Perfiles de cliente 360 con historial, preferencias y lealtad omnicanal',
+      'Asistente inteligente para demanda, inventario, recompra y alertas antes de perder venta'
     ]
   }
 ];
+
+const ROADMAP_COMPLETE_COUNT = ROADMAP_STAGES.filter(stage => stage.isComplete).length;
+const ROADMAP_PROGRESS = `${(Math.max(0, ROADMAP_COMPLETE_COUNT - 1) / Math.max(1, ROADMAP_STAGES.length - 1)) * 100}%`;
 
 const generateEmailLink = (type, formData) => {
   let subject = '';
@@ -202,11 +253,23 @@ export default function AboutPage() {
         </div>
         <p className="about-eyebrow">Versión {APP_VERSION}</p>
         <h1 id="about-title">El poder de un ERP, la sencillez de una app</h1>
-        <div className="about-hero-metrics" aria-label="Métricas de la aplicación">
+        <p className="about-hero-copy">
+          Lanzo combina punto de venta local, control de caja y Cloud PRO para que el negocio opere rápido hoy y pueda crecer con más dispositivos, datos y automatización mañana.
+        </p>
+        <div className="about-hero-metrics" aria-label="Resumen de la aplicación">
           <div className="about-metric">
             <span className="about-metric-value">{productCount.toLocaleString()}</span>
             <span className="about-metric-label">Productos gestionados</span>
           </div>
+          {HERO_CAPABILITIES.map(({ label, value, icon: Icon }) => (
+            <div className="about-hero-chip" key={label}>
+              <Icon size={17} aria-hidden="true" />
+              <span>
+                <strong>{value}</strong>
+                <small>{label}</small>
+              </span>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -246,23 +309,31 @@ export default function AboutPage() {
               </div>
               <div>
                 <p className="about-eyebrow">Lanzo sigue creciendo</p>
-                <h2 id="about-roadmap-title" className="about-section-title">Próximas mejoras</h2>
+                <h2 id="about-roadmap-title" className="about-section-title">Ruta de evolución</h2>
               </div>
             </header>
 
-            <div className="about-roadmap-progress" aria-label="3 de 6 mejoras completadas">
+            <div className="about-roadmap-progress" aria-label="Evolución de Lanzo POS">
               <div className="about-roadmap-progress-copy">
-                <strong>3 listas</strong>
-                <span>3 próximas</span>
+                <strong>Base operativa lista</strong>
+                <span>Cloud PRO y funciones premium en camino</span>
               </div>
-              <div className="about-progress-track" aria-hidden="true">
-                <span className="about-progress-fill" />
-                {Array.from({ length: 6 }, (_, index) => (
+              <div
+                className="about-progress-track"
+                style={{
+                  '--roadmap-stage-count': ROADMAP_STAGES.length,
+                  '--roadmap-progress-fill': ROADMAP_PROGRESS
+                }}
+              >
+                <span className="about-progress-fill" aria-hidden="true" />
+                {ROADMAP_STAGES.map(stage => (
                   <span
-                    className={`about-progress-dot ${index < 3 ? 'is-complete' : ''}`}
-                    key={index}
+                    className={`about-progress-dot ${stage.isComplete ? 'is-complete' : ''} ${stage.isActive ? 'is-active' : ''}`}
+                    key={stage.label}
+                    title={stage.label}
                   >
-                    {index < 3 && <CheckCircle2 size={16} />}
+                    {stage.isComplete && <CheckCircle2 size={16} aria-hidden="true" />}
+                    <span className="about-stage-label">{stage.label}</span>
                   </span>
                 ))}
               </div>

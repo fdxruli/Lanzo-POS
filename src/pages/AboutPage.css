@@ -1,7 +1,8 @@
 .about-grid {
   --about-navy: #102a43;
   --about-navy-light: #173f63;
-  --about-blue-soft: rgba(59, 130, 246, 0.1);
+  --about-brand: var(--brand-accent, #0f766e);
+  --about-blue-soft: color-mix(in srgb, var(--about-brand) 11%, transparent);
   --about-success-soft: rgba(0, 196, 140, 0.11);
   --about-warning-soft: rgba(255, 184, 0, 0.13);
   --about-error-soft: rgba(255, 59, 92, 0.11);
@@ -33,7 +34,7 @@
 }
 
 .about-grid button:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--about-brand) 30%, transparent);
   outline-offset: 2px;
 }
 
@@ -46,7 +47,7 @@
   overflow: hidden;
   color: #fff;
   background:
-    radial-gradient(circle at 92% 8%, rgba(59, 130, 246, 0.18), transparent 36%),
+    radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--about-brand) 26%, transparent), transparent 36%),
     linear-gradient(145deg, var(--about-navy), var(--about-navy-light));
   border-radius: 16px;
   box-shadow: 0 16px 34px rgba(16, 42, 67, 0.2);
@@ -113,12 +114,22 @@
   font-size: clamp(1.4rem, 4vw, 2rem);
   font-weight: 850;
   line-height: 1.18;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
+}
+
+.about-grid .about-hero-copy {
+  max-width: 760px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.9rem;
+  font-weight: 560;
+  line-height: 1.55;
 }
 
 .about-grid .about-hero-metrics {
   display: flex;
-  gap: 1.5rem;
+  flex-wrap: wrap;
+  gap: 0.65rem;
   margin-top: 0.4rem;
 }
 
@@ -126,6 +137,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-width: 140px;
+  padding: 0.7rem 0.8rem;
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
 }
 
 .about-grid .about-metric-value {
@@ -139,6 +155,48 @@
 .about-grid .about-metric-label {
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.about-grid .about-hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 170px;
+  padding: 0.72rem 0.82rem;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+}
+
+.about-grid .about-hero-chip svg {
+  flex: 0 0 auto;
+  color: #8ee9f6;
+}
+
+.about-grid .about-hero-chip span {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.about-grid .about-hero-chip strong,
+.about-grid .about-hero-chip small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.about-grid .about-hero-chip strong {
+  font-size: 0.78rem;
+  font-weight: 820;
+}
+
+.about-grid .about-hero-chip small {
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 0.68rem;
   font-weight: 650;
 }
 
@@ -231,6 +289,16 @@
   --pillar-soft: var(--about-success-soft);
 }
 
+.about-grid .about-pillar--brand {
+  --pillar-accent: var(--about-brand);
+  --pillar-soft: var(--about-blue-soft);
+}
+
+.about-grid .about-pillar--warning {
+  --pillar-accent: #9a6700;
+  --pillar-soft: var(--about-warning-soft);
+}
+
 .about-grid .about-pillar-icon {
   display: grid;
   width: 52px;
@@ -303,6 +371,7 @@
 
 .about-grid .about-roadmap-progress-copy {
   display: flex;
+  gap: 0.5rem;
   justify-content: space-between;
   margin-bottom: 0.6rem;
   font-size: 0.75rem;
@@ -314,22 +383,23 @@
 }
 
 .about-grid .about-roadmap-progress-copy span {
-  color: #9a6700;
+  color: var(--text-light);
+  text-align: right;
 }
 
 .about-grid .about-progress-track {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  align-items: center;
-  min-height: 24px;
+  grid-template-columns: repeat(var(--roadmap-stage-count, 5), minmax(0, 1fr));
+  align-items: start;
+  min-height: 56px;
 }
 
 .about-grid .about-progress-track::before,
 .about-grid .about-progress-fill {
   position: absolute;
   top: 50%;
-  left: 8.333%;
+  left: calc(50% / var(--roadmap-stage-count, 5));
   height: 5px;
   content: "";
   border-radius: 999px;
@@ -337,16 +407,17 @@
 }
 
 .about-grid .about-progress-track::before {
-  right: 8.333%;
+  right: calc(50% / var(--roadmap-stage-count, 5));
   background: var(--about-warning-soft);
 }
 
 .about-grid .about-progress-fill {
-  width: 41.667%;
+  width: var(--roadmap-progress-fill, 25%);
   background: #13aa91;
 }
 
 .about-grid .about-progress-dot {
+  position: relative;
   z-index: 1;
   display: grid;
   width: 20px;
@@ -367,9 +438,31 @@
   border-color: #13aa91;
 }
 
+.about-grid .about-progress-dot.is-active {
+  width: 24px;
+  height: 24px;
+  color: var(--about-brand);
+  background: var(--card-background-color);
+  border-color: var(--about-brand);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--about-brand) 16%, transparent);
+}
+
+.about-grid .about-stage-label {
+  position: absolute;
+  top: calc(100% + 0.38rem);
+  left: 50%;
+  width: min(92px, 20vw);
+  color: var(--text-light);
+  font-size: 0.62rem;
+  font-weight: 720;
+  line-height: 1.2;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
 .about-grid .about-roadmap-groups {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.75rem;
 }
 
@@ -385,10 +478,16 @@
   border-radius: 13px;
 }
 
-.about-grid .about-roadmap-group--upcoming {
+.about-grid .about-roadmap-group--in-progress {
   --roadmap-accent: #9a6700;
   --roadmap-soft: var(--about-warning-soft);
   --roadmap-border: color-mix(in srgb, #e7ad34 30%, var(--border-color));
+}
+
+.about-grid .about-roadmap-group--next {
+  --roadmap-accent: var(--about-brand);
+  --roadmap-soft: var(--about-blue-soft);
+  --roadmap-border: color-mix(in srgb, var(--about-brand) 25%, var(--border-color));
 }
 
 .about-grid .about-roadmap-group-header {
@@ -430,7 +529,7 @@
 
 .about-grid .about-roadmap-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   margin: 0;
   padding: 0;
   border-top: 1px solid var(--roadmap-border);
@@ -442,19 +541,15 @@
   align-items: flex-start;
   gap: 0.5rem;
   min-width: 0;
-  min-height: 74px;
-  padding: 0.8rem;
+  min-height: 64px;
+  padding: 0.78rem 0.85rem;
   color: var(--text-dark);
   font-size: 0.76rem;
   font-weight: 680;
   line-height: 1.4;
 }
 
-.about-grid .about-roadmap-grid li:nth-child(odd) {
-  border-right: 1px solid var(--roadmap-border);
-}
-
-.about-grid .about-roadmap-grid li:nth-child(n + 3) {
+.about-grid .about-roadmap-grid li + li {
   border-top: 1px solid var(--roadmap-border);
 }
 
@@ -656,7 +751,7 @@
 [data-theme="dark"] .about-grid {
   --about-navy: #071a2c;
   --about-navy-light: #123957;
-  --about-blue-soft: rgba(59, 130, 246, 0.14);
+  --about-blue-soft: color-mix(in srgb, var(--about-brand) 15%, transparent);
   --about-success-soft: rgba(0, 196, 140, 0.14);
   --about-warning-soft: rgba(255, 184, 0, 0.15);
   --about-error-soft: rgba(255, 59, 92, 0.14);
@@ -693,12 +788,20 @@
   --pillar-accent: #38d9ad;
 }
 
-[data-theme="dark"] .about-grid .about-roadmap-group--completed {
+[data-theme="dark"] .about-grid .about-pillar--brand {
+  --pillar-accent: var(--brand-accent, #22c7b8);
+}
+
+[data-theme="dark"] .about-grid .about-roadmap-group--foundation {
   --roadmap-accent: #38d9ad;
 }
 
-[data-theme="dark"] .about-grid .about-roadmap-group--upcoming {
+[data-theme="dark"] .about-grid .about-roadmap-group--in-progress {
   --roadmap-accent: #ffd166;
+}
+
+[data-theme="dark"] .about-grid .about-roadmap-group--next {
+  --roadmap-accent: var(--brand-accent, #22c7b8);
 }
 
 [data-theme="dark"] .about-grid .about-action--bug {
@@ -707,7 +810,7 @@
 
 @media (min-width: 720px) {
   .about-grid .about-roadmap-groups {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   }
 }
 
@@ -737,6 +840,16 @@
     padding: 1rem;
   }
 
+  .about-grid .about-hero-metrics {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .about-grid .about-metric,
+  .about-grid .about-hero-chip {
+    min-width: 0;
+  }
+
   .about-grid .about-contact-actions {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -755,14 +868,6 @@
 
   .about-grid .about-roadmap-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .about-grid .about-roadmap-grid li:nth-child(odd) {
-    border-right: 0;
-  }
-
-  .about-grid .about-roadmap-grid li:nth-child(n + 2) {
-    border-top: 1px solid var(--roadmap-border);
   }
 }
 
