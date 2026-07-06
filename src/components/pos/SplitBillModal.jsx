@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Check, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { loadData, STORES } from '../../services/database';
 import { Money } from '../../utils/moneyMath';
 import { getCartLineId } from '../../utils/cartLineIdentity';
@@ -104,6 +105,12 @@ const toMoneySafe = (value, fallback = '0') => {
 
 const formatMoneyFromCents = (cents) => Money.toNumber(Money.fromCents(cents)).toFixed(2);
 
+const formatQuantity = (value) => {
+  const quantity = toQuantity(value);
+  if (Number.isInteger(quantity)) return String(quantity);
+  return quantity.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+};
+
 /**
  * Build ticket lines for a specific ticket index.
  * @param {Array} allocations - Full allocations array
@@ -111,13 +118,10 @@ const formatMoneyFromCents = (cents) => Money.toNumber(Money.fromCents(cents)).t
  * @returns {Array} Line items for the ticket
  */
 const buildTicketLines = (allocations, ticketIdx) =>
-  (allocations || [])
-    .map((allocation, lineIndex) => {
-      const quantity = toQuantity(allocation?.ticketQuantities?.[ticketIdx] || 0);
-      if (quantity <= 0) return null;
-      return { lineIndex, quantity };
-    })
-    .filter(Boolean);
+  (allocations || []).flatMap((allocation, lineIndex) => {
+    const quantity = toQuantity(allocation?.ticketQuantities?.[ticketIdx] || 0);
+    return quantity <= 0 ? [] : [{ lineIndex, quantity }];
+  });
 
 /**
  * Initialize payments state for N tickets.
@@ -157,6 +161,10 @@ export default function SplitBillModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const ticketLabels = useMemo(() => generateTicketLabels(splitCount), [splitCount]);
+  const customersById = useMemo(
+    () => new Map(customers.map((customer) => [customer.id, customer])),
+    [customers]
+  );
 
   // Initialize modal state when shown
   useEffect(() => {
@@ -183,43 +191,82 @@ export default function SplitBillModal({
     fetchCustomers();
   }, [show, order, total, splitCount]);
 
+  useEffect(() => {
+    if (!show) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [show, onClose]);
+
   // Recalculate when splitCount changes
   useEffect(() => {
-    if (!show || allocations.length === 0) return;
+    if (!show) return;
 
     // Rebuild allocations for new ticket count, preserving pool
-    const newAllocations = order.map((item, idx) => {
-      const current = allocations[idx];
-      const totalQuantity = toQuantity(item?.quantity || 0);
+    setAllocations((currentAllocations) => {
+      if (currentAllocations.length === 0) return currentAllocations;
 
-      // Sum currently assigned quantities
-      const currentlyAssigned = current?.ticketQuantities
-        ? current.ticketQuantities.reduce((a, b) => a + b, 0)
-        : 0;
+      return order.map((item, idx) => {
+        const current = currentAllocations[idx];
+        const totalQuantity = toQuantity(item?.quantity || 0);
 
-      const poolQuantity = toQuantity(totalQuantity - currentlyAssigned);
+        // Sum currently assigned quantities
+        const currentlyAssigned = current?.ticketQuantities
+          ? current.ticketQuantities.reduce((a, b) => a + b, 0)
+          : 0;
 
-      // Resize ticket quantities array
-      const newTicketQuantities = Array(splitCount).fill(0);
-      if (current?.ticketQuantities) {
-        current.ticketQuantities.forEach((qty, i) => {
-          if (i < splitCount) newTicketQuantities[i] = qty;
-        });
-      }
+        const poolQuantity = toQuantity(totalQuantity - currentlyAssigned);
 
-      return {
-        poolQuantity,
-        ticketQuantities: newTicketQuantities
-      };
+        // Resize ticket quantities array
+        const newTicketQuantities = Array(splitCount).fill(0);
+        if (current?.ticketQuantities) {
+          current.ticketQuantities.forEach((qty, i) => {
+            if (i < splitCount) newTicketQuantities[i] = qty;
+          });
+        }
+
+        return {
+          poolQuantity,
+          ticketQuantities: newTicketQuantities
+        };
+      });
     });
-
-    setAllocations(newAllocations);
-  }, [splitCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [show, order, splitCount]);
 
   const ticketMath = useMemo(
     () => calculateTicketMath({ order, allocations, mode, total }),
     [order, allocations, mode, total]
   );
+
+  const assignmentProgress = useMemo(() => {
+    let totalQuantity = 0;
+    let pendingQuantity = 0;
+    let pendingLines = 0;
+
+    (order || []).forEach((item, index) => {
+      const lineTotal = toQuantity(item?.quantity || 0);
+      const poolQuantity = toQuantity(allocations[index]?.poolQuantity || 0);
+
+      totalQuantity = toQuantity(totalQuantity + lineTotal);
+      pendingQuantity = toQuantity(pendingQuantity + poolQuantity);
+      if (poolQuantity > 0) pendingLines += 1;
+    });
+
+    const assignedQuantity = toQuantity(totalQuantity - pendingQuantity);
+
+    return {
+      assignedQuantity,
+      pendingQuantity,
+      pendingLines,
+      totalQuantity
+    };
+  }, [order, allocations]);
 
   // Update payment amounts when totals change
   useEffect(() => {
@@ -316,7 +363,7 @@ export default function SplitBillModal({
           return `El abono del ticket ${label} no puede ser mayor al total.`;
         }
 
-        const customer = customers.find((c) => c.id === payment.customerId);
+        const customer = customersById.get(payment.customerId);
         if (!customer) {
           return `Cliente inválido en ticket ${label}.`;
         }
@@ -336,7 +383,7 @@ export default function SplitBillModal({
     }
 
     return null;
-  }, [order, allocations, ticketLabels, ticketMath, payments, customers]);
+  }, [order, allocations, ticketLabels, ticketMath, payments, customersById]);
 
   const willAutoOpenCaja = useMemo(() => (
     !isCajaOpen &&
@@ -545,31 +592,57 @@ export default function SplitBillModal({
 
   return (
     <div
-      className="modal"
+      className="modal split-bill-overlay"
       style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }}
       onClick={onClose}
-      role="button"
-      tabIndex={0}
-      aria-label="Cerrar modal de dividir cuenta"
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          onClose();
-        }
-      }}
     >
       <div
         className="modal-content split-bill-modal"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Dividir cuenta"
-        style={{ maxWidth: '1200px', width: '95%' }}
+        aria-labelledby="split-bill-title"
+        aria-describedby="split-bill-description"
       >
-        <h2>Dividir Cuenta</h2>
+        <div className="split-bill-header">
+          <div className="split-bill-title-block">
+            <span className="split-bill-kicker">Separación de cobro</span>
+            <h2 id="split-bill-title">Dividir cuenta</h2>
+            <p id="split-bill-description">
+              Asigna lo pendiente a cada ticket y confirma el método de pago.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="split-close-button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            aria-label="Cerrar división de cuenta"
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="split-status-strip" aria-label="Resumen de división">
+          <div className="split-status-card">
+            <span>Total cuenta</span>
+            <strong>${formatMoneyFromCents(ticketMath.parentCents)}</strong>
+          </div>
+          <div className="split-status-card">
+            <span>Asignado</span>
+            <strong>
+              {formatQuantity(assignmentProgress.assignedQuantity)} / {formatQuantity(assignmentProgress.totalQuantity)}
+            </strong>
+          </div>
+          <div className={`split-status-card ${assignmentProgress.pendingQuantity > 0 ? 'is-pending' : 'is-ready'}`}>
+            <span>Pendiente</span>
+            <strong>{formatQuantity(assignmentProgress.pendingQuantity)}</strong>
+          </div>
+        </div>
 
         <div className="split-controls-row">
           <div className="split-count-selector">
-            <label htmlFor="splitCount">Número de tickets:</label>
+            <label htmlFor="splitCount">Tickets</label>
             <select
               id="splitCount"
               value={splitCount}
@@ -586,11 +659,13 @@ export default function SplitBillModal({
             </select>
           </div>
 
-          <div className="split-mode-row">
+          <div className="split-mode-row" aria-label="Modo de división">
             <button
               type="button"
               className={`btn-method ${mode === 'manual' ? 'active' : ''}`}
               onClick={() => handleModeChange('manual')}
+              aria-pressed={mode === 'manual'}
+              disabled={isSubmitting}
             >
               Manual
             </button>
@@ -598,18 +673,24 @@ export default function SplitBillModal({
               type="button"
               className={`btn-method ${mode === 'equal' ? 'active' : ''}`}
               onClick={() => handleModeChange('equal')}
+              aria-pressed={mode === 'equal'}
+              disabled={isSubmitting}
             >
               Equitativo
             </button>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          {/* Main Content: Pool + Tickets Grid */}
+        <form className="split-bill-form" onSubmit={handleSubmit}>
           <div className="split-main-content">
-            {/* Pool Section */}
-            <div className="split-pool-section">
-              <h3>Pool de Productos (Por Asignar)</h3>
+            <section className="split-pool-section" aria-labelledby="split-pool-title">
+              <div className="split-section-heading">
+                <div>
+                  <h3 id="split-pool-title">Pendiente por asignar</h3>
+                  <p>{assignmentProgress.pendingLines} productos con cantidad disponible</p>
+                </div>
+              </div>
+
               <div className="split-pool-list">
                 {order.map((item, index) => {
                   const allocation = allocations[index];
@@ -618,195 +699,207 @@ export default function SplitBillModal({
                   const poolQty = toQuantity(allocation.poolQuantity);
                   const totalQty = toQuantity(item.quantity || 0);
                   const step = isUnitItem(item) ? 1 : 0.0001;
+                  const isCompleted = poolQty <= 0;
 
-                  // If fully assigned, show as completed
-                  if (poolQty <= 0) {
-                    return (
-                      <div key={getCartLineId(item, index)} className="split-pool-item completed">
+                  return (
+                    <article
+                      key={getCartLineId(item, index)}
+                      className={`split-pool-item ${isCompleted ? 'completed' : ''}`}
+                    >
+                      <div className="split-pool-item-head">
                         <div className="split-pool-item-info">
                           <span className="split-pool-item-name">{item.name}</span>
                           <span className="split-pool-item-price">
                             ${Money.toNumber(item.price || 0).toFixed(2)} c/u
                           </span>
                         </div>
-                        <div className="split-pool-item-status">✓ Asignado</div>
+                        <span className={`split-pool-badge ${isCompleted ? 'is-complete' : ''}`}>
+                          {isCompleted ? (
+                            <>
+                              <Check size={14} aria-hidden="true" /> Asignado
+                            </>
+                          ) : (
+                            `${formatQuantity(poolQty)} de ${formatQuantity(totalQty)}`
+                          )}
+                        </span>
                       </div>
-                    );
-                  }
 
-                  return (
-                    <div key={getCartLineId(item, index)} className="split-pool-item">
-                      <div className="split-pool-item-info">
-                        <span className="split-pool-item-name">{item.name}</span>
-                        <span className="split-pool-item-price">
-                          ${Money.toNumber(item.price || 0).toFixed(2)} c/u
-                        </span>
-                        <span className="split-pool-item-qty">
-                          Disponible: {poolQty} / {totalQty}
-                        </span>
-                      </div>
-                      <div className="split-pool-item-actions">
-                        {ticketLabels.map((label, tIdx) => (
-                          <button
-                            key={label}
-                            type="button"
-                            className="btn-pool-move"
-                            onClick={() => moveToTicket(index, tIdx, step)}
-                            disabled={poolQty < step || isSubmitting}
-                            title={`Mover a ${label}`}
-                          >
-                            → {label}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          className="btn-pool-move-all"
-                          onClick={() => {
-                            // Distribute to first ticket with capacity, or first available
-                            for (let t = 0; t < ticketLabels.length; t++) {
-                              if (poolQty > 0) {
-                                moveAllToTicket(index, t);
-                                break;
-                              }
-                            }
-                          }}
-                          disabled={poolQty <= 0 || isSubmitting}
-                        >
-                          Todo →
-                        </button>
-                      </div>
-                    </div>
+                      {!isCompleted && (
+                        <div className="split-pool-item-actions">
+                          <span className="split-action-label">Sumar</span>
+                          <div className="split-assign-grid">
+                            {ticketLabels.map((label, tIdx) => (
+                              <button
+                                key={label}
+                                type="button"
+                                className="btn-pool-move"
+                                onClick={() => moveToTicket(index, tIdx, step)}
+                                disabled={poolQty < step || isSubmitting}
+                                title={`Sumar ${formatQuantity(step)} a ${label}`}
+                              >
+                                <Plus size={14} aria-hidden="true" />
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+
+                          <span className="split-action-label">Todo a</span>
+                          <div className="split-assign-grid split-assign-grid--compact">
+                            {ticketLabels.map((label, tIdx) => (
+                              <button
+                                key={label}
+                                type="button"
+                                className="btn-pool-move-all"
+                                onClick={() => moveAllToTicket(index, tIdx)}
+                                disabled={poolQty <= 0 || isSubmitting}
+                                title={`Asignar todo a ${label}`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </article>
                   );
                 })}
               </div>
-            </div>
+            </section>
 
-            {/* Tickets Grid */}
-            <div className="split-tickets-grid">
-              {ticketLabels.map((label, tIdx) => {
-                const ticketTotalCents = ticketMath.totalsCents[tIdx];
-                const adjustment = ticketMath.adjustments[tIdx];
-                const payment = payments[label] || {};
+            <section className="split-tickets-section" aria-label="Tickets separados">
+              <div className="split-tickets-grid">
+                {ticketLabels.map((label, tIdx) => {
+                  const ticketTotalCents = ticketMath.totalsCents[tIdx];
+                  const adjustment = ticketMath.adjustments[tIdx];
+                  const payment = payments[label] || {};
+                  const ticketItems = order.reduce((items, item, idx) => {
+                    const qty = toQuantity(allocations[idx]?.ticketQuantities?.[tIdx] || 0);
+                    if (qty > 0) {
+                      items.push({ item, qty, lineIndex: idx });
+                    }
+                    return items;
+                  }, []);
 
-                // Calculate items in this ticket
-                const ticketItems = order
-                  .map((item, idx) => ({
-                    item,
-                    qty: toQuantity(allocations[idx]?.ticketQuantities?.[tIdx] || 0),
-                    lineIndex: idx
-                  }))
-                  .filter((x) => x.qty > 0);
+                  return (
+                    <article
+                      key={label}
+                      className={`split-ticket-card ${ticketItems.length === 0 ? 'is-empty' : ''}`}
+                    >
+                      <div className="split-ticket-header">
+                        <div>
+                          <h3>Ticket {label}</h3>
+                          <span>{ticketItems.length} productos</span>
+                        </div>
+                        <p className="split-ticket-total">
+                          ${formatMoneyFromCents(ticketTotalCents)}
+                        </p>
+                      </div>
 
-                return (
-                  <div key={label} className="split-ticket-card">
-                    <div className="split-ticket-header">
-                      <h3>Ticket {label}</h3>
-                      <p className="split-ticket-total">
-                        ${formatMoneyFromCents(ticketTotalCents)}
-                      </p>
                       {adjustment !== 0 && (
                         <p className="split-ticket-adjustment">
                           Ajuste: {adjustment >= 0 ? '+' : ''}${formatMoneyFromCents(adjustment)}
                         </p>
                       )}
-                    </div>
 
-                    <div className="split-ticket-items">
-                      {ticketItems.length === 0 ? (
-                        <p className="split-ticket-empty">Sin productos</p>
-                      ) : (
-                        ticketItems.map(({ item, qty, lineIndex }) => (
-                          <div key={lineIndex} className="split-ticket-item">
-                            <span className="split-ticket-item-name">{item.name}</span>
-                            <span className="split-ticket-item-qty">× {qty}</span>
-                            <button
-                              type="button"
-                              className="btn-item-remove"
-                              onClick={() => moveToPool(lineIndex, tIdx, isUnitItem(item) ? 1 : 0.0001)}
-                              disabled={isSubmitting}
-                              title="Quitar uno"
-                            >
-                              −
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-item-remove-all"
-                              onClick={() => moveAllToPool(lineIndex, tIdx)}
-                              disabled={isSubmitting}
-                              title="Quitar todo"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
+                      <div className="split-ticket-items">
+                        {ticketItems.length === 0 ? (
+                          <p className="split-ticket-empty">Sin productos asignados</p>
+                        ) : (
+                          ticketItems.map(({ item, qty, lineIndex }) => (
+                            <div key={lineIndex} className="split-ticket-item">
+                              <span className="split-ticket-item-name">{item.name}</span>
+                              <span className="split-ticket-item-qty">x {formatQuantity(qty)}</span>
+                              <button
+                                type="button"
+                                className="btn-item-remove"
+                                onClick={() => moveToPool(lineIndex, tIdx, isUnitItem(item) ? 1 : 0.0001)}
+                                disabled={isSubmitting}
+                                aria-label={`Quitar una unidad de ${item.name} del ticket ${label}`}
+                                title="Quitar uno"
+                              >
+                                <Minus size={14} aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-item-remove-all"
+                                onClick={() => moveAllToPool(lineIndex, tIdx)}
+                                disabled={isSubmitting}
+                                aria-label={`Regresar todo ${item.name} al pendiente`}
+                                title="Regresar todo"
+                              >
+                                <RotateCcw size={14} aria-hidden="true" />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
 
-                    <div className="split-ticket-payment">
-                      <label>
-                        Método de pago
-                        <select
-                          value={payment.paymentMethod}
-                          onChange={(e) => {
-                            const newMethod = e.target.value;
-                            updatePayment(label, 'paymentMethod', newMethod);
-                            if (newMethod === 'fiado') {
-                              updatePayment(label, 'amountPaid', '0');
-                            } else {
-                              updatePayment(label, 'amountPaid', formatMoneyFromCents(ticketMath.totalsCents[tIdx] || 0));
-                            }
-                          }}
-                          disabled={isSubmitting}
-                        >
-                          <option value="efectivo">Efectivo</option>
-                          <option value="fiado">Fiado</option>
-                        </select>
-                      </label>
-
-                      <label>
-                        {payment.paymentMethod === 'efectivo' ? 'Monto recibido' : 'Abono'}
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={payment.amountPaid || '0'}
-                          onChange={(e) => updatePayment(label, 'amountPaid', e.target.value)}
-                          disabled={isSubmitting}
-                        />
-                      </label>
-
-                      {payment.paymentMethod === 'fiado' && (
+                      <div className="split-ticket-payment">
                         <label>
-                          Cliente
+                          Método de pago
                           <select
-                            value={payment.customerId || ''}
-                            onChange={(e) => updatePayment(label, 'customerId', e.target.value)}
+                            value={payment.paymentMethod}
+                            onChange={(e) => {
+                              const newMethod = e.target.value;
+                              updatePayment(label, 'paymentMethod', newMethod);
+                              if (newMethod === 'fiado') {
+                                updatePayment(label, 'amountPaid', '0');
+                              } else {
+                                updatePayment(label, 'amountPaid', formatMoneyFromCents(ticketMath.totalsCents[tIdx] || 0));
+                              }
+                            }}
                             disabled={isSubmitting}
                           >
-                            <option value="">Selecciona cliente</option>
-                            {customers.map((customer) => (
-                              <option key={customer.id} value={customer.id}>
-                                {customer.name} ({customer.phone})
-                              </option>
-                            ))}
+                            <option value="efectivo">Efectivo</option>
+                            <option value="fiado">Fiado</option>
                           </select>
                         </label>
-                      )}
 
-                      <label className="split-receipt-toggle">
-                        <input
-                          type="checkbox"
-                          checked={payment.sendReceipt || false}
-                          onChange={(e) => updatePayment(label, 'sendReceipt', e.target.checked)}
-                          disabled={payment.paymentMethod === 'fiado' && !payment.customerId}
-                        />
-                        Enviar ticket por WhatsApp
-                      </label>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                        <label>
+                          {payment.paymentMethod === 'efectivo' ? 'Monto recibido' : 'Abono'}
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={payment.amountPaid || '0'}
+                            onChange={(e) => updatePayment(label, 'amountPaid', e.target.value)}
+                            disabled={isSubmitting}
+                          />
+                        </label>
+
+                        {payment.paymentMethod === 'fiado' && (
+                          <label>
+                            Cliente
+                            <select
+                              value={payment.customerId || ''}
+                              onChange={(e) => updatePayment(label, 'customerId', e.target.value)}
+                              disabled={isSubmitting}
+                            >
+                              <option value="">Selecciona cliente</option>
+                              {customers.map((customer) => (
+                                <option key={customer.id} value={customer.id}>
+                                  {customer.name} ({customer.phone})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+
+                        <label className="split-receipt-toggle">
+                          <input
+                            type="checkbox"
+                            checked={payment.sendReceipt || false}
+                            onChange={(e) => updatePayment(label, 'sendReceipt', e.target.checked)}
+                            disabled={payment.paymentMethod === 'fiado' && !payment.customerId}
+                          />
+                          Enviar ticket por WhatsApp
+                        </label>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
           </div>
 
           {splitValidationError && (
@@ -821,19 +914,19 @@ export default function SplitBillModal({
 
           <div className="split-actions">
             <button
-              type="submit"
-              className="btn btn-confirm"
-              disabled={Boolean(splitValidationError) || isSubmitting}
-            >
-              {isSubmitting ? 'Procesando...' : 'Confirmar Split y Cobro'}
-            </button>
-            <button
               type="button"
               className="btn btn-cancel-payment"
               onClick={onClose}
               disabled={isSubmitting}
             >
               Cancelar
+            </button>
+            <button
+              type="submit"
+              className="btn btn-confirm"
+              disabled={Boolean(splitValidationError) || isSubmitting}
+            >
+              {isSubmitting ? 'Procesando...' : 'Confirmar división y cobro'}
             </button>
           </div>
         </form>
