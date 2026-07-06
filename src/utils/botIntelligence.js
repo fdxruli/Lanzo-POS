@@ -327,8 +327,21 @@ export const getTopProducts = async (timeframe = 'month', limit = 10) => {
 /**
  * Genera respuestas inteligentes y contextuales
  */
-export const generateResponse = async (intent, entities) => {
+const getContextSummary = (context = {}) => {
+  const pageLabel = context.page?.label || 'esta seccion';
+  const businessLabel = context.businessLabel || 'tu negocio';
+  const insights = Array.isArray(context.businessInsights) ? context.businessInsights : [];
+
+  return {
+    pageLabel,
+    businessLabel,
+    insightText: insights.length > 0 ? insights.join(' | ') : null
+  };
+};
+
+export const generateResponse = async (intent, entities, context = {}) => {
   console.log('💬 Generando respuesta para:', intent);
+  const contextSummary = getContextSummary(context);
   
   // Manejar contextos conversacionales
   if (CONVERSATION_CONTEXT[intent]) {
@@ -337,8 +350,8 @@ export const generateResponse = async (intent, entities) => {
     
     return {
       title: '👋 Hola',
-      message: randomResponse,
-      tips: [],
+      message: `${randomResponse}\n\nEstoy en ${contextSummary.pageLabel} y puedo ajustar la ayuda a ${contextSummary.businessLabel}.`,
+      tips: contextSummary.insightText ? [contextSummary.insightText] : [],
       actions: []
     };
   }
@@ -629,6 +642,54 @@ export const generateResponse = async (intent, entities) => {
       };
     },
     
+    cash_register: () => {
+      return {
+        title: 'Caja y corte',
+        message: 'En Caja puedes abrir turno, registrar entradas o salidas, revisar movimientos y hacer el corte cuando termines operación.',
+        tips: [
+          'Si la caja no cuadra, revisa ventas canceladas, salidas y pagos en efectivo.',
+          'Registra gastos o retiros como movimientos para que el corte sea confiable.',
+          'Haz el corte al final del turno antes de cambiar de cajero.'
+        ],
+        actions: [
+          { label: 'Abrir caja', path: '/caja', icon: '', highlight: true },
+          { label: 'Ver ventas', path: '/ventas', icon: '' }
+        ]
+      };
+    },
+
+    customer_payment: () => {
+      return {
+        title: 'Registrar abono',
+        message: 'Para registrar un abono, entra a Clientes, localiza al cliente con deuda y captura el pago desde su cuenta.',
+        tips: [
+          'Confirma el saldo antes de guardar el abono.',
+          'Registra la forma de pago para que caja y reportes cuadren.',
+          'Entrega o envía comprobante cuando aplique.'
+        ],
+        actions: [
+          { label: 'Ir a clientes', path: '/clientes', icon: '', highlight: true },
+          { label: 'Ver caja', path: '/caja', icon: '' }
+        ]
+      };
+    },
+
+    orders_help: () => {
+      return {
+        title: 'Pedidos y cocina',
+        message: 'En Pedidos puedes dar seguimiento a comandas, estados de preparación y entregas. Es útil para restaurante, cafetería o fonda.',
+        tips: [
+          'Marca un pedido como listo cuando cocina termina.',
+          'Confirma entregado para cerrar el flujo operativo.',
+          'Si usas mesas, revisa la cuenta antes de cobrar.'
+        ],
+        actions: [
+          { label: 'Ver pedidos', path: '/pedidos', icon: '', highlight: true },
+          { label: 'Ir a vender', path: '/', icon: '' }
+        ]
+      };
+    },
+
     help_product: () => {
       return {
         title: 'Cómo Agregar Productos',
@@ -642,6 +703,228 @@ export const generateResponse = async (intent, entities) => {
         actions: [
           { label: 'Ir a Agregar Producto', path: '/productos?tab=add', icon: '', highlight: true },
           { label: 'Ayuda de soporte', path: '/acerca-de', icon: '' }
+        ]
+      };
+    },
+
+    help_sale: () => {
+      return {
+        title: 'Cómo hacer una venta',
+        message: 'Desde Punto de venta puedes escanear o buscar productos, revisar cantidades en el carrito y cobrar cuando el total sea correcto.',
+        tips: [
+          context.cartCount > 0 ? `Ya tienes ${context.cartCount} artículo(s) en el carrito.` : 'Empieza escaneando un código o buscando por nombre.',
+          'Antes de cobrar revisa cantidades, descuentos y forma de pago.',
+          'Si trabajas restaurante, confirma mesa o pedido antes de cerrar.'
+        ],
+        actions: [
+          { label: 'Ir a Punto de venta', path: '/', icon: '', highlight: true },
+          { label: 'Ver caja', path: '/caja', icon: '' }
+        ]
+      };
+    },
+
+    help_inventory: () => {
+      return {
+        title: 'Gestionar inventario',
+        message: 'Para mantener el inventario confiable, registra entradas por lotes cuando recibas mercancía y usa stock mínimo para saber qué reponer.',
+        tips: [
+          context.lowStockCount > 0 ? `Tienes ${context.lowStockCount} producto(s) con stock bajo.` : 'No detecto alertas de stock bajo en el resumen actual.',
+          'Usa lotes cuando necesites controlar caducidad, costo o entradas parciales.',
+          'Revisa precios y costos para que los reportes de ganancia sean útiles.'
+        ],
+        actions: [
+          { label: 'Ver productos', path: '/productos', icon: '', highlight: true },
+          { label: 'Gestionar lotes', path: '/productos?tab=batches', icon: '' }
+        ]
+      };
+    },
+
+    backup_help: () => {
+      return {
+        title: 'Respaldo de datos',
+        message: 'El respaldo protege ventas, productos, clientes y configuración. Hazlo antes de mantenimiento, cambios grandes de inventario o cierre semanal.',
+        tips: [
+          'Ve a Configuración y entra a Datos y Mantenimiento.',
+          'Guarda el archivo en una ubicación que puedas recuperar.',
+          'Si usas sincronización en la nube, revisa que no haya errores pendientes.'
+        ],
+        actions: [
+          { label: 'Ir a respaldos', path: '/configuracion?tab=maintenance', icon: '', highlight: true },
+          { label: 'Soporte', path: '/acerca-de', icon: '' }
+        ]
+      };
+    },
+
+    sync_data: () => {
+      return {
+        title: 'Sincronizar información',
+        message: 'Si notas datos atrasados, primero revisa conexión y estado del sistema. Después actualiza la vista o entra a mantenimiento si el problema continúa.',
+        tips: [
+          'No abras dos pestañas del POS al mismo tiempo.',
+          'Si hay ventas recientes, espera a que termine la sincronización antes de cerrar.',
+          'Haz respaldo antes de ejecutar reparaciones.'
+        ],
+        actions: [
+          { label: 'Ver configuración', path: '/configuracion?tab=maintenance', icon: '', highlight: true },
+          { label: 'Ver reportes', path: '/ventas', icon: '' }
+        ]
+      };
+    },
+
+    change_settings: () => {
+      return {
+        title: 'Configuración del sistema',
+        message: 'Puedes ajustar datos del negocio, usuarios, operación, respaldos y mantenimiento desde Configuración.',
+        tips: [
+          `Estás trabajando en ${contextSummary.pageLabel}.`,
+          'Algunos cambios pueden requerir permisos de administrador.',
+          'Para cambios de licencia o datos sensibles, usa la sección Acerca de o soporte.'
+        ],
+        actions: [
+          { label: 'Abrir configuración', path: '/configuracion', icon: '', highlight: true },
+          { label: 'Acerca de', path: '/acerca-de', icon: '' }
+        ]
+      };
+    },
+
+    quick_sale: () => {
+      return {
+        title: 'Venta rápida',
+        message: 'Para cobrar rápido, entra al Punto de venta, escanea los productos, confirma el total y presiona cobrar.',
+        tips: [
+          'Usa el lector de código de barras para evitar capturas manuales.',
+          'Si el producto no existe, agrégalo desde Productos antes de vender.',
+          context.lowStockCount > 0 ? 'Después de la venta revisa stock bajo para reabastecer.' : 'Mantén actualizado el stock mínimo para recibir alertas.'
+        ],
+        actions: [
+          { label: 'Ir a vender', path: '/', icon: '', highlight: true },
+          { label: 'Agregar producto', path: '/productos?tab=add', icon: '' }
+        ]
+      };
+    },
+
+    add_stock: () => {
+      return {
+        title: 'Agregar stock',
+        message: 'Registra la entrada desde Productos o Gestionar lotes. Eso mantiene consistente el inventario y los costos.',
+        tips: [
+          'Captura cantidad, costo y caducidad si aplica.',
+          'Para farmacia o alimentos, usa lotes para controlar vencimientos.',
+          'Evita editar existencias sin registrar la entrada cuando quieras trazabilidad.'
+        ],
+        actions: [
+          { label: 'Gestionar lotes', path: '/productos?tab=batches', icon: '', highlight: true },
+          { label: 'Ver productos', path: '/productos', icon: '' }
+        ]
+      };
+    },
+
+    system_status: () => {
+      return {
+        title: 'Estado del sistema',
+        message: 'Puedo ayudarte a revisar señales visibles: licencia, respaldos, caja, stock bajo y datos recientes del negocio.',
+        tips: [
+          contextSummary.insightText || 'No hay alertas críticas en el contexto actual.',
+          context.licenseDays <= 7 ? `La licencia vence en ${context.licenseDays} día(s).` : 'La licencia no aparece como crítica.',
+          context.lowStockCount > 0 ? 'Hay productos por revisar en inventario.' : 'El resumen no marca stock bajo.'
+        ],
+        actions: [
+          { label: 'Ver reportes', path: '/ventas', icon: '', highlight: true },
+          { label: 'Mantenimiento', path: '/configuracion?tab=maintenance', icon: '' }
+        ]
+      };
+    },
+
+    customer_search: () => {
+      return {
+        title: 'Buscar cliente',
+        message: 'En Clientes puedes buscar por nombre o teléfono, abrir historial, registrar abonos y revisar cuentas pendientes.',
+        tips: [
+          'Si el cliente tiene crédito, verifica saldo antes de vender fiado.',
+          'Usa historial para confirmar compras anteriores.',
+          'Mantén teléfono actualizado para enviar recibos o recordatorios.'
+        ],
+        actions: [
+          { label: 'Ir a clientes', path: '/clientes', icon: '', highlight: true }
+        ]
+      };
+    },
+
+    best_customers: () => {
+      return {
+        title: 'Clientes importantes',
+        message: 'Para identificar mejores clientes, revisa historial y reportes. Prioriza frecuencia de compra, ticket promedio y saldos pendientes.',
+        tips: [
+          'Los clientes frecuentes pueden recibir promociones o seguimiento.',
+          'No confundas alto consumo con buen crédito si tienen deuda vencida.',
+          'Revisa cuentas por cobrar antes de ampliar crédito.'
+        ],
+        actions: [
+          { label: 'Ver clientes', path: '/clientes', icon: '', highlight: true },
+          { label: 'Ver reportes', path: '/ventas', icon: '' }
+        ]
+      };
+    },
+
+    slow_movers: () => {
+      return {
+        title: 'Productos de baja rotación',
+        message: 'Busca productos con poca venta y mucho stock. Pueden necesitar promoción, ajuste de precio o dejar de reponerse.',
+        tips: [
+          'Compara ventas del mes contra existencias actuales.',
+          'Antes de bajar precio, revisa margen y caducidad.',
+          'En alimentos o farmacia, prioriza lo que vence pronto.'
+        ],
+        actions: [
+          { label: 'Ver reportes', path: '/ventas', icon: '', highlight: true },
+          { label: 'Ver inventario', path: '/productos', icon: '' }
+        ]
+      };
+    },
+
+    trend_analysis: () => {
+      return {
+        title: 'Tendencias del negocio',
+        message: 'Revisa si las ventas suben o bajan comparando día, semana y mes. El dashboard te ayuda a ver productos fuertes y horarios con más movimiento.',
+        tips: [
+          'Mira ticket promedio además de venta total.',
+          'Cruza productos más vendidos con stock bajo.',
+          'Si baja la venta, revisa precios, disponibilidad y clientes frecuentes.'
+        ],
+        actions: [
+          { label: 'Abrir reportes', path: '/ventas', icon: '', highlight: true }
+        ]
+      };
+    },
+
+    projection: () => {
+      return {
+        title: 'Proyección de ventas',
+        message: 'La proyección más útil sale de comparar el ritmo de ventas actual contra semanas anteriores.',
+        tips: [
+          'Usa ventas del día para estimar cierre diario.',
+          'Para compras, combina proyección con stock bajo.',
+          'Evita proyectar con días atípicos sin revisar el contexto.'
+        ],
+        actions: [
+          { label: 'Ver dashboard', path: '/ventas', icon: '', highlight: true },
+          { label: 'Ver stock bajo', path: '/ventas?tab=restock', icon: '' }
+        ]
+      };
+    },
+
+    inventory_value: () => {
+      return {
+        title: 'Valor del inventario',
+        message: 'El valor del inventario depende de existencias y costo registrado. Si faltan costos, el reporte puede quedar incompleto.',
+        tips: [
+          'Captura costo de compra en cada producto o lote.',
+          'Revisa productos sin costo antes de tomar decisiones de margen.',
+          'Separa valor de inventario de ventas: no es dinero disponible.'
+        ],
+        actions: [
+          { label: 'Revisar productos', path: '/productos', icon: '', highlight: true },
+          { label: 'Ver reportes', path: '/ventas', icon: '' }
         ]
       };
     },

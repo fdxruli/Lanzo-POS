@@ -24,5 +24,5 @@ export const customerSchema = z.object({
   deletedAt: z.string().nullable().optional(),
   conflictReason: z.string().nullable().optional(),
   cloudUpdatedAt: z.string().nullable().optional(),
-  metadata: z.record(z.any()).optional()
+  metadata: z.record(z.string(), z.any()).optional()
 });

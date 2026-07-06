@@ -168,6 +168,52 @@ export const INTENT_PATTERNS = {
     ]
   },
 
+  cash_register: {
+    patterns: [
+      /(?:corte|cierre).*caja/i,
+      /caja.*(?:cuadra|cuadre|diferencia|sobrante|faltante)/i,
+      /(?:entrada|salida).*caja/i,
+      /registrar.*(?:efectivo|gasto|retiro)/i,
+      /abrir.*caja/i
+    ],
+    keywords: ['caja', 'corte', 'cierre', 'cuadra', 'efectivo', 'retiro'],
+    examples: [
+      "Cómo hago el corte de caja",
+      "La caja no cuadra",
+      "Registrar salida de efectivo"
+    ]
+  },
+
+  customer_payment: {
+    patterns: [
+      /(?:registrar|hacer|capturar).*abono/i,
+      /cliente.*(?:pago|abono)/i,
+      /pagar.*deuda/i,
+      /liquidar.*cuenta/i
+    ],
+    keywords: ['abono', 'pago', 'liquidar', 'deuda'],
+    examples: [
+      "Cómo registro un abono",
+      "Cliente pagó su deuda",
+      "Liquidar cuenta pendiente"
+    ]
+  },
+
+  orders_help: {
+    patterns: [
+      /(?:pedido|pedidos|comanda|comandas)/i,
+      /(?:cocina|kds)/i,
+      /marcar.*(?:listo|entregado)/i,
+      /mesa.*(?:pedido|cuenta)/i
+    ],
+    keywords: ['pedido', 'comanda', 'cocina', 'mesa', 'entregado'],
+    examples: [
+      "Cómo reviso pedidos pendientes",
+      "Marcar pedido como listo",
+      "Usar cocina en restaurante"
+    ]
+  },
+
   // ========== AYUDA Y TUTORIALES ==========
   help_general: {
     patterns: [
