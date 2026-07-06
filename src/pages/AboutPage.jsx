@@ -13,10 +13,9 @@ import {
 import { useProductStore } from '../store/useProductStore';
 import ContactModal from '../components/common/ContactModal';
 import Logo from '../components/common/Logo';
+import { APP_BUILD_DATE_LABEL, APP_VERSION, APP_VERSION_LABEL } from '../config/appVersion';
 import './AboutPage.css';
 
-const rawVersion = import.meta.env.VITE_APP_VERSION || '4.0.0';
-const APP_VERSION = rawVersion.startsWith('v') ? rawVersion : `v${rawVersion}`;
 const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || '';
 
 const EMPTY_CONTACT_MODAL = {
@@ -98,7 +97,8 @@ ${formData.error || '[No especificado]'}
 INFORMACIÓN DEL DISPOSITIVO:
 ${formData.device || navigator.userAgent}
 
-Versión de la app: ${APP_VERSION}
+Versión de la app: ${APP_VERSION_LABEL}
+Build: ${APP_BUILD_DATE_LABEL}
 Fecha: ${new Date().toLocaleString()}
 
 Gracias por la atención.`;
@@ -116,7 +116,8 @@ ${formData.benefit || '[No especificado]'}
 
 INFORMACIÓN ADICIONAL:
 Dispositivo: ${navigator.userAgent}
-Versión: ${APP_VERSION}
+Versión: ${APP_VERSION_LABEL}
+Build: ${APP_BUILD_DATE_LABEL}
 
 Espero que sea útil.`;
   }
