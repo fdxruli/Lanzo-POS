@@ -12,13 +12,18 @@ import {
   ShieldCheck,
   Sparkles,
   Store,
-  TrendingUp,
 } from 'lucide-react';
+import { useAppStore } from '../store/useAppStore';
 import { useProductStore } from '../store/useProductStore';
 import ContactModal from '../components/common/ContactModal';
 import Logo from '../components/common/Logo';
 import { APP_BUILD_DATE_LABEL, APP_VERSION, APP_VERSION_LABEL } from '../config/appVersion';
+import {
+  getPlanFeaturesFromLicenseDetails,
+  isCloudPosSyncEnabled,
+} from '../services/sync/syncConstants';
 import './AboutPage.css';
+import './AboutPagePlanModes.css';
 
 const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || '';
 
@@ -32,102 +37,131 @@ const EMPTY_CONTACT_MODAL = {
 
 const HERO_CAPABILITIES = [
   {
-    label: 'Operación híbrida',
-    value: 'Local + Cloud PRO',
-    icon: Cloud
-  },
-  {
-    label: 'Venta diaria',
-    value: 'Caja, productos y turnos',
+    label: 'Un dispositivo',
+    value: 'Local FREE',
     icon: Store
   },
   {
-    label: 'Lectura del negocio',
-    value: 'Reportes y trazabilidad',
+    label: 'Sincronización y equipo',
+    value: 'Cloud PRO',
+    icon: Cloud
+  },
+  {
+    label: 'Locales en FREE / cloud en PRO',
+    value: 'Reportes por plan',
     icon: BarChart2
   }
 ];
 
-const BENEFIT_PILLARS = [
+const LOCAL_FREE_FEATURES = [
+  'Punto de venta local',
+  'Caja y cortes locales',
+  'Productos e inventario local',
+  'Reportes en el dispositivo',
+  'Respaldo manual/local',
+  '1 dispositivo'
+];
+
+const LOCAL_FREE_LIMITS = [
+  'Sin sincronización cloud',
+  'Sin empleados/staff',
+  'Sin multi-dispositivo',
+  'Sin IA operativa'
+];
+
+const CLOUD_PRO_FEATURES = [
+  'Hasta 5 dispositivos',
+  'Sincronización en la nube',
+  'Staff, roles y permisos',
+  'Productos, ventas, caja, clientes y reportes cloud',
+  'Restaurante/preparación cloud',
+  'IA operativa con límite de uso',
+  'Auditoría y trazabilidad avanzada'
+];
+
+const CLOUD_PRO_LIMITS = [
+  'Disponible solo con Plan PRO activo',
+  'Requiere conexión para sincronización cloud',
+  'La IA opera con límite configurado por licencia'
+];
+
+const PLAN_MODES = [
   {
-    number: '01',
-    title: 'Local cuando importa, Cloud PRO cuando creces',
-    description: 'Lanzo sigue vendiendo en el dispositivo y suma sincronización en la nube para operar con más control cuando el negocio lo pide.',
-    tags: ['Modo local', 'Cloud PRO'],
+    id: 'free',
+    title: 'Local FREE',
+    subtitle: 'Para vender y controlar tu negocio desde un solo dispositivo.',
+    badge: 'Incluido en FREE',
+    icon: Store,
+    features: LOCAL_FREE_FEATURES,
+    limits: LOCAL_FREE_LIMITS
+  },
+  {
+    id: 'pro',
+    title: 'Cloud PRO',
+    subtitle: 'Para operar con equipo, nube y más control.',
+    badge: 'Disponible en PRO',
     icon: Cloud,
-    tone: 'brand'
-  },
-  {
-    number: '02',
-    title: 'Caja y ventas con trazabilidad',
-    description: 'Cada turno, movimiento y venta queda más claro para saber quién operó, qué pasó y cómo cerró el día.',
-    tags: ['Caja', 'Auditoría'],
-    icon: ShieldCheck,
-    tone: 'success'
-  },
-  {
-    number: '03',
-    title: 'Inventario que acompaña la operación',
-    description: 'Productos, recetas, códigos de barras y existencias trabajan juntos para reducir errores en venta y reposición.',
-    tags: ['Inventario', 'Recetas'],
-    icon: Package,
-    tone: 'warning'
-  },
-  {
-    number: '04',
-    title: 'Decisiones visibles, no escondidas',
-    description: 'Reportes y actividad reciente convierten el movimiento diario en señales útiles para ajustar precios, compras y atención.',
-    tags: ['Reportes', 'Lectura diaria'],
-    icon: TrendingUp,
-    tone: 'primary'
+    features: CLOUD_PRO_FEATURES,
+    limits: CLOUD_PRO_LIMITS
   }
 ];
 
 const ROADMAP_STAGES = [
-  { label: 'Base local', isComplete: true },
-  { label: 'Caja y KDS', isComplete: true },
-  { label: 'Cloud PRO', isActive: true },
-  { label: 'Clientes 360', isComplete: false },
-  { label: 'IA operativa', isComplete: false }
+  { label: 'Base local incluida', isComplete: true },
+  { label: 'Disponible según tu plan', isActive: true },
+  { label: 'Cloud PRO para crecer', isComplete: true },
+  { label: 'Próximas mejoras', isComplete: false }
 ];
 
 const ROADMAP_GROUPS = [
   {
     id: 'foundation',
-    title: 'Base lista',
-    summary: 'Operación diaria',
+    title: 'Base local incluida',
+    summary: 'Plan FREE',
     icon: CheckCircle2,
     items: [
-      'Punto de venta rápido con caja y cortes',
-      'Productos, recetas, códigos de barras y KDS',
-      'Modo claro/oscuro integrado al nuevo sistema visual'
+      'Punto de venta, caja, productos e inventario locales en un dispositivo',
+      'Reportes locales para revisar el movimiento desde el equipo donde vendes',
+      'Respaldo manual/local sin prometer sincronización cloud'
     ]
   },
   {
     id: 'in-progress',
-    title: 'En camino',
+    title: 'Disponible según tu plan',
     summary: 'Cloud PRO',
-    icon: Clock,
+    icon: ShieldCheck,
     items: [
-      'Sincronización multi-dispositivo con Cloud PRO',
-      'Empleados, turnos, permisos y auditoría más profunda',
-      'Cotizaciones, resúmenes y reportes listos para compartir'
+      'Multi-dispositivo, staff, roles y permisos pertenecen al Plan PRO',
+      'Caja, productos, ventas, clientes y reportes cloud se activan con Cloud PRO',
+      'Restaurante/preparación cloud e IA operativa están disponibles según tu licencia PRO'
     ]
   },
   {
     id: 'next',
-    title: 'Siguiente salto',
-    summary: 'Nivel POS global',
+    title: 'Próximas mejoras',
+    summary: 'Evolución futura',
     icon: Sparkles,
     items: [
       'Perfiles de cliente 360 con historial, preferencias y lealtad omnicanal',
-      'Asistente inteligente para demanda, inventario, recompra y alertas antes de perder venta'
+      'Más asistentes inteligentes para demanda, inventario, recompra y alertas preventivas'
     ]
   }
 ];
 
 const ROADMAP_COMPLETE_COUNT = ROADMAP_STAGES.filter(stage => stage.isComplete).length;
 const ROADMAP_PROGRESS = `${(Math.max(0, ROADMAP_COMPLETE_COUNT - 1) / Math.max(1, ROADMAP_STAGES.length - 1)) * 100}%`;
+
+const getDeviceLimitFromLicense = (licenseDetails = {}, isCloudPlan = false) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  const deviceLimit = Number(
+    features?.max_devices ||
+    licenseDetails?.max_devices ||
+    licenseDetails?.details?.max_devices ||
+    (isCloudPlan ? 5 : 1)
+  );
+
+  return Number.isFinite(deviceLimit) && deviceLimit > 0 ? deviceLimit : (isCloudPlan ? 5 : 1);
+};
 
 const generateEmailLink = (type, formData) => {
   let subject = '';
@@ -178,7 +212,12 @@ Espero que sea útil.`;
 
 export default function AboutPage() {
   const productCount = useProductStore(state => state.menu?.length || 0);
+  const licenseDetails = useAppStore(state => state.licenseDetails);
   const [contactModal, setContactModal] = useState(EMPTY_CONTACT_MODAL);
+
+  const isCloudPlan = isCloudPosSyncEnabled(licenseDetails);
+  const currentPlanMode = isCloudPlan ? 'pro' : 'free';
+  const currentDeviceLimit = getDeviceLimitFromLicense(licenseDetails, isCloudPlan);
 
   const closeContactModal = () => setContactModal(EMPTY_CONTACT_MODAL);
 
@@ -252,14 +291,14 @@ export default function AboutPage() {
           <Logo className="about-logo" showBusinessName={false} />
         </div>
         <p className="about-eyebrow">Versión {APP_VERSION}</p>
-        <h1 id="about-title">El poder de un ERP, la sencillez de una app</h1>
+        <h1 id="about-title">Lanzo POS: Local FREE para empezar, Cloud PRO para crecer</h1>
         <p className="about-hero-copy">
-          Lanzo combina punto de venta local, control de caja y Cloud PRO para que el negocio opere rápido hoy y pueda crecer con más dispositivos, datos y automatización mañana.
+          Lanzo puede operar en modo local con Plan FREE o conectarse a Cloud PRO cuando necesitas varios dispositivos, empleados, sincronización, reportes avanzados e IA. Así cada negocio sabe exactamente qué tiene incluido y qué puede activar al crecer.
         </p>
         <div className="about-hero-metrics" aria-label="Resumen de la aplicación">
           <div className="about-metric">
             <span className="about-metric-value">{productCount.toLocaleString()}</span>
-            <span className="about-metric-label">Productos gestionados</span>
+            <span className="about-metric-label">Productos gestionados en este dispositivo</span>
           </div>
           {HERO_CAPABILITIES.map(({ label, value, icon: Icon }) => (
             <div className="about-hero-chip" key={label}>
@@ -275,31 +314,77 @@ export default function AboutPage() {
 
       <div className="about-content">
         <div className="about-column">
-          <section className="about-card" aria-labelledby="about-features-title">
+          <section className="about-card" aria-labelledby="about-plan-modes-title">
             <header className="about-section-heading">
-              <p className="about-eyebrow">Hecho para el trabajo diario</p>
-              <h2 id="about-features-title" className="about-section-title">
-                ¿Por qué elegir Lanzo?
+              <p className="about-eyebrow">Dos formas de usar Lanzo</p>
+              <h2 id="about-plan-modes-title" className="about-section-title">
+                Qué incluye FREE y qué pertenece a PRO
               </h2>
             </header>
 
-            <ol className="about-pillars">
-              {BENEFIT_PILLARS.map(({ number, title, description, tags, icon: Icon, tone }) => (
-                <li className={`about-pillar about-pillar--${tone}`} key={number}>
-                  <div className="about-pillar-icon" aria-hidden="true">
-                    <Icon size={25} strokeWidth={2.2} />
-                  </div>
-                  <div className="about-pillar-content">
-                    <span className="about-pillar-number" aria-hidden="true">{number}</span>
-                    <h3>{title}</h3>
-                    <p>{description}</p>
-                    <div className="about-pillar-tags" aria-label={`Ventajas de ${title}`}>
-                      {tags.map(tag => <span key={tag}>{tag}</span>)}
+            <div className="about-plan-grid" aria-label="Comparación de modos Lanzo">
+              {PLAN_MODES.map(({ id, title, subtitle, badge, icon: Icon, features, limits }) => {
+                const isCurrent = currentPlanMode === id;
+                const planClassName = [
+                  'about-plan-card',
+                  `about-plan-card--${id}`,
+                  isCurrent ? 'about-plan-current' : ''
+                ].filter(Boolean).join(' ');
+
+                return (
+                  <article className={planClassName} key={id}>
+                    <header className="about-plan-card-header">
+                      <div className="about-plan-icon" aria-hidden="true">
+                        <Icon size={24} strokeWidth={2.2} />
+                      </div>
+                      <div>
+                        <span className="about-plan-badge">
+                          {isCurrent ? (
+                            <>
+                              <CheckCircle2 size={13} aria-hidden="true" />
+                              Tu plan actual
+                            </>
+                          ) : badge}
+                        </span>
+                        <h3>{title}</h3>
+                        <p>{subtitle}</p>
+                      </div>
+                    </header>
+
+                    <div className="about-plan-section">
+                      <h4>Incluye</h4>
+                      <ul className="about-plan-feature-list">
+                        {features.map(feature => (
+                          <li key={feature}>
+                            <CheckCircle2 size={15} aria-hidden="true" />
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </div>
-                </li>
-              ))}
-            </ol>
+
+                    <div className="about-plan-section">
+                      <h4>{id === 'free' ? 'Límites / no incluido' : 'Condiciones'}</h4>
+                      <ul className="about-plan-limit-list">
+                        {limits.map(limit => (
+                          <li key={limit}>
+                            <span aria-hidden="true">—</span>
+                            <span>{limit}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {isCurrent && (
+                      <p className="about-plan-current-note">
+                        <CheckCircle2 size={15} aria-hidden="true" />
+                        Esta licencia opera en modo {title} con límite de {currentDeviceLimit} dispositivo{currentDeviceLimit === 1 ? '' : 's'}.
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
           </section>
 
           <section className="about-card" aria-labelledby="about-roadmap-title">
@@ -315,8 +400,8 @@ export default function AboutPage() {
 
             <div className="about-roadmap-progress" aria-label="Evolución de Lanzo POS">
               <div className="about-roadmap-progress-copy">
-                <strong>Base operativa lista</strong>
-                <span>Cloud PRO y funciones premium en camino</span>
+                <strong>Base local incluida</strong>
+                <span>Cloud PRO disponible según tu plan</span>
               </div>
               <div
                 className="about-progress-track"
