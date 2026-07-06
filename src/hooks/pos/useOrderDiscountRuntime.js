@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useAppStore } from '../../store/useAppStore';
 import { db, STORES } from '../../services/db/dexie';
 import { hasSameFinancialTotals, makeSaleDiscount, orderTotalsForSave, withLineDiscount, withoutLineDiscount, withOrderTotals } from '../../services/sales/orderTotals';
 import { useActiveOrders } from './useActiveOrders';
@@ -6,6 +7,13 @@ import { useActiveOrders } from './useActiveOrders';
 let patched = false;
 const normalizeOrder = (order = {}) => withOrderTotals({ ...order, saleDiscount: order.saleDiscount || order.metadata?.discount || null });
 const saleDiscountOf = (sale = {}) => sale.saleDiscount || sale.metadata?.discount || null;
+
+const assertDiscountPermission = () => {
+  const canAccessDiscounts = useAppStore.getState().canAccess?.('discounts') === true;
+  if (!canAccessDiscounts) {
+    throw new Error('Tu usuario no tiene permiso para modificar descuentos.');
+  }
+};
 
 const normalizeLoadedSale = (sale = {}, current = {}) => normalizeOrder({
   ...current,
@@ -102,10 +110,22 @@ const patchActiveOrders = () => {
     },
     updateOrderItems: (orderId, updater) => { originalUpdateOrderItems(orderId, updater); setOrderTotalsInState(orderId); },
     updateOrder: (orderId, updates) => { originalUpdateOrder(orderId, updates); setOrderTotalsInState(orderId); },
-    applyLineDiscount: (lineId, input, orderId = useActiveOrders.getState().currentOrderId) => writeOrder(orderId, (order) => ({ ...order, items: withLineDiscount(order.items, lineId, input) })),
-    removeLineDiscount: (lineId, orderId = useActiveOrders.getState().currentOrderId) => writeOrder(orderId, (order) => ({ ...order, items: withoutLineDiscount(order.items, lineId) })),
-    applySaleDiscount: (input, orderId = useActiveOrders.getState().currentOrderId) => writeOrder(orderId, (order) => ({ ...order, saleDiscount: makeSaleDiscount(order, input) })),
-    removeSaleDiscount: (orderId = useActiveOrders.getState().currentOrderId) => writeOrder(orderId, (order) => ({ ...order, saleDiscount: null })),
+    applyLineDiscount: (lineId, input, orderId = useActiveOrders.getState().currentOrderId) => {
+      assertDiscountPermission();
+      writeOrder(orderId, (order) => ({ ...order, items: withLineDiscount(order.items, lineId, input) }));
+    },
+    removeLineDiscount: (lineId, orderId = useActiveOrders.getState().currentOrderId) => {
+      assertDiscountPermission();
+      writeOrder(orderId, (order) => ({ ...order, items: withoutLineDiscount(order.items, lineId) }));
+    },
+    applySaleDiscount: (input, orderId = useActiveOrders.getState().currentOrderId) => {
+      assertDiscountPermission();
+      writeOrder(orderId, (order) => ({ ...order, saleDiscount: makeSaleDiscount(order, input) }));
+    },
+    removeSaleDiscount: (orderId = useActiveOrders.getState().currentOrderId) => {
+      assertDiscountPermission();
+      writeOrder(orderId, (order) => ({ ...order, saleDiscount: null }));
+    },
     saveOrderAsOpen: async (orderId, snapshot = null) => {
       const order = snapshot || (orderId ? useActiveOrders.getState().activeOrders.get(orderId) : null);
       const normalized = order ? normalizeOrder(order) : snapshot;
