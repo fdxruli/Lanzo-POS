@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useAppStore } from '../../store/useAppStore';
 import { makeSaleDiscount, orderTotals, withOrderTotals } from '../../services/sales/orderTotals';
 import { showMessageModal } from '../../services/utils';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
@@ -22,6 +23,10 @@ export default function OrderDiscountPanel({
 
   const order = useActiveOrders(currentOrderSelector);
   const updateCurrentOrder = useActiveOrders((state) => state.updateCurrentOrder);
+  const canAccess = useAppStore((state) => state.canAccess);
+  useAppStore((state) => state.currentDeviceRole);
+  useAppStore((state) => state.currentStaffUser);
+
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(defaultExpanded || !restaurant);
   const [type, setType] = useState('amount');
@@ -34,6 +39,7 @@ export default function OrderDiscountPanel({
   const hasAnyDiscount = Number(totals.discountTotal || 0) > 0;
   const hasSaleDiscount = Number(totals.saleDiscountAmount || 0) > 0;
   const locked = Boolean(order?.isLockedForCheckout);
+  const canManageDiscounts = canAccess('discounts');
 
   const closeForm = () => {
     setOpen(false);
@@ -44,6 +50,10 @@ export default function OrderDiscountPanel({
 
   const applyDiscount = () => {
     if (!order || locked) return;
+    if (!canManageDiscounts) {
+      showMessageModal('Tu usuario no tiene permiso para aplicar descuentos.', null, { type: 'warning' });
+      return;
+    }
     if (!hasItems) {
       showMessageModal('Agrega productos antes de aplicar un descuento.', null, { type: 'warning' });
       return;
@@ -61,14 +71,28 @@ export default function OrderDiscountPanel({
 
   const removeDiscount = () => {
     if (!order || locked) return;
+    if (!canManageDiscounts) {
+      showMessageModal('Tu usuario no tiene permiso para quitar descuentos.', null, { type: 'warning' });
+      return;
+    }
     updateCurrentOrder(withOrderTotals({ ...order, saleDiscount: null }, null));
     closeForm();
     showMessageModal('Descuento quitado.', null, { type: 'success' });
   };
 
   if (!hasItems) return null;
+  if (!canManageDiscounts && !hasAnyDiscount) return null;
 
   if (triggerOnly) {
+    if (!canManageDiscounts) {
+      return hasAnyDiscount ? (
+        <button type="button" className="order-discount-mobile-trigger order-discount-mobile-trigger--active" disabled title="Sin permiso para modificar descuentos">
+          <span>Descuentos</span>
+          <small>-{money(totals.discountTotal)}</small>
+        </button>
+      ) : null;
+    }
+
     return (
       <button
         type="button"
@@ -90,12 +114,7 @@ export default function OrderDiscountPanel({
 
   return (
     <section className={`order-discount-panel${compact ? ' order-discount-panel--compact' : ''}${restaurant ? ' order-discount-panel--restaurant' : ''}${embedded ? ' order-discount-panel--embedded' : ''}${expanded ? ' order-discount-panel--expanded' : ''}`}>
-      <button
-        type="button"
-        className="order-discount-accordion-trigger"
-        onClick={toggleExpanded}
-        aria-expanded={expanded}
-      >
+      <button type="button" className="order-discount-accordion-trigger" onClick={toggleExpanded} aria-expanded={expanded}>
         <span>
           <strong>Descuentos</strong>
           <small>{hasAnyDiscount ? `Aplicado: -${money(totals.discountTotal)}` : 'Opcional'}</small>
@@ -111,9 +130,13 @@ export default function OrderDiscountPanel({
             <div className="order-discount-row order-discount-row--total"><span>Total</span><strong>{money(totals.total)}</strong></div>
           </div>
 
-          {totals.saleDiscount && <p className="order-discount-note">Descuento aplicado: {totals.saleDiscount.reason}</p>}
+          {!canManageDiscounts && (
+            <p className="order-discount-note">Tu usuario puede ver el descuento aplicado, pero no modificarlo.</p>
+          )}
 
-          {open && !locked && (
+          {canManageDiscounts && totals.saleDiscount && <p className="order-discount-note">Descuento aplicado: {totals.saleDiscount.reason}</p>}
+
+          {canManageDiscounts && open && !locked && (
             <div className="order-discount-form">
               <select value={type} onChange={(event) => setType(event.target.value)} aria-label="Tipo de descuento">
                 <option value="amount">Monto fijo</option>
@@ -124,19 +147,21 @@ export default function OrderDiscountPanel({
             </div>
           )}
 
-          <div className="order-discount-actions">
-            {open ? (
-              <>
-                <button type="button" className="order-discount-btn order-discount-btn--primary" onClick={applyDiscount} disabled={locked}>Aplicar descuento</button>
-                <button type="button" className="order-discount-btn" onClick={closeForm}>Cancelar</button>
-              </>
-            ) : (
-              <button type="button" className="order-discount-btn" onClick={() => setOpen(true)} disabled={locked}>Descuento general</button>
-            )}
-            {hasSaleDiscount && !open && <button type="button" className="order-discount-btn order-discount-btn--danger" onClick={removeDiscount} disabled={locked}>Quitar descuento general</button>}
-          </div>
+          {canManageDiscounts && (
+            <div className="order-discount-actions">
+              {open ? (
+                <>
+                  <button type="button" className="order-discount-btn order-discount-btn--primary" onClick={applyDiscount} disabled={locked}>Aplicar descuento</button>
+                  <button type="button" className="order-discount-btn" onClick={closeForm}>Cancelar</button>
+                </>
+              ) : (
+                <button type="button" className="order-discount-btn" onClick={() => setOpen(true)} disabled={locked}>Descuento general</button>
+              )}
+              {hasSaleDiscount && !open && <button type="button" className="order-discount-btn order-discount-btn--danger" onClick={removeDiscount} disabled={locked}>Quitar descuento general</button>}
+            </div>
+          )}
 
-          <OrderLineDiscountList />
+          {canManageDiscounts && <OrderLineDiscountList />}
         </div>
       )}
     </section>
