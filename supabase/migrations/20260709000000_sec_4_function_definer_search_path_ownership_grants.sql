@@ -72,11 +72,15 @@ AS $$
     SELECT fn.*, CASE WHEN a.grantee = 0::oid THEN 'PUBLIC' ELSE a.grantee::regrole::text END grantee, a.privilege_type
     FROM fn
     CROSS JOIN LATERAL pg_catalog.aclexplode(coalesce(fn.proacl, pg_catalog.acldefault('f'::"char", fn.owner_oid))) a
+  ), findings AS (
+    SELECT 'unsafe_secdef_search_path'::text AS check_name, count(*)::bigint AS finding_count FROM fn WHERE prosecdef AND search_path NOT IN ('""','pg_catalog, public, pg_temp','pg_catalog, public, private, pg_temp')
+    UNION ALL SELECT 'private_client_execute', count(*)::bigint FROM grants WHERE schema_name='private' AND privilege_type='EXECUTE' AND grantee IN ('PUBLIC','anon','authenticated')
+    UNION ALL SELECT 'public_execute_grant', count(*)::bigint FROM grants WHERE schema_name IN ('public','private') AND privilege_type='EXECUTE' AND grantee='PUBLIC'
+    UNION ALL SELECT 'helper_client_execute', count(*)::bigint FROM grants WHERE schema_name IN ('public','private') AND function_name ~ '(_unlimited|_internal|_helper|_legacy|_unsafe)($|_)' AND privilege_type='EXECUTE' AND grantee IN ('PUBLIC','anon','authenticated')
   )
-  SELECT 'unsafe_secdef_search_path', count(*) FROM fn WHERE prosecdef AND search_path NOT IN ('""','pg_catalog, public, pg_temp','pg_catalog, public, private, pg_temp')
-  UNION ALL SELECT 'private_client_execute', count(*) FROM grants WHERE schema_name='private' AND privilege_type='EXECUTE' AND grantee IN ('PUBLIC','anon','authenticated')
-  UNION ALL SELECT 'public_execute_grant', count(*) FROM grants WHERE schema_name IN ('public','private') AND privilege_type='EXECUTE' AND grantee='PUBLIC'
-  UNION ALL SELECT 'helper_client_execute', count(*) FROM grants WHERE schema_name IN ('public','private') AND function_name ~ '(_unlimited|_internal|_helper|_legacy|_unsafe)($|_)' AND privilege_type='EXECUTE' AND grantee IN ('PUBLIC','anon','authenticated');
+  SELECT findings.check_name, findings.finding_count
+  FROM findings
+  WHERE findings.finding_count > 0;
 $$;
 
 REVOKE ALL ON FUNCTION private.sec4_security_surface_audit() FROM PUBLIC, anon, authenticated;
