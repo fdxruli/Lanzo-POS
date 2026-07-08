@@ -34,9 +34,9 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
     monto_conteo_inicial: asStringAmount(session.opening_counted_amount, asStringAmount(session.opening_amount)),
     monto_fondo_sugerido: asStringAmount(session.opening_suggested_amount),
     diferencia_apertura: asStringAmount(session.opening_difference),
-    politica_apertura: session.opening_policy || null,
+    politica_apertura: null,
     apertura_origen: session.opening_origin || null,
-    es_auto_apertura: Boolean(session.is_auto_opening),
+    es_auto_apertura: false,
     estado: normalizeStatus(session.status),
     monto_cierre: session.closing_counted_amount === null || session.closing_counted_amount === undefined
       ? null
@@ -110,9 +110,7 @@ export const localOpeningToCloudPayload = (openingData = {}) => ({
   opening_counted_amount: asStringAmount(openingData.montoContado ?? openingData.opening_counted_amount),
   opening_suggested_amount: asStringAmount(openingData.montoSugerido ?? openingData.opening_suggested_amount),
   opening_difference: asStringAmount(openingData.diferenciaApertura ?? openingData.opening_difference),
-  opening_policy: openingData.politicaApertura || openingData.opening_policy || 'manual',
   opening_origin: openingData.origen || openingData.opening_origin || 'manual',
-  is_auto_opening: Boolean(openingData.esAutoApertura || openingData.is_auto_opening),
   responsible_name: openingData.responsable || openingData.responsible_name || null,
   metadata: openingData.metadata || {}
 });
