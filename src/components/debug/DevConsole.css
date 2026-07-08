@@ -1,0 +1,266 @@
+.dev-console-fab,
+.dev-console {
+  position: fixed;
+  right: max(12px, var(--safe-area-right));
+  z-index: calc(var(--z-toast) + 1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.dev-console-fab {
+  bottom: max(14px, calc(var(--safe-area-bottom) + 14px));
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #f8fafc;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.28);
+  cursor: grab;
+  opacity: 0.58;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dev-console-fab:active,
+.dev-console-fab:focus-visible {
+  background: rgba(15, 23, 42, 0.94);
+  opacity: 1;
+}
+
+.dev-console-fab--alert {
+  border-color: rgba(248, 113, 113, 0.72);
+  background: rgba(127, 29, 29, 0.72);
+  opacity: 0.78;
+}
+
+.dev-console-fab--dragging {
+  background: rgba(15, 23, 42, 0.94);
+  cursor: grabbing;
+  opacity: 1;
+  outline: 3px solid rgba(45, 212, 191, 0.45);
+  transform: scale(1.03);
+}
+
+.dev-console-fab strong {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 0.75rem;
+}
+
+.dev-console {
+  bottom: max(10px, calc(var(--safe-area-bottom) + 10px));
+  left: max(10px, var(--safe-area-left));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  max-height: min(62vh, 520px);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.96);
+  color: #e5e7eb;
+  box-shadow: 0 20px 54px rgba(15, 23, 42, 0.34);
+  backdrop-filter: blur(10px);
+}
+
+.dev-console--expanded {
+  top: max(10px, var(--safe-area-top));
+  max-height: none;
+}
+
+.dev-console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.dev-console-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dev-console-title strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 0.86rem;
+  line-height: 1.1;
+}
+
+.dev-console-title span {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.dev-console-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.dev-console-actions button,
+.dev-console-refresh {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.9);
+  color: #e5e7eb;
+}
+
+.dev-console-toolbar {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.dev-console-toolbar select,
+.dev-console-toolbar input {
+  height: 36px;
+  padding: 0 9px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.72);
+  color: #f8fafc;
+  font-size: 0.82rem;
+}
+
+.dev-console-refresh {
+  width: auto;
+  padding: 0 10px;
+  font-size: 0.8rem;
+}
+
+.dev-console-list {
+  min-height: 180px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.dev-console-empty {
+  padding: 20px;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.dev-console-entry {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.dev-console-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.dev-console-entry-meta strong {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  color: #e5e7eb;
+  text-transform: uppercase;
+}
+
+.dev-console-entry-meta em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
+}
+
+.dev-console-entry pre {
+  margin: 0;
+  color: #e5e7eb;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.dev-console-entry--error {
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.dev-console-entry--error .dev-console-entry-meta strong {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.dev-console-entry--warn {
+  background: rgba(120, 53, 15, 0.2);
+}
+
+.dev-console-entry--warn .dev-console-entry-meta strong {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fde68a;
+}
+
+.dev-console-entry--info .dev-console-entry-meta strong {
+  color: #bfdbfe;
+}
+
+.dev-console-entry--debug .dev-console-entry-meta strong,
+.dev-console-entry--trace .dev-console-entry-meta strong,
+.dev-console-entry--table .dev-console-entry-meta strong {
+  color: #c4b5fd;
+}
+
+@media (min-width: 768px) and (hover: hover), (min-width: 768px) and (pointer: fine) {
+  .dev-console-fab,
+  .dev-console {
+    display: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .dev-console {
+    right: max(8px, var(--safe-area-right));
+    left: max(8px, var(--safe-area-left));
+    max-height: min(70vh, 560px);
+  }
+
+  .dev-console-header {
+    align-items: flex-start;
+  }
+
+  .dev-console-title span {
+    max-width: 178px;
+    white-space: normal;
+  }
+
+  .dev-console-actions button {
+    width: 31px;
+    height: 31px;
+  }
+
+  .dev-console-toolbar {
+    grid-template-columns: 104px minmax(0, 1fr);
+  }
+
+  .dev-console-refresh {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}

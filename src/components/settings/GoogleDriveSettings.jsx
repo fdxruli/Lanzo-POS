@@ -19,14 +19,14 @@ function revokeGoogleToken(accessToken) {
 
 function getOAuthErrorMessage(oauthError) {
   if (globalThis.navigator?.onLine === false) {
-    return 'No hay conexión a internet. Revisa tu red e intenta conectar Google Drive nuevamente.';
+    return 'No hay conexion a internet. Revisa tu red e intenta conectar Google Drive nuevamente.';
   }
 
   if (oauthError?.error === 'access_denied') {
-    return 'No se autorizó el acceso a Google Drive. Puedes intentarlo nuevamente cuando estés listo.';
+    return 'No se autorizo el acceso a Google Drive. Puedes intentarlo nuevamente cuando estes listo.';
   }
 
-  return 'Google no pudo autorizar el acceso a Drive. Inténtalo de nuevo y, si el problema continúa, contacta a soporte.';
+  return 'Google no pudo autorizar el acceso a Drive. Intentalo de nuevo y, si el problema continua, contacta a soporte.';
 }
 
 function GoogleDriveOAuthControls() {
@@ -51,7 +51,7 @@ function GoogleDriveOAuthControls() {
 
       if (!tokenResponse.access_token || !hasOnlyDriveFileScope(tokenResponse.scope)) {
         revokeGoogleToken(tokenResponse.access_token);
-        setError('Google devolvió permisos distintos a drive.file. La conexión fue rechazada.');
+        setError('Google devolvio permisos distintos a drive.file. La conexion fue rechazada.');
         toast.error('No se aceptaron permisos adicionales de Google Drive.');
         return;
       }
@@ -61,7 +61,7 @@ function GoogleDriveOAuthControls() {
         expiresIn: tokenResponse.expires_in
       });
       setError('');
-      toast.success('Google Drive conectado para esta sesión.');
+      toast.success('Google Drive conectado para esta sesion.');
     },
     onError: (oauthError) => {
       setIsConnecting(false);
@@ -72,8 +72,8 @@ function GoogleDriveOAuthControls() {
     onNonOAuthError: (oauthError) => {
       setIsConnecting(false);
       const message = oauthError.type === 'popup_closed'
-        ? 'La ventana de autorización fue cerrada.'
-        : 'No fue posible abrir la autorización de Google.';
+        ? 'La ventana de autorizacion fue cerrada.'
+        : 'No fue posible abrir la autorizacion de Google.';
       setError(message);
     }
   });
@@ -86,7 +86,7 @@ function GoogleDriveOAuthControls() {
       login();
     } catch {
       setIsConnecting(false);
-      setError('No fue posible iniciar la autorización de Google.');
+      setError('No fue posible iniciar la autorizacion de Google.');
     }
   };
 
@@ -100,28 +100,28 @@ function GoogleDriveOAuthControls() {
 
   return (
     <>
-      <div className={`drive-connection-status ${hasActiveSession ? 'is-connected' : ''}`}>
+      <div className={`drive-connection-status ${hasActiveSession ? 'is-connected' : ''} ${needsDriveReauth ? 'needs-reauth' : ''}`}>
         <span className="drive-connection-status__icon">
           {hasActiveSession ? <ShieldCheck size={20} /> : <Cloud size={20} />}
         </span>
         <div>
           <strong>
             {hasActiveSession
-              ? 'Conexión activa'
+              ? 'Conexion activa'
               : needsDriveReauth
-                ? 'Sesión expirada'
+                ? 'Sesion expirada'
                 : isDriveConnected
-                ? 'Autorizado previamente'
-                : 'Google Drive no conectado'}
+                  ? 'Autorizado previamente'
+                  : 'Google Drive no conectado'}
           </strong>
           <p>
             {hasActiveSession
-              ? 'El token temporal está disponible solo durante esta sesión.'
+              ? 'El token temporal esta disponible solo durante esta sesion.'
               : needsDriveReauth
                 ? 'Reconecta Google Drive para reactivar los respaldos en la nube.'
                 : isDriveConnected
-                ? 'Vuelve a conectar para obtener un token temporal nuevo.'
-                : 'Los respaldos solo podrán administrar archivos creados por Lanzo.'}
+                  ? 'Vuelve a conectar para obtener un token temporal nuevo.'
+                  : 'Los respaldos solo podran administrar archivos creados por Lanzo.'}
           </p>
         </div>
       </div>
@@ -175,8 +175,11 @@ export default function GoogleDriveSettings() {
   return (
     <section className="backup-settings-card backup-settings-card--drive">
       <div className="backup-settings-card__heading">
-        <Cloud size={24} />
+        <span className="backup-card-icon backup-card-icon--drive" aria-hidden="true">
+          <Cloud size={20} />
+        </span>
         <div>
+          <span className="backup-card-eyebrow">Nube opcional</span>
           <h4>Respaldo en Google Drive</h4>
           <p>Conecta tu cuenta con acceso limitado a los archivos creados por Lanzo.</p>
         </div>
@@ -186,7 +189,7 @@ export default function GoogleDriveSettings() {
         ? <GoogleDriveOAuthControls />
         : (
           <div className="backup-settings-notice">
-            Configura <code>VITE_GOOGLE_CLIENT_ID</code> para habilitar la conexión con Google Drive.
+            Configura <code>VITE_GOOGLE_CLIENT_ID</code> para habilitar la conexion con Google Drive.
           </div>
         )}
     </section>

@@ -1,6 +1,8 @@
 import { Bell, Bot, FileText, ShieldCheck } from 'lucide-react';
+import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { CASH_OPENING_POLICY } from '../../services/cashOpeningPolicyService.js';
+import { isCloudCashSyncEnabled } from '../../services/sync/syncConstants.js';
 import { useAppStore } from '../../store/useAppStore';
 
 function SettingsSwitch({ checked, disabled = false, warning = false, onChange, ariaLabel }) {
@@ -29,10 +31,15 @@ export default function OperationalSettings() {
   const setEnableMultipleOrders = useAppStore((state) => state.setEnableMultipleOrders);
   const cashOpeningPolicy = useAppStore((state) => state.cashOpeningPolicy);
   const setCashOpeningPolicy = useAppStore((state) => state.setCashOpeningPolicy);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   const activeOrdersCount = useActiveOrders((state) => state.activeOrders.size);
+  const features = useFeatureConfig();
 
-  const multipleOrdersLocked = activeOrdersCount > 1;
-  const automaticCashOpening = cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC;
+  const hasMultipleActiveOrders = activeOrdersCount > 1;
+  const multipleOrdersLocked = enableMultipleOrders && hasMultipleActiveOrders;
+  const shouldShowMultipleOrdersControl = !features.hasTables;
+  const cloudCashSyncEnabled = isCloudCashSyncEnabled(licenseDetails);
+  const automaticCashOpening = !cloudCashSyncEnabled && cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC;
 
   return (
     <div className="company-form-container settings-control-panel">
@@ -84,6 +91,7 @@ export default function OperationalSettings() {
           />
         </div>
 
+        {shouldShowMultipleOrdersControl && (
         <div className={`settings-option-row settings-control-card ${multipleOrdersLocked ? 'settings-option-row--disabled' : ''}`}>
           <div className="settings-option-main">
             <div className={`settings-icon-bubble ${enableMultipleOrders ? 'settings-icon-bubble--info' : 'settings-icon-bubble--muted'}`}>
@@ -100,18 +108,24 @@ export default function OperationalSettings() {
                   Cierra, cobra o cancela las órdenes secundarias antes de desactivar esta función.
                 </span>
               )}
+              {!enableMultipleOrders && hasMultipleActiveOrders && (
+                <span className="settings-warning-text">
+                  Hay ventas simultaneas abiertas. Puedes reactivar la funcion o cerrarlas desde el POS.
+                </span>
+              )}
             </div>
           </div>
           <SettingsSwitch
             checked={!!enableMultipleOrders}
             disabled={multipleOrdersLocked}
             onChange={(event) => {
-              if (multipleOrdersLocked) return;
+              if (!event.target.checked && hasMultipleActiveOrders) return;
               setEnableMultipleOrders(event.target.checked);
             }}
             ariaLabel="Activar multiples ventas"
           />
         </div>
+        )}
 
         <div className={`settings-option-row settings-control-card ${automaticCashOpening ? 'settings-option-row--warning' : ''}`}>
           <div className="settings-option-main">
@@ -122,20 +136,31 @@ export default function OperationalSettings() {
               <span className="settings-option-title">Caja automática</span>
               <p>Define si la caja puede abrirse heredando fondo o si exige confirmación del operador.</p>
               <span className="settings-option-meta">
-                {automaticCashOpening
-                  ? 'Automática: hereda fondo y registra al sistema como responsable.'
-                  : 'Manual: exige fondo confirmado, conteo físico y responsable.'}
+                {cloudCashSyncEnabled
+                  ? 'No disponible en PRO: la caja cloud requiere confirmación de apertura por auditoría.'
+                  : automaticCashOpening
+                    ? 'Automática: puede heredar el fondo del cierre anterior. Verifica que el efectivo físico exista.'
+                    : 'Manual: exige fondo confirmado, conteo físico y responsable.'}
               </span>
+              {automaticCashOpening && (
+                <span className="settings-warning-text">
+                  Atención: si el cierre anterior dejó fondo para el siguiente turno, la caja se abrirá con ese monto. Si el efectivo físico no está en caja, cambia a apertura manual.
+                </span>
+              )}
             </div>
           </div>
           <SettingsSwitch
             checked={automaticCashOpening}
+            disabled={cloudCashSyncEnabled}
             warning={automaticCashOpening}
-            onChange={(event) => setCashOpeningPolicy(
-              event.target.checked
-                ? CASH_OPENING_POLICY.AUTOMATIC
-                : CASH_OPENING_POLICY.MANUAL
-            )}
+            onChange={(event) => {
+              if (cloudCashSyncEnabled) return;
+              setCashOpeningPolicy(
+                event.target.checked
+                  ? CASH_OPENING_POLICY.AUTOMATIC
+                  : CASH_OPENING_POLICY.MANUAL
+              );
+            }}
             ariaLabel="Permitir autoapertura de caja"
           />
         </div>

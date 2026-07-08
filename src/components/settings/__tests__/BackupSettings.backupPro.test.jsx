@@ -112,6 +112,6 @@ describe('BackupSettings copy by license mode', () => {
     expect(screen.queryByText('Copia local cifrada adicional')).not.toBeNull();
     expect(screen.queryByText('Generar copia local')).not.toBeNull();
     expect(screen.queryByText('Respaldar ahora')).toBeNull();
-    expect(screen.queryByText(/caché de este dispositivo/i)).not.toBeNull();
+    expect(screen.queryByText(/cache de este dispositivo/i)).not.toBeNull();
   });
 });
