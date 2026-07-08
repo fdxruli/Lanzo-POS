@@ -1,80 +1,187 @@
-/*
- * Estilos para CategoryManagerModal.jsx
- */
+.category-modal__content {
+  max-width: 620px;
+}
 
-/* Contenedor de la lista de categorías en el modal */
+.category-modal__header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-space-sm);
+  padding-bottom: var(--ui-space-md);
+  border-bottom: 1px solid var(--ui-border-color);
+}
+
+.category-modal__icon {
+  align-items: center;
+  background: var(--ui-bg-brand-soft);
+  border: 1px solid var(--ui-border-brand);
+  border-radius: var(--ui-radius-sm);
+  color: var(--ui-color-secondary);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2rem;
+  justify-content: center;
+  width: 2rem;
+}
+
+.category-modal .modal-title {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
+.category-modal__header p {
+  margin: 0.3rem 0 0;
+  color: var(--ui-text-muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.category-modal__form {
+  margin-top: var(--ui-space-md);
+}
+
+.category-modal__list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-sm);
+  margin-top: var(--ui-space-lg);
+  padding-top: var(--ui-space-md);
+  border-top: 1px solid var(--ui-border-color);
+}
+
+.category-modal__list-header h3 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.category-modal__list-header span {
+  align-items: center;
+  border: 1px solid var(--ui-border-brand);
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-bg-brand-soft);
+  color: var(--ui-text-brand);
+  display: inline-flex;
+  font-size: 0.74rem;
+  font-weight: 800;
+  min-height: 28px;
+  padding: 0 0.65rem;
+}
+
 .category-list {
-  max-height: 250px;
+  max-height: 270px;
   overflow-y: auto;
-  margin-top: var(--spacing-lg);
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--light-background);
+  margin-top: var(--ui-space-sm);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-surface);
 }
 
 .category-item-managed {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 0.75rem minmax(0, 1fr) auto;
   align-items: center;
-  padding: var(--spacing-sm);
-  border-bottom: 1px solid var(--light-background);
-  border-radius: var(--border-radius-sm);
+  gap: var(--ui-space-sm);
+  padding: 0.78rem 0.85rem;
+  border-bottom: 1px solid var(--ui-border-color);
 }
 
 .category-item-managed:last-child {
-  border-bottom: none;
+  border-bottom: 0;
 }
 
 .category-item-managed:hover {
-  background-color: var(--light-background);
+  background: color-mix(in srgb, var(--ui-bg-muted) 58%, transparent);
+}
+
+.category-modal__swatch {
+  display: block;
+  width: 0.75rem;
+  height: 1.8rem;
+  border-radius: var(--ui-radius-pill);
+}
+
+.category-modal__copy {
+  min-width: 0;
+}
+
+.category-modal__copy strong {
+  display: block;
+  color: var(--text-dark);
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.category-modal__copy small {
+  color: var(--ui-text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
 }
 
 .category-item-controls {
   display: flex;
-  gap: var(--spacing-sm);
+  gap: var(--ui-space-xs);
 }
 
 .category-item-controls button {
-  background: none;
-  padding: var(--spacing-xs);
-  font-size: 1.1rem;
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  color: var(--text-dark);
+  cursor: pointer;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
 }
 
-.edit-category-btn:hover {
-  color: var(--primary-color);
+.category-item-controls button:hover {
+  border-color: var(--ui-color-secondary);
+  color: var(--ui-color-secondary);
 }
 
-.delete-category-btn:hover {
-  color: var(--error-color);
+.category-item-controls .delete-category-btn {
+  color: var(--ui-text-danger);
 }
 
-.category-modal__content {
-  max-width: 560px;
+.category-item-controls .delete-category-btn:hover {
+  border-color: var(--ui-color-danger);
+  color: var(--ui-color-danger);
 }
 
-.category-modal__form {
-  margin-bottom: var(--ui-space-lg);
+.category-item-controls button:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-brand);
+}
+
+.category-modal__empty {
+  margin: 0;
+  padding: var(--ui-space-lg);
+  color: var(--ui-text-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .category-modal__actions {
   margin-top: var(--ui-space-lg);
 }
 
-.category-modal .category-list {
-  border-top-color: var(--ui-border-color);
-}
+@media (max-width: 460px) {
+  .category-item-managed {
+    grid-template-columns: 0.75rem minmax(0, 1fr);
+  }
 
-.category-modal .category-item-managed {
-  border-bottom-color: var(--ui-border-color);
-}
-
-.category-modal .category-item-managed:hover {
-  background-color: var(--ui-bg-muted);
-}
-
-.category-modal .edit-category-btn:hover {
-  color: var(--ui-color-primary);
-}
-
-.category-modal .delete-category-btn:hover {
-  color: var(--ui-color-danger);
+  .category-item-controls {
+    grid-column: 2;
+  }
 }

@@ -1,207 +1,449 @@
-/* src/components/products/IngredientManager.css */
-
-/* --- LAYOUT PRINCIPAL (Igual que categorías) --- */
 .ingredient-manager-container {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
+  gap: var(--ui-space-lg);
   width: 100%;
-  animation: fadeIn 0.3s ease-out;
+  min-width: 0;
+  animation: fadeIn 0.35s ease-out;
 }
 
-/* --- ESTADO VACÍO DE INSUMOS --- */
-.ingredient-empty-message {
-  grid-column: 1 / -1;
-  /* Asegura que ocupe todo el ancho del grid */
+.ingredient-manager-header {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-space-md);
+  padding-bottom: var(--ui-space-md);
+  border-bottom: 1px solid var(--ui-border-color);
+}
+
+.ingredient-title-group {
+  min-width: 0;
+}
+
+.ingredient-kicker {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  text-align: center;
-  color: var(--text-light);
-  padding: 3rem 1rem;
-  background-color: rgba(0, 0, 0, 0.02);
-  border: 2px dashed var(--border-color);
-  border-radius: var(--border-radius);
-  margin-top: 10px;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+  color: var(--ui-text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
-/* Icono de caja para insumos */
-.ingredient-empty-message::before {
-  content: '📦';
-  font-size: 3.5rem;
-  margin-bottom: 15px;
-  opacity: 0.6;
-  filter: grayscale(80%);
+.ingredient-kicker svg {
+  color: var(--ui-color-secondary);
 }
 
-.ingredient-empty-message p {
-  font-size: 1.1rem;
-  font-weight: 600;
+.ingredient-manager-header h2 {
+  margin: 0;
   color: var(--text-dark);
-  margin-bottom: 5px;
+  font-size: 1.15rem;
+  line-height: 1.25;
 }
 
-.ingredient-empty-message small {
+.ingredient-manager-header p {
+  margin: 0.35rem 0 0;
+  max-width: 48rem;
+  color: var(--text-light);
   font-size: 0.9rem;
-  opacity: 0.8;
+  line-height: 1.5;
 }
 
-/* --- FORMULARIO --- */
+.ingredient-status-pill {
+  align-items: center;
+  border: 1px solid var(--ui-border-brand);
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-bg-brand-soft);
+  color: var(--ui-text-brand);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 0.76rem;
+  font-weight: 800;
+  min-height: 32px;
+  padding: 0 0.75rem;
+  white-space: nowrap;
+}
+
+.ingredient-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-surface);
+}
+
+.ingredient-metric {
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border-right: 1px solid var(--ui-border-color);
+}
+
+.ingredient-metric:last-child {
+  border-right: 0;
+}
+
+.ingredient-metric span {
+  display: block;
+  color: var(--ui-text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ingredient-metric strong {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--text-dark);
+  font-size: 1.08rem;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.ingredient-manager-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ui-space-lg);
+  min-width: 0;
+}
+
+.ingredient-form-section,
+.ingredient-list-section {
+  min-width: 0;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-surface);
+}
+
 .ingredient-form-section {
-  background-color: var(--light-background);
-  padding: var(--spacing-md);
-  border-radius: var(--border-radius);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 1rem;
+}
+
+.ingredient-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-space-sm);
+  margin-bottom: var(--ui-space-md);
+}
+
+.ingredient-section-icon,
+.ingredient-card-icon {
+  align-items: center;
+  background: var(--ui-bg-brand-soft);
+  border: 1px solid var(--ui-border-brand);
+  border-radius: var(--ui-radius-sm);
+  color: var(--ui-color-secondary);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2rem;
+  justify-content: center;
+  width: 2rem;
+}
+
+.ingredient-section-heading h3,
+.ingredient-list-header h3 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 0.98rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.ingredient-section-heading p,
+.ingredient-list-header p {
+  margin: 0.2rem 0 0;
+  color: var(--ui-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .ingredient-inline-form {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
-}
-
-.ingredient-inline-form .form-row {
-  display: flex;
-  gap: var(--spacing-sm);
+  gap: var(--ui-space-md);
 }
 
 .ingredient-inline-form .form-group {
-  flex: 1;
-  margin-bottom: 0;
-  /* Reset global margin */
+  margin: 0;
 }
 
 .ingredient-inline-form label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-light);
-  margin-bottom: 4px;
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+  color: var(--ui-text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
-.form-actions {
+.ingredient-inline-form .form-input {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-surface);
+  color: var(--text-dark);
+  font: inherit;
+  padding: 0 0.75rem;
+}
+
+.ingredient-inline-form .form-input:focus {
+  outline: none;
+  border-color: var(--ui-color-secondary);
+  box-shadow: var(--ui-shadow-focus-brand);
+}
+
+.ingredient-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ui-space-sm);
+}
+
+.ingredient-form-actions {
   display: flex;
-  gap: var(--spacing-sm);
-  margin-top: var(--spacing-sm);
+  gap: var(--ui-space-sm);
+  flex-wrap: wrap;
 }
 
-.form-actions .btn {
-  flex: 1;
-  padding: 12px;
+.ingredient-form-actions .btn {
+  flex: 1 1 8rem;
+  min-height: 40px;
 }
 
-/* --- LISTA --- */
 .ingredient-list-section {
-  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .ingredient-list-header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-md);
-}
-
-.ingredient-count-badge {
-  background-color: var(--secondary-color);
-  color: white;
-  font-size: 0.75rem;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-weight: bold;
+  gap: var(--ui-space-md);
+  padding: 1rem;
+  border-bottom: 1px solid var(--ui-border-color);
 }
 
 .ingredient-list-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--spacing-md);
-  max-height: 60vh;
+  grid-template-columns: 1fr;
+  gap: 0;
   overflow-y: auto;
-  padding: 2px;
 }
 
-/* --- TARJETA DE INSUMO --- */
 .ingredient-card-item {
-  background-color: var(--card-background-color);
-  border-radius: var(--border-radius-sm);
-  padding: var(--spacing-md);
-  box-shadow: var(--box-shadow);
-  border-left: 4px solid var(--secondary-color);
-  /* Color diferente a categorías */
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
-  transition: transform 0.2s;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ui-space-sm);
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--ui-border-color);
+  background: var(--ui-bg-surface);
+}
+
+.ingredient-card-item:last-child {
+  border-bottom: 0;
 }
 
 .ingredient-card-item:hover {
-  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--ui-bg-muted) 58%, transparent);
+}
+
+.ingredient-card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-space-sm);
+  min-width: 0;
+}
+
+.ing-info {
+  min-width: 0;
 }
 
 .ing-name {
-  font-weight: 700;
-  font-size: 1rem;
+  margin: 0;
   color: var(--text-dark);
-  display: block;
-  margin-bottom: 5px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .ing-details {
   display: flex;
-  flex-direction: column;
-  font-size: 0.85rem;
-  color: var(--text-light);
+  gap: var(--ui-space-sm);
+  flex-wrap: wrap;
+  margin-top: 0.22rem;
+  color: var(--ui-text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.ing-details strong {
+  color: var(--text-dark);
+  font-weight: 900;
 }
 
 .ing-actions {
   display: flex;
+  gap: var(--ui-space-xs);
   justify-content: flex-end;
-  gap: var(--spacing-xs);
-  border-top: 1px solid var(--light-background);
-  padding-top: var(--spacing-xs);
-  margin-top: auto;
 }
 
-/* --- RESPONSIVE (DESKTOP) --- */
-@media (min-width: 768px) {
-  .ingredient-manager-container {
-    display: grid;
-    grid-template-columns: 320px 1fr;
-    /* Formulario fijo, lista flexible */
-    gap: var(--spacing-xl);
+.ingredient-icon-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  color: var(--text-dark);
+  cursor: pointer;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  transition:
+    border-color var(--ui-transition),
+    color var(--ui-transition),
+    transform var(--ui-transition-fast);
+  width: 34px;
+}
+
+.ingredient-icon-button:hover {
+  border-color: var(--ui-color-secondary);
+  color: var(--ui-color-secondary);
+}
+
+.ingredient-icon-button.delete {
+  color: var(--ui-text-danger);
+}
+
+.ingredient-icon-button.delete:hover {
+  border-color: var(--ui-color-danger);
+  color: var(--ui-color-danger);
+}
+
+.ingredient-icon-button:active {
+  transform: scale(0.98);
+}
+
+.ingredient-icon-button:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-brand);
+}
+
+.ingredient-empty-message {
+  align-items: center;
+  color: var(--ui-text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-sm);
+  justify-content: center;
+  min-height: 220px;
+  padding: var(--ui-space-xl);
+  text-align: center;
+}
+
+.ingredient-empty-message svg {
+  color: var(--ui-color-secondary);
+}
+
+.ingredient-empty-message strong {
+  color: var(--text-dark);
+  font-size: 1.05rem;
+}
+
+.ingredient-empty-message span {
+  max-width: 22rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+@media (min-width: 860px) {
+  .ingredient-manager-layout {
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
     align-items: start;
-    height: calc(100vh - 200px);
-    min-height: 500px;
   }
 
   .ingredient-form-section {
     position: sticky;
-    top: 20px;
-    background-color: var(--card-background-color);
-    box-shadow: var(--box-shadow);
-    height: fit-content;
-  }
-
-  .ingredient-list-section {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
+    top: 1rem;
   }
 
   .ingredient-list-grid {
-    max-height: 100%;
-    padding-right: 10px;
+    max-height: calc(100vh - 390px);
+    min-height: 380px;
   }
 }
 
-/* MODO OSCURO */
-[data-theme="dark"] .ingredient-form-section {
-  background-color: #1f2937;
-  border-color: #374151;
+@media (max-width: 760px) {
+  .ingredient-manager-header {
+    flex-direction: column;
+  }
+
+  .ingredient-status-pill {
+    align-self: flex-start;
+  }
+
+  .ingredient-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ingredient-metric:nth-child(2) {
+    border-right: 0;
+  }
+
+  .ingredient-metric:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--ui-border-color);
+  }
+
+  .ingredient-card-item {
+    grid-template-columns: 1fr;
+  }
+
+  .ing-actions {
+    justify-content: flex-start;
+    padding-left: calc(2rem + var(--ui-space-sm));
+  }
 }
 
-[data-theme="dark"] .ingredient-card-item {
-  background-color: #1f2937;
+@media (max-width: 460px) {
+  .ingredient-metrics,
+  .ingredient-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ingredient-metric,
+  .ingredient-metric:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--ui-border-color);
+  }
+
+  .ingredient-metric:last-child {
+    border-bottom: 0;
+  }
+
+  .ingredient-form-actions .btn {
+    flex-basis: 100%;
+  }
+
+  .ing-actions {
+    padding-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ingredient-manager-container,
+  .ingredient-icon-button {
+    animation: none;
+    transition: none;
+  }
 }

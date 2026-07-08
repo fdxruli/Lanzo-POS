@@ -1,104 +1,161 @@
-// src/components/products/IngredientManager.jsx
-import React, { useState } from 'react';
-import { Package, Pencil, Trash2 } from 'lucide-react';
+import { useId, useReducer } from 'react';
+import { Boxes, DollarSign, Layers3, Package, Pencil, Save, Scale, Trash2, X } from 'lucide-react';
 import { showConfirmModal } from '../../services/utils';
 import './IngredientManager.css';
 
-export default function IngredientManager({ ingredients, onSave, onDelete, onManageBatches }) {
-    // Estados del formulario
-    const [name, setName] = useState('');
-    const [cost, setCost] = useState('');
-    const [stock, setStock] = useState('');
-    const [unit, setUnit] = useState('kg'); // Default: Kilogramos
+const getIngredientUnit = (ingredient) => ingredient.bulkData?.purchase?.unit || (ingredient.saleType === 'unit' ? 'pza' : 'kg');
 
-    const [editingId, setEditingId] = useState(null);
+const initialFormState = {
+    name: '',
+    cost: '',
+    stock: '',
+    unit: 'kg',
+    editingId: null
+};
+
+function formReducer(state, action) {
+    switch (action.type) {
+        case 'field':
+            return { ...state, [action.name]: action.value };
+        case 'edit':
+            return {
+                ...initialFormState,
+                editingId: action.ingredient.id,
+                name: action.ingredient.name || '',
+                unit: getIngredientUnit(action.ingredient)
+            };
+        case 'reset':
+            return initialFormState;
+        default:
+            return state;
+    }
+}
+
+export default function IngredientManager({ ingredients, onSave, onDelete, onManageBatches }) {
+    const fieldId = useId();
+    const [formState, dispatchForm] = useReducer(formReducer, initialFormState);
+    const { name, cost, stock, unit, editingId } = formState;
+
+    const sortedIngredients = ingredients.toSorted((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+    const stockedCount = ingredients.filter((ingredient) => Number(ingredient.stock || 0) > 0).length;
+    const unitCount = new Set(ingredients.map(getIngredientUnit)).size;
+
+    const resetForm = () => {
+        dispatchForm({ type: 'reset' });
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!name.trim()) return;
 
-        // Preparamos el objeto del producto (Insumo)
         const ingredientData = {
-            id: editingId, // Si es null, ProductsPage creará uno nuevo
+            id: editingId,
             name: name.trim(),
-            productType: 'ingredient', // ¡Crucial!
-
-            // Lógica de unidad
+            productType: 'ingredient',
             saleType: unit === 'pza' ? 'unit' : 'bulk',
-            bulkData: { purchase: { unit: unit } }, // Guardamos la unidad preferida
-
-            // Datos para el lote inicial (solo si es nuevo)
+            bulkData: { purchase: { unit } },
             cost: parseFloat(cost) || 0,
             stock: parseFloat(stock) || 0,
-            price: 0 // Los insumos no suelen tener precio de venta al público
+            price: 0
         };
 
         onSave(ingredientData, editingId ? { id: editingId } : null);
         resetForm();
     };
 
-    const handleEdit = (ing) => {
-        setEditingId(ing.id);
-        setName(ing.name);
-        // Al editar, NO cargamos stock/costo para no sobreescribir lotes complejos.
-        // Solo permitimos editar nombre y unidad visualmente.
-        // Para inventario real, se usa "Gestionar Lotes".
-        setCost('');
-        setStock('');
-
-        // Recuperar unidad guardada o inferir
-        const savedUnit = ing.bulkData?.purchase?.unit || (ing.saleType === 'unit' ? 'pza' : 'kg');
-        setUnit(savedUnit);
+    const handleEdit = (ingredient) => {
+        dispatchForm({ type: 'edit', ingredient });
     };
 
-    const handleDelete = async (id) => {
-        if (await showConfirmModal('�Seguro que quieres eliminar este insumo?', {
+    const handleDelete = async (ingredient) => {
+        if (await showConfirmModal(`Eliminar el insumo "${ingredient.name}"?`, {
             title: 'Eliminar insumo',
             confirmButtonText: 'Si, eliminar',
             cancelButtonText: 'Cancelar'
         })) {
-            onDelete({ id, name: 'Insumo' }); // Pasamos objeto mínimo compatible
+            onDelete({ id: ingredient.id, name: ingredient.name || 'Insumo' });
         }
     };
 
-    const resetForm = () => {
-        setName('');
-        setCost('');
-        setStock('');
-        setUnit('kg');
-        setEditingId(null);
-    };
-
     return (
-        <div className="ingredient-manager-container">
+        <section className="ingredient-manager-container" aria-label="Gestion de ingredientes e insumos">
+            <div className="ingredient-manager-header">
+                <div className="ingredient-title-group">
+                    <span className="ingredient-kicker">
+                        <Boxes size={15} />
+                        Ingredientes e insumos
+                    </span>
+                    <div>
+                        <h2>Base de produccion</h2>
+                        <p>Administra insumos, unidades y acceso rapido a compras o lotes.</p>
+                    </div>
+                </div>
 
-            {/* SECCIÓN 1: FORMULARIO (Panel Izquierdo/Superior) */}
-            <div className="ingredient-form-section">
-                <h3 className="subtitle">
-                    {editingId ? 'Editar Insumo' : 'Nuevo Insumo Rápido'}
-                </h3>
+                <div className="ingredient-status-pill">
+                    {ingredients.length} insumo{ingredients.length === 1 ? '' : 's'}
+                </div>
+            </div>
 
-                <form onSubmit={handleSubmit} className="ingredient-inline-form">
-                    <div className="form-group">
-                        <label>Nombre del Insumo</label>
-                        <input
-                            type="text"
-                            className="form-input"
-                            placeholder="Ej: Harina, Tomate, Carne"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            required
-                            autoFocus
-                        />
+            <div className="ingredient-metrics" aria-label="Resumen de insumos">
+                <div className="ingredient-metric">
+                    <span>Total</span>
+                    <strong>{ingredients.length}</strong>
+                </div>
+                <div className="ingredient-metric">
+                    <span>Con stock</span>
+                    <strong>{stockedCount}</strong>
+                </div>
+                <div className="ingredient-metric">
+                    <span>Sin stock</span>
+                    <strong>{Math.max(ingredients.length - stockedCount, 0)}</strong>
+                </div>
+                <div className="ingredient-metric">
+                    <span>Unidades</span>
+                    <strong>{unitCount}</strong>
+                </div>
+            </div>
+
+            <div className="ingredient-manager-layout">
+                <aside className="ingredient-form-section">
+                    <div className="ingredient-section-heading">
+                        <span className="ingredient-section-icon" aria-hidden="true">
+                            {editingId ? <Pencil size={17} /> : <Package size={17} />}
+                        </span>
+                        <div>
+                            <h3>{editingId ? 'Editar insumo' : 'Nuevo insumo'}</h3>
+                            <p>{editingId ? 'Ajusta nombre y unidad; el stock vive en lotes.' : 'Registra un insumo base para produccion.'}</p>
+                        </div>
                     </div>
 
-                    <div className="form-row">
+                    <form onSubmit={handleSubmit} className="ingredient-inline-form">
                         <div className="form-group">
-                            <label>Unidad</label>
+                            <label htmlFor={`${fieldId}-name`}>
+                                <Package size={14} />
+                                Nombre del insumo
+                            </label>
+                            <input
+                                id={`${fieldId}-name`}
+                                type="text"
+                                className="form-input"
+                                placeholder="Ej: Harina, tomate, carne"
+                                value={name}
+                                onChange={(e) => dispatchForm({ type: 'field', name: 'name', value: e.target.value })}
+                                required
+                                aria-label="Nombre del insumo"
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor={`${fieldId}-unit`}>
+                                <Scale size={14} />
+                                Unidad
+                            </label>
                             <select
+                                id={`${fieldId}-unit`}
                                 className="form-input"
                                 value={unit}
-                                onChange={(e) => setUnit(e.target.value)}
+                                onChange={(e) => dispatchForm({ type: 'field', name: 'unit', value: e.target.value })}
+                                aria-label="Unidad del insumo"
                             >
                                 <option value="kg">Kilogramos (kg)</option>
                                 <option value="lt">Litros (L)</option>
@@ -107,104 +164,132 @@ export default function IngredientManager({ ingredients, onSave, onDelete, onMan
                                 <option value="pza">Pieza / Unidad</option>
                             </select>
                         </div>
-                    </div>
 
-                    {/* Costo y Stock solo visibles al CREAR (para no romper lógica de lotes al editar) */}
-                    {!editingId && (
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label>Costo Compra ($)</label>
-                                <input
-                                    type="number"
-                                    className="form-input"
-                                    placeholder="0.00"
-                                    step="0.01"
-                                    value={cost}
-                                    onChange={(e) => setCost(e.target.value)}
-                                />
+                        {!editingId && (
+                            <div className="ingredient-form-row">
+                                <div className="form-group">
+                                    <label htmlFor={`${fieldId}-cost`}>
+                                        <DollarSign size={14} />
+                                        Costo compra
+                                    </label>
+                                    <input
+                                        id={`${fieldId}-cost`}
+                                        type="number"
+                                        className="form-input"
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        value={cost}
+                                        onChange={(e) => dispatchForm({ type: 'field', name: 'cost', value: e.target.value })}
+                                        aria-label="Costo de compra"
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label htmlFor={`${fieldId}-stock`}>
+                                        <Layers3 size={14} />
+                                        Stock inicial
+                                    </label>
+                                    <input
+                                        id={`${fieldId}-stock`}
+                                        type="number"
+                                        className="form-input"
+                                        placeholder="0"
+                                        step="0.01"
+                                        value={stock}
+                                        onChange={(e) => dispatchForm({ type: 'field', name: 'stock', value: e.target.value })}
+                                        aria-label="Stock inicial"
+                                    />
+                                </div>
                             </div>
-                            <div className="form-group">
-                                <label>Stock Inicial</label>
-                                <input
-                                    type="number"
-                                    className="form-input"
-                                    placeholder="0"
-                                    step="0.01"
-                                    value={stock}
-                                    onChange={(e) => setStock(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="form-actions">
-                        <button type="submit" className="btn btn-save">
-                            {editingId ? 'Actualizar Datos' : 'Guardar Insumo'}
-                        </button>
-                        {editingId && (
-                            <button type="button" className="btn btn-cancel" onClick={resetForm}>
-                                Cancelar
-                            </button>
                         )}
+
+                        <div className="ingredient-form-actions">
+                            <button type="submit" className="btn btn-save">
+                                <Save size={16} />
+                                {editingId ? 'Actualizar' : 'Guardar'}
+                            </button>
+                            {editingId && (
+                                <button type="button" className="btn btn-cancel" onClick={resetForm}>
+                                    <X size={16} />
+                                    Cancelar
+                                </button>
+                            )}
+                        </div>
+                    </form>
+                </aside>
+
+                <div className="ingredient-list-section">
+                    <div className="ingredient-list-header">
+                        <div>
+                            <h3>Inventario de insumos</h3>
+                            <p>{sortedIngredients.length > 0 ? 'Edita datos base o abre compras/lotes.' : 'Agrega el primer insumo para iniciar produccion.'}</p>
+                        </div>
                     </div>
-                </form>
-            </div>
 
-            {/* SECCIÓN 2: LISTA (Panel Derecho/Inferior) */}
-            <div className="ingredient-list-section">
-                <div className="ingredient-list-header">
-                    <h3 className="subtitle">Inventario de Insumos</h3>
-                    <span className="ingredient-count-badge">{ingredients.length} items</span>
-                </div>
-
-                <div className="ingredient-list-grid">
-                    {ingredients.length === 0 ? (
+                    {sortedIngredients.length === 0 ? (
                         <div className="ingredient-empty-message">
-                            <p>No hay insumos registrados.</p>
-                            <small>Usa el formulario para añadir tu primer insumo.</small>
+                            <Package size={42} />
+                            <strong>Sin insumos registrados</strong>
+                            <span>Usa el formulario para anadir tu primer insumo.</span>
                         </div>
                     ) : (
-                        ingredients.map(ing => (
-                            <div key={ing.id} className="ingredient-card-item">
-                                <div className="ing-info">
-                                    <span className="ing-name">{ing.name}</span>
-                                    <div className="ing-details">
-                                        <span className="ing-stock">
-                                            Stock: <strong>{ing.stock || 0} {ing.bulkData?.purchase?.unit || (ing.saleType === 'unit' ? 'pza' : 'kg')}</strong>
-                                        </span>
-                                        <span className="ing-cost">
-                                            Costo: ${ing.cost?.toFixed(2) || '0.00'}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="ing-actions">
-                                    <button
-                                        className="btn-icon batches"
-                                        onClick={() => onManageBatches(ing.id)}
-                                        title="Gestionar Compras/Lotes"
-                                    >
-                                        <Package size={18} />
-                                    </button>
-                                    <button 
-                                        className="btn-icon edit" 
-                                        onClick={() => handleEdit(ing)} 
-                                        title="Editar Nombre/Unidad"
-                                    >
-                                        <Pencil size={18} />
-                                    </button>
-                                    <button 
-                                        className="btn-icon delete" 
-                                        onClick={() => handleDelete(ing.id)} 
-                                        title="Eliminar"
-                                    >
-                                        <Trash2 size={18} />
-                                    </button>
-                                </div>
-                            </div>
-                        ))
+                        <div className="ingredient-list-grid">
+                            {sortedIngredients.map((ingredient) => {
+                                const ingredientUnit = getIngredientUnit(ingredient);
+                                return (
+                                    <article key={ingredient.id} className="ingredient-card-item">
+                                        <div className="ingredient-card-main">
+                                            <span className="ingredient-card-icon" aria-hidden="true">
+                                                <Package size={17} />
+                                            </span>
+                                            <div className="ing-info">
+                                                <h4 className="ing-name">{ingredient.name}</h4>
+                                                <div className="ing-details">
+                                                    <span className="ing-stock">
+                                                        Stock <strong>{ingredient.stock || 0} {ingredientUnit}</strong>
+                                                    </span>
+                                                    <span className="ing-cost">
+                                                        Costo <strong>${ingredient.cost?.toFixed(2) || '0.00'}</strong>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="ing-actions">
+                                            <button
+                                                type="button"
+                                                className="ingredient-icon-button batches"
+                                                onClick={() => onManageBatches(ingredient.id)}
+                                                title="Gestionar compras o lotes"
+                                                aria-label={`Gestionar compras o lotes de ${ingredient.name}`}
+                                            >
+                                                <Package size={16} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="ingredient-icon-button edit"
+                                                onClick={() => handleEdit(ingredient)}
+                                                title="Editar nombre o unidad"
+                                                aria-label={`Editar ${ingredient.name}`}
+                                            >
+                                                <Pencil size={16} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="ingredient-icon-button delete"
+                                                onClick={() => handleDelete(ingredient)}
+                                                title="Eliminar"
+                                                aria-label={`Eliminar ${ingredient.name}`}
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
             </div>
-        </div>
+        </section>
     );
 }
