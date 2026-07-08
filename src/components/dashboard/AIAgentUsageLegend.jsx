@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Calendar, RefreshCw, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Calendar, RefreshCw, ShieldCheck, WifiOff } from 'lucide-react';
 import { getAIAgentUsage } from '../../services/aiAgentUsageService';
 import './AIAgentUsageLegend.css';
 
@@ -19,9 +19,9 @@ const formatPeriodDate = (value) => {
 
 const getUsageText = (usage) => {
   if (!usage?.success) return usage?.message || 'No se pudo consultar el uso de agentes IA.';
-  if (usage.remaining <= 0) return `Ya usaste los ${usage.limit} análisis IA de tu periodo Pro actual.`;
-  if (usage.remaining === 1) return `Te queda 1 de ${usage.limit} análisis IA en tu periodo Pro actual.`;
-  return `Te quedan ${usage.remaining} de ${usage.limit} análisis IA en tu periodo Pro actual.`;
+  if (usage.remaining <= 0) return `Sin consultas disponibles de ${usage.limit}.`;
+  if (usage.remaining === 1) return `1 consulta disponible de ${usage.limit}.`;
+  return `${usage.remaining} consultas disponibles de ${usage.limit}.`;
 };
 
 const getPeriodText = (usage) => {
@@ -31,12 +31,28 @@ const getPeriodText = (usage) => {
   const end = formatPeriodDate(usage.periodEnd);
 
   if (!start || !end) return null;
-  return `Periodo vigente: ${start} → ${end}`;
+  return `${start} - ${end}`;
 };
 
-export default function AIAgentUsageLegend({ enabled = true }) {
+const getStatusContent = (status = {}) => {
+  if (status.isChecking) {
+    return { className: 'checking', icon: RefreshCw, label: 'Validando asistente' };
+  }
+
+  if (status.isApiReady) {
+    return { className: 'online', icon: ShieldCheck, label: 'Asistente listo' };
+  }
+
+  if (status.isOnline) {
+    return { className: 'warning', icon: AlertCircle, label: 'Asistente no disponible' };
+  }
+
+  return { className: 'offline', icon: WifiOff, label: 'Sin conexion' };
+};
+
+export default function AIAgentUsageLegend({ enabled = true, connectionStatus = null, onRefreshStatus = null }) {
   const [usage, setUsage] = useState(null);
-  const [isLoading, setIsLoading] = useState(enabled);
+  const [isLoading, setIsLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const loadUsage = useCallback(async ({ silent = false } = {}) => {
@@ -90,62 +106,72 @@ export default function AIAgentUsageLegend({ enabled = true }) {
   const isError = usage && !usage.success;
   const periodText = getPeriodText(usage);
   const periodEnd = formatPeriodDate(usage?.periodEnd);
+  const statusContent = getStatusContent(connectionStatus || {});
+  const StatusIcon = statusContent.icon;
+
+  const handleRefresh = async () => {
+    await Promise.all([
+      loadUsage(),
+      onRefreshStatus ? onRefreshStatus() : Promise.resolve()
+    ]);
+  };
 
   return (
     <section className={`ai-agent-usage-legend ${isLoading ? 'is-loading' : ''} ${isError ? 'is-error' : ''}`}>
-      <div className="ai-agent-usage-main">
-        <div className="ai-agent-usage-icon">
-          {isError ? <AlertCircle size={20} /> : <ShieldCheck size={20} />}
+      <div className="ai-agent-usage-header">
+        <div className="ai-agent-usage-main">
+          <div className="ai-agent-usage-icon">
+            {isError ? <AlertCircle size={18} /> : <ShieldCheck size={18} />}
+          </div>
+          <div className="ai-agent-usage-copy">
+            <span className="ai-agent-usage-kicker">Uso del periodo</span>
+            <h3 className="ai-agent-usage-title">{isLoading && !usage ? 'Consultando disponibilidad' : getUsageText(usage)}</h3>
+            {periodText && (
+              <p className="ai-agent-period-meta">
+                <Calendar size={13} />
+                {periodText}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="ai-agent-usage-copy">
-          <h3 className="ai-agent-usage-title">Uso de Agentes IA Pro</h3>
-          <p className="ai-agent-usage-text">
-            {isLoading && !usage ? 'Consultando análisis disponibles...' : getUsageText(usage)}
-          </p>
-          {periodText && (
-            <p className="ai-agent-period-meta">
-              <Calendar size={13} />
-              {periodText}
-            </p>
-          )}
-          {lastUpdated && (
-            <p className="ai-agent-usage-text">
-              Actualizado: {lastUpdated.toLocaleTimeString()}
-            </p>
-          )}
+
+        <div className="ai-agent-usage-controls">
+          <span className={`ai-agent-usage-status ${statusContent.className}`}>
+            <StatusIcon size={13} className={connectionStatus?.isChecking ? 'spinning' : ''} />
+            {statusContent.label}
+          </span>
+          <button
+            className="ai-agent-usage-refresh"
+            type="button"
+            onClick={handleRefresh}
+            disabled={isLoading || connectionStatus?.isChecking}
+            aria-label="Actualizar uso y estado"
+            title={lastUpdated ? 'Actualizar uso y estado' : 'Consultar uso y estado'}
+          >
+            <RefreshCw size={14} className={isLoading ? 'spinning' : ''} />
+          </button>
         </div>
       </div>
 
       {usage?.success && (
         <div className="ai-agent-usage-panel">
-          <div className="ai-agent-usage-numbers">
-            <div className="ai-agent-usage-stat">
-              <span>Límite periodo</span>
-              <strong>{usage.limit}</strong>
-            </div>
-            <div className="ai-agent-usage-stat">
-              <span>Usados</span>
-              <strong>{usage.used}</strong>
-            </div>
-            <div className="ai-agent-usage-stat">
-              <span>Disponibles</span>
-              <strong>{usage.remaining}</strong>
-            </div>
-            <div className="ai-agent-usage-stat">
-              <span>Vence</span>
-              <strong className="ai-agent-usage-date">{periodEnd || 'N/D'}</strong>
-            </div>
+          <div className="ai-agent-usage-stat">
+            <span>Usadas</span>
+            <strong>{usage.used}</strong>
+          </div>
+          <div className="ai-agent-usage-stat">
+            <span>Disponibles</span>
+            <strong>{usage.remaining}</strong>
+          </div>
+          <div className="ai-agent-usage-stat">
+            <span>Vence</span>
+            <strong>{periodEnd || 'N/D'}</strong>
           </div>
           <div className="ai-agent-usage-progress" aria-hidden="true">
             <div className="ai-agent-usage-progress-bar" style={{ width: `${progress}%` }} />
           </div>
         </div>
       )}
-
-      <button className="ai-agent-usage-refresh" type="button" onClick={() => loadUsage()} disabled={isLoading}>
-        <RefreshCw size={14} className={isLoading ? 'spinning' : ''} />
-        Actualizar uso
-      </button>
     </section>
   );
 }

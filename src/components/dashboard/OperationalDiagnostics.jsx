@@ -1,15 +1,17 @@
 /**
  * OperationalDiagnostics.jsx
  *
- * Orquestador de UI para diagnóstico operativo del negocio.
- * Alterna entre diagnóstico clásico basado en reglas duras y el dashboard de agentes de IA.
- * Los agentes IA quedan disponibles solo cuando la licencia trae ai_agents=true.
+ * UI coordinator for operational diagnostics. Keeps the rule-based diagnostic
+ * flow and the AI agent dashboard, but presents the classic view as a compact
+ * mobile-first work queue instead of a card-heavy dashboard.
  */
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import { memo, useMemo, useState, useCallback } from 'react';
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   CheckCircle,
   ChefHat,
   Clock,
@@ -31,7 +33,6 @@ import { useRestaurantDiagnostics } from '../../hooks/diagnostics/useRestaurantD
 import { usePharmacyDiagnostics } from '../../hooks/diagnostics/usePharmacyDiagnostics';
 import { useRetailDiagnostics } from '../../hooks/diagnostics/useRetailDiagnostics';
 import AIAgentDashboard from './AIAgentDashboard';
-import AIAgentUsageLegend from './AIAgentUsageLegend';
 import { normalizeBusinessType, normalizeBusinessTypes } from '../../utils/businessType';
 import './OperationalDiagnostics.css';
 
@@ -52,17 +53,58 @@ const DIAGNOSTIC_HOOKS = {
 };
 
 const ALERT_TYPE_CONFIG = {
-  danger: { icon: XCircle, className: 'alert-danger', label: 'Crítico' },
-  warning: { icon: AlertTriangle, className: 'alert-warning', label: 'Advertencia' },
-  info: { icon: AlertCircle, className: 'alert-info', label: 'Información' },
-  success: { icon: CheckCircle, className: 'alert-success', label: 'Correcto' }
+  danger: { icon: XCircle, className: 'alert-danger', label: 'Critico', shortLabel: 'Critico' },
+  warning: { icon: AlertTriangle, className: 'alert-warning', label: 'Advertencia', shortLabel: 'Aviso' },
+  info: { icon: AlertCircle, className: 'alert-info', label: 'Informacion', shortLabel: 'Info' },
+  success: { icon: CheckCircle, className: 'alert-success', label: 'Correcto', shortLabel: 'OK' }
 };
 
 const CATEGORY_CONFIG = {
   revenue: { label: 'Ingresos', icon: DollarSign },
-  operations: { label: 'Operaciones', icon: Activity },
+  operations: { label: 'Operacion', icon: Activity },
   inventory: { label: 'Inventario', icon: Package },
   pricing: { label: 'Precios', icon: TrendingUp }
+};
+
+const EMPTY_ARRAY = [];
+
+const METRIC_LABELS = {
+  leakageRate: 'Fuga',
+  affectedTickets: 'Tickets afectados',
+  potentialLostRevenue: 'Venta no capturada',
+  avgDrinkPrice: 'Ticket extra promedio',
+  wasteCost: 'Costo de merma',
+  grossProfit: 'Utilidad bruta',
+  wasteRatio: 'Peso de merma',
+  currentStock: 'Stock actual',
+  avgDailySales: 'Venta diaria',
+  daysUntilStockout: 'Dias para agotarse',
+  estimatedLostSales: 'Venta perdida estimada',
+  capitalAtRisk: 'Capital en riesgo',
+  batchCount: 'Lotes',
+  avgDaysToExpiry: 'Dias promedio',
+  productsAtRisk: 'Productos en riesgo',
+  lostRevenue: 'Venta en riesgo',
+  deadCapital: 'Capital detenido',
+  productCount: 'Productos',
+  potentialRevenue: 'Venta potencial',
+  missingCostProducts: 'Sin costo',
+  revenueAtRisk: 'Venta sin costo',
+  criticalProducts: 'Productos criticos',
+  warningProducts: 'Productos en aviso',
+  avgMargin: 'Margen promedio',
+  impactOnProfit: 'Impacto en utilidad',
+  affectedProducts: 'Productos afectados',
+  avgIncrease: 'Aumento promedio',
+  totalIncrease: 'Aumento total'
+};
+
+const metricLabel = (key) => {
+  if (METRIC_LABELS[key]) return METRIC_LABELS[key];
+  return String(key)
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (letter) => letter.toUpperCase())
+    .trim();
 };
 
 const hasAIAgentsEntitlement = (licenseDetails) => {
@@ -85,26 +127,21 @@ const hasAIAgentsEntitlement = (licenseDetails) => {
 
 const DiagnosticSkeleton = () => (
   <div className="diagnostic-skeleton">
-    <div className="skeleton-header">
-      <div className="skeleton-line short" />
-      <div className="skeleton-line medium" />
-    </div>
-    <div className="skeleton-alerts">
-      {[1, 2, 3].map(i => (
-        <div key={i} className="skeleton-alert">
-          <div className="skeleton-icon" />
-          <div className="skeleton-content">
-            <div className="skeleton-line full" />
-            <div className="skeleton-line medium" />
-            <div className="skeleton-line short" />
-          </div>
+    <div className="skeleton-line short" />
+    {[1, 2, 3].map(i => (
+      <div key={i} className="skeleton-alert">
+        <div className="skeleton-icon" />
+        <div className="skeleton-content">
+          <div className="skeleton-line full" />
+          <div className="skeleton-line medium" />
+          <div className="skeleton-line short" />
         </div>
-      ))}
-    </div>
+      </div>
+    ))}
   </div>
 );
 
-const AlertCard = React.memo(({ alert, onNavigate }) => {
+const AlertCard = memo(({ alert, onNavigate }) => {
   const TypeConfig = ALERT_TYPE_CONFIG[alert.type] || ALERT_TYPE_CONFIG.info;
   const TypeIcon = TypeConfig.icon;
   const CategoryConfig = CATEGORY_CONFIG[alert.category] || { label: 'General', icon: Activity };
@@ -114,73 +151,55 @@ const AlertCard = React.memo(({ alert, onNavigate }) => {
     if (alert.link) onNavigate?.(alert.link);
   }, [alert.link, onNavigate]);
 
+  const metrics = Object.entries(alert.metrics || {}).filter(([, value]) => value !== null && value !== undefined);
+
   return (
-    <div
-      className={`diagnostic-alert ${TypeConfig.className} ${alert.link ? 'clickable' : ''}`}
-      onClick={handleClick}
-      role={alert.link ? 'button' : 'article'}
-      tabIndex={alert.link ? 0 : -1}
-      onKeyDown={(e) => e.key === 'Enter' && handleClick()}
-    >
-      <div className="alert-header">
-        <div className="alert-type-badge">
-          <TypeIcon size={16} />
-          <span>{TypeConfig.label}</span>
-        </div>
-
-        <div className="alert-category">
-          <CategoryIcon size={14} />
-          <span>{CategoryConfig.label}</span>
-        </div>
-
-        {alert.priority === 1 && (
-          <div className="priority-badge high">
-            <Activity size={12} />
-            <span>Alta</span>
-          </div>
-        )}
+    <article className={`diagnostic-alert ${TypeConfig.className}`}>
+      <div className="alert-leading" aria-hidden="true">
+        <TypeIcon size={18} />
       </div>
 
-      <div className="alert-body">
-        <h4 className="alert-title">{alert.title}</h4>
-        <p className="alert-message">
-          {String(alert.message || '').split('\n').map((line, index, arr) => (
-            <React.Fragment key={`${alert.id}-line-${index}`}>
-              {line}
-              {index < arr.length - 1 && <br />}
-            </React.Fragment>
-          ))}
-        </p>
-      </div>
+      <div className="alert-main">
+        <div className="alert-meta">
+          <span className="alert-type-badge">{TypeConfig.shortLabel}</span>
+          <span className="alert-category">
+            <CategoryIcon size={13} />
+            {CategoryConfig.label}
+          </span>
+          {alert.priority === 1 && <span className="priority-badge">Alta</span>}
+        </div>
 
-      {alert.metrics && (
-        <div className="alert-metrics">
-          {Object.entries(alert.metrics).map(([key, value]) => {
-            if (value === null || value === undefined) return null;
-            return (
+        <div className="alert-body">
+          <h4 className="alert-title">{alert.title}</h4>
+          <p className="alert-message">{alert.message}</p>
+        </div>
+
+        {metrics.length > 0 && (
+          <dl className="alert-metrics">
+            {metrics.map(([key, value]) => (
               <div key={key} className="metric-item">
-                <span className="metric-label">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                <span className="metric-value">{value}</span>
+                <dt className="metric-label">{metricLabel(key)}</dt>
+                <dd className="metric-value">{value}</dd>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="alert-footer">
-        <p className="alert-action">
-          <CheckCircle size={14} />
-          {alert.action}
-        </p>
-
-        {alert.link && (
-          <button className="alert-action-button" type="button">
-            Ir ahora
-            <TrendingUp size={14} />
-          </button>
+            ))}
+          </dl>
         )}
+
+        <div className="alert-footer">
+          <p className="alert-action">
+            <CheckCircle size={14} />
+            <span>{alert.action}</span>
+          </p>
+
+          {alert.link && (
+            <button className="alert-action-button" type="button" onClick={handleClick}>
+              Revisar
+              <TrendingUp size={14} />
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+    </article>
   );
 });
 
@@ -192,15 +211,17 @@ const NoAlertsState = ({ businessType }) => {
   return (
     <div className="no-alerts-state">
       <div className="no-alerts-icon">
-        <CheckCircle size={48} />
+        <CheckCircle size={26} />
       </div>
-      <h3 className="no-alerts-title">Todo en Orden</h3>
-      <p className="no-alerts-message">
-        No se detectaron alertas operativas para tu {typeConfig.label}.
-      </p>
-      <p className="no-alerts-hint">
-        Sigue registrando ventas para recibir diagnóstico continuo.
-      </p>
+      <div>
+        <h3 className="no-alerts-title">Operacion sin avisos</h3>
+        <p className="no-alerts-message">
+          No se detectaron alertas operativas para {typeConfig.label}.
+        </p>
+        <p className="no-alerts-hint">
+          Sigue registrando ventas para mantener el diagnostico actualizado.
+        </p>
+      </div>
     </div>
   );
 };
@@ -214,11 +235,11 @@ const BusinessTypeSelector = ({ currentType, onSelect }) => {
   }, []);
 
   return (
-    <div className="business-type-selector">
-      <label className="selector-label">
-        <Activity size={16} />
-        Rubro de Diagnóstico
-      </label>
+    <label className="business-type-selector">
+      <span className="selector-label">
+        <Activity size={14} />
+        Rubro
+      </span>
       <select
         value={currentType}
         onChange={(e) => onSelect(e.target.value)}
@@ -230,29 +251,25 @@ const BusinessTypeSelector = ({ currentType, onSelect }) => {
           </option>
         ))}
       </select>
-    </div>
+    </label>
   );
 };
 
-const SummaryCard = ({ icon: Icon, label, value, theme }) => (
-  <div className="summary-card">
-    <div className={`summary-icon ${theme}`}>
-      <Icon size={20} />
-    </div>
-    <div className="summary-content">
-      <span className="summary-label">{label}</span>
-      <span className="summary-value">{value}</span>
-    </div>
+const SummaryMetric = ({ icon: Icon, label, value, theme }) => (
+  <div className={`summary-metric ${theme}`}>
+    <Icon size={16} />
+    <span className="summary-label">{label}</span>
+    <strong className="summary-value">{value}</strong>
   </div>
 );
 
 export default function OperationalDiagnostics({
   allowRubroOverride = false,
   onNavigate,
-  sales = [],
-  menu = [],
-  customers = [],
-  wasteLogs = []
+  sales = EMPTY_ARRAY,
+  menu = EMPTY_ARRAY,
+  customers = EMPTY_ARRAY,
+  wasteLogs = EMPTY_ARRAY
 }) {
   const [rubroOverride, setRubroOverride] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(() => Date.now());
@@ -271,12 +288,7 @@ export default function OperationalDiagnostics({
   const DiagnosticHook = DIAGNOSTIC_HOOKS[diagnosticType] || DIAGNOSTIC_HOOKS.retail;
   const diagnostics = DiagnosticHook(lastRefresh);
   const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
-
-  useEffect(() => {
-    if (!canUseAIAgents && showAIAgent) {
-      setShowAIAgent(false);
-    }
-  }, [canUseAIAgents, showAIAgent]);
+  const effectiveShowAIAgent = Boolean(showAIAgent && canUseAIAgents);
 
   const handleNavigate = useCallback((link) => {
     if (onNavigate) {
@@ -291,12 +303,60 @@ export default function OperationalDiagnostics({
   }, []);
 
   const handleToggleMode = useCallback(() => {
-    if (!canUseAIAgents && !showAIAgent) return;
+    if (!canUseAIAgents && !effectiveShowAIAgent) return;
     setShowAIAgent(prev => !prev);
-  }, [canUseAIAgents, showAIAgent]);
+  }, [canUseAIAgents, effectiveShowAIAgent]);
 
   const currentTypeConfig = BUSINESS_TYPE_MAPPING[businessTypeString] || { label: 'Negocio', icon: Activity };
   const TypeIcon = currentTypeConfig.icon;
+
+  const summaryItems = useMemo(() => {
+    const summary = diagnostics.summary;
+    if (!summary || diagnostics.isLoading) return [];
+
+    return [
+      summary.ticketLeakage && {
+        icon: DollarSign,
+        label: 'Fuga ticket',
+        value: `${Math.round(summary.ticketLeakage.leakageRate * 100)}%`,
+        theme: 'revenue'
+      },
+      summary.wasteImpact && {
+        icon: Activity,
+        label: 'Merma',
+        value: `${Math.round(summary.wasteImpact.wasteRatio * 100)}%`,
+        theme: 'operations'
+      },
+      summary.expirationRisk && {
+        icon: Package,
+        label: 'Caducidad',
+        value: `${summary.expirationRisk.criticalCount + summary.expirationRisk.warningCount} lotes`,
+        theme: 'inventory'
+      },
+      summary.stockoutRisk && {
+        icon: TrendingDown,
+        label: 'Stock',
+        value: `${summary.stockoutRisk.criticalCount + summary.stockoutRisk.warningCount} productos`,
+        theme: 'inventory'
+      },
+      summary.deadStock && {
+        icon: Clock,
+        label: 'Capital muerto',
+        value: `$${summary.deadStock.totalDeadStockValue.toFixed(0)}`,
+        theme: 'inventory'
+      },
+      summary.margins && {
+        icon: TrendingUp,
+        label: 'Margen prom.',
+        value: `${summary.margins.avgMargin.toFixed(1)}%`,
+        theme: 'pricing'
+      }
+    ].filter(Boolean);
+  }, [diagnostics.summary, diagnostics.isLoading]);
+
+  const statusText = effectiveShowAIAgent
+    ? 'Analisis con agentes IA'
+    : `${diagnostics.summary?.totalAlerts || 0} alertas${diagnostics.summary?.criticalCount > 0 ? `, ${diagnostics.summary.criticalCount} criticas` : ''}`;
 
   const renderClassicContent = () => {
     if (diagnostics.isLoading) return <DiagnosticSkeleton />;
@@ -304,8 +364,8 @@ export default function OperationalDiagnostics({
     if (diagnostics.error) {
       return (
         <div className="diagnostic-error">
-          <AlertCircle size={32} />
-          <h3>Error en Diagnóstico</h3>
+          <AlertCircle size={30} />
+          <h3>Error en diagnostico</h3>
           <p>{diagnostics.error}</p>
           <button onClick={handleRefresh} className="refresh-button" type="button">
             <RefreshCw size={16} />
@@ -329,37 +389,52 @@ export default function OperationalDiagnostics({
   };
 
   return (
-    <div className="operational-diagnostics">
-      <div className="diagnostics-header">
+    <section className="operational-diagnostics" aria-label="Diagnostico operativo">
+      <header className="diagnostics-header">
         <div className="header-content">
-          <div className="header-icon-wrapper">
-            {showAIAgent ? <Bot size={28} className="header-icon" /> : <TypeIcon size={28} className="header-icon" />}
+          <div className="header-icon-wrapper" aria-hidden="true">
+            {effectiveShowAIAgent ? <Bot size={22} className="header-icon" /> : <TypeIcon size={22} className="header-icon" />}
           </div>
           <div className="header-text">
+            <span className="header-kicker">{effectiveShowAIAgent ? 'Modo IA' : currentTypeConfig.label}</span>
             <h2 className="header-title">
-              {showAIAgent ? 'Agentes de IA' : 'Diagnóstico Operativo'}
+              {effectiveShowAIAgent ? 'Agentes de IA' : 'Diagnostico operativo'}
             </h2>
-            <p className="header-subtitle">
-              {showAIAgent
-                ? 'Análisis inteligente con contexto de tu negocio'
-                : `${currentTypeConfig.label} • ${diagnostics.summary?.totalAlerts || 0} alertas${diagnostics.summary?.criticalCount > 0 ? ` (${diagnostics.summary.criticalCount} críticas)` : ''}`
-              }
-            </p>
+            <p className="header-subtitle">{statusText}</p>
           </div>
         </div>
 
         <div className="header-actions">
           {canUseAIAgents && (
-            <button className="mode-toggle-button" onClick={handleToggleMode} type="button">
-              {showAIAgent ? (
+            <button
+              className={`mode-toggle-button ${effectiveShowAIAgent ? 'is-diagnostic-entry' : 'is-ai-entry'}`}
+              onClick={handleToggleMode}
+              type="button"
+              aria-label={effectiveShowAIAgent ? 'Ver diagnostico operativo' : 'Activar agente IA'}
+            >
+              {effectiveShowAIAgent ? (
                 <>
-                  <BrainCircuit size={16} />
-                  <span>Modo Clásico</span>
+                  <span className="mode-toggle-icon" aria-hidden="true">
+                    <BrainCircuit size={18} />
+                  </span>
+                  <span className="mode-toggle-copy">
+                    <span className="mode-toggle-kicker">Volver a accion</span>
+                    <strong>Diagnostico operativo</strong>
+                    <small>Alertas claras para decidir ahora</small>
+                  </span>
+                  <ArrowLeft size={16} className="mode-toggle-arrow" aria-hidden="true" />
                 </>
               ) : (
                 <>
-                  <Bot size={16} />
-                  <span>Modo Agente IA</span>
+                  <span className="mode-toggle-icon" aria-hidden="true">
+                    <Bot size={18} />
+                  </span>
+                  <span className="mode-toggle-copy">
+                    <span className="mode-toggle-kicker">Analisis avanzado</span>
+                    <strong>Activar Agente IA</strong>
+                    <small>Detecta oportunidades con mas contexto</small>
+                  </span>
+                  <ArrowRight size={16} className="mode-toggle-arrow" aria-hidden="true" />
                 </>
               )}
             </button>
@@ -369,108 +444,59 @@ export default function OperationalDiagnostics({
             <BusinessTypeSelector currentType={businessTypeString} onSelect={setRubroOverride} />
           )}
 
-          {!showAIAgent && (
+          {!effectiveShowAIAgent && (
             <button
               className="refresh-button-small"
               onClick={handleRefresh}
               disabled={diagnostics.isLoading}
               type="button"
-              aria-label="Refrescar diagnóstico"
-              title="Actualizar diagnóstico"
+              aria-label="Actualizar diagnostico"
+              title="Actualizar diagnostico"
             >
               {diagnostics.isLoading ? <Loader2 size={18} className="spinning" /> : <RefreshCw size={18} />}
             </button>
           )}
         </div>
-      </div>
+      </header>
 
-      {!showAIAgent && diagnostics.summary && !diagnostics.isLoading && (
-        <div className="diagnostics-summary">
-          {diagnostics.summary.ticketLeakage && (
-            <SummaryCard
-              icon={DollarSign}
-              label="Fuga de Ticket"
-              value={`${Math.round(diagnostics.summary.ticketLeakage.leakageRate * 100)}%`}
-              theme="revenue"
+      {!effectiveShowAIAgent && summaryItems.length > 0 && (
+        <div className="diagnostics-summary" aria-label="Resumen del diagnostico">
+          {summaryItems.map((item) => (
+            <SummaryMetric
+              key={`${item.label}-${item.value}`}
+              icon={item.icon}
+              label={item.label}
+              value={item.value}
+              theme={item.theme}
             />
-          )}
-
-          {diagnostics.summary.wasteImpact && (
-            <SummaryCard
-              icon={Activity}
-              label="Merma"
-              value={`${Math.round(diagnostics.summary.wasteImpact.wasteRatio * 100)}%`}
-              theme="operations"
-            />
-          )}
-
-          {diagnostics.summary.expirationRisk && (
-            <SummaryCard
-              icon={Package}
-              label="Caducidad"
-              value={`${diagnostics.summary.expirationRisk.criticalCount + diagnostics.summary.expirationRisk.warningCount} lotes`}
-              theme="inventory"
-            />
-          )}
-
-          {diagnostics.summary.stockoutRisk && (
-            <SummaryCard
-              icon={TrendingDown}
-              label="Quiebre Stock"
-              value={`${diagnostics.summary.stockoutRisk.criticalCount + diagnostics.summary.stockoutRisk.warningCount} productos`}
-              theme="inventory"
-            />
-          )}
-
-          {diagnostics.summary.deadStock && (
-            <SummaryCard
-              icon={Clock}
-              label="Capital Muerto"
-              value={`$${diagnostics.summary.deadStock.totalDeadStockValue.toFixed(0)}`}
-              theme="inventory"
-            />
-          )}
-
-          {diagnostics.summary.margins && (
-            <SummaryCard
-              icon={TrendingUp}
-              label="Margen Prom."
-              value={`${diagnostics.summary.margins.avgMargin.toFixed(1)}%`}
-              theme="pricing"
-            />
-          )}
+          ))}
         </div>
       )}
 
       <div className="diagnostics-content">
-        {showAIAgent && canUseAIAgents ? (
-          <>
-            <AIAgentUsageLegend enabled={canUseAIAgents} />
-            <AIAgentDashboard
-              sales={sales}
-              menu={menu}
-              customers={customers}
-              wasteLogs={wasteLogs}
-              businessType={businessTypeArray}
-            />
-          </>
+        {effectiveShowAIAgent ? (
+          <AIAgentDashboard
+            sales={sales}
+            menu={menu}
+            customers={customers}
+            wasteLogs={wasteLogs}
+            businessType={businessTypeArray}
+          />
         ) : renderClassicContent()}
       </div>
 
-      <div className="diagnostics-footer">
+      <footer className="diagnostics-footer">
         <span className="last-update">
           <Clock size={12} />
-          Actualizado: {new Date(lastRefresh).toLocaleTimeString()}
+          Actualizado {new Date(lastRefresh).toLocaleTimeString()}
         </span>
 
         {diagnostics.rawData && (
           <span className="data-summary">
-            {diagnostics.rawData.salesCount || 0} ventas •
-            {diagnostics.rawData.menuCount || diagnostics.rawData.inventoryCount || 0} productos •
-            {diagnostics.rawData.batchesCount || 0} lotes
+            {diagnostics.rawData.salesCount || 0} ventas / {diagnostics.rawData.menuCount || diagnostics.rawData.inventoryCount || 0} productos / {diagnostics.rawData.batchesCount || 0} lotes
           </span>
         )}
-      </div>
-    </div>
+      </footer>
+    </section>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Clipboard, Truck, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Clipboard, Truck, AlertTriangle, RefreshCw, PackageCheck } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { getLowStockProductsReport } from '../../services/inventoryAnalysis';
 import { showMessageModal, getProductAlerts } from '../../services/utils';
@@ -277,6 +277,25 @@ export default function RestockSuggestion() {
     return sortedGroups;
   }, [lowStockItems]);
 
+  const restockSummary = useMemo(() => {
+    const suppliersCount = Object.keys(groupedBySupplier).length;
+    const unitsToOrder = lowStockItems.reduce(
+      (total, item) => total + toSafeNumber(item.suggestedOrder, 0),
+      0
+    );
+    const urgentItems = lowStockItems.filter((item) => {
+      if (!Number.isFinite(item.coverageDays)) return false;
+      return item.coverageDays <= 3;
+    }).length;
+
+    return {
+      productsCount: lowStockItems.length,
+      suppliersCount,
+      unitsToOrder,
+      urgentItems
+    };
+  }, [groupedBySupplier, lowStockItems]);
+
   // ==========================================================================
   // MANEJO DEL CLIPBOARD (SEGURO PARA ENTORNOS NO SEGUROS)
   // ==========================================================================
@@ -304,13 +323,13 @@ export default function RestockSuggestion() {
     navigator.clipboard.writeText(orderText)
       .then(() => {
         showMessageModal(
-          '✅ Lista copiada al portapapeles. Pégala en WhatsApp o tu sistema de órdenes.',
+          'Lista copiada al portapapeles. Pegala en WhatsApp o tu sistema de ordenes.',
           null,
           { type: 'success' }
         );
       })
       .catch((error) => {
-        Logger.warn('Clipboard API falló:', error);
+        Logger.warn('Clipboard API fallo:', error);
 
         // Fallback por error en la API (permisos denegados, etc.)
         setClipboardFallbackText(orderText);
@@ -330,12 +349,12 @@ export default function RestockSuggestion() {
       try {
         document.execCommand('copy');
         showMessageModal(
-          '✅ Texto seleccionado. Usa Ctrl+C / Cmd+C para copiar.',
+          'Texto seleccionado. Usa Ctrl+C / Cmd+C para copiar.',
           null,
           { type: 'success' }
         );
       } catch (err) {
-        Logger.warn('execCommand falló:', err);
+        Logger.warn('execCommand fallo:', err);
       }
     }
   }, []);
@@ -414,7 +433,7 @@ export default function RestockSuggestion() {
         <AlertTriangle className="restock-error-icon" size={48} />
         <h3>Error al cargar el inventario</h3>
         <p>{errorMessage}</p>
-        <button className="btn-retry" onClick={() => loadReport(false)}>
+        <button type="button" className="btn-retry" onClick={() => loadReport(false)}>
           <RefreshCw size={16} />
           Reintentar
         </button>
@@ -426,10 +445,10 @@ export default function RestockSuggestion() {
   if (lowStockItems.length === 0) {
     return (
       <div className="restock-empty">
-        <Truck className="restock-empty-icon" size={48} />
-        <h3>¡Todo en Orden!</h3>
+        <PackageCheck className="restock-empty-icon" size={48} />
+        <h3>Inventario saludable</h3>
         <p>
-          Tu inventario está saludable. No hay productos por debajo del mínimo.
+          No hay productos por debajo del minimo. La siguiente compra puede esperar.
         </p>
       </div>
     );
@@ -440,21 +459,23 @@ export default function RestockSuggestion() {
     <div className="restock-container">
       {/* HEADER CON BOTÓN DE SINCRONIZACIÓN */}
       <div className="restock-header">
-        <div className="restock-header-content">
-          <AlertTriangle className="restock-header-icon" size={20} />
+        <div className="restock-title-group">
+          <span className="restock-kicker">
+            <Truck size={15} />
+            Reabastecimiento
+          </span>
           <div>
-            <h3 className="restock-header-title">
-              Sugerencias de Compra
-            </h3>
-            <span className="restock-header-count">
-              {lowStockItems.length} productos con stock bajo
-            </span>
+            <h2 className="restock-header-title">Compra sugerida por proveedor</h2>
+            <p className="restock-header-copy">
+              Prioriza productos bajo minimo y copia pedidos listos para ordenar.
+            </p>
           </div>
         </div>
 
         <div className="restock-header-actions">
           <button
-            className="btn-sync"
+            type="button"
+            className={`btn-sync ${isSyncing ? 'syncing' : ''}`}
             onClick={() => loadReport(true)}
             disabled={isSyncing}
             title="Forzar recarga del inventario"
@@ -465,18 +486,47 @@ export default function RestockSuggestion() {
         </div>
       </div>
 
+      <div className="restock-metrics" aria-label="Resumen de reabastecimiento">
+        <div className="restock-metric">
+          <span>Productos</span>
+          <strong>{restockSummary.productsCount}</strong>
+        </div>
+        <div className="restock-metric">
+          <span>Proveedores</span>
+          <strong>{restockSummary.suppliersCount}</strong>
+        </div>
+        <div className="restock-metric">
+          <span>A pedir</span>
+          <strong>{restockSummary.unitsToOrder}</strong>
+        </div>
+        <div className="restock-metric">
+          <span>Urgentes</span>
+          <strong>{restockSummary.urgentItems}</strong>
+        </div>
+      </div>
+
       {/* GRID DE TARJETAS POR PROVEEDOR */}
       <div className="restock-grid">
         {Object.entries(groupedBySupplier).map(([supplier, items]) => (
-          <div
+          <article
             key={supplier}
             className={`supplier-card ${supplier === FALLBACK_SUPPLIER ? 'fallback-supplier' : ''}`}
           >
             {/* Header de la tarjeta */}
             <div className="supplier-card-header">
-              <h4 className={`supplier-card-title ${items.length === 0 ? 'no-orders' : ''}`}>
-                {supplier}
-              </h4>
+              <div className="supplier-card-heading">
+                <span className="supplier-card-icon" aria-hidden="true">
+                  <Truck size={17} />
+                </span>
+                <div>
+                  <h3 className={`supplier-card-title ${items.length === 0 ? 'no-orders' : ''}`}>
+                    {supplier}
+                  </h3>
+                  <span className="supplier-card-count">
+                    {items.length} producto{items.length === 1 ? '' : 's'} por reponer
+                  </span>
+                </div>
+              </div>
               <div className="supplier-card-actions">
                 {/* TODO: Botón para crear orden de compra real */}
                 {/* <button
@@ -490,6 +540,7 @@ export default function RestockSuggestion() {
                 </button> */}
 
                 <button
+                  type="button"
                   className="btn-copy-list"
                   onClick={() => handleCopyList(supplier, items)}
                   disabled={items.length === 0}
@@ -503,7 +554,8 @@ export default function RestockSuggestion() {
 
             {/* Tabla de productos */}
             {items.length > 0 ? (
-              <table className="supplier-table">
+              <div className="supplier-table-wrap">
+                <table className="supplier-table">
                 <thead>
                   <tr>
                     <th>Producto</th>
@@ -520,16 +572,16 @@ export default function RestockSuggestion() {
                         <div className="stock-info">
                           <span className="current-stock">{item.availableStock}</span>
                           {item.physicalStock !== item.availableStock && (
-                            <span className="committed-info" title="Stock físico - Stock comprometido">
-                              ({item.physicalStock} fís.)
+                            <span className="committed-info" title="Stock fisico - Stock comprometido">
+                              {item.physicalStock} fis.
                             </span>
                           )}
                           <span className="stock-min">
-                            min: {item.minStock}
+                            min. {item.minStock}
                           </span>
                         </div>
                       </td>
-                      <td className="stock-cell text-center">
+                      <td className="coverage-cell text-center">
                         {Number.isFinite(item.coverageDays) ? `${Math.floor(item.coverageDays)} dias` : 'Sin ventas'}
                       </td>
                       <td className="order-cell">
@@ -538,13 +590,14 @@ export default function RestockSuggestion() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             ) : (
               <p className="supplier-card-title no-orders">
                 No hay productos para mostrar
               </p>
             )}
-          </div>
+          </article>
         ))}
       </div>
 
@@ -559,12 +612,13 @@ export default function RestockSuggestion() {
 
             <div className="clipboard-fallback-modal-body">
               <p style={{ marginBottom: 'var(--spacing-sm)', color: 'var(--text-light)', fontSize: '0.9rem' }}>
-                Tu navegador no permite acceso automático al portapapeles (posiblemente por HTTP o permisos).
+                Tu navegador no permite acceso automatico al portapapeles (posiblemente por HTTP o permisos).
                 Selecciona y copia manualmente:
               </p>
 
               <textarea
                 className="clipboard-fallback-textarea"
+                aria-label="Texto del pedido para copiar manualmente"
                 value={clipboardFallbackText}
                 readOnly
                 rows={10}
@@ -572,18 +626,20 @@ export default function RestockSuggestion() {
               />
 
               <div className="clipboard-fallback-instructions">
-                💡 <strong>Instrucciones:</strong> Haz click en el texto, presiona Ctrl+A (Cmd+A en Mac) para seleccionar todo, luego Ctrl+C (Cmd+C) para copiar.
+                <strong>Instrucciones:</strong> Haz click en el texto, presiona Ctrl+A (Cmd+A en Mac) para seleccionar todo, luego Ctrl+C (Cmd+C) para copiar.
               </div>
             </div>
 
             <div className="clipboard-fallback-modal-footer">
               <button
+                type="button"
                 className="btn-close-fallback"
                 onClick={() => setShowClipboardFallback(false)}
               >
                 Cerrar
               </button>
               <button
+                type="button"
                 className="btn-copy-list"
                 onClick={handleManualCopy}
                 style={{ marginLeft: 'var(--spacing-sm)' }}

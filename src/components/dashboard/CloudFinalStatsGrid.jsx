@@ -7,7 +7,6 @@ import {
   TrendingUp
 } from 'lucide-react';
 import './StatsGrid.css';
-import { REPORT_SOURCE_MODES } from '../../services/reports/reportSourceBadges';
 
 const currencyFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
 const numberFormatter = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 });
@@ -32,26 +31,15 @@ const readText = (obj, keys = [], fallback = '') => {
   return fallback;
 };
 
-const buildFinalBadges = (source = {}) => {
-  if (source.mode === REPORT_SOURCE_MODES.CACHE || source.stale) {
-    return [
-      { label: 'Último snapshot cloud final', variant: 'cache' },
-      { label: 'Desactualizado', variant: 'stale' }
-    ];
-  }
-
-  return [{ label: 'Cloud oficial final', variant: 'cloud_final' }];
-};
-
 const getProfitNote = (profitStatus) => {
   const status = String(profitStatus || '').toLowerCase();
   if (status === 'definitive') return 'Utilidad definitiva';
   if (status === 'estimated') return 'Utilidad estimada';
   if (status === 'incomplete') return 'Costos incompletos';
-  return 'Utilidad cloud final';
+  return 'Utilidad calculada';
 };
 
-const MetricCard = ({ label, value, formatter = formatCurrency, note, icon = <Activity size={18} className="icon-muted" />, badges = [] }) => (
+const MetricCard = ({ label, value, formatter = formatCurrency, note, icon = <Activity size={18} className="icon-muted" /> }) => (
   <div className="stat-card-modern small-card">
     <div className="card-header-small">
       <span className="card-label">{label}</span>
@@ -59,22 +47,11 @@ const MetricCard = ({ label, value, formatter = formatCurrency, note, icon = <Ac
     </div>
     <div className="card-value-small">{formatter(value)}</div>
     {note && <small className="text-muted">{note}</small>}
-    {badges.length > 0 && (
-      <div className="card-mini-stats card-mini-stats--inline">
-        {badges.map((badge) => (
-          <span key={`${badge.variant}-${badge.label}`} className="mini-stat-pill">
-            {badge.label}
-          </span>
-        ))}
-      </div>
-    )}
   </div>
 );
 
-export default function CloudFinalStatsGrid({ reportData = null, reportSource = null }) {
+export default function CloudFinalStatsGrid({ reportData = null }) {
   const finalOverview = reportData?.overview || reportData?.summary || reportData || {};
-  const source = reportSource || reportData?.source || {};
-  const badges = buildFinalBadges(source);
 
   const netSalesTotal = readMetric(finalOverview, ['net_sales_total', 'netSalesTotal']);
   const grossSalesTotal = readMetric(finalOverview, ['gross_sales_total', 'grossSalesTotal']);
@@ -106,15 +83,8 @@ export default function CloudFinalStatsGrid({ reportData = null, reportSource = 
         <div className="stats-header-title">
           <h3>Resumen de Negocio</h3>
           <p className="stats-subtitle">
-            <Activity size={16} /> Reporte oficial final desde ventas cloud. No mezcla ventas locales/Dexie.
+            <Activity size={16} /> Ventas netas, utilidad, tickets y margen del periodo.
           </p>
-          <div className="card-mini-stats card-mini-stats--inline">
-            {badges.map((badge) => (
-              <span key={`${badge.variant}-${badge.label}`} className="mini-stat-pill">
-                {badge.label}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -122,7 +92,7 @@ export default function CloudFinalStatsGrid({ reportData = null, reportSource = 
         <div className="financial-quality-warning financial-quality-warning--compact">
           <AlertTriangle size={15} />
           <span>
-            Faltan métricas cloud finales ({missingRequiredMetrics.slice(0, 4).join(', ')}). Se muestran en 0 para no romper la UI.
+            Faltan metricas del reporte ({missingRequiredMetrics.slice(0, 4).join(', ')}). Se muestran en 0 para no romper la UI.
           </span>
         </div>
       )}
@@ -138,7 +108,7 @@ export default function CloudFinalStatsGrid({ reportData = null, reportSource = 
             <div className="card-mini-stats">
               <span className="mini-stat-pill">Excluye canceladas</span>
             </div>
-            <small className="text-muted">Fuente oficial Supabase</small>
+            <small className="text-muted">Total despues de cancelaciones</small>
           </div>
         </div>
 
@@ -162,22 +132,20 @@ export default function CloudFinalStatsGrid({ reportData = null, reportSource = 
           formatter={formatNumber}
           note="Ventas cerradas"
           icon={<ShoppingBag size={18} className="icon-muted" />}
-          badges={badges}
         />
 
         <MetricCard
           label="Ticket promedio"
           value={averageTicket}
           formatter={formatCurrency}
-          note="Promedio neto cloud"
+          note="Promedio neto"
           icon={<Ticket size={18} className="icon-muted" />}
-          badges={badges}
         />
 
-        <MetricCard label="Ventas brutas" value={grossSalesTotal} note="Antes de cancelaciones" badges={badges} />
-        <MetricCard label="Canceladas" value={cancelledSalesTotal} note="No inflan ventas netas" badges={badges} />
-        <MetricCard label="COGS" value={cogsTotal} note="Costo de venta" badges={badges} />
-        <MetricCard label="Margen" value={grossMarginPercent} formatter={formatPercent} note={getProfitNote(profitStatus)} badges={badges} />
+        <MetricCard label="Ventas brutas" value={grossSalesTotal} note="Antes de cancelaciones" />
+        <MetricCard label="Canceladas" value={cancelledSalesTotal} note="No inflan ventas netas" />
+        <MetricCard label="COGS" value={cogsTotal} note="Costo de venta" />
+        <MetricCard label="Margen" value={grossMarginPercent} formatter={formatPercent} note={getProfitNote(profitStatus)} />
       </div>
     </div>
   );

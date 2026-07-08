@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   ArrowRight,
   BarChart3,
@@ -19,6 +19,8 @@ const currencyFormatter = new Intl.NumberFormat('es-MX', {
   currency: 'MXN',
   maximumFractionDigits: 0
 });
+
+const EMPTY_ARRAY = [];
 
 const getNumber = (value, fallback = 0) => {
   const numeric = Number(value);
@@ -55,7 +57,7 @@ const getRubroLabel = (activeRubros = []) => {
     abarrotes: 'tienda',
     'verduleria/fruteria': 'fruteria o verduleria',
     apparel: 'tienda de ropa',
-    hardware: 'ferretería'
+    hardware: 'ferreteria'
   };
 
   return labels[normalized] || 'negocio';
@@ -78,8 +80,8 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
       icon: BarChart3,
       tone: 'info',
       title: 'Junta historial antes de tomar decisiones fuertes',
-      description: `Tu ${rubroLabel} necesita más ventas registradas para detectar patrones confiables.`,
-      action: 'Registra ventas reales durante al menos 7 días seguidos.',
+      description: `Tu ${rubroLabel} necesita mas ventas registradas para detectar patrones confiables.`,
+      action: 'Registra ventas reales durante al menos 7 dias seguidos.',
       route: '/',
       metric: `${totalSales} ventas registradas`
     });
@@ -88,9 +90,9 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
       id: 'ticket-focus',
       icon: TrendingUp,
       tone: 'success',
-      title: 'Usa tu ticket promedio como brújula',
-      description: `Tu ticket promedio estimado es ${currencyFormatter.format(avgTicket)}. Úsalo para crear combos o metas de venta.`,
-      action: 'Busca subir el ticket con complementos sencillos, no solo vendiendo más piezas.',
+      title: 'Usa tu ticket promedio como brujula',
+      description: `Tu ticket promedio estimado es ${currencyFormatter.format(avgTicket)}. Usalo para crear combos o metas de venta.`,
+      action: 'Busca subir el ticket con complementos sencillos, no solo vendiendo mas piezas.',
       route: '/ventas',
       metric: currencyFormatter.format(avgTicket)
     });
@@ -101,9 +103,9 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
       id: 'catalog-start',
       icon: Package,
       tone: 'warning',
-      title: 'Carga tu catálogo base',
+      title: 'Carga tu catalogo base',
       description: 'Sin productos registrados, Lanzo no puede ayudarte a medir inventario, precios ni margen.',
-      action: 'Agrega tus productos más vendidos primero.',
+      action: 'Agrega tus productos mas vendidos primero.',
       route: '/productos?tab=add',
       metric: '0 productos'
     });
@@ -113,7 +115,7 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
       icon: Package,
       tone: 'warning',
       title: 'Completa precios y costos para cuidar margen',
-      description: 'Hay productos con precio o costo incompleto. Eso limita los reportes y puede ocultar pérdidas.',
+      description: 'Hay productos con precio o costo incompleto. Eso limita los reportes y puede ocultar perdidas.',
       action: 'Revisa los productos sin precio o sin costo antes de hacer promociones.',
       route: '/productos?tab=list',
       metric: `${productsWithoutPrice + productsWithoutCost} detalles pendientes`
@@ -123,9 +125,9 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
       id: 'catalog-ready',
       icon: CheckCircle,
       tone: 'success',
-      title: 'Tu catálogo ya tiene mejor base de control',
+      title: 'Tu catalogo ya tiene mejor base de control',
       description: 'Con productos, precios y costos completos puedes tomar mejores decisiones de compra y venta.',
-      action: 'Revisa cada semana si algún costo cambió con tus proveedores.',
+      action: 'Revisa cada semana si algun costo cambio con tus proveedores.',
       route: '/productos?tab=list',
       metric: `${menu.length} productos`
     });
@@ -138,7 +140,7 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
       tone: 'info',
       title: 'Empieza a registrar clientes frecuentes',
       description: 'Aunque vendas en local, guardar clientes te ayuda a recordar deudas, preferencias y recompra.',
-      action: 'Registra nombre y teléfono de tus clientes frecuentes o con crédito.',
+      action: 'Registra nombre y telefono de tus clientes frecuentes o con credito.',
       route: '/clientes?tab=add',
       metric: `${customers.length} clientes`
     });
@@ -149,7 +151,7 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
       tone: 'success',
       title: 'Aprovecha tu base de clientes',
       description: 'Ya tienes clientes registrados. Puedes usarlos para seguimiento, cobranza sana o promociones.',
-      action: 'Identifica quién no compra desde hace días y prepara un mensaje simple.',
+      action: 'Identifica quien no compra desde hace dias y prepara un mensaje simple.',
       route: '/clientes?tab=list',
       metric: `${customers.length} clientes`
     });
@@ -161,8 +163,8 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
       icon: ShieldCheck,
       tone: 'warning',
       title: 'Convierte las mermas en aprendizaje',
-      description: 'Cada merma registrada debe ayudarte a ajustar producción, compras o porciones.',
-      action: 'Revisa qué producto se repite más en merma y reduce preparación o compra.',
+      description: 'Cada merma registrada debe ayudarte a ajustar produccion, compras o porciones.',
+      action: 'Revisa que producto se repite mas en merma y reduce preparacion o compra.',
       route: '/ventas?tab=waste',
       metric: `${wasteLogs.length} mermas`
     });
@@ -172,7 +174,7 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
       icon: Package,
       tone: 'info',
       title: 'Revisa productos sin stock',
-      description: 'Hay productos que podrían estar sin existencia o sin inventario configurado.',
+      description: 'Hay productos que podrian estar sin existencia o sin inventario configurado.',
       action: 'Actualiza stock inicial o desactiva temporalmente productos que no vendes.',
       route: '/productos?tab=list',
       metric: `${productsWithoutStock} sin stock`
@@ -183,9 +185,9 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
     id: 'pro-upgrade',
     icon: Lock,
     tone: 'pro',
-    title: 'Agentes IA disponibles en Pro',
-    description: 'Cuando actives Pro, Lanzo podrá analizar inventario, finanzas y clientes con contexto del negocio.',
-    action: 'Usa estos consejos gratis mientras decides si necesitas análisis más profundo.',
+    title: 'Analisis avanzado disponible en Pro',
+    description: 'Cuando actives Pro, Lanzo podra analizar inventario, finanzas y clientes con mas contexto del negocio.',
+    action: 'Usa estos consejos gratis mientras decides si necesitas analisis mas profundo.',
     route: '/configuracion',
     metric: 'IA Pro'
   });
@@ -194,15 +196,16 @@ const buildLocalTips = ({ sales, menu, customers, wasteLogs, activeRubros }) => 
 };
 
 export default function BusinessTips({
-  sales = [],
-  menu = [],
-  customers = [],
-  wasteLogs = [],
-  activeRubros = [],
+  sales = EMPTY_ARRAY,
+  menu = EMPTY_ARRAY,
+  customers = EMPTY_ARRAY,
+  wasteLogs = EMPTY_ARRAY,
+  activeRubros = EMPTY_ARRAY,
   onNavigate
 }) {
   const tips = useMemo(() => buildLocalTips({ sales, menu, customers, wasteLogs, activeRubros }), [sales, menu, customers, wasteLogs, activeRubros]);
   const totalRevenue = useMemo(() => sales.reduce((sum, sale) => sum + getSaleTotal(sale), 0), [sales]);
+  const warningCount = useMemo(() => tips.filter((tip) => tip.tone === 'warning').length, [tips]);
 
   const handleNavigate = (route) => {
     if (!route) return;
@@ -215,65 +218,70 @@ export default function BusinessTips({
 
   return (
     <section className="business-tips-panel">
-      <div className="business-tips-hero">
-        <div className="business-tips-hero-icon">
-          <Lightbulb size={28} />
+      <div className="business-tips-header">
+        <div className="business-tips-title-group">
+          <span className="business-tips-kicker">
+            <Lightbulb size={15} />
+            Consejos Lan
+          </span>
+          <h2>Lectura rapida del negocio</h2>
+          <p>Recomendaciones simples con tus ventas, inventario y clientes actuales.</p>
         </div>
-        <div>
-          <span className="business-tips-kicker">Consejos Lan • Gratis</span>
-          <h2>Mejoras prácticas sin consumir IA</h2>
-          <p>
-            Esta sección usa datos locales de tu POS para darte recomendaciones simples.
-            Los agentes IA avanzados quedan reservados para licencias Pro.
-          </p>
+
+        <div className={`business-tips-status ${warningCount > 0 ? 'has-warning' : 'is-stable'}`}>
+          <span>{warningCount > 0 ? `${warningCount} aviso${warningCount > 1 ? 's' : ''}` : 'Sin avisos criticos'}</span>
         </div>
       </div>
 
-      <div className="business-tips-summary">
-        <div>
+      <div className="business-tips-metrics" aria-label="Resumen del negocio">
+        <div className="business-tips-metric">
           <span>Ventas</span>
           <strong>{sales.length}</strong>
         </div>
-        <div>
+        <div className="business-tips-metric">
           <span>Ingresos</span>
           <strong>{currencyFormatter.format(totalRevenue)}</strong>
         </div>
-        <div>
+        <div className="business-tips-metric">
           <span>Productos</span>
           <strong>{menu.length}</strong>
         </div>
-        <div>
+        <div className="business-tips-metric">
           <span>Clientes</span>
           <strong>{customers.length}</strong>
         </div>
       </div>
 
-      <div className="business-tips-grid">
+      <div className="business-tips-feed">
         {tips.map(tip => {
           const Icon = tip.icon || Sparkles;
           return (
-            <article key={tip.id} className={`business-tip-card tone-${tip.tone}`}>
-              <div className="business-tip-header">
-                <div className="business-tip-icon">
-                  <Icon size={20} />
+            <article key={tip.id} className={`business-tip-row tone-${tip.tone}`}>
+              <div className="business-tip-icon" aria-hidden="true">
+                <Icon size={18} />
+              </div>
+
+              <div className="business-tip-content">
+                <div className="business-tip-copy">
+                  <h3>{tip.title}</h3>
+                  <p>{tip.description}</p>
                 </div>
+
+                <div className="business-tip-action">
+                  <CheckCircle size={15} />
+                  <span>{tip.action}</span>
+                </div>
+              </div>
+
+              <div className="business-tip-meta">
                 <span className="business-tip-metric">{tip.metric}</span>
+                {tip.route && (
+                  <button type="button" className="business-tip-button" onClick={() => handleNavigate(tip.route)}>
+                    Abrir
+                    <ArrowRight size={14} />
+                  </button>
+                )}
               </div>
-
-              <h3>{tip.title}</h3>
-              <p>{tip.description}</p>
-
-              <div className="business-tip-action">
-                <CheckCircle size={15} />
-                <span>{tip.action}</span>
-              </div>
-
-              {tip.route && (
-                <button type="button" className="business-tip-button" onClick={() => handleNavigate(tip.route)}>
-                  Ir al módulo
-                  <ArrowRight size={14} />
-                </button>
-              )}
             </article>
           );
         })}

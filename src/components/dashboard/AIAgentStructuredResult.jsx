@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   ArrowRight,
   BrainCircuit,
@@ -33,13 +33,100 @@ const ACTION_TYPE_LABELS = {
   manual: 'Manual'
 };
 
+const formatFallbackKey = (key = '') => String(key)
+  .replace(/[_-]+/g, ' ')
+  .replace(/([a-z])([A-Z])/g, '$1 $2')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .replace(/^./, letter => letter.toUpperCase());
+
+const flattenReadableValue = (value, prefix = '') => {
+  if (value === null || value === undefined || value === '') return [];
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    const text = String(value).replace(/\s+/g, ' ').trim();
+    if (!text) return [];
+    return [prefix ? `${prefix}: ${text}` : text];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => {
+      const itemPrefix = prefix ? `${prefix} ${index + 1}` : `Punto ${index + 1}`;
+      return flattenReadableValue(item, itemPrefix);
+    });
+  }
+
+  if (typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, nestedValue]) => {
+      const nextPrefix = prefix ? `${prefix} / ${formatFallbackKey(key)}` : formatFallbackKey(key);
+      return flattenReadableValue(nestedValue, nextPrefix);
+    });
+  }
+
+  return [];
+};
+
+const stripCodeFence = (text = '') => String(text)
+  .replace(/```(?:json|javascript|js)?/gi, '')
+  .replace(/```/g, '')
+  .trim();
+
+const buildReadableFallbackLines = (rawResult) => {
+  const rawText = stripCodeFence(rawResult)
+    .replace(/\\n/g, '\n')
+    .replace(/\\"/g, '"')
+    .trim();
+
+  if (!rawText) return [];
+
+  try {
+    const parsed = JSON.parse(rawText);
+    const flattened = flattenReadableValue(parsed);
+    if (flattened.length > 0) return flattened.slice(0, 18);
+  } catch {
+    // Continue with a text cleanup fallback.
+  }
+
+  const looksJsonLike = /^[\s[{]/.test(rawText) || /"\w+"\s*:/.test(rawText);
+  const cleaned = looksJsonLike
+    ? rawText
+      .replace(/[{}[\]]/g, '\n')
+      .replace(/,\s*(?="?[A-Za-z0-9_ -]+"?\s*:)/g, '\n')
+      .replace(/["']/g, '')
+      .replace(/\s*:\s*/g, ': ')
+      .replace(/\n{2,}/g, '\n')
+    : rawText;
+
+  const lines = cleaned
+    .split(/\n+/)
+    .map(line => line.replace(/^\s*[-*]\s*/, '').replace(/\s+/g, ' ').trim())
+    .filter(line => line && /[A-Za-z0-9]/.test(line))
+    .filter(line => !/^(formatVersion|confidence)\s*:/i.test(line))
+    .slice(0, 18);
+
+  if (lines.length > 0) return lines;
+  return [rawText.replace(/\s+/g, ' ').trim()];
+};
+
 const MarkdownAnalysisResult = ({ result }) => {
   const sections = useMemo(() => parseMarkdownResponse(result), [result]);
+  const readableLines = useMemo(() => buildReadableFallbackLines(result), [result]);
 
   if (sections.length === 0) {
     return (
-      <div className="analysis-result raw-markdown">
-        <pre>{result}</pre>
+      <div className="analysis-result readable-analysis">
+        <div className="result-section">
+          <h4 className="section-title">Analisis generado</h4>
+          {readableLines.length > 1 ? (
+            <ul className="section-items">
+              {readableLines.map((line) => (
+                <li key={`readable-line-${line}`}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="readable-analysis-text">{readableLines[0] || 'La IA genero una respuesta, pero no incluyo contenido legible.'}</p>
+          )}
+        </div>
       </div>
     );
   }
@@ -87,8 +174,8 @@ const FindingCard = ({ finding }) => (
 
     {finding.evidence?.length > 0 && (
       <ul className="structured-evidence">
-        {finding.evidence.map((entry, index) => (
-          <li key={`${finding.id}-evidence-${index}`}>{entry}</li>
+        {finding.evidence.map((entry) => (
+          <li key={`${finding.id}-evidence-${entry}`}>{entry}</li>
         ))}
       </ul>
     )}
@@ -211,8 +298,8 @@ export default function StructuredAnalysisResult({ result, onAction }) {
             Datos que mejorarían el análisis
           </h4>
           <ul className="section-items">
-            {parsed.questionsToAskUser.map((question, index) => (
-              <li key={`question-${index}`}>{question}</li>
+            {parsed.questionsToAskUser.map((question) => (
+              <li key={`question-${question}`}>{question}</li>
             ))}
           </ul>
         </section>

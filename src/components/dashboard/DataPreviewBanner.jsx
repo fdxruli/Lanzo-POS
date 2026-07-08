@@ -9,20 +9,20 @@ const DataPreviewBanner = ({ preview, isCalculating, isDataEmpty }) => {
 
   return (
     <div className={`data-preview-banner ${isDataEmpty ? 'warning-empty' : ''}`}>
-      <div className="preview-header">
+      <div className="ai-agent-preview-header">
         {isDataEmpty ? <AlertTriangle size={16} /> : <Activity size={16} />}
-        <span>Datos a inyectar en la IA:</span>
+        <span>Datos considerados</span>
       </div>
-      <ul className="preview-metrics">
-        {preview.map((metric, idx) => (
-          <li key={idx}>
-            <span className="metric-label">{metric.label}:</span>
-            <span className="metric-value">{metric.value}</span>
+      <ul className="ai-agent-preview-metrics">
+        {preview.map((metric) => (
+          <li key={`${metric.label}-${metric.value}`}>
+            <span className="ai-agent-preview-label">{metric.label}</span>
+            <span className="ai-agent-preview-value">{metric.value}</span>
           </li>
         ))}
       </ul>
       {isDataEmpty && (
-        <p className="empty-warning-text">Faltan datos base en el sistema para realizar un análisis válido con este agente.</p>
+        <p className="ai-agent-empty-warning">Faltan datos base para generar un analisis valido con este agente.</p>
       )}
     </div>
   );

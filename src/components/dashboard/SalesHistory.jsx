@@ -100,13 +100,9 @@ const isEffectApplied = (status) => String(status || '').toLowerCase() === 'appl
 const buildCloudBadges = (sale = {}, isCloudFinal = false) => {
   if (!isCloudFinal) return [];
 
-  const sourceMode = getSourceMode(sale);
   const status = getSaleStatus(sale);
   const badges = [];
 
-  if (sourceMode === 'cloud_committed') badges.push({ label: 'Cloud oficial', tone: 'cloud' });
-  if (sourceMode === 'shadow') badges.push({ label: 'Shadow', tone: 'warning' });
-  if (sourceMode === 'legacy_imported' || sourceMode === 'legacy') badges.push({ label: 'Historico local importado', tone: 'local' });
   if (status === 'closed') badges.push({ label: 'Cerrada', tone: 'success' });
   if (status === 'cancelled') badges.push({ label: 'Cancelada', tone: 'danger' });
 
@@ -361,13 +357,6 @@ export default function SalesHistory({
         </div>
       </div>
 
-      {effectiveIsCloudFinal && (
-        <div className="card-mini-stats sales-history-mini-stats">
-          <span className="ui-badge ui-badge--success mini-stat-pill">Cloud oficial final</span>
-          {effectiveSource.mode === REPORT_SOURCE_MODES.CACHE && <span className="ui-badge ui-badge--warning mini-stat-pill">Último snapshot cloud final</span>}
-        </div>
-      )}
-
       {sourceWarnings.length > 0 && (
         <div className="ui-alert ui-alert--warning empty-message sales-history-warning">
           {sourceWarnings[0]}
@@ -379,6 +368,7 @@ export default function SalesHistory({
           type="search"
           value={filters.query}
           onChange={(event) => updateFilter('query', event.target.value)}
+          aria-label="Buscar ventas"
           placeholder="Folio, cliente, metodo..."
         />
         <input

@@ -1,157 +1,202 @@
 .ai-agent-usage-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
-  margin-bottom: 1rem;
-  border: 1px solid rgba(99, 102, 241, 0.18);
-  border-radius: 0.875rem;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(16, 185, 129, 0.06));
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-border-color);
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
 }
 
-.ai-agent-usage-legend.is-loading,
-.ai-agent-usage-legend.is-error {
-  background: var(--light-background, #f9fafb);
-  border-color: var(--border-color, #e5e7eb);
+.ai-agent-usage-header,
+.ai-agent-usage-main,
+.ai-agent-usage-panel {
+  background: var(--ui-bg-surface);
+}
+
+.ai-agent-usage-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-sm);
+  padding: 0.85rem;
 }
 
 .ai-agent-usage-main {
-  display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-}
-
-.ai-agent-usage-icon {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 999px;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #4f46e5;
-  background: rgba(99, 102, 241, 0.12);
-  flex-shrink: 0;
-}
-
-.ai-agent-usage-copy {
-  flex: 1;
+  gap: 0.7rem;
   min-width: 0;
 }
 
-.ai-agent-usage-title {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-dark, #111827);
+.ai-agent-usage-icon {
+  align-items: center;
+  background: var(--ui-bg-success-soft);
+  border: 1px solid var(--ui-border-success);
+  border-radius: var(--ui-radius-sm);
+  color: var(--ui-text-success);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2rem;
+  justify-content: center;
+  width: 2rem;
 }
 
-.ai-agent-usage-text {
-  margin: 0.2rem 0 0;
-  font-size: 0.85rem;
-  line-height: 1.45;
-  color: var(--text-light, #6b7280);
+.ai-agent-usage-legend.is-error .ai-agent-usage-icon {
+  background: var(--ui-bg-warning-soft);
+  border-color: var(--ui-border-warning);
+  color: var(--ui-text-warning);
+}
+
+.ai-agent-usage-copy {
+  min-width: 0;
+}
+
+.ai-agent-usage-kicker {
+  color: var(--ui-text-muted);
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ai-agent-usage-title {
+  color: var(--text-dark);
+  font-size: 0.95rem;
+  line-height: 1.3;
+  margin: 0.12rem 0 0;
 }
 
 .ai-agent-period-meta {
-  display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  margin: 0.35rem 0 0;
-  padding: 0.25rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #4f46e5;
-  background: rgba(99, 102, 241, 0.1);
+  color: var(--ui-text-muted);
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-weight: 800;
+  gap: 0.32rem;
+  margin: 0.28rem 0 0;
 }
 
 .ai-agent-usage-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-
-.ai-agent-usage-numbers {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: 1px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
 }
 
 .ai-agent-usage-stat {
-  padding: 0.65rem;
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: var(--ui-bg-surface);
+  min-width: 0;
+  padding: 0.72rem 0.8rem;
 }
 
 .ai-agent-usage-stat span {
+  color: var(--ui-text-muted);
   display: block;
   font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--text-light, #6b7280);
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
 }
 
 .ai-agent-usage-stat strong {
+  color: var(--text-dark);
   display: block;
-  margin-top: 0.15rem;
-  font-size: 1.15rem;
-  color: var(--text-dark, #111827);
-}
-
-.ai-agent-usage-date {
-  font-size: 0.82rem !important;
-  line-height: 1.35;
+  font-size: 0.96rem;
+  font-weight: 900;
+  line-height: 1.25;
+  margin-top: 0.12rem;
+  overflow-wrap: anywhere;
 }
 
 .ai-agent-usage-progress {
-  height: 0.45rem;
+  background: var(--ui-bg-muted);
+  grid-column: 1 / -1;
+  height: 0.28rem;
   overflow: hidden;
-  border-radius: 999px;
-  background: rgba(99, 102, 241, 0.14);
 }
 
 .ai-agent-usage-progress-bar {
+  background: var(--ui-color-primary);
   height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #6366f1, #10b981);
-  transition: width 240ms ease;
+  transition: width 220ms ease;
+}
+
+.ai-agent-usage-controls {
+  align-items: center;
+  display: flex;
+  gap: 0.45rem;
+  justify-content: flex-start;
+}
+
+.ai-agent-usage-status {
+  align-items: center;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-pill);
+  color: var(--ui-text-muted);
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 900;
+  gap: 0.32rem;
+  min-height: 30px;
+  padding: 0 0.62rem;
+  white-space: nowrap;
+}
+
+.ai-agent-usage-status.online {
+  background: var(--ui-bg-success-soft);
+  border-color: var(--ui-border-success);
+  color: var(--ui-text-success);
+}
+
+.ai-agent-usage-status.warning {
+  background: var(--ui-bg-warning-soft);
+  border-color: var(--ui-border-warning);
+  color: var(--ui-text-warning);
+}
+
+.ai-agent-usage-status.offline {
+  background: var(--ui-bg-muted);
+  color: var(--ui-text-muted);
 }
 
 .ai-agent-usage-refresh {
-  align-self: flex-start;
-  display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  border: 0;
-  border-radius: 999px;
-  padding: 0.45rem 0.7rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: #4f46e5;
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--ui-bg-surface);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  color: var(--text-dark);
   cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0;
+  width: 30px;
+}
+
+.ai-agent-usage-refresh:hover:not(:disabled) {
+  border-color: var(--ui-color-primary);
+  color: var(--ui-color-primary);
 }
 
 .ai-agent-usage-refresh:disabled {
-  opacity: 0.55;
   cursor: not-allowed;
+  opacity: 0.55;
 }
 
-@media (min-width: 640px) {
-  .ai-agent-usage-legend {
+.ai-agent-usage-legend .spinning {
+  animation: ai-agent-usage-spin 1s linear infinite;
+}
+
+@keyframes ai-agent-usage-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (min-width: 720px) {
+  .ai-agent-usage-header {
+    align-items: flex-start;
     flex-direction: row;
-    align-items: center;
     justify-content: space-between;
   }
 
-  .ai-agent-usage-main {
-    flex: 1;
-  }
-
-  .ai-agent-usage-numbers {
-    min-width: 22rem;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .ai-agent-usage-controls {
+    justify-content: flex-end;
   }
 }

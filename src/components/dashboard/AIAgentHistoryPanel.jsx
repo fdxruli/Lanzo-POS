@@ -1,4 +1,3 @@
-import React from 'react';
 import { CheckCircle, Clock, Eye, History, Loader2, Sparkles } from 'lucide-react';
 import './AIAgentHistoryPanel.css';
 
@@ -6,13 +5,15 @@ const formatToolSummary = (toolRunSummary = {}) => {
   const executed = Number(toolRunSummary.executedToolCount || 0);
   const available = Number(toolRunSummary.availableToolCount || 0);
 
-  if (executed > 0 && available > 0) return `${executed}/${available} herramientas usadas`;
-  if (available > 0) return `${available} herramientas disponibles`;
+  if (executed > 0 && available > 0) return `${executed}/${available} herramientas`;
+  if (available > 0) return `${available} herramientas`;
   return null;
 };
 
+const EMPTY_ANALYSES = [];
+
 export default function AIAgentHistoryPanel({
-  analyses = [],
+  analyses = EMPTY_ANALYSES,
   isLoading = false,
   message = null,
   error = null,
@@ -20,23 +21,19 @@ export default function AIAgentHistoryPanel({
   selectedAgent = null
 }) {
   return (
-    <section className="ai-analysis-history" aria-label="Historial local de análisis IA">
+    <section className="ai-analysis-history" aria-label="Historial local de analisis IA">
       <div className="ai-analysis-history-header">
         <div>
-          <h3>
-            <History size={18} />
-            Análisis guardados en este dispositivo
-          </h3>
-          <p>
-            Tus análisis se guardan automáticamente en este dispositivo. Puedes consultarlos después sin consumir una nueva consulta IA.
-          </p>
-          <p className="ai-analysis-history-helper">
-            Si limpias los datos del navegador o cambias de dispositivo, este historial local puede perderse.
-          </p>
+          <span className="ai-analysis-history-kicker">
+            <History size={14} />
+            Historial
+          </span>
+          <h3>Analisis guardados</h3>
+          <p>Consulta resultados anteriores sin generar una nueva solicitud.</p>
         </div>
         {selectedAgent && (
           <span className="ai-analysis-history-filter">
-            Filtrado por agente actual
+            Agente actual
           </span>
         )}
       </div>
@@ -58,63 +55,54 @@ export default function AIAgentHistoryPanel({
       {isLoading && (
         <div className="ai-analysis-history-loading">
           <Loader2 size={18} className="spin-icon" />
-          <span>Cargando historial local...</span>
+          <span>Cargando historial...</span>
         </div>
       )}
 
       {!isLoading && analyses.length === 0 && (
         <div className="ai-analysis-history-empty">
-          <History size={28} />
-          <p>
-            Aún no hay análisis guardados en este dispositivo.
-            Cuando generes un análisis IA, se guardará aquí automáticamente.
-          </p>
+          <History size={22} />
+          <p>Aun no hay analisis guardados para esta vista.</p>
         </div>
       )}
 
       {!isLoading && analyses.length > 0 && (
-        <div className="ai-analysis-history-grid">
+        <div className="ai-analysis-history-list">
           {analyses.map(analysis => {
             const toolSummary = formatToolSummary(analysis.toolRunSummary);
 
             return (
-              <article key={analysis.id} className="ai-analysis-history-card">
-                <div className="ai-analysis-history-card-header">
-                  <div>
+              <article key={analysis.id} className="ai-analysis-history-row">
+                <div className="ai-analysis-history-main">
+                  <div className="ai-analysis-history-title-row">
                     <h4 className="ai-analysis-history-agent">{analysis.agentName}</h4>
-                    <p className="ai-analysis-history-range">{analysis.dateRangeLabel}</p>
+                    <span className="ai-analysis-history-format">
+                      {analysis.resultFormat === 'structured_json' ? 'Estructurado' : 'Texto'}
+                    </span>
                   </div>
-                  <span className="ai-analysis-history-format">
-                    {analysis.resultFormat === 'structured_json' ? 'Estructurado' : 'Texto'}
-                  </span>
-                </div>
 
-                <p className="ai-analysis-history-date">
-                  <Clock size={14} />
-                  Generado: {analysis.generatedAtLabel}
-                </p>
-
-                <span className="ai-analysis-history-saved-badge">
-                  <CheckCircle size={14} />
-                  Guardado automáticamente
-                </span>
-
-                <p className="ai-analysis-history-summary">
-                  {analysis.resultSummary}
-                </p>
-
-                {toolSummary && (
-                  <p className="ai-analysis-history-tools">
-                    {toolSummary}
+                  <p className="ai-analysis-history-summary">
+                    {analysis.resultSummary}
                   </p>
-                )}
 
-                <div className="ai-analysis-history-actions">
-                  <button type="button" className="history-primary-action" onClick={() => onOpen?.(analysis.id)}>
-                    <Eye size={16} />
-                    Ver análisis
-                  </button>
+                  <div className="ai-analysis-history-meta">
+                    <span>
+                      <Clock size={13} />
+                      {analysis.generatedAtLabel}
+                    </span>
+                    <span>{analysis.dateRangeLabel}</span>
+                    {toolSummary && <span>{toolSummary}</span>}
+                    <span className="ai-analysis-history-saved">
+                      <CheckCircle size={13} />
+                      Guardado
+                    </span>
+                  </div>
                 </div>
+
+                <button type="button" className="history-primary-action" onClick={() => onOpen?.(analysis.id)}>
+                  <Eye size={16} />
+                  Ver
+                </button>
               </article>
             );
           })}
