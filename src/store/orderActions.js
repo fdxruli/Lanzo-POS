@@ -99,6 +99,39 @@ const buildScannedLineId = (product) =>
   product?.uniqueLineId ||
   createCartLineId(product);
 
+const getInventoryReservationKey = (item) => {
+  if (!item) return null;
+  if (item.batchId) return `batch:${item.batchId}`;
+  const productId = item.parentId || item.id;
+  return productId ? `product:${productId}` : null;
+};
+
+const getSessionReservedQuantity = (activeOrders = new Map(), candidate, excludeOrderId = null) => {
+  const reservationKey = getInventoryReservationKey(candidate);
+  if (!reservationKey) return 0;
+
+  let reserved = 0;
+  activeOrders.forEach((order, orderId) => {
+    if (orderId === excludeOrderId) return;
+
+    (order?.items || []).forEach((item) => {
+      if (getInventoryReservationKey(item) !== reservationKey) return;
+      reserved += Number(item.quantity) || 0;
+    });
+  });
+
+  return normalizeStock(reserved);
+};
+
+const getSessionAvailableStock = (state, product, orderId) => {
+  if (!product?.trackStock && !product?.batchId) return product?.stock;
+
+  const baseAvailableStock = getAvailableStock(product);
+  const reservedInOtherOrders = getSessionReservedQuantity(state.activeOrders, product, orderId);
+
+  return normalizeStock(Math.max(0, baseAvailableStock - reservedInOtherOrders));
+};
+
 export const summarizeScannedProducts = (items = []) => {
   const groupedItems = [];
 
@@ -410,14 +443,17 @@ export const createOrderActions = (set, get) => ({
             };
             return updatedOrder;
           } else {
+            const sessionAvailableStock = product.trackStock
+              ? getSessionAvailableStock(get(), product, orderId)
+              : product.stock;
             const newItem = {
               ...product,
               lineId: targetLineId,
               quantity: 1,
               price: initialPrice,
               originalPrice: product.originalPrice ?? product.price,
-              stock: product.trackStock ? getAvailableStock(product) : product.stock,
-              exceedsStock: product.trackStock && 1 > getAvailableStock(product),
+              stock: sessionAvailableStock,
+              exceedsStock: product.trackStock && 1 > sessionAvailableStock,
               priceWarning: isPriceWarning,
               forceWholesale: false,
               forceSafePrice: false
@@ -461,12 +497,16 @@ export const createOrderActions = (set, get) => ({
               result.item = newOrder[existingItemIndex];
               return newOrder;
             } else {
+              const sessionAvailableStock = resolvedProduct.trackStock
+                ? getSessionAvailableStock(get(), resolvedProduct, orderId)
+                : resolvedProduct.stock;
               const newItem = {
                 ...resolvedProduct,
                 lineId: createCartLineId(resolvedProduct),
                 uniqueLineId: `${resolvedProduct.id}-${Date.now()}`,
                 quantity: 1,
-                exceedsStock: resolvedProduct.trackStock && 1 > (resolvedProduct.stock || 99999)
+                stock: sessionAvailableStock,
+                exceedsStock: resolvedProduct.trackStock && 1 > sessionAvailableStock
               };
 
               result.success = true;
@@ -475,11 +515,15 @@ export const createOrderActions = (set, get) => ({
               return [...order, newItem];
             }
           } else {
+            const sessionAvailableStock = resolvedProduct.trackStock
+              ? getSessionAvailableStock(get(), resolvedProduct, orderId)
+              : resolvedProduct.stock;
             const newItem = {
               ...resolvedProduct,
               lineId: createCartLineId(resolvedProduct),
               quantity: 1,
-              exceedsStock: resolvedProduct.trackStock && 1 > (resolvedProduct.stock || 99999)
+              stock: sessionAvailableStock,
+              exceedsStock: resolvedProduct.trackStock && 1 > sessionAvailableStock
             };
 
             result.success = true;

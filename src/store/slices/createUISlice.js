@@ -4,6 +4,7 @@ import {
   getCashOpeningPolicy,
   setCashOpeningPolicy
 } from '../../services/cashOpeningPolicyService.js';
+import { isCloudCashSyncEnabled } from '../../services/sync/syncConstants.js';
 
 const BACKUP_NOTICE_DISMISSED_KEY = 'lanzo_backup_notice_dismissed';
 const SHOW_ASSISTANT_BOT_KEY = 'lanzo_show_bot:v1';
@@ -174,11 +175,15 @@ export const createUISlice = (set, get) => ({
   cashOpeningPolicy: getCashOpeningPolicy(),
 
   setCashOpeningPolicy: (policy) => {
-    const normalized = setCashOpeningPolicy(policy);
+    const requestedPolicy = isCloudCashSyncEnabled(get().licenseDetails)
+      ? CASH_OPENING_POLICY.MANUAL
+      : policy;
+    const normalized = setCashOpeningPolicy(requestedPolicy);
     set({ cashOpeningPolicy: normalized });
   },
 
   isAutomaticCashOpeningEnabled: () => (
+    !isCloudCashSyncEnabled(get().licenseDetails) &&
     get().cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC
   ),
 

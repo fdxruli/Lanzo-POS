@@ -55,9 +55,11 @@ vi.mock('../../../services/db/dexie', () => ({
 }));
 
 let useActiveOrders;
+let useAppStore;
 
 beforeAll(async () => {
   ({ useActiveOrders } = await import('../useActiveOrders'));
+  ({ useAppStore } = await import('../../../store/useAppStore'));
 });
 
 describe('useActiveOrders session recovery', () => {
@@ -72,6 +74,7 @@ describe('useActiveOrders session recovery', () => {
       currentOrderId: null,
       isLoading: false
     });
+    useAppStore.setState({ enableMultipleOrders: false });
   });
 
   it('reuses an in-session draft instead of creating a duplicate order', async () => {
@@ -129,6 +132,40 @@ describe('useActiveOrders session recovery', () => {
     expect(state.activeOrders.has('sal-db-1')).toBe(true);
     expect(state.activeOrders.has('sal-draft-local')).toBe(true);
     expect(state.currentOrderId).toBe('sal-draft-local');
+  });
+
+  it('keeps recovered parallel orders when multiple order creation is disabled', async () => {
+    dbState.openSales = [{
+      id: 'sal-db-1',
+      items: [{ id: 'p1', quantity: 1, price: 35 }],
+      customerId: null,
+      tableData: 'Venta recuperada',
+      timestamp: '2026-05-12T01:00:00.000Z',
+      total: 35,
+      status: 'open'
+    }];
+
+    useActiveOrders.setState({
+      activeOrders: new Map([
+        ['sal-draft-local', {
+          id: 'sal-draft-local',
+          items: [{ id: 'p2', quantity: 1, price: 20 }],
+          customer: null,
+          tableData: 'Mostrador',
+          createdAt: '2026-05-12T02:00:00.000Z',
+          total: 20
+        }]
+      ]),
+      currentOrderId: 'sal-draft-local'
+    });
+
+    await useActiveOrders.getState().loadOrdersFromDB();
+
+    const state = useActiveOrders.getState();
+    expect(useAppStore.getState().enableMultipleOrders).toBe(false);
+    expect(state.activeOrders.size).toBe(2);
+    expect(state.currentOrderId).toBe('sal-draft-local');
+    expect(useActiveOrders.getState().createOrder()).toBeNull();
   });
 
   it('keeps the newer DB version even when the stale local draft has more items', async () => {

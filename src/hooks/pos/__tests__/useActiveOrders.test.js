@@ -203,6 +203,43 @@ describe('useActiveOrders unified store', () => {
     expect(state.activeOrders.get('two')?.deviceId).toEqual(expect.any(String));
   });
 
+  it('marks stock as exceeded when another active order already uses the remaining stock', async () => {
+    useActiveOrders.setState({
+      activeOrders: new Map([
+        ['one', makeOrder('one')],
+        ['two', makeOrder('two')]
+      ]),
+      currentOrderId: 'one'
+    });
+
+    const product = {
+      id: 'product-1',
+      name: 'Product',
+      price: 25,
+      saleType: 'unit',
+      trackStock: true,
+      stock: 1,
+      committedStock: 0
+    };
+
+    await useActiveOrders.getState().addItemToOrder('one', product);
+    await useActiveOrders.getState().addItemToOrder('two', product);
+
+    const state = useActiveOrders.getState();
+    expect(state.activeOrders.get('one')?.items[0]).toMatchObject({
+      id: 'product-1',
+      quantity: 1,
+      stock: 1,
+      exceedsStock: false
+    });
+    expect(state.activeOrders.get('two')?.items[0]).toMatchObject({
+      id: 'product-1',
+      quantity: 1,
+      stock: 0,
+      exceedsStock: true
+    });
+  });
+
   it('resolves batch data before mutating the order', async () => {
     let resolveBatches;
     dbState.batchLoadPromise = new Promise((resolve) => {

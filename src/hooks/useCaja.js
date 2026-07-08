@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { showMessageModal } from '../services/utils';
+import { showConfirmModal, showMessageModal } from '../services/utils';
 import Logger from '../services/Logger';
 import { Money } from '../utils/moneyMath';
 import { MOVIMIENTO_TIPOS, CAJA_CONFIG } from '../services/cajaService';
 import { cashRepository } from '../services/cash/cashRepository';
 import { CASH_CLOUD_OFFLINE_MESSAGE } from '../services/cash/cashActor';
 import { resolveCashSessionAmounts } from '../services/cajaProjection';
+import { useAppStore } from '../store/useAppStore';
 import {
   CASH_OPENING_POLICY,
   CASH_OPENING_POLICY_EVENT,
   buildAutomaticOpeningData,
   buildManualOpeningData,
-  getCashOpeningPolicy
+  getCashOpeningPolicy,
+  setCashOpeningPolicy as persistCashOpeningPolicy
 } from '../services/cashOpeningPolicyService.js';
 
 const zeroTotals = { ventasContado: '0', abonosFiado: '0' };
@@ -31,6 +33,16 @@ const createCloudCashOfflineError = () => {
   const error = new Error(CASH_CLOUD_OFFLINE_MESSAGE);
   error.code = 'CLOUD_CASH_OFFLINE';
   return error;
+};
+
+const switchCashOpeningToManual = () => {
+  const storeSetter = useAppStore.getState?.().setCashOpeningPolicy;
+  if (typeof storeSetter === 'function') {
+    storeSetter(CASH_OPENING_POLICY.MANUAL);
+    return;
+  }
+
+  persistCashOpeningPolicy(CASH_OPENING_POLICY.MANUAL);
 };
 
 const getNextOpeningSuggestion = (sessions = []) => {
@@ -267,6 +279,27 @@ export function useCaja() {
     }
 
     const suggestedAmount = aperturaPendiente?.montoSugerido || '0';
+    const suggestedAmountSafe = Money.init(suggestedAmount);
+
+    if (suggestedAmountSafe.gt(0)) {
+      const formattedAmount = Money.toNumber(suggestedAmountSafe).toFixed(2);
+      const confirmed = await showConfirmModal(
+        `La caja se abrirá automáticamente con $${formattedAmount} según el cierre anterior.\n\nSi no tienes ese efectivo físico en caja, cancela y cambia a apertura manual.`,
+        {
+          title: 'Confirmar fondo heredado',
+          confirmButtonText: 'Sí, abrir con ese fondo',
+          cancelButtonText: 'No, abrir manualmente'
+        }
+      );
+
+      if (!confirmed) {
+        switchCashOpeningToManual();
+        showMessageModal('Cambiamos la caja a apertura manual para que confirmes el efectivo real.', null, { type: 'warning' });
+        await sincronizarEstadoCaja();
+        throw createCajaNeedsOpeningError('La caja requiere apertura manual. Confirma el fondo, el conteo y el empleado responsable.');
+      }
+    }
+
     const autoOpening = buildAutomaticOpeningData(suggestedAmount, 'operation_requires_cash');
     const response = await cashRepository.openCashSession(autoOpening);
     await sincronizarEstadoCaja();
@@ -399,7 +432,7 @@ export function useCaja() {
       const diferencia = response.diferencia || response.cashSession?.diferencia || '0';
       const mode = cashRepository.getMode();
 
-      if (!mode.cloudEnabled && getCashOpeningPolicy() === CASH_OPENING_POLICY.AUTOMATIC) {
+      if (!mode.cloudEnabled && getCashOpeningPolicy() === CASH_OPENING_POLICY.AUTOMATIC && fondoSiguienteSafe.eq(0)) {
         try {
           const opening = buildAutomaticOpeningData(Money.toExactString(fondoSiguienteSafe), 'cash_close');
           await cashRepository.openCashSession(opening);
