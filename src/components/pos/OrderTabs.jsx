@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Star, X, Plus, Check } from 'lucide-react';
+import { useState } from 'react';
+import { Star, Plus, Check } from 'lucide-react';
 import './OrderTabs.css';
 
 const OrderTabs = ({
@@ -7,6 +7,7 @@ const OrderTabs = ({
   currentOrderId,
   onSwitchOrder,
   onCreateOrder,
+  canCreateOrder = true,
   isPausing
 }) => {
   const [showNewOrderForm, setShowNewOrderForm] = useState(false);
@@ -44,13 +45,12 @@ const OrderTabs = ({
           }
 
           return (
-            <div
+            <button
+              type="button"
               key={order.id}
               className={`order-tab ${isActive ? 'active' : ''} ${isPausing && isActive ? 'pausing' : ''}`}
               onClick={() => !isActive && onSwitchOrder(order.id)}
-              role="button"
-              tabIndex={0}
-              aria-selected={isActive}
+              aria-current={isActive ? 'true' : undefined}
             >
               <div className="order-tab-content">
                 {isActive && <Star className="active-icon" size={14} fill="currentColor" aria-hidden="true" />}
@@ -65,12 +65,13 @@ const OrderTabs = ({
               <div className="order-tab-total">
                 ${Number(order.total || 0).toFixed(2)}
               </div>
-            </div>
+            </button>
           );
         })}
 
-        {!showNewOrderForm ? (
+        {canCreateOrder && (!showNewOrderForm ? (
           <button
+            type="button"
             className="order-tab-add"
             onClick={() => setShowNewOrderForm(true)}
             aria-label="Crear nueva orden"
@@ -81,7 +82,6 @@ const OrderTabs = ({
         ) : (
           <form className="order-tab-form" onSubmit={handleCreateSubmit}>
             <input
-              autoFocus
               type="text"
               placeholder="Nombre (opcional)"
               value={newOrderName}
@@ -98,7 +98,7 @@ const OrderTabs = ({
               <Check size={16} />
             </button>
           </form>
-        )}
+        ))}
       </div>
     </div>
   );

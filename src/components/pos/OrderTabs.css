@@ -30,6 +30,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  font: inherit;
+  text-align: left;
   min-width: 110px; /* smaller for mobile */
   max-width: 160px;
   background: var(--background-color, #eaeaea);

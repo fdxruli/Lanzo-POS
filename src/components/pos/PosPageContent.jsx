@@ -22,6 +22,7 @@ const ActiveOrderControls = () => {
     const cancelOrder = useActiveOrders((state) => state.cancelOrder);
     const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
     const [isPausing, setIsPausing] = useState(false);
+    const shouldShowOrderTabs = activeOrders.size > 1 || (activeOrders.size >= 1 && enableMultipleOrders);
 
     const handleCreateOrder = (name) => createOrder(null, name || null);
     const handleDeleteOrder = async (id) => {
@@ -41,17 +42,18 @@ const ActiveOrderControls = () => {
             {activeOrders.size === 0 && (
                 <div style={{ padding: '12px', background: '#fff3cd', color: '#856404', textAlign: 'center' }}>
                     <span>No hay órdenes activas.</span>
-                    <button onClick={() => handleCreateOrder()} style={{ marginLeft: '12px', padding: '4px 12px', background: 'var(--primary-color, #2e7d32)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                    <button type="button" onClick={() => handleCreateOrder()} style={{ marginLeft: '12px', padding: '4px 12px', background: 'var(--primary-color, #2e7d32)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
                         + Crear Orden
                     </button>
                 </div>
             )}
 
-            {activeOrders.size >= 1 && enableMultipleOrders && (
+            {shouldShowOrderTabs && (
                 <OrderTabs
                     activeOrders={activeOrders}
                     currentOrderId={currentOrderId}
                     isPausing={isPausing}
+                    canCreateOrder={enableMultipleOrders}
                     onSwitchOrder={switchOrder}
                     onCreateOrder={handleCreateOrder}
                     onDeleteOrder={handleDeleteOrder}
