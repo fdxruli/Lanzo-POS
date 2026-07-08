@@ -1,37 +1,29 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import './SettingsPage.css';
 import GeneralSettings from '../components/settings/GeneralSettings';
 import OperationalSettings from '../components/settings/OperationalSettings';
 import LicenseSettings from '../components/settings/LicenseSettings';
 import MaintenanceSettings from '../components/settings/MaintenanceSettings';
 import BackupSettings from '../components/settings/BackupSettings';
-import PreparationStationsSettings from '../components/settings/PreparationStationsSettings';
 import DbMigrationTester from '../components/debug/DbMigrationTester';
 import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { isCloudPosSyncEnabled } from '../services/sync/syncConstants';
-import { normalizeBusinessTypes } from '../utils/businessType';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general');
   const [searchParams, setSearchParams] = useSearchParams();
   const canAccess = useAppStore((state) => state.canAccess);
-  const businessTypes = useAppStore((state) => state.companyProfile?.business_type);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   useAppStore((state) => state.currentDeviceRole);
   useAppStore((state) => state.currentStaffUser);
-
-  const hasRestaurantSettings = useMemo(() => (
-    normalizeBusinessTypes(businessTypes || []).includes('food_service')
-  ), [businessTypes]);
 
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
 
   const visibleTabs = [
     { key: 'general', allowed: canAccess('settings') },
     { key: 'controls', allowed: canAccess('settings') },
-    { key: 'restaurant', allowed: hasRestaurantSettings && (canAccess('settings') || canAccess('products')) },
     { key: 'license', allowed: canAccess('license') },
     { key: 'maintenance', allowed: canAccess('sync') || canAccess('inventory') },
     { key: 'backup', allowed: canAccess('sync') },
@@ -44,7 +36,6 @@ export default function SettingsPage() {
     const tabMap = {
       general: 'general',
       controls: 'controls',
-      restaurant: 'restaurant',
       license: 'license',
       maintenance: 'maintenance',
       backup: 'backup',
@@ -73,27 +64,25 @@ export default function SettingsPage() {
     <main className="ui-page settings-page-wrapper" aria-label="Configuracion">
       <section className="ui-section settings-tabs-section" aria-label="Secciones de configuracion">
         <div className="tabs-container settings-tabs">
-          <button className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`} onClick={() => handleTabChange('general')} hidden={!tabIsVisible('general')}>Datos y Apariencia</button>
-          <button className={`tab-btn ${activeTab === 'controls' ? 'active' : ''}`} onClick={() => handleTabChange('controls')} hidden={!tabIsVisible('controls')}>Controles</button>
-          <button className={`tab-btn ${activeTab === 'restaurant' ? 'active' : ''}`} onClick={() => handleTabChange('restaurant')} hidden={!tabIsVisible('restaurant')}>Restaurante</button>
-          <button className={`tab-btn ${activeTab === 'license' ? 'active' : ''}`} onClick={() => handleTabChange('license')} hidden={!tabIsVisible('license')}>Licencia y Rubros</button>
-          <button className={`tab-btn ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => handleTabChange('maintenance')} hidden={!tabIsVisible('maintenance')}>Datos y Mantenimiento</button>
-          <button className={`tab-btn ${activeTab === 'backup' ? 'active' : ''}`} onClick={() => handleTabChange('backup')} hidden={!tabIsVisible('backup')}>Respaldos</button>
-          {import.meta.env.DEV && <button className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`} onClick={() => handleTabChange('debug')}>Depuracion DB</button>}
-          {import.meta.env.DEV && <button className={`tab-btn ${activeTab === 'test-ventas' ? 'active' : ''}`} onClick={() => handleTabChange('test-ventas')}>Test Ventas</button>}
+          <button type="button" className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`} onClick={() => handleTabChange('general')} hidden={!tabIsVisible('general')}>Datos y Apariencia</button>
+          <button type="button" className={`tab-btn ${activeTab === 'controls' ? 'active' : ''}`} onClick={() => handleTabChange('controls')} hidden={!tabIsVisible('controls')}>Controles</button>
+          <button type="button" className={`tab-btn ${activeTab === 'license' ? 'active' : ''}`} onClick={() => handleTabChange('license')} hidden={!tabIsVisible('license')}>Licencia y Rubros</button>
+          <button type="button" className={`tab-btn ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => handleTabChange('maintenance')} hidden={!tabIsVisible('maintenance')}>Datos y Mantenimiento</button>
+          <button type="button" className={`tab-btn ${activeTab === 'backup' ? 'active' : ''}`} onClick={() => handleTabChange('backup')} hidden={!tabIsVisible('backup')}>Respaldos</button>
+          {import.meta.env.DEV && <button type="button" className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`} onClick={() => handleTabChange('debug')}>Depuracion DB</button>}
+          {import.meta.env.DEV && <button type="button" className={`tab-btn ${activeTab === 'test-ventas' ? 'active' : ''}`} onClick={() => handleTabChange('test-ventas')}>Test Ventas</button>}
         </div>
       </section>
 
       <section className="ui-section settings-content">
         {activeTab === 'general' && <GeneralSettings />}
         {activeTab === 'controls' && <OperationalSettings />}
-        {activeTab === 'restaurant' && <PreparationStationsSettings />}
         {activeTab === 'license' && <LicenseSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}
         {activeTab === 'backup' && (
           <>
             {isCloudLicense && (
-              <div className="ui-card" role="note">
+              <div className="ui-card backup-cloud-license-note" role="note">
                 <h3>Respaldo adicional opcional</h3>
                 <p>
                   Tus datos principales se sincronizan en la nube. Puedes generar una copia local cifrada solo como respaldo adicional,

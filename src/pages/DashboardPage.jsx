@@ -26,14 +26,13 @@ import { loadData, STORES } from '../services/database';
 import { reportingService } from '../services/db/reporting';
 import { reportsRepository, REPORT_SYNC_UPDATED_EVENT } from '../services/reports/reportsRepository';
 import {
-  getReportSourceLabel,
   isCloudFinalReportSource,
   REPORT_SOURCE_MODES
 } from '../services/reports/reportSourceBadges';
 import { showConfirmModal, showMessageModal } from '../services/utils';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
-import { Save, BarChart3, Trash2, ArrowRight } from 'lucide-react';
+import { BarChart3, Trash2 } from 'lucide-react';
 import { CANCELLATION_ACTIONS } from '../services/sales/cancelSaleCore';
 
 const SALES_HISTORY_PAGE_SIZE = 50;
@@ -69,40 +68,6 @@ const buildWarningsMessage = (warnings = []) => {
     : '';
 
   return `\n\nAdvertencias:\n${preview}${tail}`;
-};
-
-const ReportSourceBanner = ({ source }) => {
-  if (!source) return null;
-
-  const isMixed = source.mode === REPORT_SOURCE_MODES.MIXED;
-  const isCache = source.mode === REPORT_SOURCE_MODES.CACHE || source.stale;
-  const isCloudFinal = isCloudFinalReportSource(source);
-  const warnings = Array.isArray(source.warnings) ? source.warnings : [];
-
-  return (
-    <div className={`ui-alert ui-alert--warning data-warning-banner report-source-banner report-source-banner--${source.mode || 'local'}`}>
-      <span className="ui-alert__icon data-warning-icon">
-        <Save size={22} strokeWidth={1.5} />
-      </span>
-      <div className="ui-alert__content">
-        <strong className="ui-alert__title">{getReportSourceLabel(source)}</strong>
-        <p className="ui-alert__text">
-          {isCloudFinal && isCache
-            ? 'Sin conexion o servicio no disponible: se muestra el ultimo snapshot cloud final guardado. Ventas netas, utilidad e historial siguen separados de ventas locales.'
-            : isCloudFinal
-              ? 'Modo PRO cloud final: ventas, caja, inventario, credito, cancelaciones y utilidad vienen de Supabase como fuente oficial.'
-              : isMixed
-                ? 'Modo PRO cloud: caja, abonos, clientes y productos usan datos cloud oficiales. Ventas, utilidad real, historial y mermas siguen usando datos locales de este dispositivo hasta activar ventas cloud.'
-                : isCache
-                  ? 'Sin conexion o servicio no disponible: se muestra el ultimo snapshot cloud guardado. Puede estar desactualizado.'
-                  : 'Reporte local de este dispositivo.'}
-        </p>
-        {warnings.length > 0 && (
-          <small>{warnings.slice(0, 2).join(' ')}</small>
-        )}
-      </div>
-    </div>
-  );
 };
 
 export default function DashboardPage() {
@@ -427,37 +392,24 @@ export default function DashboardPage() {
   return (
     <>
       <main className="ui-page dashboard-page" aria-label="Dashboard">
-      <header className="ui-page__header dashboard-page__header" aria-label="Fuente del reporte">
-        <div className="ui-section__actions dashboard-page__actions">
-          {statsSource && (
-            <span className={`ui-badge ${statsIsCloudFinal ? 'ui-badge--success' : 'ui-badge--info'}`}>
-              {getReportSourceLabel(statsSource)}
-            </span>
-          )}
-        </div>
-      </header>
-
       <section className="ui-section dashboard-tabs-section" aria-label="Secciones del dashboard">
       <div className="tabs-container dashboard-tabs" id="sales-tabs">
-        <button className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`} onClick={() => handleTabChange('stats')}>Estadisticas Clave</button>
-        <button className={`tab-btn ${activeTab === 'tips' ? 'active' : ''}`} onClick={() => handleTabChange('tips')}>Consejos Lan</button>
-        <button className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`} onClick={() => handleTabChange('restock')}>Reabastecimiento</button>
-        <button className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => handleTabChange('history')}>Historial y Papelera</button>
-        <button className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`} onClick={() => handleTabChange('expiration')}>Caducidad</button>
+        <button type="button" className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`} onClick={() => handleTabChange('stats')}>Estadisticas Clave</button>
+        <button type="button" className={`tab-btn ${activeTab === 'tips' ? 'active' : ''}`} onClick={() => handleTabChange('tips')}>Consejos Lan</button>
+        <button type="button" className={`tab-btn ${activeTab === 'restock' ? 'active' : ''}`} onClick={() => handleTabChange('restock')}>Reabastecimiento</button>
+        <button type="button" className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => handleTabChange('history')}>Historial y Papelera</button>
+        <button type="button" className={`tab-btn ${activeTab === 'expiration' ? 'active' : ''}`} onClick={() => handleTabChange('expiration')}>Caducidad</button>
         {features.hasWaste && (
-          <button className={`tab-btn dashboard-tab-danger ${activeTab === 'waste' ? 'active' : ''}`} onClick={() => handleTabChange('waste')}>Mermas</button>
+          <button type="button" className={`tab-btn dashboard-tab-danger ${activeTab === 'waste' ? 'active' : ''}`} onClick={() => handleTabChange('waste')}>Mermas</button>
         )}
       </div>
       </section>
-
-      <ReportSourceBanner source={reportingData.reportSource} />
 
       {activeTab === 'stats' && (
         <section className="ui-section dashboard-section dashboard-section--stats" aria-label="Estadisticas principales">
           {statsIsCloudFinal ? (
             <CloudFinalStatsGrid
               reportData={reportingData.overviewReport}
-              reportSource={reportingData.reportSource}
             />
           ) : (
             <StatsGrid
@@ -483,38 +435,13 @@ export default function DashboardPage() {
 
       {activeTab === 'history' && (
         <section className="ui-section tab-content fade-in dashboard-section dashboard-section--history">
-          <div className="ui-alert ui-alert--warning data-warning-banner">
-            <span className="ui-alert__icon data-warning-icon"><Save size={24} strokeWidth={1.5} /></span>
-            <div className="ui-alert__content">
-              <strong className="ui-alert__title">
-                {historyIsCloudFinal
-                  ? 'Historial cloud final oficial.'
-                  : reportingData.usesRepositorySalesHistory
-                    ? 'Historial local no oficial de este dispositivo.'
-                    : 'Importante: historial de ventas local.'}
-              </strong>
-              <p className="ui-alert__text">
-                {historyIsCloudFinal
-                  ? 'Las ventas se leen desde Supabase usando pos_get_sales_final_history. No se mezclan con ventas locales/Dexie.'
-                  : reportingData.usesRepositorySalesHistory
-                    ? 'Sin snapshot cloud final disponible o sin conexión: se muestra historial local no oficial de este dispositivo.'
-                    : 'Las ventas e historial se leen desde este dispositivo. Caja, abonos y credito pueden venir de cloud en PRO.'}
-                {!historyIsCloudFinal && (
-                  <button onClick={() => navigate('/settings')} className="ui-button ui-button--ghost ui-button--sm link-button">
-                    Ir a Respaldar ahora <ArrowRight size={16} />
-                  </button>
-                )}
-              </p>
-            </div>
-          </div>
-
           <div className="history-layout-grid">
             <section className="ui-card dashboard-panel history-panel">
               <div className="ui-card__header panel-header">
                 <h3><BarChart3 size={20} /> Historial de Movimientos</h3>
                 <span className="panel-subtitle">
                   {historyIsCloudFinal
-                    ? `Ventas finales cloud${reportingData.salesHistoryTotalCount ? ` (${reportingData.salesHistoryTotalCount})` : ''}`
+                    ? `Ventas registradas${reportingData.salesHistoryTotalCount ? ` (${reportingData.salesHistoryTotalCount})` : ''}`
                     : 'Registro de ventas recientes'}
                 </span>
               </div>

@@ -16,11 +16,6 @@
   padding-bottom: calc(var(--ui-space-xl) + 72px);
 }
 
-.dashboard-page__header {
-  justify-content: flex-end;
-  margin-bottom: var(--ui-space-md);
-}
-
 .dashboard-tabs-section {
   margin-bottom: var(--ui-space-lg);
 }

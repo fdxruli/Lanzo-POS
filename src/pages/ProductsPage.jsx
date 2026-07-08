@@ -1,5 +1,5 @@
 // src/pages/ProductsPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { showConfirmModal, showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
@@ -7,6 +7,7 @@ import CategoryManagerModal from '../components/products/CategoryManagerModal';
 import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
 import VariantInventoryView from '../components/products/VarianteInvetoryView';
+import PreparationStationsSettings from '../components/settings/PreparationStationsSettings';
 import { useProductStore, broadcastDBChange } from '../store/useProductStore';
 import { useStatsStore } from '../store/useStatsStore';
 import BatchManager from '../components/products/BatchManager';
@@ -14,6 +15,7 @@ import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import DailyPriceModal from '../components/products/DailyPriceModal';
 import { useAppStore } from '../store/useAppStore';
 import { productRepository } from '../services/products/productRepository';
+import { normalizeBusinessTypes } from '../utils/businessType';
 import './ProductsPage.css';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
@@ -27,6 +29,10 @@ export default function ProductsPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const features = useFeatureConfig();
     const companyProfile = useAppStore(state => state.companyProfile);
+    const businessTypes = companyProfile?.business_type;
+    const hasRestaurantProductSettings = useMemo(() => (
+        normalizeBusinessTypes(businessTypes || []).includes('food_service')
+    ), [businessTypes]);
     const isApparel = (() => {
         const types = companyProfile?.business_type;
         if (Array.isArray(types)) return types.includes('apparel');
@@ -70,15 +76,20 @@ export default function ProductsPage() {
             batches: 'batches',
             categories: 'categories',
             variants: 'variants-view',
+            restaurant: 'restaurant',
             list: 'view-products'
         };
 
         if (currentTabParam && paramToTabMap[currentTabParam]) {
+            if (paramToTabMap[currentTabParam] === 'restaurant' && !hasRestaurantProductSettings) {
+                setActiveTab('view-products');
+                return;
+            }
             setActiveTab(paramToTabMap[currentTabParam]);
         } else {
             setActiveTab('view-products');
         }
-    }, [searchParams]);
+    }, [searchParams, hasRestaurantProductSettings]);
 
     const handleTabChange = (tabKey) => {
         if (tabKey === activeTab) return;
@@ -89,7 +100,8 @@ export default function ProductsPage() {
             batches: 'batches',
             ingredients: 'ingredients',
             categories: 'categories',
-            'variants-view': 'variants'
+            'variants-view': 'variants',
+            restaurant: 'restaurant'
         };
 
         const paramValue = urlMap[tabKey];
@@ -357,6 +369,15 @@ export default function ProductsPage() {
                 >
                     Categorías
                 </button>
+
+                {hasRestaurantProductSettings && (
+                    <button
+                        className={`tab-btn ${activeTab === 'restaurant' ? 'active' : ''}`}
+                        onClick={() => handleTabChange('restaurant')}
+                    >
+                        Restaurante
+                    </button>
+                )}
             </div>
             </section>
 
@@ -412,6 +433,10 @@ export default function ProductsPage() {
 
             {activeTab === 'variants-view' && features.hasVariants && isApparel && (
                 <VariantInventoryView />
+            )}
+
+            {activeTab === 'restaurant' && hasRestaurantProductSettings && (
+                <PreparationStationsSettings />
             )}
             </section>
             </main>

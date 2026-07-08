@@ -18,7 +18,10 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 import { cleanupDevelopmentServiceWorkers } from './services/devServiceWorkerCleanup';
 import { startPosSyncAutoBootstrap } from './services/sync/posSyncBootstrapAutoCoordinator';
 import { installMobileZoomGuard } from './services/mobileZoomGuard';
+import { installDevConsoleCapture } from './services/devConsoleCapture';
+import DevConsole from './components/debug/DevConsole';
 
+installDevConsoleCapture();
 installMobileZoomGuard();
 
 function Thrower({ error }) {
@@ -84,11 +87,14 @@ const router = createBrowserRouter([
   // Ahora renderizar React
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-      <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
-        <ErrorBoundary>
-          <RouterProvider router={router} />
-        </ErrorBoundary>
-      </GoogleOAuthProvider>
+      <>
+        <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
+          <ErrorBoundary>
+            <RouterProvider router={router} />
+          </ErrorBoundary>
+        </GoogleOAuthProvider>
+        {import.meta.env.DEV && <DevConsole />}
+      </>
     </React.StrictMode>
   );
 })();
