@@ -11,6 +11,10 @@ import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { isCloudPosSyncEnabled } from '../services/sync/syncConstants';
+import {
+  canManageEcommercePortal as evaluateEcommercePortalAccess,
+  resolveAllowedSettingsTab
+} from './settingsPageAccess';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general');
@@ -21,11 +25,15 @@ export default function SettingsPage() {
   useAppStore((state) => state.currentStaffUser);
 
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
+  const canManageEcommercePortal = evaluateEcommercePortalAccess({
+    canAccess,
+    currentDeviceRole
+  });
 
   const visibleTabs = [
     { key: 'general', allowed: canAccess('settings') },
     { key: 'controls', allowed: canAccess('settings') },
-    { key: 'portal-online', allowed: canAccess('settings') && currentDeviceRole === 'admin' },
+    { key: 'portal-online', allowed: canManageEcommercePortal },
     { key: 'license', allowed: canAccess('license') },
     { key: 'maintenance', allowed: canAccess('sync') || canAccess('inventory') },
     { key: 'backup', allowed: canAccess('sync') },
@@ -47,13 +55,11 @@ export default function SettingsPage() {
     };
 
     const requestedTab = tabParam && tabMap[tabParam] ? tabMap[tabParam] : 'general';
-    const fallbackTab = visibleTabs[0]?.key || 'general';
 
-    if (visibleTabs.some((tab) => tab.key === requestedTab)) {
-      setActiveTab(requestedTab);
-    } else {
-      setActiveTab(fallbackTab);
-    }
+    setActiveTab(resolveAllowedSettingsTab({
+      requestedTab,
+      visibleTabs
+    }));
   }, [searchParams, visibleTabs]);
 
   const handleTabChange = (tabKey) => {
@@ -81,7 +87,7 @@ export default function SettingsPage() {
       <section className="ui-section settings-content">
         {activeTab === 'general' && <GeneralSettings />}
         {activeTab === 'controls' && <OperationalSettings />}
-        {activeTab === 'portal-online' && <EcommercePortalSettings />}
+        {activeTab === 'portal-online' && canManageEcommercePortal && <EcommercePortalSettings />}
         {activeTab === 'license' && <LicenseSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}
         {activeTab === 'backup' && (
@@ -107,8 +113,7 @@ export default function SettingsPage() {
         )}
         {activeTab === 'test-ventas' && (
           <div className="ui-card debug-section">
-            <h3>Pruebas de ventas</h3>
-            <p className="text-warning">Herramienta tecnica para revisar ventas.</p>
+            <h3>Test Ventas</h3>
             <SalesSystemTester />
           </div>
         )}
