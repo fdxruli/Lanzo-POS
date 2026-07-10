@@ -11,6 +11,9 @@ import {
   getProactiveSuggestions
 } from '../utils/botIntelligence.js';
 
+// botIntelligence imports services/db, which also imports BackupRiskEvaluator.
+// Keep that chain worker-safe: no UI/browser-only work should run at import time.
+
 /**
  * @typedef {Object} BotRequestPayload
  * @property {string} messageId - UUID único para rastrear la solicitud

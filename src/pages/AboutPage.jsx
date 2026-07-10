@@ -20,10 +20,12 @@ import {
   getPlanFeaturesFromLicenseDetails,
   isCloudPosSyncEnabled,
 } from '../services/sync/syncConstants';
+import {
+  buildSupportEmailPayload,
+  buildSupportMailtoUrl
+} from '../services/support/supportContact';
 import './AboutPage.css';
 import './AboutPagePlanModes.css';
-
-const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || '';
 
 const EMPTY_CONTACT_MODAL = {
   show: false,
@@ -36,22 +38,22 @@ const EMPTY_CONTACT_MODAL = {
 const HERO_CAPABILITIES = [
   {
     label: 'Un dispositivo',
-    value: 'Local FREE',
+    value: 'Lanzo Local',
     icon: Store
   },
   {
     label: 'Sincronización y equipo',
-    value: 'Cloud PRO',
+    value: 'Lanzo Nube',
     icon: Cloud
   },
   {
-    label: 'Locales en FREE / cloud en PRO',
+    label: 'Local o nube según plan',
     value: 'Reportes por plan',
     icon: BarChart2
   }
 ];
 
-const LOCAL_FREE_FEATURES = [
+const LOCAL_PLAN_FEATURES = [
   'Punto de venta local',
   'Caja y cortes locales',
   'Productos e inventario local',
@@ -60,14 +62,14 @@ const LOCAL_FREE_FEATURES = [
   '1 dispositivo'
 ];
 
-const LOCAL_FREE_LIMITS = [
+const LOCAL_PLAN_LIMITS = [
   'Sin sincronización cloud',
   'Sin empleados/staff',
   'Sin multi-dispositivo',
   'Sin IA operativa'
 ];
 
-const CLOUD_PRO_FEATURES = [
+const CLOUD_PLAN_FEATURES = [
   'Hasta 5 dispositivos',
   'Sincronización en la nube',
   'Staff, roles y permisos',
@@ -77,8 +79,8 @@ const CLOUD_PRO_FEATURES = [
   'Auditoría y trazabilidad avanzada'
 ];
 
-const CLOUD_PRO_LIMITS = [
-  'Disponible solo con Plan PRO activo',
+const CLOUD_PLAN_LIMITS = [
+  'Disponible solo con Lanzo Nube activo',
   'Requiere conexión para sincronización cloud',
   'La IA opera con límite configurado por licencia'
 ];
@@ -86,36 +88,36 @@ const CLOUD_PRO_LIMITS = [
 const PLAN_MODES = [
   {
     id: 'free',
-    title: 'Local FREE',
+    title: 'Lanzo Local',
     subtitle: 'Para vender y controlar tu negocio desde un solo dispositivo.',
-    badge: 'Incluido en FREE',
+    badge: 'Incluido en Lanzo Local',
     icon: Store,
-    features: LOCAL_FREE_FEATURES,
-    limits: LOCAL_FREE_LIMITS
+    features: LOCAL_PLAN_FEATURES,
+    limits: LOCAL_PLAN_LIMITS
   },
   {
     id: 'pro',
-    title: 'Cloud PRO',
+    title: 'Lanzo Nube',
     subtitle: 'Para operar con equipo, nube y más control.',
-    badge: 'Disponible en PRO',
+    badge: 'Disponible en Lanzo Nube',
     icon: Cloud,
-    features: CLOUD_PRO_FEATURES,
-    limits: CLOUD_PRO_LIMITS
+    features: CLOUD_PLAN_FEATURES,
+    limits: CLOUD_PLAN_LIMITS
   }
 ];
 
 const ROADMAP_STAGES = [
-  { label: 'Base local incluida', isComplete: true },
+  { label: 'Lanzo Local incluido', isComplete: true },
   { label: 'Disponible según tu plan', isActive: true },
-  { label: 'Cloud PRO para crecer', isComplete: true },
+  { label: 'Lanzo Nube para crecer', isComplete: true },
   { label: 'Próximas mejoras', isComplete: false }
 ];
 
 const ROADMAP_GROUPS = [
   {
     id: 'foundation',
-    title: 'Base local incluida',
-    summary: 'Plan FREE',
+    title: 'Lanzo Local incluido',
+    summary: 'Lanzo Local',
     icon: CheckCircle2,
     items: [
       'Punto de venta, caja, productos e inventario locales en un dispositivo',
@@ -126,12 +128,12 @@ const ROADMAP_GROUPS = [
   {
     id: 'in-progress',
     title: 'Disponible según tu plan',
-    summary: 'Cloud PRO',
+    summary: 'Lanzo Nube',
     icon: ShieldCheck,
     items: [
-      'Multi-dispositivo, staff, roles y permisos pertenecen al Plan PRO',
-      'Caja, productos, ventas, clientes y reportes cloud se activan con Cloud PRO',
-      'Restaurante/preparación cloud e IA operativa están disponibles según tu licencia PRO'
+      'Multi-dispositivo, staff, roles y permisos pertenecen a Lanzo Nube',
+      'Caja, productos, ventas, clientes y reportes cloud se activan con Lanzo Nube',
+      'Restaurante/preparación cloud e IA operativa están disponibles según tu licencia'
     ]
   },
   {
@@ -161,56 +163,35 @@ const getDeviceLimitFromLicense = (licenseDetails = {}, isCloudPlan = false) => 
   return Number.isFinite(deviceLimit) && deviceLimit > 0 ? deviceLimit : (isCloudPlan ? 5 : 1);
 };
 
-const generateEmailLink = (type, formData) => {
-  let subject = '';
-  let body = '';
-
+const buildContactDescription = (type, formData) => {
   if (type === 'bug') {
-    subject = `Reporte de error [${APP_VERSION}]`;
-    body = `Hola equipo de Lanzo,
-
-He encontrado un problema que quiero reportar:
-
-ACCIÓN QUE REALIZABA:
+    return `ACCION QUE REALIZABA:
 ${formData.action || '[No especificado]'}
 
-QUÉ PASÓ:
+QUE PASO:
 ${formData.error || '[No especificado]'}
 
-INFORMACIÓN DEL DISPOSITIVO:
+INFORMACION DEL DISPOSITIVO:
 ${formData.device || navigator.userAgent}
 
-Versión de la app: ${APP_VERSION_LABEL}
-Build: ${APP_BUILD_DATE_LABEL}
-Fecha: ${new Date().toLocaleString()}
+Build: ${APP_BUILD_DATE_LABEL}`;
+  }
 
-Gracias por la atención.`;
-  } else {
-    subject = 'Sugerencia de función - Lanzo POS';
-    body = `Hola equipo,
-
-Tengo una idea para mejorar Lanzo:
-
-MI IDEA:
+  return `MI IDEA:
 ${formData.idea || '[No especificado]'}
 
 BENEFICIO:
 ${formData.benefit || '[No especificado]'}
 
-INFORMACIÓN ADICIONAL:
+INFORMACION ADICIONAL:
 Dispositivo: ${navigator.userAgent}
-Versión: ${APP_VERSION_LABEL}
-Build: ${APP_BUILD_DATE_LABEL}
-
-Espero que sea útil.`;
-  }
-
-  return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+Build: ${APP_BUILD_DATE_LABEL}`;
 };
 
 export default function AboutPage() {
   const productCount = useProductStore(state => state.menu?.length || 0);
   const licenseDetails = useAppStore(state => state.licenseDetails);
+  const companyProfile = useAppStore(state => state.companyProfile);
   const [contactModal, setContactModal] = useState(EMPTY_CONTACT_MODAL);
 
   const isCloudPlan = isCloudPosSyncEnabled(licenseDetails);
@@ -279,7 +260,18 @@ export default function AboutPage() {
   };
 
   const handleSubmitContact = (formData) => {
-    window.location.href = generateEmailLink(contactModal.type, formData);
+    const issueType = contactModal.type === 'bug'
+      ? `Reporte de error [${APP_VERSION}]`
+      : 'Sugerencia de funcion';
+    const payload = buildSupportEmailPayload({
+      licenseDetails,
+      companyProfile,
+      appVersion: APP_VERSION_LABEL,
+      issueType,
+      description: buildContactDescription(contactModal.type, formData)
+    });
+
+    window.location.href = buildSupportMailtoUrl(payload);
   };
 
   return (
@@ -289,9 +281,9 @@ export default function AboutPage() {
           <Logo className="about-logo" showBusinessName={false} />
         </div>
         <p className="about-eyebrow">Versión {APP_VERSION}</p>
-        <h1 id="about-title">Lanzo POS: Local FREE para empezar, Cloud PRO para crecer</h1>
+        <h1 id="about-title">Lanzo POS: Lanzo Local para empezar, Lanzo Nube para crecer</h1>
         <p className="about-hero-copy">
-          Lanzo puede operar en modo local con Plan FREE o conectarse a Cloud PRO cuando necesitas varios dispositivos, empleados, sincronización, reportes avanzados e IA. Así cada negocio sabe exactamente qué tiene incluido y qué puede activar al crecer.
+          Lanzo puede operar en modo local con Lanzo Local o conectarse a Lanzo Nube cuando necesitas varios dispositivos, empleados, sincronización, reportes avanzados e IA. Así cada negocio sabe exactamente qué tiene incluido y qué puede activar al crecer.
         </p>
         <div className="about-hero-metrics" aria-label="Resumen de la aplicación">
           <div className="about-metric">
@@ -316,7 +308,7 @@ export default function AboutPage() {
             <header className="about-section-heading">
               <p className="about-eyebrow">Dos formas de usar Lanzo</p>
               <h2 id="about-plan-modes-title" className="about-section-title">
-                Qué incluye FREE y qué pertenece a PRO
+                Qué incluye Lanzo Local y qué pertenece a Lanzo Nube
               </h2>
             </header>
 
@@ -398,8 +390,8 @@ export default function AboutPage() {
 
             <div className="about-roadmap-progress" aria-label="Evolución de Lanzo POS">
               <div className="about-roadmap-progress-copy">
-                <strong>Base local incluida</strong>
-                <span>Cloud PRO disponible según tu plan</span>
+                <strong>Lanzo Local incluido</strong>
+                <span>Lanzo Nube disponible según tu plan</span>
               </div>
               <div
                 className="about-progress-track"

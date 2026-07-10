@@ -86,7 +86,7 @@ export default function SettingsPage() {
                 <h3>Respaldo adicional opcional</h3>
                 <p>
                   Tus datos principales se sincronizan en la nube. Puedes generar una copia local cifrada solo como respaldo adicional,
-                  pero no es un requisito operativo para licencias PRO/cloud.
+                  pero no es un requisito operativo para Lanzo Nube.
                 </p>
               </div>
             )}

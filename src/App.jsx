@@ -160,6 +160,8 @@ function App() {
 
   const startLicenseSync = useAppStore((state) => state.startLicenseSync);
   const stopLicenseSync = useAppStore((state) => state.stopLicenseSync);
+  const startNotificationRealtime = useAppStore((state) => state.startNotificationRealtime);
+  const stopNotificationRealtime = useAppStore((state) => state.stopNotificationRealtime);
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
   const shouldMountLocalBackupRuntime = !isCloudLicense;
 
@@ -170,13 +172,16 @@ function App() {
   useEffect(() => {
     if (appStatus === 'ready') {
       startLicenseSync();
+      startNotificationRealtime?.();
       return () => {
+        stopNotificationRealtime?.();
         stopLicenseSync();
       };
     } else {
+      stopNotificationRealtime?.();
       stopLicenseSync();
     }
-  }, [appStatus, startLicenseSync, stopLicenseSync]);
+  }, [appStatus, startLicenseSync, startNotificationRealtime, stopLicenseSync, stopNotificationRealtime]);
 
   useEffect(() => {
     let resumeCheckTimer = null;
