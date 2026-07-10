@@ -66,7 +66,7 @@ const catalogResult = {
   pagination: { limit: 100, offset: 0, hasMore: false },
 };
 
-const successfulOrder = (idempotent = false) => ({
+const successfulOrder = (idempotent = false, overrides = {}) => ({
   success: true,
   idempotent,
   order: {
@@ -77,11 +77,13 @@ const successfulOrder = (idempotent = false) => ({
     currency: 'MXN',
     fulfillmentMethod: 'pickup',
     createdAt: '2026-07-10T12:00:00.000Z',
+    ...overrides.order,
   },
   whatsapp: {
     phone: '529610000000',
     message: 'Pedido',
     url: 'https://wa.me/529610000000?text=Pedido',
+    ...overrides.whatsapp,
   },
 });
 
@@ -186,7 +188,7 @@ describe('PublicStorePage checkout integration', () => {
     await waitFor(() => expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).toBeNull());
   });
 
-  it('keeps the cart after a network error and retries with the same idempotency key', async () => {
+  it('keeps form data, cart and idempotency key after a network error', async () => {
     serviceMocks.createPublicOrder
       .mockRejectedValueOnce(new EcommercePublicError(
         'ECOMMERCE_PUBLIC_NETWORK_ERROR',
@@ -196,15 +198,50 @@ describe('PublicStorePage checkout integration', () => {
     const user = userEvent.setup();
     renderPage();
     await openAndFillCheckout(user);
+    await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
+    await user.type(screen.getByLabelText(/Dirección/), 'Calle de recuperación 10');
+    await user.type(screen.getByLabelText('Notas'), 'Conservar estos datos');
     await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar el pedido');
+    expect(screen.getByLabelText('Nombre *')).toHaveValue('Cliente QA');
+    expect(screen.getByLabelText('Teléfono *')).toHaveValue('9610000000');
+    expect(screen.getByLabelText(/Dirección/)).toHaveValue('Calle de recuperación 10');
+    expect(screen.getByLabelText('Notas')).toHaveValue('Conservar estos datos');
     expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
     const firstKey = serviceMocks.createPublicOrder.mock.calls[0][1].idempotencyKey;
 
     await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
     expect(await screen.findByText('PED-1001')).toBeInTheDocument();
     expect(serviceMocks.createPublicOrder.mock.calls[1][1].idempotencyKey).toBe(firstKey);
+  });
+
+  it('opens a second checkout without personal data after success', async () => {
+    serviceMocks.createPublicOrder.mockResolvedValue(successfulOrder(false, {
+      order: { fulfillmentMethod: 'delivery' },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await openAndFillCheckout(user);
+    await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
+    await user.type(screen.getByLabelText(/Dirección/), 'Avenida primera 25');
+    await user.type(screen.getByLabelText('Notas'), 'Pedido anterior');
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+
+    expect(await screen.findByText('PED-1001')).toBeInTheDocument();
+    expect(screen.getByText('Entrega a domicilio')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Enviar resumen por WhatsApp' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Seguir comprando' }));
+
+    await addAndOpenCart(user);
+    await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
+
+    expect(screen.getByLabelText('Nombre *')).toHaveValue('');
+    expect(screen.getByLabelText('Teléfono *')).toHaveValue('');
+    expect(screen.getByLabelText('Notas')).toHaveValue('');
+    expect(screen.getByRole('radio', { name: /Recoger/ })).toBeChecked();
+    await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
+    expect(screen.getByLabelText(/Dirección/)).toHaveValue('');
   });
 
   it('offers cart refresh for a stale product error without clearing the cart', async () => {
