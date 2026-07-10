@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import './SettingsPage.css';
 import GeneralSettings from '../components/settings/GeneralSettings';
 import OperationalSettings from '../components/settings/OperationalSettings';
@@ -30,7 +30,7 @@ export default function SettingsPage() {
     currentDeviceRole
   });
 
-  const visibleTabs = [
+  const visibleTabs = useMemo(() => [
     { key: 'general', allowed: canAccess('settings') },
     { key: 'controls', allowed: canAccess('settings') },
     { key: 'portal-online', allowed: canManageEcommercePortal },
@@ -39,7 +39,7 @@ export default function SettingsPage() {
     { key: 'backup', allowed: canAccess('sync') },
     { key: 'debug', allowed: import.meta.env.DEV },
     { key: 'test-ventas', allowed: import.meta.env.DEV }
-  ].filter((tab) => tab.allowed);
+  ].filter((tab) => tab.allowed), [canAccess, canManageEcommercePortal]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
