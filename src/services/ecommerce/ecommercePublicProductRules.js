@@ -17,6 +17,7 @@ export function isPublicProductAvailable(product) {
   const stockMode = product.stock?.mode || 'hidden';
   const stockStatus = product.stock?.status || null;
 
+  if (stockMode === 'hidden') return true;
   if (stockStatus === 'out_of_stock') return false;
 
   if (stockMode === 'exact') {
