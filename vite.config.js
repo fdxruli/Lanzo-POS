@@ -58,6 +58,10 @@ export default defineConfig(() => ({
     })
   ],
 
+  test: {
+    setupFiles: ['./src/test/setupTestingLibrary.js'],
+  },
+
   resolve: {
     dedupe: ['react', 'react-dom'],
   },
