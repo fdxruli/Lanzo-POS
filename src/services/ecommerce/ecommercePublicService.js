@@ -135,7 +135,7 @@ function normalizeCatalogResult(data) {
         mode: stockMode,
         status: stockStatus,
         quantity: stockMode === 'exact' && Number.isFinite(Number(stock.quantity))
-          ? Math.max(0, Number(stock.quantity))
+          ? Math.max(0, Math.floor(Number(stock.quantity)))
           : null,
       },
       options: asObject(item.options),

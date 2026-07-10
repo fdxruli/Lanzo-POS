@@ -33,7 +33,6 @@ function PublicCartDrawer({
   minOrderTotal,
   minimumRemaining,
   minimumReached,
-  maxItemQuantity,
   onIncrement,
   onDecrement,
   onSetQuantity,
@@ -106,7 +105,7 @@ function PublicCartDrawer({
             </div>
           ) : (
             <ul className="public-cart-items" aria-label="Productos en el carrito">
-              {items.map(({ product, quantity, lineTotal }) => (
+              {items.map(({ product, quantity, maxQuantity, lineTotal }) => (
                 <li key={product.id} className="public-cart-item">
                   <div className="public-cart-item__top">
                     <div>
@@ -136,7 +135,7 @@ function PublicCartDrawer({
                         type="number"
                         inputMode="numeric"
                         min="1"
-                        max={maxItemQuantity}
+                        max={maxQuantity}
                         value={quantity}
                         onChange={(event) => {
                           const nextValue = event.target.value;
@@ -147,7 +146,7 @@ function PublicCartDrawer({
                       <button
                         type="button"
                         onClick={() => onIncrement(product.id)}
-                        disabled={quantity >= maxItemQuantity}
+                        disabled={quantity >= maxQuantity}
                         aria-label={`Aumentar cantidad de ${product.name}`}
                       >
                         <Plus aria-hidden="true" size={16} />

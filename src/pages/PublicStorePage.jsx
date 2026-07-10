@@ -14,16 +14,22 @@ import {
 import './PublicStorePage.css';
 
 const DEFAULT_META_DESCRIPTION = 'Consulta el catálogo de esta tienda online.';
+const INITIAL_PAGINATION = { offset: 0, limit: 100, hasMore: false };
 
 const normalizeSearch = (value) => value.trim().toLocaleLowerCase('es-MX');
 
 function PublicStorePage() {
   const { slug = '' } = useParams();
+  const mountedRef = useRef(false);
   const activeSlugRef = useRef(slug);
+  const requestGenerationRef = useRef(0);
+  const requestedOffsetsRef = useRef(new Set());
+  const paginationRef = useRef(INITIAL_PAGINATION);
   const [portalResult, setPortalResult] = useState(null);
   const [storeStatus, setStoreStatus] = useState('loading');
+  const [storeReloadKey, setStoreReloadKey] = useState(0);
   const [products, setProducts] = useState([]);
-  const [pagination, setPagination] = useState({ offset: 0, limit: 100, hasMore: false });
+  const [pagination, setPagination] = useState(INITIAL_PAGINATION);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogLoadingMore, setCatalogLoadingMore] = useState(false);
   const [catalogReady, setCatalogReady] = useState(false);
@@ -33,20 +39,49 @@ function PublicStorePage() {
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   const portal = portalResult?.portal || null;
+  const catalogExhausted = catalogReady && pagination.hasMore === false;
 
-  const loadCatalog = useCallback(async ({ offset = 0, replace = false } = {}) => {
-    const requestSlug = slug;
-    if (replace) {
-      setCatalogLoading(true);
-      setCatalogReady(false);
-    } else {
-      setCatalogLoadingMore(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestGenerationRef.current += 1;
+    };
+  }, []);
+
+  const loadCatalog = useCallback(async ({
+    requestSlug,
+    offset = 0,
+    replace = false,
+    generation,
+  }) => {
+    const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
+    const requestedOffsets = requestedOffsetsRef.current;
+    if (requestedOffsets.has(normalizedOffset)) return false;
+    requestedOffsets.add(normalizedOffset);
+
+    const isCurrentRequest = () => (
+      mountedRef.current
+      && activeSlugRef.current === requestSlug
+      && requestGenerationRef.current === generation
+    );
+
+    if (isCurrentRequest()) {
+      if (replace) {
+        setCatalogLoading(true);
+        setCatalogReady(false);
+      } else {
+        setCatalogLoadingMore(true);
+      }
+      setCatalogError(null);
     }
-    setCatalogError(null);
 
     try {
-      const result = await getPublicCatalog(requestSlug, { limit: 100, offset });
-      if (activeSlugRef.current !== requestSlug) return;
+      const result = await getPublicCatalog(requestSlug, {
+        limit: 100,
+        offset: normalizedOffset,
+      });
+      if (!isCurrentRequest()) return false;
 
       setProducts((currentProducts) => {
         const source = replace ? [] : currentProducts;
@@ -54,48 +89,88 @@ function PublicStorePage() {
         result.items.forEach((product) => byId.set(product.id, product));
         return Array.from(byId.values());
       });
-      setPagination(result.pagination);
+
+      const previousPagination = paginationRef.current;
+      const returnedPagination = result.pagination;
+      const offsetDidNotAdvance = !replace
+        && returnedPagination.hasMore
+        && returnedPagination.offset <= previousPagination.offset;
+      const nextPagination = {
+        ...returnedPagination,
+        hasMore: offsetDidNotAdvance ? false : returnedPagination.hasMore,
+      };
+
+      paginationRef.current = nextPagination;
+      setPagination(nextPagination);
       setCatalogReady(true);
+      return true;
     } catch (error) {
-      if (activeSlugRef.current !== requestSlug) return;
-      setCatalogError(error);
+      requestedOffsets.delete(normalizedOffset);
+      if (!isCurrentRequest()) return false;
+      setCatalogError({ error, offset: normalizedOffset, replace });
+      return false;
     } finally {
-      if (activeSlugRef.current === requestSlug) {
+      if (isCurrentRequest()) {
         setCatalogLoading(false);
         setCatalogLoadingMore(false);
       }
     }
-  }, [slug]);
+  }, []);
 
-  const loadStore = useCallback(async () => {
-    const requestSlug = slug;
+  useEffect(() => {
+    const generation = requestGenerationRef.current + 1;
+    requestGenerationRef.current = generation;
+    activeSlugRef.current = slug;
+    requestedOffsetsRef.current = new Set();
+    paginationRef.current = INITIAL_PAGINATION;
+
     setStoreStatus('loading');
     setPortalResult(null);
     setProducts([]);
+    setPagination(INITIAL_PAGINATION);
+    setCatalogLoading(true);
+    setCatalogLoadingMore(false);
     setCatalogReady(false);
     setCatalogError(null);
     setSearchTerm('');
     setSelectedCategory('all');
+    setIsCartOpen(false);
 
-    try {
-      const result = await getPublicPortalBySlug(requestSlug);
-      if (activeSlugRef.current !== requestSlug) return;
-      setPortalResult(result);
-      setStoreStatus('ready');
-      await loadCatalog({ offset: 0, replace: true });
-    } catch (error) {
-      if (activeSlugRef.current !== requestSlug) return;
-      const unavailable = error instanceof EcommercePublicError
-        && error.code === 'ECOMMERCE_PORTAL_NOT_FOUND';
-      setStoreStatus(unavailable ? 'unavailable' : 'error');
-      setCatalogLoading(false);
-    }
-  }, [loadCatalog, slug]);
+    const isCurrentRequest = () => (
+      mountedRef.current
+      && activeSlugRef.current === slug
+      && requestGenerationRef.current === generation
+    );
 
-  useEffect(() => {
-    activeSlugRef.current = slug;
+    const loadStore = async () => {
+      try {
+        const result = await getPublicPortalBySlug(slug);
+        if (!isCurrentRequest()) return;
+        setPortalResult(result);
+        setStoreStatus('ready');
+        await loadCatalog({
+          requestSlug: slug,
+          offset: 0,
+          replace: true,
+          generation,
+        });
+      } catch (error) {
+        if (!isCurrentRequest()) return;
+        const unavailable = error instanceof EcommercePublicError
+          && error.code === 'ECOMMERCE_PORTAL_NOT_FOUND';
+        setStoreStatus(unavailable ? 'unavailable' : 'error');
+        setCatalogLoading(false);
+      }
+    };
+
     loadStore();
-  }, [loadStore, slug]);
+
+    return () => {
+      if (requestGenerationRef.current === generation) {
+        requestGenerationRef.current += 1;
+      }
+    };
+  }, [loadCatalog, slug, storeReloadKey]);
 
   useEffect(() => {
     if (!portal) return undefined;
@@ -147,16 +222,65 @@ function PublicStorePage() {
     slug,
     products,
     catalogReady,
+    catalogExhausted,
     maxItemQuantity: portal?.maxItemQuantity,
     maxOrderItems: portal?.maxOrderItems,
     minOrderTotal: portal?.minOrderTotal,
   });
+
+  const loadNextCatalogPage = useCallback(() => {
+    const currentPagination = paginationRef.current;
+    if (!currentPagination.hasMore) return false;
+
+    const nextOffset = currentPagination.offset + currentPagination.limit;
+    if (!Number.isFinite(nextOffset) || nextOffset <= currentPagination.offset) {
+      const exhaustedPagination = { ...currentPagination, hasMore: false };
+      paginationRef.current = exhaustedPagination;
+      setPagination(exhaustedPagination);
+      return false;
+    }
+
+    return loadCatalog({
+      requestSlug: activeSlugRef.current,
+      offset: nextOffset,
+      replace: false,
+      generation: requestGenerationRef.current,
+    });
+  }, [loadCatalog]);
+
+  useEffect(() => {
+    if (!cart.hasStoredEntries || cart.isReconciled) return;
+    if (cart.pendingProductIds.length === 0) return;
+    if (!catalogReady || catalogExhausted || catalogLoading || catalogLoadingMore || catalogError) return;
+
+    loadNextCatalogPage();
+  }, [
+    cart.hasStoredEntries,
+    cart.isReconciled,
+    cart.pendingProductIds,
+    catalogError,
+    catalogExhausted,
+    catalogLoading,
+    catalogLoadingMore,
+    catalogReady,
+    loadNextCatalogPage,
+  ]);
 
   useEffect(() => {
     if (!cart.notice) return undefined;
     const timeoutId = window.setTimeout(cart.clearNotice, 2600);
     return () => window.clearTimeout(timeoutId);
   }, [cart.notice, cart.clearNotice]);
+
+  const retryCatalog = useCallback(() => {
+    const retry = catalogError || { offset: 0, replace: true };
+    return loadCatalog({
+      requestSlug: activeSlugRef.current,
+      offset: retry.offset,
+      replace: retry.replace,
+      generation: requestGenerationRef.current,
+    });
+  }, [catalogError, loadCatalog]);
 
   if (storeStatus === 'loading') {
     return (
@@ -190,7 +314,7 @@ function PublicStorePage() {
           title="No se pudo cargar la tienda"
           description="Revisa tu conexión e intenta nuevamente."
           actionLabel="Reintentar"
-          onAction={loadStore}
+          onAction={() => setStoreReloadKey((current) => current + 1)}
         />
       </main>
     );
@@ -231,13 +355,10 @@ function PublicStorePage() {
           onCategoryChange={setSelectedCategory}
           onAdd={cart.addProduct}
           isLoading={catalogLoading}
-          error={catalogError}
-          onRetry={() => loadCatalog({ offset: 0, replace: true })}
+          error={catalogError?.error || null}
+          onRetry={retryCatalog}
           hasMore={pagination.hasMore}
-          onLoadMore={() => loadCatalog({
-            offset: pagination.offset + pagination.limit,
-            replace: false,
-          })}
+          onLoadMore={loadNextCatalogPage}
           isLoadingMore={catalogLoadingMore}
         />
       </div>
@@ -259,7 +380,6 @@ function PublicStorePage() {
         minOrderTotal={portal.minOrderTotal}
         minimumRemaining={cart.minimumRemaining}
         minimumReached={cart.minimumReached}
-        maxItemQuantity={portal.maxItemQuantity}
         onIncrement={cart.increment}
         onDecrement={cart.decrement}
         onSetQuantity={cart.setQuantity}

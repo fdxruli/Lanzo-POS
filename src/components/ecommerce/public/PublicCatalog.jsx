@@ -1,4 +1,8 @@
 import { Plus, Search, SlidersHorizontal } from 'lucide-react';
+import {
+  getPublicProductStockLabel,
+  isPublicProductAvailable,
+} from '../../../services/ecommerce/ecommercePublicProductRules';
 import PublicSafeImage from './PublicSafeImage';
 import PublicStoreState from './PublicStoreState';
 
@@ -8,16 +12,9 @@ const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX
 }).format(Number(value) || 0);
 
 function PublicProductCard({ product, onAdd }) {
-  const outOfStock = product.stock?.status === 'out_of_stock';
-  const isAvailable = product.isAvailable !== false && !outOfStock;
-  const stockMode = product.stock?.mode || 'hidden';
-
-  let stockLabel = '';
-  if (stockMode === 'status') {
-    stockLabel = outOfStock ? 'Agotado' : 'Disponible';
-  } else if (stockMode === 'exact' && Number.isFinite(Number(product.stock?.quantity))) {
-    stockLabel = outOfStock ? 'Agotado' : `${Number(product.stock.quantity)} disponibles`;
-  }
+  const isAvailable = isPublicProductAvailable(product);
+  const stockLabel = getPublicProductStockLabel(product);
+  const isOutOfStock = stockLabel === 'Agotado';
 
   return (
     <article className="public-product-card ui-card">
@@ -37,7 +34,7 @@ function PublicProductCard({ product, onAdd }) {
           <div>
             <strong>{formatCurrency(product.price, product.currency)}</strong>
             {stockLabel ? (
-              <span className={`public-product-card__stock${outOfStock ? ' is-unavailable' : ''}`}>
+              <span className={`public-product-card__stock${isOutOfStock ? ' is-unavailable' : ''}`}>
                 {stockLabel}
               </span>
             ) : null}
