@@ -1,0 +1,272 @@
+name: ECOM Orders Final Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths-ignore:
+      - 'reports/ecom_orders_validation_runtime.md'
+      - '.validation/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate:
+    if: ${{ !contains(github.event.pull_request.head.label || '', 'dependabot') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-key
+    steps:
+      - name: Checkout branch head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run blocking validations
+        id: blocking
+        shell: bash
+        run: |
+          mkdir -p validation-artifacts .validation
+          rm -f .validation/ecom_orders_*
+          set +e
+
+          npx eslint \
+            src/App.jsx \
+            src/components/layout/Layout.jsx \
+            'src/components/ecommerce/orders/**/*.jsx' \
+            src/components/notifications/NotificationCenterDrawer.jsx \
+            src/components/notifications/NotificationItem.jsx \
+            src/components/notifications/NotificationPreferencesPanel.jsx \
+            src/components/notifications/NotificationTabs.jsx \
+            src/pages/EcommerceOrdersPage.jsx \
+            src/services/ecommerce/ecommerceOrderCapabilities.js \
+            src/services/ecommerce/ecommerceOrderService.js \
+            src/services/notifications/notificationPreferencesService.js \
+            src/services/notifications/notificationRealtimeService.js \
+            src/store/installEcommerceOrderStore.js \
+            src/store/slices/createEcommerceOrderSlice.js \
+            src/services/ecommerce/__tests__/ecommerceOrderCapabilities.test.js \
+            src/services/ecommerce/__tests__/ecommerceOrderService.test.js \
+            src/store/slices/__tests__/createEcommerceOrderSlice.test.js \
+            src/pages/__tests__/EcommerceOrdersPage.test.jsx \
+            src/components/ecommerce/orders/__tests__/EcommerceOrdersRoute.test.jsx \
+            src/components/notifications/__tests__/NotificationItem.ecommerce.test.jsx \
+            src/services/notifications/__tests__/notificationPreferencesService.ecommerce.test.js \
+            src/services/notifications/__tests__/notificationRealtimeService.ecommerce.test.js \
+            > validation-artifacts/specific-lint.log 2>&1
+          lint_exit=$?
+
+          npx vitest run --maxWorkers=4 \
+            src/services/ecommerce/__tests__/ecommerceOrderCapabilities.test.js \
+            src/services/ecommerce/__tests__/ecommerceOrderService.test.js \
+            src/store/slices/__tests__/createEcommerceOrderSlice.test.js \
+            src/pages/__tests__/EcommerceOrdersPage.test.jsx \
+            src/components/ecommerce/orders/__tests__/EcommerceOrdersRoute.test.jsx \
+            src/components/notifications/__tests__/NotificationItem.ecommerce.test.jsx \
+            src/services/notifications/__tests__/notificationPreferencesService.ecommerce.test.js \
+            src/services/notifications/__tests__/notificationRealtimeService.ecommerce.test.js \
+            src/components/notifications/__tests__/NotificationBell.test.jsx \
+            src/services/ecommerce/__tests__/ecommerceAdminService.test.js \
+            src/services/ecommerce/__tests__/ecommercePublicProductRules.test.js \
+            src/services/ecommerce/__tests__/ecommerceCheckoutIdempotency.test.js \
+            src/services/ecommerce/__tests__/ecommercePublicService.test.js \
+            src/pages/__tests__/PublicStorePage.test.jsx \
+            src/pages/__tests__/PublicStoreCheckout.test.jsx \
+            > validation-artifacts/specific-tests.log 2>&1
+          tests_exit=$?
+
+          npm run build > validation-artifacts/build.log 2>&1
+          build_exit=$?
+
+          printf '%s' "$lint_exit" > .validation/ecom_orders_lint_exit
+          printf '%s' "$tests_exit" > .validation/ecom_orders_tests_exit
+          printf '%s' "$build_exit" > .validation/ecom_orders_build_exit
+
+          echo "lint_exit=$lint_exit" >> "$GITHUB_OUTPUT"
+          echo "tests_exit=$tests_exit" >> "$GITHUB_OUTPUT"
+          echo "build_exit=$build_exit" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Capture global branch baseline
+        id: branch_global
+        shell: bash
+        run: |
+          set +e
+          npm run lint > validation-artifacts/branch-lint.log 2>&1
+          lint_exit=$?
+          npm run test:ci > validation-artifacts/branch-test-ci.log 2>&1
+          tests_exit=$?
+          printf '%s' "$lint_exit" > .validation/ecom_orders_branch_lint_exit
+          printf '%s' "$tests_exit" > .validation/ecom_orders_branch_tests_exit
+          echo "lint_exit=$lint_exit" >> "$GITHUB_OUTPUT"
+          echo "tests_exit=$tests_exit" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Capture main global baseline
+        id: main_global
+        shell: bash
+        run: |
+          git worktree add /tmp/lanzo-main origin/main
+          cd /tmp/lanzo-main
+          npm ci
+          set +e
+          npm run lint > "$GITHUB_WORKSPACE/validation-artifacts/main-lint.log" 2>&1
+          lint_exit=$?
+          npm run test:ci > "$GITHUB_WORKSPACE/validation-artifacts/main-test-ci.log" 2>&1
+          tests_exit=$?
+          printf '%s' "$lint_exit" > "$GITHUB_WORKSPACE/.validation/ecom_orders_main_lint_exit"
+          printf '%s' "$tests_exit" > "$GITHUB_WORKSPACE/.validation/ecom_orders_main_tests_exit"
+          echo "lint_exit=$lint_exit" >> "$GITHUB_OUTPUT"
+          echo "tests_exit=$tests_exit" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Write runtime evidence
+        if: always()
+        shell: bash
+        run: |
+          lint_exit='${{ steps.blocking.outputs.lint_exit }}'
+          tests_exit='${{ steps.blocking.outputs.tests_exit }}'
+          build_exit='${{ steps.blocking.outputs.build_exit }}'
+          branch_lint='${{ steps.branch_global.outputs.lint_exit }}'
+          branch_tests='${{ steps.branch_global.outputs.tests_exit }}'
+          main_lint='${{ steps.main_global.outputs.lint_exit }}'
+          main_tests='${{ steps.main_global.outputs.tests_exit }}'
+
+          {
+            echo '# ECOM.ORDERS.1 — Validación reproducible'
+            echo
+            echo "Fecha UTC: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "SHA validado: \`${GITHUB_SHA}\`"
+            echo
+            echo '| Validación | Exit code | Resultado |'
+            echo '|---|---:|---|'
+            echo "| ESLint específico | ${lint_exit:-missing} | $([ "${lint_exit:-99}" = 0 ] && echo PASS || echo FAIL) |"
+            echo "| Vitest específico + regresión | ${tests_exit:-missing} | $([ "${tests_exit:-99}" = 0 ] && echo PASS || echo FAIL) |"
+            echo "| npm run build | ${build_exit:-missing} | $([ "${build_exit:-99}" = 0 ] && echo PASS || echo FAIL) |"
+            echo "| npm run lint — rama | ${branch_lint:-missing} | informativo |"
+            echo "| npm run lint — main | ${main_lint:-missing} | informativo |"
+            echo "| npm run test:ci — rama | ${branch_tests:-missing} | informativo |"
+            echo "| npm run test:ci — main | ${main_tests:-missing} | informativo |"
+            echo
+            echo '## ESLint específico — cola'
+            echo '```text'
+            tail -n 80 validation-artifacts/specific-lint.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo '## Vitest específico/regresión — cola'
+            echo '```text'
+            tail -n 120 validation-artifacts/specific-tests.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo '## Build — cola'
+            echo '```text'
+            tail -n 80 validation-artifacts/build.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo '## Global rama — cola'
+            echo '```text'
+            tail -n 40 validation-artifacts/branch-lint.log 2>/dev/null || true
+            tail -n 60 validation-artifacts/branch-test-ci.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo '## Global main — cola'
+            echo '```text'
+            tail -n 40 validation-artifacts/main-lint.log 2>/dev/null || true
+            tail -n 60 validation-artifacts/main-test-ci.log 2>/dev/null || true
+            echo '```'
+          } > reports/ecom_orders_validation_runtime.md
+
+      - name: Commit diagnostic evidence when blocking validation fails
+        if: ${{ always() && (steps.blocking.outputs.lint_exit != '0' || steps.blocking.outputs.tests_exit != '0' || steps.blocking.outputs.build_exit != '0') }}
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/ecom_orders_validation_runtime.md .validation
+          git commit -m 'chore(ecommerce): record failed validation evidence [skip ci]' || exit 0
+          git push origin "HEAD:${HEAD_REF}"
+
+      - name: Finalize reports and remove temporary validation files
+        if: ${{ steps.blocking.outputs.lint_exit == '0' && steps.blocking.outputs.tests_exit == '0' && steps.blocking.outputs.build_exit == '0' }}
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          validation_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          for report in \
+            reports/ecom_rpc_2_order_management_report.md \
+            reports/ecom_fe_orders_1_inbox_report.md \
+            reports/ecom_notif_1_order_notifications_report.md
+          do
+            {
+              echo
+              echo '## Validación automática final'
+              echo
+              echo "- SHA validado antes del commit de limpieza: \`${GITHUB_SHA}\`."
+              echo "- Fecha UTC: \`${validation_date}\`."
+              echo '- ESLint específico: **PASS**.'
+              echo '- Vitest específico y regresión ecommerce/notificaciones: **PASS**.'
+              echo '- Build estándar `npm run build` / `vite build`: **PASS**.'
+              echo "- Global rama/main: lint \`${{ steps.branch_global.outputs.lint_exit }}/${{ steps.main_global.outputs.lint_exit }}\`; test:ci \`${{ steps.branch_global.outputs.tests_exit }}/${{ steps.main_global.outputs.tests_exit }}\`."
+              echo '- Los fallos globales, si ambos exit codes son no cero, se documentan como línea base heredada y no se ocultaron suites.'
+            } >> "$report"
+          done
+
+          rm -f \
+            .github/workflows/ecom-orders-validation.yml \
+            .github/workflows/ecom-orders-validation-v2.yml \
+            .github/workflows/ecom-orders-validation-final.yml \
+            reports/ecom_orders_1_validation_trigger.md \
+            reports/ecom_orders_validation_runtime.md \
+            tmp/test-overwrite.txt \
+            tmp/bulk-probe.txt
+          rm -rf .validation
+          rmdir tmp 2>/dev/null || true
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(ecommerce): finalize validation evidence and cleanup'
+          git push origin "HEAD:${HEAD_REF}"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecom-orders-final-validation
+          path: validation-artifacts
+          retention-days: 7
+
+      - name: Enforce blocking criteria
+        if: always()
+        shell: bash
+        run: |
+          lint_exit='${{ steps.blocking.outputs.lint_exit }}'
+          tests_exit='${{ steps.blocking.outputs.tests_exit }}'
+          build_exit='${{ steps.blocking.outputs.build_exit }}'
+          if [ "${lint_exit:-99}" != 0 ] || [ "${tests_exit:-99}" != 0 ] || [ "${build_exit:-99}" != 0 ]; then
+            echo "Blocking validation failed: lint=${lint_exit:-missing} tests=${tests_exit:-missing} build=${build_exit:-missing}"
+            exit 1
+          fi
