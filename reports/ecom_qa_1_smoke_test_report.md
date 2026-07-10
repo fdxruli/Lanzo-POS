@@ -347,7 +347,7 @@ Fecha/hora del reintento:
 
 Migración aplicada:
 
-- repositorio: `supabase/migrations/20260710032500_ecom_rpc_1_2_rate_limit_adapter.sql`
+- repositorio: `supabase/migrations/20260710032739_ecom_rpc_1_2_rate_limit_adapter.sql`
 - Supabase: `20260710032739_ecom_rpc_1_2_rate_limit_adapter`
 - método: `apply_migration`
 
