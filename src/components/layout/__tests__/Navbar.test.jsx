@@ -1,28 +1,15 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+// @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import Navbar from '../Navbar';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const appState = {
-  isVolatileDismissed: false,
-  setVolatileDismissed: vi.fn(),
-  updateAvailable: false,
-  isInstallable: false,
-  isIOS: false,
-  isUpdating: false,
-  isInstalling: false,
-  isBackupLoading: false,
-  runUpdate: vi.fn(),
-  requestInstall: vi.fn(),
-  needsDriveReauth: false,
-  dismissedBackupNotice: null,
-  showBackupNotice: vi.fn(),
-  canAccess: vi.fn(() => true),
-  licenseDetails: { features: { cloud_pos_sync: false } }
-};
+const state = vi.hoisted(() => ({
+  app: null
+}));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: vi.fn((selector) => selector(appState))
+  useAppStore: vi.fn((selector) => selector(state.app))
 }));
 
 vi.mock('../../../hooks/useFeatureConfig', () => ({
@@ -49,38 +36,89 @@ vi.mock('../../common/Logo', () => ({
   default: () => <div aria-label="Lanzo" />
 }));
 
-function renderNavbar() {
+vi.mock('../../notifications/NotificationBell', () => ({
+  default: () => <button type="button" aria-label="Notificaciones" />
+}));
+
+import Navbar from '../Navbar';
+
+const createAppState = (overrides = {}) => ({
+  isVolatileDismissed: false,
+  setVolatileDismissed: vi.fn(),
+  updateAvailable: false,
+  isInstallable: false,
+  isIOS: false,
+  isUpdating: false,
+  isInstalling: false,
+  isBackupLoading: false,
+  runUpdate: vi.fn(),
+  requestInstall: vi.fn(),
+  needsDriveReauth: false,
+  dismissedBackupNotice: null,
+  showBackupNotice: vi.fn(),
+  canAccess: vi.fn(() => true),
+  licenseDetails: {
+    features: {
+      cloud_pos_sync: false,
+      ecommerce_order_inbox: true
+    }
+  },
+  currentDeviceRole: 'admin',
+  currentStaffUser: null,
+  ecommerceOrderCounts: { new: 0 },
+  ...overrides
+});
+
+function renderNavbar(entry = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>
       <Navbar />
     </MemoryRouter>
   );
 }
 
-describe('Navbar mobile menu', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    appState.canAccess.mockReturnValue(true);
-  });
+const getOnlineOrderLinks = () => (
+  [...document.querySelectorAll('a[href="/pedidos-online"]')]
+);
 
+const openMobileDrawer = () => {
+  const menuButton = screen.getByRole('button', { name: 'Abrir menú principal' });
+  fireEvent.click(menuButton);
+  return {
+    menuButton,
+    drawer: screen.getByRole('dialog', { name: 'Menú principal' })
+  };
+};
+
+afterEach(() => {
+  cleanup();
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  state.app = createAppState();
+});
+
+describe('Navbar mobile menu', () => {
   it('opens as a dialog and closes with Escape', () => {
     renderNavbar();
 
     const menuButton = screen.getByRole('button', { name: 'Abrir menú principal' });
     const drawer = document.getElementById('mobile-main-menu');
 
-    expect(menuButton.getAttribute('aria-expanded')).toBe('false');
-    expect(drawer.getAttribute('aria-hidden')).toBe('true');
-    expect(drawer.hasAttribute('inert')).toBe(true);
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    expect(drawer).toHaveAttribute('aria-hidden', 'true');
+    expect(drawer).toHaveAttribute('inert');
 
     fireEvent.click(menuButton);
 
-    expect(screen.getByRole('dialog', { name: 'Menú principal' }).getAttribute('aria-hidden')).toBe('false');
+    expect(screen.getByRole('dialog', { name: 'Menú principal' }))
+      .toHaveAttribute('aria-hidden', 'false');
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cerrar menú' }));
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
-    expect(menuButton.getAttribute('aria-expanded')).toBe('false');
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
     expect(document.activeElement).toBe(menuButton);
   });
 
@@ -90,6 +128,105 @@ describe('Navbar mobile menu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Abrir menú principal' }));
     fireEvent.click(document.querySelector('.mobile-drawer-overlay'));
 
-    expect(screen.getByRole('button', { name: 'Abrir menú principal' }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Abrir menú principal' }))
+      .toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('shows Pedidos online inside the drawer and closes after navigation', () => {
+    renderNavbar();
+    const { menuButton, drawer } = openMobileDrawer();
+    const onlineLink = within(drawer).getByRole('link', { name: /Pedidos online/i });
+
+    expect(onlineLink).toHaveTextContent('Pedidos recibidos desde la tienda');
+    fireEvent.click(onlineLink);
+
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('does not add Pedidos online to the mobile bottom navigation', () => {
+    renderNavbar();
+    const bottomNav = document.querySelector('.mobile-bottom-nav');
+
+    expect(bottomNav.querySelector('a[href="/pedidos-online"]')).toBeNull();
+  });
+});
+
+describe('Navbar ecommerce orders access', () => {
+  it('places Pedidos online immediately below Punto de Venta on desktop', () => {
+    renderNavbar();
+    const labels = [...document.querySelectorAll('.desktop-sidebar .sidebar-links > a')]
+      .map((link) => link.textContent.replace(/\s+/g, ' ').trim());
+
+    expect(labels.slice(0, 3)).toEqual([
+      'Punto de Venta',
+      'Pedidos online',
+      'Caja'
+    ]);
+  });
+
+  it('does not render a badge when the new count is zero', () => {
+    renderNavbar();
+
+    expect(getOnlineOrderLinks()).toHaveLength(2);
+    expect(document.querySelectorAll('.ecommerce-nav-badge')).toHaveLength(0);
+  });
+
+  it('shows the numeric badge in desktop and drawer', () => {
+    state.app = createAppState({ ecommerceOrderCounts: { new: 7 } });
+    renderNavbar();
+
+    const badges = [...document.querySelectorAll('.ecommerce-nav-badge')];
+    expect(badges).toHaveLength(2);
+    badges.forEach((badge) => expect(badge).toHaveTextContent('7'));
+  });
+
+  it('caps the badge at 99+', () => {
+    state.app = createAppState({ ecommerceOrderCounts: { new: 100 } });
+    renderNavbar();
+
+    const badges = [...document.querySelectorAll('.ecommerce-nav-badge')];
+    expect(badges).toHaveLength(2);
+    badges.forEach((badge) => expect(badge).toHaveTextContent('99+'));
+  });
+
+  it('shows the link to staff with ecommerce permission', () => {
+    state.app = createAppState({
+      currentDeviceRole: 'staff',
+      currentStaffUser: { permissions: { ecommerce: true } }
+    });
+    renderNavbar();
+
+    expect(getOnlineOrderLinks()).toHaveLength(2);
+  });
+
+  it('hides the link from staff without ecommerce permission', () => {
+    state.app = createAppState({
+      currentDeviceRole: 'staff',
+      currentStaffUser: { permissions: { ecommerce: false } }
+    });
+    renderNavbar();
+
+    expect(getOnlineOrderLinks()).toHaveLength(0);
+  });
+
+  it('hides the link while the device role is unresolved', () => {
+    state.app = createAppState({ currentDeviceRole: null });
+    renderNavbar();
+
+    expect(getOnlineOrderLinks()).toHaveLength(0);
+  });
+
+  it('hides the link when ecommerce_order_inbox is disabled', () => {
+    state.app = createAppState({
+      licenseDetails: {
+        features: {
+          cloud_pos_sync: false,
+          ecommerce_order_inbox: false
+        }
+      }
+    });
+    renderNavbar();
+
+    expect(getOnlineOrderLinks()).toHaveLength(0);
   });
 });
