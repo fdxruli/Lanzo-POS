@@ -90,8 +90,8 @@ describe('EcommerceOrdersPage', () => {
 
     expect(screen.getByText('EC-00000011')).toBeInTheDocument();
     expect(screen.getByText('Cliente de prueba')).toBeInTheDocument();
-    expect(screen.queryByText('Dirección privada')).not.toBeInTheDocument();
-    expect(screen.queryByText('Notas privadas')).not.toBeInTheDocument();
+    expect(screen.queryByText('Calle Central 123')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tocar el timbre azul')).not.toBeInTheDocument();
   });
 
   it('does not call the inbox RPC while the device role is unresolved', async () => {
@@ -135,7 +135,12 @@ describe('EcommerceOrdersPage', () => {
         code: 'EC-00000011',
         status: 'accepted',
         fulfillmentMethod: 'pickup',
-        customer: { name: 'Cliente', phone: '9610000000', address: 'Dirección', notes: 'Notas' },
+        customer: {
+          name: 'Cliente',
+          phone: '9610000000',
+          address: 'Calle Central 123',
+          notes: 'Tocar el timbre azul'
+        },
         totals: { subtotal: 20, deliveryFee: 0, discountTotal: 0, taxTotal: 0, total: 20, currency: 'MXN' },
         payment: { method: 'on_delivery', status: 'pending' },
         timestamps: { createdAt: '2026-07-10T12:00:00Z' },
@@ -148,8 +153,8 @@ describe('EcommerceOrdersPage', () => {
     renderPage();
 
     expect(screen.getByText('9610000000')).toBeInTheDocument();
-    expect(screen.getByText('Dirección')).toBeInTheDocument();
-    expect(screen.getByText('Notas')).toBeInTheDocument();
+    expect(screen.getByText('Calle Central 123')).toBeInTheDocument();
+    expect(screen.getByText('Tocar el timbre azul')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Abrir WhatsApp/i }))
       .toHaveAttribute('href', 'https://wa.me/529610000000');
     expect(screen.queryByRole('button', { name: /Preparando/i })).not.toBeInTheDocument();
