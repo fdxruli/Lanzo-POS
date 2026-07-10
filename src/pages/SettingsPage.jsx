@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import './SettingsPage.css';
 import GeneralSettings from '../components/settings/GeneralSettings';
 import OperationalSettings from '../components/settings/OperationalSettings';
@@ -11,6 +11,10 @@ import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { isCloudPosSyncEnabled } from '../services/sync/syncConstants';
+import {
+  canManageEcommercePortal as evaluateEcommercePortalAccess,
+  resolveAllowedSettingsTab
+} from './settingsPageAccess';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general');
@@ -21,17 +25,21 @@ export default function SettingsPage() {
   useAppStore((state) => state.currentStaffUser);
 
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
+  const canManageEcommercePortal = evaluateEcommercePortalAccess({
+    canAccess,
+    currentDeviceRole
+  });
 
-  const visibleTabs = [
+  const visibleTabs = useMemo(() => [
     { key: 'general', allowed: canAccess('settings') },
     { key: 'controls', allowed: canAccess('settings') },
-    { key: 'portal-online', allowed: canAccess('settings') && currentDeviceRole === 'admin' },
+    { key: 'portal-online', allowed: canManageEcommercePortal },
     { key: 'license', allowed: canAccess('license') },
     { key: 'maintenance', allowed: canAccess('sync') || canAccess('inventory') },
     { key: 'backup', allowed: canAccess('sync') },
     { key: 'debug', allowed: import.meta.env.DEV },
     { key: 'test-ventas', allowed: import.meta.env.DEV }
-  ].filter((tab) => tab.allowed);
+  ].filter((tab) => tab.allowed), [canAccess, canManageEcommercePortal]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -47,13 +55,11 @@ export default function SettingsPage() {
     };
 
     const requestedTab = tabParam && tabMap[tabParam] ? tabMap[tabParam] : 'general';
-    const fallbackTab = visibleTabs[0]?.key || 'general';
 
-    if (visibleTabs.some((tab) => tab.key === requestedTab)) {
-      setActiveTab(requestedTab);
-    } else {
-      setActiveTab(fallbackTab);
-    }
+    setActiveTab(resolveAllowedSettingsTab({
+      requestedTab,
+      visibleTabs
+    }));
   }, [searchParams, visibleTabs]);
 
   const handleTabChange = (tabKey) => {
@@ -81,7 +87,7 @@ export default function SettingsPage() {
       <section className="ui-section settings-content">
         {activeTab === 'general' && <GeneralSettings />}
         {activeTab === 'controls' && <OperationalSettings />}
-        {activeTab === 'portal-online' && <EcommercePortalSettings />}
+        {activeTab === 'portal-online' && canManageEcommercePortal && <EcommercePortalSettings />}
         {activeTab === 'license' && <LicenseSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}
         {activeTab === 'backup' && (
