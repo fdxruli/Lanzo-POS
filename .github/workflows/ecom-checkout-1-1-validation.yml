@@ -41,7 +41,7 @@ jobs:
 
   full-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -92,11 +92,27 @@ jobs:
           path: global-lint.log
           retention-days: 1
       - name: Global tests
-        run: npm run test:ci
+        id: global_tests
+        continue-on-error: true
+        run: npm run test:ci > global-tests.log 2>&1
+      - name: Upload global test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: global-test-diagnostics
+          path: global-tests.log
+          retention-days: 1
       - name: Production build
         run: npm run build
-      - name: Enforce global lint
-        if: steps.global_lint.outcome != 'success'
+      - name: Enforce global validation
+        if: steps.global_lint.outcome != 'success' || steps.global_tests.outcome != 'success'
         run: |
-          cat global-lint.log
+          if [ "${{ steps.global_lint.outcome }}" != "success" ]; then
+            echo "GLOBAL LINT FAILED"
+            cat global-lint.log
+          fi
+          if [ "${{ steps.global_tests.outcome }}" != "success" ]; then
+            echo "GLOBAL TESTS FAILED"
+            tail -n 200 global-tests.log
+          fi
           exit 1
