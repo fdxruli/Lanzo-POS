@@ -1,0 +1,289 @@
+.public-checkout-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+}
+
+.public-checkout-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: var(--ui-bg-overlay);
+}
+
+.public-checkout-dialog {
+  position: absolute;
+  inset: auto 0 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: min(94vh, 54rem);
+  border-radius: 1.25rem 1.25rem 0 0;
+  background: var(--ui-bg-surface);
+  color: var(--ui-text);
+  box-shadow: 0 -20px 50px -26px rgba(15, 23, 42, 0.65);
+}
+
+.public-checkout-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--ui-border-color);
+}
+
+.public-checkout-dialog__header h2,
+.public-order-confirmation h2 {
+  margin: 0;
+  color: var(--ui-text-strong);
+}
+
+.public-checkout-dialog__body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.public-checkout-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.public-checkout-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-page);
+  color: var(--ui-text-muted);
+}
+
+.public-checkout-summary strong {
+  color: var(--ui-text-strong);
+  font-size: 1.2rem;
+}
+
+.public-checkout-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--ui-border-danger);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface) 90%, var(--ui-color-danger));
+  color: var(--ui-text-danger);
+}
+
+.public-checkout-error p {
+  margin: 0.25rem 0 0;
+  line-height: 1.45;
+}
+
+.public-checkout-error button {
+  margin-top: 0.55rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.public-checkout-field {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--ui-text-strong);
+  font-weight: 700;
+}
+
+.public-checkout-field > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.public-checkout-field input,
+.public-checkout-field textarea {
+  width: 100%;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-surface);
+  color: var(--ui-text-strong);
+  padding: 0.8rem 0.9rem;
+  resize: vertical;
+}
+
+.public-checkout-field input[aria-invalid='true'],
+.public-checkout-field textarea[aria-invalid='true'] {
+  border-color: var(--ui-border-danger);
+}
+
+.public-checkout-field small,
+.public-checkout-field-error {
+  margin: 0;
+  color: var(--ui-text-danger);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.public-checkout-methods {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.public-checkout-methods legend {
+  margin-bottom: 0.45rem;
+  color: var(--ui-text-strong);
+  font-weight: 800;
+}
+
+.public-checkout-methods > label {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-page);
+  cursor: pointer;
+}
+
+.public-checkout-methods > label:has(input:checked) {
+  border-color: var(--ui-color-primary);
+  background: color-mix(in srgb, var(--ui-bg-surface) 90%, var(--ui-color-primary));
+}
+
+.public-checkout-methods input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--ui-color-primary);
+}
+
+.public-checkout-methods span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.public-checkout-methods small {
+  color: var(--ui-text-muted);
+  font-weight: 500;
+}
+
+.public-checkout-privacy,
+.public-checkout-inline-note {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.public-checkout-submit,
+.public-checkout-action {
+  width: 100%;
+  justify-content: center;
+}
+
+.public-checkout-spinner {
+  animation: public-checkout-spin 0.85s linear infinite;
+}
+
+@keyframes public-checkout-spin {
+  to { transform: rotate(360deg); }
+}
+
+.public-order-confirmation {
+  display: grid;
+  justify-items: center;
+  gap: 0.85rem;
+  text-align: center;
+}
+
+.public-order-confirmation__icon {
+  display: grid;
+  width: 4rem;
+  height: 4rem;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ui-bg-surface) 82%, var(--ui-color-success));
+  color: var(--ui-text-success);
+}
+
+.public-order-confirmation__lead {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-weight: 700;
+}
+
+.public-order-confirmation__details {
+  display: grid;
+  width: 100%;
+  gap: 0;
+  margin: 0.5rem 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+  text-align: left;
+}
+
+.public-order-confirmation__details > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  padding: 0.8rem 0.9rem;
+  border-bottom: 1px solid var(--ui-border-color);
+}
+
+.public-order-confirmation__details > div:last-child {
+  border-bottom: 0;
+}
+
+.public-order-confirmation__details dt {
+  color: var(--ui-text-muted);
+}
+
+.public-order-confirmation__details dd {
+  margin: 0;
+  color: var(--ui-text-strong);
+  font-weight: 800;
+  text-align: right;
+}
+
+.public-order-confirmation__actions {
+  display: grid;
+  width: 100%;
+  gap: 0.65rem;
+}
+
+@media (min-width: 42rem) {
+  .public-checkout-dialog {
+    inset: 50% auto auto 50%;
+    width: min(40rem, calc(100% - 2rem));
+    max-height: min(90vh, 54rem);
+    transform: translate(-50%, -50%);
+    border-radius: var(--ui-radius-lg);
+  }
+
+  .public-checkout-dialog__header,
+  .public-checkout-dialog__body {
+    padding: 1.25rem;
+  }
+
+  .public-order-confirmation__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-checkout-spinner {
+    animation-duration: 1.8s;
+  }
+}

@@ -4,13 +4,20 @@ import { useParams } from 'react-router-dom';
 import PublicStoreHeader from '../components/ecommerce/public/PublicStoreHeader';
 import PublicCatalog from '../components/ecommerce/public/PublicCatalog';
 import PublicCartDrawer, { PublicMobileCartBar } from '../components/ecommerce/public/PublicCartDrawer';
+import PublicCheckoutDialog from '../components/ecommerce/public/PublicCheckoutDialog';
 import PublicStoreState from '../components/ecommerce/public/PublicStoreState';
 import usePublicCart from '../hooks/ecommerce/usePublicCart';
 import {
   EcommercePublicError,
+  createPublicOrder,
   getPublicCatalog,
   getPublicPortalBySlug,
 } from '../services/ecommerce/ecommercePublicService';
+import {
+  clearCheckoutAttempt,
+  getOrCreateCheckoutAttempt,
+} from '../services/ecommerce/ecommerceCheckoutIdempotency';
+import '../components/ecommerce/public/PublicCheckout.css';
 import './PublicStorePage.css';
 
 const DEFAULT_META_DESCRIPTION = 'Consulta el catálogo de esta tienda online.';
@@ -25,6 +32,7 @@ function PublicStorePage() {
   const requestGenerationRef = useRef(0);
   const requestedOffsetsRef = useRef(new Set());
   const paginationRef = useRef(INITIAL_PAGINATION);
+  const activeCheckoutPromiseRef = useRef(null);
   const [portalResult, setPortalResult] = useState(null);
   const [storeStatus, setStoreStatus] = useState('loading');
   const [storeReloadKey, setStoreReloadKey] = useState(0);
@@ -37,8 +45,13 @@ function PublicStorePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutStatus, setCheckoutStatus] = useState('idle');
+  const [confirmedOrder, setConfirmedOrder] = useState(null);
+  const [checkoutError, setCheckoutError] = useState(null);
 
   const portal = portalResult?.portal || null;
+  const features = portalResult?.features || {};
   const catalogExhausted = catalogReady && pagination.hasMore === false;
 
   useEffect(() => {
@@ -46,6 +59,7 @@ function PublicStorePage() {
     return () => {
       mountedRef.current = false;
       requestGenerationRef.current += 1;
+      activeCheckoutPromiseRef.current = null;
     };
   }, []);
 
@@ -123,6 +137,7 @@ function PublicStorePage() {
     activeSlugRef.current = slug;
     requestedOffsetsRef.current = new Set();
     paginationRef.current = INITIAL_PAGINATION;
+    activeCheckoutPromiseRef.current = null;
 
     setStoreStatus('loading');
     setPortalResult(null);
@@ -135,6 +150,10 @@ function PublicStorePage() {
     setSearchTerm('');
     setSelectedCategory('all');
     setIsCartOpen(false);
+    setCheckoutOpen(false);
+    setCheckoutStatus('idle');
+    setConfirmedOrder(null);
+    setCheckoutError(null);
 
     const isCurrentRequest = () => (
       mountedRef.current
@@ -282,6 +301,101 @@ function PublicStorePage() {
     });
   }, [catalogError, loadCatalog]);
 
+  const openCheckout = useCallback(() => {
+    const canCheckout = (
+      portal?.orderingEnabled === true
+      && features.orderInbox === true
+      && cart.isReconciled
+      && cart.items.length > 0
+      && cart.minimumReached
+      && (portal.pickupEnabled === true || portal.deliveryEnabled === true)
+      && checkoutStatus !== 'submitting'
+    );
+    if (!canCheckout) return false;
+
+    setCheckoutError(null);
+    setConfirmedOrder(null);
+    setCheckoutStatus('editing');
+    setCheckoutOpen(true);
+    setIsCartOpen(false);
+    return true;
+  }, [cart.isReconciled, cart.items.length, cart.minimumReached, checkoutStatus, features.orderInbox, portal]);
+
+  const submitCheckout = useCallback((customer) => {
+    if (activeCheckoutPromiseRef.current) return activeCheckoutPromiseRef.current;
+
+    const requestSlug = activeSlugRef.current;
+    const items = cart.items.map(({ product, quantity }) => ({
+      productId: product.id,
+      quantity,
+    }));
+
+    const requestPromise = (async () => {
+      setCheckoutError(null);
+      setCheckoutStatus('submitting');
+
+      try {
+        const attempt = await getOrCreateCheckoutAttempt(requestSlug, { customer, items });
+        const response = await createPublicOrder(requestSlug, {
+          customer,
+          items,
+          idempotencyKey: attempt.idempotencyKey,
+        });
+
+        if (!mountedRef.current || activeSlugRef.current !== requestSlug) return response;
+
+        clearCheckoutAttempt(requestSlug, attempt.idempotencyKey);
+        cart.clearCart();
+        setConfirmedOrder(response);
+        setCheckoutStatus('confirmed');
+        setCheckoutError(null);
+        return response;
+      } catch (error) {
+        if (mountedRef.current && activeSlugRef.current === requestSlug) {
+          const safeError = error instanceof Error
+            ? error
+            : new EcommercePublicError(
+                'ECOMMERCE_ORDER_CREATE_FAILED',
+                'No se pudo confirmar el pedido. Revisa tu conexión e intenta nuevamente.'
+              );
+          setCheckoutError(safeError);
+          setCheckoutStatus('recoverable_error');
+        }
+        throw error;
+      }
+    })();
+
+    activeCheckoutPromiseRef.current = requestPromise;
+    const releaseActiveRequest = () => {
+      if (activeCheckoutPromiseRef.current === requestPromise) {
+        activeCheckoutPromiseRef.current = null;
+      }
+    };
+    requestPromise.then(releaseActiveRequest, releaseActiveRequest);
+    return requestPromise;
+  }, [cart]);
+
+  const closeCheckout = useCallback(() => {
+    if (checkoutStatus === 'submitting') return;
+    setCheckoutOpen(false);
+    if (checkoutStatus !== 'confirmed') {
+      setCheckoutStatus('idle');
+      setCheckoutError(null);
+    }
+  }, [checkoutStatus]);
+
+  const continueShopping = useCallback(() => {
+    setCheckoutOpen(false);
+    setCheckoutStatus('idle');
+    setConfirmedOrder(null);
+    setCheckoutError(null);
+  }, []);
+
+  const refreshStaleCart = useCallback(() => {
+    if (checkoutStatus === 'submitting') return;
+    window.location.reload();
+  }, [checkoutStatus]);
+
   if (storeStatus === 'loading') {
     return (
       <main className="public-store-shell public-store-shell--centered">
@@ -380,11 +494,32 @@ function PublicStorePage() {
         minOrderTotal={portal.minOrderTotal}
         minimumRemaining={cart.minimumRemaining}
         minimumReached={cart.minimumReached}
+        isReconciled={cart.isReconciled}
+        orderingEnabled={portal.orderingEnabled}
+        orderInboxEnabled={features.orderInbox}
+        pickupEnabled={portal.pickupEnabled}
+        deliveryEnabled={portal.deliveryEnabled}
+        isCheckoutLoading={checkoutStatus === 'submitting'}
         onIncrement={cart.increment}
         onDecrement={cart.decrement}
         onSetQuantity={cart.setQuantity}
         onRemove={cart.removeProduct}
         onClear={cart.clearCart}
+        onCheckout={openCheckout}
+      />
+
+      <PublicCheckoutDialog
+        isOpen={checkoutOpen}
+        status={checkoutStatus}
+        error={checkoutError}
+        portal={portal}
+        features={features}
+        cart={cart}
+        confirmedOrder={confirmedOrder}
+        onClose={closeCheckout}
+        onSubmit={submitCheckout}
+        onRefreshCart={refreshStaleCart}
+        onContinue={continueShopping}
       />
     </main>
   );
