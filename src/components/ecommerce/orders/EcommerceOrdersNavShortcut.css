@@ -1,0 +1,55 @@
+.ecommerce-orders-nav-shortcut {
+  position: fixed;
+  z-index: calc(var(--z-navbar, 900) + 2);
+  left: 18px;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 13px;
+  border: 1px solid var(--border-color, #dbe3ee);
+  border-radius: 12px;
+  background: var(--card-background-color, #fff);
+  color: var(--text-color, #1f2937);
+  box-shadow: 0 12px 30px rgb(15 23 42 / 16%);
+  text-decoration: none;
+  font-weight: 800;
+}
+
+.ecommerce-orders-nav-shortcut:hover,
+.ecommerce-orders-nav-shortcut:focus-visible,
+.ecommerce-orders-nav-shortcut.is-active {
+  border-color: var(--primary-color, #2563eb);
+  color: var(--primary-color, #2563eb);
+  outline: none;
+}
+
+.ecommerce-orders-nav-shortcut strong {
+  min-width: 23px;
+  height: 23px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--error-color, #dc2626);
+  color: #fff;
+  font-size: .72rem;
+}
+
+@media (min-width: 900px) {
+  .ecommerce-orders-nav-shortcut {
+    left: 12px;
+    bottom: 18px;
+    max-width: 190px;
+  }
+}
+
+@media (max-width: 899px) {
+  .ecommerce-orders-nav-shortcut {
+    left: 50%;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+}

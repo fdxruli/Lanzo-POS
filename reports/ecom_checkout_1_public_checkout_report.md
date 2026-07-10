@@ -255,8 +255,32 @@ Producción: PASS con `vite build`.
 
 Preview correctivo: READY. El head final se verifica después de retirar el workflow auxiliar.
 
+## Integración posterior ECOM.ORDERS.1
+
+ECOM.ORDERS.1 consume el contrato público de checkout sin modificar su semántica:
+
+- `ecommerce_create_order` continúa creando una sola orden, sus items y un único evento `order_created` dentro de la transacción pública;
+- la notificación PRO se conecta después del evento `order_created`, cuando los items y totales ya existen;
+- la creación de notificación es deduplicada por `ecommerce_order_created:<order_id>`;
+- un retry idempotente del checkout conserva una orden y una notificación;
+- FREE crea el pedido pero no genera filas ecommerce en `pos_notifications`;
+- ningún fallo interno de notificación revierte o expone errores al checkout;
+- la bandeja administrativa consulta y muta pedidos únicamente mediante RPCs autenticadas;
+- aceptar o rechazar no crea ventas, comandas, clientes POS, pagos, caja, movimientos de inventario ni reservas de stock;
+- el pedido controlado `EC-00000010` no fue modificado ni recibió notificación retroactiva durante la implementación.
+
+La validación detallada queda documentada en:
+
+- `reports/ecom_rpc_2_order_management_report.md`;
+- `reports/ecom_fe_orders_1_inbox_report.md`;
+- `reports/ecom_notif_1_order_notifications_report.md`.
+
 ## Estado de cierre
 
 - Implementación ECOM.RPC.1.3.2: terminada y validada en SQL.
 - Implementación ECOM.FE.CHECKOUT.1.1: terminada y validada en frontend.
 - Etiquetas formales `ECOM.RPC.1.3.2 PASS` y `ECOM.FE.CHECKOUT.1.1 PASS`: **no declaradas**, porque los criterios exigen `npm run lint` y `npm run test:ci` globales verdes y la línea base actual no los cumple.
+
+## Corrección posterior ECOM.ORDERS.1.1
+
+La mini fase corrigió exclusivamente permisos frontend, aislamiento de requests, pruebas y limpieza del PR de la bandeja administrativa. No modificó el checkout público, su RPC, idempotencia, carrito, stock, órdenes reales ni migraciones aplicadas. Las regresiones `PublicCheckoutDialog`, `PublicStoreCheckout`, `PublicStorePage`, `ecommercePublicService` y `ecommerceCheckoutIdempotency` permanecen en PASS.

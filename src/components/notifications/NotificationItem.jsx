@@ -5,9 +5,11 @@ import {
   CloudCog,
   Headphones,
   KeyRound,
-  MonitorCog
+  MonitorCog,
+  ShoppingBag
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAppStore } from '../../store/useAppStore';
 import {
   getNotificationCategory,
   isCategoryMuted,
@@ -32,6 +34,7 @@ const TYPE_ICONS = {
   license: KeyRound,
   support: Headphones,
   sync: CloudCog,
+  ecommerce: ShoppingBag,
   system: MonitorCog
 };
 
@@ -40,6 +43,7 @@ const TYPE_LABELS = {
   license: 'Licencia',
   support: 'Soporte',
   sync: 'Sincronización',
+  ecommerce: 'Pedidos online',
   system: 'Sistema'
 };
 
@@ -57,6 +61,7 @@ export default function NotificationItem({
   preferences
 }) {
   const navigate = useNavigate();
+  const closeNotificationCenter = useAppStore((state) => state.closeNotificationCenter);
   const {
     id,
     title = 'Notificación',
@@ -82,12 +87,14 @@ export default function NotificationItem({
   const actionRoute = notification?.action_route || notification?.actionRoute || '';
   const actionLabel = notification?.action_label || notification?.actionLabel || (!isRead ? 'Marcar como leída' : '');
 
-  const handleRead = () => {
-    if (id) {
-      onRead?.(id);
-    }
+  const handleRead = async () => {
+    const result = id ? await onRead?.(id) : { success: true };
+    if (result?.success === false) return;
 
     if (typeof actionRoute === 'string' && actionRoute.startsWith('/')) {
+      if (type === 'ecommerce') {
+        closeNotificationCenter?.();
+      }
       navigate(actionRoute);
     }
   };

@@ -7,6 +7,7 @@ import {
 
 const CATEGORY_LABELS = {
   support: 'Soporte',
+  ecommerce: 'Pedidos online',
   cash: 'Caja',
   sync: 'Sincronización',
   license: 'Licencia',

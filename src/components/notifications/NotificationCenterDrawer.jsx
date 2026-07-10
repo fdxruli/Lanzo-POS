@@ -30,6 +30,7 @@ const getNotificationGroup = (notification) => {
 
   if (type === 'cash' || type === 'sync') return 'operation';
   if (type === 'support') return 'support';
+  if (type === 'ecommerce') return 'ecommerce';
   if (type === 'license') return 'license';
   return 'system';
 };
@@ -117,6 +118,7 @@ export default function NotificationCenterDrawer({
       all: notifications.length,
       unread: 0,
       support: 0,
+      ecommerce: 0,
       operation: 0,
       license: 0,
       system: 0
@@ -377,9 +379,7 @@ export default function NotificationCenterDrawer({
         aria-modal="true"
         aria-labelledby="notification-center-title"
       >
-        <NotificationCenterHeader
-          onClose={onClose}
-        />
+        <NotificationCenterHeader onClose={onClose} />
 
         <div className="notification-center-actions">
           <button
