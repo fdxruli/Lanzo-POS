@@ -1,11 +1,10 @@
-// src/App.jsx
 import { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
+import { AlertTriangle, XCircle } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import NavigationGuard from './components/common/NavigationGuard';
 import Logger from './services/Logger';
-// --- COMPONENTES CRÍTICOS (Eager Loading) ---
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
 import StaffLoginModal from './components/common/StaffLoginModal';
@@ -13,6 +12,7 @@ import LicenseChangeRequiredModal from './components/common/LicenseChangeRequire
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
 import PermissionRoute from './components/common/PermissionRoute';
+import EcommerceOrdersRoute from './components/ecommerce/orders/EcommerceOrdersRoute';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
 import InstallPrompt from './components/common/InstallPrompt';
@@ -22,10 +22,9 @@ import BackupRuntime from './components/common/BackupRuntime';
 import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 import { isCloudPosSyncEnabled } from './services/sync/syncConstants';
-import { AlertTriangle, XCircle } from 'lucide-react';
 
 const MAX_RETRIES = 3;
-const GLOBAL_COOLDOWN_MS = 5000; // 5 segundos de cooldown global
+const GLOBAL_COOLDOWN_MS = 5000;
 
 const resetAppShellCache = async () => {
   try {
@@ -94,7 +93,7 @@ const lazyRetry = (importFn, componentName = 'Component') => {
         window.sessionStorage.setItem('lazy_retry_last_time', now.toString());
         Logger.warn(`Reintentando carga limpia de ${componentName} (${currentRetries + 1}/${MAX_RETRIES})...`);
         resetAppShellCache().finally(() => window.location.reload());
-        return new Promise(() => { });
+        return new Promise(() => {});
       }
 
       Logger.error(`Máximo de reintentos, sin conexión o en cooldown para ${componentName}. Mostrando UI de error.`);
@@ -103,8 +102,13 @@ const lazyRetry = (importFn, componentName = 'Component') => {
       return {
         default: () => (
           <div style={{
-            height: '100vh', display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center'
+            height: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            textAlign: 'center'
           }}>
             <AlertTriangle size={48} className="text-yellow-500 mb-4" />
             <h3>Error de carga del módulo</h3>
@@ -131,6 +135,7 @@ const lazyRetry = (importFn, componentName = 'Component') => {
 const PosPage = lazyRetry(() => import('./pages/PosPage'), 'PosPage');
 const CajaPage = lazyRetry(() => import('./pages/CajaPage'), 'CajaPage');
 const OrdersPage = lazyRetry(() => import('./pages/OrderPage'), 'OrdersPage');
+const EcommerceOrdersPage = lazyRetry(() => import('./pages/EcommerceOrdersPage'), 'EcommerceOrdersPage');
 const ProductsPage = lazyRetry(() => import('./pages/ProductsPage'), 'ProductsPage');
 const CustomersPage = lazyRetry(() => import('./pages/CustomersPage'), 'CustomersPage');
 const DashboardPage = lazyRetry(() => import('./pages/DashboardPage'), 'DashboardPage');
@@ -138,8 +143,16 @@ const SettingsPage = lazyRetry(() => import('./pages/SettingsPage'), 'SettingsPa
 const AboutPage = lazyRetry(() => import('./pages/AboutPage'), 'AboutPage');
 
 const PageLoader = () => (
-  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '50vh', gap: '1rem' }}>
-    <div className="loader-spinner"></div>
+  <div style={{
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    minHeight: '50vh',
+    gap: '1rem'
+  }}>
+    <div className="loader-spinner" />
     <p style={{ color: 'var(--text-light)', fontSize: '0.9rem' }}>Cargando módulo...</p>
   </div>
 );
@@ -154,16 +167,16 @@ function App() {
   const initializeApp = useAppStore((state) => state.initializeApp);
   const pendingTermsUpdate = useAppStore((state) => state.pendingTermsUpdate);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  const clearTermsNotification = () => {
-    useAppStore.setState({ pendingTermsUpdate: null });
-  };
-
   const startLicenseSync = useAppStore((state) => state.startLicenseSync);
   const stopLicenseSync = useAppStore((state) => state.stopLicenseSync);
   const startNotificationRealtime = useAppStore((state) => state.startNotificationRealtime);
   const stopNotificationRealtime = useAppStore((state) => state.stopNotificationRealtime);
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
   const shouldMountLocalBackupRuntime = !isCloudLicense;
+
+  const clearTermsNotification = () => {
+    useAppStore.setState({ pendingTermsUpdate: null });
+  };
 
   useEffect(() => {
     initializeApp();
@@ -177,10 +190,11 @@ function App() {
         stopNotificationRealtime?.();
         stopLicenseSync();
       };
-    } else {
-      stopNotificationRealtime?.();
-      stopLicenseSync();
     }
+
+    stopNotificationRealtime?.();
+    stopLicenseSync();
+    return undefined;
   }, [appStatus, startLicenseSync, startNotificationRealtime, stopLicenseSync, stopNotificationRealtime]);
 
   useEffect(() => {
@@ -251,8 +265,13 @@ function App() {
   if (isDuplicate) {
     return (
       <div style={{
-        height: '100vh', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '20px'
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        padding: '20px'
       }}>
         <XCircle size={64} className="text-red-500 mb-4" />
         <h2>Aplicación ya abierta</h2>
@@ -269,7 +288,7 @@ function App() {
     case 'loading':
       return (
         <div id="app-loader" style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="loader-spinner"></div>
+          <div className="loader-spinner" />
         </div>
       );
 
@@ -322,9 +341,9 @@ function App() {
           <Suspense fallback={<Layout><PageLoader /></Layout>}>
             {pendingTermsUpdate && (
               <TermsAndConditionsModal
-                isOpen={true}
+                isOpen
                 onClose={clearTermsNotification}
-                isUpdateNotification={true}
+                isUpdateNotification
               />
             )}
             <NavigationGuard />
@@ -333,20 +352,20 @@ function App() {
               <Routes>
                 <Route
                   path="/renovacion-urgente"
-                  element={
+                  element={(
                     <div style={{ width: '100vw', height: '100vh', background: '#000' }}>
                       <RenewalModal />
                     </div>
-                  }
+                  )}
                 />
                 <Route path="/" element={<Layout />}>
                   <Route index element={<PermissionRoute permission="pos"><Suspense fallback={<PageLoader />}><PosPage /></Suspense></PermissionRoute>} />
                   <Route path="caja" element={<PermissionRoute permission="cash_register"><Suspense fallback={<PageLoader />}><CajaPage /></Suspense></PermissionRoute>} />
                   <Route path="pedidos" element={<PermissionRoute permission="orders"><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
+                  <Route path="pedidos-online" element={<EcommerceOrdersRoute><Suspense fallback={<PageLoader />}><EcommerceOrdersPage /></Suspense></EcommerceOrdersRoute>} />
                   <Route path="productos" element={<PermissionRoute permission="products"><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
                   <Route path="clientes" element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
                   <Route path="ventas" element={<PermissionRoute permission="reports"><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></PermissionRoute>} />
-                  {/* /configuracion permite settings o products; tabs internos siguen filtrando cada permiso. */}
                   <Route path="configuracion" element={<PermissionRoute permission={['settings', 'products']}><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></PermissionRoute>} />
                   <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
                 </Route>
