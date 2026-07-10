@@ -335,3 +335,63 @@ Mientras no se aplique ECOM.RPC.1.2:
 - no pueden completarse pedidos públicos;
 - el error público es genérico y no revela la causa real;
 - no hay evidencia de afectación a ventas, caja o inventario POS.
+
+## Reintento después de ECOM.RPC.1.2
+
+**ECOM.QA.1 RETRY PASS**
+
+Fecha/hora del reintento:
+
+- Inicio UTC: `2026-07-10T03:27:52.871184+00:00`
+- Fin UTC: `2026-07-10T03:29:31.314299+00:00`
+
+Migración aplicada:
+
+- repositorio: `supabase/migrations/20260710032739_ecom_rpc_1_2_rate_limit_adapter.sql`
+- Supabase: `20260710032739_ecom_rpc_1_2_rate_limit_adapter`
+- método: `apply_migration`
+
+Resultados:
+
+- firma real de 10 argumentos confirmada;
+- helper `private.ecommerce_enforce_create_order_rate_limit(uuid, uuid)` creado con `SECURITY DEFINER` y `search_path = ''`;
+- helper cerrado para `public`, `anon` y `authenticated`;
+- llamada directa defectuosa retirada de `ecommerce_create_order`;
+- argumentos nombrados confirmados;
+- no se consultó ni expuso una credencial real de licencia;
+- creación de pedido: PASS;
+- replay idempotente: PASS;
+- límite FREE de 10 productos: PASS;
+- grants de tablas ecommerce: PASS (`0 rows`);
+- RPCs públicas: PASS (`anon/authenticated = true`, `public = false`);
+- 21 helpers privados ecommerce cerrados: PASS;
+- RLS en 7 tablas ecommerce: PASS;
+- no afectación a ventas/caja/inventario/reportes POS: PASS.
+
+Pedido creado:
+
+- `order_id`: `78bb8981-7f80-46e5-99f7-b10694b5948f`
+- `public_order_code`: `EC-00000001`
+- idempotency key: `qa-ecom-idem-rpc-1-2-202607092128`
+- total: `50.00 MXN`
+- pedidos persistidos con la clave: `1`
+- items: `1`
+- eventos: `1`
+- evento: `order_created`
+- URL de WhatsApp: generada
+
+Límite FREE:
+
+- conteo final publicado: `10`
+- nueve productos QA adicionales conservados;
+- intento número 11 rechazado con `ECOMMERCE_PRODUCT_LIMIT_REACHED`;
+- fila del intento rechazado: `0`.
+
+Estado final:
+
+- portal `qa-ecom-free-202607092110`: `paused`;
+- `metadata.phase = ECOM.RPC.1.2`;
+- `metadata.qa_retry_result = PASS`;
+- no se borraron datos.
+
+El detalle completo quedó documentado en `reports/ecom_rpc_1_2_rate_limit_adapter_report.md`.
