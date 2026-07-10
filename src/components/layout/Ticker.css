@@ -68,6 +68,17 @@
   animation-play-state: paused;
 }
 
+.notification-ticker-container.summary-mode {
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 28%, var(--border-color));
+  background:
+    linear-gradient(90deg, rgba(37, 99, 235, 0.08), rgba(16, 185, 129, 0.06)),
+    var(--card-background-color);
+}
+
+.notification-ticker-container.summary-mode .ticker-item {
+  font-size: 1rem;
+}
+
 /* === ÍTEM INDIVIDUAL === */
 .ticker-item {
   display: inline-flex;

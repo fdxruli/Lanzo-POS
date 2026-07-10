@@ -245,7 +245,7 @@ export default function AbonoModal({
                 </div>
                 {isCloudCredit && (
                   <div className="deuda-row">
-                    <span className="deuda-label">Caja PRO:</span>
+                    <span className="deuda-label">Caja Nube:</span>
                     <span className="cliente-name">
                       {cashSession?.id
                         ? (cashActor?.displayName || cashActor?.responsibleName || cashSession.responsable_apertura || 'Responsable')

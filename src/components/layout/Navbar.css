@@ -25,6 +25,18 @@
   gap: 10px;
 }
 
+.mobile-notification-slot {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  display: flex;
+  transform: translateY(-50%);
+}
+
+.mobile-notification-slot:empty {
+  display: none;
+}
+
 .brand-name {
   font-weight: 800;
   color: var(--text-dark);
@@ -501,6 +513,19 @@
     margin-bottom: 1.4rem;
     padding: 0 0 1.15rem;
     border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  }
+
+  .sidebar-notification-slot {
+    display: flex;
+    justify-content: flex-end;
+    min-height: 44px;
+    margin-top: 14px;
+  }
+
+  .sidebar-notification-slot:empty {
+    display: none;
+    min-height: 0;
+    margin-top: 0;
   }
 
   .sidebar-brand {

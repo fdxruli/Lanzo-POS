@@ -202,7 +202,7 @@ export default function SaleCancellationModal({
         {isCloudSale ? (
           <>
             <div className="sale-cancellation-notice cloud-notice">
-              <strong>Cancelación cloud PRO.</strong>
+              <strong>Cancelación Lanzo Nube.</strong>
               <p>
                 Esta venta fue registrada en la nube. Antes de aplicar cambios se ejecuta un
                 preview seguro que valida caja, inventario/lotes y deuda. No se borrará el historial original.

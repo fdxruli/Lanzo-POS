@@ -8,6 +8,7 @@ import { useBackupRiskStore } from '../../services/BackupRiskEvaluator';
 import { isCloudPosSyncEnabled } from '../../services/sync/syncConstants';
 import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
 import Logo from '../common/Logo';
+import NotificationBell from '../notifications/NotificationBell';
 import {
   Store,
   Package,
@@ -232,6 +233,9 @@ function Navbar() {
         <div className="mobile-top-bar">
           <div className="mobile-brand" style={{ width: '100%', justifyContent: 'center', position: 'relative' }}>
             <Logo style={{ height: '40px', width: 'auto' }} />
+            <div className="mobile-notification-slot">
+              <NotificationBell className="notification-bell--mobile" />
+            </div>
           </div>
         </div>
       )}
@@ -439,6 +443,9 @@ function Navbar() {
               <strong className="sidebar-business-name">{companyName || 'Tu negocio'}</strong>
             </span>
           </div>
+          <div className="sidebar-notification-slot">
+            <NotificationBell className="notification-bell--desktop" />
+          </div>
         </div>
 
         <div className="sidebar-links">
@@ -528,6 +535,7 @@ function Navbar() {
               {effectiveBackupRiskLevel === 1 && <span title="Respaldo recomendado" style={{ display: 'flex', alignItems: 'center' }}><AlertCircle size={18} color="#ff4444" /></span>}
               {showLocalBackupIndicators && isVolatile && isVolatileDismissed && (
                 <button
+                  type="button"
                   onClick={(e) => { e.preventDefault(); setVolatileDismissed(false); }}
                   title="Riesgo de pérdida de datos"
                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
@@ -550,10 +558,11 @@ function Navbar() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
               {hasDismissedBackupNotice && (
                 <button
+                  type="button"
                   onClick={showBackupNotice}
                   disabled={isBackupLoading}
                   style={backupButtonStyle}
-                  aria-label={backupNotice.navbarLabel}
+                  aria-label={`${backupNotice.navbarLabel} en barra lateral`}
                 >
                   <FolderKey size={16} />
                   {backupNotice.navbarLabel}
@@ -561,7 +570,7 @@ function Navbar() {
               )}
 
               {updateAvailable && (
-                <button onClick={runUpdate} disabled={isUpdating || isBackupLoading} style={updateButtonStyle} aria-label="Actualizar sistema">
+                <button type="button" onClick={runUpdate} disabled={isUpdating || isBackupLoading} style={updateButtonStyle} aria-label="Actualizar sistema">
                   <RefreshCw size={16} />
                   {isUpdating ? 'Actualizando...' : 'Actualizar Sistema'}
                 </button>
@@ -569,6 +578,7 @@ function Navbar() {
 
               {isInstallable && (
                 <button
+                  type="button"
                   onClick={requestInstall}
                   disabled={isInstalling || isBackupLoading}
                   style={installButtonStyle}

@@ -8,7 +8,13 @@ import {
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
+  BellDot,
+  CircleDollarSign,
   Clock,
+  Cloud,
+  CloudCog,
+  Headphones,
+  MonitorCog,
   Package,
   Rocket,
   Shield,
@@ -17,6 +23,19 @@ import {
 import { useAppStore } from '../../store/useAppStore';
 import { useTickerAlerts } from '../../hooks/useTickerAlerts';
 import Logger from '../../services/Logger';
+import {
+  canStaffAccessNotifications,
+  getTickerMode,
+  isCloudNotificationsEnabled,
+  isNotificationCenterEnabled,
+  shouldUseLocalTicker,
+  shouldUseSummaryTicker
+} from '../../services/notifications/notificationCapabilities';
+import {
+  isCategoryMuted,
+  isNotificationHiddenByPreferences,
+  normalizeNotificationPreferences
+} from '../../services/notifications/notificationPreferencesService';
 import './Ticker.css';
 
 const MAX_INVENTORY_ALERTS = 8;
@@ -182,16 +201,187 @@ function toTickerMessage(alert) {
   };
 }
 
+function isUnread(notification) {
+  return notification?.is_read !== true && notification?.is_archived !== true;
+}
+
+function getOperationalSummary(notification) {
+  if (!notification) return null;
+
+  if (notification.type === 'sync') {
+    return {
+      icon: CloudCog,
+      text: 'Sincronización cloud requiere atención. Revisa Lanzo Nube.'
+    };
+  }
+
+  if (notification.type === 'cash') {
+    return {
+      icon: CircleDollarSign,
+      text: 'Hay una alerta de caja cloud. Revisa Lanzo Nube.'
+    };
+  }
+
+  return {
+    icon: MonitorCog,
+    text: 'Hay un aviso de dispositivos o staff. Revisa Lanzo Nube.'
+  };
+}
+
+function buildSummaryMessages({
+  notifications = [],
+  notificationsUnreadCount = 0,
+  supportTickets = [],
+  notificationPreferences
+}) {
+  const preferences = normalizeNotificationPreferences(notificationPreferences);
+  const unreadNotifications = notifications.filter((notification) => (
+    isUnread(notification) &&
+    !isNotificationHiddenByPreferences(notification, preferences, { surface: 'ticker' })
+  ));
+  const messages = [];
+
+  const criticalAlert = unreadNotifications.find((notification) => (
+    notification.severity === 'critical'
+  ));
+  const licenseAlert = criticalAlert || unreadNotifications.find((notification) => (
+    notification.type === 'license' && notification.severity === 'critical'
+  )) || unreadNotifications.find((notification) => (
+    notification.type === 'license' && notification.severity === 'warning'
+  ));
+
+  if (licenseAlert) {
+    const isLicenseAlert = licenseAlert.type === 'license';
+    messages.push({
+      id: `summary-critical-${licenseAlert.id}`,
+      icon: AlertTriangle,
+      text: isLicenseAlert
+        ? 'Hay una alerta importante de licencia. Revisa Lanzo Nube.'
+        : 'Hay una alerta crítica en Lanzo Nube. Revisa el Centro de Notificaciones.',
+      urgency: licenseAlert.severity === 'critical' ? URGENCY.CRITICAL : URGENCY.WARNING,
+      openNotificationCenter: true
+    });
+  }
+
+  const supportNotification = unreadNotifications.find((notification) => (
+    notification.type === 'support' && notification.metadata?.ticket_id
+  ));
+  const canShowSupportInTicker = (
+    preferences.tickerCategories?.support !== false &&
+    !isCategoryMuted('support', preferences)
+  );
+  const supportTicketWaiting = canShowSupportInTicker
+    ? supportTickets.find((ticket) => ticket.status === 'waiting_user')
+    : null;
+  const supportTicketId = supportNotification?.metadata?.ticket_id || supportTicketWaiting?.id || null;
+
+  if (canShowSupportInTicker && (supportNotification || supportTicketWaiting)) {
+    messages.push({
+      id: `summary-support-${supportTicketId || supportNotification?.id || 'waiting'}`,
+      icon: Headphones,
+      text: 'Soporte respondió una solicitud. Abre el Centro de Notificaciones.',
+      urgency: URGENCY.WARNING,
+      openNotificationCenter: true,
+      tab: 'support',
+      ticketId: supportTicketId
+    });
+  }
+
+  const operationalWarning = unreadNotifications.find((notification) => (
+    ['sync', 'cash'].includes(notification.type) &&
+    ['critical', 'warning'].includes(notification.severity)
+  )) || unreadNotifications.find((notification) => (
+    notification.type === 'system' &&
+    ['critical', 'warning'].includes(notification.severity) &&
+    ['staff', 'sync', 'cash'].includes(notification.metadata?.category)
+  ));
+
+  if (
+    operationalWarning &&
+    operationalWarning.id !== licenseAlert?.id &&
+    !messages.some((message) => message.sourceNotificationId === operationalWarning.id)
+  ) {
+    const summary = getOperationalSummary(operationalWarning);
+    messages.push({
+      id: `summary-operational-${operationalWarning.id}`,
+      sourceNotificationId: operationalWarning.id,
+      icon: summary.icon,
+      text: summary.text,
+      urgency: operationalWarning.severity === 'critical' ? URGENCY.CRITICAL : URGENCY.WARNING,
+      openNotificationCenter: true
+    });
+  }
+
+  const safeUnreadCount = Math.min(
+    Number(notificationsUnreadCount || 0),
+    unreadNotifications.length
+  );
+  if (safeUnreadCount > 0) {
+    messages.push({
+      id: 'summary-unread-count',
+      icon: BellDot,
+      text: `Tienes ${safeUnreadCount} notificaciones nuevas en Lanzo Nube.`,
+      urgency: URGENCY.INFO,
+      openNotificationCenter: true
+    });
+  }
+
+  if (messages.length === 0) {
+    messages.push({
+      id: 'summary-cloud-ok',
+      icon: Cloud,
+      text: 'Lanzo Nube activo: sincronización, soporte y notificaciones cloud disponibles.',
+      urgency: URGENCY.INFO,
+      openNotificationCenter: true
+    });
+  }
+
+  return messages.slice(0, 3);
+}
+
 export default function Ticker() {
   const navigate = useNavigate();
   const licenseStatus = useAppStore(state => state.licenseStatus);
   const gracePeriodEnds = useAppStore(state => state.gracePeriodEnds);
   const licenseDetails = useAppStore(state => state.licenseDetails);
-  const { catalogSize, alerts } = useTickerAlerts();
-  const backupAlert = useBackupAlert(catalogSize > BACKUP_ALERT_THRESHOLD);
+  const currentDeviceRole = useAppStore(state => state.currentDeviceRole);
+  const currentStaffUser = useAppStore(state => state.currentStaffUser);
+  const notifications = useAppStore(state => state.notifications);
+  const notificationsUnreadCount = useAppStore(state => state.notificationsUnreadCount);
+  const supportTickets = useAppStore(state => state.supportTickets);
+  const notificationPreferences = useAppStore(state => state.notificationPreferences);
+  const openNotificationCenter = useAppStore(state => state.openNotificationCenter);
+  const loadNotifications = useAppStore(state => state.loadNotifications);
+  const tickerMode = getTickerMode(licenseDetails);
+  const useLocalTicker = shouldUseLocalTicker(licenseDetails);
+  const useSummaryTicker = (
+    shouldUseSummaryTicker(licenseDetails) &&
+    isNotificationCenterEnabled(licenseDetails) &&
+    isCloudNotificationsEnabled(licenseDetails) &&
+    canStaffAccessNotifications(licenseDetails, { currentDeviceRole, currentStaffUser })
+  );
+  const { catalogSize, alerts } = useTickerAlerts(useLocalTicker);
+  const backupAlert = useBackupAlert(useLocalTicker && catalogSize > BACKUP_ALERT_THRESHOLD);
   const { containerRef, shouldPauseAnimation } = useTickerVisibility();
 
+  useEffect(() => {
+    if (!useSummaryTicker) return;
+    loadNotifications?.();
+  }, [loadNotifications, useSummaryTicker]);
+
   const { messages, isPriority } = useMemo(() => {
+    if (useSummaryTicker) {
+      return {
+        messages: buildSummaryMessages({
+          notifications,
+          notificationsUnreadCount,
+          supportTickets,
+          notificationPreferences
+        }),
+        isPriority: false
+      };
+    }
+
     const now = new Date();
     const effectiveGracePeriodEnds =
       gracePeriodEnds ||
@@ -236,7 +426,18 @@ export default function Ticker() {
         : promotionalMessages,
       isPriority: false
     };
-  }, [alerts, backupAlert, gracePeriodEnds, licenseDetails, licenseStatus]);
+  }, [
+    alerts,
+    backupAlert,
+    gracePeriodEnds,
+    licenseDetails,
+    licenseStatus,
+    notifications,
+    notificationsUnreadCount,
+    notificationPreferences,
+    supportTickets,
+    useSummaryTicker
+  ]);
 
   const animationDuration = useMemo(() => {
     const secondsPerMessage = isPriority ? 8 : SECONDS_PER_MESSAGE;
@@ -247,11 +448,20 @@ export default function Ticker() {
   }, [isPriority, messages.length]);
 
   const handleAlertClick = useCallback((message) => {
+    if (message.openNotificationCenter) {
+      openNotificationCenter?.({
+        tab: message.tab || null,
+        ticketId: message.ticketId || null
+      });
+      return;
+    }
+
     if (message.route) navigate(message.route);
-  }, [navigate]);
+  }, [navigate, openNotificationCenter]);
 
   const containerClasses = [
     'notification-ticker-container',
+    tickerMode === 'summary' ? 'summary-mode' : '',
     isPriority ? 'priority-warning' : '',
     shouldPauseAnimation ? 'ticker-animation-paused' : ''
   ].filter(Boolean).join(' ');
@@ -272,7 +482,7 @@ export default function Ticker() {
         >
           {messages.map(message => {
             const Icon = message.icon;
-            const isClickable = Boolean(message.route);
+            const isClickable = Boolean(message.route || message.openNotificationCenter);
             const urgencyClass = message.urgency === URGENCY.CRITICAL
               ? 'urgency-critical'
               : message.urgency === URGENCY.WARNING
@@ -284,7 +494,7 @@ export default function Ticker() {
                 key={message.id}
                 className={`ticker-item ${urgencyClass} ${isClickable ? 'ticker-item-clickable' : ''}`}
                 onClick={isClickable ? () => handleAlertClick(message) : undefined}
-                role={isClickable ? 'link' : undefined}
+                role={isClickable ? (message.openNotificationCenter ? 'button' : 'link') : undefined}
                 tabIndex={isClickable ? 0 : undefined}
                 onKeyDown={isClickable ? event => {
                   if (event.key === 'Enter' || event.key === ' ') {

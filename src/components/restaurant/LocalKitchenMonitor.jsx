@@ -36,7 +36,7 @@ const KdsCommandCenter = ({ metrics, tabs, onRefresh, isLoading }) => (
   <section className="kds-command-center mode-local">
     <div className="kds-command-main">
       <div className="kds-title-block">
-        <span className="kds-mode-pill mode-local">FREE local</span>
+        <span className="kds-mode-pill mode-local">Lanzo Local</span>
         <h1>Monitor de cocina</h1>
         <p>Pedidos locales</p>
       </div>
