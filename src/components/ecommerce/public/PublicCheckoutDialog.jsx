@@ -142,7 +142,11 @@ function PublicCheckoutDialog({
     const validation = validateCheckout(form, portal, cart);
     setFieldErrors(validation.errors);
     if (Object.keys(validation.errors).length > 0) return;
-    await onSubmit(validation.normalized);
+    try {
+      await onSubmit(validation.normalized);
+    } catch {
+      // La página conserva el error seguro y permite reintentar con la misma llave.
+    }
   };
 
   const showRefresh = STALE_CART_CODES.has(error?.code);
