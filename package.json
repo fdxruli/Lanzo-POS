@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/ecom-fe-admin-1-1-validation.mjs",
+    "build": "vite build",
     "lint": "eslint src/**/*.{js,jsx}",
     "preview": "vite preview",
     "test": "vitest",
