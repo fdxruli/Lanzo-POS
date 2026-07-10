@@ -113,7 +113,8 @@ export default function SettingsPage() {
         )}
         {activeTab === 'test-ventas' && (
           <div className="ui-card debug-section">
-            <h3>Test Ventas</h3>
+            <h3>Pruebas de ventas</h3>
+            <p className="text-warning">Herramienta tecnica para revisar ventas.</p>
             <SalesSystemTester />
           </div>
         )}
