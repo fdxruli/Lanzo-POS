@@ -1,3 +1,7 @@
+-- FASE STAFF.NOTIF.1 — Permisos staff para Centro de Notificaciones y Soporte
+-- FASE NOTIF.DB.DRIFT.1 — Endurecimiento de revokes privados en instalación limpia.
+-- No borra datos. No abre tablas a cliente. Mantiene contratos públicos existentes.
+
 create or replace function private.default_staff_permissions()
 returns jsonb
 language sql
@@ -23,6 +27,10 @@ as $$
     'support_center', false
   );
 $$;
+
+revoke all on function private.default_staff_permissions() from public;
+revoke all on function private.default_staff_permissions() from anon;
+revoke all on function private.default_staff_permissions() from authenticated;
 
 create or replace function private.normalize_staff_permissions(p_permissions jsonb)
 returns jsonb
@@ -52,6 +60,10 @@ begin
   return v_result;
 end;
 $$;
+
+revoke all on function private.normalize_staff_permissions(jsonb) from public;
+revoke all on function private.normalize_staff_permissions(jsonb) from anon;
+revoke all on function private.normalize_staff_permissions(jsonb) from authenticated;
 
 update public.license_staff_users
 set permissions = private.normalize_staff_permissions(permissions)
@@ -156,6 +168,10 @@ begin
   return v_context;
 end;
 $$;
+
+revoke all on function private.get_pos_notification_context(text, text, text, text, text) from public;
+revoke all on function private.get_pos_notification_context(text, text, text, text, text) from anon;
+revoke all on function private.get_pos_notification_context(text, text, text, text, text) from authenticated;
 
 create or replace function private.get_support_ticket_context(
   p_license_key text,
@@ -340,6 +356,10 @@ exception
     );
 end;
 $$;
+
+revoke all on function private.get_support_ticket_context(text, text, text, text, text) from public;
+revoke all on function private.get_support_ticket_context(text, text, text, text, text) from anon;
+revoke all on function private.get_support_ticket_context(text, text, text, text, text) from authenticated;
 
 create or replace function public.refresh_operational_notifications(
   p_license_key text,
@@ -545,3 +565,6 @@ exception
     );
 end;
 $$;
+
+revoke all on function public.refresh_operational_notifications(text, text, text, text) from public;
+grant execute on function public.refresh_operational_notifications(text, text, text, text) to anon, authenticated;
