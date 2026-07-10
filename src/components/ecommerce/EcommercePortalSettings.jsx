@@ -104,8 +104,8 @@ export default function EcommercePortalSettings() {
   const [categoriesById, setCategoriesById] = useState(new Map());
 
   const authorizationPending = isLicenseInitializing
-    || currentDeviceRole == null
-    || (currentDeviceRole === 'staff' && currentStaffUser == null && licenseDetails == null);
+    || currentDeviceRole === null
+    || (currentDeviceRole === 'staff' && currentStaffUser === null && licenseDetails === null);
   const canManageEcommercePortal = evaluateEcommercePortalAccess({
     canAccess,
     currentDeviceRole
