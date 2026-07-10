@@ -55,7 +55,7 @@ function SummaryCard({ label, value, tone = 'neutral' }) {
 
 function OrderList({ orders, loading, error, onOpen }) {
   if (loading) {
-    return <div className="ecommerce-orders-state">Cargando pedidos online…</div>;
+    return <div className="ecommerce-orders-state" role="status">Cargando pedidos online…</div>;
   }
   if (error && orders.length === 0) {
     return <div className="ecommerce-orders-state ecommerce-orders-state--error">{error}</div>;
@@ -71,7 +71,7 @@ function OrderList({ orders, loading, error, onOpen }) {
   }
 
   return (
-    <div className="ecommerce-orders-list" role="list">
+    <div className="ecommerce-orders-list" role="list" aria-busy={loading}>
       {orders.map((order) => (
         <button
           key={order.id}
@@ -113,7 +113,13 @@ function OrderDetail({ order, loading, error, onClose, onAccept, onReject, actio
   if (!order && !loading && !error) return null;
 
   return (
-    <div className="ecommerce-order-detail-shell" role="dialog" aria-modal="true" aria-label="Detalle del pedido online">
+    <div
+      className="ecommerce-order-detail-shell"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Detalle del pedido online"
+      aria-busy={loading}
+    >
       <button type="button" className="ecommerce-order-detail-backdrop" onClick={onClose} aria-label="Cerrar detalle" />
       <aside className="ecommerce-order-detail">
         <header className="ecommerce-order-detail__header">
@@ -124,7 +130,7 @@ function OrderDetail({ order, loading, error, onClose, onAccept, onReject, actio
           <button type="button" onClick={onClose} aria-label="Cerrar detalle"><X size={20} /></button>
         </header>
 
-        {loading && <div className="ecommerce-orders-state">Cargando detalle…</div>}
+        {loading && <div className="ecommerce-orders-state" role="status">Cargando detalle…</div>}
         {error && <div className="ecommerce-orders-state ecommerce-orders-state--error">{error}</div>}
 
         {order && !loading && (
@@ -202,7 +208,7 @@ function OrderDetail({ order, loading, error, onClose, onAccept, onReject, actio
                     type="button"
                     className="ui-button ui-button--primary"
                     onClick={onAccept}
-                    disabled={Boolean(actionLoading)}
+                    disabled={Boolean(actionLoading) || loading}
                   >
                     <PackageCheck size={17} />
                     {actionLoading === 'accept' ? 'Aceptando…' : 'Aceptar pedido'}
@@ -211,7 +217,7 @@ function OrderDetail({ order, loading, error, onClose, onAccept, onReject, actio
                     type="button"
                     className="ui-button ui-button--danger"
                     onClick={onReject}
-                    disabled={Boolean(actionLoading)}
+                    disabled={Boolean(actionLoading) || loading}
                   >
                     Rechazar pedido
                   </button>
@@ -307,31 +313,53 @@ export default function EcommerceOrdersPage() {
     const orderId = searchParams.get('order');
     if (!orderId) return;
 
-    if (!UUID_PATTERN.test(orderId)) {
-      const next = new URLSearchParams(searchParams);
-      next.delete('order');
-      setSearchParams(next, { replace: true });
-      return;
-    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('order');
+    setSearchParams(next, { replace: true });
 
-    openOrder?.(orderId, { force: true, markSeen: true }).finally(() => {
-      const next = new URLSearchParams(searchParams);
-      next.delete('order');
-      setSearchParams(next, { replace: true });
-    });
+    if (!UUID_PATTERN.test(orderId)) return;
+
+    setDialogMode(null);
+    openOrder?.(orderId, { force: true, markSeen: true });
   }, [canAccess, openOrder, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (selectedLoading) setDialogMode(null);
+  }, [selectedLoading]);
+
+  const handleOpenOrder = (orderId) => {
+    setDialogMode(null);
+    openOrder?.(orderId, { markSeen: true });
+  };
+
+  const handleCloseDetail = () => {
+    setDialogMode(null);
+    clearSelectedOrder?.();
+  };
 
   const handleFilter = async (nextFilter) => {
     if (nextFilter === filter) return;
+
+    setDialogMode(null);
+    clearSelectedOrder?.();
+
+    if (searchParams.has('order')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('order');
+      setSearchParams(next, { replace: true });
+    }
+
     setFilter?.(nextFilter);
     await loadOrders?.({ filter: nextFilter, force: true });
   };
 
   const handleConfirmAction = async (reason) => {
-    if (!selectedOrder?.id) return;
+    const visibleOrderId = selectedOrder?.id;
+    if (!visibleOrderId || selectedLoading || actionLoading) return;
+
     const result = dialogMode === 'reject'
-      ? await rejectOrder?.(selectedOrder.id, reason)
-      : await acceptOrder?.(selectedOrder.id);
+      ? await rejectOrder?.(visibleOrderId, reason)
+      : await acceptOrder?.(visibleOrderId);
     if (result?.success !== false) setDialogMode(null);
   };
 
@@ -377,19 +405,23 @@ export default function EcommerceOrdersPage() {
       </nav>
 
       {error && orders.length > 0 && <div className="ecommerce-orders-inline-error" role="alert">{error}</div>}
-      <OrderList orders={orders} loading={loading} error={error} onOpen={(id) => openOrder?.(id, { markSeen: true })} />
+      <OrderList orders={orders} loading={loading} error={error} onOpen={handleOpenOrder} />
 
       <OrderDetail
         order={selectedOrder}
         loading={selectedLoading}
         error={selectedError}
         actionLoading={actionLoading}
-        onClose={clearSelectedOrder}
-        onAccept={() => setDialogMode('accept')}
-        onReject={() => setDialogMode('reject')}
+        onClose={handleCloseDetail}
+        onAccept={() => {
+          if (!selectedLoading && !actionLoading) setDialogMode('accept');
+        }}
+        onReject={() => {
+          if (!selectedLoading && !actionLoading) setDialogMode('reject');
+        }}
       />
 
-      {dialogMode && selectedOrder && (
+      {dialogMode && selectedOrder && !selectedLoading && (
         <ActionDialog
           mode={dialogMode}
           orderCode={selectedOrder.code}
