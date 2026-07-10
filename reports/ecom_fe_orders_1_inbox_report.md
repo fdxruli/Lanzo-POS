@@ -6,7 +6,7 @@ Rama: `fase-ecom-orders-1`
 
 ## Estado del reporte
 
-La bandeja, navegación, capacidad, estado y servicio quedaron implementados y corregidos. ESLint específico, suites de la fase, regresión ecommerce/notificaciones y build estándar pasan. La línea base global no presenta regresiones nuevas respecto de `main`.
+`ECOM.FE.ORDERS.1 PASS`. La bandeja, navegación, capacidad, estado y servicio quedaron implementados y corregidos. ESLint específico, suites de la fase, regresión ecommerce/notificaciones y build estándar pasan. La línea base global no presenta regresiones nuevas respecto de `main`.
 
 ## 1. Ruta y guarda
 
@@ -331,7 +331,7 @@ El workflow usado para la reproducción fue temporal y se elimina en el mismo co
 1. La navegación se presenta como acceso operativo global junto al layout; debe revisarse visualmente en el preview final para confirmar que no cubra controles en resoluciones particulares.
 2. El frontend no convierte pedidos a ventas ni reserva inventario; esa separación es intencional.
 3. Un conflicto de transición entre dispositivos se muestra con el error seguro del servidor y posterior refresh; no existe resolución automática fuera del estado definitivo.
-4. El cierre formal depende de checks, regresión y preview.
+4. La corrección ECOM.ORDERS.1.1 quedó cerrada; los riesgos restantes pertenecen al alcance operativo futuro, no a los cuatro bloques correctivos.
 
 ## Corrección ECOM.ORDERS.1.1
 
