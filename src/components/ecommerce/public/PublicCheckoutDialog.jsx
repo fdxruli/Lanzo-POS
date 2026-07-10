@@ -76,6 +76,7 @@ function PublicCheckoutDialog({
   onContinue,
 }) {
   const closeButtonRef = useRef(null);
+  const submitPromiseRef = useRef(null);
   const [form, setForm] = useState({
     name: '',
     phone: '',
@@ -138,14 +139,18 @@ function PublicCheckoutDialog({
 
   const submit = async (event) => {
     event.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || submitPromiseRef.current) return;
     const validation = validateCheckout(form, portal, cart);
     setFieldErrors(validation.errors);
     if (Object.keys(validation.errors).length > 0) return;
+    const submitPromise = Promise.resolve(onSubmit(validation.normalized));
+    submitPromiseRef.current = submitPromise;
     try {
-      await onSubmit(validation.normalized);
+      await submitPromise;
     } catch {
       // La página conserva el error seguro y permite reintentar con la misma llave.
+    } finally {
+      if (submitPromiseRef.current === submitPromise) submitPromiseRef.current = null;
     }
   };
 
