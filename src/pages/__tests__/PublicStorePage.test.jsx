@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PublicStorePage from '../PublicStorePage';
 import { EcommercePublicError } from '../../services/ecommerce/ecommercePublicService';
 
@@ -85,6 +85,10 @@ describe('PublicStorePage', () => {
     window.sessionStorage.clear();
     serviceMocks.getPublicPortalBySlug.mockReset().mockResolvedValue(portalResult);
     serviceMocks.getPublicCatalog.mockReset().mockResolvedValue(catalogResult);
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it('loads the public portal and catalog without POS shell elements', async () => {
