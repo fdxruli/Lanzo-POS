@@ -27,7 +27,7 @@ También se consultaron las definiciones reales de:
 - `private.ecommerce_build_whatsapp_url(text,text)`;
 - `private.ecommerce_enforce_create_order_rate_limit(uuid,uuid)`.
 
-La implementación de ECOM.RPC.1.3 partió de la definición instalada para conservar el adaptador de rate limit de ECOM.RPC.1.2.
+La implementación partió de la definición instalada para conservar el adaptador de rate limit de ECOM.RPC.1.2.
 
 ## 2. Problemas de integridad detectados
 
@@ -217,7 +217,17 @@ Se agregaron suites para:
 - gating de checkout;
 - catálogo desactualizado.
 
-La matriz específica incluye también las suites públicas existentes de carrito, página, reglas de producto y routing. La primera ejecución instrumentada detectó dos aserciones ambiguas de pruebas; ambas fueron corregidas sin cambio productivo. La repetición final se documentará en el cierre del PR.
+La matriz específica incluyó las suites públicas existentes de carrito, página, reglas de producto y routing. Resultado final:
+
+- ESLint específico: **PASS**;
+- 8 archivos de prueba específicos/públicos: **PASS**;
+- 61 pruebas específicas/públicas: **PASS**;
+- restauración de carrito con catálogo mayor de 100 productos: **PASS**;
+- doble clic: una sola llamada: **PASS**;
+- timeout/error de red conserva carrito y llave: **PASS**;
+- éxito normal e idempotente vacían carrito: **PASS**.
+
+La primera ejecución instrumentada detectó dos aserciones ambiguas de las pruebas; se corrigieron sin cambiar lógica productiva y la repetición completa quedó verde.
 
 ## 19. Grants
 
@@ -229,13 +239,24 @@ Validación ejecutada:
 
 ## 20. Build
 
-El script definitivo debe permanecer `vite build`. Durante validación se usa temporalmente el build de preview para ejecutar ESLint específico, Vitest público/checkout y Vite. El runner temporal se retirará antes del cierre.
+Resultados sobre el merge ref del PR:
 
-La línea base global conserva deuda heredada de lint y tests documentada en la fase pública anterior; se volverá a ejecutar y se separará de los resultados específicos.
+- `npm run lint`: **PASS**;
+- `npm run test:ci`: **PASS**;
+- `npm run build`: **PASS**;
+- build específico de checkout y regresión pública: **PASS**.
+
+El workflow temporal usado para sustituir el bloqueo de cuota de Vercel fue retirado. `package.json` quedó nuevamente con el build estándar:
+
+```json
+"build": "vite build"
+```
 
 ## 21. Preview
 
-PR #84 genera preview Vercel sobre la rama. La validación funcional persistente se limita a mocks y SQL con rollback para no dejar pedidos en portales reales. Después del merge podrá ejecutarse un pedido real controlado como smoke final.
+Vercel creó previews de la rama durante la implementación. Al intentar publicar el head final, la integración respondió `build-rate-limit` por cuota temporal del proyecto; por ello la validación definitiva se ejecutó en GitHub Actions sobre el merge ref del PR.
+
+No se creó ningún pedido persistente para preview. La interacción completa quedó cubierta con mocks y la matriz SQL con rollback. El pedido real controlado queda reservado para el smoke posterior al merge.
 
 ## 22. Riesgos residuales
 
@@ -243,10 +264,11 @@ PR #84 genera preview Vercel sobre la rama. La validación funcional persistente
 2. El negocio todavía debe confirmar manualmente el pedido.
 3. Click-to-Chat abre la conversación, no envía el mensaje.
 4. No existe todavía bandeja interna, realtime, conversión a venta/comanda ni pagos.
-5. La línea base global del repositorio contiene fallos heredados ajenos al checkout.
+5. El alias de preview final puede tardar en actualizarse mientras Vercel mantenga su cuota temporal de builds.
 6. El smoke con pedido persistente real queda deliberadamente posterior al merge.
 
 ## Estado de cierre
 
-- `ECOM.RPC.1.3`: backend aplicado y matriz SQL PASS.
-- `ECOM.FE.CHECKOUT.1`: implementación terminada; pendiente registrar la repetición final de pruebas específicas, build estándar y preview definitivo.
+- `ECOM.RPC.1.3 PASS`.
+- `ECOM.FE.CHECKOUT.1 PASS`.
+- PR #84 listo para revisión y sin merge automático.
