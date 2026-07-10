@@ -1,0 +1,148 @@
+name: ECOM Orders Validation
+
+on:
+  push:
+    branches:
+      - fase-ecom-orders-1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-key
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Specific ESLint
+        run: >-
+          npx eslint
+          src/App.jsx
+          src/components/layout/Layout.jsx
+          src/components/ecommerce/orders/**/*.jsx
+          src/components/notifications/NotificationCenterDrawer.jsx
+          src/components/notifications/NotificationItem.jsx
+          src/components/notifications/NotificationPreferencesPanel.jsx
+          src/components/notifications/NotificationTabs.jsx
+          src/pages/EcommerceOrdersPage.jsx
+          src/services/ecommerce/ecommerceOrderCapabilities.js
+          src/services/ecommerce/ecommerceOrderService.js
+          src/services/notifications/notificationPreferencesService.js
+          src/services/notifications/notificationRealtimeService.js
+          src/store/installEcommerceOrderStore.js
+          src/store/slices/createEcommerceOrderSlice.js
+          src/services/ecommerce/__tests__/ecommerceOrderCapabilities.test.js
+          src/services/ecommerce/__tests__/ecommerceOrderService.test.js
+          src/store/slices/__tests__/createEcommerceOrderSlice.test.js
+          src/pages/__tests__/EcommerceOrdersPage.test.jsx
+          src/components/ecommerce/orders/__tests__/EcommerceOrdersRoute.test.jsx
+          src/components/notifications/__tests__/NotificationItem.ecommerce.test.jsx
+          src/services/notifications/__tests__/notificationPreferencesService.ecommerce.test.js
+          src/services/notifications/__tests__/notificationRealtimeService.ecommerce.test.js
+
+      - name: Specific and regression Vitest
+        run: >-
+          npx vitest run --maxWorkers=4
+          src/services/ecommerce/__tests__/ecommerceOrderCapabilities.test.js
+          src/services/ecommerce/__tests__/ecommerceOrderService.test.js
+          src/store/slices/__tests__/createEcommerceOrderSlice.test.js
+          src/pages/__tests__/EcommerceOrdersPage.test.jsx
+          src/components/ecommerce/orders/__tests__/EcommerceOrdersRoute.test.jsx
+          src/components/notifications/__tests__/NotificationItem.ecommerce.test.jsx
+          src/services/notifications/__tests__/notificationPreferencesService.ecommerce.test.js
+          src/services/notifications/__tests__/notificationRealtimeService.ecommerce.test.js
+          src/components/notifications/__tests__/NotificationBell.test.jsx
+          src/services/ecommerce/__tests__/ecommerceAdminService.test.js
+          src/services/ecommerce/__tests__/ecommercePublicProductRules.test.js
+          src/services/ecommerce/__tests__/ecommerceCheckoutIdempotency.test.js
+          src/services/ecommerce/__tests__/ecommercePublicService.test.js
+          src/pages/__tests__/PublicStorePage.test.jsx
+          src/pages/__tests__/PublicStoreCheckout.test.jsx
+
+      - name: Standard build
+        run: npm run build
+
+      - name: Capture branch global baseline
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p validation-artifacts
+          set +e
+          npm run lint > validation-artifacts/branch-lint.log 2>&1
+          echo $? > validation-artifacts/branch-lint.exit
+          npm run test:ci > validation-artifacts/branch-test-ci.log 2>&1
+          echo $? > validation-artifacts/branch-test-ci.exit
+          set -e
+
+      - name: Capture main global baseline
+        if: always()
+        shell: bash
+        run: |
+          git worktree add /tmp/lanzo-main origin/main
+          cd /tmp/lanzo-main
+          npm ci
+          mkdir -p "$GITHUB_WORKSPACE/validation-artifacts"
+          set +e
+          npm run lint > "$GITHUB_WORKSPACE/validation-artifacts/main-lint.log" 2>&1
+          echo $? > "$GITHUB_WORKSPACE/validation-artifacts/main-lint.exit"
+          npm run test:ci > "$GITHUB_WORKSPACE/validation-artifacts/main-test-ci.log" 2>&1
+          echo $? > "$GITHUB_WORKSPACE/validation-artifacts/main-test-ci.exit"
+          set -e
+
+      - name: Summarize baseline comparison
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## ECOM Orders validation"
+            echo
+            echo "| Command | Branch exit | Main exit |"
+            echo "|---|---:|---:|"
+            echo "| npm run lint | $(cat validation-artifacts/branch-lint.exit 2>/dev/null || echo missing) | $(cat validation-artifacts/main-lint.exit 2>/dev/null || echo missing) |"
+            echo "| npm run test:ci | $(cat validation-artifacts/branch-test-ci.exit 2>/dev/null || echo missing) | $(cat validation-artifacts/main-test-ci.exit 2>/dev/null || echo missing) |"
+            echo
+            echo "### Branch lint tail"
+            echo '```text'
+            tail -n 25 validation-artifacts/branch-lint.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo "### Main lint tail"
+            echo '```text'
+            tail -n 25 validation-artifacts/main-lint.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo "### Branch test tail"
+            echo '```text'
+            tail -n 35 validation-artifacts/branch-test-ci.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo "### Main test tail"
+            echo '```text'
+            tail -n 35 validation-artifacts/main-test-ci.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecom-orders-validation-logs
+          path: validation-artifacts
+          retention-days: 7
