@@ -7,7 +7,7 @@ Supabase producción: `odlrhijtfyavryeqivaa`
 
 ## Estado del reporte
 
-La migración, feature gate, deduplicación, protección de PII, permiso requerido y QA SQL están terminados. El cierre formal `ECOM.NOTIF.1 PASS` depende todavía de regresiones frontend, build y preview del PR conjunto.
+La migración, feature gate, deduplicación, protección de PII, permiso requerido y QA SQL están terminados. ECOM.ORDERS.1.1 corrigió únicamente frontend, pruebas y limpieza; la verificación read-only confirmó que la seguridad SQL permanece intacta.
 
 ## 1. Preflight del sistema existente
 
@@ -340,15 +340,11 @@ No se creó otro índice.
 
 ## 18. Build y regresiones
 
-Pendiente de completar sobre el SHA final del PR:
-
-- ESLint específico;
-- Vitest específico;
-- regresión Notification Center, soporte, preferencias y realtime;
-- regresión ecommerce pública y checkout;
-- `npm run build`;
-- comparación global contra `main`;
-- preview Vercel `READY`.
+- ESLint específico: **PASS**;
+- suites de notificaciones, realtime, preferencias, ecommerce público y checkout: **PASS**;
+- build estándar `vite build`: **PASS**;
+- la comparación global contra `main` no muestra regresiones nuevas;
+- la inicialización del canal realtime se separó de `subscribe`, evitando una referencia temporal a `channel` cuando un adaptador invoca el callback de suscripción sincrónicamente.
 
 ## 19. Riesgos residuales
 
@@ -356,3 +352,9 @@ Pendiente de completar sobre el SHA final del PR:
 2. Un mute del ticker es local al dispositivo y no altera reads cloud.
 3. No existen sonidos persistentes, alarmas invasivas ni WhatsApp automático en esta fase.
 4. La etiqueta formal de cierre depende del resultado de checks y preview.
+
+## Corrección ECOM.ORDERS.1.1
+
+Las suites realtime se aislaron con mocks hoisted, cleanup de listeners y cierre del canal entre pruebas. La implementación separa la creación de `.on(...)` de la llamada a `.subscribe(...)`, por lo que un callback de suscripción sincrónico ya no accede a `channel` antes de inicializarse.
+
+FREE continúa sin iniciar realtime ecommerce. PRO reutiliza un solo canal privado; `ecommerce_orders_changed` y `notifications_changed` ecommerce invalidan la bandeja, mientras eventos ajenos no lo hacen. Las pruebas de Notification Bell, Notification Item, preferencias, portal, checkout y tienda pública pasan junto con la fase.

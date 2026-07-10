@@ -280,3 +280,7 @@ La validación detallada queda documentada en:
 - Implementación ECOM.RPC.1.3.2: terminada y validada en SQL.
 - Implementación ECOM.FE.CHECKOUT.1.1: terminada y validada en frontend.
 - Etiquetas formales `ECOM.RPC.1.3.2 PASS` y `ECOM.FE.CHECKOUT.1.1 PASS`: **no declaradas**, porque los criterios exigen `npm run lint` y `npm run test:ci` globales verdes y la línea base actual no los cumple.
+
+## Corrección posterior ECOM.ORDERS.1.1
+
+La mini fase corrigió exclusivamente permisos frontend, aislamiento de requests, pruebas y limpieza del PR de la bandeja administrativa. No modificó el checkout público, su RPC, idempotencia, carrito, stock, órdenes reales ni migraciones aplicadas. Las regresiones `PublicCheckoutDialog`, `PublicStoreCheckout`, `PublicStorePage`, `ecommercePublicService` y `ecommerceCheckoutIdempotency` permanecen en PASS.

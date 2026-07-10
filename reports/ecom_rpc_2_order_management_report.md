@@ -7,7 +7,7 @@ Supabase producción: `odlrhijtfyavryeqivaa`
 
 ## Estado del reporte
 
-La implementación SQL, la instalación controlada en producción y la matriz transaccional de seguridad están terminadas. La etiqueta formal `ECOM.RPC.2 PASS` queda condicionada al cierre conjunto de frontend, regresiones, build y preview del PR.
+La implementación SQL, la instalación controlada en producción y la matriz transaccional de seguridad están terminadas. La verificación read-only de ECOM.ORDERS.1.1 confirmó que los contratos y grants permanecen intactos.
 
 ## 1. Preflight de producción
 
@@ -355,3 +355,17 @@ Aceptar un pedido en ECOM.RPC.2 únicamente actualiza la orden e inserta su even
 2. No existe reserva de stock; el negocio debe confirmar disponibilidad operativa.
 3. La concurrencia está protegida en servidor, pero la interfaz debe presentar correctamente una transición perdida frente a otro dispositivo; esto se valida en la capa frontend/realtime.
 4. La etiqueta formal de cierre depende de checks específicos, regresiones, build y preview del PR conjunto.
+
+## Verificación read-only ECOM.ORDERS.1.1
+
+No se editó, renombró ni reaplicó ninguna migración. Producción sigue registrando `20260710174725_ecom_rpc_2_order_management` y `20260710175017_ecom_notif_1_order_notifications`.
+
+La inspección read-only confirmó:
+
+- RPC administrativas `SECURITY DEFINER` y `search_path=''`;
+- execute para `authenticated` y denegado para `anon`/`public`;
+- helpers privados sin execute para roles cliente;
+- cero grants directos sobre órdenes, items, eventos, notificaciones y reads;
+- constraints ecommerce conservados.
+
+ECOM.ORDERS.1.1 no realizó escrituras SQL ni tocó `EC-00000010`.

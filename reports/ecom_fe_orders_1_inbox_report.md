@@ -6,7 +6,7 @@ Rama: `fase-ecom-orders-1`
 
 ## Estado del reporte
 
-La bandeja, navegación, capacidad, estado, servicio y pruebas específicas quedaron implementados. El resultado final de ESLint, Vitest, build y preview se completará con los checks del PR antes de declarar `ECOM.FE.ORDERS.1 PASS`.
+La bandeja, navegación, capacidad, estado y servicio quedaron implementados y corregidos. ESLint específico, suites de la fase, regresión ecommerce/notificaciones y build estándar pasan. La línea base global no presenta regresiones nuevas respecto de `main`.
 
 ## 1. Ruta y guarda
 
@@ -314,16 +314,17 @@ Cubre FREE sin canal, PRO sobre el canal privado existente, transición ecommerc
 
 ## 14. Build y validación
 
-Pendiente de completar mediante los checks del PR sobre el SHA final:
+Resultado reproducible de ECOM.ORDERS.1.1:
 
-- ESLint específico de archivos modificados;
-- Vitest específico;
-- regresión ecommerce y notificaciones;
-- `npm run build` con `vite build`;
-- comparación de `npm run lint` y `npm run test:ci` contra `main`;
-- preview Vercel `READY`.
+- ESLint específico de producción y tests modificados: **PASS**;
+- 17 suites específicas y de regresión ecommerce/notificaciones: **PASS**, cero suites y pruebas fallidas;
+- `npm run build`, conservando `vite build`: **PASS**;
+- `npm run lint`: rama y `main` conservan la misma línea base heredada de **156 errores y 226 warnings**;
+- `npm run test:ci`: rama **27 archivos / 76 pruebas fallidas**, `main` **28 archivos / 79 pruebas fallidas**;
+- la rama aumenta los resultados verdes a 78 archivos y 448 pruebas, frente a 69 archivos y 394 pruebas en `main`;
+- no se ocultaron suites, no se usaron `.skip`/`.todo` y no se versionaron logs o exit codes.
 
-No se modificó `package.json` para excluir suites ni se agregaron runners temporales.
+El workflow usado para la reproducción fue temporal y se elimina en el mismo commit de cierre.
 
 ## 15. Riesgos residuales
 
@@ -331,3 +332,19 @@ No se modificó `package.json` para excluir suites ni se agregaron runners tempo
 2. El frontend no convierte pedidos a ventas ni reserva inventario; esa separación es intencional.
 3. Un conflicto de transición entre dispositivos se muestra con el error seguro del servidor y posterior refresh; no existe resolución automática fuera del estado definitivo.
 4. El cierre formal depende de checks, regresión y preview.
+
+## Corrección ECOM.ORDERS.1.1
+
+### Bootstrap de rol fail-closed
+
+La ausencia de `currentDeviceRole` ya no se interpreta como admin. Durante `_isInitializing=true`, la ruta muestra `Cargando permisos…`; fuera de bootstrap, un rol nulo o desconocido queda bloqueado. El runtime, el acceso directo, la página y el shortcut no llaman RPC ni muestran badge hasta resolver un rol autorizado.
+
+### Aislamiento de respuestas tardías
+
+El slice usa `requestEpoch` y contextos que incluyen identidad de licencia, rol, usuario staff y permiso ecommerce. Listado, resumen, detalle y acciones se deduplican con mapas por licencia/recurso. `resetEcommerceOrdersState` incrementa el epoch, limpia los mapas y elimina inmediatamente lista, conteos, detalle, errores y PII. Una respuesta de una licencia, sesión o permiso anterior devuelve `ECOMMERCE_ORDERS_STALE_RESPONSE` y no puede ejecutar `set`, refrescar la lista ni reabrir un detalle.
+
+Las pruebas diferidas cubren cambio A→B, logout, revocación de ecommerce, detalle con teléfono/dirección y aceptación tardía.
+
+### Pruebas y limpieza
+
+Los mocks que participan en fábricas `vi.mock` usan `vi.hoisted`. Las pruebas React importan `@testing-library/jest-dom/vitest` y ejecutan `cleanup`; realtime elimina listeners, detiene el canal y restaura timers. El diff final no conserva workflows de validación, `.validation`, markers, logs, exit codes o archivos `tmp`.
