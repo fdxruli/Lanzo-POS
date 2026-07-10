@@ -4,6 +4,8 @@ import { Minus, Plus, ShoppingCart, Trash2, X } from 'lucide-react';
 const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX', {
   style: 'currency',
   currency,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 }).format(Number(value) || 0);
 
 export function PublicMobileCartBar({ totalUnits, subtotal, currency, onOpen }) {
@@ -33,11 +35,18 @@ function PublicCartDrawer({
   minOrderTotal,
   minimumRemaining,
   minimumReached,
+  isReconciled,
+  orderingEnabled,
+  orderInboxEnabled,
+  pickupEnabled,
+  deliveryEnabled,
+  isCheckoutLoading,
   onIncrement,
   onDecrement,
   onSetQuantity,
   onRemove,
   onClear,
+  onCheckout,
 }) {
   const closeButtonRef = useRef(null);
 
@@ -65,6 +74,27 @@ function PublicCartDrawer({
   const progress = minimum > 0
     ? Math.min(100, Math.max(0, (Number(subtotal) / minimum) * 100))
     : 100;
+  const hasFulfillmentMethod = pickupEnabled === true || deliveryEnabled === true;
+  const checkoutDisabled = (
+    items.length === 0
+    || !isReconciled
+    || isCheckoutLoading
+    || !minimumReached
+    || orderingEnabled !== true
+    || orderInboxEnabled !== true
+    || !hasFulfillmentMethod
+  );
+
+  let checkoutNotice = 'Tus productos y el total se confirmarán nuevamente al enviar.';
+  if (!isReconciled || isCheckoutLoading) {
+    checkoutNotice = 'Actualizando carrito...';
+  } else if (orderingEnabled !== true || orderInboxEnabled !== true) {
+    checkoutNotice = 'Este negocio no está recibiendo pedidos por ahora.';
+  } else if (!hasFulfillmentMethod) {
+    checkoutNotice = 'Este negocio no tiene una modalidad de entrega disponible.';
+  } else if (!minimumReached) {
+    checkoutNotice = `Faltan ${formatCurrency(minimumRemaining, currency)} para realizar el pedido`;
+  }
 
   return (
     <div className="public-cart-modal">
@@ -136,6 +166,7 @@ function PublicCartDrawer({
                         inputMode="numeric"
                         min="1"
                         max={maxQuantity}
+                        step="1"
                         value={quantity}
                         onChange={(event) => {
                           const nextValue = event.target.value;
@@ -188,12 +219,12 @@ function PublicCartDrawer({
           <button
             type="button"
             className="ui-button ui-button--primary public-cart-checkout"
-            disabled
-            title="El envío del pedido se habilitará próximamente."
+            disabled={checkoutDisabled}
+            onClick={onCheckout}
           >
             Continuar pedido
           </button>
-          <p className="public-cart-coming-soon">El envío del pedido se habilitará próximamente.</p>
+          <p className="public-cart-coming-soon" aria-live="polite">{checkoutNotice}</p>
         </div>
       </aside>
     </div>
