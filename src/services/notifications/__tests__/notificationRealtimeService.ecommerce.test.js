@@ -1,25 +1,18 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-let broadcastHandler;
-const subscribe = vi.fn((callback) => {
-  callback('SUBSCRIBED');
-  return channel;
-});
-const channel = {
-  on: vi.fn((_kind, _filter, callback) => {
-    broadcastHandler = callback;
-    return channel;
-  }),
-  subscribe
-};
-const channelFactory = vi.fn(() => channel);
-const removeChannel = vi.fn().mockResolvedValue(undefined);
+const realtimeMocks = vi.hoisted(() => ({
+  channelFactory: vi.fn(),
+  removeChannel: vi.fn(),
+  subscribe: vi.fn(),
+  broadcastHandler: null,
+  channel: null
+}));
 
 vi.mock('../../supabase', () => ({
   supabaseClient: {
-    channel: channelFactory,
-    removeChannel
+    channel: realtimeMocks.channelFactory,
+    removeChannel: realtimeMocks.removeChannel
   }
 }));
 
@@ -28,6 +21,14 @@ import {
   startNotificationRealtime,
   stopNotificationRealtime
 } from '../notificationRealtimeService';
+
+const ORDER_EVENT = 'lanzo:ecommerce-orders-changed';
+const registeredListeners = [];
+
+const addOrderListener = (listener) => {
+  window.addEventListener(ORDER_EVENT, listener);
+  registeredListeners.push(listener);
+};
 
 const admin = { currentDeviceRole: 'admin' };
 const proOrders = {
@@ -43,7 +44,31 @@ const proOrders = {
 beforeEach(async () => {
   await stopNotificationRealtime();
   vi.clearAllMocks();
-  broadcastHandler = null;
+  realtimeMocks.broadcastHandler = null;
+
+  const channel = {};
+  channel.on = vi.fn((_kind, _filter, callback) => {
+    realtimeMocks.broadcastHandler = callback;
+    return channel;
+  });
+  channel.subscribe = realtimeMocks.subscribe;
+
+  realtimeMocks.channel = channel;
+  realtimeMocks.subscribe.mockImplementation((callback) => {
+    callback('SUBSCRIBED');
+    return channel;
+  });
+  realtimeMocks.channelFactory.mockReturnValue(channel);
+  realtimeMocks.removeChannel.mockResolvedValue(undefined);
+});
+
+afterEach(async () => {
+  registeredListeners.splice(0).forEach((listener) => {
+    window.removeEventListener(ORDER_EVENT, listener);
+  });
+  await stopNotificationRealtime();
+  realtimeMocks.broadcastHandler = null;
+  vi.useRealTimers();
 });
 
 describe('notificationRealtimeService ecommerce', () => {
@@ -60,25 +85,40 @@ describe('notificationRealtimeService ecommerce', () => {
 
     expect(canUseNotificationRealtime(free, admin)).toBe(false);
     expect(startNotificationRealtime({ licenseDetails: free, staffSession: admin })).toBeNull();
-    expect(channelFactory).not.toHaveBeenCalled();
+    expect(realtimeMocks.channelFactory).not.toHaveBeenCalled();
   });
 
-  it('reuses the private notification channel for PRO order events', () => {
-    const listener = vi.fn();
-    window.addEventListener('lanzo:ecommerce-orders-changed', listener);
-
-    const result = startNotificationRealtime({
+  it('reuses the private notification channel for PRO', () => {
+    const first = startNotificationRealtime({
+      licenseDetails: proOrders,
+      staffSession: admin,
+      onNotificationEvent: vi.fn()
+    });
+    const second = startNotificationRealtime({
       licenseDetails: proOrders,
       staffSession: admin,
       onNotificationEvent: vi.fn()
     });
 
-    expect(result).toBe(channel);
-    expect(channelFactory).toHaveBeenCalledWith('license:pro-fixture', {
+    expect(first).toBe(realtimeMocks.channel);
+    expect(second).toBe(realtimeMocks.channel);
+    expect(realtimeMocks.channelFactory).toHaveBeenCalledTimes(1);
+    expect(realtimeMocks.channelFactory).toHaveBeenCalledWith('license:pro-fixture', {
       config: { private: true }
     });
+  });
 
-    broadcastHandler({
+  it('dispatches ecommerce_orders_changed to invalidate the inbox', () => {
+    const listener = vi.fn();
+    addOrderListener(listener);
+
+    startNotificationRealtime({
+      licenseDetails: proOrders,
+      staffSession: admin,
+      onNotificationEvent: vi.fn()
+    });
+
+    realtimeMocks.broadcastHandler({
       payload: {
         event: 'ecommerce_orders_changed',
         reason: 'order_accepted',
@@ -101,14 +141,12 @@ describe('notificationRealtimeService ecommerce', () => {
         status: 'accepted'
       })
     }));
-
-    window.removeEventListener('lanzo:ecommerce-orders-changed', listener);
   });
 
-  it('invalidates orders when a normal notification event is ecommerce', () => {
+  it('dispatches notifications_changed when its category is ecommerce', () => {
     const listener = vi.fn();
     const notificationHandler = vi.fn();
-    window.addEventListener('lanzo:ecommerce-orders-changed', listener);
+    addOrderListener(listener);
 
     startNotificationRealtime({
       licenseDetails: proOrders,
@@ -116,7 +154,7 @@ describe('notificationRealtimeService ecommerce', () => {
       onNotificationEvent: notificationHandler
     });
 
-    broadcastHandler({
+    realtimeMocks.broadcastHandler({
       payload: {
         event: 'notifications_changed',
         reason: 'ecommerce_order_created',
@@ -131,6 +169,50 @@ describe('notificationRealtimeService ecommerce', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(notificationHandler).toHaveBeenCalledTimes(1);
-    window.removeEventListener('lanzo:ecommerce-orders-changed', listener);
+  });
+
+  it('does not invalidate orders for unrelated notification events', () => {
+    const listener = vi.fn();
+    const notificationHandler = vi.fn();
+    addOrderListener(listener);
+
+    startNotificationRealtime({
+      licenseDetails: proOrders,
+      staffSession: admin,
+      onNotificationEvent: notificationHandler
+    });
+
+    realtimeMocks.broadcastHandler({
+      payload: {
+        event: 'notifications_changed',
+        reason: 'sync_changed',
+        metadata: {
+          source: 'sync',
+          category: 'sync'
+        }
+      }
+    });
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(notificationHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not duplicate browser listeners when start is called twice', () => {
+    const listener = vi.fn();
+    addOrderListener(listener);
+
+    startNotificationRealtime({ licenseDetails: proOrders, staffSession: admin });
+    startNotificationRealtime({ licenseDetails: proOrders, staffSession: admin });
+
+    realtimeMocks.broadcastHandler({
+      payload: {
+        event: 'ecommerce_orders_changed',
+        reason: 'order_seen',
+        metadata: { source: 'ecommerce', category: 'ecommerce', status: 'seen' }
+      }
+    });
+
+    expect(realtimeMocks.channelFactory).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
