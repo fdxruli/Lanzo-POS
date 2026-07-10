@@ -11,6 +11,7 @@ import {
   Scale,
 } from 'lucide-react';
 import LazyImage from '../common/LazyImage';
+import { LogoMark } from '../common/Logo';
 import { getProductAlerts } from '../../services/utils';
 import { getAvailableStock } from '../../services/db/utils';
 import { STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL } from '../../services/products/strictExpirySaleGuards';
@@ -243,6 +244,9 @@ const ProductCard = memo(function ProductCard({
     ? ` ${product?.bulkData?.purchase?.unit || 'kg'}`
     : '';
   const expiryDate = useMemo(() => formatExpiryDate(product?.expiryDate), [product?.expiryDate]);
+  const hasProductImage = typeof product?.image === 'string'
+    ? product.image.trim().length > 0
+    : Boolean(product?.image);
 
   // ── Fábrica de badges (Zona 2) ────────────────────────────────────────────
   const badgeDescriptors = useMemo(
@@ -327,11 +331,21 @@ const ProductCard = memo(function ProductCard({
     >
       {/* ── ZONA 1: IMAGEN + OVERLAY DE DEGRADADO ── */}
       <div className="product-card__image-zone">
-        <LazyImage
-          className="product-card__image"
-          src={product?.image}
-          alt={product?.name || ''}
-        />
+        {hasProductImage ? (
+          <LazyImage
+            className="product-card__image"
+            src={product?.image}
+            alt={product?.name || ''}
+          />
+        ) : (
+          <div
+            className="product-card__logo-placeholder"
+            aria-label="Producto sin foto"
+            role="img"
+          >
+            <LogoMark className="product-card__logo-mark" />
+          </div>
+        )}
 
         {/* Overlay de agotado */}
         {isOutOfStock && (

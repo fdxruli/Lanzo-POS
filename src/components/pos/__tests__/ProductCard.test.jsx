@@ -6,6 +6,12 @@ vi.mock('../../common/LazyImage', () => ({
   default: ({ alt }) => <div role="img" aria-label={alt} />
 }));
 
+vi.mock('../../common/Logo', () => ({
+  LogoMark: ({ className }) => (
+    <svg className={className} data-testid="lanzo-product-placeholder" aria-hidden="true" />
+  )
+}));
+
 import ProductCard from '../ProductCard';
 
 describe('ProductCard variant badge', () => {
@@ -43,5 +49,43 @@ describe('ProductCard variant badge', () => {
     );
 
     expect(screen.getByText('Variantes')).toBeInTheDocument();
+  });
+});
+
+describe('ProductCard product image placeholder', () => {
+  const features = {};
+  const baseProduct = {
+    id: 'product-2',
+    name: 'Cafe molido',
+    price: 85,
+    stock: 10,
+    trackStock: true
+  };
+
+  it('shows the Lanzo mark when the product has no assigned image', () => {
+    render(
+      <ProductCard
+        features={features}
+        product={{ ...baseProduct, image: '' }}
+        onCardClick={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText('Producto sin foto')).toBeInTheDocument();
+    expect(screen.getByTestId('lanzo-product-placeholder')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: baseProduct.name })).not.toBeInTheDocument();
+  });
+
+  it('uses the product image when one is assigned', () => {
+    render(
+      <ProductCard
+        features={features}
+        product={{ ...baseProduct, image: 'product-image-key' }}
+        onCardClick={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('img', { name: baseProduct.name })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Producto sin foto')).not.toBeInTheDocument();
   });
 });
