@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const rpc = vi.fn();
-const buildPosSyncAuthContext = vi.fn();
+const mocks = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  buildPosSyncAuthContext: vi.fn()
+}));
 
 vi.mock('../../supabase', () => ({
-  supabaseClient: { rpc }
+  supabaseClient: { rpc: mocks.rpc }
 }));
 
 vi.mock('../../sync/posSyncClient', () => ({
-  buildPosSyncAuthContext
+  buildPosSyncAuthContext: mocks.buildPosSyncAuthContext
 }));
 
 import {
@@ -41,9 +43,8 @@ const orderDetail = {
 };
 
 beforeEach(() => {
-  rpc.mockReset();
-  buildPosSyncAuthContext.mockReset();
-  buildPosSyncAuthContext.mockResolvedValue({
+  vi.clearAllMocks();
+  mocks.buildPosSyncAuthContext.mockResolvedValue({
     licenseKey: 'license-fixture',
     deviceFingerprint: 'device-fixture',
     securityToken: 'security-fixture',
@@ -53,7 +54,7 @@ beforeEach(() => {
 
 describe('ecommerceOrderService', () => {
   it('sends the exact admin auth context with a null staff token', async () => {
-    rpc.mockResolvedValue({
+    mocks.rpc.mockResolvedValue({
       data: {
         success: true,
         orders: [],
@@ -65,7 +66,7 @@ describe('ecommerceOrderService', () => {
 
     await listEcommerceOrders({ licenseDetails, status: 'pending', limit: 500, offset: -10 });
 
-    expect(rpc).toHaveBeenCalledWith('ecommerce_admin_list_orders', {
+    expect(mocks.rpc).toHaveBeenCalledWith('ecommerce_admin_list_orders', {
       p_license_key: 'license-fixture',
       p_device_fingerprint: 'device-fixture',
       p_security_token: 'security-fixture',
@@ -77,27 +78,27 @@ describe('ecommerceOrderService', () => {
   });
 
   it('passes the current staff session token to every mutation', async () => {
-    buildPosSyncAuthContext.mockResolvedValue({
+    mocks.buildPosSyncAuthContext.mockResolvedValue({
       licenseKey: 'license-fixture',
       deviceFingerprint: 'device-fixture',
       securityToken: 'security-fixture',
       staffSessionToken: 'staff-token-fixture'
     });
-    rpc.mockResolvedValue({ data: { success: true, changed: true, order: orderDetail }, error: null });
+    mocks.rpc.mockResolvedValue({ data: { success: true, changed: true, order: orderDetail }, error: null });
 
     await markEcommerceOrderSeen({ licenseDetails, orderId: orderDetail.id });
     await acceptEcommerceOrder({ licenseDetails, orderId: orderDetail.id });
     await rejectEcommerceOrder({ licenseDetails, orderId: orderDetail.id, reason: 'Sin existencia' });
 
-    expect(rpc).toHaveBeenNthCalledWith(1, 'ecommerce_admin_mark_order_seen', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'ecommerce_admin_mark_order_seen', expect.objectContaining({
       p_staff_session_token: 'staff-token-fixture',
       p_order_id: orderDetail.id
     }));
-    expect(rpc).toHaveBeenNthCalledWith(2, 'ecommerce_admin_accept_order', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'ecommerce_admin_accept_order', expect.objectContaining({
       p_staff_session_token: 'staff-token-fixture',
       p_order_id: orderDetail.id
     }));
-    expect(rpc).toHaveBeenNthCalledWith(3, 'ecommerce_admin_reject_order', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenNthCalledWith(3, 'ecommerce_admin_reject_order', expect.objectContaining({
       p_staff_session_token: 'staff-token-fixture',
       p_order_id: orderDetail.id,
       p_reason: 'Sin existencia'
@@ -105,7 +106,7 @@ describe('ecommerceOrderService', () => {
   });
 
   it('normalizes list and detail values without leaking unknown fields', async () => {
-    rpc
+    mocks.rpc
       .mockResolvedValueOnce({
         data: {
           success: true,
@@ -144,8 +145,26 @@ describe('ecommerceOrderService', () => {
     expect(detailResult.order.contact.whatsappUrl).toBe('https://wa.me/529610000000');
   });
 
+  it('accepts only https://wa.me links in normalized detail', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: { success: true, order: { ...orderDetail, contact: { whatsappUrl: 'http://wa.me/529610000000' } } },
+        error: null
+      })
+      .mockResolvedValueOnce({
+        data: { success: true, order: { ...orderDetail, contact: { whatsappUrl: 'https://example.com/529610000000' } } },
+        error: null
+      });
+
+    const insecure = await getEcommerceOrder({ licenseDetails, orderId: orderDetail.id });
+    const foreignHost = await getEcommerceOrder({ licenseDetails, orderId: orderDetail.id });
+
+    expect(insecure.order.contact.whatsappUrl).toBeNull();
+    expect(foreignHost.order.contact.whatsappUrl).toBeNull();
+  });
+
   it('maps safe server codes and never exposes raw PostgREST messages', async () => {
-    rpc
+    mocks.rpc
       .mockResolvedValueOnce({
         data: {
           success: false,
