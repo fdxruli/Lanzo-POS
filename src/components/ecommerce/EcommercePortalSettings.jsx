@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../../store/useAppStore';
+import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
 import { productRepository } from '../../services/products/productRepository';
 import {
   getEcommercePortal,
@@ -82,7 +83,11 @@ function StateMessage({ error, onRetry }) {
 
 export default function EcommercePortalSettings() {
   const companyProfile = useAppStore((state) => state.companyProfile);
+  const canAccess = useAppStore((state) => state.canAccess);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
+  const isLicenseInitializing = useAppStore((state) => state._isInitializing);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [savingPortal, setSavingPortal] = useState(false);
@@ -98,6 +103,13 @@ export default function EcommercePortalSettings() {
   const [localProducts, setLocalProducts] = useState([]);
   const [categoriesById, setCategoriesById] = useState(new Map());
 
+  const authorizationPending = isLicenseInitializing
+    || currentDeviceRole === null
+    || (currentDeviceRole === 'staff' && currentStaffUser === null && licenseDetails === null);
+  const canManageEcommercePortal = evaluateEcommercePortalAccess({
+    canAccess,
+    currentDeviceRole
+  });
   const isPro = features.customSlug === true || plan.code === 'pro_monthly';
   const publishedCount = products.filter((product) => product.isPublished).length;
   const maxProducts = features.maxPublishedProducts < 0 ? Number.MAX_SAFE_INTEGER : (features.maxPublishedProducts || 10);
@@ -138,7 +150,10 @@ export default function EcommercePortalSettings() {
     setLoading(false);
   }, [companyProfile, loadProducts]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (authorizationPending || !canManageEcommercePortal) return;
+    load();
+  }, [authorizationPending, canManageEcommercePortal, load]);
 
   const updateForm = (field) => (event) => {
     const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
@@ -271,8 +286,9 @@ export default function EcommercePortalSettings() {
     toast.success(product.isPublished ? 'Producto despublicado.' : 'Producto publicado.');
   };
 
-  if (currentDeviceRole && currentDeviceRole !== 'admin') {
-    return <StateMessage error="Solo el propietario o dispositivo administrador puede configurar el portal online." onRetry={() => window.location.reload()} />;
+  if (authorizationPending) return <StateMessage />;
+  if (!canManageEcommercePortal) {
+    return <StateMessage error="No tienes permiso para administrar el portal online." onRetry={() => window.location.reload()} />;
   }
   if (loading) return <StateMessage />;
   if (error) return <StateMessage error={error} onRetry={load} />;
@@ -315,6 +331,7 @@ export default function EcommercePortalSettings() {
             <div className="ecom-admin-badges"><PlanBadge isPro={isPro} /><span className={`ecom-admin-status status-${portal.status}`}>{STATUS_LABELS[portal.status] || portal.status}</span></div>
           </div>
           <div className="ecom-admin-link-box">
+            <Globe2 size={22} />
             <div><span>Link reservado</span><strong>{reservedLink}</strong><small>El enlace ya queda reservado. La pagina publica se activara en la siguiente fase.</small></div>
             <button type="button" className="btn btn-secondary" onClick={copyLink}><Copy size={16} /> Copiar link</button>
           </div>

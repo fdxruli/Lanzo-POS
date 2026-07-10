@@ -1,4 +1,4 @@
-export const canManageEcommercePortal = ({
+export const evaluateEcommercePortalAccess = ({
   canAccess,
   currentDeviceRole
 }) => {
@@ -12,6 +12,8 @@ export const canManageEcommercePortal = ({
 
   return currentDeviceRole === 'staff' && canAccess('ecommerce') === true;
 };
+
+export const canManageEcommercePortal = evaluateEcommercePortalAccess;
 
 export const resolveAllowedSettingsTab = ({
   requestedTab,

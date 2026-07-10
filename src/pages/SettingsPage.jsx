@@ -12,7 +12,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { isCloudPosSyncEnabled } from '../services/sync/syncConstants';
 import {
-  canManageEcommercePortal as evaluateEcommercePortalAccess,
+  evaluateEcommercePortalAccess,
   resolveAllowedSettingsTab
 } from './settingsPageAccess';
 
