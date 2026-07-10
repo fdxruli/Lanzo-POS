@@ -109,32 +109,33 @@ export const startNotificationRealtime = ({
       }
 
       onNotificationEvent?.(event);
-    })
-    .subscribe((status, error) => {
-      if (status === 'SUBSCRIBED') {
-        isNotificationRealtimeConnecting = false;
-        activeNotificationChannel = channel;
-        Logger.log('[NotificationRealtime] Canal privado conectado.');
-        return;
-      }
-
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        isNotificationRealtimeConnecting = false;
-        if (activeNotificationChannel === channel) {
-          activeNotificationChannel = null;
-        }
-        Logger.warn('[NotificationRealtime] Error de canal:', error || status);
-        return;
-      }
-
-      if (status === 'CLOSED') {
-        isNotificationRealtimeConnecting = false;
-        if (activeNotificationChannel === channel) {
-          activeNotificationChannel = null;
-        }
-        Logger.log('[NotificationRealtime] Canal cerrado.');
-      }
     });
+
+  channel.subscribe((status, error) => {
+    if (status === 'SUBSCRIBED') {
+      isNotificationRealtimeConnecting = false;
+      activeNotificationChannel = channel;
+      Logger.log('[NotificationRealtime] Canal privado conectado.');
+      return;
+    }
+
+    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      isNotificationRealtimeConnecting = false;
+      if (activeNotificationChannel === channel) {
+        activeNotificationChannel = null;
+      }
+      Logger.warn('[NotificationRealtime] Error de canal:', error || status);
+      return;
+    }
+
+    if (status === 'CLOSED') {
+      isNotificationRealtimeConnecting = false;
+      if (activeNotificationChannel === channel) {
+        activeNotificationChannel = null;
+      }
+      Logger.log('[NotificationRealtime] Canal cerrado.');
+    }
+  });
 
   return channel;
 };
