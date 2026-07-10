@@ -5,6 +5,7 @@ import OperationalSettings from '../components/settings/OperationalSettings';
 import LicenseSettings from '../components/settings/LicenseSettings';
 import MaintenanceSettings from '../components/settings/MaintenanceSettings';
 import BackupSettings from '../components/settings/BackupSettings';
+import EcommercePortalSettings from '../components/ecommerce/EcommercePortalSettings';
 import DbMigrationTester from '../components/debug/DbMigrationTester';
 import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
@@ -16,7 +17,7 @@ export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const canAccess = useAppStore((state) => state.canAccess);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  useAppStore((state) => state.currentDeviceRole);
+  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   useAppStore((state) => state.currentStaffUser);
 
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
@@ -24,6 +25,7 @@ export default function SettingsPage() {
   const visibleTabs = [
     { key: 'general', allowed: canAccess('settings') },
     { key: 'controls', allowed: canAccess('settings') },
+    { key: 'portal-online', allowed: canAccess('settings') && currentDeviceRole === 'admin' },
     { key: 'license', allowed: canAccess('license') },
     { key: 'maintenance', allowed: canAccess('sync') || canAccess('inventory') },
     { key: 'backup', allowed: canAccess('sync') },
@@ -36,6 +38,7 @@ export default function SettingsPage() {
     const tabMap = {
       general: 'general',
       controls: 'controls',
+      'portal-online': 'portal-online',
       license: 'license',
       maintenance: 'maintenance',
       backup: 'backup',
@@ -66,6 +69,7 @@ export default function SettingsPage() {
         <div className="tabs-container settings-tabs">
           <button type="button" className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`} onClick={() => handleTabChange('general')} hidden={!tabIsVisible('general')}>Datos y Apariencia</button>
           <button type="button" className={`tab-btn ${activeTab === 'controls' ? 'active' : ''}`} onClick={() => handleTabChange('controls')} hidden={!tabIsVisible('controls')}>Controles</button>
+          <button type="button" className={`tab-btn ${activeTab === 'portal-online' ? 'active' : ''}`} onClick={() => handleTabChange('portal-online')} hidden={!tabIsVisible('portal-online')}>Portal online</button>
           <button type="button" className={`tab-btn ${activeTab === 'license' ? 'active' : ''}`} onClick={() => handleTabChange('license')} hidden={!tabIsVisible('license')}>Licencia y Rubros</button>
           <button type="button" className={`tab-btn ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => handleTabChange('maintenance')} hidden={!tabIsVisible('maintenance')}>Datos y Mantenimiento</button>
           <button type="button" className={`tab-btn ${activeTab === 'backup' ? 'active' : ''}`} onClick={() => handleTabChange('backup')} hidden={!tabIsVisible('backup')}>Respaldos</button>
@@ -77,6 +81,7 @@ export default function SettingsPage() {
       <section className="ui-section settings-content">
         {activeTab === 'general' && <GeneralSettings />}
         {activeTab === 'controls' && <OperationalSettings />}
+        {activeTab === 'portal-online' && <EcommercePortalSettings />}
         {activeTab === 'license' && <LicenseSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}
         {activeTab === 'backup' && (
