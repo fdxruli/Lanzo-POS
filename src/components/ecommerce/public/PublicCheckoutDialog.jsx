@@ -89,10 +89,17 @@ function PublicCheckoutDialog({
   const [fieldErrors, setFieldErrors] = useState({});
   const isSubmitting = status === 'submitting';
   const isConfirmed = status === 'confirmed';
+  const portalSlug = portal?.slug || '';
+  const pickupEnabled = portal?.pickupEnabled === true;
+  const deliveryEnabled = portal?.deliveryEnabled === true;
+  const fulfillmentPortal = useMemo(() => ({
+    pickupEnabled,
+    deliveryEnabled,
+  }), [deliveryEnabled, pickupEnabled]);
   const availableMethods = useMemo(() => [
-    portal?.pickupEnabled ? 'pickup' : null,
-    portal?.deliveryEnabled ? 'delivery' : null,
-  ].filter(Boolean), [portal?.deliveryEnabled, portal?.pickupEnabled]);
+    pickupEnabled ? 'pickup' : null,
+    deliveryEnabled ? 'delivery' : null,
+  ].filter(Boolean), [deliveryEnabled, pickupEnabled]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -112,31 +119,31 @@ function PublicCheckoutDialog({
   }, [isOpen, isSubmitting, onClose]);
 
   useEffect(() => {
-    setForm(createEmptyForm(portal));
+    setForm(createEmptyForm(fulfillmentPortal));
     setFieldErrors({});
-  }, [portal?.deliveryEnabled, portal?.pickupEnabled, portal?.slug]);
+  }, [fulfillmentPortal, portalSlug]);
 
   useEffect(() => {
     if (!isConfirmed) return;
-    setForm(createEmptyForm(portal));
+    setForm(createEmptyForm(fulfillmentPortal));
     setFieldErrors({});
-  }, [isConfirmed, portal?.deliveryEnabled, portal?.pickupEnabled, portal?.slug]);
+  }, [fulfillmentPortal, isConfirmed]);
 
   useEffect(() => {
     if (!isOpen || isConfirmed) return;
     setForm((current) => {
       const currentAvailable = (
-        (current.fulfillmentMethod === 'pickup' && portal?.pickupEnabled)
-        || (current.fulfillmentMethod === 'delivery' && portal?.deliveryEnabled)
+        (current.fulfillmentMethod === 'pickup' && pickupEnabled)
+        || (current.fulfillmentMethod === 'delivery' && deliveryEnabled)
       );
       if (currentAvailable) return current;
       return {
         ...current,
-        fulfillmentMethod: getInitialFulfillmentMethod(portal),
+        fulfillmentMethod: getInitialFulfillmentMethod(fulfillmentPortal),
         address: '',
       };
     });
-  }, [isConfirmed, isOpen, portal?.deliveryEnabled, portal?.pickupEnabled]);
+  }, [deliveryEnabled, fulfillmentPortal, isConfirmed, isOpen, pickupEnabled]);
 
   if (!isOpen) return null;
 
@@ -168,7 +175,7 @@ function PublicCheckoutDialog({
   };
 
   const handleContinue = () => {
-    setForm(createEmptyForm(portal));
+    setForm(createEmptyForm(fulfillmentPortal));
     setFieldErrors({});
     onContinue();
   };
