@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const closeNotificationCenter = vi.fn();
+const mocks = vi.hoisted(() => ({
+  closeNotificationCenter: vi.fn()
+}));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector({ closeNotificationCenter })
+  useAppStore: (selector) => selector({
+    closeNotificationCenter: mocks.closeNotificationCenter
+  })
 }));
 
 import NotificationItem from '../NotificationItem';
@@ -29,6 +34,14 @@ const notification = {
   is_dismissible: true
 };
 
+afterEach(() => {
+  cleanup();
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 describe('NotificationItem ecommerce', () => {
   it('shows the ecommerce label, marks read, closes the center and navigates', async () => {
     const onRead = vi.fn().mockResolvedValue({ success: true });
@@ -50,8 +63,9 @@ describe('NotificationItem ecommerce', () => {
 
     await waitFor(() => {
       expect(onRead).toHaveBeenCalledWith('notification-1');
-      expect(closeNotificationCenter).toHaveBeenCalledTimes(1);
-      expect(screen.getByTestId('location')).toHaveTextContent('/pedidos-online?order=11111111-1111-4111-8111-111111111111');
+      expect(mocks.closeNotificationCenter).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('location'))
+        .toHaveTextContent('/pedidos-online?order=11111111-1111-4111-8111-111111111111');
     });
   });
 
@@ -73,7 +87,7 @@ describe('NotificationItem ecommerce', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ver pedido' }));
 
     await waitFor(() => expect(onRead).toHaveBeenCalled());
-    expect(closeNotificationCenter).not.toHaveBeenCalled();
+    expect(mocks.closeNotificationCenter).not.toHaveBeenCalled();
     expect(screen.getByTestId('location')).toHaveTextContent('/');
   });
 });
