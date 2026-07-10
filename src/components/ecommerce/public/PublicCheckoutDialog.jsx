@@ -23,6 +23,14 @@ const getInitialFulfillmentMethod = (portal) => {
   return '';
 };
 
+const createEmptyForm = (portal) => ({
+  name: '',
+  phone: '',
+  fulfillmentMethod: getInitialFulfillmentMethod(portal),
+  address: '',
+  notes: '',
+});
+
 const normalizeForm = (form) => {
   const fulfillmentMethod = form.fulfillmentMethod;
   return {
@@ -77,13 +85,7 @@ function PublicCheckoutDialog({
 }) {
   const closeButtonRef = useRef(null);
   const submitPromiseRef = useRef(null);
-  const [form, setForm] = useState({
-    name: '',
-    phone: '',
-    fulfillmentMethod: getInitialFulfillmentMethod(portal),
-    address: '',
-    notes: '',
-  });
+  const [form, setForm] = useState(() => createEmptyForm(portal));
   const [fieldErrors, setFieldErrors] = useState({});
   const isSubmitting = status === 'submitting';
   const isConfirmed = status === 'confirmed';
@@ -110,6 +112,17 @@ function PublicCheckoutDialog({
   }, [isOpen, isSubmitting, onClose]);
 
   useEffect(() => {
+    setForm(createEmptyForm(portal));
+    setFieldErrors({});
+  }, [portal?.deliveryEnabled, portal?.pickupEnabled, portal?.slug]);
+
+  useEffect(() => {
+    if (!isConfirmed) return;
+    setForm(createEmptyForm(portal));
+    setFieldErrors({});
+  }, [isConfirmed, portal?.deliveryEnabled, portal?.pickupEnabled, portal?.slug]);
+
+  useEffect(() => {
     if (!isOpen || isConfirmed) return;
     setForm((current) => {
       const currentAvailable = (
@@ -123,7 +136,7 @@ function PublicCheckoutDialog({
         address: '',
       };
     });
-  }, [isConfirmed, isOpen, portal]);
+  }, [isConfirmed, isOpen, portal?.deliveryEnabled, portal?.pickupEnabled]);
 
   if (!isOpen) return null;
 
@@ -152,6 +165,12 @@ function PublicCheckoutDialog({
     } finally {
       if (submitPromiseRef.current === submitPromise) submitPromiseRef.current = null;
     }
+  };
+
+  const handleContinue = () => {
+    setForm(createEmptyForm(portal));
+    setFieldErrors({});
+    onContinue();
   };
 
   const showRefresh = STALE_CART_CODES.has(error?.code);
@@ -196,7 +215,7 @@ function PublicCheckoutDialog({
               order={confirmedOrder?.order}
               whatsapp={confirmedOrder?.whatsapp}
               whatsappEnabled={features?.whatsappCheckout === true}
-              onContinue={onContinue}
+              onContinue={handleContinue}
             />
           ) : (
             <form className="public-checkout-form" onSubmit={submit} noValidate>
