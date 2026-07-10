@@ -30,7 +30,9 @@ const readNum = (storage, key) => {
 const write = (storage, key, value) => {
   try {
     storage.setItem(key, value);
-  } catch {}
+  } catch {
+    // Best effort cache write.
+  }
 };
 
 const planCodeOf = (licenseDetails = {}) => (

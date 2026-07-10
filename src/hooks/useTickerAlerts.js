@@ -8,11 +8,17 @@ import { TICKER_INVENTORY_ALERT_EVENT } from '../services/tickerAlertEvents';
 
 const EMPTY_SNAPSHOT = { catalogSize: 0, alerts: [] };
 
-export function useTickerAlerts() {
+export function useTickerAlerts(enabled = true) {
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
+    if (!enabled) {
+      requestIdRef.current += 1;
+      setSnapshot(EMPTY_SNAPSHOT);
+      return undefined;
+    }
+
     let cancelled = false;
 
     const refreshIfVisible = async () => {
@@ -49,7 +55,7 @@ export function useTickerAlerts() {
       window.removeEventListener(TICKER_INVENTORY_ALERT_EVENT, handleRefresh);
       document.removeEventListener('visibilitychange', handleRefresh);
     };
-  }, []);
+  }, [enabled]);
 
   return snapshot;
 }

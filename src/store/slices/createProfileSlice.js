@@ -28,7 +28,7 @@ const normalizeBusinessTypes = (businessType) => {
     rawTypes = businessType.filter(Boolean);
   } else if (typeof businessType === 'string') {
     rawTypes = businessType
-      .replace(/[{}\"]/g, '')
+      .replace(/[{}"]/g, '')
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
