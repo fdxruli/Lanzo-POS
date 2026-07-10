@@ -1,0 +1,62 @@
+name: ECOM Checkout 1.1 Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - fase-ecom-checkout-1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Specific ESLint
+        run: >-
+          npx eslint
+          src/components/ecommerce/public/PublicCheckoutDialog.jsx
+          src/components/ecommerce/public/PublicOrderConfirmation.jsx
+          src/pages/PublicStorePage.jsx
+          src/services/ecommerce/ecommerceCheckoutIdempotency.js
+          src/services/ecommerce/ecommercePublicService.js
+          src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx
+          src/pages/__tests__/PublicStoreCheckout.test.jsx
+      - name: Specific checkout tests
+        run: >-
+          npx vitest run
+          src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx
+          src/pages/__tests__/PublicStoreCheckout.test.jsx
+          src/services/ecommerce/__tests__/ecommerceCheckoutIdempotency.test.js
+          src/services/ecommerce/__tests__/ecommercePublicService.test.js
+          src/pages/__tests__/PublicStorePage.test.jsx
+          --maxWorkers=4
+      - name: Public regression tests
+        run: >-
+          npx vitest run
+          src/services/ecommerce/__tests__/ecommercePublicService.test.js
+          src/services/ecommerce/__tests__/ecommercePublicProductRules.test.js
+          src/services/ecommerce/__tests__/ecommerceCheckoutIdempotency.test.js
+          src/hooks/ecommerce/__tests__/usePublicCart.test.jsx
+          src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx
+          src/pages/__tests__/PublicStorePage.test.jsx
+          src/pages/__tests__/PublicStoreCheckout.test.jsx
+          src/router/__tests__/publicStoreRouting.test.jsx
+          --maxWorkers=4
+      - name: Global lint
+        run: npm run lint
+      - name: Global tests
+        run: npm run test:ci
+      - name: Production build
+        run: npm run build
