@@ -255,6 +255,26 @@ Producción: PASS con `vite build`.
 
 Preview correctivo: READY. El head final se verifica después de retirar el workflow auxiliar.
 
+## Integración posterior ECOM.ORDERS.1
+
+ECOM.ORDERS.1 consume el contrato público de checkout sin modificar su semántica:
+
+- `ecommerce_create_order` continúa creando una sola orden, sus items y un único evento `order_created` dentro de la transacción pública;
+- la notificación PRO se conecta después del evento `order_created`, cuando los items y totales ya existen;
+- la creación de notificación es deduplicada por `ecommerce_order_created:<order_id>`;
+- un retry idempotente del checkout conserva una orden y una notificación;
+- FREE crea el pedido pero no genera filas ecommerce en `pos_notifications`;
+- ningún fallo interno de notificación revierte o expone errores al checkout;
+- la bandeja administrativa consulta y muta pedidos únicamente mediante RPCs autenticadas;
+- aceptar o rechazar no crea ventas, comandas, clientes POS, pagos, caja, movimientos de inventario ni reservas de stock;
+- el pedido controlado `EC-00000010` no fue modificado ni recibió notificación retroactiva durante la implementación.
+
+La validación detallada queda documentada en:
+
+- `reports/ecom_rpc_2_order_management_report.md`;
+- `reports/ecom_fe_orders_1_inbox_report.md`;
+- `reports/ecom_notif_1_order_notifications_report.md`.
+
 ## Estado de cierre
 
 - Implementación ECOM.RPC.1.3.2: terminada y validada en SQL.
