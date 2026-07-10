@@ -1,20 +1,22 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const loadEcommerceOrders = vi.fn().mockResolvedValue({ success: true });
-const openEcommerceOrder = vi.fn().mockResolvedValue({ success: true });
-const refreshEcommerceOrders = vi.fn().mockResolvedValue({ success: true });
-const setEcommerceOrdersFilter = vi.fn();
-const clearSelectedEcommerceOrder = vi.fn();
-const acceptEcommerceOrder = vi.fn().mockResolvedValue({ success: true });
-const rejectEcommerceOrder = vi.fn().mockResolvedValue({ success: true });
-
-let storeState;
+const store = vi.hoisted(() => ({
+  state: null,
+  loadEcommerceOrders: vi.fn(),
+  openEcommerceOrder: vi.fn(),
+  refreshEcommerceOrders: vi.fn(),
+  setEcommerceOrdersFilter: vi.fn(),
+  clearSelectedEcommerceOrder: vi.fn(),
+  acceptEcommerceOrder: vi.fn(),
+  rejectEcommerceOrder: vi.fn()
+}));
 
 vi.mock('../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector(storeState)
+  useAppStore: (selector) => selector(store.state)
 }));
 
 import EcommerceOrdersPage from '../EcommerceOrdersPage';
@@ -45,13 +47,13 @@ const baseState = () => ({
   selectedEcommerceOrderLoading: false,
   selectedEcommerceOrderError: null,
   ecommerceOrderActionLoading: null,
-  loadEcommerceOrders,
-  openEcommerceOrder,
-  refreshEcommerceOrders,
-  setEcommerceOrdersFilter,
-  clearSelectedEcommerceOrder,
-  acceptEcommerceOrder,
-  rejectEcommerceOrder
+  loadEcommerceOrders: store.loadEcommerceOrders,
+  openEcommerceOrder: store.openEcommerceOrder,
+  refreshEcommerceOrders: store.refreshEcommerceOrders,
+  setEcommerceOrdersFilter: store.setEcommerceOrdersFilter,
+  clearSelectedEcommerceOrder: store.clearSelectedEcommerceOrder,
+  acceptEcommerceOrder: store.acceptEcommerceOrder,
+  rejectEcommerceOrder: store.rejectEcommerceOrder
 });
 
 const renderPage = (entry = '/pedidos-online') => render(
@@ -62,16 +64,26 @@ const renderPage = (entry = '/pedidos-online') => render(
   </MemoryRouter>
 );
 
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
-  storeState = baseState();
+  store.loadEcommerceOrders.mockResolvedValue({ success: true });
+  store.openEcommerceOrder.mockResolvedValue({ success: true });
+  store.refreshEcommerceOrders.mockResolvedValue({ success: true });
+  store.acceptEcommerceOrder.mockResolvedValue({ success: true });
+  store.rejectEcommerceOrder.mockResolvedValue({ success: true });
+  store.state = baseState();
 });
 
 describe('EcommerceOrdersPage', () => {
   it('loads the inbox and keeps address and notes out of the list', async () => {
     renderPage();
 
-    await waitFor(() => expect(loadEcommerceOrders).toHaveBeenCalledWith({
+    await waitFor(() => expect(store.loadEcommerceOrders).toHaveBeenCalledWith({
       filter: 'all',
       force: false
     }));
@@ -82,10 +94,23 @@ describe('EcommerceOrdersPage', () => {
     expect(screen.queryByText('Notas privadas')).not.toBeInTheDocument();
   });
 
+  it('does not call the inbox RPC while the device role is unresolved', async () => {
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: null
+    };
+
+    renderPage();
+    await Promise.resolve();
+
+    expect(store.loadEcommerceOrders).not.toHaveBeenCalled();
+    expect(store.openEcommerceOrder).not.toHaveBeenCalled();
+  });
+
   it('opens a valid order deep link and requests mark-seen behavior', async () => {
     renderPage(`/pedidos-online?order=${orderId}`);
 
-    await waitFor(() => expect(openEcommerceOrder).toHaveBeenCalledWith(orderId, {
+    await waitFor(() => expect(store.openEcommerceOrder).toHaveBeenCalledWith(orderId, {
       force: true,
       markSeen: true
     }));
@@ -95,15 +120,15 @@ describe('EcommerceOrdersPage', () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /Pendientes/i }));
-    await waitFor(() => expect(setEcommerceOrdersFilter).toHaveBeenCalledWith('pending'));
-    expect(loadEcommerceOrders).toHaveBeenCalledWith({ filter: 'pending', force: true });
+    await waitFor(() => expect(store.setEcommerceOrdersFilter).toHaveBeenCalledWith('pending'));
+    expect(store.loadEcommerceOrders).toHaveBeenCalledWith({ filter: 'pending', force: true });
 
     fireEvent.click(screen.getByRole('button', { name: /Actualizar/i }));
-    expect(refreshEcommerceOrders).toHaveBeenCalled();
+    expect(store.refreshEcommerceOrders).toHaveBeenCalled();
   });
 
-  it('opens a selected order without exposing future operational actions', () => {
-    storeState = {
+  it('shows authorized PII in detail without exposing future operational actions', () => {
+    store.state = {
       ...baseState(),
       selectedEcommerceOrder: {
         id: orderId,
@@ -122,11 +147,14 @@ describe('EcommerceOrdersPage', () => {
 
     renderPage();
 
+    expect(screen.getByText('9610000000')).toBeInTheDocument();
     expect(screen.getByText('Dirección')).toBeInTheDocument();
     expect(screen.getByText('Notas')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Abrir WhatsApp/i })).toHaveAttribute('href', 'https://wa.me/529610000000');
+    expect(screen.getByRole('link', { name: /Abrir WhatsApp/i }))
+      .toHaveAttribute('href', 'https://wa.me/529610000000');
     expect(screen.queryByRole('button', { name: /Preparando/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Convertir a venta/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Aceptar pedido/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rechazar pedido/i })).not.toBeInTheDocument();
   });
 });
