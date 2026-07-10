@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../store/useAppStore';
 import EcommercePortalSettings from '../EcommercePortalSettings';
 import {
@@ -68,6 +68,11 @@ describe('EcommercePortalSettings internal access guard', () => {
     vi.clearAllMocks();
     getEcommercePortal.mockResolvedValue(successfulPortalResponse);
     listPublishedProducts.mockResolvedValue({ success: true, products: [] });
+    setStoreState({ role: null, initializing: false, licenseDetails: null });
+  });
+
+  afterEach(() => {
+    cleanup();
     setStoreState({ role: null, initializing: false, licenseDetails: null });
   });
 
