@@ -147,7 +147,7 @@ describe('PublicStorePage', () => {
     await user.click(await screen.findByRole('button', { name: 'Ver carrito, 2 unidades' }));
 
     expect(screen.getByRole('dialog', { name: 'Carrito (2)' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Producto 120' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: 'Producto 120' })).toHaveLength(2);
     expect(screen.getByText('$55.00 cada uno')).toBeInTheDocument();
     expect(screen.getAllByText('$110.00').length).toBeGreaterThan(0);
     expect(JSON.parse(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).items).toEqual([
