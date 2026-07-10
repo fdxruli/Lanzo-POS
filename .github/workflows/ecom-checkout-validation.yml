@@ -1,6 +1,9 @@
 name: ECOM Checkout Validation
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - fase-ecom-checkout-1
