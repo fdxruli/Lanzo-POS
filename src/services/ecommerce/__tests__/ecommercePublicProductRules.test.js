@@ -38,18 +38,22 @@ describe('ecommercePublicProductRules', () => {
     expect(getPublicProductMaxQuantity(product, 2)).toBe(2);
   });
 
-  it('keeps hidden stock private and follows isAvailable', () => {
-    expect(getPublicProductStockLabel({
+  it('keeps hidden stock private and follows only isAvailable', () => {
+    const inconsistentHiddenStock = {
       isAvailable: true,
-      stock: { mode: 'hidden', quantity: 50 },
-    })).toBeNull();
+      stock: { mode: 'hidden', status: 'out_of_stock', quantity: 0 },
+    };
+
+    expect(getPublicProductStockLabel(inconsistentHiddenStock)).toBeNull();
+    expect(isPublicProductAvailable(inconsistentHiddenStock)).toBe(true);
+    expect(getPublicProductMaxQuantity(inconsistentHiddenStock, 8)).toBe(8);
     expect(isPublicProductAvailable({
       isAvailable: false,
       stock: { mode: 'hidden' },
     })).toBe(false);
   });
 
-  it('lets confirmed out_of_stock override inconsistent positive quantity', () => {
+  it('lets confirmed out_of_stock override inconsistent positive exact quantity', () => {
     const product = {
       isAvailable: true,
       stock: { mode: 'exact', status: 'out_of_stock', quantity: 5 },
