@@ -1,5 +1,6 @@
 import Logger from '../Logger';
 import { supabaseClient } from '../supabase';
+import { canUseEcommerceOrderRealtime } from '../ecommerce/ecommerceOrderCapabilities';
 import {
   canStaffAccessNotifications,
   isCloudNotificationsEnabled,
@@ -27,14 +28,23 @@ export const getNotificationRealtimeTopic = (licenseDetails = {}) => (
 
 export const canUseNotificationRealtime = (licenseDetails = {}, staffSession = {}) => {
   const features = getFeatures(licenseDetails);
-
-  return (
+  const topic = getNotificationRealtimeTopic(licenseDetails);
+  const notificationsRealtimeEnabled = (
     isNotificationCenterEnabled(licenseDetails) &&
     isCloudNotificationsEnabled(licenseDetails) &&
     canStaffAccessNotifications(licenseDetails, staffSession) &&
-    (isTrue(features.support_realtime) || isTrue(features.realtime_license_sync)) &&
-    Boolean(getNotificationRealtimeTopic(licenseDetails))
+    (isTrue(features.support_realtime) || isTrue(features.realtime_license_sync))
   );
+  const ecommerceRealtimeEnabled = canUseEcommerceOrderRealtime(licenseDetails, staffSession);
+
+  return Boolean(topic) && (notificationsRealtimeEnabled || ecommerceRealtimeEnabled);
+};
+
+const dispatchEcommerceOrderEvent = (event) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('lanzo:ecommerce-orders-changed', {
+    detail: event
+  }));
 };
 
 export const startNotificationRealtime = ({
@@ -43,12 +53,12 @@ export const startNotificationRealtime = ({
   onNotificationEvent
 } = {}) => {
   if (!canUseNotificationRealtime(licenseDetails, staffSession)) {
-    Logger.log('[NotificationRealtime] Desactivado por plan o falta de topic.');
+    Logger.log('[NotificationRealtime] Desactivado por plan, permiso o falta de topic.');
     return null;
   }
 
   if (!supabaseClient) {
-    Logger.warn('[NotificationRealtime] Supabase no esta configurado.');
+    Logger.warn('[NotificationRealtime] Supabase no está configurado.');
     return null;
   }
 
@@ -74,21 +84,31 @@ export const startNotificationRealtime = ({
       config: { private: true }
     })
     .on('broadcast', { event: 'notification_event' }, (payload) => {
-      const event = payload?.payload || payload || {};
+      const rawEvent = payload?.payload || payload || {};
+      const event = {
+        event: rawEvent.event,
+        notificationId: rawEvent.notification_id || rawEvent.notificationId || null,
+        ticketId: rawEvent.ticket_id || rawEvent.ticketId || null,
+        reason: rawEvent.reason || 'notification_created',
+        createdAt: rawEvent.created_at || rawEvent.createdAt || null,
+        metadata: rawEvent.metadata || {}
+      };
 
-      if (event?.event !== 'notifications_changed') {
-        Logger.log('[NotificationRealtime] Evento ignorado.', event?.event || 'unknown');
+      if (rawEvent?.event === 'ecommerce_orders_changed') {
+        dispatchEcommerceOrderEvent(event);
         return;
       }
 
-      onNotificationEvent?.({
-        event: event.event,
-        notificationId: event.notification_id || event.notificationId || null,
-        ticketId: event.ticket_id || event.ticketId || null,
-        reason: event.reason || 'notification_created',
-        createdAt: event.created_at || event.createdAt || null,
-        metadata: event.metadata || {}
-      });
+      if (rawEvent?.event !== 'notifications_changed') {
+        Logger.log('[NotificationRealtime] Evento ignorado.', rawEvent?.event || 'unknown');
+        return;
+      }
+
+      if (event.metadata?.category === 'ecommerce' || event.metadata?.source === 'ecommerce') {
+        dispatchEcommerceOrderEvent(event);
+      }
+
+      onNotificationEvent?.(event);
     })
     .subscribe((status, error) => {
       if (status === 'SUBSCRIBED') {
