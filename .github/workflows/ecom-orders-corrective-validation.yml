@@ -16,15 +16,13 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
     env:
       VITE_SUPABASE_URL: https://example.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-key
     steps:
       - name: Checkout branch
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -77,67 +75,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Global branch baseline
-        if: always()
-        shell: bash
-        run: |
-          mkdir -p validation-artifacts
-          set +e
-          npm run lint > validation-artifacts/branch-lint.log 2>&1
-          echo $? > validation-artifacts/branch-lint.exit
-          npm run test:ci > validation-artifacts/branch-test-ci.log 2>&1
-          echo $? > validation-artifacts/branch-test-ci.exit
-          set -e
-
-      - name: Global main baseline
-        if: always()
-        shell: bash
-        run: |
-          git worktree add /tmp/lanzo-main origin/main
-          cd /tmp/lanzo-main
-          npm ci
-          set +e
-          npm run lint > "$GITHUB_WORKSPACE/validation-artifacts/main-lint.log" 2>&1
-          echo $? > "$GITHUB_WORKSPACE/validation-artifacts/main-lint.exit"
-          npm run test:ci > "$GITHUB_WORKSPACE/validation-artifacts/main-test-ci.log" 2>&1
-          echo $? > "$GITHUB_WORKSPACE/validation-artifacts/main-test-ci.exit"
-          set -e
-
-      - name: Baseline summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo '## ECOM.ORDERS.1.1 baseline comparison'
-            echo
-            echo '| Command | Branch exit | Main exit |'
-            echo '|---|---:|---:|'
-            echo "| npm run lint | $(cat validation-artifacts/branch-lint.exit 2>/dev/null || echo missing) | $(cat validation-artifacts/main-lint.exit 2>/dev/null || echo missing) |"
-            echo "| npm run test:ci | $(cat validation-artifacts/branch-test-ci.exit 2>/dev/null || echo missing) | $(cat validation-artifacts/main-test-ci.exit 2>/dev/null || echo missing) |"
-            echo
-            echo '### Branch lint tail'
-            echo '```text'
-            tail -n 25 validation-artifacts/branch-lint.log 2>/dev/null || true
-            echo '```'
-            echo '### Main lint tail'
-            echo '```text'
-            tail -n 25 validation-artifacts/main-lint.log 2>/dev/null || true
-            echo '```'
-            echo '### Branch test tail'
-            echo '```text'
-            tail -n 35 validation-artifacts/branch-test-ci.log 2>/dev/null || true
-            echo '```'
-            echo '### Main test tail'
-            echo '```text'
-            tail -n 35 validation-artifacts/main-test-ci.log 2>/dev/null || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload baseline logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ecom-orders-corrective-validation
-          path: validation-artifacts
-          retention-days: 3
