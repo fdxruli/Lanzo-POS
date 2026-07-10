@@ -17,6 +17,8 @@ const summaryRequestPromises = new Map();
 const detailRequestPromises = new Map();
 const actionRequestPromises = new Map();
 let requestEpoch = 0;
+let listIntentEpoch = 0;
+let detailIntentEpoch = 0;
 
 const now = () => Date.now();
 const isFresh = (value, ttl) => Number.isFinite(Number(value)) && now() - Number(value) < ttl;
@@ -61,10 +63,22 @@ const isRequestContextCurrent = (context, state = {}) => (
   canAccessEcommerceOrders(state.licenseDetails, getStaffSession(state))
 );
 
+const isListIntentCurrent = ({ requestContext, intentEpoch, requestKey }, state = {}) => (
+  isRequestContextCurrent(requestContext, state) &&
+  intentEpoch === listIntentEpoch &&
+  state.ecommerceOrdersActiveRequestKey === requestKey
+);
+
+const isDetailIntentCurrent = ({ requestContext, intentEpoch, orderId }, state = {}) => (
+  isRequestContextCurrent(requestContext, state) &&
+  intentEpoch === detailIntentEpoch &&
+  state.selectedEcommerceOrderRequestId === orderId
+);
+
 const staleResponse = () => ({
   success: false,
   code: 'ECOMMERCE_ORDERS_STALE_RESPONSE',
-  message: 'La sesión cambió antes de completar la solicitud.',
+  message: 'La sesión o la selección cambió antes de completar la solicitud.',
   stale: true
 });
 
@@ -86,13 +100,16 @@ const createInitialState = () => ({
   ecommerceOrdersLoaded: false,
   ecommerceOrdersFilter: 'all',
   ecommerceOrdersPagination: { limit: 50, offset: 0, hasMore: false },
+  ecommerceOrdersActiveRequestKey: null,
   selectedEcommerceOrder: null,
   selectedEcommerceOrderLoading: false,
   selectedEcommerceOrderError: null,
   selectedEcommerceOrderLoadedAt: null,
   selectedEcommerceOrderLicenseIdentity: null,
   selectedEcommerceOrderActorIdentity: null,
+  selectedEcommerceOrderRequestId: null,
   ecommerceOrderActionLoading: null,
+  ecommerceOrderActionOrderId: null,
   ecommerceOrdersStale: true,
   ecommerceOrderSummaryStale: true,
   lastEcommerceOrdersLoadedAt: null,
@@ -114,6 +131,8 @@ const clearRequestMaps = () => {
 
 const resetRequestState = (set) => {
   requestEpoch += 1;
+  listIntentEpoch += 1;
+  detailIntentEpoch += 1;
   clearRequestMaps();
   set(createInitialState());
 };
@@ -137,7 +156,8 @@ const runOrderAction = async ({
   actionName,
   loadingValue,
   request,
-  requestArgs = {}
+  requestArgs = {},
+  requireVisibleSelection = false
 }) => {
   if (!orderId) return { success: false, code: 'ECOMMERCE_ORDER_NOT_FOUND' };
 
@@ -147,8 +167,16 @@ const runOrderAction = async ({
     return { success: false, code: 'ECOMMERCE_ORDERS_ACCESS_DENIED' };
   }
 
+  if (
+    requireVisibleSelection &&
+    (state.selectedEcommerceOrder?.id !== orderId || state.selectedEcommerceOrderRequestId !== orderId)
+  ) {
+    return staleResponse();
+  }
+
   const requestContext = captureRequestContext(state);
   const requestLicenseDetails = state.licenseDetails;
+  const detailIntentAtStart = detailIntentEpoch;
   const requestKey = [
     requestContext.licenseIdentity,
     requestContext.actorIdentity,
@@ -160,8 +188,24 @@ const runOrderAction = async ({
     return actionRequestPromises.get(requestKey);
   }
 
+  const isCurrentAction = () => {
+    const current = get();
+    return (
+      isRequestContextCurrent(requestContext, current) &&
+      (!requireVisibleSelection || (
+        detailIntentAtStart === detailIntentEpoch &&
+        current.selectedEcommerceOrderRequestId === orderId &&
+        current.selectedEcommerceOrder?.id === orderId
+      ))
+    );
+  };
+
   if (loadingValue) {
-    set({ ecommerceOrderActionLoading: loadingValue, selectedEcommerceOrderError: null });
+    set({
+      ecommerceOrderActionLoading: loadingValue,
+      ecommerceOrderActionOrderId: orderId,
+      selectedEcommerceOrderError: null
+    });
   }
 
   const actionPromise = (async () => {
@@ -171,7 +215,7 @@ const runOrderAction = async ({
       ...requestArgs
     });
 
-    if (!isRequestContextCurrent(requestContext, get())) return staleResponse();
+    if (!isCurrentAction()) return staleResponse();
 
     if (result.success === false) {
       set({ selectedEcommerceOrderError: result.message || getEcommerceOrderErrorMessage(result) });
@@ -185,8 +229,6 @@ const runOrderAction = async ({
         get().openEcommerceOrder?.(orderId, { force: true, markSeen: false }),
         get().refreshEcommerceOrders?.({ background: true })
       ]);
-
-      if (!isRequestContextCurrent(requestContext, get())) return staleResponse();
     }
 
     return result;
@@ -201,8 +243,8 @@ const runOrderAction = async ({
       actionRequestPromises.delete(requestKey);
     }
 
-    if (loadingValue && isRequestContextCurrent(requestContext, get())) {
-      set({ ecommerceOrderActionLoading: null });
+    if (loadingValue && get().ecommerceOrderActionOrderId === orderId) {
+      set({ ecommerceOrderActionLoading: null, ecommerceOrderActionOrderId: null });
     }
   }
 };
@@ -230,14 +272,26 @@ export const createEcommerceOrderSlice = (set, get) => ({
     const resolvedFilter = filter || state.ecommerceOrdersFilter || 'all';
     const resolvedLimit = normalizeLimit(limit);
     const resolvedOffset = normalizeOffset(offset);
+    const requestKey = [
+      licenseIdentity,
+      actorIdentity,
+      resolvedFilter,
+      resolvedLimit,
+      resolvedOffset
+    ].join(':');
     const sameLicense = state.ecommerceOrdersLicenseIdentity === licenseIdentity;
     const sameActor = state.ecommerceOrdersActorIdentity === actorIdentity;
     const sameFilter = state.ecommerceOrdersFilter === resolvedFilter;
+    const samePagination = (
+      state.ecommerceOrdersPagination?.limit === resolvedLimit &&
+      state.ecommerceOrdersPagination?.offset === resolvedOffset
+    );
     const canUseCache = (
       !force &&
       sameLicense &&
       sameActor &&
       sameFilter &&
+      samePagination &&
       state.ecommerceOrdersLoaded &&
       !state.ecommerceOrdersStale &&
       isFresh(state.lastEcommerceOrdersLoadedAt, LIST_TTL_MS)
@@ -253,28 +307,28 @@ export const createEcommerceOrderSlice = (set, get) => ({
       };
     }
 
-    const requestKey = [
-      licenseIdentity,
-      actorIdentity,
-      resolvedFilter,
-      resolvedLimit,
-      resolvedOffset
-    ].join(':');
-
-    if (listRequestPromises.has(requestKey)) {
+    if (
+      listRequestPromises.has(requestKey) &&
+      state.ecommerceOrdersActiveRequestKey === requestKey
+    ) {
       return listRequestPromises.get(requestKey);
     }
 
+    listIntentEpoch += 1;
+    const intentEpoch = listIntentEpoch;
     const hasCachedList = sameLicense && sameActor && state.ecommerceOrdersLoaded;
+
     set({
       ecommerceOrdersLoading: !background && !hasCachedList,
       ecommerceOrdersRefreshing: background || hasCachedList,
       ecommerceOrdersError: null,
       ecommerceOrdersFilter: resolvedFilter,
+      ecommerceOrdersActiveRequestKey: requestKey,
       ecommerceOrdersLicenseIdentity: licenseIdentity,
       ecommerceOrdersActorIdentity: actorIdentity
     });
 
+    const intent = { requestContext, intentEpoch, requestKey };
     const request = (async () => {
       const result = await listEcommerceOrders({
         licenseDetails: requestLicenseDetails,
@@ -283,7 +337,7 @@ export const createEcommerceOrderSlice = (set, get) => ({
         offset: resolvedOffset
       });
 
-      if (!isRequestContextCurrent(requestContext, get())) return staleResponse();
+      if (!isListIntentCurrent(intent, get())) return staleResponse();
 
       if (result.success === false) {
         set({
@@ -324,7 +378,7 @@ export const createEcommerceOrderSlice = (set, get) => ({
     }
   },
 
-  loadEcommerceOrderSummary: async ({ force = false, background = true } = {}) => {
+  loadEcommerceOrderSummary: async ({ force = false } = {}) => {
     const state = get();
     if (!canUseInbox(state)) {
       resetRequestState(set);
@@ -364,10 +418,7 @@ export const createEcommerceOrderSlice = (set, get) => ({
       set({
         ecommerceOrderCounts: result.counts,
         ecommerceOrderSummaryStale: false,
-        lastEcommerceOrderSummaryLoadedAt: now(),
-        ecommerceOrdersLicenseIdentity: licenseIdentity,
-        ecommerceOrdersActorIdentity: actorIdentity,
-        ...(background ? {} : { ecommerceOrdersError: null })
+        lastEcommerceOrderSummaryLoadedAt: now()
       });
       return { success: true, counts: result.counts };
     })();
@@ -400,6 +451,7 @@ export const createEcommerceOrderSlice = (set, get) => ({
     if (
       !force &&
       state.selectedEcommerceOrder?.id === orderId &&
+      state.selectedEcommerceOrderRequestId === orderId &&
       state.selectedEcommerceOrderLicenseIdentity === licenseIdentity &&
       state.selectedEcommerceOrderActorIdentity === actorIdentity &&
       isFresh(state.selectedEcommerceOrderLoadedAt, DETAIL_TTL_MS)
@@ -408,24 +460,39 @@ export const createEcommerceOrderSlice = (set, get) => ({
     }
 
     const requestKey = `${licenseIdentity}:${actorIdentity}:${orderId}`;
-    if (detailRequestPromises.has(requestKey)) {
+    if (
+      detailRequestPromises.has(requestKey) &&
+      state.selectedEcommerceOrderRequestId === orderId
+    ) {
       return detailRequestPromises.get(requestKey);
     }
 
+    detailIntentEpoch += 1;
+    const intentEpoch = detailIntentEpoch;
+    const switchingOrder = state.selectedEcommerceOrderRequestId !== orderId;
+
     set({
+      selectedEcommerceOrder: null,
       selectedEcommerceOrderLoading: true,
       selectedEcommerceOrderError: null,
+      selectedEcommerceOrderLoadedAt: null,
       selectedEcommerceOrderLicenseIdentity: licenseIdentity,
-      selectedEcommerceOrderActorIdentity: actorIdentity
+      selectedEcommerceOrderActorIdentity: actorIdentity,
+      selectedEcommerceOrderRequestId: orderId,
+      ...(switchingOrder ? {
+        ecommerceOrderActionLoading: null,
+        ecommerceOrderActionOrderId: null
+      } : {})
     });
 
+    const intent = { requestContext, intentEpoch, orderId };
     const request = (async () => {
       let result = await getEcommerceOrder({
         licenseDetails: requestLicenseDetails,
         orderId
       });
 
-      if (!isRequestContextCurrent(requestContext, get())) return staleResponse();
+      if (!isDetailIntentCurrent(intent, get())) return staleResponse();
 
       if (result.success === false) {
         set({
@@ -442,7 +509,7 @@ export const createEcommerceOrderSlice = (set, get) => ({
           orderId
         });
 
-        if (!isRequestContextCurrent(requestContext, get())) return staleResponse();
+        if (!isDetailIntentCurrent(intent, get())) return staleResponse();
 
         if (seenResult.success !== false && seenResult.changed) {
           const refreshed = await getEcommerceOrder({
@@ -450,7 +517,7 @@ export const createEcommerceOrderSlice = (set, get) => ({
             orderId
           });
 
-          if (!isRequestContextCurrent(requestContext, get())) return staleResponse();
+          if (!isDetailIntentCurrent(intent, get())) return staleResponse();
           if (refreshed.success !== false) result = refreshed;
 
           set((current) => ({
@@ -468,7 +535,7 @@ export const createEcommerceOrderSlice = (set, get) => ({
         }
       }
 
-      if (!isRequestContextCurrent(requestContext, get())) return staleResponse();
+      if (!isDetailIntentCurrent(intent, get())) return staleResponse();
 
       set({
         selectedEcommerceOrder: result.order,
@@ -476,7 +543,8 @@ export const createEcommerceOrderSlice = (set, get) => ({
         selectedEcommerceOrderError: null,
         selectedEcommerceOrderLoadedAt: now(),
         selectedEcommerceOrderLicenseIdentity: licenseIdentity,
-        selectedEcommerceOrderActorIdentity: actorIdentity
+        selectedEcommerceOrderActorIdentity: actorIdentity,
+        selectedEcommerceOrderRequestId: orderId
       });
       return result;
     })();
@@ -507,7 +575,8 @@ export const createEcommerceOrderSlice = (set, get) => ({
     orderId,
     actionName: 'accept',
     loadingValue: 'accept',
-    request: acceptOrderRequest
+    request: acceptOrderRequest,
+    requireVisibleSelection: true
   }),
 
   rejectEcommerceOrder: (orderId, reason) => runOrderAction({
@@ -517,33 +586,45 @@ export const createEcommerceOrderSlice = (set, get) => ({
     actionName: 'reject',
     loadingValue: 'reject',
     request: rejectOrderRequest,
-    requestArgs: { reason }
+    requestArgs: { reason },
+    requireVisibleSelection: true
   }),
 
   refreshEcommerceOrders: ({ background = false } = {}) => get().loadEcommerceOrders({
     filter: get().ecommerceOrdersFilter,
     limit: get().ecommerceOrdersPagination?.limit || 50,
-    offset: 0,
+    offset: get().ecommerceOrdersPagination?.offset || 0,
     force: true,
     background
   }),
 
   setEcommerceOrdersFilter: (filter) => {
-    set({ ecommerceOrdersFilter: filter || 'all', ecommerceOrdersStale: true });
+    listIntentEpoch += 1;
+    set({
+      ecommerceOrdersFilter: filter || 'all',
+      ecommerceOrdersStale: true,
+      ecommerceOrdersActiveRequestKey: null
+    });
   },
 
   invalidateEcommerceOrdersCache: () => {
     set({ ecommerceOrdersStale: true, ecommerceOrderSummaryStale: true });
   },
 
-  clearSelectedEcommerceOrder: () => set({
-    selectedEcommerceOrder: null,
-    selectedEcommerceOrderLoading: false,
-    selectedEcommerceOrderError: null,
-    selectedEcommerceOrderLoadedAt: null,
-    selectedEcommerceOrderLicenseIdentity: null,
-    selectedEcommerceOrderActorIdentity: null
-  }),
+  clearSelectedEcommerceOrder: () => {
+    detailIntentEpoch += 1;
+    set({
+      selectedEcommerceOrder: null,
+      selectedEcommerceOrderLoading: false,
+      selectedEcommerceOrderError: null,
+      selectedEcommerceOrderLoadedAt: null,
+      selectedEcommerceOrderLicenseIdentity: null,
+      selectedEcommerceOrderActorIdentity: null,
+      selectedEcommerceOrderRequestId: null,
+      ecommerceOrderActionLoading: null,
+      ecommerceOrderActionOrderId: null
+    });
+  },
 
   resetEcommerceOrdersState: () => {
     resetRequestState(set);
