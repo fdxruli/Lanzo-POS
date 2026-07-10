@@ -26,6 +26,30 @@ jobs:
       - run: npx eslint src/components/ecommerce/public/PublicCheckoutDialog.jsx src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx
       - run: npx vitest run src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx --maxWorkers=1 --reporter=verbose
 
+  integration-error-preservation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run src/pages/__tests__/PublicStoreCheckout.test.jsx --maxWorkers=1 --reporter=verbose -t "keeps form data, cart and idempotency key after a network error"
+
+  integration-second-checkout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run src/pages/__tests__/PublicStoreCheckout.test.jsx --maxWorkers=1 --reporter=verbose -t "opens a second checkout without personal data after success"
+
   integration-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
