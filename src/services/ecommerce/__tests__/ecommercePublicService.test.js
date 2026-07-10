@@ -54,17 +54,31 @@ describe('ecommercePublicService', () => {
     expect(rpc.mock.calls.flat().join(' ')).not.toContain('ecommerce_create_order');
   });
 
-  it('keeps hidden stock hidden and never invents a quantity', async () => {
+  it('keeps hidden stock hidden and normalizes exact stock as an integer', async () => {
     const service = createEcommercePublicService({
       rpc: vi.fn().mockResolvedValue({
         data: {
           success: true,
-          items: [{
-            id: 'product-1',
-            name: 'Producto',
-            price: 50,
-            stock: { mode: 'hidden', status: null, quantity: 999 },
-          }],
+          items: [
+            {
+              id: 'hidden',
+              name: 'Oculto',
+              price: 50,
+              stock: { mode: 'hidden', status: null, quantity: 999 },
+            },
+            {
+              id: 'exact',
+              name: 'Exacto',
+              price: 50,
+              stock: { mode: 'exact', status: null, quantity: 3.8 },
+            },
+            {
+              id: 'zero',
+              name: 'Cero',
+              price: 50,
+              stock: { mode: 'exact', status: null, quantity: 0 },
+            },
+          ],
           pagination: {},
         },
         error: null,
@@ -73,6 +87,8 @@ describe('ecommercePublicService', () => {
 
     const result = await service.getPublicCatalog('mi-negocio');
     expect(result.items[0].stock).toEqual({ mode: 'hidden', status: null, quantity: null });
+    expect(result.items[1].stock).toEqual({ mode: 'exact', status: null, quantity: 3 });
+    expect(result.items[2].stock).toEqual({ mode: 'exact', status: null, quantity: 0 });
   });
 
   it('maps an unavailable portal to a safe public error', async () => {
