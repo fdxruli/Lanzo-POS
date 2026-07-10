@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider, useRouteError } from 'react-router-dom';
 import { publicStoreRoutes } from './router/publicStoreRoutes';
 import { isPublicStorePath } from './router/isPublicStorePath';
+import { preparePublicStoreDocument } from './router/preparePublicStoreDocument';
 import './index.css';
 import './styles/design-tokens.css';
 import './styles/ui-button.css';
@@ -123,6 +124,7 @@ async function renderPosApplication() {
 }
 
 if (isPublicStorePath(window.location.pathname)) {
+  preparePublicStoreDocument();
   renderPublicStore();
 } else {
   renderPosApplication().catch((error) => {

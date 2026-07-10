@@ -5,6 +5,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { isPublicStorePath } from '../isPublicStorePath';
 import { publicStoreRoutes } from '../publicStoreRoutes';
+import { preparePublicStoreDocument } from '../preparePublicStoreDocument';
 
 vi.mock('../../services/ecommerce/ecommercePublicService', async (importOriginal) => {
   const actual = await importOriginal();
@@ -40,6 +41,19 @@ describe('public store routing', () => {
     expect(isPublicStorePath('/')).toBe(false);
     expect(isPublicStorePath('/configuracion')).toBe(false);
     expect(isPublicStorePath('/tienda/uno/dos')).toBe(false);
+  });
+
+  it('removes zoom restrictions from the public document viewport', () => {
+    document.head.innerHTML = '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">';
+
+    preparePublicStoreDocument(document);
+
+    const content = document.querySelector('meta[name="viewport"]').getAttribute('content');
+    expect(content).toContain('width=device-width');
+    expect(content).toContain('initial-scale=1');
+    expect(content).toContain('viewport-fit=cover');
+    expect(content).not.toContain('maximum-scale');
+    expect(content).not.toContain('user-scalable');
   });
 
   it('mounts the public page for /tienda/:slug without POS shell UI', async () => {
