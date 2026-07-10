@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { webcrypto } from 'node:crypto';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -228,10 +228,11 @@ describe('PublicStorePage checkout integration', () => {
     await user.type(screen.getByLabelText('Notas'), 'Pedido anterior');
     await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
 
-    expect(await screen.findByText('PED-1001')).toBeInTheDocument();
-    expect(screen.getByText('Entrega a domicilio')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Enviar resumen por WhatsApp' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Seguir comprando' }));
+    const confirmationDialog = await screen.findByRole('dialog', { name: 'Pedido enviado' });
+    expect(within(confirmationDialog).getByText('PED-1001')).toBeInTheDocument();
+    expect(within(confirmationDialog).getByText('Entrega a domicilio')).toBeInTheDocument();
+    expect(within(confirmationDialog).getByRole('link', { name: 'Enviar resumen por WhatsApp' })).toBeInTheDocument();
+    await user.click(within(confirmationDialog).getByRole('button', { name: 'Seguir comprando' }));
 
     await addAndOpenCart(user);
     await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
