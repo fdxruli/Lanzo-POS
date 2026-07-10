@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { webcrypto } from 'node:crypto';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -165,9 +165,10 @@ describe('PublicStorePage checkout integration', () => {
     renderPage();
     await openAndFillCheckout(user);
     const confirm = screen.getByRole('button', { name: 'Confirmar pedido' });
-    await Promise.all([user.click(confirm), user.click(confirm)]);
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
 
-    expect(serviceMocks.createPublicOrder).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(serviceMocks.createPublicOrder).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole('heading', { name: 'Pedido enviado' })).toBeInTheDocument();
     expect(screen.getByText('PED-1001')).toBeInTheDocument();
     expect(screen.getByText('$80.00')).toBeInTheDocument();
@@ -197,7 +198,7 @@ describe('PublicStorePage checkout integration', () => {
     await openAndFillCheckout(user);
     await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
 
-    expect(await screen.findByText(/No se pudo confirmar el pedido/)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar el pedido');
     expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
     const firstKey = serviceMocks.createPublicOrder.mock.calls[0][1].idempotencyKey;
 
