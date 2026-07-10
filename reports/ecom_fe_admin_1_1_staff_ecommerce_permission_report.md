@@ -2,23 +2,25 @@
 
 ## Estado
 
-Implementación completada en la rama `fase-ecom-fe-admin-1-1-staff-permission` y publicada en el PR independiente `#82`.
+Implementación completada en la rama `fase-ecom-fe-admin-1-1-staff-permission` y publicada en el PR `#82`.
 
 Supabase producción: `odlrhijtfyavryeqivaa`.
 
-Se aplicaron de forma controlada únicamente las migraciones de esta fase:
+Migraciones aplicadas de forma controlada:
 
 1. `ecom_fe_admin_1_1_staff_permission` — autorización v2 y sobrecargas RPC.
-2. `ecom_fe_admin_1_1_rate_limit_actor_partition` — hardening de la partición admin/staff del rate limiter.
+2. `ecom_fe_admin_1_1_rate_limit_actor_partition` — primer hardening admin/staff.
+3. `ecom_fe_admin_1_1_device_rate_limit` — corrección ECOM.FE.ADMIN.1.1.1 con bucket previo exclusivamente por dispositivo.
 
-En el repositorio quedaron ordenadas como:
+Archivos versionados:
 
 - `supabase/migrations/20260710070000_ecom_fe_admin_1_1_staff_permission.sql`
 - `supabase/migrations/20260710071000_ecom_fe_admin_1_1_rate_limit_actor_partition.sql`
+- `supabase/migrations/20260710072000_ecom_fe_admin_1_1_device_rate_limit.sql`
 
-No se editaron migraciones antiguas, no se aplicaron migraciones ajenas y no se usó `db push`, `migration repair` ni `--include-all`.
+Las dos primeras migraciones ya estaban aplicadas y no fueron editadas ni renombradas. No se aplicaron migraciones ajenas y no se usó `db push`, `migration repair` ni `--include-all`.
 
-## 1. Causa raíz
+## 1. Causa raíz original
 
 El acceso al portal online dependía exclusivamente del rol físico del dispositivo.
 
@@ -46,10 +48,9 @@ Las cinco RPC administrativas usaban `private.ecommerce_admin_authorize(...)`, q
 
 - solo aceptaba `device_role = 'admin'`;
 - no recibía sesión staff;
-- enviaba siempre token staff nulo al rate limiter;
 - no consultaba los permisos vigentes `settings` y `ecommerce`.
 
-## 4. Nueva matriz admin/staff
+## 4. Matriz admin/staff vigente
 
 | Actor | Condición | Resultado |
 |---|---|---|
@@ -60,9 +61,9 @@ Las cinco RPC administrativas usaban `private.ecommerce_admin_authorize(...)`, q
 | Staff sin `settings` o sin `ecommerce` | Falta cualquiera de los dos permisos | `ECOMMERCE_STAFF_PERMISSION_DENIED` |
 | Otro rol | No es admin ni staff | `ECOMMERCE_ADMIN_ACCESS_DENIED` |
 
-## 5. Helper privado creado
+## 5. Helper privado
 
-Se creó:
+Firma vigente:
 
 ```sql
 private.ecommerce_admin_authorize_v2(
@@ -83,16 +84,11 @@ Propiedades verificadas:
 - sin ejecución para `public`, `anon` ni `authenticated`;
 - no devuelve licencia, fingerprint, tokens ni hashes.
 
-El hardening complementario identifica el rol confiable del dispositivo antes de elegir la partición del rate limiter:
-
-- admin, rol desconocido o credenciales no confiables: partición por dispositivo, token staff forzado a `null`;
-- staff identificado por licencia, fingerprint y security token: partición por sesión staff.
-
-Así un admin no puede fragmentar el límite enviando tokens arbitrarios.
+La partición vigente del rate limiter es exclusivamente por dispositivo para todos los actores. El token staff nunca participa en el bucket previo.
 
 ## 6. Firmas RPC nuevas
 
-Se agregaron sobrecargas sin valores por defecto:
+Sobrecargas sin valores por defecto:
 
 ```sql
 public.ecommerce_admin_get_portal(text, text, text, text)
@@ -102,18 +98,16 @@ public.ecommerce_admin_upsert_published_product(text, text, text, text, jsonb)
 public.ecommerce_admin_set_product_published(text, text, text, text, uuid, boolean)
 ```
 
-El cuarto argumento es `p_staff_session_token`.
+El cuarto argumento sigue siendo `p_staff_session_token` porque se necesita para autorizar al staff después del rate limit previo.
 
 ## 7. Estrategia de compatibilidad
 
 Las firmas antiguas se conservaron intactas y siguen usando `private.ecommerce_admin_authorize(...)`.
 
-Consecuencias:
-
-- el frontend anterior continúa funcionando para admin;
-- una firma antigua sin token no autoriza staff;
-- no hay `DEFAULT NULL` que genere ambigüedad en PostgREST;
-- el frontend nuevo invoca siempre las sobrecargas con token staff explícito.
+- El frontend anterior continúa funcionando para admin.
+- Una firma antigua sin token no autoriza staff.
+- No hay `DEFAULT NULL` que genere ambigüedad en PostgREST.
+- El frontend nuevo invoca siempre las sobrecargas con token staff explícito.
 
 ## 8. Validación de sesión staff
 
@@ -127,7 +121,7 @@ public.verify_staff_session_unlimited(
 )
 ```
 
-Se exige `valid = true`. La función existente valida licencia, dispositivo, hash, expiración, revocación, usuario activo y vínculo de la sesión con el dispositivo.
+Se exige `valid = true`. La función valida licencia, dispositivo, hash, expiración, revocación, usuario activo y vínculo de la sesión con el dispositivo.
 
 ## 9. Permisos obligatorios
 
@@ -138,7 +132,7 @@ coalesce((permissions->>'settings')::boolean, false) is true
 and coalesce((permissions->>'ecommerce')::boolean, false) is true
 ```
 
-No se confía en `currentStaffUser`, en permisos enviados por el cliente ni en un snapshot de sesión.
+No se confía en `currentStaffUser`, permisos enviados por el cliente ni snapshots de sesión.
 
 ## 10. Protección contra sesión de otro dispositivo o usuario
 
@@ -148,13 +142,13 @@ Además de `verify_staff_session_unlimited`, se verifica:
 staff_user.id = license_devices.staff_user_id
 ```
 
-Una sesión válida de otro dispositivo fue rechazada en la prueba transaccional.
+Una sesión válida vinculada a otro dispositivo fue rechazada en la prueba transaccional.
 
 ## 11. Revocación inmediata
 
 Dentro de una transacción se cambió únicamente `permissions.ecommerce` a `false` manteniendo activa la sesión. La siguiente RPC respondió `ECOMMERCE_STAFF_PERMISSION_DENIED`.
 
-Esto confirma que el backend consulta permisos vigentes en cada llamada. El fixture fue restaurado mediante `ROLLBACK`.
+El fixture fue restaurado mediante `ROLLBACK`.
 
 ## 12. Resultado admin
 
@@ -162,15 +156,15 @@ Con dispositivo admin activo y `p_staff_session_token = null`:
 
 - obtener portal: PASS;
 - listar productos: PASS;
-- guardar portal en rollback: PASS;
-- crear/actualizar producto en rollback: PASS;
-- publicar/despublicar en rollback: PASS.
+- guardar portal en rollback: PASS.
 
-Prueba adicional del rate limiter:
+Admin con token arbitrario:
 
-- admin enviando un token arbitrario: sigue en la partición del dispositivo;
-- no se creó una partición basada en el hash arbitrario;
-- resultado: PASS con rollback.
+- conserva acceso por dispositivo: PASS;
+- comparte el mismo bucket que la llamada con token nulo: PASS;
+- una sola fila de rate limit: PASS;
+- contador `1 → 2`: PASS;
+- `staff_session_hash IS NULL`: PASS.
 
 ## 13. Resultado staff autorizado
 
@@ -180,10 +174,9 @@ Con dispositivo staff activo, sesión fixture válida y `settings=true`, `ecomme
 - listar productos: PASS;
 - guardar portal en rollback: PASS;
 - crear/actualizar producto en rollback: PASS;
-- publicar/despublicar en rollback: PASS;
-- partición del rate limiter por sesión staff: PASS.
+- publicar/despublicar en rollback: PASS.
 
-No se registró ni imprimió el token staff.
+El token válido se utiliza únicamente para autorización posterior. El bucket previo sigue siendo por dispositivo y tiene `staff_session_hash IS NULL`.
 
 ## 14. Resultado staff no autorizado
 
@@ -201,8 +194,8 @@ Casos verificados con rollback:
 
 Resultados consolidados:
 
-- `ECOM.FE.ADMIN.1.1 SQL MATRIX: PASS`
-- `RATE LIMIT ACTOR PARTITION: PASS`
+- `DEVICE BUCKET FRAGMENTATION MATRIX: PASS`
+- `AUTHORIZATION REGRESSION MATRIX: PASS`
 
 ## 15. Verificación read-only de caja1
 
@@ -213,61 +206,60 @@ Producción confirmó:
   "username": "caja1",
   "role_name": "custom",
   "is_active": true,
-  "permissions": {
-    "settings": true,
-    "ecommerce": true
-  }
+  "settings": true,
+  "ecommerce": true,
+  "device_role": "staff",
+  "device_active": true
 }
 ```
 
-El JSON real conserva sin cambios los demás permisos, incluidos `pos`, `products`, `cash_register`, `discounts` y `notifications`. No se sobrescribió el objeto completo ni se modificó contraseña alguna.
+El JSON real conserva sin cambios los demás permisos, incluidos `pos`, `products`, `cash_register`, `discounts` y `notifications`. No se sobrescribió el objeto completo ni se modificó contraseña, username, role name, device role o sesiones reales.
 
 ## 16. Confirmación de que caja1 no fue convertido a admin
 
 `caja1` continúa vinculado a un dispositivo activo con `device_role = 'staff'`.
 
-No se actualizó `license_devices.device_role` y no se concedió acceso por username o `role_name`.
+No se concedió acceso por username o `role_name`.
 
 ## 17. Grants y helpers privados
 
-Verificación posterior a ambas migraciones:
+Verificación posterior a la tercera migración:
 
-- RPC administrativas antiguas y nuevas: `SECURITY DEFINER`;
-- `search_path = ''`;
-- firmas públicas nuevas: `anon=true`, `authenticated=true`, `public=false`;
-- helpers privados: `anon=false`, `authenticated=false`, `public=false`;
+- helper v2: `SECURITY DEFINER=true`;
+- `search_path=''`;
+- `anon_execute=false`;
+- `authenticated_execute=false`;
+- `public_execute=false`;
 - grants directos sobre tablas `public.ecommerce_%`: **0 filas**.
+
+No se modificaron los grants de las cinco RPC públicas.
 
 ## 18. Frontend, lint, pruebas y build
 
-Cambios frontend:
+No se realizaron cambios funcionales de frontend en ECOM.FE.ADMIN.1.1.1.
 
-- admin requiere `settings`;
-- staff requiere simultáneamente `settings + ecommerce`;
-- navegación directa no autorizada cae en una pestaña permitida;
-- `EcommercePortalSettings` no se monta sin capacidad;
-- `ecommerceAdminService.js` reutiliza `buildPosSyncAuthContext({ licenseKey })`;
-- las cinco RPC reciben `p_staff_session_token`;
-- no existe fallback inseguro a la firma antigua;
-- errores de sesión/permisos usan mensajes seguros;
-- errores técnicos no se muestran directamente al usuario.
+Continúa vigente:
 
-Pruebas agregadas:
+- admin + `settings` → acceso;
+- staff + `settings + ecommerce` → acceso;
+- staff sin cualquiera de ambos permisos → bloqueo;
+- todas las RPC envían `p_staff_session_token: authContext.staffSessionToken || null`;
+- no existe reintento sin token;
+- no existe fallback a firmas antiguas.
 
-- `src/pages/__tests__/settingsPageAccess.test.js`;
-- `src/services/ecommerce/__tests__/ecommerceAdminService.test.js`.
+Validaciones ejecutadas:
 
 | Validación | Resultado |
 |---|---|
 | ESLint específico | PASS, exit 0 |
 | Vitest específico | PASS, 2 archivos y 8 pruebas |
-| Build Vite/PWA | PASS |
+| Build Vite/PWA | PASS, exit 0 |
 | `npm run lint` global | FAIL heredado: 34 errores y 116 advertencias |
 | `npm run test:ci` global | FAIL heredado: 65 archivos PASS, 28 FAIL; 354 pruebas PASS, 79 FAIL |
 
-Las fallas globales están fuera de los archivos de esta fase. No se afirma que la suite global esté verde. Las dos suites nuevas también pasaron dentro de la ejecución global.
+Las fallas globales están fuera de los archivos de esta fase. No se afirma que la suite global esté verde. Las dos suites específicas pasan también dentro de la ejecución global.
 
-El repositorio no contiene workflows activos en `.github/workflows`; no hubo checks de GitHub Actions asociados al commit.
+El runner temporal de validación fue retirado y `package.json` volvió a `build: vite build`.
 
 ## 19. Preview de Vercel
 
@@ -275,13 +267,7 @@ Alias de la rama:
 
 `https://lanzo-pos-git-fase-ecom-fe-admin-1-1-s-bcb022-fdxrulis-projects.vercel.app`
 
-Preview limpio validado después de restaurar `build: vite build` y retirar el runner temporal:
-
-`https://lanzo-ax60hgwqy-fdxrulis-projects.vercel.app`
-
-Estado: `READY`. El build generó correctamente los artefactos Vite/PWA.
-
-No se realizó una prueba manual autenticada en navegador con admin y `caja1`, porque no se utilizaron contraseñas ni tokens reales. El backend se cubrió con pruebas SQL transaccionales y el contrato frontend con pruebas unitarias.
+El preview de validación completa quedó `READY`. Después de retirar el runner temporal se generó un preview limpio con el script estándar de producción.
 
 ## 20. Riesgos y operación posterior
 
@@ -290,14 +276,90 @@ No se realizó una prueba manual autenticada en navegador con admin y `caja1`, p
 3. Las firmas antiguas se mantienen temporalmente para despliegue sin interrupción y continúan siendo admin-only.
 4. La fase no modifica catálogo público, carrito, checkout, pedidos, ventas, caja, inventario ni reportes.
 5. La línea base global de lint y tests conserva deuda técnica preexistente documentada.
-6. El hardening del rate limiter quedó en una segunda migración porque la primera ya estaba aplicada y no debía editarse.
+6. No se agregó un segundo rate limiter por sesión; para esta superficie administrativa el límite previo por dispositivo es deliberado.
 
-Prueba manual posterior al despliegue:
+## Corrección ECOM.FE.ADMIN.1.1.1 — Rate limit por dispositivo
 
-1. cerrar sesión staff;
-2. iniciar nuevamente como `caja1`;
-3. abrir Configuración;
-4. confirmar que aparece `Portal online`;
-5. cargar portal y productos;
-6. guardar un cambio controlado;
-7. confirmar que no obtiene acceso a funciones administrativas adicionales.
+### 1. Defecto detectado
+
+La segunda migración distinguía un dispositivo staff antes de verificar su sesión y enviaba el token suministrado al rate limiter. El helper de rate limit calculaba SHA-256 de cualquier token no vacío.
+
+### 2. Por qué un token inválido creaba buckets distintos
+
+La clave del bucket incluía `staff_session_hash`. Por ello, dos cadenas inválidas diferentes producían hashes diferentes y dos particiones independientes antes de ser rechazadas por `verify_staff_session_unlimited`.
+
+### 3. Nueva partición exclusivamente por dispositivo
+
+La tercera migración fuerza:
+
+```sql
+p_staff_session_token := null
+```
+
+en todas las llamadas previas a `public.enforce_pos_rpc_rate_limit_v2`.
+
+La clave efectiva queda formada por licencia, fingerprint, RPC, scope y ventana, sin hash de sesión.
+
+### 4. Confirmación de que el token sigue validándose
+
+El frontend sigue enviando el token staff. Después del rate limit por dispositivo, `public.verify_staff_session_unlimited(...)` continúa validándolo para autorizar al staff.
+
+### 5. Tokens inválidos distintos
+
+Dos tokens inválidos diferentes desde el mismo dispositivo staff:
+
+- ambos rechazados con `ECOMMERCE_STAFF_SESSION_INVALID`;
+- una sola fila de bucket;
+- `staff_session_hash IS NULL`;
+- contador compartido `1 → 2`;
+- resultado: PASS con rollback.
+
+### 6. Token válido e inválido
+
+Una llamada con token válido seguida de otra con token inválido:
+
+- la válida fue autorizada;
+- la inválida fue rechazada después del rate limit;
+- ambas compartieron una sola fila;
+- contador `1 → 2`;
+- `staff_session_hash IS NULL`;
+- resultado: PASS con rollback.
+
+### 7. Resultado admin
+
+Admin con token nulo y token arbitrario compartió una sola fila por dispositivo, contador `1 → 2` y hash nulo. Resultado: PASS.
+
+### 8. Resultado staff autorizado
+
+Las cinco RPC administrativas conservaron su funcionamiento para staff autorizado. Resultado: PASS.
+
+### 9. Resultado staff no autorizado
+
+Permisos parciales, sesión nula, incorrecta, revocada, vencida, usuario inactivo y sesión de otro dispositivo continuaron bloqueados. Resultado: PASS.
+
+### 10. Grants
+
+El helper privado conserva ejecución cerrada para `anon`, `authenticated` y `public`. Las tablas ecommerce continúan sin grants directos.
+
+### 11. Verificación de caja1
+
+`caja1` permanece activo, con `settings=true`, `ecommerce=true`, dispositivo activo y `device_role=staff`.
+
+### 12. Pruebas frontend
+
+- 2 archivos PASS;
+- 8 pruebas PASS;
+- frontend sin modificaciones funcionales;
+- token staff continúa enviándose para autorización.
+
+### 13. Build y migración aplicada
+
+- migración aplicada: `ecom_fe_admin_1_1_device_rate_limit`;
+- build Vite/PWA: PASS;
+- definición instalada contiene `p_staff_session_token := null`;
+- el rate limiter aparece antes de `verify_staff_session_unlimited`;
+- producción reporta buckets ECOM_ADMIN con hash no nulo: **0**.
+
+### 14. Riesgos residuales
+
+El límite es por dispositivo, por RPC y por ventana. Varias sesiones válidas del mismo dispositivo comparten deliberadamente el mismo contador. Esto evita la fragmentación y es suficiente para la superficie administrativa actual.
