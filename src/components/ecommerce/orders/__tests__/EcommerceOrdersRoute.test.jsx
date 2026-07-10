@@ -1,17 +1,18 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-let storeState;
+const store = vi.hoisted(() => ({ state: null }));
 
 vi.mock('../../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector(storeState)
+  useAppStore: (selector) => selector(store.state)
 }));
 
 import EcommerceOrdersRoute from '../EcommerceOrdersRoute';
 
-const renderRoute = () => render(
+const routeTree = () => (
   <MemoryRouter>
     <EcommerceOrdersRoute>
       <div>Bandeja autorizada</div>
@@ -19,23 +20,32 @@ const renderRoute = () => render(
   </MemoryRouter>
 );
 
-describe('EcommerceOrdersRoute', () => {
-  beforeEach(() => {
-    storeState = {
-      licenseDetails: { features: { ecommerce_order_inbox: true } },
-      currentDeviceRole: 'admin',
-      currentStaffUser: null
-    };
-  });
+const renderRoute = () => render(routeTree());
 
+const baseState = () => ({
+  licenseDetails: { features: { ecommerce_order_inbox: true } },
+  currentDeviceRole: 'admin',
+  currentStaffUser: null,
+  _isInitializing: false
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+beforeEach(() => {
+  store.state = baseState();
+});
+
+describe('EcommerceOrdersRoute', () => {
   it('allows an admin with the inbox feature', () => {
     renderRoute();
     expect(screen.getByText('Bandeja autorizada')).toBeInTheDocument();
   });
 
   it('allows staff with ecommerce even when settings and notifications are disabled', () => {
-    storeState = {
-      ...storeState,
+    store.state = {
+      ...baseState(),
       currentDeviceRole: 'staff',
       currentStaffUser: {
         permissions: {
@@ -51,8 +61,8 @@ describe('EcommerceOrdersRoute', () => {
   });
 
   it('blocks direct navigation for staff without ecommerce', () => {
-    storeState = {
-      ...storeState,
+    store.state = {
+      ...baseState(),
       currentDeviceRole: 'staff',
       currentStaffUser: {
         permissions: {
@@ -69,9 +79,102 @@ describe('EcommerceOrdersRoute', () => {
   });
 
   it('blocks every actor when the inbox feature is disabled', () => {
-    storeState = {
-      ...storeState,
+    store.state = {
+      ...baseState(),
       licenseDetails: { features: { ecommerce_order_inbox: false } }
+    };
+
+    renderRoute();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('shows a loading state instead of a permission flash while role restoration is active', () => {
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: null,
+      _isInitializing: true
+    };
+
+    renderRoute();
+
+    expect(screen.getByRole('status')).toHaveTextContent('Cargando permisos');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bandeja autorizada')).not.toBeInTheDocument();
+  });
+
+  it('blocks a null role when bootstrap is no longer active', () => {
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: null,
+      _isInitializing: false
+    };
+
+    renderRoute();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('reveals access when an unresolved role becomes admin', () => {
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: null,
+      _isInitializing: true
+    };
+    const view = renderRoute();
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: 'admin',
+      _isInitializing: false
+    };
+    view.rerender(routeTree());
+
+    expect(screen.getByText('Bandeja autorizada')).toBeInTheDocument();
+  });
+
+  it('reveals access when an unresolved role becomes authorized staff', () => {
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: null,
+      _isInitializing: true
+    };
+    const view = renderRoute();
+
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: 'staff',
+      currentStaffUser: { permissions: { ecommerce: true, settings: false } },
+      _isInitializing: false
+    };
+    view.rerender(routeTree());
+
+    expect(screen.getByText('Bandeja autorizada')).toBeInTheDocument();
+  });
+
+  it('remains blocked when an unresolved role becomes staff without ecommerce', () => {
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: null,
+      _isInitializing: true
+    };
+    const view = renderRoute();
+
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: 'staff',
+      currentStaffUser: { permissions: { ecommerce: false, settings: true } },
+      _isInitializing: false
+    };
+    view.rerender(routeTree());
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText('Bandeja autorizada')).not.toBeInTheDocument();
+  });
+
+  it('blocks an unknown role', () => {
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: 'owner'
     };
 
     renderRoute();
