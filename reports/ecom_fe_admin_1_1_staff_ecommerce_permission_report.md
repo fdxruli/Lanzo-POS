@@ -6,6 +6,10 @@ Implementación funcional completada en la rama:
 
 `fase-ecom-fe-admin-1-1-staff-permission`
 
+PR independiente:
+
+`#82 — FASE ECOM.FE.ADMIN.1.1 — Permitir administración del portal a staff autorizado`
+
 La migración de esta fase fue aplicada de forma controlada en Supabase producción:
 
 `odlrhijtfyavryeqivaa`
@@ -198,7 +202,7 @@ Resultado consolidado SQL:
 
 ## 15. Verificación read-only de caja1
 
-Producción confirmó:
+La consulta final en producción confirmó:
 
 ```json
 {
@@ -212,11 +216,11 @@ Producción confirmó:
 }
 ```
 
-El JSON real conserva los demás permisos existentes. No se sobrescribió el objeto completo ni se modificó contraseña alguna.
+El JSON real conserva sin cambios los demás permisos existentes, entre ellos `pos`, `products`, `cash_register`, `discounts` y `notifications`. No se sobrescribió el objeto completo ni se modificó contraseña alguna.
 
 ## 16. Confirmación de que caja1 no fue convertido a admin
 
-`caja1` continúa vinculado a un dispositivo `device_role = 'staff'`.
+`caja1` continúa vinculado a un dispositivo activo con `device_role = 'staff'`.
 
 La fase no actualizó `license_devices.device_role`, no elevó el dispositivo y no concedió permisos por username o `role_name`.
 
@@ -248,11 +252,34 @@ Pruebas agregadas:
 - `src/pages/__tests__/settingsPageAccess.test.js`;
 - `src/services/ecommerce/__tests__/ecommerceAdminService.test.js`.
 
-Resultados de CI, ESLint específico, Vitest específico, suite global y build: pendientes de registrar tras la ejecución del PR.
+Resultados ejecutados en un runner temporal de preview, retirado después de validar:
+
+| Validación | Resultado |
+|---|---|
+| ESLint específico de archivos modificados | PASS, exit 0 |
+| Vitest específico | PASS, 2 archivos y 8 pruebas |
+| `npm run build` / Vite producción | PASS |
+| `npm run lint` global | FAIL heredado: 34 errores y 116 advertencias |
+| `npm run test:ci` global | FAIL heredado: 65 archivos PASS, 28 FAIL; 354 pruebas PASS, 79 FAIL |
+
+Las fallas globales están fuera de los archivos de esta fase. Incluyen suites antiguas con entorno DOM/IndexedDB incompleto y expectativas desactualizadas de ventas, respaldos, navegación, caja y stores. No se afirma que la suite global esté verde.
+
+Las dos suites nuevas pasaron también dentro de la ejecución global.
+
+El repositorio no contiene workflows activos en `.github/workflows`; por ello no hubo checks de GitHub Actions asociados al commit.
 
 ## 19. Preview de Vercel
 
-Pendiente de registrar cuando el despliegue de preview de la rama finalice.
+Preview limpio de la rama, generado después de restaurar el script estándar `build: vite build` y retirar el runner temporal:
+
+- estado: `READY`;
+- commit validado: `d3d801a1277d04973d232554a394579b2a9dcf6c`;
+- URL inmutable: `https://lanzo-ax60hgwqy-fdxrulis-projects.vercel.app`;
+- alias de rama: `https://lanzo-pos-git-fase-ecom-fe-admin-1-1-s-bcb022-fdxrulis-projects.vercel.app`.
+
+El build final transformó correctamente la aplicación y generó los artefactos PWA.
+
+No se realizó una prueba manual autenticada dentro del navegador con admin y `caja1`, porque no se utilizaron ni solicitaron contraseñas o tokens reales. La autorización backend se cubrió mediante la matriz SQL transaccional y el contrato frontend mediante pruebas unitarias.
 
 ## 20. Riesgos y operación posterior
 
@@ -262,8 +289,9 @@ Riesgos residuales:
 2. El backend no depende de ese snapshot: una revocación se aplica en la siguiente RPC aunque la pestaña todavía estuviera visible.
 3. Las firmas antiguas se mantienen temporalmente para despliegue sin interrupción; continúan siendo exclusivamente admin.
 4. La fase no modifica catálogo público, carrito, checkout, pedidos, ventas, caja, inventario ni reportes.
+5. La línea base global de lint y tests tiene deuda técnica preexistente documentada; no fue ampliada para evitar mezclar alcance.
 
-Para probar `caja1` después del preview/despliegue:
+Prueba manual posterior al despliegue:
 
 1. cerrar sesión staff;
 2. iniciar nuevamente como `caja1`;
