@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useBackupRiskStore, evaluator, LEVEL_1_THRESHOLD, LEVEL_2_THRESHOLD, LEVEL_3_THRESHOLD } from '../BackupRiskEvaluator';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useBackupRiskStore, evaluator, startBackupRiskEvaluator } from '../BackupRiskEvaluator';
 import { db, STORES } from '../db/dexie';
+import Logger from '../Logger';
 
 // Mock de dexie y localStorage
 vi.mock('../db/dexie', () => ({
@@ -10,11 +11,39 @@ vi.mock('../db/dexie', () => ({
   }
 }));
 
+vi.mock('../Logger', () => ({
+  default: {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn()
+  }
+}));
+
 describe('BackupRiskEvaluator', () => {
+  const hideLocalStorage = () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: undefined
+    });
+
+    return () => {
+      if (descriptor) {
+        Object.defineProperty(window, 'localStorage', descriptor);
+      } else {
+        delete window.localStorage;
+      }
+    };
+  };
+
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
     useBackupRiskStore.setState({ isCalculating: false, riskLevel: 0, totalMutations: 0, lastBackupCount: 0 });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const mockDbCounts = (sales, menu, customers) => {
@@ -68,5 +97,48 @@ describe('BackupRiskEvaluator', () => {
     
     expect(localStorage.getItem('last_backup_mutation_count')).toBe('300');
     expect(useBackupRiskStore.getState().riskLevel).toBe(0);
+  });
+
+  it('no debe lanzar ni registrar error cuando localStorage no existe', async () => {
+    mockDbCounts(20, 20, 20);
+    const restoreLocalStorage = hideLocalStorage();
+
+    try {
+      await expect(evaluator.ping()).resolves.toBeUndefined();
+      await expect(evaluator.postpone()).resolves.toBeUndefined();
+      await expect(evaluator.markBackupCompleted()).resolves.toBeUndefined();
+
+      expect(Logger.error).not.toHaveBeenCalled();
+      expect(db.table).not.toHaveBeenCalled();
+    } finally {
+      restoreLocalStorage();
+    }
+  });
+
+  it('startBackupRiskEvaluator no hace nada cuando localStorage no existe', () => {
+    const restoreLocalStorage = hideLocalStorage();
+    const setTimeoutSpy = vi.spyOn(window, 'setTimeout');
+
+    try {
+      expect(startBackupRiskEvaluator()).toBe(false);
+      expect(setTimeoutSpy).not.toHaveBeenCalled();
+    } finally {
+      setTimeoutSpy.mockRestore();
+      restoreLocalStorage();
+    }
+  });
+
+  it('startBackupRiskEvaluator programa un solo ping inicial', async () => {
+    vi.useFakeTimers();
+    mockDbCounts(20, 20, 11);
+
+    expect(startBackupRiskEvaluator()).toBe(true);
+    expect(startBackupRiskEvaluator()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(db.table).toHaveBeenCalledTimes(3);
+    expect(useBackupRiskStore.getState().riskLevel).toBe(1);
+    expect(startBackupRiskEvaluator()).toBe(false);
   });
 });
