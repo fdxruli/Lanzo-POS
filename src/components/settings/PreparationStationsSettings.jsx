@@ -138,7 +138,7 @@ export default function PreparationStationsSettings() {
             <div className="settings-icon-bubble settings-icon-bubble--info"><Info size={22} /></div>
             <div className="settings-option-copy">
               <span className="settings-option-title">Tu plan actual usa una estacion fija: Cocina.</span>
-              <p>Actualiza a PRO para crear areas como Bebidas, Barra o Postres.</p>
+              <p>Actualiza a Lanzo Nube para crear areas como Bebidas, Barra o Postres.</p>
             </div>
           </div>
         </div>

@@ -21,7 +21,7 @@ export default function CajaOpeningPanel({ aperturaPendiente, onOpen, cashActor 
 
       <div className="ui-alert ui-alert--info cash-opening-notice">
         <ShieldCheck size={19} aria-hidden="true" />
-        <p>{cloudEnabled ? 'Caja PRO separada por usuario para auditoría.' : 'Valida el fondo inicial antes de operar efectivo.'}</p>
+        <p>{cloudEnabled ? 'Caja Lanzo Nube separada por usuario para auditoría.' : 'Valida el fondo inicial antes de operar efectivo.'}</p>
       </div>
 
       {actor?.isStaff && responsibleName && (

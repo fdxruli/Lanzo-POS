@@ -49,7 +49,7 @@ describe('OperationalSettings cash opening control', () => {
 
     render(<OperationalSettings />);
 
-    expect(screen.queryByText('No disponible en PRO: la caja cloud requiere confirmación de apertura por auditoría.')).not.toBeNull();
+    expect(screen.queryByText('No disponible en Lanzo Nube: la caja cloud requiere confirmación de apertura por auditoría.')).not.toBeNull();
     const switchInput = screen.getByLabelText('Permitir autoapertura de caja');
     expect(switchInput.disabled).toBe(true);
     expect(switchInput.checked).toBe(false);

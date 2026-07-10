@@ -20,6 +20,7 @@ import { useAppStore } from '../../store/useAppStore';
 import DeviceManager from '../common/DeviceManager';
 import StaffUsersSettings from './StaffUsersSettings';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
+import { getCommercialPlanName, getCommercialPlanShortName } from '../../utils/planDisplay';
 
 const BUSINESS_RUBROS = [
     { id: 'food_service', label: 'Restaurante / Cocina', description: 'Recetas, comandas e insumos.', Icon: Store },
@@ -122,7 +123,7 @@ function getExpirationInfo(licenseDetails) {
     return { label: formattedDate, tone: 'neutral', note: '' };
 }
 
-function LicenseHero({ selectedCount, maxRubrosAllowed, isProLicense, licenseStatus }) {
+function LicenseHero({ selectedCount, maxRubrosAllowed, planName, licenseStatus }) {
     return (
         <header className="license-settings-hero">
             <div className="license-hero-copy">
@@ -143,7 +144,7 @@ function LicenseHero({ selectedCount, maxRubrosAllowed, isProLicense, licenseSta
                 </div>
                 <div>
                     <span>Plan</span>
-                    <strong>{isProLicense ? 'PRO' : 'Base'}</strong>
+                    <strong>{planName}</strong>
                 </div>
                 <div>
                     <span>Rubros</span>
@@ -261,6 +262,8 @@ function LicenseInfoPanel({
     } = licenseContext;
     const expirationInfo = getExpirationInfo(licenseDetails);
     const [copiedLicense, setCopiedLicense] = useState(false);
+    const commercialPlanName = getCommercialPlanName(licenseDetails);
+    const commercialPlanShortName = getCommercialPlanShortName(licenseDetails);
 
     const handleCopyLicense = async () => {
         const licenseKey = licenseDetails?.license_key;
@@ -325,10 +328,13 @@ function LicenseInfoPanel({
                             {copiedLicense ? <Check size={15} /> : <Copy size={15} />}
                             <span>{copiedLicense ? 'Copiado' : 'Copiar'}</span>
                         </button>
-                        {isProLicense && <span className="license-plan-badge license-plan-badge--pro">PRO</span>}
+                        <span className={`license-plan-badge ${isProLicense ? 'license-plan-badge--pro' : ''}`}>
+                            {commercialPlanShortName}
+                        </span>
                     </span>
                 </LicenseDetail>
-                <LicenseDetail label="Producto" value={licenseDetails.product_name || 'N/A'} />
+                <LicenseDetail label="Producto" value="Lanzo POS" />
+                <LicenseDetail label="Plan" value={commercialPlanName} />
                 <LicenseDetail label="Dispositivo">
                     <span className="license-id-value">
                         <span>{isStaffDevice ? 'Staff' : 'Administrador'}</span>
@@ -359,12 +365,12 @@ function LicenseInfoPanel({
             {showFreeCompatibilityUpdate && (
                 <div className="license-renewal-panel">
                     <div className="license-renewal-copy">
-                        <strong>Actualizacion FREE disponible</strong>
-                        <span>Esta licencia se actualizara a FREE permanente.</span>
+                        <strong>Actualizacion Lanzo Local disponible</strong>
+                        <span>Esta licencia se actualizara a Lanzo Local permanente.</span>
                     </div>
                     <button type="button" className="btn btn-primary license-renewal-button" onClick={onFreeCompatibilityUpdate} disabled={isUpdatingFree}>
                         <RefreshCw size={18} />
-                        <span>{isUpdatingFree ? 'Actualizando...' : 'Actualizar a FREE permanente'}</span>
+                        <span>{isUpdatingFree ? 'Actualizando...' : 'Actualizar a Lanzo Local permanente'}</span>
                     </button>
                 </div>
             )}
@@ -409,6 +415,7 @@ export default function LicenseSettings() {
     const gracePeriodState = getGracePeriodState(licenseDetails);
     const { isFreePlan, isFreeLifetime } = getFreeState(licenseDetails);
     const showFreeCompatibilityUpdate = gracePeriodState.inGracePeriod && isFreePlan && !isFreeLifetime;
+    const commercialPlanName = getCommercialPlanName(licenseDetails);
 
     const selectedRubros = useMemo(() => normalizeRubros(companyProfile?.business_type), [companyProfile]);
     const selectedRubrosSet = useMemo(() => new Set(selectedRubros), [selectedRubros]);
@@ -503,7 +510,7 @@ export default function LicenseSettings() {
             <LicenseHero
                 selectedCount={selectedRubros.length}
                 maxRubrosAllowed={maxRubrosAllowed}
-                isProLicense={isProLicense}
+                planName={commercialPlanName}
                 licenseStatus={licenseDetails?.status}
             />
 

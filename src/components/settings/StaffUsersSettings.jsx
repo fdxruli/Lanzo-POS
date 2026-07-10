@@ -13,6 +13,8 @@ const PERMISSION_LABELS = {
   products: 'Productos',
   customers: 'Clientes',
   reports: 'Reportes',
+  notifications: 'Centro de Notificaciones',
+  support_center: 'Soporte Lanzo',
   ai_agents: 'Agentes IA',
   settings: 'Configuracion',
   devices: 'Dispositivos',
@@ -24,6 +26,37 @@ const PERMISSION_LABELS = {
   ecommerce: 'Ecommerce',
   sync: 'Sincronizacion'
 };
+
+const PERMISSION_DESCRIPTIONS = {
+  notifications: 'Permite ver la campana, notificaciones de licencia, caja, sincronizacion y sistema.',
+  support_center: 'Permite crear y responder solicitudes de soporte desde Lanzo Nube.'
+};
+
+const PERMISSION_GROUPS = [
+  {
+    title: 'Operacion',
+    permissions: [
+      'pos',
+      'orders',
+      'products',
+      'customers',
+      'reports',
+      'settings',
+      'devices',
+      'license',
+      'inventory',
+      'cash_register',
+      'discounts',
+      'refunds',
+      'ecommerce',
+      'sync'
+    ]
+  },
+  {
+    title: 'Lanzo Nube',
+    permissions: ['notifications', 'support_center', 'ai_agents']
+  }
+];
 
 const EMPTY_PERMISSIONS = Object.fromEntries(
   Object.keys(PERMISSION_LABELS).map((permission) => [permission, false])
@@ -63,6 +96,8 @@ const ROLE_TEMPLATES = {
     products: true,
     customers: true,
     reports: true,
+    notifications: true,
+    support_center: true,
     ai_agents: true,
     inventory: true,
     cash_register: true,
@@ -96,7 +131,7 @@ export default function StaffUsersSettings({ licenseKey }) {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const permissionKeys = useMemo(() => Object.keys(PERMISSION_LABELS), []);
+  const permissionGroups = useMemo(() => PERMISSION_GROUPS, []);
 
   const loadStaffUsers = useCallback(async () => {
     if (!licenseKey) return;
@@ -287,17 +322,29 @@ export default function StaffUsersSettings({ licenseKey }) {
           </div>
         </div>
 
-        <div className="staff-permissions-grid">
-          {permissionKeys.map((permission) => (
-            <label key={permission} className="staff-permission-toggle">
-              <input
-                type="checkbox"
-                checked={form.permissions?.[permission] === true}
-                onChange={() => togglePermission(permission)}
-                disabled={isSaving}
-              />
-              <span>{PERMISSION_LABELS[permission]}</span>
-            </label>
+        <div className="staff-permissions-groups">
+          {permissionGroups.map((group) => (
+            <fieldset key={group.title} className="staff-permissions-group">
+              <legend>{group.title}</legend>
+              <div className="staff-permissions-grid">
+                {group.permissions.map((permission) => (
+                  <label key={permission} className="staff-permission-toggle">
+                    <input
+                      type="checkbox"
+                      checked={form.permissions?.[permission] === true}
+                      onChange={() => togglePermission(permission)}
+                      disabled={isSaving}
+                    />
+                    <span>
+                      {PERMISSION_LABELS[permission]}
+                      {PERMISSION_DESCRIPTIONS[permission] && (
+                        <small>{PERMISSION_DESCRIPTIONS[permission]}</small>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
           ))}
         </div>
 

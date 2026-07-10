@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useBackupManager } from '../../hooks/useBackupManager';
 import { useAppStore } from '../../store/useAppStore';
+import { startBackupRiskEvaluator } from '../../services/BackupRiskEvaluator';
 import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
 import './BackupRuntime.css';
 
@@ -22,6 +23,10 @@ export default function BackupRuntime() {
   const [actionError, setActionError] = useState('');
   const idleTimerRef = useRef(null);
   const lastActivityRef = useRef(null);
+
+  useEffect(() => {
+    startBackupRiskEvaluator();
+  }, []);
 
   useEffect(() => {
     if (!driveTokenExpiresAt) return undefined;

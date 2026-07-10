@@ -106,10 +106,10 @@ export default function WelcomeModal() {
       const result = await handleFreeTrial();
 
       if (!result.success) {
-        setErrorMessage(result.message || 'No se pudo crear la licencia FREE.');
+        setErrorMessage(result.message || 'No se pudo crear la licencia Lanzo Local.');
       }
     } catch (error) {
-      Logger.error("Error al crear licencia FREE:", error);
+      Logger.error("Error al crear licencia Lanzo Local:", error);
 
       if (error.message?.includes('fetch') || error.message?.includes('Network')) {
         setErrorMessage('Error de red. Verifica tu conexión.');
@@ -296,7 +296,7 @@ DESCRIBE TU PROBLEMA:
                 onClick={handleTrialClick}
                 disabled={isLoading || !isOnline}
               >
-                Crear licencia FREE
+                Crear licencia Lanzo Local
               </button>
             </div>
           </form>

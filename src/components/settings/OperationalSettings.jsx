@@ -137,7 +137,7 @@ export default function OperationalSettings() {
               <p>Define si la caja puede abrirse heredando fondo o si exige confirmación del operador.</p>
               <span className="settings-option-meta">
                 {cloudCashSyncEnabled
-                  ? 'No disponible en PRO: la caja cloud requiere confirmación de apertura por auditoría.'
+                  ? 'No disponible en Lanzo Nube: la caja cloud requiere confirmación de apertura por auditoría.'
                   : automaticCashOpening
                     ? 'Automática: puede heredar el fondo del cierre anterior. Verifica que el efectivo físico exista.'
                     : 'Manual: exige fondo confirmado, conteo físico y responsable.'}

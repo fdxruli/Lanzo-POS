@@ -1,9 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { tryEnablePersistence } from '../../services/utils';
+import { useAppStore } from '../../store/useAppStore';
+import { isProLicense } from '../../store/slices/license/licenseGuards';
 import './DataSafetyModal.css';
 
 export default function DataSafetyModal() {
   const [show, setShow] = useState(false);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
+
+  const isStaffSession =
+    currentDeviceRole === 'staff' ||
+    licenseDetails?.device_role === 'staff' ||
+    Boolean(currentStaffUser || licenseDetails?.staff_user);
 
   useEffect(() => {
     const checkSafety = async () => {
@@ -12,12 +22,11 @@ export default function DataSafetyModal() {
 
       // 2. Verificar si el usuario ya vio la advertencia
       const hasAcknowledged = localStorage.getItem('lanzo_data_safety_ack');
-      if (!hasAcknowledged) {
-        setShow(true);
-      }
+      const shouldSkipSafetyWarning = isProLicense(licenseDetails) || isStaffSession;
+      setShow(!hasAcknowledged && !shouldSkipSafetyWarning);
     };
     checkSafety();
-  }, []);
+  }, [currentDeviceRole, currentStaffUser, isStaffSession, licenseDetails]);
 
   const handleAcknowledge = () => {
     localStorage.setItem('lanzo_data_safety_ack', 'true');

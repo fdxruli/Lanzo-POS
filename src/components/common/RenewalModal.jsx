@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useNavigate } from 'react-router-dom';
 import Logger from '../../services/Logger';
@@ -24,7 +24,8 @@ const getLicenseContext = (licenseDetails = {}) => {
   );
   const isFreeLifetime = isFreePlan && (
     licenseDetails?.is_lifetime === true ||
-    licenseDetails?.expires_at == null ||
+    licenseDetails?.expires_at === null ||
+    licenseDetails?.expires_at === undefined ||
     licenseType === 'free'
   );
 
@@ -62,7 +63,7 @@ export default function RenewalModal() {
 
   const handleRenewal = async () => {
     if (!licenseContext.canRunFreeCompatFlow) {
-      setErrorMessage('Esta licencia no usa actualización FREE. Cambia de licencia o contacta a soporte.');
+      setErrorMessage('Esta licencia no usa actualizacion Lanzo Local. Cambia de licencia o contacta a soporte.');
       return;
     }
 
@@ -74,11 +75,11 @@ export default function RenewalModal() {
       if (!result.success) {
         setErrorMessage(result.message || 'No se pudo revisar la licencia.');
       } else {
-        Logger.log('Licencia FREE revisada:', result);
+        Logger.log('Licencia Lanzo Local revisada:', result);
         navigate('/');
       }
     } catch (error) {
-      Logger.error('Error revisando licencia FREE:', error);
+      Logger.error('Error revisando licencia Lanzo Local:', error);
       setErrorMessage('Ocurrió un error inesperado. Intenta de nuevo.');
     } finally {
       setIsLoading(false);
@@ -97,7 +98,7 @@ export default function RenewalModal() {
           <h2>Licencia requiere revisión</h2>
           <p>
             {licenseContext.canRunFreeCompatFlow
-              ? 'Detectamos una licencia FREE anterior con vencimiento técnico. Al continuar se actualizará a FREE permanente.'
+              ? 'Detectamos una licencia Lanzo Local anterior con vencimiento tecnico. Al continuar se actualizara a Lanzo Local permanente.'
               : 'Esta licencia tiene vencimiento técnico. Cambia de licencia o contacta a soporte para continuar.'}
           </p>
         </div>
@@ -129,8 +130,8 @@ export default function RenewalModal() {
         <div className="renewal-actions">
           <p className="promo-text">
             {licenseContext.canRunFreeCompatFlow
-              ? 'Tu licencia FREE se actualizará a permanente.'
-              : 'Este flujo no aplica a licencias PRO/BASIC.'}
+              ? 'Tu licencia Lanzo Local se actualizara a permanente.'
+              : 'Este flujo no aplica a Lanzo Nube / plan heredado.'}
           </p>
 
           {licenseContext.canRunFreeCompatFlow && (
@@ -143,7 +144,7 @@ export default function RenewalModal() {
                 <>
                   <span className="spinner"></span> 
                 </>
-              ) : 'Actualizar a FREE permanente'}
+              ) : 'Actualizar a Lanzo Local permanente'}
             </button>
           )}
           

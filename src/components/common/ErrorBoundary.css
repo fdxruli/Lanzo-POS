@@ -282,9 +282,9 @@
   color: #fff !important;
 }
 
-.error-boundary__button--whatsapp {
-  background: #25d366 !important;
-  color: #082d16 !important;
+.error-boundary__button--email {
+  background: #2563eb !important;
+  color: #ffffff !important;
   box-shadow: none !important;
 }
 
@@ -330,8 +330,8 @@
     background: #4ade80 !important;
   }
 
-  .error-boundary__button--whatsapp:hover {
-    background: #20bd5a !important;
+  .error-boundary__button--email:hover {
+    background: #1d4ed8 !important;
   }
 
   .error-boundary__button--copy:hover,

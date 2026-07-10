@@ -1,7 +1,8 @@
 import React from 'react';
-import { MessageCircle, RefreshCw, AlertTriangle, ShieldCheck, Store, ArrowRightCircle, Copy, CheckCheck, Wifi, WifiOff } from 'lucide-react';
+import { Mail, RefreshCw, AlertTriangle, ShieldCheck, Store, ArrowRightCircle, Copy, CheckCheck, Wifi, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import Logger from '../../services/Logger';
+import { buildSupportMailtoUrl } from '../../services/support/supportContact';
 import './ErrorBoundary.css';
 
 // ─── Utilidades de diagnóstico ────────────────────────────────────────────────
@@ -251,10 +252,12 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
   }
 
   handleReport = () => {
-    const SUPPORT_PHONE = import.meta.env.VITE_SUPPORT_PHONE || '';
     const message = this._buildReportMessage();
-    const whatsappUrl = `https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
+    const mailtoUrl = buildSupportMailtoUrl({
+      subject: 'Reporte de incidencia tecnica - Lanzo POS',
+      body: message
+    });
+    window.location.href = mailtoUrl;
   }
 
   handleCopy = async () => {
@@ -509,9 +512,9 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
           {/* ── Botones de acción ── */}
           <div className="error-boundary__actions" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
 
-            {/* Reportar por WhatsApp */}
+            {/* Reportar por correo */}
             <button type="button"
-              className="error-boundary__button error-boundary__button--whatsapp"
+              className="error-boundary__button error-boundary__button--email"
               onClick={this.handleReport}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
@@ -523,8 +526,8 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
                 boxShadow: '0 4px 6px -1px rgba(37,211,102,0.25)',
               }}
             >
-              <MessageCircle size={20} />
-              Reportar Problema por WhatsApp
+              <Mail size={20} />
+              Reportar problema por correo
             </button>
 
             {/* Copiar reporte al portapapeles */}

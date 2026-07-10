@@ -41,7 +41,7 @@ const CajaActionsCard = ({
       <div className="cash-action-context">
         <span>
           <ShieldCheck size={15} aria-hidden="true" />
-          {isCloudCash ? 'Cloud PRO' : 'Caja local'}
+          {isCloudCash ? 'Caja Nube' : 'Caja local'}
         </span>
         <span>
           <UserRound size={15} aria-hidden="true" />
