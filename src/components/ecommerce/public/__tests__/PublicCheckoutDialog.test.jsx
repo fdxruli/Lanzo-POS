@@ -102,7 +102,8 @@ describe('PublicCheckoutDialog', () => {
   it('disables submission while the parent is submitting', () => {
     renderDialog({ status: 'submitting' });
     expect(screen.getByRole('button', { name: 'Enviando pedido...' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Cerrar checkout' })).toBeDisabled();
+    screen.getAllByRole('button', { name: 'Cerrar checkout' })
+      .forEach((button) => expect(button).toBeDisabled());
   });
 
   it('offers cart refresh for stale catalog errors', async () => {
