@@ -13,7 +13,33 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  component-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx eslint src/components/ecommerce/public/PublicCheckoutDialog.jsx src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx
+      - run: npx vitest run src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx --maxWorkers=1 --reporter=verbose
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx eslint src/pages/PublicStorePage.jsx src/pages/__tests__/PublicStoreCheckout.test.jsx
+      - run: npx vitest run src/pages/__tests__/PublicStoreCheckout.test.jsx --maxWorkers=1 --reporter=verbose
+
+  full-validation:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
