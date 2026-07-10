@@ -1,0 +1,17 @@
+branch_lint_exit=1
+main_lint_exit=1
+branch_test_exit=1
+main_test_exit=1
+
+[branch_lint_summary]
+✖ 382 problems (156 errors, 226 warnings)
+[main_lint_summary]
+✖ 382 problems (156 errors, 226 warnings)
+[branch_test_summary]
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 76 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+[2m Test Files [22m [1m[31m27 failed[39m[22m[2m | [22m[1m[32m78 passed[39m[22m[90m (105)[39m
+[2m      Tests [22m [1m[31m76 failed[39m[22m[2m | [22m[1m[32m448 passed[39m[22m[90m (524)[39m
+[main_test_summary]
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 79 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+[2m Test Files [22m [1m[31m28 failed[39m[22m[2m | [22m[1m[32m69 passed[39m[22m[90m (97)[39m
+[2m      Tests [22m [1m[31m79 failed[39m[22m[2m | [22m[1m[32m394 passed[39m[22m[90m (473)[39m
