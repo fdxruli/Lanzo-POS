@@ -10,6 +10,12 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_STAFF_PERMISSION_DENIED: 'No tienes permiso para administrar el portal online.'
 };
 
+const SAFE_CONTEXT_MESSAGES = new Set([
+  'La conexion con Supabase no esta configurada.',
+  'Necesitas conexion a internet para configurar el portal online.',
+  'No se pudo confirmar el acceso para administrar el portal. Revalida la licencia o inicia sesion nuevamente.'
+]);
+
 const normalizeFailure = (data, fallback) => {
   const code = data?.code || data?.error?.code || 'ECOMMERCE_ADMIN_ERROR';
 
@@ -82,11 +88,14 @@ export const createEcommerceAdminService = ({
       return normalizeFailure(data, fallback);
     } catch (error) {
       const code = error?.code || 'ECOMMERCE_ADMIN_NETWORK_ERROR';
+      const safeContextMessage = SAFE_CONTEXT_MESSAGES.has(error?.message)
+        ? error.message
+        : null;
 
       return {
         success: false,
         code,
-        message: SAFE_ERROR_MESSAGES[code] || error?.message || fallback
+        message: SAFE_ERROR_MESSAGES[code] || safeContextMessage || fallback
       };
     }
   };
