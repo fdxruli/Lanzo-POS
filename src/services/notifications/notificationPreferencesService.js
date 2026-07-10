@@ -1,12 +1,13 @@
 const STORAGE_KEY = 'lanzo_notification_preferences:v1';
 
-export const NOTIFICATION_CATEGORIES = ['support', 'cash', 'sync', 'license', 'system'];
+export const NOTIFICATION_CATEGORIES = ['support', 'ecommerce', 'cash', 'sync', 'license', 'system'];
 
 export const DEFAULT_NOTIFICATION_PREFERENCES = {
   showInfoNotifications: true,
   compactMode: false,
   tickerCategories: {
     support: true,
+    ecommerce: true,
     cash: true,
     sync: true,
     license: true,
@@ -14,6 +15,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES = {
   },
   featuredCategories: {
     support: true,
+    ecommerce: true,
     cash: true,
     sync: true,
     license: true,
@@ -21,6 +23,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES = {
   },
   mutedCategories: {
     support: null,
+    ecommerce: null,
     cash: null,
     sync: null,
     license: null,
@@ -104,7 +107,7 @@ export function resetNotificationPreferences() {
     try {
       window.localStorage.removeItem(STORAGE_KEY);
     } catch {
-      // No se requiere accion adicional.
+      // No se requiere acción adicional.
     }
   }
 
@@ -116,6 +119,7 @@ export function getNotificationCategory(notification = {}) {
   const metadataCategory = notification?.metadata?.category;
 
   if (type === 'support') return 'support';
+  if (type === 'ecommerce' || metadataCategory === 'ecommerce') return 'ecommerce';
   if (type === 'cash' || metadataCategory === 'cash') return 'cash';
   if (type === 'sync' || metadataCategory === 'sync') return 'sync';
   if (type === 'license') return 'license';
