@@ -17,10 +17,21 @@ const getStaffPermissions = (staffSession = {}) => (
   {}
 );
 
-const getDeviceRole = (staffSession = {}) => (
-  staffSession?.currentDeviceRole ||
-  staffSession?.deviceRole ||
-  (staffSession?.isStaff === true ? 'staff' : 'admin')
+export const getEcommerceOrderDeviceRole = (staffSession = {}) => {
+  const explicitRole = (
+    staffSession?.currentDeviceRole ||
+    staffSession?.deviceRole ||
+    null
+  );
+
+  if (explicitRole) return explicitRole;
+  if (staffSession?.isStaff === true) return 'staff';
+  return null;
+};
+
+export const isEcommerceOrderRoleResolving = (staffSession = {}) => (
+  getEcommerceOrderDeviceRole(staffSession) === null &&
+  staffSession?._isInitializing === true
 );
 
 export function isEcommerceOrderInboxEnabled(licenseDetails = {}) {
@@ -30,7 +41,8 @@ export function isEcommerceOrderInboxEnabled(licenseDetails = {}) {
 export function canAccessEcommerceOrders(licenseDetails = {}, staffSession = {}) {
   if (!isEcommerceOrderInboxEnabled(licenseDetails)) return false;
 
-  const deviceRole = getDeviceRole(staffSession);
+  const deviceRole = getEcommerceOrderDeviceRole(staffSession);
+  if (!deviceRole) return false;
   if (deviceRole === 'admin') return true;
   if (deviceRole !== 'staff') return false;
 
@@ -52,11 +64,14 @@ export function canUseEcommerceOrderRealtime(licenseDetails = {}, staffSession =
 
 export function getEcommerceOrderCapabilityReason(licenseDetails = {}, staffSession = {}) {
   if (!isEcommerceOrderInboxEnabled(licenseDetails)) return 'ECOMMERCE_ORDER_INBOX_DISABLED';
-  if (getDeviceRole(staffSession) === 'staff' && getStaffPermissions(staffSession).ecommerce !== true) {
+
+  const deviceRole = getEcommerceOrderDeviceRole(staffSession);
+  if (!deviceRole) return 'ECOMMERCE_ORDERS_ACCESS_DENIED';
+  if (deviceRole === 'admin') return null;
+  if (deviceRole !== 'staff') return 'ECOMMERCE_ORDERS_ACCESS_DENIED';
+  if (getStaffPermissions(staffSession).ecommerce !== true) {
     return 'ECOMMERCE_STAFF_PERMISSION_DENIED';
   }
-  if (getDeviceRole(staffSession) !== 'admin' && getDeviceRole(staffSession) !== 'staff') {
-    return 'ECOMMERCE_ORDERS_ACCESS_DENIED';
-  }
+
   return null;
 }
