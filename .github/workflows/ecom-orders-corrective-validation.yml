@@ -14,9 +14,9 @@ permissions:
   contents: write
 
 jobs:
-  validate:
+  compare-global-baseline:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 50
     env:
       VITE_SUPABASE_URL: https://example.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-key
@@ -25,6 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: fase-ecom-orders-1
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -32,72 +33,54 @@ jobs:
           node-version: '20'
           cache: npm
 
-      - name: Install dependencies
+      - name: Install branch dependencies
         run: npm ci
 
-      - name: ESLint specific
-        run: >-
-          npx eslint
-          src/services/ecommerce/ecommerceOrderCapabilities.js
-          src/store/slices/createEcommerceOrderSlice.js
-          src/components/ecommerce/orders/EcommerceOrdersRoute.jsx
-          src/components/ecommerce/orders/EcommerceOrdersRuntime.jsx
-          src/components/ecommerce/orders/EcommerceOrdersNavShortcut.jsx
-          src/pages/EcommerceOrdersPage.jsx
-          src/services/ecommerce/__tests__/ecommerceOrderCapabilities.test.js
-          src/services/ecommerce/__tests__/ecommerceOrderService.test.js
-          src/services/notifications/__tests__/notificationRealtimeService.ecommerce.test.js
-          src/components/ecommerce/orders/__tests__/EcommerceOrdersRoute.test.jsx
-          src/pages/__tests__/EcommerceOrdersPage.test.jsx
-          src/store/slices/__tests__/createEcommerceOrderSlice.test.js
-          src/components/notifications/__tests__/NotificationItem.ecommerce.test.jsx
-          src/components/notifications/__tests__/NotificationBell.test.jsx
-          src/services/notifications/__tests__/notificationPreferencesService.ecommerce.test.js
-
-      - name: Vitest specific and regression
-        id: vitest
+      - name: Run branch global commands
         shell: bash
         run: |
           set +e
-          npx vitest run --maxWorkers=4 \
-            src/services/ecommerce/__tests__/ecommerceOrderCapabilities.test.js \
-            src/services/ecommerce/__tests__/ecommerceOrderService.test.js \
-            src/store/slices/__tests__/createEcommerceOrderSlice.test.js \
-            src/components/ecommerce/orders/__tests__/EcommerceOrdersRoute.test.jsx \
-            src/pages/__tests__/EcommerceOrdersPage.test.jsx \
-            src/components/notifications/__tests__/NotificationItem.ecommerce.test.jsx \
-            src/services/notifications/__tests__/notificationPreferencesService.ecommerce.test.js \
-            src/services/notifications/__tests__/notificationRealtimeService.ecommerce.test.js \
-            src/components/notifications/__tests__/NotificationBell.test.jsx \
-            src/components/ecommerce/__tests__/EcommercePortalSettings.test.jsx \
-            src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx \
-            src/services/ecommerce/__tests__/ecommerceAdminService.test.js \
-            src/services/ecommerce/__tests__/ecommercePublicProductRules.test.js \
-            src/services/ecommerce/__tests__/ecommerceCheckoutIdempotency.test.js \
-            src/services/ecommerce/__tests__/ecommercePublicService.test.js \
-            src/pages/__tests__/PublicStorePage.test.jsx \
-            src/pages/__tests__/PublicStoreCheckout.test.jsx \
-            > /tmp/ecom-orders-vitest.log 2>&1
-          code=$?
-          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-          tail -n 180 /tmp/ecom-orders-vitest.log
-          exit 0
+          npm run lint > /tmp/branch-lint.log 2>&1
+          echo $? > /tmp/branch-lint.exit
+          npm run test:ci > /tmp/branch-test.log 2>&1
+          echo $? > /tmp/branch-test.exit
+          set -e
 
-      - name: Commit temporary failure diagnostic
-        if: ${{ steps.vitest.outputs.exit_code != '0' }}
+      - name: Run main global commands
+        shell: bash
+        run: |
+          git worktree add /tmp/lanzo-main origin/main
+          cd /tmp/lanzo-main
+          npm ci
+          set +e
+          npm run lint > /tmp/main-lint.log 2>&1
+          echo $? > /tmp/main-lint.exit
+          npm run test:ci > /tmp/main-test.log 2>&1
+          echo $? > /tmp/main-test.exit
+          set -e
+
+      - name: Commit concise temporary comparison
         shell: bash
         run: |
           mkdir -p tmp
-          tail -n 260 /tmp/ecom-orders-vitest.log > tmp/ecom-orders-vitest-diagnostic.txt
+          {
+            echo "branch_lint_exit=$(cat /tmp/branch-lint.exit)"
+            echo "main_lint_exit=$(cat /tmp/main-lint.exit)"
+            echo "branch_test_exit=$(cat /tmp/branch-test.exit)"
+            echo "main_test_exit=$(cat /tmp/main-test.exit)"
+            echo
+            echo '[branch_lint_summary]'
+            grep -E '([0-9]+ problems|✖)' /tmp/branch-lint.log | tail -n 2 || true
+            echo '[main_lint_summary]'
+            grep -E '([0-9]+ problems|✖)' /tmp/main-lint.log | tail -n 2 || true
+            echo '[branch_test_summary]'
+            grep -E 'Test Files|Tests ' /tmp/branch-test.log | tail -n 4 || true
+            echo '[main_test_summary]'
+            grep -E 'Test Files|Tests ' /tmp/main-test.log | tail -n 4 || true
+          } > tmp/ecom-orders-global-baseline.txt
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tmp/ecom-orders-vitest-diagnostic.txt
-          git commit -m 'chore(ecommerce): record temporary Vitest diagnostic [skip ci]'
+          git add tmp/ecom-orders-global-baseline.txt
+          git commit -m 'chore(ecommerce): record temporary global comparison [skip ci]'
           git push origin HEAD:fase-ecom-orders-1
-
-      - name: Enforce Vitest
-        if: ${{ steps.vitest.outputs.exit_code != '0' }}
-        run: exit 1
-
-      - name: Build
-        run: npm run build
