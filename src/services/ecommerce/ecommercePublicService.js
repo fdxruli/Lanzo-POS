@@ -2,6 +2,32 @@ import { createClient } from '@supabase/supabase-js';
 
 const PUBLIC_RPC_TIMEOUT_MS = 12_000;
 const DEFAULT_CURRENCY = 'MXN';
+const STORE_REQUEST_MESSAGE = 'No se pudo cargar la tienda. Revisa tu conexión e intenta nuevamente.';
+const CHECKOUT_REQUEST_MESSAGE = 'No se pudo confirmar el pedido. Revisa tu conexión e intenta nuevamente.';
+
+const CHECKOUT_ERROR_MESSAGES = {
+  ECOMMERCE_ORDERING_DISABLED: 'Este negocio no está recibiendo pedidos por ahora.',
+  ECOMMERCE_CUSTOMER_NAME_REQUIRED: 'Escribe tu nombre para continuar.',
+  ECOMMERCE_CUSTOMER_PHONE_REQUIRED: 'Escribe un teléfono válido para continuar.',
+  ECOMMERCE_INVALID_FULFILLMENT_METHOD: 'Selecciona una modalidad válida para recibir tu pedido.',
+  ECOMMERCE_DELIVERY_ADDRESS_REQUIRED: 'Escribe la dirección de entrega para continuar.',
+  ECOMMERCE_DELIVERY_NOT_AVAILABLE: 'Este negocio no tiene entrega a domicilio disponible.',
+  ECOMMERCE_PICKUP_NOT_AVAILABLE: 'Este negocio no tiene recolección disponible.',
+  ECOMMERCE_EMPTY_CART: 'Agrega al menos un producto para continuar.',
+  ECOMMERCE_TOO_MANY_ITEMS: 'El pedido tiene demasiados productos distintos.',
+  ECOMMERCE_DUPLICATE_PRODUCT: 'El carrito contiene productos repetidos. Actualízalo e intenta nuevamente.',
+  ECOMMERCE_PRODUCT_NOT_FOUND: 'Uno de los productos ya no está disponible.',
+  ECOMMERCE_PRODUCT_NOT_AVAILABLE: 'Uno de los productos ya no está disponible.',
+  ECOMMERCE_INVALID_QUANTITY: 'Revisa las cantidades del carrito.',
+  ECOMMERCE_STOCK_LIMIT_EXCEEDED: 'La cantidad solicitada supera la disponibilidad actual.',
+  ECOMMERCE_MIN_ORDER_NOT_REACHED: 'El pedido no alcanza el mínimo requerido.',
+  ECOMMERCE_IDEMPOTENCY_KEY_REQUIRED: 'No se pudo preparar el envío seguro del pedido.',
+  ECOMMERCE_RATE_LIMITED: 'Se realizaron demasiados intentos. Espera unos minutos e intenta nuevamente.',
+  ECOMMERCE_DAILY_ORDER_LIMIT_REACHED: 'Este negocio no puede recibir más pedidos por ahora.',
+  ECOMMERCE_ORDER_CREATE_FAILED: CHECKOUT_REQUEST_MESSAGE,
+  ECOMMERCE_PUBLIC_TIMEOUT: CHECKOUT_REQUEST_MESSAGE,
+  ECOMMERCE_PUBLIC_NETWORK_ERROR: CHECKOUT_REQUEST_MESSAGE,
+};
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -34,26 +60,30 @@ const asNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-function withTimeout(promise, timeoutMs = PUBLIC_RPC_TIMEOUT_MS) {
+function withTimeout(promise, {
+  timeoutMs = PUBLIC_RPC_TIMEOUT_MS,
+  timeoutMessage = STORE_REQUEST_MESSAGE,
+} = {}) {
   let timeoutId;
   const timeout = new Promise((_, reject) => {
-    timeoutId = window.setTimeout(() => {
-      reject(new EcommercePublicError(
-        'ECOMMERCE_PUBLIC_TIMEOUT',
-        'No se pudo cargar la tienda. Revisa tu conexión e intenta nuevamente.'
-      ));
+    timeoutId = globalThis.setTimeout(() => {
+      reject(new EcommercePublicError('ECOMMERCE_PUBLIC_TIMEOUT', timeoutMessage));
     }, timeoutMs);
   });
 
   return Promise.race([Promise.resolve(promise), timeout])
-    .finally(() => window.clearTimeout(timeoutId));
+    .finally(() => globalThis.clearTimeout(timeoutId));
 }
 
-function normalizeRpcFailure(data, error) {
+function getCheckoutMessage(code) {
+  return CHECKOUT_ERROR_MESSAGES[code] || CHECKOUT_REQUEST_MESSAGE;
+}
+
+function normalizeRpcFailure(data, error, operation = 'store') {
   if (error) {
     return new EcommercePublicError(
       'ECOMMERCE_PUBLIC_NETWORK_ERROR',
-      'No se pudo cargar la tienda. Revisa tu conexión e intenta nuevamente.',
+      operation === 'checkout' ? CHECKOUT_REQUEST_MESSAGE : STORE_REQUEST_MESSAGE,
       error
     );
   }
@@ -61,23 +91,35 @@ function normalizeRpcFailure(data, error) {
   const responseError = asObject(data?.error);
   const responseCode = asText(responseError.code, 'ECOMMERCE_PUBLIC_REQUEST_FAILED');
 
-  if (responseCode === 'ECOMMERCE_PORTAL_NOT_FOUND') {
-    return new EcommercePublicError(
-      responseCode,
-      'Esta tienda no está disponible.'
-    );
+  if (operation === 'checkout') {
+    return new EcommercePublicError(responseCode, getCheckoutMessage(responseCode));
   }
 
-  return new EcommercePublicError(
-    responseCode,
-    'No se pudo cargar la tienda. Revisa tu conexión e intenta nuevamente.'
-  );
+  if (responseCode === 'ECOMMERCE_PORTAL_NOT_FOUND') {
+    return new EcommercePublicError(responseCode, 'Esta tienda no está disponible.');
+  }
+
+  return new EcommercePublicError(responseCode, STORE_REQUEST_MESSAGE);
+}
+
+function normalizeFeatures(rawFeatures) {
+  const features = asObject(rawFeatures);
+  return {
+    whatsappCheckout: asBoolean(features.whatsappCheckout, false),
+    orderInbox: asBoolean(features.orderInbox, false),
+    customSlug: asBoolean(features.customSlug, false),
+    brandingCustomization: asText(features.brandingCustomization, 'basic'),
+    layoutCustomization: asText(features.layoutCustomization, 'template_only'),
+    businessHours: asBoolean(features.businessHours, true),
+    deliveryPickupSettings: asText(features.deliveryPickupSettings, 'basic'),
+    stockVisibility: asBoolean(features.stockVisibility, false),
+    realtimeOrders: asBoolean(features.realtimeOrders, false),
+  };
 }
 
 function normalizePortalResult(data) {
   const portal = asObject(data.portal);
   const hours = asObject(data.hours);
-  const features = asObject(data.features);
 
   return {
     portal: {
@@ -107,7 +149,7 @@ function normalizePortalResult(data) {
       weekly: asArray(hours.weekly),
       exceptions: asArray(hours.exceptions),
     },
-    features,
+    features: normalizeFeatures(data.features),
   };
 }
 
@@ -152,25 +194,101 @@ function normalizeCatalogResult(data) {
   };
 }
 
-async function executeRpc(client, rpcName, params) {
+function normalizeWhatsappUrl(value) {
+  const rawUrl = asText(value);
+  if (!rawUrl) return '';
+
+  try {
+    const parsed = new URL(rawUrl);
+    if (
+      parsed.protocol !== 'https:'
+      || parsed.hostname !== 'wa.me'
+      || parsed.port
+      || parsed.username
+      || parsed.password
+    ) {
+      return '';
+    }
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+function normalizeOrderResult(data) {
+  const order = asObject(data.order);
+  const whatsapp = asObject(data.whatsapp);
+  const total = Number(order.total);
+
+  if (asText(order.id) === '' || asText(order.code) === '' || !Number.isFinite(total)) {
+    throw new EcommercePublicError('ECOMMERCE_ORDER_CREATE_FAILED', CHECKOUT_REQUEST_MESSAGE);
+  }
+
+  return {
+    success: true,
+    idempotent: asBoolean(data.idempotent, false),
+    order: {
+      id: asText(order.id),
+      code: asText(order.code),
+      status: asText(order.status, 'new'),
+      total: Number(total.toFixed(2)),
+      currency: asText(order.currency, DEFAULT_CURRENCY).toUpperCase(),
+      fulfillmentMethod: ['pickup', 'delivery'].includes(order.fulfillmentMethod)
+        ? order.fulfillmentMethod
+        : 'pickup',
+      createdAt: asText(order.createdAt),
+    },
+    whatsapp: {
+      phone: asText(whatsapp.phone),
+      message: asText(whatsapp.message),
+      url: normalizeWhatsappUrl(whatsapp.url),
+    },
+  };
+}
+
+function normalizeCustomer(customer) {
+  const source = asObject(customer);
+  const fulfillmentMethod = asText(source.fulfillmentMethod).toLowerCase();
+
+  return {
+    name: asText(source.name).slice(0, 120),
+    phone: asText(source.phone).slice(0, 40),
+    address: fulfillmentMethod === 'delivery' ? asText(source.address).slice(0, 500) : '',
+    notes: asText(source.notes).slice(0, 1000),
+    fulfillmentMethod,
+  };
+}
+
+function normalizeOrderItems(items) {
+  return asArray(items).map((item) => ({
+    productId: asText(item?.productId || item?.product?.id),
+    quantity: Number(item?.quantity),
+  }));
+}
+
+async function executeRpc(client, rpcName, params, operation = 'store') {
   if (!client) {
     throw new EcommercePublicError(
       'ECOMMERCE_PUBLIC_CONFIG_MISSING',
-      'La tienda no está disponible temporalmente.'
+      operation === 'checkout'
+        ? 'No se pudo preparar el pedido en este momento.'
+        : 'La tienda no está disponible temporalmente.'
     );
   }
 
   let response;
   try {
-    response = await withTimeout(client.rpc(rpcName, params));
+    response = await withTimeout(client.rpc(rpcName, params), {
+      timeoutMessage: operation === 'checkout' ? CHECKOUT_REQUEST_MESSAGE : STORE_REQUEST_MESSAGE,
+    });
   } catch (error) {
     if (error instanceof EcommercePublicError) throw error;
-    throw normalizeRpcFailure(null, error);
+    throw normalizeRpcFailure(null, error, operation);
   }
 
   const { data, error } = response || {};
   if (error || data?.success !== true) {
-    throw normalizeRpcFailure(data, error);
+    throw normalizeRpcFailure(data, error, operation);
   }
 
   return data;
@@ -207,6 +325,23 @@ export function createEcommercePublicService(client = ecommercePublicClient) {
 
       return normalizeCatalogResult(data);
     },
+
+    async createPublicOrder(slug, { customer, items, idempotencyKey } = {}) {
+      const normalizedSlug = asText(slug);
+      const normalizedIdempotencyKey = asText(idempotencyKey).slice(0, 160);
+      if (!normalizedSlug) {
+        throw new EcommercePublicError('ECOMMERCE_PORTAL_NOT_FOUND', 'Esta tienda no está disponible.');
+      }
+
+      const data = await executeRpc(client, 'ecommerce_create_order', {
+        p_slug: normalizedSlug,
+        p_customer: normalizeCustomer(customer),
+        p_items: normalizeOrderItems(items),
+        p_idempotency_key: normalizedIdempotencyKey,
+      }, 'checkout');
+
+      return normalizeOrderResult(data);
+    },
   };
 }
 
@@ -214,3 +349,4 @@ const defaultService = createEcommercePublicService();
 
 export const getPublicPortalBySlug = (slug) => defaultService.getPublicPortalBySlug(slug);
 export const getPublicCatalog = (slug, options) => defaultService.getPublicCatalog(slug, options);
+export const createPublicOrder = (slug, payload) => defaultService.createPublicOrder(slug, payload);
