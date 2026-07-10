@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
+import '../../../store/installEcommerceOrderStore';
 import { useAppStore } from '../../../store/useAppStore';
 import { canAccessEcommerceOrders } from '../../../services/ecommerce/ecommerceOrderCapabilities';
 
@@ -36,11 +37,16 @@ export default function EcommerceOrdersRuntime() {
 
     if (!canAccess || !licenseIdentity) {
       resetOrders?.();
-      return;
+      return undefined;
     }
 
     loadSummary?.({ background: true });
+    return undefined;
   }, [canAccess, licenseIdentity, loadSummary, resetOrders]);
+
+  useEffect(() => () => {
+    resetOrders?.();
+  }, [resetOrders]);
 
   useEffect(() => {
     if (!canAccess) return undefined;
