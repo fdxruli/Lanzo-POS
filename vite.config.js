@@ -58,6 +58,11 @@ export default defineConfig(() => ({
     })
   ],
 
+  test: {
+    setupFiles: ['./src/test/setupTestingLibrary.js'],
+    testTimeout: 15_000,
+  },
+
   resolve: {
     dedupe: ['react', 'react-dom'],
   },
