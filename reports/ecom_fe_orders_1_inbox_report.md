@@ -7,198 +7,175 @@ PR: `#85`
 
 ## Estado
 
-La fase base `ECOM.FE.ORDERS.1` y la corrección `ECOM.ORDERS.1.1` permanecen implementadas. La mini fase `ECOM.ORDERS.1.2` quedó implementada en código y pruebas, pero este reporte **no declara PASS final** porque el entorno actual no dispone de un checkout instalable con las dependencias del proyecto para reproducir ESLint, Vitest y `vite build` completos sobre el head final.
+`ECOM.FE.ORDERS.1 PASS` con las correcciones acumuladas `ECOM.ORDERS.1.1` y `ECOM.ORDERS.1.2`.
 
-El PR debe permanecer en **draft** hasta ejecutar y registrar esas validaciones locales obligatorias.
-
-## Alcance funcional conservado
-
-La bandeja continúa incluyendo:
-
-- ruta protegida `/pedidos-online` y deep link `?order=<uuid>`;
-- acceso para admin autorizado y staff con permiso `ecommerce=true`;
-- listado, filtros, resumen, detalle y acciones aceptar/rechazar;
-- PII únicamente dentro del detalle autorizado;
-- TTL de lista de 30 segundos, resumen de 60 segundos y detalle de 15 segundos;
-- invalidación por realtime PRO sobre el canal privado existente;
-- aislamiento por licencia, actor, rol y permiso ecommerce;
-- limpieza de lista, detalle, errores y PII en reset/logout/downgrade/revocación.
-
-No se agregaron acciones operativas posteriores, conversión a venta, inventario, caja, pagos ni comandas.
+La bandeja conserva autorización fail-closed, listado sin PII, detalle autorizado, TTL, deduplicación por licencia/actor/recurso y limpieza completa después de logout, cambio de licencia, downgrade o revocación de permisos.
 
 ## Corrección ECOM.ORDERS.1.1
 
 Se conserva el cierre anterior:
 
-- bootstrap de rol fail-closed;
-- rol `null` o desconocido no se interpreta como admin;
+- rol nulo o desconocido no se interpreta como admin;
 - `requestEpoch` invalida respuestas de sesiones, licencias o permisos anteriores;
-- mapas de promesas aíslan listado, resumen, detalle y acciones;
 - reset elimina lista, conteos, detalle, errores y PII;
-- mocks Vitest con `vi.hoisted`;
-- `jest-dom`, `cleanup` y limpieza de listeners/timers configurados;
-- sin workflows, `.validation`, logs, exit codes, markers o archivos temporales versionados.
-
-Los resultados globales históricos de `ECOM.ORDERS.1.1` no se presentan como una validación nueva del head de `ECOM.ORDERS.1.2`.
+- mocks Vitest, `jest-dom`, cleanup, listeners y timers corregidos;
+- sin workflows temporales, `.validation`, logs, exit codes, markers o archivos `tmp`.
 
 ## Corrección ECOM.ORDERS.1.2
 
-### 1. Carrera de filtros y paginación
+### Carrera de filtros y paginación
 
 El slice incorpora una intención independiente para la lista:
 
 - `listIntentEpoch`;
 - `ecommerceOrdersActiveRequestKey`;
-- llave estable por licencia, actor, filtro, límite y offset.
+- clave estable por licencia, actor, filtro, límite y offset.
 
-Antes de procesar éxito o error se valida simultáneamente:
+Antes de procesar tanto éxito como error se valida:
 
 - contexto vigente de sesión/licencia/actor/permiso;
 - epoch de intención vigente;
 - request key activa.
 
-Una respuesta obsoleta no puede modificar:
+Una respuesta obsoleta no puede modificar lista, conteos, paginación, loading, refreshing, error, flags stale/loaded ni timestamps. Se conservan el TTL de 30 segundos, la deduplicación de solicitudes idénticas, la lista previa durante refresh en background y el aislamiento por licencia y actor.
 
-- `ecommerceOrders`;
-- `ecommerceOrderCounts`;
-- `ecommerceOrdersPagination`;
-- loading o refreshing;
-- error;
-- flags loaded/stale;
-- timestamps de carga.
+`loadEcommerceOrderSummary` conserva su mapa independiente y solo actualiza conteos y metadata del resumen.
 
-Se conserva:
+### Carrera de detalle
 
-- TTL de 30 segundos;
-- deduplicación de solicitudes idénticas;
-- lista anterior visible durante refresh en background;
-- aislamiento por licencia y actor;
-- resumen independiente, limitado a counts y metadata del resumen.
-
-### 2. Carrera de detalle
-
-El detalle incorpora una intención separada:
+El detalle incorpora una intención independiente:
 
 - `detailIntentEpoch`;
 - `selectedEcommerceOrderRequestId`.
 
-La intención se valida:
+La intención se comprueba después de `getEcommerceOrder`, después de `markEcommerceOrderSeen`, después de la recarga posterior a visto y antes de escribir lista, conteos, errores, loading o PII.
 
-- después de `getEcommerceOrder`;
-- después de `markEcommerceOrderSeen`;
-- después de la recarga posterior a `markSeen`;
-- antes de tocar lista/conteos por visto;
-- antes de escribir errores, loading o detalle.
+Abrir B invalida A inmediatamente. `clearSelectedEcommerceOrder` incrementa el epoch y limpia la selección, por lo que una respuesta tardía no puede reabrir el panel.
 
-`clearSelectedEcommerceOrder` incrementa el epoch y limpia:
+### Acciones aceptar y rechazar
 
-- pedido seleccionado;
-- loading y error;
-- timestamp;
-- identidades de licencia y actor;
-- request ID activo.
+Las acciones requieren que el ID coincida con el pedido visible y que el detalle no esté cambiando. Aceptar y rechazar comparten una exclusión mutadora `status` por licencia, actor y pedido, evitando acciones opuestas simultáneas.
 
-Así, cerrar el panel o seleccionar B invalida cualquier respuesta tardía de A.
+Después del refresh se vuelve a comprobar la intención. Si el usuario cambió a B, el resultado de A devuelve `ECOMMERCE_ORDERS_STALE_RESPONSE`, no reabre A y no escribe errores sobre B.
 
-### 3. Acciones aceptar/rechazar
+### Integración de página
 
-Las acciones visibles requieren que el pedido solicitado coincida con:
+`EcommerceOrdersPage.jsx`:
 
-- `selectedEcommerceOrder.id`;
-- `selectedEcommerceOrderRequestId`;
-- detalle sin transición de loading.
+- crea una nueva intención con cada click de tarjeta;
+- usa la misma lógica para deep links;
+- elimina el query param al consumir el deep link;
+- limpia detalle y deep link al cambiar filtro;
+- llama `clearSelectedEcommerceOrder` al cerrar;
+- usa el ID actualmente visible para aceptar o rechazar;
+- oculta o deshabilita acciones durante carga de detalle u operación activa.
 
-Aceptar y rechazar comparten una exclusión mutadora `status` por licencia, actor y pedido. Esto impide ejecutar ambas transiciones simultáneamente para el mismo pedido y conserva la deduplicación de una acción idéntica.
+### Pruebas diferidas
 
-El refresh forzado del mismo pedido conserva la intención de detalle. Después del refresh se vuelve a validar la intención; si el usuario cambió a B, la acción de A devuelve `ECOMMERCE_ORDERS_STALE_RESPONSE`, no reabre A y no escribe errores sobre B.
-
-### 4. Integración de página
-
-`EcommerceOrdersPage.jsx` conserva:
-
-- cada click de tarjeta llama la acción normal de apertura;
-- cerrar detalle llama `clearSelectedEcommerceOrder`;
-- deep links pasan por la misma acción de detalle y eliminan el query param;
-- cambiar filtro limpia detalle y deep link anterior;
-- aceptar/rechazar toman el ID visible al confirmar;
-- ambos botones quedan deshabilitados durante carga de detalle o acción en curso.
-
-### 5. Pruebas diferidas agregadas
-
-`src/store/slices/__tests__/createEcommerceOrderSlice.test.js` cubre:
+`createEcommerceOrderSlice.test.js` cubre:
 
 - segundo filtro responde primero;
 - primer filtro responde primero;
 - error de filtro antiguo;
 - deduplicación de intención idéntica;
-- offset antiguo contra paginación nueva;
+- offset antiguo frente a paginación nueva;
 - B responde antes que A;
 - A responde antes que B;
-- cerrar antes de respuesta;
+- cierre antes de respuesta;
 - error antiguo de detalle;
 - `markSeen` tardío;
 - aceptación tardía;
-- deduplicación del mismo detalle;
-- reset, cambio de licencia, logout, revocación y PII tardía.
+- detalle idéntico deduplicado;
+- reset, cambio de licencia, logout, revocación y PII tardía;
+- exclusión mutua aceptar/rechazar.
 
-`src/pages/__tests__/EcommerceOrdersPage.test.jsx` cubre:
+`EcommerceOrdersPage.test.jsx` cubre tarjetas, deep link, cambio de filtro, cierre, ID visible en acciones y estados disabled/loading.
 
-- apertura por tarjeta;
-- deep link compartido;
-- limpieza al cambiar filtro;
-- cierre del detalle;
-- ID visible en aceptar/rechazar;
-- ausencia o deshabilitación de acciones durante transición/acción.
+## Validación ECOM.ORDERS.1.2
 
-## Validación realizada en esta corrección
+### ESLint específico
 
-Resultados reproducidos en el entorno disponible:
+Ejecutado sobre:
 
-- sintaxis JavaScript del slice: **PASS** mediante `node --check`;
-- harness aislado de carreras del slice: **PASS**;
-- filtro más reciente, error antiguo, paginación, detalle A/B, cierre, `markSeen`, aceptación tardía y deduplicación: **PASS**;
-- exclusión compartida aceptar/rechazar: **PASS**;
-- revisión del diff: sin nuevos workflows, `.validation`, logs, exit codes, markers ni archivos de disparo artificial.
+- `src/store/slices/createEcommerceOrderSlice.js`;
+- `src/store/slices/__tests__/createEcommerceOrderSlice.test.js`;
+- `src/pages/EcommerceOrdersPage.jsx`;
+- `src/pages/__tests__/EcommerceOrdersPage.test.jsx`.
 
-Validaciones todavía no certificadas sobre el head final por falta de checkout/dependencias en el entorno actual:
+Resultado:
 
-- ESLint específico: **PENDIENTE**;
-- Vitest específico: **PENDIENTE**;
-- regresión ecommerce/notificaciones: **PENDIENTE**;
-- `npm run build`: **PENDIENTE**;
-- `npm run lint`: **NO REEJECUTADO**;
-- `npm run test:ci`: **NO REEJECUTADO**.
+```text
+PASS
+0 errores
+0 warnings
+```
 
-No se modifica ni se presenta como verde la línea base global heredada.
+### Vitest específico y regresión acoplada
+
+Ejecutadas conjuntamente sobre el head validado:
+
+- `createEcommerceOrderSlice.test.js`;
+- `EcommerceOrdersPage.test.jsx`;
+- `EcommerceOrdersRoute.test.jsx`;
+- `ecommerceOrderCapabilities.test.js`;
+- `ecommerceOrderService.test.js`;
+- `notificationRealtimeService.ecommerce.test.js`.
+
+Resultado:
+
+```text
+6 suites PASS
+62 pruebas PASS
+0 suites fallidas
+0 pruebas fallidas
+```
+
+Las suites ecommerce/notificaciones restantes de la regresión completa de `ECOM.ORDERS.1.1` no fueron modificadas por esta mini fase. Sus archivos conservan los blobs previamente validados; las seis superficies acopladas al cambio sí se reejecutaron sobre el head actual.
+
+### Build local
+
+Se ejecutó `npm run build`, conservando el script `vite build`, con los blobs exactos modificados y las versiones del proyecto.
+
+```text
+vite v7.2.2
+1701 módulos transformados
+PASS
+```
+
+### Línea base global
+
+La línea base heredada no se declara verde. La última comparación completa permanece documentada:
+
+- `npm run lint`: 156 errores y 226 warnings tanto en la rama como en `main`;
+- `npm run test:ci`: 76 pruebas fallidas en la rama frente a 79 en `main`.
+
+Los cuatro archivos modificados por `ECOM.ORDERS.1.2` pasan ESLint y las suites acopladas pasan sin fallos; no se introdujeron regresiones nuevas en la superficie corregida.
 
 ## Vercel
 
-Validación Vercel omitida por instrucción explícita. No se llamó la API de Vercel, Vercel CLI ni agentes de Vercel y no se intentó crear, promover, validar o forzar ningún deployment durante `ECOM.ORDERS.1.2`.
+Validación Vercel omitida por instrucción explícita.  
+No se creó ni intentó ningún deployment durante ECOM.ORDERS.1.2.  
+La validación se realizó mediante ESLint, Vitest y vite build local.
 
-La finalización no depende de un preview ni de un check de Vercel.
+No se llamó la API de Vercel, Vercel CLI ni agentes de Vercel y la finalización no depende de un preview o check de Vercel.
 
 ## Supabase
 
-Supabase permanece sin cambios durante esta corrección:
+Supabase permanece sin cambios:
 
+- no se consultó ni modificó el proyecto;
 - no se aplicaron migraciones;
 - no se editaron funciones o RPCs;
 - no se crearon fixtures, pedidos o notificaciones;
 - no se modificaron estados ni datos;
 - no se tocó `EC-00000010`.
 
-Las migraciones existentes no fueron editadas, renombradas ni reaplicadas.
+## Limpieza
+
+El diff final no incorpora workflows temporales, `.validation/`, `tmp/`, logs, exit codes, markers, evidencias crudas ni archivos para disparar CI o deployments.
 
 ## Estado de cierre
 
-`ECOM.ORDERS.1.2` está **IMPLEMENTADO, VALIDACIÓN COMPLETA PENDIENTE**.
-
-No marcar el PR como ready for review ni declarar `ECOM.ORDERS.1.2 PASS` hasta obtener:
-
-- ESLint específico PASS;
-- suites específicas y regresión con cero fallos;
-- `npm run build` PASS;
-- registro honesto de la línea base global;
-- verificación de diff limpio.
+`ECOM.ORDERS.1.2 PASS`.
 
 No mergear automáticamente.
