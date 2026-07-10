@@ -26,30 +26,6 @@ jobs:
       - run: npx eslint src/components/ecommerce/public/PublicCheckoutDialog.jsx src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx
       - run: npx vitest run src/components/ecommerce/public/__tests__/PublicCheckoutDialog.test.jsx --maxWorkers=1 --reporter=verbose
 
-  integration-error-preservation:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx vitest run src/pages/__tests__/PublicStoreCheckout.test.jsx --maxWorkers=1 --reporter=verbose -t "keeps form data, cart and idempotency key after a network error"
-
-  integration-second-checkout:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx vitest run src/pages/__tests__/PublicStoreCheckout.test.jsx --maxWorkers=1 --reporter=verbose -t "opens a second checkout without personal data after success"
-
   integration-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -65,7 +41,7 @@ jobs:
 
   full-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -105,8 +81,22 @@ jobs:
           src/router/__tests__/publicStoreRouting.test.jsx
           --maxWorkers=4
       - name: Global lint
-        run: npm run lint
+        id: global_lint
+        continue-on-error: true
+        run: npm run lint > global-lint.log 2>&1
+      - name: Upload global lint diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: global-lint-diagnostics
+          path: global-lint.log
+          retention-days: 1
       - name: Global tests
         run: npm run test:ci
       - name: Production build
         run: npm run build
+      - name: Enforce global lint
+        if: steps.global_lint.outcome != 'success'
+        run: |
+          cat global-lint.log
+          exit 1
