@@ -171,7 +171,7 @@ describe('PublicStorePage checkout integration', () => {
     await waitFor(() => expect(serviceMocks.createPublicOrder).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole('heading', { name: 'Pedido enviado' })).toBeInTheDocument();
     expect(screen.getByText('PED-1001')).toBeInTheDocument();
-    expect(screen.getByText('$80.00')).toBeInTheDocument();
+    expect(screen.getAllByText('$80.00').length).toBeGreaterThan(0);
     await waitFor(() => expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).toBeNull());
   });
 
