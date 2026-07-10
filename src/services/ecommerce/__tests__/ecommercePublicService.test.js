@@ -192,14 +192,14 @@ describe('ecommercePublicService', () => {
       rpc: vi.fn(() => new Promise(() => {})),
     });
 
-    const request = service.createPublicOrder('mi-negocio', {
+    const capturedError = service.createPublicOrder('mi-negocio', {
       customer: {},
       items: [],
       idempotencyKey: 'web-key',
-    });
+    }).catch((error) => error);
     await vi.advanceTimersByTimeAsync(12_001);
 
-    await expect(request).rejects.toMatchObject({
+    await expect(capturedError).resolves.toMatchObject({
       code: 'ECOMMERCE_PUBLIC_TIMEOUT',
       message: 'No se pudo confirmar el pedido. Revisa tu conexión e intenta nuevamente.',
     });
