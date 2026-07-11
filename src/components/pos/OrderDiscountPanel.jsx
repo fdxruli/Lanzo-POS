@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { makeSaleDiscount, orderTotals, withOrderTotals } from '../../services/sales/orderTotals';
 import { showMessageModal } from '../../services/utils';
+import { isEcommercePosEffectBlocked } from '../../services/ecommerce/ecommercePosDraftGuards';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useOrderDiscountRuntime } from '../../hooks/pos/useOrderDiscountRuntime';
 import OrderLineDiscountList from './OrderLineDiscountList';
@@ -40,6 +41,7 @@ export default function OrderDiscountPanel({
   const hasSaleDiscount = Number(totals.saleDiscountAmount || 0) > 0;
   const locked = Boolean(order?.isLockedForCheckout);
   const canManageDiscounts = canAccess('discounts');
+  const isEcommerceDraft = isEcommercePosEffectBlocked(order);
 
   const closeForm = () => {
     setOpen(false);
@@ -49,19 +51,22 @@ export default function OrderDiscountPanel({
   };
 
   const applyDiscount = () => {
-    if (!order || locked) return;
+    const liveOrder = currentOrderSelector(useActiveOrders.getState());
+    if (!liveOrder || liveOrder.isLockedForCheckout || isEcommercePosEffectBlocked(liveOrder)) return;
     if (!canManageDiscounts) {
       showMessageModal('Tu usuario no tiene permiso para aplicar descuentos.', null, { type: 'warning' });
       return;
     }
-    if (!hasItems) {
+
+    const liveItems = Array.isArray(liveOrder.items) ? liveOrder.items : [];
+    if (!liveItems.some((item) => Number(item?.quantity) > 0)) {
       showMessageModal('Agrega productos antes de aplicar un descuento.', null, { type: 'warning' });
       return;
     }
 
     try {
-      const saleDiscount = makeSaleDiscount(order, { type, value, reason });
-      updateCurrentOrder(withOrderTotals({ ...order, saleDiscount }));
+      const saleDiscount = makeSaleDiscount(liveOrder, { type, value, reason });
+      updateCurrentOrder(withOrderTotals({ ...liveOrder, saleDiscount }));
       closeForm();
       showMessageModal('Descuento aplicado.', null, { type: 'success' });
     } catch (error) {
@@ -70,16 +75,18 @@ export default function OrderDiscountPanel({
   };
 
   const removeDiscount = () => {
-    if (!order || locked) return;
+    const liveOrder = currentOrderSelector(useActiveOrders.getState());
+    if (!liveOrder || liveOrder.isLockedForCheckout || isEcommercePosEffectBlocked(liveOrder)) return;
     if (!canManageDiscounts) {
       showMessageModal('Tu usuario no tiene permiso para quitar descuentos.', null, { type: 'warning' });
       return;
     }
-    updateCurrentOrder(withOrderTotals({ ...order, saleDiscount: null }, null));
+    updateCurrentOrder(withOrderTotals({ ...liveOrder, saleDiscount: null }, null));
     closeForm();
     showMessageModal('Descuento quitado.', null, { type: 'success' });
   };
 
+  if (isEcommerceDraft) return null;
   if (!hasItems) return null;
   if (!canManageDiscounts && !hasAnyDiscount) return null;
 
