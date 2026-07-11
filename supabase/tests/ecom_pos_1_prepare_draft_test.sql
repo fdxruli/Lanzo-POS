@@ -1,5 +1,281 @@
--- ECOM.POS.1 controlled SQL test. Run inside BEGIN/ROLLBACK after the migration.
-do $test$
+-- ECOM.POS.1.1 controlled SQL test.
+-- All fixtures and changes are rolled back, including temporary changes to real test orders.
+begin;
+
+do $mapping_test$
+declare
+  v_order_id uuid;
+  v_portal_id uuid;
+  v_license_id uuid;
+  v_published_product_id uuid;
+  v_expected_source text;
+  v_realistic_item_id uuid := extensions.gen_random_uuid();
+  v_other_license_item_id uuid := extensions.gen_random_uuid();
+  v_other_portal_item_id uuid := extensions.gen_random_uuid();
+  v_unlinked_item_id uuid := extensions.gen_random_uuid();
+  v_other_license_published_id uuid;
+  v_other_portal_id uuid := extensions.gen_random_uuid();
+  v_other_portal_published_id uuid := extensions.gen_random_uuid();
+  v_unlinked_published_id uuid := extensions.gen_random_uuid();
+  v_source text;
+  v_snapshot jsonb;
+  v_snapshot_source text;
+  v_unmapped_mappable_count integer;
+begin
+  select o.id, o.portal_id, o.license_id
+  into v_order_id, v_portal_id, v_license_id
+  from public.ecommerce_orders o
+  where o.public_order_code = 'EC-00000010'
+  limit 1;
+
+  if v_order_id is null then
+    raise exception 'ECOM.POS.1.1 mapping fixture order missing';
+  end if;
+
+  select pp.id, coalesce(pp.product_id, pp.local_product_ref)
+  into v_published_product_id, v_expected_source
+  from public.ecommerce_published_products pp
+  where pp.portal_id = v_portal_id
+    and pp.license_id = v_license_id
+    and coalesce(pp.product_id, pp.local_product_ref) is not null
+  order by pp.created_at, pp.id
+  limit 1;
+
+  if v_published_product_id is null or v_expected_source is null then
+    raise exception 'same-license publication with local mapping missing';
+  end if;
+
+  -- Reproduce the public checkout contract: publication present, source_product_id omitted/null.
+  insert into public.ecommerce_order_items (
+    id,
+    order_id,
+    portal_id,
+    license_id,
+    published_product_id,
+    source_product_id,
+    product_name,
+    unit_price,
+    quantity,
+    line_total
+  ) values (
+    v_realistic_item_id,
+    v_order_id,
+    v_portal_id,
+    v_license_id,
+    v_published_product_id,
+    null,
+    'ECOM.POS.1.1 realistic mapping fixture',
+    1,
+    1,
+    1
+  );
+
+  select i.source_product_id
+  into v_source
+  from public.ecommerce_order_items i
+  where i.id = v_realistic_item_id;
+
+  if v_source is distinct from v_expected_source then
+    raise exception 'server trigger did not resolve realistic checkout item: expected %, got %', v_expected_source, v_source;
+  end if;
+
+  -- A publication from another license must never map into this order item.
+  select pp.id
+  into v_other_license_published_id
+  from public.ecommerce_published_products pp
+  where pp.license_id <> v_license_id
+    and coalesce(pp.product_id, pp.local_product_ref) is not null
+  order by pp.created_at, pp.id
+  limit 1;
+
+  if v_other_license_published_id is null then
+    raise exception 'other-license publication fixture missing';
+  end if;
+
+  insert into public.ecommerce_order_items (
+    id, order_id, portal_id, license_id, published_product_id, source_product_id,
+    product_name, unit_price, quantity, line_total
+  ) values (
+    v_other_license_item_id, v_order_id, v_portal_id, v_license_id,
+    v_other_license_published_id, null,
+    'ECOM.POS.1.1 other license fixture', 1, 1, 1
+  );
+
+  if (select source_product_id is not null from public.ecommerce_order_items where id = v_other_license_item_id) then
+    raise exception 'publication from another license mapped unexpectedly';
+  end if;
+
+  -- A soft-deleted temporary portal bypasses the one-active-portal invariant without
+  -- changing any real portal. Its publication must not map into the original portal.
+  insert into public.ecommerce_portals (
+    id, license_id, slug, name, deleted_at
+  ) values (
+    v_other_portal_id,
+    v_license_id,
+    'ecom-pos-test-' || replace(v_other_portal_id::text, '-', ''),
+    'ECOM POS temporary deleted portal',
+    now()
+  );
+
+  insert into public.ecommerce_published_products (
+    id, portal_id, license_id, source_type, product_id, local_product_ref,
+    public_name, price, deleted_at
+  ) values (
+    v_other_portal_published_id,
+    v_other_portal_id,
+    v_license_id,
+    'local_snapshot',
+    null,
+    'other-portal-local-ref',
+    'ECOM POS other portal product',
+    1,
+    now()
+  );
+
+  insert into public.ecommerce_order_items (
+    id, order_id, portal_id, license_id, published_product_id, source_product_id,
+    product_name, unit_price, quantity, line_total
+  ) values (
+    v_other_portal_item_id, v_order_id, v_portal_id, v_license_id,
+    v_other_portal_published_id, null,
+    'ECOM.POS.1.1 other portal fixture', 1, 1, 1
+  );
+
+  if (select source_product_id is not null from public.ecommerce_order_items where id = v_other_portal_item_id) then
+    raise exception 'publication from another portal mapped unexpectedly';
+  end if;
+
+  -- A same-license, same-portal publication with no local link remains intentionally unmapped.
+  insert into public.ecommerce_published_products (
+    id, portal_id, license_id, source_type, product_id, local_product_ref,
+    public_name, price
+  ) values (
+    v_unlinked_published_id,
+    v_portal_id,
+    v_license_id,
+    'local_snapshot',
+    null,
+    null,
+    'ECOM POS unlinked publication',
+    1
+  );
+
+  insert into public.ecommerce_order_items (
+    id, order_id, portal_id, license_id, published_product_id, source_product_id,
+    product_name, unit_price, quantity, line_total
+  ) values (
+    v_unlinked_item_id, v_order_id, v_portal_id, v_license_id,
+    v_unlinked_published_id, null,
+    'ECOM.POS.1.1 unlinked product fixture', 1, 1, 1
+  );
+
+  if (select source_product_id is not null from public.ecommerce_order_items where id = v_unlinked_item_id) then
+    raise exception 'publication without product_id/local_product_ref mapped unexpectedly';
+  end if;
+
+  -- Simulate pre-migration rows and execute the exact safe backfill contract.
+  update public.ecommerce_order_items
+  set source_product_id = null
+  where id = v_realistic_item_id;
+
+  update public.ecommerce_order_items as i
+  set source_product_id = coalesce(pp.product_id, pp.local_product_ref)
+  from public.ecommerce_published_products as pp
+  where pp.id = i.published_product_id
+    and pp.portal_id = i.portal_id
+    and pp.license_id = i.license_id
+    and i.source_product_id is null
+    and coalesce(pp.product_id, pp.local_product_ref) is not null;
+
+  select count(*)
+  into v_unmapped_mappable_count
+  from public.ecommerce_order_items i
+  join public.ecommerce_published_products pp
+    on pp.id = i.published_product_id
+   and pp.portal_id = i.portal_id
+   and pp.license_id = i.license_id
+  where i.source_product_id is null
+    and coalesce(pp.product_id, pp.local_product_ref) is not null;
+
+  if v_unmapped_mappable_count <> 0 then
+    raise exception 'safe backfill left % mappable item(s) unresolved', v_unmapped_mappable_count;
+  end if;
+
+  if (select source_product_id from public.ecommerce_order_items where id = v_realistic_item_id) is distinct from v_expected_source then
+    raise exception 'safe backfill did not restore realistic fixture mapping';
+  end if;
+
+  if (select source_product_id is not null from public.ecommerce_order_items where id = v_other_license_item_id) then
+    raise exception 'safe backfill crossed license isolation';
+  end if;
+
+  if (select source_product_id is not null from public.ecommerce_order_items where id = v_other_portal_item_id) then
+    raise exception 'safe backfill crossed portal isolation';
+  end if;
+
+  if (select source_product_id is not null from public.ecommerce_order_items where id = v_unlinked_item_id) then
+    raise exception 'safe backfill mapped an unlinked publication';
+  end if;
+
+  -- The administrative snapshot must resolve the authorized publication even if a legacy
+  -- row is temporarily missing source_product_id.
+  update public.ecommerce_order_items
+  set source_product_id = null
+  where id = v_realistic_item_id;
+
+  v_snapshot := private.ecommerce_order_pos_snapshot_v1(
+    v_order_id,
+    v_license_id,
+    jsonb_build_object('actor_type', 'admin', 'device_id', 'sql-ecom-pos-1-1')
+  );
+
+  select item->>'sourceProductId'
+  into v_snapshot_source
+  from jsonb_array_elements(coalesce(v_snapshot->'items', '[]'::jsonb)) item
+  where item->>'id' = v_realistic_item_id::text
+  limit 1;
+
+  if v_snapshot_source is distinct from v_expected_source then
+    raise exception 'snapshot fallback did not resolve same-license/same-portal sourceProductId';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(coalesce(v_snapshot->'items', '[]'::jsonb)) item
+    where item->>'id' in (
+      v_other_license_item_id::text,
+      v_other_portal_item_id::text,
+      v_unlinked_item_id::text
+    )
+      and item->>'sourceProductId' is not null
+  ) then
+    raise exception 'snapshot fallback exposed a cross-tenant or unlinked product mapping';
+  end if;
+
+  if has_function_privilege('anon', 'private.ecommerce_resolve_order_item_source_product_v1()', 'execute')
+     or has_function_privilege('authenticated', 'private.ecommerce_resolve_order_item_source_product_v1()', 'execute')
+     or has_function_privilege('public', 'private.ecommerce_resolve_order_item_source_product_v1()', 'execute') then
+    raise exception 'private product mapping helper is executable by a client role';
+  end if;
+
+  if has_function_privilege('anon', 'private.ecommerce_order_pos_snapshot_v1(uuid,uuid,jsonb)', 'execute')
+     or has_function_privilege('authenticated', 'private.ecommerce_order_pos_snapshot_v1(uuid,uuid,jsonb)', 'execute')
+     or has_function_privilege('public', 'private.ecommerce_order_pos_snapshot_v1(uuid,uuid,jsonb)', 'execute') then
+    raise exception 'private POS snapshot helper is executable by a client role';
+  end if;
+
+  if has_table_privilege('anon', 'public.ecommerce_order_items', 'select,insert,update,delete')
+     or has_table_privilege('authenticated', 'public.ecommerce_order_items', 'select,insert,update,delete')
+     or has_table_privilege('anon', 'public.ecommerce_published_products', 'select,insert,update,delete')
+     or has_table_privilege('authenticated', 'public.ecommerce_published_products', 'select,insert,update,delete')
+     or has_table_privilege('anon', 'public.ecommerce_orders', 'select,insert,update,delete')
+     or has_table_privilege('authenticated', 'public.ecommerce_orders', 'select,insert,update,delete') then
+    raise exception 'client role retains direct ecommerce table privileges';
+  end if;
+end;
+$mapping_test$;
+
+do $claim_test$
 declare
   v_license_id uuid;
   v_license_key text;
@@ -127,12 +403,17 @@ begin
   if not has_function_privilege('anon', 'public.ecommerce_admin_claim_pos_draft(text,text,text,text,uuid,text)', 'execute') then raise exception 'anon cannot execute claim'; end if;
   if not has_function_privilege('authenticated', 'public.ecommerce_admin_claim_pos_draft(text,text,text,text,uuid,text)', 'execute') then raise exception 'authenticated cannot execute claim'; end if;
   if has_function_privilege('anon', 'private.ecommerce_pos_draft_authorize_v1(text,text,text,text,text)', 'execute') then raise exception 'anon can execute private helper'; end if;
-  if has_table_privilege('anon', 'public.ecommerce_orders', 'select') or has_table_privilege('authenticated', 'public.ecommerce_orders', 'select') then raise exception 'client role has direct ecommerce_orders grant'; end if;
 end;
-$test$;
+$claim_test$;
 
 select jsonb_build_object(
-  'status', 'ECOM.POS.1 SQL PASS',
+  'status', 'ECOM.POS.1.1 SQL PASS',
+  'realisticProductMapping', true,
+  'crossLicenseBlocked', true,
+  'crossPortalBlocked', true,
+  'snapshotFallback', true,
   'financialEffects', 0,
-  'rollbackRequired', true
+  'rolledBack', true
 ) as result;
+
+rollback;
