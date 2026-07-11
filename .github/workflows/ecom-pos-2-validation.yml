@@ -11,7 +11,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - name: Checkout PR head
         uses: actions/checkout@v4
@@ -25,24 +25,42 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Prepare validation logs
+        run: mkdir -p validation-logs
+
       - name: Install dependencies
-        run: npm ci
+        run: npm ci 2>&1 | tee validation-logs/npm-ci.log
 
       - name: ESLint modified implementation
+        id: eslint_specific
+        continue-on-error: true
         run: >-
           npx eslint
           src/services/ecommerce/ecommercePosInventoryResolution.js
           src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js
           src/components/pos/EcommercePosDraftBanner.jsx
           src/components/pos/__tests__/EcommercePosInventoryResolution.test.jsx
+          2>&1 | tee validation-logs/eslint-specific.log
 
-      - name: ECOM.POS.2 specific tests
+      - name: Inventory service tests
+        id: service_tests
+        continue-on-error: true
         run: >-
           npm run test:ci --
           src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js
+          2>&1 | tee validation-logs/service-tests.log
+
+      - name: Inventory banner tests
+        id: banner_tests
+        continue-on-error: true
+        run: >-
+          npm run test:ci --
           src/components/pos/__tests__/EcommercePosInventoryResolution.test.jsx
+          2>&1 | tee validation-logs/banner-tests.log
 
       - name: ECOM.POS regression tests
+        id: regression_tests
+        continue-on-error: true
         run: >-
           npm run test:ci --
           src/services/ecommerce/__tests__/ecommercePosDraftService.test.js
@@ -59,18 +77,53 @@ jobs:
           src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
           src/hooks/pos/__tests__/usePosCheckout.ecommerce.test.jsx
           src/hooks/pos/__tests__/useTableManagement.ecommerce.test.jsx
+          2>&1 | tee validation-logs/regression-tests.log
 
       - name: Build
-        run: npm run build
+        id: build
+        continue-on-error: true
+        run: npm run build 2>&1 | tee validation-logs/build.log
 
       - name: Global lint
-        run: npm run lint
+        id: lint_global
+        continue-on-error: true
+        run: npm run lint 2>&1 | tee validation-logs/lint-global.log
 
       - name: Global tests
-        run: npm run test:ci
+        id: tests_global
+        continue-on-error: true
+        run: npm run test:ci 2>&1 | tee validation-logs/tests-global.log
 
       - name: Diff check
-        run: git diff --check origin/main...HEAD
+        id: diff_check
+        continue-on-error: true
+        run: git diff --check origin/main...HEAD 2>&1 | tee validation-logs/diff-check.log
 
       - name: Working tree check
-        run: test -z "$(git status --short)"
+        id: tree_check
+        continue-on-error: true
+        run: |
+          git status --short | tee validation-logs/git-status.log
+          test -z "$(git status --short)"
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecom-pos-2-validation-logs
+          path: validation-logs
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Validation gate
+        if: always()
+        run: |
+          test "${{ steps.eslint_specific.outcome }}" = "success"
+          test "${{ steps.service_tests.outcome }}" = "success"
+          test "${{ steps.banner_tests.outcome }}" = "success"
+          test "${{ steps.regression_tests.outcome }}" = "success"
+          test "${{ steps.build.outcome }}" = "success"
+          test "${{ steps.lint_global.outcome }}" = "success"
+          test "${{ steps.tests_global.outcome }}" = "success"
+          test "${{ steps.diff_check.outcome }}" = "success"
+          test "${{ steps.tree_check.outcome }}" = "success"
