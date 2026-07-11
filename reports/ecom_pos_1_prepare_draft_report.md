@@ -7,121 +7,206 @@
 - Base: `main`
 - Estado del PR: `draft`
 
-## Estado actual
+## Resultado de la validación global final
 
 ```text
-ECOM.POS.1 PENDING GLOBAL VALIDATION
+ECOM.POS.1 VALIDACIÓN GLOBAL BLOCKED
 ```
 
-El PR permanece en draft. No debe marcarse `ready for review`, declararse `PASS` ni mergearse hasta completar la validación global sobre el HEAD final.
+No se declara `PASS`, no se marca el PR como `ready for review` y no se debe mergear.
 
-## Contexto conservado
+El entorno disponible no permitió obtener el checkout íntegro requerido. La validación ejecutable quedó bloqueada antes de la instalación de dependencias; por tanto, no existen resultados reales de ESLint, Vitest, build, lint global ni `test:ci` que permitan promover el PR.
 
-Las correcciones anteriores permanecen intactas:
+## HEAD y relación con main
 
-- `ECOM.POS.1.1`: mapeo seguro de productos, guards operativos, reconciliación, propiedad del claim y protección de PII;
-- `ECOM.POS.1.2`: checkout real y descuentos ecommerce fail-closed;
-- `ECOM.POS.1.3`: propiedad explícita del lock, snapshot obsoleto, unlock idempotente, quick caja y `Vender Igual` sin self-lock.
-
-Contrato ecommerce estable:
+Estado remoto confirmado mediante la API de GitHub antes de actualizar este reporte:
 
 ```text
-code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
-message: Este pedido online está preparado para revisión. El cobro y la conversión definitiva se habilitarán en la siguiente fase.
+HEAD funcional inspeccionado: ac61ee2da09e871600392ad7d5b75c16d6ed1cad
+main comparado:             e823b04c179b9ac3683c59ecb278f8e1fc9a71f5
+merge-base:                 e823b04c179b9ac3683c59ecb278f8e1fc9a71f5
+ahead_by:                   45
+behind_by:                  0
 ```
 
-## Corrección ECOM.POS.1.3.1 — Ruta controlada de cancelación de STOCK_WARNING
+La rama no estaba atrasada respecto de `main`; no fue necesario integrar `main` ni resolver conflictos.
 
-### Causa raíz
+El commit que actualiza este reporte es posterior al HEAD funcional anterior y no modifica código de producción, dependencias, pruebas, migraciones ni workflows.
 
-Cuando `processSale` devolvía `STOCK_WARNING`, el flujo conservaba correctamente el snapshot y su lock para permitir `Sí, Vender Igual`. Sin embargo, el aviso mostraba cancelación y era descartable por backdrop sin una ruta controlada que liberara el lock.
-
-El estado podía quedar así:
+## Entorno disponible
 
 ```text
-lockOwnedByCheckout=true
-lockReleased=false
-isLockedForCheckout=true
-modal cerrado
+Node: v22.16.0
+npm: 10.9.2
+git: 2.47.3
+gh: NO INSTALADO
 ```
 
-### Cancelar venta
+## Checkout íntegro
 
-La rama `STOCK_WARNING` ahora define una cancelación explícita que:
+Comando intentado:
 
-1. llama `releaseCheckoutSnapshotLock(snapshot, { reason: 'stock_warning_cancelled' })`;
-2. usa exclusivamente `snapshot.orderId`;
-3. no ejecuta `processSale` ni force sale;
-4. limpia `checkoutSnapshotRef.current` únicamente cuando la liberación queda resuelta correctamente;
-5. deja la orden original editable tras liberar su lock;
-6. no elimina la orden, no remueve artículos y no modifica inventario o caja.
-
-### Fallo de unlock
-
-Si el unlock falla:
-
-- se conserva `lockOwnedByCheckout`;
-- se conserva `lockReleased=false`;
-- se conserva `checkoutAttemptId`;
-- se conserva `checkoutSnapshotRef.current`;
-- no se toca ninguna orden distinta;
-- se muestra una advertencia segura;
-- `handlePaymentModalClose` o `prepareForNewCheckout` pueden reintentar liberar el lock original.
-
-### Backdrop
-
-El aviso usa:
-
-```text
-showCancel=true
-cancelButtonText=Cancelar venta
-isDismissible=false
-onCancel=cancelStockWarningCheckout
+```bash
+GIT_TERMINAL_PROMPT=0 git clone \
+  https://github.com/fdxruli/Lanzo-POS.git \
+  /tmp/lanzo-pos-pr88-validation
 ```
 
-Un clic en el backdrop no confirma, no cancela, no libera el lock y no cierra el aviso. El lock permanece retenido intencionalmente mientras el operador decide.
-
-### Sí, Vender Igual
-
-El flujo existente se conserva:
-
-- revalida el snapshot y la orden viva;
-- bloquea si la orden cambió o se volvió ecommerce;
-- reutiliza el lock cuando todavía pertenece al intento;
-- readquiere únicamente si ya fue liberado;
-- llama una sola vez `handleProcessOrder(paymentData, true)`.
-
-No se libera el lock antes del force sale.
-
-## Alcance
-
-La corrección funcional se limita a:
+Resultado real:
 
 ```text
+exit code: 128
+fatal: unable to access 'https://github.com/fdxruli/Lanzo-POS.git/':
+Could not resolve host: github.com
+```
+
+No existía un checkout previo del repositorio en el sistema de archivos. El contenedor tampoco dispone de GitHub CLI y no se creó ningún workflow temporal para sustituir la validación local.
+
+## Instalación limpia
+
+```text
+npm ci: NO EJECUTADO
+clasificación: INDETERMINADO — bloqueado antes de obtener el checkout
+```
+
+No se reutilizó `node_modules` de otra rama y no se modificaron `package.json` ni `package-lock.json`.
+
+## Superficie modificada
+
+La comparación remota `main...fase-ecom-pos-1` confirmó 42 archivos modificados y `behind_by=0`.
+
+La superficie JavaScript/JSX incluye los archivos mínimos solicitados:
+
+```text
+src/components/ecommerce/orders/EcommerceOrdersRuntime.jsx
+src/components/pos/EcommercePosDraftBanner.jsx
+src/components/pos/MobilePosCart.jsx
+src/components/pos/OrderDiscountPanel.jsx
+src/components/pos/OrderLineDiscountList.jsx
+src/components/pos/OrderSummary.jsx
+src/components/pos/OrderTabs.jsx
+src/components/pos/PosPageContent.jsx
+src/hooks/pos/useActiveOrders.js
+src/hooks/pos/useCheckoutFlow.js
+src/hooks/pos/useLayawayFlow.js
 src/hooks/pos/usePosCheckout.js
+src/hooks/pos/useTableManagement.js
+src/pages/EcommerceOrdersPage.jsx
+src/services/ecommerce/ecommerceOrderCapabilities.js
+src/services/ecommerce/ecommerceOrderService.js
+src/services/ecommerce/ecommercePosDraftGuards.js
+src/services/ecommerce/ecommercePosDraftService.js
+src/services/ecommerce/installEcommercePosActiveOrderGuards.js
 ```
 
-No se modificaron:
+También se confirmaron las suites específicas agregadas o modificadas por el PR.
 
-- `useActiveOrders.js`;
-- contratos públicos o códigos de error;
-- checkout normal;
-- quick caja;
-- snapshot obsoleto;
-- venta exitosa;
-- errores normales de `processSale`;
-- ecommerce guards;
-- descuentos;
-- cocina;
-- apartados;
-- split bill;
-- dependencias o workflows.
+## ESLint específico
 
-## Validación
+```text
+xargs npx eslint < /tmp/pr88-eslint-files.txt: NO EJECUTADO
+clasificación: INDETERMINADO — no existe checkout ejecutable
+```
 
-Por instrucción de esta corrección puntual no se solicitaron ni ejecutaron pruebas adicionales.
+No se desactivaron reglas, no se añadieron `eslint-disable` y no se ocultaron warnings.
 
-La validación global permanece pendiente.
+## Suites específicas y regresión
+
+```text
+npx vitest run <suites ECOM.POS.1>: NO EJECUTADO
+suites adicionales relacionadas: NO EJECUTADAS
+clasificación: INDETERMINADO — no existe checkout ejecutable
+```
+
+No se añadieron `.skip`, `.todo`, snapshots de silenciamiento ni se borraron pruebas.
+
+## Revisión puntual STOCK_WARNING
+
+Revisión estática del HEAD funcional `ac61ee2da09e871600392ad7d5b75c16d6ed1cad`:
+
+```text
+STOCK_WARNING conserva snapshot y lock: PASS ESTÁTICO
+Sí, Vender Igual reutiliza el lock: PASS ESTÁTICO
+No readquiere su propio lock: PASS ESTÁTICO
+Cancelar venta llama releaseCheckoutSnapshotLock: PASS ESTÁTICO
+Cancelación usa snapshot.orderId: PASS ESTÁTICO
+Cancelación no llama processSale: PASS ESTÁTICO
+Snapshot solo se limpia tras release resuelto: PASS ESTÁTICO
+Unlock fallido conserva snapshot recuperable: PASS ESTÁTICO
+isDismissible=false: PASS ESTÁTICO
+Backdrop no ejecuta cancelación: PASS ESTÁTICO
+```
+
+Evidencia revisada:
+
+- `usePosCheckout.js` conserva `checkoutSnapshotRef.current = snapshot` y excluye `STOCK_WARNING` del release automático del `finally`.
+- `Cancelar venta` ejecuta `releaseCheckoutSnapshotLock(snapshot, { reason: 'stock_warning_cancelled' })`.
+- El helper libera exclusivamente `snapshot.orderId` y conserva `lockOwnedByCheckout`, `lockReleased=false`, `checkoutAttemptId` y la referencia cuando el unlock falla.
+- `Sí, Vender Igual` solo readquiere cuando `lockOwnedByCheckout !== true` o `lockReleased === true`.
+- El aviso define `isDismissible: false` y `onCancel: cancelStockWarningCheckout`.
+- `MessageModal.jsx` solo invoca `handleCancel()` desde el backdrop cuando `isDismissible` es verdadero; con `false` únicamente muestra feedback visual.
+
+Esta revisión estática no sustituye Vitest.
+
+## Build global
+
+```text
+npm run build: NO EJECUTADO
+clasificación: INDETERMINADO — no existe checkout ejecutable
+```
+
+No se utilizó un deploy o preview de Vercel como sustituto.
+
+## Validación global
+
+```text
+npm run lint: NO EJECUTADO
+npm run test:ci: NO EJECUTADO
+clasificación: INDETERMINADO — no existe checkout ejecutable
+```
+
+Los scripts remotos confirmados son:
+
+```text
+build: vite build
+lint: eslint src/**/*.{js,jsx}
+test:ci: vitest run --maxWorkers=4
+```
+
+## Comparación contra main
+
+La rama está `behind_by=0`, pero no fue posible crear el worktree local de `main` porque el checkout inicial falló.
+
+```text
+build PR vs main: NO COMPARADO
+lint PR vs main: NO COMPARADO
+test:ci PR vs main: NO COMPARADO
+clasificación de fallos ejecutables: INDETERMINADO
+```
+
+No se corrigió deuda heredada de `main` ni se realizó ningún cambio funcional durante esta validación.
+
+## Git y residuos
+
+```text
+git diff --check: NO EJECUTADO
+working tree local: NO DISPONIBLE
+git status --short: NO EJECUTADO
+búsqueda de residuos local: NO EJECUTADA
+```
+
+La comparación remota no muestra cambios en dependencias ni workflows dentro del PR. La actualización de este archivo es el único cambio realizado durante esta sesión.
+
+## Revisión de alcance
+
+La inspección estática conserva el contrato fail-closed de preparación:
+
+```text
+ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
+Este pedido online está preparado para revisión. El cobro y la conversión definitiva se habilitarán en la siguiente fase.
+```
+
+No se encontró evidencia estática de habilitación de conversión ecommerce. Sin embargo, el alcance completo no puede promoverse sin ejecutar las suites y regresiones indicadas.
 
 ## Supabase
 
@@ -129,7 +214,7 @@ La validación global permanece pendiente.
 Supabase: SIN CAMBIOS
 ```
 
-No se ejecutó SQL, no se aplicaron migraciones y no se modificaron pedidos, claims, `source_product_id` ni `EC-00000010–12`.
+No se ejecutó SQL, no se aplicaron migraciones y no se modificaron pedidos, claims, `source_product_id` ni datos reales.
 
 ## Vercel
 
@@ -137,20 +222,36 @@ No se ejecutó SQL, no se aplicaron migraciones y no se modificaron pedidos, cla
 Vercel manual: NO UTILIZADO
 ```
 
-No se utilizó CLI, API, agentes, previews, redeploy, promoción, aliases, variables ni commits vacíos.
+No se invocó manualmente Vercel mediante API, CLI o agentes. No se creó, intentó, forzó, promovió ni validó un preview. Un check automático existente no se utilizó como evidencia de ESLint, Vitest o build.
 
-## Estado de la corrección
+## Estado final del PR
 
 ```text
-ECOM.POS.1.3.1 IMPLEMENTADO
-
-Cancelar STOCK_WARNING: CORREGIDO
-Backdrop descartable: BLOQUEADO
-Unlock de orden original: IMPLEMENTADO
-Snapshot recuperable ante fallo: IMPLEMENTADO
-Vender Igual: CONSERVADO
+Rama actualizada respecto de main: PASS REMOTO (behind_by=0)
+Checkout íntegro: BLOCKED
+npm ci: NO EJECUTADO
+ESLint específico: NO EJECUTADO
+Suites específicas: NO EJECUTADAS
+Build global: NO EJECUTADO
+Lint global: NO EJECUTADO
+test:ci: NO EJECUTADO
+Comparación ejecutable contra main: NO REALIZADA
+git diff --check: NO EJECUTADO
+Working tree: NO DISPONIBLE
+Revisión STOCK_WARNING: PASS ESTÁTICO
 Supabase: SIN CAMBIOS
 Vercel manual: NO UTILIZADO
+Estado del PR: DRAFT
 ```
 
-El PR #88 permanece en draft y pendiente de validación global.
+## Bloqueante exacto
+
+```text
+Comando bloqueante: git clone https://github.com/fdxruli/Lanzo-POS.git /tmp/lanzo-pos-pr88-validation
+Fallo: Could not resolve host: github.com
+Clasificación: INDETERMINADO — limitación del entorno de validación
+Corrección aplicada al código: NO
+Estado del PR: DRAFT
+```
+
+No mergear.
