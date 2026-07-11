@@ -16,6 +16,11 @@ import {
 } from '../../services/sync/syncConstants';
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 import { closeRestaurantCloudOrderAfterSuccessfulSplitPayment } from '../../services/restaurant/restaurantOrderCheckoutClose';
+import {
+    ECOMMERCE_POS_CHECKOUT_MESSAGE,
+    getEcommercePosBlockedResult,
+    isEcommercePosEffectBlocked
+} from '../../services/ecommerce/ecommercePosDraftGuards';
 
 const EMPTY_ORDER = [];
 
@@ -58,6 +63,14 @@ export function useTableManagement({
     const currentOrder = useActiveOrders(selectCurrentOrder);
     const order = currentOrder?.items || EMPTY_ORDER;
     const activeOrderId = useActiveOrders((state) => state.currentOrderId);
+
+    const blockEcommerceRestaurantEffect = useCallback(() => {
+        const liveOrder = selectCurrentOrder(useActiveOrders.getState());
+        if (!isEcommercePosEffectBlocked(liveOrder)) return null;
+
+        showMessageModal(ECOMMERCE_POS_CHECKOUT_MESSAGE, null, { type: 'warning' });
+        return getEcommercePosBlockedResult();
+    }, []);
 
     const clearSession = useCallback(() => {
         useActiveOrders.getState().cancelCurrentOrder();
@@ -106,6 +119,8 @@ export function useTableManagement({
     }, [isCloudRestaurantOrdersEnabled, licenseKey]);
 
     const handleSaveAsOpen = useCallback(async () => {
+        const blocked = blockEcommerceRestaurantEffect();
+        if (blocked) return blocked;
         if (!features?.hasTables) return;
 
         let currentOrderState = selectCurrentOrder(useActiveOrders.getState());
@@ -127,6 +142,9 @@ export function useTableManagement({
         }
 
         currentOrderState = selectCurrentOrder(useActiveOrders.getState());
+        if (isEcommercePosEffectBlocked(currentOrderState)) {
+            return blockEcommerceRestaurantEffect();
+        }
 
         if (isUpdating && isCloudRestaurantOrdersEnabled && currentOrderState?.id) {
             try {
@@ -225,11 +243,13 @@ export function useTableManagement({
             }
 
             await fetchActiveTablesCount();
-            return;
+            return result;
         }
 
         showMessageModal(result.message || 'No se pudo guardar la orden abierta.', null, { type: 'error' });
+        return result;
     }, [
+        blockEcommerceRestaurantEffect,
         features?.hasTables,
         saveOrderAsOpen,
         isCloudRestaurantOrdersEnabled,
@@ -256,6 +276,9 @@ export function useTableManagement({
     }, [loadOpenOrder, closeModal, fetchActiveTablesCount]);
 
     const reconcileKitchenCancelledItemsBeforeSplit = useCallback(async () => {
+        const blocked = blockEcommerceRestaurantEffect();
+        if (blocked) return { ...blocked, canContinue: false, orderItems: [], removedCount: 0 };
+
         const activeOrdersState = useActiveOrders.getState();
         const targetOrderId = activeOrdersState.currentOrderId || activeOrderId;
         const targetOrder = targetOrderId ? activeOrdersState.activeOrders.get(targetOrderId) : null;
@@ -340,9 +363,12 @@ export function useTableManagement({
         useActiveOrders.getState().updateOrderItems(targetOrderId, persistedItems);
 
         return { canContinue: true, orderItems: persistedItems, removedCount };
-    }, [features?.hasTables, activeOrderId, order, licenseDetails]);
+    }, [blockEcommerceRestaurantEffect, features?.hasTables, activeOrderId, order, licenseDetails]);
 
     const reconcileKitchenCancelledItemsBeforeTablePayment = useCallback(async () => {
+        const blocked = blockEcommerceRestaurantEffect();
+        if (blocked) return { ...blocked, canContinue: false, orderItems: [], removedCount: 0 };
+
         const activeOrdersState = useActiveOrders.getState();
         const targetOrderId = activeOrdersState.currentOrderId || activeOrderId;
         const targetOrder = targetOrderId ? activeOrdersState.activeOrders.get(targetOrderId) : null;
@@ -464,6 +490,7 @@ export function useTableManagement({
 
         return { canContinue: true, orderItems: persistedItems, removedCount: reconciliation.removedCount };
     }, [
+        blockEcommerceRestaurantEffect,
         features?.hasTables,
         activeOrderId,
         order,
@@ -492,6 +519,9 @@ export function useTableManagement({
     }, [features?.hasTables, order, executeLoadOpenOrder]);
 
     const handleQuickTableAction = useCallback(async (targetOrder, actionType) => {
+        const blocked = blockEcommerceRestaurantEffect();
+        if (blocked) return blocked;
+
         const hasCurrentOrder = order.some((item) => Number(item?.quantity) > 0);
 
         if (hasCurrentOrder) {
@@ -507,14 +537,14 @@ export function useTableManagement({
             const result = await executeLoadOpenOrder(targetOrder.id, true);
             if (!result?.success) {
                 showMessageModal(result?.message || 'Error al cargar la mesa para cobro.', null, { type: 'error' });
-                return;
+                return result;
             }
 
             closeModal('tables');
 
             if (actionType === 'checkout') {
                 const kitchenReview = await reconcileKitchenCancelledItemsBeforeTablePayment();
-                if (!kitchenReview.canContinue) return;
+                if (!kitchenReview.canContinue) return kitchenReview;
 
                 if (countSellableItems(kitchenReview.orderItems) === 0) {
                     showMessageModal(
@@ -526,14 +556,13 @@ export function useTableManagement({
                 }
 
                 if (typeof handleInitiateCheckout === 'function') {
-                    await handleInitiateCheckout();
-                } else {
-                    console.error('[useTableManagement] handleInitiateCheckout no está disponible.');
-                    openModal('payment');
+                    return handleInitiateCheckout();
                 }
+                console.error('[useTableManagement] handleInitiateCheckout no está disponible.');
+                openModal('payment');
             } else if (actionType === 'split') {
                 const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
-                if (!kitchenReview.canContinue) return;
+                if (!kitchenReview.canContinue) return kitchenReview;
 
                 if (countSellableItems(kitchenReview.orderItems) === 0) {
                     showMessageModal('No hay productos en la mesa activa para dividir.');
@@ -546,6 +575,7 @@ export function useTableManagement({
             console.error('Error al cargar la mesa para acción rápida:', error);
         }
     }, [
+        blockEcommerceRestaurantEffect,
         order,
         executeLoadOpenOrder,
         closeModal,
@@ -598,8 +628,8 @@ export function useTableManagement({
         if (!ok) return { success: false, cancelled: true };
 
         try {
-            const { useActiveOrders } = await import('./useActiveOrders.js');
-            const result = await useActiveOrders.getState().cancelOpenSaleByIdFromPos(targetOrder.id);
+            const { useActiveOrders: activeOrdersStore } = await import('./useActiveOrders.js');
+            const result = await activeOrdersStore.getState().cancelOpenSaleByIdFromPos(targetOrder.id);
 
             if (result.success) {
                 showMessageModal('Venta anulada correctamente.', null, { type: 'success' });
@@ -616,6 +646,8 @@ export function useTableManagement({
     }, [features?.hasTables, fetchActiveTablesCount, licenseDetails]);
 
     const handleOpenSplitBill = useCallback(async () => {
+        const blocked = blockEcommerceRestaurantEffect();
+        if (blocked) return blocked;
         if (!features?.hasTables) return;
         if (!activeOrderId) {
             showMessageModal('No hay una mesa activa cargada para dividir.');
@@ -623,7 +655,7 @@ export function useTableManagement({
         }
 
         const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
-        if (!kitchenReview.canContinue) return;
+        if (!kitchenReview.canContinue) return kitchenReview;
 
         if (countSellableItems(kitchenReview.orderItems) === 0) {
             showMessageModal('No hay productos en la mesa activa para dividir.');
@@ -631,9 +663,12 @@ export function useTableManagement({
         }
 
         openModal('split');
-    }, [features?.hasTables, activeOrderId, reconcileKitchenCancelledItemsBeforeSplit, openModal]);
+    }, [blockEcommerceRestaurantEffect, features?.hasTables, activeOrderId, reconcileKitchenCancelledItemsBeforeSplit, openModal]);
 
     const handleConfirmSplitBill = useCallback(async (splitPayload) => {
+        const blocked = blockEcommerceRestaurantEffect();
+        if (blocked) return blocked;
+
         const isSessionValid = await verifySessionIntegrity(SPLIT_BILL_INTEGRITY_OPTIONS);
         if (!isSessionValid) {
             showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
@@ -643,7 +678,7 @@ export function useTableManagement({
         }
 
         const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
-        if (!kitchenReview.canContinue) return;
+        if (!kitchenReview.canContinue) return kitchenReview;
 
         if (kitchenReview.removedCount > 0) {
             closeModal('split');
@@ -729,21 +764,24 @@ export function useTableManagement({
 
                 await refreshData();
                 await fetchActiveTablesCount();
-                return;
+                return result;
             }
 
             if (result.errorType === 'DIRTY_ORDER' || result.errorType === 'RACE_CONDITION') {
                 showMessageModal(result.message, null, { type: 'warning' });
                 if (result.errorType === 'RACE_CONDITION') await refreshData();
-                return;
+                return result;
             }
 
             showMessageModal(result.message || 'No se pudo dividir/cobrar la mesa.', null, { type: 'error' });
+            return result;
         } catch (error) {
             Logger.error('Error crítico en Split Bill:', error);
             showMessageModal(`Error inesperado: ${error.message}`, null, { type: 'error' });
+            return { success: false, message: error?.message || 'No se pudo dividir la cuenta.' };
         }
     }, [
+        blockEcommerceRestaurantEffect,
         activeOrderId,
         features,
         companyName,
