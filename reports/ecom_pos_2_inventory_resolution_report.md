@@ -1,316 +1,363 @@
 # ECOM.POS.2 — Resolución de inventario y lotes
 
-## Resultado
+## Estado actual
 
-**ECOM.POS.2 PASS**, sujeto a conservar el PR #89 sin merge automático y con el cobro ecommerce bloqueado hasta ECOM.POS.3.
+- Rama: `fase-ecom-pos-2`
+- PR: `#89 — FASE ECOM.POS.2 — Resolver inventario y lotes de pedidos preparados`
+- Base: `main` en `505764ff853ddc35c1cf0af9e7473e32a60b1aa1`
+- PR abierto, mergeable, no mergeado y mantenido como draft.
+- Cobro ecommerce: continúa bloqueado.
+- Supabase: sin cambios.
+- Vercel manual: no utilizado.
 
-Rama: `fase-ecom-pos-2`
+ECOM.POS.2 implementó la resolución local de inventario ilimitado, exacto y por lotes. ECOM.POS.2.1 corrige consistencia entre varias líneas, concurrencia asíncrona, errores de lectura y cantidades con factor de conversión.
 
-PR: `#89 — FASE ECOM.POS.2 — Resolver inventario y lotes de pedidos preparados`
+## Arquitectura base de ECOM.POS.2
 
-Base validada: `main` en `505764ff853ddc35c1cf0af9e7473e32a60b1aa1`.
-
-## Alcance implementado
-
-La fase resuelve localmente el inventario de las órdenes activas con `origin: 'ecommerce'` y `ecommerceDraftStatus: 'prepared'`. No modifica el estado remoto del claim y mantiene separado el contrato del borrador mediante:
+La resolución permanece dentro de la orden activa ecommerce y separada de `ecommerceDraftStatus` mediante:
 
 - `ecommerceInventoryStatus: pending | ready | conflict`;
 - `ecommerceInventoryResolvedAt`;
 - `ecommerceInventoryResolutionVersion`;
 - `ecommerceInventoryConflictCount`;
+- `ecommerceInventoryError`;
 - `inventoryResolution` compacto por línea.
 
-El estado global se calcula con prioridad `conflict > pending > ready`.
+Se reutilizan:
 
-## Arquitectura reutilizada
+- `useProductStore` y Dexie `menu` para productos vigentes;
+- Dexie `product_batches` para lotes;
+- `getAvailableStock` para existencia disponible;
+- `fefoUtils` y `getBatchExpiryStatus` para FEFO y caducidad;
+- `item.batchId` como contrato compatible con el checkout normal;
+- `useActiveOrders.updateOrder` para persistencia y aumento de revisión.
 
-Se creó `src/services/ecommerce/ecommercePosInventoryResolution.js` como servicio central, separando lectura, cálculo, persistencia y renderizado.
-
-El servicio reutiliza las fuentes y contratos actuales del POS:
-
-- catálogo vigente desde `useProductStore` con fallback a Dexie `menu`;
-- lotes desde Dexie `product_batches` por `productId`;
-- disponibilidad exacta mediante `getAvailableStock` después de validar los valores crudos;
-- identidad, disponibilidad, vigencia y orden FEFO mediante `fefoUtils`;
-- semántica de caducidad mediante `getBatchExpiryStatus`;
-- contrato de una sola selección `item.batchId` compatible con el checkout normal;
-- persistencia de la orden mediante `useActiveOrders.updateOrder`.
-
-No se creó un segundo motor de inventario ni un contrato multilote paralelo.
+No existe una segunda copia en `localStorage` ni persistencia remota de la resolución.
 
 ## Clasificación de inventario
 
-### Inventario ilimitado
+### Ilimitado
 
-Un producto con `trackStock === false` y sin receta queda resuelto automáticamente:
+Un producto sin control directo de stock y sin receta queda resuelto sin consultar lotes, sin `batchId` y sin mutaciones.
 
-- `mode: unlimited`;
-- `status: resolved`;
-- `batchId: null` en la resolución y `undefined` en la línea;
-- `needsInventoryResolution: false`;
-- sin consultar lotes.
+### Exacto
 
-### Stock exacto
+La existencia exacta se obtiene del producto local vigente y descuenta `committedStock` únicamente dentro del cálculo. Los estados son:
 
-El stock exacto usa la existencia local vigente, no el snapshot público ecommerce.
+- suficiente: `resolved`;
+- insuficiente: `INSUFFICIENT_STOCK`;
+- desconocido o inválido: `INVENTORY_UNKNOWN` fail-closed.
 
-- existencia suficiente: `resolved`;
-- existencia insuficiente: `INSUFFICIENT_STOCK`;
-- stock `null`, ausente, no numérico o comprometido inválido: `INVENTORY_UNKNOWN` fail-closed;
-- no se modifica `stock` ni `committedStock`.
+### Lotes
 
-Los productos con receta quedan fail-closed en esta fase porque su disponibilidad depende del motor de ingredientes del checkout y no se implementó un cálculo paralelo.
+Solo participan lotes del producto correcto, activos, no eliminados, con existencia positiva y caducidad permitida. Los lotes se ordenan con los helpers FEFO existentes.
 
-### Productos por lotes
-
-Solo se consideran lotes que:
-
-- pertenecen al producto;
-- están activos y no eliminados;
-- tienen disponibilidad positiva;
-- no están vencidos;
-- tienen una caducidad válida cuando la política del producto la exige.
-
-Los lotes válidos se ordenan con los helpers FEFO existentes.
-
-## FEFO automático
-
-Cuando un lote válido cubre por sí solo toda la cantidad:
-
-- se selecciona el primero por FEFO;
-- se persiste `item.batchId`;
-- se guarda número, caducidad y disponibilidad como snapshot de UI;
-- `selectionMode: fefo_auto`;
-- la selección es provisional y no reserva ni descuenta inventario.
-
-Cuando ningún lote individual cubre la cantidad pero la suma sí alcanza, se marca `MULTI_BATCH_REQUIRED`. La línea no se divide silenciosamente porque el contrato actual de venta usa un solo `batchId` por línea.
+Cuando un lote cubre toda la cantidad se asigna provisionalmente. Si la suma de varios lotes alcanza pero ninguno individual cubre la línea, se devuelve `MULTI_BATCH_REQUIRED`; no se divide silenciosamente la línea.
 
 ## Selección manual
 
-`EcommercePosDraftBanner` muestra la acción `Resolver inventario` solo para un borrador ecommerce preparado y un actor que conserva los permisos de preparación POS/ecommerce.
+La UI solo muestra lotes válidos. Al confirmar se revalida:
 
-Para líneas por lote, el modal muestra:
+- producto y pertenencia del lote;
+- actividad y eliminación;
+- caducidad;
+- cantidad disponible;
+- contexto de licencia/actor;
+- revisión vigente de la orden.
 
-- número de lote;
-- fecha de caducidad;
-- existencia disponible;
-- indicador `FEFO recomendado`.
+Una selección válida se guarda con `selectionMode: manual`. La selección continúa siendo provisional y debe revalidarse en ECOM.POS.3 antes de cobrar.
 
-Los lotes inválidos no se incluyen. Los válidos que no cubren toda la cantidad se muestran deshabilitados. Al confirmar se revalida nuevamente:
+## Conflictos implementados
 
-- pertenencia al producto;
-- vigencia;
-- estado activo;
-- existencia suficiente.
+- `PRODUCT_MISSING`
+- `PRODUCT_INACTIVE`
+- `INVENTORY_MODE_CHANGED`
+- `PRODUCT_STALE`
+- `INVENTORY_UNKNOWN`
+- `INVENTORY_READ_FAILED`
+- `INSUFFICIENT_STOCK`
+- `NO_VALID_BATCH`
+- `ONLY_EXPIRED_BATCHES`
+- `INSUFFICIENT_BATCH_STOCK`
+- `MULTI_BATCH_REQUIRED`
+- `BATCH_STALE`
 
-Una selección válida se persiste con `selectionMode: manual`. No se confía en un `batchId` recibido directamente desde React.
+## Corrección ECOM.POS.2.1 — Consistencia acumulada y protección contra respuestas obsoletas
 
-## Conflictos
+### Ledger provisional por producto
 
-Se implementaron mensajes específicos para:
+La resolución completa crea `remainingStockByProduct` a partir de la existencia vigente menos `committedStock`.
 
-- `PRODUCT_MISSING`;
-- `PRODUCT_INACTIVE`;
-- `INVENTORY_MODE_CHANGED`;
-- `PRODUCT_STALE`;
-- `INVENTORY_UNKNOWN`;
-- `INSUFFICIENT_STOCK`;
-- `NO_VALID_BATCH`;
-- `ONLY_EXPIRED_BATCHES`;
-- `INSUFFICIENT_BATCH_STOCK`;
-- `MULTI_BATCH_REQUIRED`;
-- `BATCH_STALE`.
+Cada línea exacta se procesa en orden estable:
 
-Un lote seleccionado que se agota, vence o deja de pertenecer al producto limpia `item.batchId` y devuelve la línea a conflicto.
+1. lee el saldo provisional;
+2. compara la cantidad real requerida;
+3. consume el saldo solo dentro del ledger cuando alcanza;
+4. deja la línea posterior en `INSUFFICIENT_STOCK` cuando el saldo restante no cubre la demanda.
 
-## Persistencia y liberación
+Ejemplo validado:
 
-La resolución se guarda dentro de la orden activa ecommerce mediante el mecanismo existente de `useActiveOrders`. No se creó una segunda copia ni una vía adicional en `localStorage`.
+- stock 5;
+- línea A requiere 4;
+- línea B requiere 4;
+- A queda resuelta;
+- B queda en conflicto con disponibilidad restante 1;
+- estado global `conflict`.
 
-Al liberar el borrador se elimina la orden activa completa mediante el flujo existente, por lo que desaparecen conjuntamente:
+No se modifica `product.stock` ni `product.committedStock`.
 
-- `inventoryResolution`;
-- `batchId` provisional;
-- `ecommerceInventoryStatus`;
-- metadatos de resolución.
+### Ledger provisional por lote
 
-## Revalidación
+La resolución crea `remainingStockByBatch`, indexado por producto y `batchId`, usando disponibilidad real menos `committedStock`.
 
-La UI solicita revalidación sin polling agresivo cuando:
+El saldo se consume provisionalmente y evita asignar el mismo lote dos veces. Con un lote de 5 y dos líneas de 4, solo la primera puede usarlo; la segunda recibe conflicto con saldo restante 1.
 
-- se abre o restaura el borrador;
-- cambia la composición de la orden;
-- cambia el catálogo local observado;
-- cambian los lotes del producto en Dexie;
-- se pulsa `Resolver inventario`;
-- se selecciona un lote;
-- la ventana recupera foco;
-- el dispositivo vuelve a estar online.
+Con dos lotes de 4, las dos líneas se asignan de forma determinista según FEFO, sin sobreasignación.
 
-Una selección manual válida se conserva. Solo se sustituye por conflicto si deja de cumplir el contrato.
+### Orden manual y FEFO
 
-## UI
+El procesamiento mantiene este orden:
 
-El banner separa explícitamente:
+1. selecciones manuales vigentes ya persistidas;
+2. selección manual nueva pendiente de confirmación;
+3. líneas restantes en su orden original;
+4. dentro de cada línea automática, lotes ordenados FEFO.
 
-- `Estado del pedido: Preparado para revisión`;
-- `Inventario: Listo | Pendiente de resolver | Requiere atención`.
+Esto evita que una selección nueva consuma stock reservado provisionalmente por otra selección manual existente. Una segunda selección manual incompatible queda en conflicto y su `batchId` no se considera válido para avanzar.
 
-Cada línea muestra su condición concreta. El copy histórico `Hay productos con lote pendiente de resolver en la siguiente fase` deja de renderizarse y es reemplazado por el motivo real.
+### Factor de conversión canónico
+
+`stockValidation.js` exporta ahora el helper puro:
+
+```js
+getInventoryQuantityForSale(item, product)
+```
+
+El mismo helper es utilizado por:
+
+- `validateStockBeforeSale` del checkout normal;
+- `ecommercePosInventoryResolution`.
+
+Semántica conservada:
+
+- factor habilitado, numérico y mayor que 1: `quantity / factor`;
+- factor `null`, 0, 1 o no numérico: cantidad de venta sin transformación.
+
+La resolución conserva:
+
+- `requestedSaleQuantity`;
+- `requiredInventoryQuantity`;
+- `requestedQuantity` como alias compatible de la cantidad real de inventario.
+
+La cantidad transformada se utiliza en stock exacto, lotes, ledger, FEFO y selección manual. No cambia la cantidad ni el precio del pedido.
+
+### Protección por revisión y firma
+
+Al iniciar una revalidación se capturan:
+
+- `revision`;
+- `updatedAt`;
+- firma de líneas relevante: identidad, producto, cantidad, `batchId`, modo de selección y conversión.
+
+Antes de aplicar se comprueba nuevamente:
+
+- que la orden existe;
+- `origin === ecommerce`;
+- `ecommerceDraftStatus === prepared`;
+- mismo contexto/licencia y permisos;
+- misma revisión;
+- mismo `updatedAt`;
+- misma composición relevante.
+
+Si no coincide, el resultado es:
+
+```js
+{
+  success: false,
+  stale: true,
+  changed: false,
+  code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE'
+}
+```
+
+La respuesta obsoleta no escribe ni muestra un error operativo.
+
+### Intento más reciente
+
+`inventoryResolutionAttempts` mantiene una generación local por orden. Dos lecturas iniciadas con la misma revisión no pueden escribirse fuera de orden: solo el intento más reciente puede aplicar.
+
+Una selección manual crea un intento nuevo, trabaja sobre la orden viva y aumenta la revisión mediante `updateOrder`. Una revalidación automática anterior no puede reemplazarla.
+
+Una respuesta tardía tampoco puede recrear una orden liberada o eliminada.
+
+### Error de lectura fail-closed
+
+Un fallo vigente de producto/lote aplica:
+
+- `ecommerceInventoryStatus: conflict`;
+- `ecommerceInventoryResolvedAt: null`;
+- al menos un conflicto;
+- `ecommerceInventoryError.code: INVENTORY_READ_FAILED`;
+- líneas en conflicto con `resolvedAt: null`.
+
+La selección manual previa puede conservarse como referencia visual, pero no queda validada para continuar.
+
+Copy:
+
+> No se pudo comprobar el inventario local. Intenta resolverlo nuevamente.
+
+Una respuesta de error antigua se descarta como stale. Una revalidación posterior exitosa elimina `ecommerceInventoryError` y puede recuperar `ready`.
+
+## UI ECOM.POS.2.1
+
+`EcommercePosDraftBanner`:
+
+- nunca muestra `Inventario: Listo` ante un error de lectura vigente;
+- no muestra error por `ECOMMERCE_INVENTORY_STALE_RESPONSE`;
+- permite volver a ejecutar `Resolver inventario`;
+- mantiene visible una selección manual vigente cuando termina una respuesta automática anterior;
+- muestra cantidad vendida y cantidad real de inventario cuando existe conversión.
 
 ## Ausencia de efectos operativos
 
-La implementación no importa ni invoca:
+ECOM.POS.2.1 no invoca ni modifica:
 
 - `processSale`;
-- decrementos de productos;
-- decrementos de lotes;
+- decrementos de productos o lotes;
+- `committedStock` real;
 - movimientos de inventario;
 - checkout/payment;
-- quickCaja;
-- caja;
-- cocina o comanda cloud;
+- quickCaja o caja;
+- cocina/comanda;
 - split bill;
 - apartados;
 - descuentos;
-- conversión a venta.
+- `converted_to_sale`;
+- `converted_sale_id`.
 
-No se escribe `converted_to_sale` ni `converted_sale_id`.
+`ECOMMERCE_POS_CHECKOUT_NOT_ENABLED` y los guards de ECOM.POS.1 permanecen sin cambios.
 
-Los guards de ECOM.POS.1.1–ECOM.POS.1.3.1 continúan ocultando y bloqueando las acciones operativas aun cuando `ecommerceInventoryStatus === 'ready'`. `ECOMMERCE_POS_CHECKOUT_NOT_ENABLED` no fue modificado.
+## Pruebas ECOM.POS.2.1
 
-## Pruebas específicas
+### Servicio ecommerce
 
-### Servicio central
+Archivo:
 
 `src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js`
 
-Resultado: **22/22 PASS**.
+Resultado aislado: **43/43 PASS**.
 
-Cobertura:
+Incluye:
 
 - ilimitado;
-- exacto suficiente, insuficiente y desconocido;
-- FEFO y exclusión de vencidos/agotados;
-- sin lote vigente;
-- solo lotes vencidos;
-- stock distribuido entre lotes;
+- acumulación exacta suficiente e insuficiente;
+- `committedStock`;
+- stock desconocido;
+- recetas fail-closed;
+- conversión válida e inválida;
+- FEFO;
+- lotes vencidos y agotados;
+- no sobreasignación de lote;
+- dos lotes deterministas;
+- prioridad manual;
+- selecciones manuales incompatibles;
 - selección manual válida e inválida;
-- lote obsoleto;
-- cambio de modo;
-- estado global;
-- persistencia y eliminación;
-- ausencia de mutaciones y efectos de caja/venta.
+- opciones manuales con saldo restante;
+- R1/R2 fuera de orden;
+- selección manual durante revalidación;
+- orden liberada;
+- error de lectura vigente y antiguo;
+- recuperación a ready;
+- persistencia;
+- ausencia de mutaciones y efectos.
 
 ### UI
 
+Archivo:
+
 `src/components/pos/__tests__/EcommercePosInventoryResolution.test.jsx`
 
-Resultado: **2/2 PASS**.
+Resultado aislado: **6/6 PASS**.
 
-Cobertura:
+### Helper compartido del checkout
 
-- separación entre estado del pedido e inventario;
-- eliminación del copy de fase futura;
-- acción de resolución;
-- opciones manuales validadas;
-- indicador FEFO;
-- persistencia de selección mediante el servicio.
+Archivo existente:
 
-Total nuevo: **24/24 PASS**.
+`src/services/__test__/sales/stockValidation.test.js`
 
-## Regresión ECOM.POS.1
+Resultado: **3/3 PASS**.
 
-Se ejecutaron individualmente 14 archivos relacionados para evitar contaminación de mocks y stores entre suites.
+Confirma que exportar y reutilizar el helper no cambia la validación acumulada del checkout normal.
 
-Resultado:
+### Regresión del banner existente
 
-- 11 archivos PASS completos;
-- 74 tests PASS;
-- 3 tests con fallos que también existen en `main` sin ECOM.POS.2:
-  - reapertura de borrador existente en `ecommercePosDraftService.test.js`;
-  - navegación normal a payment en `useCheckoutFlow.ecommerce.test.jsx`;
-  - submit de quickCaja con lock obsoleto en `usePosCheckout.ecommerce.test.jsx`.
+`src/components/pos/__tests__/EcommercePosDraftBanner.test.jsx`: **2/2 PASS** en el entorno aislado.
 
-Los mismos tres nombres de fallo aparecen en la línea base global de `main`; ECOM.POS.2 no modifica sus módulos de producción.
+### Total ejecutado sobre la superficie corregida
 
-Las suites PASS confirman los guards de:
+- pruebas de servicio/UI/helper: **52/52 PASS**;
+- banner histórico adicional: **2/2 PASS**;
+- total distinto ejecutado: **54 PASS**.
 
-- checkout ecommerce;
-- descuentos;
-- cocina;
-- split bill;
-- apartados;
-- órdenes activas y locks;
-- banner ecommerce;
-- POS móvil;
-- administración de mesas.
+## ESLint específico
 
-## Validación global y comparación contra main
+Se ejecutó sobre:
 
-### Instalación
+- `src/services/sales/stockValidation.js`;
+- `src/services/ecommerce/ecommercePosInventoryResolution.js`;
+- `src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js`;
+- `src/components/pos/EcommercePosDraftBanner.jsx`;
+- `src/components/pos/__tests__/EcommercePosInventoryResolution.test.jsx`.
 
-`npm ci`: **PASS**.
+Resultado: **PASS, 0 errores y 0 warnings**.
 
-### ESLint específico
+No se usaron `eslint-disable`, `.skip`, `.todo`, snapshots artificiales ni eliminación de cobertura para ocultar fallos.
 
-Los cuatro archivos JS/JSX de implementación y pruebas nuevas: **PASS**.
+## Compilación de superficie
 
-### Build
+Los módulos modificados se compilaron y empaquetaron como ESM/JSX con sus imports mediante esbuild:
 
-`npm run build`: **PASS**.
+- JavaScript generado: 167877 bytes;
+- CSS generado: 53 bytes;
+- resultado: **PASS**.
 
-### Lint global
+## Validación global pendiente
 
-El repositorio mantiene una línea base global no limpia:
+No se creó un workflow temporal, conforme a la restricción de ECOM.POS.2.1.
 
-- PR: 382 problemas, 156 errores y 226 warnings;
-- `main`: 382 problemas, 156 errores y 226 warnings;
-- los logs normalizados son idénticos byte por byte;
-- regresiones introducidas por ECOM.POS.2: **0**.
+El entorno de ejecución disponible no puede resolver `github.com`, por lo que no fue posible obtener un checkout íntegro nuevo de la rama para volver a ejecutar en esta corrección:
 
-### Test global
+- `npm ci` del repositorio completo;
+- `npm run build` global;
+- `npm run lint` global;
+- `npm run test:ci` global;
+- las 14 suites relacionadas completas sobre el checkout real;
+- `git diff --check origin/main...HEAD` y `git status --short` desde un clon local real.
 
-- PR: 77 tests fallidos en 29 archivos, 580 PASS en 123 archivos;
-- `main`: 77 tests fallidos en 29 archivos, 556 PASS en 121 archivos;
-- los 83 registros `FAIL` normalizados tienen exactamente los mismos nombres en ambos checkouts;
-- ECOM.POS.2 agrega 2 archivos y 24 tests, todos PASS;
-- regresiones globales nuevas: **0**.
+La validación global de ECOM.POS.2 previa a esta corrección sí había pasado build y había clasificado la deuda global contra `main`, pero no se reutiliza como prueba de que el HEAD de ECOM.POS.2.1 pasó esos comandos.
 
-### Git
-
-- `git diff --check origin/main...HEAD`: **PASS**;
-- los artefactos de instalación/build se limpian antes de la comprobación final;
-- el árbol rastreado queda sin modificaciones pendientes.
-
-## Smoke test documentado
-
-| Escenario | Resultado esperado/validado |
-|---|---|
-| Producto ilimitado | Inventario listo, sin lote, cobro bloqueado |
-| Exacto con existencia | Stock verificado, inventario listo, cobro bloqueado |
-| Exacto sin existencia | `INSUFFICIENT_STOCK`, requiere atención |
-| Exacto desconocido | `INVENTORY_UNKNOWN`, fail-closed |
-| Lote vigente | lote FEFO, número/caducidad visibles, cobro bloqueado |
-| Sin lote vigente | `NO_VALID_BATCH`, requiere atención |
-| Solo lote vencido | `ONLY_EXPIRED_BATCHES`, no seleccionable |
-| Stock repartido | `MULTI_BATCH_REQUIRED`, sin división automática |
-| Selección obsoleta | `BATCH_STALE`, `batchId` eliminado |
-
-La matriz está respaldada por pruebas unitarias del servicio y pruebas renderizadas del banner. No se ejecutó un cobro porque esta fase debe mantenerlo bloqueado.
+Por este motivo el PR debe permanecer draft y **ECOM.POS.2.1 no se declara PASS todavía**, aunque los cuatro bloqueantes están implementados y la superficie específica está verde.
 
 ## Supabase
 
 **SIN CAMBIOS**.
 
-No se crearon tablas, estados remotos, RPC, migraciones ni modificaciones en producción. El claim existente es suficiente para conservar la propiedad del borrador y la resolución permanece local.
+No se crearon migraciones, SQL, RPC, estados remotos ni escrituras sobre pedidos reales.
 
 ## Vercel
 
 **NO UTILIZADO MANUALMENTE**.
 
-No se usó CLI, API, agentes, preview, redeploy, promoción, alias, variables ni commits vacíos. La integración automática de GitHub puede publicar un check, pero no fue abierta ni usada como evidencia de validación.
+No se usó CLI, API, agentes, previews, redeploy, promoción, alias ni variables.
 
 ## Conclusión
 
-ECOM.POS.2 resuelve de forma provisional y fail-closed el inventario de pedidos ecommerce preparados, conserva compatibilidad con el checkout normal y no produce efectos operativos. El cobro continúa bloqueado para ECOM.POS.3.
+Los cuatro bloqueantes de ECOM.POS.2.1 quedaron corregidos en código y cubiertos por pruebas específicas:
+
+- demanda exacta acumulada;
+- demanda por lote acumulada;
+- protección stale;
+- error de lectura fail-closed;
+- cantidad canónica con conversión.
+
+El PR permanece draft hasta completar la validación global obligatoria sobre un checkout íntegro del HEAD actual.
