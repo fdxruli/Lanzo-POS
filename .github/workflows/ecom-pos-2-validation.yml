@@ -1,0 +1,76 @@
+name: ECOM.POS.2 Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint modified implementation
+        run: >-
+          npx eslint
+          src/services/ecommerce/ecommercePosInventoryResolution.js
+          src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js
+          src/components/pos/EcommercePosDraftBanner.jsx
+          src/components/pos/__tests__/EcommercePosInventoryResolution.test.jsx
+
+      - name: ECOM.POS.2 specific tests
+        run: >-
+          npm run test:ci --
+          src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js
+          src/components/pos/__tests__/EcommercePosInventoryResolution.test.jsx
+
+      - name: ECOM.POS regression tests
+        run: >-
+          npm run test:ci --
+          src/services/ecommerce/__tests__/ecommercePosDraftService.test.js
+          src/services/ecommerce/__tests__/installEcommercePosActiveOrderGuards.test.js
+          src/components/pos/__tests__/EcommercePosDraftBanner.test.jsx
+          src/components/pos/__tests__/MobilePosCart.ecommerce.test.jsx
+          src/components/pos/__tests__/OrderDiscountPanel.ecommerce.test.jsx
+          src/components/pos/__tests__/OrderLineDiscountList.ecommerce.test.jsx
+          src/components/pos/__tests__/OrderSummary.ecommerce.test.jsx
+          src/components/pos/__tests__/PosPageContent.ecommerce.test.jsx
+          src/hooks/pos/__tests__/useActiveOrders.checkoutLock.test.js
+          src/hooks/pos/__tests__/useActiveOrders.test.js
+          src/hooks/pos/__tests__/useCheckoutFlow.ecommerce.test.jsx
+          src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
+          src/hooks/pos/__tests__/usePosCheckout.ecommerce.test.jsx
+          src/hooks/pos/__tests__/useTableManagement.ecommerce.test.jsx
+
+      - name: Build
+        run: npm run build
+
+      - name: Global lint
+        run: npm run lint
+
+      - name: Global tests
+        run: npm run test:ci
+
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
+
+      - name: Working tree check
+        run: test -z "$(git status --short)"
