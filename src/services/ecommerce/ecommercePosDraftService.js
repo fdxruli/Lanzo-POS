@@ -315,6 +315,10 @@ async function runPrepareEcommerceOrderPosDraft({ order } = {}) {
     removeLocalDraft(draftId);
   }
 
+  if (remoteStatus === 'prepared' && isRemoteOwner && remoteOrder?.posDraft?.draftId !== draftId) {
+    return conflictResult('El identificador remoto del borrador no coincide con la copia local. Recarga el pedido.');
+  }
+
   if (remoteStatus === 'prepared' && !isRemoteOwner) {
     return {
       success: false,
