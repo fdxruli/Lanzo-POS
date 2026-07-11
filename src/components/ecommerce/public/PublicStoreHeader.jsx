@@ -1,5 +1,6 @@
 import { Clock3, MapPin, PackageCheck, ShoppingBag, Truck } from 'lucide-react';
 import PublicSafeImage from './PublicSafeImage';
+import './PublicResponsive.css';
 
 const formatTime = (value) => {
   if (typeof value !== 'string' || !value) return '';
