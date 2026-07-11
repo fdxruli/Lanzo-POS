@@ -289,7 +289,12 @@ const consumeBatchQuantity = (ledger, productId, batchId, quantity) => {
 
 const isManualBatchSelection = (item = {}) => Boolean(
   item.batchId
-  && item.inventoryResolution?.selectionMode === 'manual'
+  && ['manual', 'manual_pending'].includes(item.inventoryResolution?.selectionMode)
+);
+
+const isPendingManualBatchSelection = (item = {}) => Boolean(
+  item.batchId
+  && item.inventoryResolution?.selectionMode === 'manual_pending'
 );
 
 const resolveLineWithLedger = ({ item, product, batches = [], now, ledger }) => {
@@ -421,8 +426,7 @@ const resolveLineWithLedger = ({ item, product, batches = [], now, ledger }) => 
         mode,
         code: 'BATCH_STALE',
         quantityMetadata,
-        availableQuantitySnapshot: remaining,
-        preserveBatchId: true
+        availableQuantitySnapshot: remaining
       });
     }
 
@@ -530,12 +534,22 @@ export const resolveEcommerceDraftInventoryFromInputs = ({
   });
   const ledger = createInventoryLedger({ products, batchesByProduct, now });
   const items = new Array(records.length);
-  const manualBatchRecords = records.filter(({ item, product }) => (
-    getInventoryMode(product || item) === 'batch' && isManualBatchSelection(item)
+  const existingManualBatchRecords = records.filter(({ item, product }) => (
+    getInventoryMode(product || item) === 'batch'
+    && isManualBatchSelection(item)
+    && !isPendingManualBatchSelection(item)
   ));
-  const manualIndexes = new Set(manualBatchRecords.map(({ index }) => index));
+  const pendingManualBatchRecords = records.filter(({ item, product }) => (
+    getInventoryMode(product || item) === 'batch'
+    && isPendingManualBatchSelection(item)
+  ));
+  const manualIndexes = new Set([
+    ...existingManualBatchRecords,
+    ...pendingManualBatchRecords
+  ].map(({ index }) => index));
   const processingOrder = [
-    ...manualBatchRecords,
+    ...existingManualBatchRecords,
+    ...pendingManualBatchRecords,
     ...records.filter(({ index }) => !manualIndexes.has(index))
   ];
 
@@ -948,31 +962,83 @@ export const selectEcommerceDraftBatch = async ({
 
   const expectation = captureOrderExpectation(order);
   const attemptId = createAttempt(orderId);
-  const candidateOrder = {
-    ...order,
-    items: order.items.map((entry, index) => (
-      index === itemIndex
-        ? {
-          ...entry,
-          batchId,
-          needsInventoryResolution: true,
-          inventoryResolution: {
-            ...entry.inventoryResolution,
-            mode: 'batch',
-            status: 'pending',
-            code: null,
-            batchId,
-            selectionMode: 'manual',
-            resolvedAt: null
-          }
-        }
-        : entry
-    ))
-  };
 
   try {
-    const resolution = await resolveEcommerceDraftInventory({ order: candidateOrder, now, deps });
+    const { products, batchesByProduct } = await loadOrderInventoryInputs({ order, deps });
+    if (!isExpectedOrderCurrent({
+      order: getActiveOrdersState(deps).activeOrders?.get(orderId),
+      orderId,
+      expectation,
+      attemptId,
+      deps
+    })) {
+      return staleResult();
+    }
+
+    const productMap = new Map(products.map((product) => [String(product.id), product]));
+    const item = order.items[itemIndex];
+    const productId = getRealProductId(item);
+    const product = productMap.get(String(productId)) || null;
+    if (!product || isProductInactive(product)) {
+      return {
+        success: false,
+        changed: false,
+        code: product ? 'PRODUCT_INACTIVE' : 'PRODUCT_MISSING'
+      };
+    }
+    if (!isBatchManagedProduct(product)) {
+      return { success: false, changed: false, code: 'ECOMMERCE_INVENTORY_BATCH_NOT_APPLICABLE' };
+    }
+
+    const batches = batchesByProduct.get(productId) || batchesByProduct.get(String(productId)) || [];
+    const selectedBatch = batches.find((entry) => String(getBatchId(entry)) === String(batchId));
+    const selected = selectedBatch
+      ? classifyBatch({ batch: selectedBatch, product, productId, now })
+      : null;
+    const quantityMetadata = getRequiredQuantityMetadata(item, product);
+
+    if (!selected || !selected.belongs) {
+      return { success: false, changed: false, code: 'BATCH_STALE' };
+    }
+    if (selected.expired || selected.invalidExpiry) {
+      return { success: false, changed: false, code: 'ONLY_EXPIRED_BATCHES' };
+    }
+    if (!selected.valid) {
+      return { success: false, changed: false, code: 'NO_VALID_BATCH' };
+    }
+    if (selected.available + EPSILON < quantityMetadata.requiredInventoryQuantity) {
+      return { success: false, changed: false, code: 'INSUFFICIENT_BATCH_STOCK' };
+    }
+
+    const candidateOrder = {
+      ...order,
+      items: order.items.map((entry, index) => (
+        index === itemIndex
+          ? {
+            ...entry,
+            batchId,
+            needsInventoryResolution: true,
+            inventoryResolution: {
+              ...entry.inventoryResolution,
+              mode: 'batch',
+              status: 'pending',
+              code: null,
+              batchId,
+              selectionMode: 'manual_pending',
+              resolvedAt: null
+            }
+          }
+          : entry
+      ))
+    };
+    const resolution = resolveEcommerceDraftInventoryFromInputs({
+      order: candidateOrder,
+      products,
+      batchesByProduct,
+      now
+    });
     const selectedLine = resolution.items[itemIndex];
+
     if (!isExpectedOrderCurrent({
       order: getActiveOrdersState(deps).activeOrders?.get(orderId),
       orderId,
