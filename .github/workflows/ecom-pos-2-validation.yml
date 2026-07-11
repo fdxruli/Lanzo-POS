@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
-      LOG_DIR: ${{ runner.temp }}/ecom-pos-2-main-baseline
+      LOG_DIR: /tmp/ecom-pos-2-main-baseline
     steps:
       - name: Checkout clean main
         uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ecom-pos-2-main-baseline-logs
-          path: ${{ runner.temp }}/ecom-pos-2-main-baseline
+          path: /tmp/ecom-pos-2-main-baseline
           if-no-files-found: error
           retention-days: 7
 
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 65
     env:
-      LOG_DIR: ${{ runner.temp }}/ecom-pos-2-validation
+      LOG_DIR: /tmp/ecom-pos-2-validation
     steps:
       - name: Checkout PR head
         uses: actions/checkout@v4
@@ -210,7 +210,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ecom-pos-2-validation-logs
-          path: ${{ runner.temp }}/ecom-pos-2-validation
+          path: /tmp/ecom-pos-2-validation
           if-no-files-found: error
           retention-days: 7
 
