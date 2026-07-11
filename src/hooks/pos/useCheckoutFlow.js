@@ -6,13 +6,22 @@ import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 import { processSale } from '../../services/salesService';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
+import {
+    ECOMMERCE_POS_CHECKOUT_MESSAGE,
+    ECOMMERCE_POS_CHECKOUT_NOT_ENABLED,
+    getEcommercePosBlockedResult,
+    isEcommercePosEffectBlocked
+} from '../../services/ecommerce/ecommercePosDraftGuards';
 
 const EMPTY_ORDER = [];
 
-export const ECOMMERCE_POS_CHECKOUT_NOT_ENABLED = 'ECOMMERCE_POS_CHECKOUT_NOT_ENABLED';
-export const ECOMMERCE_POS_CHECKOUT_MESSAGE = 'Este pedido online está preparado para revisión. El cobro y la conversión definitiva se habilitarán en la siguiente fase.';
+export {
+    ECOMMERCE_POS_CHECKOUT_MESSAGE,
+    ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
+} from '../../services/ecommerce/ecommercePosDraftGuards';
+
 export const isEcommercePosCheckoutBlocked = (activeOrder) => (
-    activeOrder?.origin === 'ecommerce' && activeOrder?.ecommerceDraftStatus === 'prepared'
+    isEcommercePosEffectBlocked(activeOrder)
 );
 
 const CHECKOUT_INTEGRITY_OPTIONS = {
@@ -79,7 +88,7 @@ export function useCheckoutFlow({
         const liveOrder = selectCurrentOrder(useActiveOrders.getState());
         if (isEcommercePosCheckoutBlocked(liveOrder)) {
             showMessageModal(ECOMMERCE_POS_CHECKOUT_MESSAGE, null, { type: 'warning' });
-            return { success: false, code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED };
+            return getEcommercePosBlockedResult();
         }
 
         const licenseDetails = useAppStore.getState().licenseDetails;
@@ -116,7 +125,7 @@ export function useCheckoutFlow({
         const liveOrder = selectCurrentOrder(useActiveOrders.getState());
         if (isEcommercePosCheckoutBlocked(liveOrder)) {
             showMessageModal(ECOMMERCE_POS_CHECKOUT_MESSAGE, null, { type: 'warning' });
-            return { success: false, code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED };
+            return getEcommercePosBlockedResult();
         }
 
         // Idempotencia: verificar con ref atómico
@@ -212,8 +221,9 @@ export function useCheckoutFlow({
         const liveOrder = selectCurrentOrder(useActiveOrders.getState());
         if (isEcommercePosCheckoutBlocked(liveOrder)) {
             showMessageModal(ECOMMERCE_POS_CHECKOUT_MESSAGE, null, { type: 'warning' });
-            return false;
+            return getEcommercePosBlockedResult();
         }
+
         const success = await abrirCaja(openingData);
         if (success) {
             closeModal('quickCaja');
