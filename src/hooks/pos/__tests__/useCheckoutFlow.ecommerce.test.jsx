@@ -48,47 +48,67 @@ const makeDeps = () => ({
   fetchActiveTablesCount: vi.fn()
 });
 
+const setOrder = ({ origin = 'ecommerce', ecommerceDraftStatus } = {}) => {
+  mocks.activeState.currentOrderId = 'active-order';
+  mocks.activeState.activeOrders = new Map([[
+    'active-order',
+    {
+      id: 'active-order',
+      items: [{ id: 'product-1', quantity: 1, price: 20 }],
+      total: 20,
+      origin,
+      ...(ecommerceDraftStatus === undefined ? {} : { ecommerceDraftStatus })
+    }
+  ]]);
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.appState = {
     licenseDetails: { valid: true },
     features: {},
     cajaActual: { estado: 'abierta' },
-    abrirCaja: vi.fn(),
+    abrirCaja: vi.fn().mockResolvedValue(true),
     verifySessionIntegrity: vi.fn().mockResolvedValue(true),
     companyProfile: { name: 'Lanzo' }
   };
   mocks.activeState = {
-    currentOrderId: 'ecom-order',
-    activeOrders: new Map([[
-      'ecom-order',
-      {
-        id: 'ecom-order',
-        items: [{ id: 'product-1', quantity: 1, price: 20 }],
-        total: 20,
-        origin: 'ecommerce',
-        ecommerceDraftStatus: 'prepared'
-      }
-    ]]),
+    currentOrderId: null,
+    activeOrders: new Map(),
     removeOrder: vi.fn()
   };
+  setOrder({ ecommerceDraftStatus: 'prepared' });
   mocks.processSale.mockResolvedValue({ success: false, message: 'fixture' });
 });
 
+const expectBlockedResult = (response) => {
+  expect(response).toMatchObject({
+    success: false,
+    code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED,
+    message: ECOMMERCE_POS_CHECKOUT_MESSAGE
+  });
+};
+
 describe('useCheckoutFlow ecommerce guard', () => {
-  it('blocks the payment modal for a prepared ecommerce draft', () => {
+  it.each([
+    ['claimed', 'claimed'],
+    ['prepared', 'prepared'],
+    ['missing', undefined],
+    ['unknown', 'future_state']
+  ])('blocks the payment modal for ecommerce status %s', (_label, ecommerceDraftStatus) => {
+    setOrder({ ecommerceDraftStatus });
     const deps = makeDeps();
     const { result } = renderHook(() => useCheckoutFlow(deps));
 
     let response;
     act(() => { response = result.current.handleInitiateCheckout(); });
 
-    expect(response).toEqual({ success: false, code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED });
+    expectBlockedResult(response);
     expect(deps.openModal).not.toHaveBeenCalled();
     expect(mocks.showMessageModal).toHaveBeenCalledWith(ECOMMERCE_POS_CHECKOUT_MESSAGE, null, { type: 'warning' });
   });
 
-  it('also blocks handleProcessOrder before session, caja and processSale effects', async () => {
+  it('blocks handleProcessOrder before session, caja and processSale effects', async () => {
     const deps = makeDeps();
     const { result } = renderHook(() => useCheckoutFlow(deps));
 
@@ -97,18 +117,29 @@ describe('useCheckoutFlow ecommerce guard', () => {
       response = await result.current.handleProcessOrder({ paymentMethod: 'efectivo' });
     });
 
-    expect(response).toEqual({ success: false, code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED });
+    expectBlockedResult(response);
     expect(mocks.appState.verifySessionIntegrity).not.toHaveBeenCalled();
     expect(deps.openModal).not.toHaveBeenCalledWith('quickCaja');
     expect(mocks.processSale).not.toHaveBeenCalled();
   });
 
+  it('blocks quick caja before opening caja or payment', async () => {
+    mocks.appState.cajaActual = null;
+    const deps = makeDeps();
+    const { result } = renderHook(() => useCheckoutFlow(deps));
+
+    let response;
+    await act(async () => {
+      response = await result.current.handleQuickCajaSubmit({ openingAmount: 100 });
+    });
+
+    expectBlockedResult(response);
+    expect(mocks.appState.abrirCaja).not.toHaveBeenCalled();
+    expect(deps.openModal).not.toHaveBeenCalled();
+  });
+
   it('does not change checkout behavior for a normal POS order', async () => {
-    mocks.activeState.currentOrderId = 'normal';
-    mocks.activeState.activeOrders = new Map([[
-      'normal',
-      { id: 'normal', items: [{ id: 'product-1', quantity: 1, price: 20 }], total: 20 }
-    ]]);
+    setOrder({ origin: undefined, ecommerceDraftStatus: undefined });
     const deps = makeDeps();
     const { result } = renderHook(() => useCheckoutFlow(deps));
 
