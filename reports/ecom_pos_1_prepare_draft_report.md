@@ -10,362 +10,401 @@
 
 ## Estado actual
 
-`ECOM.POS.1.1 PENDING GLOBAL VALIDATION`.
-
-La corrección funcional, la alineación de migraciones, las pruebas SQL transaccionales y la verificación read-only de Supabase están completas. El PR **no** se declara listo para revisión porque este entorno no pudo ejecutar `npm ci`, ESLint, Vitest, `npm run build`, `npm run lint` ni `npm run test:ci`: no existe un checkout local accesible, la red del contenedor no resuelve `github.com` y el commit actual no tiene GitHub Actions disponibles. El check automático de Vercel no se usa como evidencia.
-
-No se debe conservar ni reutilizar la declaración anterior `ECOM.POS.1 PASS`, porque fue emitida antes de detectar que los pedidos creados por el checkout real no contenían `source_product_id`.
-
-## Corrección ECOM.POS.1.1
-
-### Drift de migración corregido
-
-La migración ya aplicada en producción estaba registrada como:
-
 ```text
-20260711024125 / ecom_pos_1_prepare_order_draft
+ECOM.POS.1.2 PENDING GLOBAL VALIDATION
 ```
 
-El archivo local se renombró sin modificar su contenido:
+La implementación funcional de `ECOM.POS.1.2` quedó versionada en la rama del PR #88. El PR no se declara listo para revisión porque este entorno no pudo ejecutar el checkout íntegro requerido: `npm ci`, ESLint, Vitest, build, lint global, `test:ci` ni la comparación ejecutable contra `origin/main`.
 
-```text
-supabase/migrations/20260711024125_ecom_pos_1_prepare_order_draft.sql
+No se debe declarar `ECOM.POS.1.2 PASS` ni marcar el PR como `ready for review` hasta que esas validaciones se ejecuten sobre el HEAD final.
+
+## Contexto conservado de ECOM.POS.1.1
+
+La corrección anterior permanece intacta:
+
+- migraciones local/remoto alineadas;
+- `source_product_id` resuelto para pedidos reales;
+- trigger servidor para filas futuras;
+- snapshot con fallback seguro;
+- protección central para `origin='ecommerce'`;
+- `saveOrderAsOpen`, `closeOrder` y `lockOrderForCheckout` bloqueados;
+- cocina, split bill y apartados bloqueados;
+- reconciliación remoto/local;
+- propiedad del claim en UI;
+- protección de PII.
+
+El criterio único durante `ECOM.POS.1` continúa siendo:
+
+```js
+order?.origin === 'ecommerce'
 ```
 
-Se eliminó el nombre local incorrecto `20260711022044_ecom_pos_1_prepare_order_draft.sql`.
-
-No se reaplicó esta migración y no se ejecutó `migration repair`, `db push` ni `--include-all`.
-
-### Migración correctiva de mapeo
-
-Producción ya registraba antes de esta corrección:
+Contrato estable:
 
 ```text
-20260711122554 / ecom_pos_1_1_product_mapping_and_guards
+code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
+message: Este pedido online está preparado para revisión. El cobro y la conversión definitiva se habilitarán en la siguiente fase.
 ```
 
-La rama ahora contiene el archivo correspondiente:
+## Corrección ECOM.POS.1.2
+
+### Checkout real utilizado por usePos
+
+`src/hooks/pos/usePos.js` utiliza directamente:
+
+```js
+const checkout = usePosCheckout(...)
+```
+
+Por tanto, la defensa en profundidad fue agregada al flujo real:
 
 ```text
-supabase/migrations/20260711122554_ecom_pos_1_1_product_mapping_and_guards.sql
+src/hooks/pos/usePosCheckout.js
 ```
 
-No se reaplicó una versión ya registrada.
-
-La migración correctiva:
-
-- confirma que `source_product_id`, `product_id` y `local_product_ref` son `text`;
-- completa artículos existentes con `coalesce(product_id, local_product_ref)`;
-- valida simultáneamente `published_product_id`, `portal_id` y `license_id`;
-- instala un trigger servidor `BEFORE INSERT OR UPDATE` para futuras filas;
-- no confía en un ID enviado por el navegador;
-- deja `source_product_id=NULL` cuando la publicación no tiene vínculo local;
-- actualiza `private.ecommerce_order_pos_snapshot_v1` con fallback defensivo y join aislado por portal/licencia;
-- mantiene los helpers privados sin `EXECUTE` para `PUBLIC`, `anon` y `authenticated`.
-
-## Evidencia real de producto
-
-Verificación read-only de producción:
+El hook importa los guards centralizados desde:
 
 ```text
-ecommerce_order_items totales: 4
-con source_product_id: 4
-mapeables todavía en NULL: 0
-
-publicaciones activas: 11
-con product_id: 0
-con local_product_ref: 11
+src/services/ecommerce/ecommercePosDraftGuards.js
 ```
 
-Los snapshots de `EC-00000010`, `EC-00000011` y `EC-00000012` devolvieron un artículo cada uno y todos incluyeron `sourceProductId`.
+No se duplicó el criterio de estado ecommerce por `ecommerceDraftStatus`; cualquier orden con `origin='ecommerce'` permanece bloqueada.
 
-## Protección centralizada de efectos
+### Estado vivo del store
 
-Se agregó `src/services/ecommerce/ecommercePosDraftGuards.js` como contrato único:
+Cada operación sensible consulta `useActiveOrders.getState()` al momento de ejecutar el efecto.
+
+La resolución viva usa:
 
 ```text
-isEcommercePosDraft(order) => order?.origin === 'ecommerce'
-isEcommercePosEffectBlocked(order) => mismo criterio
-ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
+currentOrderId del store
+fallback a pos.activeOrderId
+activeOrders.get(orderId)
 ```
 
-Durante `ECOM.POS.1`, cualquier orden con `origin='ecommerce'` permanece bloqueada sin depender de `ecommerceDraftStatus`.
+Esto evita depender únicamente de closures capturados por React.
 
-### Checkout y caja
+### handleInitiateCheckout
 
-`useCheckoutFlow` bloquea antes de cualquier efecto:
+El guard ecommerce es la primera operación funcional de `handleInitiateCheckout`.
 
-- `handleInitiateCheckout`;
-- `handleProcessOrder`;
-- `handleQuickCajaSubmit`.
-
-El guard se ejecuta antes de abrir pago/caja rápida, verificar sesión o llamar `processSale`.
-
-Estados cubiertos por pruebas añadidas:
-
-- `claimed`;
-- `prepared`;
-- estado faltante;
-- estado desconocido;
-- regresión de una orden POS normal.
-
-### Operaciones de órdenes activas
-
-Se añadió una capa central instalada por `EcommerceOrdersRuntime` sobre:
-
-- `saveOrderAsOpen`;
-- `closeOrder`;
-- `lockOrderForCheckout`.
-
-Para ecommerce devuelve:
+Para una orden ecommerce se retorna:
 
 ```text
 success: false
 code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
 ```
 
-Las implementaciones originales no se invocan, por lo que no se escribe en `STORES.SALES`, no se cierra una venta y no se toma un lock de checkout.
-
-`EcommerceOrdersRuntime` está montado desde `Layout`, por lo que la protección se instala en el runtime global del POS.
-
-### Restaurante, cocina y división de cuenta
-
-`useTableManagement` bloquea al inicio de:
-
-- `handleSaveAsOpen`;
-- reconciliaciones previas a split/cobro de mesa;
-- `handleQuickTableAction`;
-- `handleOpenSplitBill`;
-- `handleConfirmSplitBill`.
-
 El bloqueo ocurre antes de:
 
-- prompt de mesa;
-- `saveOrderAsOpen`;
-- escritura de `fulfillmentStatus='pending'`;
-- lectura/escritura de venta abierta;
-- `restaurantOrdersRepository.upsertRestaurantOrderFromLocalSale`;
-- `splitOpenTableOrder`;
-- cierre cloud posterior al split.
+- validar cocina cloud;
+- reconciliar artículos cancelados;
+- actualizar artículos;
+- llamar `saveOrderAsOpen`;
+- cerrar el carrito móvil;
+- adquirir `lockOrderForCheckout`;
+- ejecutar FEFO;
+- abrir prescription;
+- abrir payment.
 
-### Apartados
+También se revalida la identidad viva de la orden después de operaciones asíncronas de cocina, persistencia, lock y FEFO.
 
-`useLayawayFlow` bloquea tanto `handleInitiateLayaway` como `handleConfirmLayaway`.
+### handleProcessOrder
 
-Una orden ecommerce no abre el modal, no llama `layawayRepo.create`, no registra pago inicial, no mueve caja y no limpia la orden como si el apartado hubiera sido creado.
+El guard ecommerce se ejecuta antes de leer o convertir el snapshot en una venta.
 
-### UI y móvil
+Para ecommerce no se llama:
 
-`OrderSummary` muestra el banner ecommerce y conserva la acción segura `Liberar borrador` y el regreso al detalle.
+- `verifySessionIntegrity`;
+- `asegurarCajaAbierta`;
+- `processSale`;
+- cierre de cocina cloud;
+- `removeOrder`;
+- `broadcastDBChange`;
+- actualización posterior de inventario/mesas.
 
-Para ecommerce se ocultan visualmente:
+La orden se vuelve a validar:
 
-- cobrar;
-- guardar/enviar a cocina;
-- dividir cuenta;
-- apartar;
-- identificador/acceso de mesa;
-- descuentos embebidos;
-- acciones de edición operativa.
+- antes de verificar sesión;
+- después de verificar sesión;
+- antes y después de asegurar caja;
+- antes de abrir quick caja;
+- antes de cargar `salesService`;
+- inmediatamente antes de `processSale`.
 
-`MobilePosCart` reutiliza `OrderSummary` y ahora también omite el `OrderDiscountPanel` separado cuando la orden activa es ecommerce.
+### Carrera de snapshot obsoleto
 
-`PosFloatingBar` únicamente abre el carrito o la bandeja de mesas; no ejecuta cobro. Las acciones posteriores siguen atravesando los guards lógicos.
-
-## Estado remoto como fuente de verdad
-
-`prepareEcommerceOrderPosDraft` ya no abre una copia local solo por existir.
-
-La reutilización local exige simultáneamente:
-
-- pedido remoto `accepted`;
-- remoto `posDraft.status='prepared'`;
-- `isClaimedByCurrentActor=true`;
-- claim token remoto presente;
-- `draftId` remoto igual al determinístico local;
-- mismo `ecommerceOrderId`;
-- misma identidad local de licencia/actor;
-- mismo claim token;
-- estado local `prepared`.
-
-Comportamiento fail-closed:
-
-- remoto `released`: elimina la copia local, reclama de nuevo y confirma con token nuevo;
-- remoto `claimed` por otro dispositivo: no abre y no intenta un claim redundante;
-- remoto `prepared` por otro dispositivo: no abre;
-- token diferente: no reutiliza la copia;
-- `draftId` diferente: conflicto y recarga;
-- pedido ya no `accepted`: elimina/invalida la copia;
-- estado remoto desconocido: oculta acciones y devuelve conflicto.
-
-## Propiedad del claim en la bandeja
-
-La UI distingue:
-
-- `prepared` propio con token y `draftId`: `Abrir en Punto de Venta` + `Liberar borrador`;
-- `prepared` ajeno para staff: mensaje informativo, sin abrir ni liberar;
-- `prepared` ajeno para admin: liberación administrativa con confirmación explícita;
-- `claimed` propio con token: `Continuar preparación`;
-- `claimed` ajeno: mensaje informativo;
-- estado desconocido: acciones ocultas y mensaje de conflicto/recarga.
-
-La liberación administrativa omite token únicamente para administrador, conforme al contrato de la RPC.
-
-## Fallos compensatorios y recuperación
-
-Si falla contexto, mapeo, upsert o confirmación, el servicio intenta liberar remotamente antes de retirar la copia local.
-
-Si también falla la liberación compensatoria:
-
-- la orden conserva `origin='ecommerce'`;
-- queda en `ecommerceDraftStatus='error_releasing'`;
-- conserva el claim token necesario;
-- marca `ecommerceReleaseRecoveryRequired=true`;
-- todos los guards financieros/operativos continúan bloqueándola;
-- `retryReleaseEcommerceDraft` permite reintentar la liberación;
-- una liberación exitosa elimina después la copia local.
-
-No se convierte en una orden normal.
-
-## Protección de PII
-
-El borrador local conserva únicamente datos operativos del pedido y del claim.
-
-No persiste:
-
-- nombre del cliente;
-- teléfono;
-- dirección;
-- notas;
-- URL de WhatsApp.
-
-Las pruebas añadidas construyen el detalle remoto con PII y verifican que no aparezca en el borrador serializado.
-
-## Pruebas SQL
-
-Se actualizó:
+Se agregó coherencia entre:
 
 ```text
-supabase/tests/ecom_pos_1_prepare_draft_test.sql
+checkoutSnapshotRef.current.orderId
+currentOrderId vivo
+orden activa viva
 ```
 
-La prueba reproduce el checkout real con `published_product_id` definido y `source_product_id=NULL`.
-
-Casos ejecutados en producción dentro de `BEGIN/ROLLBACK`:
-
-- trigger servidor resuelve `local_product_ref`;
-- backfill deja cero artículos mapeables sin resolver;
-- publicación de otra licencia no mapea;
-- publicación de otro portal no mapea;
-- publicación sin vínculo queda sin mapping;
-- snapshot usa fallback seguro;
-- helpers privados continúan cerrados;
-- tablas continúan sin grants directos;
-- `PUBLIC` no ejecuta la RPC;
-- claim idempotente;
-- segundo dispositivo bloqueado;
-- confirmación idempotente;
-- liberación propia y administrativa controlada;
-- cero efectos financieros;
-- rollback completo.
-
-Resultado final:
+Cuando el snapshot ya no pertenece a la orden activa se devuelve un resultado fail-closed con:
 
 ```text
-ECOM.POS.1.1 SQL PASS
+POS_CHECKOUT_SNAPSHOT_STALE
 ```
 
-La primera iteración del fixture de portal falló por el guard que exige portal activo; la transacción se revirtió. El fixture se corrigió sin relajar producción y la ejecución final pasó.
-
-## Pruebas frontend añadidas o ampliadas
-
-Se añadieron/ampliaron pruebas para:
-
-- `ecommercePosDraftService` y contrato real de mapping;
-- reconciliación remoto/local;
-- confirmación fallida + liberación fallida + reintento;
-- checkout fail-closed para todos los estados;
-- wrappers centrales de órdenes activas;
-- restaurante/cocina/split;
-- apartados;
-- propiedad del claim en `EcommerceOrdersPage`;
-- carrito móvil y panel de descuentos;
-- PII ausente del borrador.
-
-Archivos relevantes:
+Cuando la orden activa viva es ecommerce prevalece el contrato estable:
 
 ```text
-src/services/ecommerce/__tests__/ecommercePosDraftService.test.js
-src/services/ecommerce/__tests__/installEcommercePosActiveOrderGuards.test.js
+ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
+```
+
+Escenario cubierto:
+
+```text
+1. una orden POS normal abre payment;
+2. currentOrderId cambia a una orden ecommerce;
+3. llega una confirmación tardía;
+4. verifySessionIntegrity y processSale no se ejecutan.
+```
+
+Los snapshots cruzados se invalidan sin borrar otra orden. El rollback final comprueba que el snapshot todavía pertenece a la orden activa y que esa orden no es ecommerce antes de liberar un lock.
+
+### handleQuickCajaSubmit
+
+El guard ecommerce se ejecuta antes de:
+
+- `abrirCaja`;
+- `asegurarCajaAbierta`;
+- cerrar quick caja;
+- abrir payment.
+
+También se revalida el snapshot después de abrir caja y antes de volver a payment, para impedir que un cambio de orden continúe el cobro.
+
+### Acciones rápidas de mesas
+
+`useTableManagement.handleQuickTableAction` conserva el comportamiento fail-closed existente: si hay un borrador ecommerce activo, bloquea antes de cargar o procesar la mesa objetivo.
+
+Se añadió una prueba de coherencia para:
+
+```text
+orden ecommerce activa + acción rápida sobre mesa normal
+```
+
+Resultado esperado documentado:
+
+- la mesa normal no se carga;
+- el checkout no se inicia;
+- cocina no se consulta;
+- se devuelve `ECOMMERCE_POS_CHECKOUT_NOT_ENABLED`.
+
+## Descuentos bloqueados en todas las superficies
+
+### PosPageContent
+
+`src/components/pos/PosPageContent.jsx` obtiene la orden activa desde `useActiveOrders` y no monta `OrderDiscountPanel` cuando la orden es ecommerce.
+
+El panel desktop externo a `OrderSummary` ya no depende del selector CSS `:has()`.
+
+### OrderDiscountPanel
+
+`src/components/pos/OrderDiscountPanel.jsx` agrega dos defensas:
+
+1. retorna `null` antes de renderizar botones o formularios cuando la orden activa es ecommerce;
+2. `applyDiscount` y `removeDiscount` vuelven a leer la orden viva y abortan antes de `updateCurrentOrder` si el guard está activo.
+
+Para ecommerce no se aplica ni elimina `saleDiscount`.
+
+### OrderLineDiscountList
+
+`src/components/pos/OrderLineDiscountList.jsx` también retorna `null` para ecommerce.
+
+Las mutaciones `applyLineDiscount` y `removeLineDiscount` consultan la orden viva y abortan si es ecommerce, por lo que no dependen solamente del componente padre.
+
+### OrderSummary y móvil
+
+Se conservó la protección existente en:
+
+- `OrderSummary`;
+- `MobilePosCart`;
+- `EcommercePosDraftGuards.css`.
+
+La barrera lógica interna de `OrderDiscountPanel` hace que los slots desktop/restaurante/móvil no produzcan triggers ni formularios aunque sean montados desde otra superficie futura.
+
+No se modificó la decisión existente sobre cantidades o edición de líneas. El checkout completo continúa bloqueado.
+
+## Pruebas añadidas o ampliadas
+
+### Checkout real
+
+Archivo nuevo:
+
+```text
+src/hooks/pos/__tests__/usePosCheckout.ecommerce.test.jsx
+```
+
+Casos cubiertos:
+
+- `claimed`;
+- `prepared`;
+- `error_releasing`;
+- estado faltante;
+- estado desconocido;
+- inicio bloqueado antes de cocina, persistencia, FEFO, lock y modales;
+- proceso bloqueado antes de sesión, caja, venta, cocina y broadcast;
+- quick caja bloqueada antes de apertura;
+- snapshot normal seguido por cambio vivo a ecommerce;
+- regresión de checkout y `processSale` para orden POS normal;
+- regresión de quick caja para orden POS normal.
+
+La suite previa se conserva:
+
+```text
 src/hooks/pos/__tests__/useCheckoutFlow.ecommerce.test.jsx
-src/hooks/pos/__tests__/useTableManagement.ecommerce.test.jsx
-src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
-src/pages/__tests__/EcommerceOrdersPage.claimOwnership.test.jsx
-src/components/pos/__tests__/MobilePosCart.ecommerce.test.jsx
-src/components/pos/__tests__/EcommercePosDraftBanner.test.jsx
 ```
 
-### Estado de ejecución frontend
+### Descuentos
+
+Archivos nuevos:
 
 ```text
-ESLint específico: NO EJECUTADO EN ESTE ENTORNO
-Vitest específico: NO EJECUTADO EN ESTE ENTORNO
-Regresión: NO EJECUTADA EN ESTE ENTORNO
-npm run build: NO EJECUTADO EN ESTE ENTORNO
-npm run lint: NO EJECUTADO EN ESTE ENTORNO
-npm run test:ci: NO EJECUTADO EN ESTE ENTORNO
-comparación global contra main: PENDIENTE
+src/components/pos/__tests__/PosPageContent.ecommerce.test.jsx
+src/components/pos/__tests__/OrderDiscountPanel.ecommerce.test.jsx
+src/components/pos/__tests__/OrderLineDiscountList.ecommerce.test.jsx
+src/components/pos/__tests__/OrderSummary.ecommerce.test.jsx
+```
+
+Cobertura añadida:
+
+- desktop sin mesas no monta el panel para ecommerce;
+- orden POS normal conserva el panel;
+- montaje directo de `OrderDiscountPanel` retorna `null` para ecommerce;
+- descuento general normal puede aplicarse y quitarse;
+- `OrderLineDiscountList` retorna `null` para ecommerce;
+- descuento por línea normal puede aplicarse y quitarse;
+- slots integrados de `OrderSummary` no exponen descuentos ecommerce;
+- orden POS normal conserva las superficies de descuento.
+
+La suite móvil existente se conserva:
+
+```text
+src/components/pos/__tests__/MobilePosCart.ecommerce.test.jsx
+```
+
+### Mesas
+
+Se amplió:
+
+```text
+src/hooks/pos/__tests__/useTableManagement.ecommerce.test.jsx
+```
+
+Incluye la coherencia de target para una acción rápida sobre una mesa normal mientras el borrador ecommerce sigue activo.
+
+## Validación ejecutada en este entorno
+
+Se realizó revisión estática del diff y comprobación sintáctica local de los dos archivos de mayor riesgo:
+
+```text
+node --check src/hooks/pos/usePosCheckout.js: PASS sobre el contenido final preparado
+parseo TypeScript AST de usePosCheckout.js: PASS
+parseo TypeScript AST de usePosCheckout.ecommerce.test.jsx: PASS
+```
+
+Estas comprobaciones no sustituyen ESLint, Vitest ni build.
+
+Metadatos GitHub observados antes del commit documental final:
+
+```text
+HEAD funcional: 2706305f32fb434724ccfde343c8a69596494c76
+PR open: sí
+PR draft: sí
+PR merged: no
+GitHub Actions para el HEAD: 0 ejecuciones
+estado automático visible: Vercel pending
+```
+
+El estado automático de Vercel no se utilizó como evidencia ni se abrió mediante API, CLI o agentes de Vercel.
+
+## Validación global pendiente
+
+No fue posible ejecutar:
+
+```text
+npm ci
+npx eslint <todos los archivos modificados>
+npx vitest run <suites específicas y regresión>
+npm run build
+npm run lint
+npm run test:ci
+git diff --check origin/main...HEAD
+git status --short
+git diff --name-status origin/main...HEAD
 ```
 
 Motivo verificable:
 
-- el contenedor no pudo clonar el repositorio: `Could not resolve host: github.com`;
-- no existe checkout local disponible;
-- el commit no tiene GitHub Actions asociados;
+- el contenedor no puede resolver `github.com` y no pudo clonar el repositorio;
+- no existe un checkout local íntegro disponible;
+- las dependencias del proyecto no están instaladas en el contenedor;
+- el HEAD no tiene workflows de GitHub Actions asociados;
 - no se creó ningún workflow temporal;
-- no se usó Vercel como sustituto.
+- Vercel no se usa como sustituto.
 
-Los resultados históricos del reporte anterior no deben tratarse como validación de los cambios de `ECOM.POS.1.1`.
+La comparación de metadatos de GitHub contra el `main` actual indicó que la rama estaba, antes del commit documental final:
 
-## Verificación final de Supabase
+```text
+ahead_by: 38
+behind_by: 3
+```
 
-Producción, read-only:
+Por tanto, también sigue pendiente ejecutar la línea base real de `main` y comparar sus resultados contra el HEAD final de la rama. No se integró `main` automáticamente porque no puede validarse el resultado en este entorno.
 
-- migración `20260711024125` registrada: PASS;
-- migración `20260711122554` registrada: PASS;
-- archivo local con versiones coincidentes: PASS;
-- 4/4 artículos reales con `source_product_id`: PASS;
-- 0 artículos mapeables todavía nulos: PASS;
-- snapshots de `EC-00000010–12` con `sourceProductId`: PASS;
-- trigger de mapping presente: PASS;
-- `PUBLIC` sin `EXECUTE` sobre claim: PASS;
-- helpers privados cerrados: PASS;
-- grants directos cliente sobre tablas: 0;
-- claims residuales en `EC-00000010–12`: 0;
-- estados de pedidos reales no modificados durante la verificación read-only.
+## Supabase
+
+No se realizaron cambios en Supabase durante `ECOM.POS.1.2`.
+
+No se aplicaron migraciones, no se modificaron triggers, claims, pedidos, `source_product_id` ni los pedidos `EC-00000010–12`.
+
+```text
+Supabase: SIN CAMBIOS
+```
 
 ## Vercel
 
-No se invocó manualmente Vercel mediante API, CLI o agentes. No se creó, forzó, promovió ni validó preview. La integración automática de GitHub puede registrar un check, pero no se utiliza como evidencia.
+No se invocó manualmente Vercel mediante API, CLI o agentes. No se creó, intentó, forzó, promovió ni validó preview.
+
+```text
+Vercel manual: NO UTILIZADO
+```
+
+Un check automático de GitHub puede aparecer, pero no se utiliza como evidencia.
 
 ## Estado de aceptación
 
 ```text
-Mapeo de pedidos reales: PASS
-Migraciones alineadas: PASS
-Checkout fail-closed implementado: PASS DE REVISIÓN ESTÁTICA
-Venta abierta bloqueada implementada: PASS DE REVISIÓN ESTÁTICA
-Cocina y split bloqueados implementados: PASS DE REVISIÓN ESTÁTICA
-Apartados bloqueados implementados: PASS DE REVISIÓN ESTÁTICA
-Reconciliación remoto/local implementada: PASS DE REVISIÓN ESTÁTICA
-Protección de PII: PASS DE REVISIÓN ESTÁTICA + COBERTURA AÑADIDA
-Supabase: PASS
-SQL: PASS
-ESLint: PENDIENTE
-Vitest: PENDIENTE
+Checkout real usePosCheckout: IMPLEMENTADO
+handleInitiateCheckout fail-closed: IMPLEMENTADO
+handleProcessOrder fail-closed: IMPLEMENTADO
+handleQuickCajaSubmit fail-closed: IMPLEMENTADO
+Snapshot obsoleto: IMPLEMENTADO + COBERTURA AÑADIDA
+Quick action de mesas: COBERTURA AÑADIDA
+Descuentos desktop: IMPLEMENTADO + COBERTURA AÑADIDA
+Descuentos móvil: PROTECCIÓN CONSERVADA + COBERTURA EXISTENTE
+OrderDiscountPanel directo: IMPLEMENTADO + COBERTURA AÑADIDA
+Descuentos por línea: IMPLEMENTADO + COBERTURA AÑADIDA
+Orden POS normal: COBERTURA DE REGRESIÓN AÑADIDA
+Parseo sintáctico limitado: PASS
+ESLint específico: PENDIENTE
+Vitest específico: PENDIENTE
+Regresión completa: PENDIENTE
 Build global: PENDIENTE
-Línea base main: PENDIENTE
+npm run lint: PENDIENTE
+npm run test:ci: PENDIENTE
+Comparación ejecutable contra main: PENDIENTE
+Supabase: SIN CAMBIOS
 Vercel manual: NO UTILIZADO
 ```
 
-El PR #88 debe permanecer en draft. No marcar `ready for review`, no declarar `ECOM.POS.1.1 PASS` y no mergear hasta ejecutar la validación frontend/global íntegra y corregir únicamente regresiones introducidas por esta rama.
+## Decisión final
+
+```text
+ECOM.POS.1.2 PENDING GLOBAL VALIDATION
+```
+
+El PR #88 debe permanecer en draft. No marcar `ready for review`, no declarar `ECOM.POS.1.2 PASS` y no mergear hasta ejecutar la validación frontend/global íntegra sobre el HEAD final y corregir únicamente regresiones introducidas por esta rama.
