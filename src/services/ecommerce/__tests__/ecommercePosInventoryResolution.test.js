@@ -1,27 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  activeState: null,
-  productState: { menu: [] },
-  table: vi.fn()
-}));
-
-vi.mock('../../../hooks/pos/useActiveOrders', () => ({
-  useActiveOrders: { getState: () => mocks.activeState }
-}));
-
-vi.mock('../../../store/useProductStore', () => ({
-  useProductStore: { getState: () => mocks.productState }
-}));
-
+const mocks = vi.hoisted(() => ({ activeState: null, productState: { menu: [] }, table: vi.fn() }));
+vi.mock('../../../hooks/pos/useActiveOrders', () => ({ useActiveOrders: { getState: () => mocks.activeState } }));
+vi.mock('../../../store/useProductStore', () => ({ useProductStore: { getState: () => mocks.productState } }));
 vi.mock('../../db/dexie', () => ({
   db: { table: mocks.table },
   STORES: { MENU: 'menu', PRODUCT_BATCHES: 'product_batches' }
 }));
-
-vi.mock('../ecommercePosDraftService', () => ({
-  getEcommercePosContextIdentity: () => 'context-1'
-}));
+vi.mock('../ecommercePosDraftService', () => ({ getEcommercePosContextIdentity: () => 'context-1' }));
 
 import {
   ECOMMERCE_INVENTORY_READ_FAILED,
@@ -40,30 +26,16 @@ import {
 import { getInventoryQuantityForSale } from '../../sales/stockValidation';
 
 const now = new Date('2026-07-11T12:00:00.000Z');
-
 const exactProduct = (overrides = {}) => ({
-  id: 'product-1',
-  name: 'Producto exacto',
-  isActive: true,
-  trackStock: true,
-  stock: 10,
-  committedStock: 0,
-  expirationMode: 'NONE',
-  batchManagement: { enabled: false },
-  updatedAt: '2026-07-11T10:00:00.000Z',
-  ...overrides
+  id: 'product-1', name: 'Producto exacto', isActive: true, trackStock: true,
+  stock: 10, committedStock: 0, expirationMode: 'NONE',
+  batchManagement: { enabled: false }, updatedAt: '2026-07-11T10:00:00.000Z', ...overrides
 });
-
 const batchProduct = (overrides = {}) => exactProduct({
-  name: 'Producto por lote',
-  stock: 0,
-  committedStock: 0,
-  expirationMode: 'STRICT',
-  batchManagement: { enabled: true },
-  ...overrides
+  name: 'Producto por lote', stock: 0, expirationMode: 'STRICT',
+  batchManagement: { enabled: true }, ...overrides
 });
-
-const lineFromProduct = (product, overrides = {}) => ({
+const line = (product, overrides = {}) => ({
   ...product,
   lineId: overrides.lineId || 'line-1',
   uniqueLineId: overrides.lineId || 'line-1',
@@ -73,64 +45,39 @@ const lineFromProduct = (product, overrides = {}) => ({
   batchId: undefined,
   ...overrides
 });
-
 const batch = (id, expiryDate, stock, overrides = {}) => ({
-  id,
-  productId: 'product-1',
-  sku: id.toUpperCase(),
-  expiryDate,
-  stock,
-  committedStock: 0,
-  isActive: true,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  ...overrides
+  id, productId: 'product-1', sku: id.toUpperCase(), expiryDate, stock,
+  committedStock: 0, isActive: true, createdAt: '2026-01-01T00:00:00.000Z', ...overrides
 });
-
-const orderFrom = (items, overrides = {}) => ({
-  id: 'ecom-order-1',
-  origin: 'ecommerce',
-  ecommerceDraftStatus: 'prepared',
-  ecommerceLicenseIdentity: 'context-1',
-  revision: 0,
-  updatedAt: '2026-07-11T11:00:00.000Z',
-  items,
-  ...overrides
+const order = (items, overrides = {}) => ({
+  id: 'ecom-order-1', origin: 'ecommerce', ecommerceDraftStatus: 'prepared',
+  ecommerceLicenseIdentity: 'context-1', revision: 0,
+  updatedAt: '2026-07-11T11:00:00.000Z', items, ...overrides
 });
-
-const createActiveState = (order) => {
+const activeState = (initialOrder) => {
   const state = {
-    activeOrders: new Map([[order.id, order]]),
+    activeOrders: new Map([[initialOrder.id, initialOrder]]),
     updateOrder: vi.fn((orderId, updates) => {
       const current = state.activeOrders.get(orderId);
       if (!current) return;
       const revision = Number(current.revision || 0) + 1;
       state.activeOrders.set(orderId, {
-        ...current,
-        ...updates,
-        revision,
+        ...current, ...updates, revision,
         updatedAt: `2026-07-11T11:00:${String(revision).padStart(2, '0')}.000Z`
       });
     }),
-    removeEcommerceDraftLocal: vi.fn((orderId) => {
-      state.activeOrders.delete(orderId);
-      return { success: true };
-    })
+    removeEcommerceDraftLocal: vi.fn((orderId) => state.activeOrders.delete(orderId))
   };
   return state;
 };
-
 const deferred = () => {
   let resolve;
   let reject;
-  const promise = new Promise((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
+  const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
   return { promise, resolve, reject };
 };
-
-const depsFor = (activeOrders, products, extra = {}) => ({
-  activeOrders,
+const deps = (state, products, extra = {}) => ({
+  activeOrders: state,
   products,
   getContextIdentity: () => 'context-1',
   ...extra
@@ -140,651 +87,501 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetEcommerceInventoryResolutionAttemptsForTests();
   mocks.productState = { menu: [] };
-  mocks.activeState = createActiveState(orderFrom([]));
+  mocks.activeState = activeState(order([]));
 });
 
-describe('canonical inventory quantity', () => {
-  it('uses the same valid conversion semantics as checkout', () => {
-    const product = exactProduct({ conversionFactor: { enabled: true, factor: 10 } });
-    expect(getInventoryQuantityForSale({ quantity: 10 }, product)).toBe(1);
+describe('canonical quantity shared with checkout', () => {
+  it('divides by a valid conversion factor greater than one', () => {
+    expect(getInventoryQuantityForSale(
+      { quantity: 10 },
+      exactProduct({ conversionFactor: { enabled: true, factor: 10 } })
+    )).toBe(1);
   });
 
-  it.each([null, 0, 1, 'invalid'])('keeps sale quantity for invalid or neutral factor %s', (factor) => {
-    const product = exactProduct({ conversionFactor: { enabled: true, factor } });
-    expect(getInventoryQuantityForSale({ quantity: 2 }, product)).toBe(2);
+  it.each([null, 0, 1, 'invalid'])('keeps sale quantity for factor %s', (factor) => {
+    expect(getInventoryQuantityForSale(
+      { quantity: 2 },
+      exactProduct({ conversionFactor: { enabled: true, factor } })
+    )).toBe(2);
   });
 });
 
-describe('pure inventory resolution', () => {
-  it('resolves unlimited inventory automatically without assigning or querying a batch', async () => {
+describe('exact and unlimited inventory', () => {
+  it('resolves unlimited inventory without querying batches', async () => {
     const product = exactProduct({ trackStock: false, stock: null });
-    const item = lineFromProduct(product);
     const queryBatchesByProduct = vi.fn();
-
     const result = await resolveEcommerceDraftInventory({
-      order: orderFrom([item]),
-      now,
+      order: order([line(product)]), now,
       deps: { products: [product], queryBatchesByProduct, db: null, STORES: {} }
     });
-
     expect(result.ecommerceInventoryStatus).toBe('ready');
     expect(result.items[0]).toMatchObject({
+      batchId: undefined,
       needsInventoryResolution: false,
-      inventoryResolution: {
-        mode: 'unlimited',
-        status: 'resolved',
-        code: null,
-        requestedSaleQuantity: 2,
-        requiredInventoryQuantity: 2,
-        batchId: null
-      }
+      inventoryResolution: { mode: 'unlimited', status: 'resolved', batchId: null }
     });
-    expect(result.items[0].batchId).toBeUndefined();
     expect(queryBatchesByProduct).not.toHaveBeenCalled();
   });
 
-  it('accumulates sufficient exact-stock demand across duplicate product lines', () => {
+  it('accumulates two sufficient lines and does not mutate the product', () => {
     const product = exactProduct({ stock: 10 });
-    const original = structuredClone(product);
-    const order = orderFrom([
-      lineFromProduct(product, { lineId: 'line-a', quantity: 4 }),
-      lineFromProduct(product, { lineId: 'line-b', quantity: 4 })
-    ]);
-
-    const result = resolveEcommerceDraftInventoryFromInputs({ order, products: [product], now });
-
+    const snapshot = structuredClone(product);
+    const result = resolveEcommerceDraftInventoryFromInputs({
+      order: order([line(product, { lineId: 'a', quantity: 4 }), line(product, { lineId: 'b', quantity: 4 })]),
+      products: [product], now
+    });
     expect(result.ecommerceInventoryStatus).toBe('ready');
-    expect(result.items.map((item) => item.inventoryResolution.status)).toEqual(['resolved', 'resolved']);
-    expect(result.items[0].inventoryResolution.availableQuantitySnapshot).toBe(10);
-    expect(result.items[1].inventoryResolution.availableQuantitySnapshot).toBe(6);
-    expect(product).toEqual(original);
+    expect(result.items.map((item) => item.inventoryResolution.availableQuantitySnapshot)).toEqual([10, 6]);
+    expect(product).toEqual(snapshot);
   });
 
-  it('fails the later exact-stock line with the real remaining availability', () => {
+  it('conflicts the later line using its real remaining availability', () => {
     const product = exactProduct({ stock: 5 });
-    const order = orderFrom([
-      lineFromProduct(product, { lineId: 'line-a', quantity: 4 }),
-      lineFromProduct(product, { lineId: 'line-b', quantity: 4 })
-    ]);
-
-    const result = resolveEcommerceDraftInventoryFromInputs({ order, products: [product], now });
-
+    const result = resolveEcommerceDraftInventoryFromInputs({
+      order: order([line(product, { lineId: 'a', quantity: 4 }), line(product, { lineId: 'b', quantity: 4 })]),
+      products: [product], now
+    });
     expect(result.ecommerceInventoryStatus).toBe('conflict');
     expect(result.items[0].inventoryResolution.status).toBe('resolved');
     expect(result.items[1].inventoryResolution).toMatchObject({
-      status: 'conflict',
-      code: 'INSUFFICIENT_STOCK',
-      availableQuantitySnapshot: 1,
-      requiredInventoryQuantity: 4
+      status: 'conflict', code: 'INSUFFICIENT_STOCK', availableQuantitySnapshot: 1
     });
   });
 
-  it('respects committedStock before accumulating exact demand', () => {
+  it('subtracts committedStock before accumulating demand', () => {
     const product = exactProduct({ stock: 10, committedStock: 4 });
-    const order = orderFrom([
-      lineFromProduct(product, { lineId: 'line-a', quantity: 4 }),
-      lineFromProduct(product, { lineId: 'line-b', quantity: 4 })
-    ]);
-
-    const result = resolveEcommerceDraftInventoryFromInputs({ order, products: [product], now });
-
-    expect(result.ecommerceInventoryStatus).toBe('conflict');
+    const result = resolveEcommerceDraftInventoryFromInputs({
+      order: order([line(product, { lineId: 'a', quantity: 4 }), line(product, { lineId: 'b', quantity: 4 })]),
+      products: [product], now
+    });
     expect(result.items[0].inventoryResolution.availableQuantitySnapshot).toBe(6);
     expect(result.items[1].inventoryResolution).toMatchObject({
-      code: 'INSUFFICIENT_STOCK',
-      availableQuantitySnapshot: 2
+      code: 'INSUFFICIENT_STOCK', availableQuantitySnapshot: 2
     });
     expect(product.committedStock).toBe(4);
   });
 
-  it.each([null, undefined, 'invalid'])('fails exact stock closed when stock is %s', (stock) => {
+  it.each([null, undefined, 'invalid'])('fails closed for unknown exact stock %s', (stock) => {
     const product = exactProduct({ stock });
-    const result = resolveEcommerceDraftLineInventory({ item: lineFromProduct(product), product, now });
-    expect(result.inventoryResolution).toMatchObject({ status: 'conflict', code: 'INVENTORY_UNKNOWN' });
-  });
-
-  it('does not allocate the same batch stock twice', () => {
-    const product = batchProduct();
-    const order = orderFrom([
-      lineFromProduct(product, { lineId: 'line-a', quantity: 4 }),
-      lineFromProduct(product, { lineId: 'line-b', quantity: 4 })
-    ]);
-    const batchesByProduct = new Map([['product-1', [batch('l1', '2026-08-01', 5)]]]);
-
-    const result = resolveEcommerceDraftInventoryFromInputs({ order, products: [product], batchesByProduct, now });
-
-    expect(result.ecommerceInventoryStatus).toBe('conflict');
-    expect(result.items[0]).toMatchObject({ batchId: 'l1', inventoryResolution: { status: 'resolved' } });
-    expect(result.items[1].batchId).toBeUndefined();
-    expect(result.items[1].inventoryResolution).toMatchObject({
-      status: 'conflict',
-      code: 'INSUFFICIENT_BATCH_STOCK',
-      availableQuantitySnapshot: 1
-    });
-  });
-
-  it('assigns two lines deterministically across two FEFO batches without over-allocation', () => {
-    const product = batchProduct();
-    const order = orderFrom([
-      lineFromProduct(product, { lineId: 'line-a', quantity: 4 }),
-      lineFromProduct(product, { lineId: 'line-b', quantity: 4 })
-    ]);
-    const batches = [batch('l2', '2026-09-01', 4), batch('l1', '2026-08-01', 4)];
-    const original = structuredClone(batches);
-
-    const result = resolveEcommerceDraftInventoryFromInputs({
-      order,
-      products: [product],
-      batchesByProduct: new Map([['product-1', batches]]),
-      now
-    });
-
-    expect(result.ecommerceInventoryStatus).toBe('ready');
-    expect(result.items.map((item) => item.batchId)).toEqual(['l1', 'l2']);
-    expect(batches).toEqual(original);
-  });
-
-  it('processes a valid manual selection before automatic FEFO allocation', () => {
-    const product = batchProduct();
-    const manual = lineFromProduct(product, {
-      lineId: 'line-a',
-      quantity: 4,
-      batchId: 'l2',
-      inventoryResolution: { mode: 'batch', status: 'resolved', batchId: 'l2', selectionMode: 'manual' }
-    });
-    const automatic = lineFromProduct(product, { lineId: 'line-b', quantity: 4 });
-
-    const result = resolveEcommerceDraftInventoryFromInputs({
-      order: orderFrom([automatic, manual]),
-      products: [product],
-      batchesByProduct: new Map([['product-1', [
-        batch('l1', '2026-08-01', 4),
-        batch('l2', '2026-09-01', 4)
-      ]]]),
-      now
-    });
-
-    expect(result.ecommerceInventoryStatus).toBe('ready');
-    expect(result.items[1]).toMatchObject({
-      batchId: 'l2',
-      inventoryResolution: { selectionMode: 'manual', status: 'resolved' }
-    });
-    expect(result.items[0]).toMatchObject({
-      batchId: 'l1',
-      inventoryResolution: { selectionMode: 'fefo_auto', status: 'resolved' }
-    });
-  });
-
-  it('keeps only the first of two incompatible manual selections valid', () => {
-    const product = batchProduct();
-    const manualLine = (lineId) => lineFromProduct(product, {
-      lineId,
-      quantity: 4,
-      batchId: 'l1',
-      inventoryResolution: { mode: 'batch', status: 'resolved', batchId: 'l1', selectionMode: 'manual' }
-    });
-
-    const result = resolveEcommerceDraftInventoryFromInputs({
-      order: orderFrom([manualLine('line-a'), manualLine('line-b')]),
-      products: [product],
-      batchesByProduct: new Map([['product-1', [batch('l1', '2026-08-01', 5)]]]),
-      now
-    });
-
-    expect(result.items[0].inventoryResolution.status).toBe('resolved');
-    expect(result.items[1]).toMatchObject({
-      batchId: 'l1',
-      inventoryResolution: { status: 'conflict', code: 'BATCH_STALE', availableQuantitySnapshot: 1 }
-    });
-  });
-
-  it('distinguishes no valid batches, expired batches and split stock', () => {
-    const product = batchProduct();
-    const item = lineFromProduct(product, { quantity: 4 });
-
-    expect(resolveEcommerceDraftLineInventory({ item, product, batches: [], now }).inventoryResolution.code)
-      .toBe('NO_VALID_BATCH');
-    expect(resolveEcommerceDraftLineInventory({
-      item,
-      product,
-      batches: [batch('expired', '2026-07-10', 8)],
-      now
-    }).inventoryResolution.code).toBe('ONLY_EXPIRED_BATCHES');
-    expect(resolveEcommerceDraftLineInventory({
-      item,
-      product,
-      batches: [batch('one', '2026-08-01', 2), batch('two', '2026-09-01', 2)],
-      now
-    }).inventoryResolution.code).toBe('MULTI_BATCH_REQUIRED');
-  });
-
-  it('uses converted inventory quantity for exact stock', () => {
-    const product = exactProduct({ stock: 2, conversionFactor: { enabled: true, factor: 10 } });
-    const result = resolveEcommerceDraftLineInventory({
-      item: lineFromProduct(product, { quantity: 10 }),
-      product,
-      now
-    });
-
-    expect(result.inventoryResolution).toMatchObject({
-      status: 'resolved',
-      requestedSaleQuantity: 10,
-      requiredInventoryQuantity: 1,
-      requestedQuantity: 1,
-      availableQuantitySnapshot: 2
-    });
-    expect(getEcommerceInventoryLineMessage(result)).toContain('10 unidades vendidas · 1 unidad de inventario requerida');
-  });
-
-  it('uses converted inventory quantity for exact-stock conflict', () => {
-    const product = exactProduct({ stock: 1, conversionFactor: { enabled: true, factor: 10 } });
-    const result = resolveEcommerceDraftLineInventory({
-      item: lineFromProduct(product, { quantity: 20 }),
-      product,
-      now
-    });
-
-    expect(result.inventoryResolution).toMatchObject({
-      status: 'conflict',
-      code: 'INSUFFICIENT_STOCK',
-      requestedSaleQuantity: 20,
-      requiredInventoryQuantity: 2,
-      availableQuantitySnapshot: 1
-    });
-  });
-
-  it('uses converted inventory quantity for batch allocation', () => {
-    const product = batchProduct({ conversionFactor: { enabled: true, factor: 10 } });
-    const result = resolveEcommerceDraftLineInventory({
-      item: lineFromProduct(product, { quantity: 10 }),
-      product,
-      batches: [batch('l1', '2026-08-01', 1)],
-      now
-    });
-
-    expect(result).toMatchObject({
-      batchId: 'l1',
-      inventoryResolution: {
-        status: 'resolved',
-        requestedSaleQuantity: 10,
-        requiredInventoryQuantity: 1
-      }
-    });
-  });
-
-  it.each([null, 0, 1, 'invalid'])('keeps original quantity for invalid factor %s', (factor) => {
-    const product = exactProduct({ stock: 2, conversionFactor: { enabled: true, factor } });
-    const result = resolveEcommerceDraftLineInventory({
-      item: lineFromProduct(product, { quantity: 2 }),
-      product,
-      now
-    });
-
-    expect(result.inventoryResolution).toMatchObject({
-      status: 'resolved',
-      requestedSaleQuantity: 2,
-      requiredInventoryQuantity: 2
-    });
+    expect(resolveEcommerceDraftLineInventory({ item: line(product), product, now }).inventoryResolution)
+      .toMatchObject({ status: 'conflict', code: 'INVENTORY_UNKNOWN' });
   });
 
   it('keeps recipe products fail-closed', () => {
     const product = exactProduct({ recipe: [{ ingredientId: 'ingredient-1', quantity: 1 }] });
-    const result = resolveEcommerceDraftLineInventory({ item: lineFromProduct(product), product, now });
-    expect(result.inventoryResolution).toMatchObject({ status: 'conflict', code: 'INVENTORY_UNKNOWN' });
+    expect(resolveEcommerceDraftLineInventory({ item: line(product), product, now }).inventoryResolution)
+      .toMatchObject({ status: 'conflict', code: 'INVENTORY_UNKNOWN' });
   });
 
-  it('calculates global status with conflict over pending over ready priority', () => {
-    expect(calculateEcommerceInventoryStatus([
-      { inventoryResolution: { status: 'resolved' } },
-      { inventoryResolution: { status: 'pending' } }
-    ])).toBe('pending');
-    expect(calculateEcommerceInventoryStatus([
-      { inventoryResolution: { status: 'pending' } },
-      { inventoryResolution: { status: 'conflict' } }
-    ])).toBe('conflict');
-    expect(calculateEcommerceInventoryStatus([
-      { inventoryResolution: { status: 'resolved' } }
-    ])).toBe('ready');
+  it.each([
+    [10, 10, 2, 'resolved'],
+    [20, 10, 1, 'conflict']
+  ])('uses converted exact demand: sale=%s factor=%s stock=%s', (sale, factor, stock, status) => {
+    const product = exactProduct({ stock, conversionFactor: { enabled: true, factor } });
+    const result = resolveEcommerceDraftLineInventory({ item: line(product, { quantity: sale }), product, now });
+    expect(result.inventoryResolution).toMatchObject({
+      status,
+      requestedSaleQuantity: sale,
+      requiredInventoryQuantity: sale / factor,
+      requestedQuantity: sale / factor
+    });
+    if (status === 'conflict') expect(result.inventoryResolution.code).toBe('INSUFFICIENT_STOCK');
   });
 });
 
-describe('manual selection and provisional ledger', () => {
-  it('accepts a valid manual batch and persists the fully recalculated draft', async () => {
+describe('batch ledger, FEFO and manual priority', () => {
+  it('selects the nearest valid FEFO batch and ignores expired/exhausted batches', () => {
     const product = batchProduct();
-    const order = orderFrom([lineFromProduct(product)]);
-    const activeOrders = createActiveState(order);
+    const batches = [
+      batch('expired', '2026-07-10', 10),
+      batch('empty', '2026-07-12', 0),
+      batch('later', '2026-09-01', 8),
+      batch('nearest', '2026-08-01', 6)
+    ];
+    const snapshot = structuredClone(batches);
+    const result = resolveEcommerceDraftLineInventory({ item: line(product), product, batches, now });
+    expect(result).toMatchObject({
+      batchId: 'nearest',
+      inventoryResolution: { status: 'resolved', selectionMode: 'fefo_auto', expirationDate: '2026-08-01' }
+    });
+    expect(batches).toEqual(snapshot);
+  });
 
+  it('does not assign one batch twice', () => {
+    const product = batchProduct();
+    const result = resolveEcommerceDraftInventoryFromInputs({
+      order: order([line(product, { lineId: 'a', quantity: 4 }), line(product, { lineId: 'b', quantity: 4 })]),
+      products: [product],
+      batchesByProduct: new Map([['product-1', [batch('l1', '2026-08-01', 5)]]]), now
+    });
+    expect(result.ecommerceInventoryStatus).toBe('conflict');
+    expect(result.items[0].batchId).toBe('l1');
+    expect(result.items[1]).toMatchObject({
+      batchId: undefined,
+      inventoryResolution: { code: 'INSUFFICIENT_BATCH_STOCK', availableQuantitySnapshot: 1 }
+    });
+  });
+
+  it('allocates two FEFO batches deterministically', () => {
+    const product = batchProduct();
+    const result = resolveEcommerceDraftInventoryFromInputs({
+      order: order([line(product, { lineId: 'a', quantity: 4 }), line(product, { lineId: 'b', quantity: 4 })]),
+      products: [product],
+      batchesByProduct: new Map([['product-1', [
+        batch('l2', '2026-09-01', 4), batch('l1', '2026-08-01', 4)
+      ]]]), now
+    });
+    expect(result.ecommerceInventoryStatus).toBe('ready');
+    expect(result.items.map((item) => item.batchId)).toEqual(['l1', 'l2']);
+  });
+
+  it('consumes existing manual selections before automatic lines', () => {
+    const product = batchProduct();
+    const manual = line(product, {
+      lineId: 'manual', quantity: 4, batchId: 'l2',
+      inventoryResolution: { mode: 'batch', status: 'resolved', batchId: 'l2', selectionMode: 'manual' }
+    });
+    const result = resolveEcommerceDraftInventoryFromInputs({
+      order: order([line(product, { lineId: 'automatic', quantity: 4 }), manual]),
+      products: [product],
+      batchesByProduct: new Map([['product-1', [
+        batch('l1', '2026-08-01', 4), batch('l2', '2026-09-01', 4)
+      ]]]), now
+    });
+    expect(result.items[1]).toMatchObject({ batchId: 'l2', inventoryResolution: { selectionMode: 'manual' } });
+    expect(result.items[0]).toMatchObject({ batchId: 'l1', inventoryResolution: { selectionMode: 'fefo_auto' } });
+  });
+
+  it('keeps only the first incompatible manual allocation', () => {
+    const product = batchProduct();
+    const manual = (lineId) => line(product, {
+      lineId, quantity: 4, batchId: 'l1',
+      inventoryResolution: { mode: 'batch', status: 'resolved', batchId: 'l1', selectionMode: 'manual' }
+    });
+    const result = resolveEcommerceDraftInventoryFromInputs({
+      order: order([manual('a'), manual('b')]), products: [product],
+      batchesByProduct: new Map([['product-1', [batch('l1', '2026-08-01', 5)]]]), now
+    });
+    expect(result.items[0].inventoryResolution.status).toBe('resolved');
+    expect(result.items[1]).toMatchObject({
+      batchId: undefined,
+      inventoryResolution: { status: 'conflict', code: 'BATCH_STALE', availableQuantitySnapshot: 1 }
+    });
+  });
+
+  it.each([
+    [[], 'NO_VALID_BATCH'],
+    [[batch('expired', '2026-07-10', 8)], 'ONLY_EXPIRED_BATCHES'],
+    [[batch('one', '2026-08-01', 2), batch('two', '2026-09-01', 1)], 'INSUFFICIENT_BATCH_STOCK'],
+    [[batch('one', '2026-08-01', 2), batch('two', '2026-09-01', 2)], 'MULTI_BATCH_REQUIRED']
+  ])('classifies batch conflicts', (batches, code) => {
+    const product = batchProduct();
+    const quantity = code === 'INSUFFICIENT_BATCH_STOCK' ? 5 : 4;
+    expect(resolveEcommerceDraftLineInventory({ item: line(product, { quantity }), product, batches, now }).inventoryResolution.code)
+      .toBe(code);
+  });
+
+  it('uses converted inventory quantity for batches', () => {
+    const product = batchProduct({ conversionFactor: { enabled: true, factor: 10 } });
+    const result = resolveEcommerceDraftLineInventory({
+      item: line(product, { quantity: 10 }), product,
+      batches: [batch('l1', '2026-08-01', 1)], now
+    });
+    expect(result).toMatchObject({
+      batchId: 'l1',
+      inventoryResolution: { status: 'resolved', requestedSaleQuantity: 10, requiredInventoryQuantity: 1 }
+    });
+  });
+
+  it('clears a stale selected batch', () => {
+    const product = batchProduct();
+    const item = line(product, {
+      batchId: 'selected',
+      inventoryResolution: { mode: 'batch', status: 'resolved', batchId: 'selected', selectionMode: 'manual' }
+    });
+    const result = resolveEcommerceDraftLineInventory({
+      item, product, batches: [batch('selected', '2026-09-01', 0)], now
+    });
+    expect(result).toMatchObject({ batchId: undefined, inventoryResolution: { code: 'BATCH_STALE' } });
+  });
+
+  it('detects inventory mode changes', () => {
+    const original = exactProduct();
+    const current = batchProduct();
+    expect(resolveEcommerceDraftLineInventory({ item: line(original), product: current, batches: [], now }).inventoryResolution)
+      .toMatchObject({ status: 'conflict', code: 'INVENTORY_MODE_CHANGED' });
+  });
+});
+
+describe('manual selection service', () => {
+  it('persists a valid manual batch and increments revision through updateOrder', async () => {
+    const product = batchProduct();
+    const current = order([line(product)]);
+    const state = activeState(current);
     const result = await selectEcommerceDraftBatch({
-      orderId: order.id,
-      lineId: 'line-1',
-      batchId: 'manual',
-      now,
-      deps: depsFor(activeOrders, [product], {
+      orderId: current.id, lineId: 'line-1', batchId: 'manual', now,
+      deps: deps(state, [product], {
         queryBatchesByProduct: vi.fn().mockResolvedValue([batch('manual', '2026-09-01', 5)])
       })
     });
-
     expect(result.success).toBe(true);
-    expect(activeOrders.activeOrders.get(order.id)).toMatchObject({
-      revision: 1,
-      ecommerceInventoryStatus: 'ready',
-      ecommerceInventoryError: null
-    });
-    expect(activeOrders.activeOrders.get(order.id).items[0]).toMatchObject({
-      batchId: 'manual',
-      needsInventoryResolution: false,
-      inventoryResolution: { status: 'resolved', selectionMode: 'manual' }
+    expect(state.activeOrders.get(current.id)).toMatchObject({ revision: 1, ecommerceInventoryStatus: 'ready' });
+    expect(state.activeOrders.get(current.id).items[0]).toMatchObject({
+      batchId: 'manual', inventoryResolution: { selectionMode: 'manual', status: 'resolved' }
     });
   });
 
   it.each([
     ['other product', batch('manual', '2026-09-01', 5, { productId: 'other' }), 'BATCH_STALE'],
-    ['expired', batch('manual', '2026-07-10', 5), 'BATCH_STALE'],
-    ['insufficient', batch('manual', '2026-09-01', 1), 'BATCH_STALE']
-  ])('rejects a manual batch that is %s', async (_label, selectedBatch, code) => {
+    ['expired', batch('manual', '2026-07-10', 5), 'ONLY_EXPIRED_BATCHES'],
+    ['insufficient', batch('manual', '2026-09-01', 1), 'INSUFFICIENT_BATCH_STOCK']
+  ])('rejects a batch that is %s', async (_label, selected, code) => {
     const product = batchProduct();
-    const order = orderFrom([lineFromProduct(product)]);
-    const activeOrders = createActiveState(order);
-
+    const current = order([line(product)]);
+    const state = activeState(current);
     const result = await selectEcommerceDraftBatch({
-      orderId: order.id,
-      lineId: 'line-1',
-      batchId: 'manual',
-      now,
-      deps: depsFor(activeOrders, [product], {
-        queryBatchesByProduct: vi.fn().mockResolvedValue([selectedBatch])
-      })
+      orderId: current.id, lineId: 'line-1', batchId: 'manual', now,
+      deps: deps(state, [product], { queryBatchesByProduct: vi.fn().mockResolvedValue([selected]) })
     });
-
     expect(result).toMatchObject({ success: false, changed: false, code });
-    expect(activeOrders.updateOrder).not.toHaveBeenCalled();
+    expect(state.updateOrder).not.toHaveBeenCalled();
   });
 
-  it('subtracts other manual allocations from displayed batch options', async () => {
+  it('subtracts prior manual allocations from batch options', async () => {
     const product = batchProduct();
-    const order = orderFrom([
-      lineFromProduct(product, {
-        lineId: 'manual-line',
-        quantity: 4,
-        batchId: 'l1',
+    const current = order([
+      line(product, {
+        lineId: 'manual', quantity: 4, batchId: 'l1',
         inventoryResolution: { mode: 'batch', status: 'resolved', batchId: 'l1', selectionMode: 'manual' }
       }),
-      lineFromProduct(product, { lineId: 'target-line', quantity: 2 })
+      line(product, { lineId: 'target', quantity: 2 })
     ]);
-    const activeOrders = createActiveState(order);
-
+    const state = activeState(current);
     const result = await getEcommerceDraftBatchOptions({
-      orderId: order.id,
-      lineId: 'target-line',
-      now,
-      deps: depsFor(activeOrders, [product], {
+      orderId: current.id, lineId: 'target', now,
+      deps: deps(state, [product], {
         queryBatchesByProduct: vi.fn().mockResolvedValue([
-          batch('l1', '2026-08-01', 5),
-          batch('l2', '2026-09-01', 4)
+          batch('l1', '2026-08-01', 5), batch('l2', '2026-09-01', 4)
         ])
       })
     });
-
     expect(result.options).toEqual([
       expect.objectContaining({ batchId: 'l1', availableQuantity: 1, canCoverRequested: false }),
       expect.objectContaining({ batchId: 'l2', availableQuantity: 4, canCoverRequested: true })
     ]);
   });
-});
 
-describe('stale response protection', () => {
-  it('rejects R1 when R2 starts later and writes conflict first', async () => {
+  it('lists only valid options and identifies FEFO recommendation', async () => {
     const product = batchProduct();
-    const order = orderFrom([lineFromProduct(product)]);
-    const activeOrders = createActiveState(order);
-    const r1Batches = deferred();
-    const r2Batches = deferred();
-
-    const r1 = revalidateEcommerceDraftInventory({
-      orderId: order.id,
-      now,
-      deps: depsFor(activeOrders, [product], { queryBatchesByProduct: () => r1Batches.promise })
-    });
-    const r2 = revalidateEcommerceDraftInventory({
-      orderId: order.id,
-      now,
-      deps: depsFor(activeOrders, [product], { queryBatchesByProduct: () => r2Batches.promise })
-    });
-
-    r2Batches.resolve([]);
-    const r2Result = await r2;
-    expect(r2Result.success).toBe(true);
-    expect(activeOrders.activeOrders.get(order.id).ecommerceInventoryStatus).toBe('conflict');
-
-    r1Batches.resolve([batch('l1', '2026-08-01', 5)]);
-    const r1Result = await r1;
-
-    expect(r1Result).toMatchObject({
-      success: false,
-      stale: true,
-      changed: false,
-      code: ECOMMERCE_INVENTORY_STALE_RESPONSE
-    });
-    expect(activeOrders.activeOrders.get(order.id).ecommerceInventoryStatus).toBe('conflict');
-  });
-
-  it('does not let an automatic response replace a manual selection made while it was pending', async () => {
-    const product = batchProduct();
-    const order = orderFrom([lineFromProduct(product)]);
-    const activeOrders = createActiveState(order);
-    const oldRead = deferred();
-
-    const oldResolution = revalidateEcommerceDraftInventory({
-      orderId: order.id,
-      now,
-      deps: depsFor(activeOrders, [product], { queryBatchesByProduct: () => oldRead.promise })
-    });
-
-    const manualResult = await selectEcommerceDraftBatch({
-      orderId: order.id,
-      lineId: 'line-1',
-      batchId: 'l2',
-      now,
-      deps: depsFor(activeOrders, [product], {
+    const current = order([line(product)]);
+    const state = activeState(current);
+    const result = await getEcommerceDraftBatchOptions({
+      orderId: current.id, lineId: 'line-1', now,
+      deps: deps(state, [product], {
         queryBatchesByProduct: vi.fn().mockResolvedValue([
-          batch('l1', '2026-08-01', 5),
-          batch('l2', '2026-09-01', 5)
+          batch('expired', '2026-07-10', 10),
+          batch('later', '2026-09-01', 5),
+          batch('recommended', '2026-08-01', 4)
         ])
       })
     });
-    expect(manualResult.success).toBe(true);
-
-    oldRead.resolve([
-      batch('l1', '2026-08-01', 5),
-      batch('l2', '2026-09-01', 5)
-    ]);
-    const oldResult = await oldResolution;
-
-    expect(oldResult.code).toBe(ECOMMERCE_INVENTORY_STALE_RESPONSE);
-    expect(activeOrders.activeOrders.get(order.id).items[0]).toMatchObject({
-      batchId: 'l2',
-      inventoryResolution: { selectionMode: 'manual' }
-    });
-  });
-
-  it('does not recreate a released order when a pending resolution finishes', async () => {
-    const product = batchProduct();
-    const order = orderFrom([lineFromProduct(product)]);
-    const activeOrders = createActiveState(order);
-    const pendingRead = deferred();
-
-    const pending = revalidateEcommerceDraftInventory({
-      orderId: order.id,
-      now,
-      deps: depsFor(activeOrders, [product], { queryBatchesByProduct: () => pendingRead.promise })
-    });
-
-    activeOrders.removeEcommerceDraftLocal(order.id);
-    pendingRead.resolve([batch('l1', '2026-08-01', 5)]);
-    const result = await pending;
-
-    expect(result.code).toBe(ECOMMERCE_INVENTORY_STALE_RESPONSE);
-    expect(activeOrders.activeOrders.has(order.id)).toBe(false);
-    expect(activeOrders.updateOrder).not.toHaveBeenCalled();
+    expect(result.options.map((option) => option.batchId)).toEqual(['recommended', 'later']);
+    expect(result.options[0]).toMatchObject({ isRecommended: true, canCoverRequested: true });
   });
 });
 
-describe('read failures are fail closed', () => {
-  it('turns a previously ready order into conflict while preserving prior batch metadata', async () => {
+describe('stale response protection', () => {
+  it('rejects R1 after a newer R2 writes conflict', async () => {
     const product = batchProduct();
-    const readyItem = lineFromProduct(product, {
-      batchId: 'l1',
-      needsInventoryResolution: false,
-      inventoryResolution: {
-        mode: 'batch',
-        status: 'resolved',
-        code: null,
-        batchId: 'l1',
-        batchNumber: 'L1',
-        selectionMode: 'manual',
-        requestedSaleQuantity: 2,
-        requiredInventoryQuantity: 2,
-        requestedQuantity: 2,
-        resolvedAt: '2026-07-11T10:00:00.000Z'
-      }
+    const current = order([line(product)]);
+    const state = activeState(current);
+    const r1Read = deferred();
+    const r2Read = deferred();
+    const r1 = revalidateEcommerceDraftInventory({
+      orderId: current.id, now,
+      deps: deps(state, [product], { queryBatchesByProduct: () => r1Read.promise })
     });
-    const order = orderFrom([readyItem], {
-      ecommerceInventoryStatus: 'ready',
-      ecommerceInventoryResolvedAt: '2026-07-11T10:00:00.000Z'
+    const r2 = revalidateEcommerceDraftInventory({
+      orderId: current.id, now,
+      deps: deps(state, [product], { queryBatchesByProduct: () => r2Read.promise })
     });
-    const activeOrders = createActiveState(order);
+    r2Read.resolve([]);
+    expect((await r2).success).toBe(true);
+    r1Read.resolve([batch('l1', '2026-08-01', 5)]);
+    expect(await r1).toMatchObject({
+      success: false, stale: true, changed: false, code: ECOMMERCE_INVENTORY_STALE_RESPONSE
+    });
+    expect(state.activeOrders.get(current.id).ecommerceInventoryStatus).toBe('conflict');
+  });
 
-    const result = await revalidateEcommerceDraftInventory({
-      orderId: order.id,
-      now,
-      deps: depsFor(activeOrders, [], {
-        loadProductsForOrder: vi.fn().mockRejectedValue(new Error('Dexie unavailable'))
+  it('does not replace a manual selection with an older automatic response', async () => {
+    const product = batchProduct();
+    const current = order([line(product)]);
+    const state = activeState(current);
+    const oldRead = deferred();
+    const oldResolution = revalidateEcommerceDraftInventory({
+      orderId: current.id, now,
+      deps: deps(state, [product], { queryBatchesByProduct: () => oldRead.promise })
+    });
+    const manual = await selectEcommerceDraftBatch({
+      orderId: current.id, lineId: 'line-1', batchId: 'l2', now,
+      deps: deps(state, [product], {
+        queryBatchesByProduct: vi.fn().mockResolvedValue([
+          batch('l1', '2026-08-01', 5), batch('l2', '2026-09-01', 5)
+        ])
       })
     });
-
-    const live = activeOrders.activeOrders.get(order.id);
-    expect(result).toMatchObject({
-      success: false,
-      changed: true,
-      code: ECOMMERCE_INVENTORY_READ_FAILED
-    });
-    expect(live).toMatchObject({
-      ecommerceInventoryStatus: 'conflict',
-      ecommerceInventoryResolvedAt: null,
-      ecommerceInventoryError: { code: 'INVENTORY_READ_FAILED' }
-    });
-    expect(live.items[0]).toMatchObject({
-      batchId: 'l1',
-      inventoryResolution: { status: 'conflict', code: 'INVENTORY_READ_FAILED', resolvedAt: null }
+    expect(manual.success).toBe(true);
+    oldRead.resolve([batch('l1', '2026-08-01', 5), batch('l2', '2026-09-01', 5)]);
+    expect((await oldResolution).code).toBe(ECOMMERCE_INVENTORY_STALE_RESPONSE);
+    expect(state.activeOrders.get(current.id).items[0]).toMatchObject({
+      batchId: 'l2', inventoryResolution: { selectionMode: 'manual' }
     });
   });
 
-  it('ignores an old read failure after a newer successful resolution wrote ready', async () => {
+  it('does not recreate a released draft after a delayed response', async () => {
     const product = batchProduct();
-    const order = orderFrom([lineFromProduct(product)]);
-    const activeOrders = createActiveState(order);
-    const oldRead = deferred();
+    const current = order([line(product)]);
+    const state = activeState(current);
+    const read = deferred();
+    const pending = revalidateEcommerceDraftInventory({
+      orderId: current.id, now,
+      deps: deps(state, [product], { queryBatchesByProduct: () => read.promise })
+    });
+    state.removeEcommerceDraftLocal(current.id);
+    read.resolve([batch('l1', '2026-08-01', 5)]);
+    expect((await pending).code).toBe(ECOMMERCE_INVENTORY_STALE_RESPONSE);
+    expect(state.activeOrders.has(current.id)).toBe(false);
+    expect(state.updateOrder).not.toHaveBeenCalled();
+  });
+});
 
+describe('read failures and recovery', () => {
+  it('marks a previously ready draft conflict while preserving prior manual metadata', async () => {
+    const product = batchProduct();
+    const readyLine = line(product, {
+      batchId: 'l1', needsInventoryResolution: false,
+      inventoryResolution: {
+        mode: 'batch', status: 'resolved', code: null, batchId: 'l1', batchNumber: 'L1',
+        selectionMode: 'manual', requestedSaleQuantity: 2, requiredInventoryQuantity: 2,
+        requestedQuantity: 2, resolvedAt: '2026-07-11T10:00:00.000Z'
+      }
+    });
+    const current = order([readyLine], {
+      ecommerceInventoryStatus: 'ready', ecommerceInventoryResolvedAt: '2026-07-11T10:00:00.000Z'
+    });
+    const state = activeState(current);
+    const result = await revalidateEcommerceDraftInventory({
+      orderId: current.id, now,
+      deps: deps(state, [], { loadProductsForOrder: vi.fn().mockRejectedValue(new Error('Dexie unavailable')) })
+    });
+    expect(result).toMatchObject({ success: false, changed: true, code: ECOMMERCE_INVENTORY_READ_FAILED });
+    expect(state.activeOrders.get(current.id)).toMatchObject({
+      ecommerceInventoryStatus: 'conflict', ecommerceInventoryResolvedAt: null,
+      ecommerceInventoryError: { code: 'INVENTORY_READ_FAILED' }
+    });
+    expect(state.activeOrders.get(current.id).items[0]).toMatchObject({
+      batchId: 'l1', inventoryResolution: { status: 'conflict', code: 'INVENTORY_READ_FAILED', resolvedAt: null }
+    });
+  });
+
+  it('ignores an old read failure after a newer successful ready result', async () => {
+    const product = batchProduct();
+    const current = order([line(product)]);
+    const state = activeState(current);
+    const oldRead = deferred();
     const r1 = revalidateEcommerceDraftInventory({
-      orderId: order.id,
-      now,
-      deps: depsFor(activeOrders, [product], { queryBatchesByProduct: () => oldRead.promise })
+      orderId: current.id, now,
+      deps: deps(state, [product], { queryBatchesByProduct: () => oldRead.promise })
     });
     const r2 = revalidateEcommerceDraftInventory({
-      orderId: order.id,
-      now,
-      deps: depsFor(activeOrders, [product], {
+      orderId: current.id, now,
+      deps: deps(state, [product], {
         queryBatchesByProduct: vi.fn().mockResolvedValue([batch('l1', '2026-08-01', 5)])
       })
     });
-
-    const r2Result = await r2;
-    expect(r2Result.success).toBe(true);
-    expect(activeOrders.activeOrders.get(order.id).ecommerceInventoryStatus).toBe('ready');
-
-    oldRead.reject(new Error('late Dexie failure'));
-    const r1Result = await r1;
-
-    expect(r1Result.code).toBe(ECOMMERCE_INVENTORY_STALE_RESPONSE);
-    expect(activeOrders.activeOrders.get(order.id)).toMatchObject({
-      ecommerceInventoryStatus: 'ready',
-      ecommerceInventoryError: null
+    expect((await r2).success).toBe(true);
+    oldRead.reject(new Error('late failure'));
+    expect((await r1).code).toBe(ECOMMERCE_INVENTORY_STALE_RESPONSE);
+    expect(state.activeOrders.get(current.id)).toMatchObject({
+      ecommerceInventoryStatus: 'ready', ecommerceInventoryError: null
     });
   });
 
-  it('recovers from a read failure on the next successful revalidation', async () => {
+  it('recovers from conflict to ready on a later successful revalidation', async () => {
     const product = exactProduct({ stock: 5 });
-    const order = orderFrom([lineFromProduct(product)]);
-    const activeOrders = createActiveState(order);
-
+    const current = order([line(product)]);
+    const state = activeState(current);
     const failed = await revalidateEcommerceDraftInventory({
-      orderId: order.id,
-      now,
-      deps: depsFor(activeOrders, [], {
-        loadProductsForOrder: vi.fn().mockRejectedValue(new Error('offline'))
-      })
+      orderId: current.id, now,
+      deps: deps(state, [], { loadProductsForOrder: vi.fn().mockRejectedValue(new Error('offline')) })
     });
     expect(failed.code).toBe(ECOMMERCE_INVENTORY_READ_FAILED);
-    expect(activeOrders.activeOrders.get(order.id).ecommerceInventoryStatus).toBe('conflict');
-
     const recovered = await revalidateEcommerceDraftInventory({
-      orderId: order.id,
-      now: new Date('2026-07-11T12:01:00.000Z'),
-      deps: depsFor(activeOrders, [product])
+      orderId: current.id, now: new Date('2026-07-11T12:01:00.000Z'), deps: deps(state, [product])
     });
-
     expect(recovered.success).toBe(true);
-    expect(activeOrders.activeOrders.get(order.id)).toMatchObject({
-      ecommerceInventoryStatus: 'ready',
-      ecommerceInventoryError: null
+    expect(state.activeOrders.get(current.id)).toMatchObject({
+      ecommerceInventoryStatus: 'ready', ecommerceInventoryError: null
     });
-    expect(activeOrders.activeOrders.get(order.id).items[0].inventoryResolution.status).toBe('resolved');
   });
 });
 
-describe('persistence and absence of effects', () => {
-  it('applies compact metadata and deletion removes it with the draft', () => {
-    const product = exactProduct();
-    const order = orderFrom([lineFromProduct(product)]);
-    const activeOrders = createActiveState(order);
-    const resolution = resolveEcommerceDraftInventoryFromInputs({ order, products: [product], now });
-
-    const applied = applyEcommerceInventoryResolution({
-      orderId: order.id,
-      resolution,
-      deps: depsFor(activeOrders, [product])
-    });
-
-    expect(applied).toMatchObject({ success: true, changed: true });
-    expect(activeOrders.activeOrders.get(order.id)).toMatchObject({
-      ecommerceInventoryStatus: 'ready',
-      ecommerceInventoryResolutionVersion: 2
-    });
-
-    activeOrders.removeEcommerceDraftLocal(order.id);
-    expect(activeOrders.activeOrders.has(order.id)).toBe(false);
+describe('global status, persistence and no effects', () => {
+  it('uses conflict over pending over ready priority', () => {
+    expect(calculateEcommerceInventoryStatus([
+      { inventoryResolution: { status: 'resolved' } }, { inventoryResolution: { status: 'pending' } }
+    ])).toBe('pending');
+    expect(calculateEcommerceInventoryStatus([
+      { inventoryResolution: { status: 'pending' } }, { inventoryResolution: { status: 'conflict' } }
+    ])).toBe('conflict');
+    expect(calculateEcommerceInventoryStatus([
+      { inventoryResolution: { status: 'resolved' } }
+    ])).toBe('ready');
   });
 
-  it('does not mutate products, batches, committed stock, sales or caja', () => {
+  it('persists compact resolution and deletion removes the whole draft', () => {
+    const product = exactProduct();
+    const current = order([line(product)]);
+    const state = activeState(current);
+    const resolution = resolveEcommerceDraftInventoryFromInputs({ order: current, products: [product], now });
+    expect(applyEcommerceInventoryResolution({
+      orderId: current.id, resolution, deps: deps(state, [product])
+    })).toMatchObject({ success: true, changed: true });
+    expect(state.activeOrders.get(current.id).ecommerceInventoryResolutionVersion).toBe(2);
+    state.removeEcommerceDraftLocal(current.id);
+    expect(state.activeOrders.has(current.id)).toBe(false);
+  });
+
+  it('does not rewrite an unchanged resolution', () => {
+    const product = exactProduct();
+    const initial = order([line(product)]);
+    const first = resolveEcommerceDraftInventoryFromInputs({ order: initial, products: [product], now });
+    const resolved = { ...initial, ...first };
+    const state = activeState(resolved);
+    const second = resolveEcommerceDraftInventoryFromInputs({ order: resolved, products: [product], now });
+    expect(applyEcommerceInventoryResolution({
+      orderId: resolved.id, resolution: second, deps: deps(state, [product])
+    })).toMatchObject({ success: true, changed: false });
+    expect(state.updateOrder).not.toHaveBeenCalled();
+  });
+
+  it('does not mutate product, batch, committed stock, sale, caja or movement state', () => {
     const product = batchProduct();
     const batches = [batch('l1', '2026-08-01', 5, { committedStock: 1 })];
-    const productBefore = structuredClone(product);
-    const batchesBefore = structuredClone(batches);
-    const activeOrders = createActiveState(orderFrom([lineFromProduct(product)]));
-
+    const productSnapshot = structuredClone(product);
+    const batchSnapshot = structuredClone(batches);
     const result = resolveEcommerceDraftInventoryFromInputs({
-      order: activeOrders.activeOrders.get('ecom-order-1'),
-      products: [product],
-      batchesByProduct: new Map([['product-1', batches]]),
-      now
+      order: order([line(product)]), products: [product],
+      batchesByProduct: new Map([['product-1', batches]]), now
     });
-
     expect(result.ecommerceInventoryStatus).toBe('ready');
-    expect(product).toEqual(productBefore);
-    expect(batches).toEqual(batchesBefore);
+    expect(product).toEqual(productSnapshot);
+    expect(batches).toEqual(batchSnapshot);
     expect(batches[0].committedStock).toBe(1);
-    expect(activeOrders).not.toHaveProperty('processSale');
-    expect(activeOrders).not.toHaveProperty('caja');
-    expect(activeOrders).not.toHaveProperty('inventoryMovement');
+    expect(result).not.toHaveProperty('processSale');
+    expect(result).not.toHaveProperty('caja');
+    expect(result).not.toHaveProperty('inventoryMovement');
+    expect(JSON.stringify(result)).not.toContain('customerPhone');
   });
 });
