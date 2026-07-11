@@ -18,8 +18,15 @@ import {
     isCloudSalesCreditEnabled,
     isRestaurantOrdersCloudEnabled
 } from '../../services/sync/syncConstants';
+import {
+    ECOMMERCE_POS_CHECKOUT_MESSAGE,
+    getEcommercePosBlockedResult,
+    isEcommercePosEffectBlocked
+} from '../../services/ecommerce/ecommercePosDraftGuards';
 
 const CLOUD_TURN_REQUIRED_PAYMENT_METHODS = new Set(['cash', 'card', 'transfer', 'credit', 'mixed']);
+const POS_CHECKOUT_SNAPSHOT_STALE = 'POS_CHECKOUT_SNAPSHOT_STALE';
+const POS_CHECKOUT_SNAPSHOT_STALE_MESSAGE = 'La orden activa cambió. Cierra el cobro y vuelve a iniciarlo desde la orden actual.';
 
 const CHECKOUT_INTEGRITY_OPTIONS = {
     reason: 'sale_checkout',
@@ -49,6 +56,12 @@ const buildCashNeedsOpeningError = () => Object.assign(
     new Error('La caja requiere apertura manual. Confirma el fondo inicial.'),
     { code: 'CAJA_NEEDS_OPENING' }
 );
+
+const getPosCheckoutSnapshotStaleResult = () => ({
+    success: false,
+    code: POS_CHECKOUT_SNAPSHOT_STALE,
+    message: POS_CHECKOUT_SNAPSHOT_STALE_MESSAGE
+});
 
 const normalizePaymentMethod = (method) => {
     const raw = String(method || '').trim().toLowerCase();
@@ -210,6 +223,91 @@ export function usePosCheckout({
     const asegurarCajaAbierta = pos.asegurarCajaAbierta;
     const checkoutSnapshotRef = useRef(null);
 
+    const getLiveCheckoutContext = useCallback(() => {
+        const state = useActiveOrders.getState();
+        const orderId = state.currentOrderId || pos.activeOrderId || null;
+        const activeOrder = orderId
+            ? state.activeOrders.get(orderId) || null
+            : null;
+
+        return { state, orderId, activeOrder };
+    }, [pos.activeOrderId]);
+
+    const showEcommerceCheckoutBlocked = useCallback(() => {
+        showMessageModal(
+            ECOMMERCE_POS_CHECKOUT_MESSAGE,
+            null,
+            { type: 'warning' }
+        );
+        return getEcommercePosBlockedResult();
+    }, []);
+
+    const blockEcommerceCheckoutEffect = useCallback(({ invalidateSnapshot = false } = {}) => {
+        const { orderId, activeOrder } = getLiveCheckoutContext();
+        if (!isEcommercePosEffectBlocked(activeOrder)) return null;
+
+        if (invalidateSnapshot && checkoutSnapshotRef.current) {
+            if (checkoutSnapshotRef.current.orderId === orderId) {
+                checkoutSnapshotRef.current = null;
+            } else {
+                checkoutSnapshotRef.current = {
+                    ...checkoutSnapshotRef.current,
+                    invalidated: true
+                };
+            }
+        }
+
+        return showEcommerceCheckoutBlocked();
+    }, [getLiveCheckoutContext, showEcommerceCheckoutBlocked]);
+
+    const showStaleSnapshotBlocked = useCallback(() => {
+        showMessageModal(
+            POS_CHECKOUT_SNAPSHOT_STALE_MESSAGE,
+            null,
+            { type: 'warning' }
+        );
+        return getPosCheckoutSnapshotStaleResult();
+    }, []);
+
+    const validateLiveCheckoutTarget = useCallback((expectedOrderId) => {
+        const { orderId, activeOrder } = getLiveCheckoutContext();
+
+        if (isEcommercePosEffectBlocked(activeOrder)) {
+            return showEcommerceCheckoutBlocked();
+        }
+
+        if (!expectedOrderId || !orderId || !activeOrder || orderId !== expectedOrderId) {
+            return showStaleSnapshotBlocked();
+        }
+
+        return null;
+    }, [getLiveCheckoutContext, showEcommerceCheckoutBlocked, showStaleSnapshotBlocked]);
+
+    const validateLiveCheckoutSnapshot = useCallback((snapshot) => {
+        const ecommerceBlocked = blockEcommerceCheckoutEffect({ invalidateSnapshot: true });
+        if (ecommerceBlocked) return ecommerceBlocked;
+
+        const { orderId, activeOrder } = getLiveCheckoutContext();
+        if (
+            !snapshot ||
+            snapshot.invalidated ||
+            !snapshot.orderId ||
+            !orderId ||
+            !activeOrder ||
+            snapshot.orderId !== orderId
+        ) {
+            if (snapshot) {
+                checkoutSnapshotRef.current = {
+                    ...snapshot,
+                    invalidated: true
+                };
+            }
+            return showStaleSnapshotBlocked();
+        }
+
+        return null;
+    }, [blockEcommerceCheckoutEffect, getLiveCheckoutContext, showStaleSnapshotBlocked]);
+
     useEffect(() => {
         if (typeof window === 'undefined') return undefined;
 
@@ -229,7 +327,7 @@ export function usePosCheckout({
         const snapshot = checkoutSnapshotRef.current;
         checkoutSnapshotRef.current = null;
 
-        if (snapshot?.orderId) {
+        if (snapshot?.orderId && !snapshot.invalidated) {
             useActiveOrders.getState().unlockOrder(snapshot.orderId).catch((err) => {
                 console.error('[usePosCheckout] Error en rollback al cerrar modal de pago:', err);
             });
@@ -243,7 +341,7 @@ export function usePosCheckout({
         checkoutSnapshotRef.current = null;
 
         try {
-            if (snapshot?.orderId) {
+            if (snapshot?.orderId && !snapshot.invalidated) {
                 await useActiveOrders.getState().unlockOrder(snapshot.orderId);
             }
         } catch (err) {
@@ -262,10 +360,13 @@ export function usePosCheckout({
     }, [modal]);
 
     const handleInitiateCheckout = useCallback(async () => {
+        const ecommerceBlocked = blockEcommerceCheckoutEffect();
+        if (ecommerceBlocked) return ecommerceBlocked;
+
         const licenseDetails = useAppStore.getState().licenseDetails;
         if (!licenseDetails || !licenseDetails.valid) {
             showMessageModal('⚠️ Error de Seguridad: Licencia no válida.');
-            return;
+            return undefined;
         }
 
         const activeOrdersState = useActiveOrders.getState();
@@ -280,7 +381,7 @@ export function usePosCheckout({
                 null,
                 { type: 'warning' }
             );
-            return;
+            return undefined;
         }
 
         const shouldVerifyCloudKitchen = Boolean(
@@ -297,8 +398,11 @@ export function usePosCheckout({
                 shouldVerifyCloudKitchen
             });
 
+            const afterKitchenTargetError = validateLiveCheckoutTarget(activeOrderId);
+            if (afterKitchenTargetError) return afterKitchenTargetError;
+
             if (!kitchenReview.canContinue) {
-                return;
+                return undefined;
             }
 
             if (Array.isArray(kitchenReview.orderItems)) {
@@ -314,8 +418,11 @@ export function usePosCheckout({
                         null,
                         { type: 'error' }
                     );
-                    return;
+                    return saveResult;
                 }
+
+                const afterSaveTargetError = validateLiveCheckoutTarget(activeOrderId);
+                if (afterSaveTargetError) return afterSaveTargetError;
 
                 const persistedSale = await db.table(STORES.SALES).get(activeOrderId);
                 const persistedItems = Array.isArray(persistedSale?.items) ? persistedSale.items : orderItems;
@@ -332,23 +439,30 @@ export function usePosCheckout({
             }
         }
 
+        const beforeLockTargetError = validateLiveCheckoutTarget(activeOrderId);
+        if (beforeLockTargetError) return beforeLockTargetError;
+
         const itemsToProcess = orderItems.filter((item) => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) {
             showMessageModal('El pedido está vacío.', null, { type: 'warning' });
-            return;
+            return undefined;
         }
-
-        mobileCart.closeCart();
 
         const lockResult = await useActiveOrders.getState().lockOrderForCheckout(activeOrderId);
         if (!lockResult.success) {
             showMessageModal(`⚠️ No se puede iniciar el cobro: ${lockResult.reason}`, null, { type: 'warning' });
-            return;
+            return lockResult;
         }
 
         const lockedState = useActiveOrders.getState();
         const lockedOrder = lockedState.activeOrders.get(activeOrderId);
         const pendingAfterLock = lockedState.pendingInventoryResolutions?.get(activeOrderId) || 0;
+
+        const afterLockTargetError = validateLiveCheckoutTarget(activeOrderId);
+        if (afterLockTargetError) {
+            await lockedState.unlockOrder(activeOrderId);
+            return afterLockTargetError;
+        }
 
         if (pendingAfterLock > 0 || !lockedOrder) {
             await lockedState.unlockOrder(activeOrderId);
@@ -359,20 +473,26 @@ export function usePosCheckout({
                 null,
                 { type: 'warning' }
             );
-            return;
+            return undefined;
         }
 
         const lockedItemsToProcess = lockedOrder.items.filter((item) => item.quantity && item.quantity > 0);
         if (lockedItemsToProcess.length === 0) {
             await lockedState.unlockOrder(activeOrderId);
             showMessageModal('El pedido está vacío.', null, { type: 'warning' });
-            return;
+            return undefined;
         }
 
         const fefoValidation = await validateFefoSelectionBeforeCheckout(
             lockedItemsToProcess,
             posSearch.menuVisual
         );
+
+        const afterFefoTargetError = validateLiveCheckoutTarget(activeOrderId);
+        if (afterFefoTargetError) {
+            await lockedState.unlockOrder(activeOrderId);
+            return afterFefoTargetError;
+        }
 
         if (fefoValidation.blocked) {
             await lockedState.unlockOrder(activeOrderId);
@@ -381,7 +501,7 @@ export function usePosCheckout({
                 null,
                 { type: 'error' }
             );
-            return;
+            return fefoValidation;
         }
 
         if (fefoValidation.warnings?.length > 0) {
@@ -392,7 +512,8 @@ export function usePosCheckout({
             orderId: activeOrderId,
             order: deepClone(lockedOrder.items),
             total: Number(lockedOrder.total),
-            tableData: deepClone(lockedOrder.tableData ?? null)
+            tableData: deepClone(lockedOrder.tableData ?? null),
+            invalidated: false
         };
 
         const itemsRequiring = features?.hasLabFields
@@ -403,6 +524,7 @@ export function usePosCheckout({
             : [];
 
         prescription.setTempPrescriptionData(null);
+        mobileCart.closeCart();
 
         if (itemsRequiring.length > 0) {
             prescription.setPrescriptionItems(itemsRequiring);
@@ -410,7 +532,11 @@ export function usePosCheckout({
         } else {
             modal.openModal('payment');
         }
+
+        return { success: true, orderId: activeOrderId };
     }, [
+        blockEcommerceCheckoutEffect,
+        validateLiveCheckoutTarget,
         pos.order,
         pos.activeOrderId,
         posSearch.menuVisual,
@@ -422,29 +548,38 @@ export function usePosCheckout({
     ]);
 
     const handleProcessOrder = useCallback(async (paymentData, forceSale = false) => {
+        const ecommerceBlocked = blockEcommerceCheckoutEffect({ invalidateSnapshot: true });
+        if (ecommerceBlocked) return ecommerceBlocked;
+
         const snapshot = checkoutSnapshotRef.current;
 
         if (!snapshot) {
             console.error('[usePosCheckout] handleProcessOrder llamado sin snapshot activo.');
             showMessageModal('⚠️ Error interno: cierra el modal y vuelve a intentar el cobro.');
             modal.closeModal('payment');
-            return;
+            return { success: false, code: POS_CHECKOUT_SNAPSHOT_STALE };
         }
+
+        const initialSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+        if (initialSnapshotError) return initialSnapshotError;
 
         const isSessionValid = await verifySessionIntegrity(CHECKOUT_INTEGRITY_OPTIONS);
         if (!isSessionValid) {
             showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
                 window.location.reload();
             });
-            return;
+            return { success: false, code: 'SESSION_INVALID' };
         }
+
+        const afterSessionSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+        if (afterSessionSnapshotError) return afterSessionSnapshotError;
 
         if (paymentData.paymentMethod === 'fiado') {
             if (!paymentData.dueDate) {
                 showMessageModal('⚠️ Fecha de vencimiento es requerida para ventas a crédito.');
                 checkoutSnapshotRef.current = null;
                 modal.closeModal('payment');
-                return;
+                return { success: false, code: 'CREDIT_DUE_DATE_REQUIRED' };
             }
 
             const todayStr = new Date().toISOString().split('T')[0];
@@ -453,7 +588,7 @@ export function usePosCheckout({
                 showMessageModal('⚠️ La fecha de vencimiento no puede ser en el pasado.');
                 checkoutSnapshotRef.current = null;
                 modal.closeModal('payment');
-                return;
+                return { success: false, code: 'CREDIT_DUE_DATE_INVALID' };
             }
         }
 
@@ -476,6 +611,9 @@ export function usePosCheckout({
             : hasCashComponent;
 
         if (requiresOpenCashSession && !hasOpenCashSession(pos.cajaActual)) {
+            const beforeCajaSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+            if (beforeCajaSnapshotError) return beforeCajaSnapshotError;
+
             try {
                 const ensuredCashSession = await asegurarCajaAbierta?.();
 
@@ -484,9 +622,12 @@ export function usePosCheckout({
                 }
             } catch (cashError) {
                 if (cashError?.code === 'CAJA_NEEDS_OPENING') {
+                    const beforeQuickCajaSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+                    if (beforeQuickCajaSnapshotError) return beforeQuickCajaSnapshotError;
+
                     modal.closeModal('payment');
                     modal.openModal('quickCaja');
-                    return;
+                    return { success: false, code: 'CAJA_NEEDS_OPENING' };
                 }
 
                 showMessageModal(
@@ -498,18 +639,27 @@ export function usePosCheckout({
                         confirmButtonText: 'Entendido'
                     }
                 );
-                return;
+                return { success: false, code: cashError?.code || 'CAJA_VALIDATION_FAILED' };
             }
+
+            const afterCajaSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+            if (afterCajaSnapshotError) return afterCajaSnapshotError;
         }
 
-        checkoutSnapshotRef.current = null;
+        const beforeSaleSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+        if (beforeSaleSnapshotError) return beforeSaleSnapshotError;
 
         let isSuccess = false;
         let isStockWarning = false;
 
         try {
-            modal.closeModal('payment');
             const { processSale } = await import('../../services/salesService');
+            const finalSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+            if (finalSnapshotError) return finalSnapshotError;
+
+            checkoutSnapshotRef.current = null;
+            modal.closeModal('payment');
+
             const result = await processSale({
                 order: snapshot.order,
                 paymentData,
@@ -575,26 +725,38 @@ export function usePosCheckout({
                 showMessageModal(
                     result.message,
                     async () => {
+                        const snapshotError = validateLiveCheckoutSnapshot(snapshot);
+                        if (snapshotError) return snapshotError;
+
                         const lockResult = await useActiveOrders.getState().lockOrderForCheckout(snapshot.orderId);
                         if (lockResult.success) {
-                            handleProcessOrder(paymentData, true);
-                        } else {
-                            showMessageModal(`⚠️ No se puede forzar el cobro: ${lockResult.reason}`, null, { type: 'warning' });
+                            return handleProcessOrder(paymentData, true);
                         }
+
+                        showMessageModal(`⚠️ No se puede forzar el cobro: ${lockResult.reason}`, null, { type: 'warning' });
+                        return lockResult;
                     },
                     { confirmButtonText: 'Sí, Vender Igual', type: 'warning' }
                 );
             } else {
                 showMessageModal(`Error: ${result.message}`, null, { type: 'error' });
             }
+
+            return result;
         } catch (error) {
             console.error('[usePosCheckout] Error crítico en UI:', error);
             showMessageModal(`Error inesperado: ${error.message}`);
+            return { success: false, message: error.message };
         } finally {
             if (!isSuccess) {
-                await useActiveOrders.getState().unlockOrder(snapshot.orderId).catch((err) => {
-                    console.error('[usePosCheckout] Error en rollback en finally:', err);
-                });
+                const latestSnapshot = checkoutSnapshotRef.current;
+                const canRollbackSnapshotOrder = !latestSnapshot?.invalidated;
+
+                if (canRollbackSnapshotOrder) {
+                    await useActiveOrders.getState().unlockOrder(snapshot.orderId).catch((err) => {
+                        console.error('[usePosCheckout] Error en rollback en finally:', err);
+                    });
+                }
 
                 if (!isStockWarning) {
                     checkoutSnapshotRef.current = null;
@@ -602,6 +764,8 @@ export function usePosCheckout({
             }
         }
     }, [
+        blockEcommerceCheckoutEffect,
+        validateLiveCheckoutSnapshot,
         verifySessionIntegrity,
         pos.cajaActual,
         asegurarCajaAbierta,
@@ -614,8 +778,18 @@ export function usePosCheckout({
     ]);
 
     const handleQuickCajaSubmit = useCallback(async (openingData) => {
+        const ecommerceBlocked = blockEcommerceCheckoutEffect({ invalidateSnapshot: true });
+        if (ecommerceBlocked) return ecommerceBlocked;
+
+        const snapshot = checkoutSnapshotRef.current;
+        const initialSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+        if (initialSnapshotError) return initialSnapshotError;
+
         const success = await abrirCaja(openingData);
         if (success) {
+            const afterOpenSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+            if (afterOpenSnapshotError) return afterOpenSnapshotError;
+
             try {
                 const ensuredCashSession = await asegurarCajaAbierta?.();
                 if (!hasOpenCashSession(ensuredCashSession)) {
@@ -634,11 +808,20 @@ export function usePosCheckout({
                 return false;
             }
 
+            const beforePaymentSnapshotError = validateLiveCheckoutSnapshot(snapshot);
+            if (beforePaymentSnapshotError) return beforePaymentSnapshotError;
+
             modal.closeModal('quickCaja');
             modal.openModal('payment');
         }
         return success;
-    }, [abrirCaja, asegurarCajaAbierta, modal]);
+    }, [
+        blockEcommerceCheckoutEffect,
+        validateLiveCheckoutSnapshot,
+        abrirCaja,
+        asegurarCajaAbierta,
+        modal
+    ]);
 
     return {
         handleInitiateCheckout,
