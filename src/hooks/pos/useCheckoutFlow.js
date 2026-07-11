@@ -6,8 +6,23 @@ import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 import { processSale } from '../../services/salesService';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
+import {
+    ECOMMERCE_POS_CHECKOUT_MESSAGE,
+    ECOMMERCE_POS_CHECKOUT_NOT_ENABLED,
+    getEcommercePosBlockedResult,
+    isEcommercePosEffectBlocked
+} from '../../services/ecommerce/ecommercePosDraftGuards';
 
 const EMPTY_ORDER = [];
+
+export {
+    ECOMMERCE_POS_CHECKOUT_MESSAGE,
+    ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
+} from '../../services/ecommerce/ecommercePosDraftGuards';
+
+export const isEcommercePosCheckoutBlocked = (activeOrder) => (
+    isEcommercePosEffectBlocked(activeOrder)
+);
 
 const CHECKOUT_INTEGRITY_OPTIONS = {
     reason: 'sale_checkout',
@@ -70,6 +85,12 @@ export function useCheckoutFlow({
 
     // ── Flujo de pago ──────────────────────────────────────────────
     const handleInitiateCheckout = useCallback(() => {
+        const liveOrder = selectCurrentOrder(useActiveOrders.getState());
+        if (isEcommercePosCheckoutBlocked(liveOrder)) {
+            showMessageModal(ECOMMERCE_POS_CHECKOUT_MESSAGE, null, { type: 'warning' });
+            return getEcommercePosBlockedResult();
+        }
+
         const licenseDetails = useAppStore.getState().licenseDetails;
         if (!licenseDetails || !licenseDetails.valid) {
             showMessageModal('⚠️ Error de Seguridad: Licencia no válida.');
@@ -101,6 +122,12 @@ export function useCheckoutFlow({
     }, [order, features, closeMobileCart, openModal]);
 
     const handleProcessOrder = useCallback(async (paymentData, forceSale = false) => {
+        const liveOrder = selectCurrentOrder(useActiveOrders.getState());
+        if (isEcommercePosCheckoutBlocked(liveOrder)) {
+            showMessageModal(ECOMMERCE_POS_CHECKOUT_MESSAGE, null, { type: 'warning' });
+            return getEcommercePosBlockedResult();
+        }
+
         // Idempotencia: verificar con ref atómico
         if (isSaleInProgressRef.current) {
             console.warn('🚫 Intento de venta duplicada bloqueado por idempotencia UI.');
@@ -191,6 +218,12 @@ export function useCheckoutFlow({
     ]);
 
     const handleQuickCajaSubmit = useCallback(async (openingData) => {
+        const liveOrder = selectCurrentOrder(useActiveOrders.getState());
+        if (isEcommercePosCheckoutBlocked(liveOrder)) {
+            showMessageModal(ECOMMERCE_POS_CHECKOUT_MESSAGE, null, { type: 'warning' });
+            return getEcommercePosBlockedResult();
+        }
+
         const success = await abrirCaja(openingData);
         if (success) {
             closeModal('quickCaja');

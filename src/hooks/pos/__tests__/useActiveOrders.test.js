@@ -4,7 +4,12 @@ const dbState = vi.hoisted(() => ({
   sales: new Map(),
   products: new Map(),
   batches: [],
-  batchLoadPromise: null
+  batchLoadPromise: null,
+  releasePosDraft: vi.fn()
+}));
+
+vi.mock('../../../services/ecommerce/ecommerceOrderService', () => ({
+  releaseEcommerceOrderPosDraft: dbState.releasePosDraft
 }));
 
 const localStorageMock = {
@@ -112,6 +117,7 @@ describe('useActiveOrders unified store', () => {
     dbState.products.clear();
     dbState.batches = [];
     dbState.batchLoadPromise = null;
+    dbState.releasePosDraft.mockResolvedValue({ success: true, changed: true });
     vi.clearAllMocks();
     useActiveOrders.setState({
       activeOrders: new Map(),
@@ -120,6 +126,81 @@ describe('useActiveOrders unified store', () => {
       isCurrentOrderLocked: false,
       pendingInventoryResolutions: new Map()
     });
+  });
+
+  it('upserts an ecommerce draft atomically without PII and reuses the deterministic tab', () => {
+    const draft = {
+      id: 'ecom-11111111-1111-4111-8111-111111111111',
+      items: [{ id: 'product-1', lineId: 'ecom-line-1', name: 'Producto', price: 20, quantity: 2 }],
+      ecommerceOrderId: '11111111-1111-4111-8111-111111111111',
+      ecommerceOrderCode: 'EC-00000011',
+      ecommerceLicenseIdentity: 'ecomctx-safe',
+      ecommerceDraftStatus: 'claimed',
+      ecommerceClaimToken: 'opaque-token',
+      fulfillmentMethod: 'pickup',
+      expectedSubtotal: 40,
+      expectedTotal: 40,
+      currency: 'MXN'
+    };
+
+    const first = useActiveOrders.getState().upsertEcommerceDraft(draft);
+    const second = useActiveOrders.getState().upsertEcommerceDraft({ ...draft, items: [] });
+    const stored = useActiveOrders.getState().activeOrders.get(draft.id);
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(stored.items).toHaveLength(1);
+    expect(stored.total).toBe(40);
+    expect(stored.customer).toBeNull();
+    expect(JSON.stringify(stored)).not.toContain('phone');
+    expect(JSON.stringify(stored)).not.toContain('address');
+    expect(JSON.stringify(stored)).not.toContain('notes');
+    expect(useActiveOrders.getState().currentOrderId).toBe(draft.id);
+  });
+
+  it('keeps the local ecommerce draft when remote release fails and removes it after success', async () => {
+    const id = 'ecom-11111111-1111-4111-8111-111111111111';
+    useActiveOrders.getState().upsertEcommerceDraft({
+      id,
+      items: [{ id: 'product-1', lineId: 'line-1', price: 10, quantity: 1 }],
+      ecommerceOrderId: '11111111-1111-4111-8111-111111111111',
+      ecommerceOrderCode: 'EC-00000011',
+      ecommerceLicenseIdentity: 'ecomctx-safe',
+      ecommerceDraftStatus: 'prepared',
+      ecommerceClaimToken: 'opaque-token'
+    });
+
+    dbState.releasePosDraft.mockResolvedValueOnce({ success: false, code: 'NETWORK' });
+    const failed = await useActiveOrders.getState().releaseEcommerceDraft(id);
+    expect(failed.success).toBe(false);
+    expect(useActiveOrders.getState().activeOrders.has(id)).toBe(true);
+
+    dbState.releasePosDraft.mockResolvedValueOnce({ success: true });
+    const released = await useActiveOrders.getState().releaseEcommerceDraft(id);
+    expect(released.success).toBe(true);
+    expect(useActiveOrders.getState().activeOrders.has(id)).toBe(false);
+    expect(dbState.releasePosDraft).toHaveBeenLastCalledWith(expect.objectContaining({
+      orderId: '11111111-1111-4111-8111-111111111111',
+      claimToken: 'opaque-token'
+    }));
+  });
+
+  it('prunes ecommerce drafts fail-closed while preserving normal orders', () => {
+    useActiveOrders.setState({
+      activeOrders: new Map([
+        ['normal', makeOrder('normal')],
+        ['ecom-a', { ...makeOrder('ecom-a'), origin: 'ecommerce', ecommerceLicenseIdentity: 'license-a' }],
+        ['ecom-b', { ...makeOrder('ecom-b'), origin: 'ecommerce', ecommerceLicenseIdentity: 'license-b' }]
+      ]),
+      currentOrderId: 'ecom-a'
+    });
+
+    useActiveOrders.getState().pruneEcommerceDraftsForContext({ licenseIdentity: 'license-b', canPrepare: true });
+    expect(Array.from(useActiveOrders.getState().activeOrders.keys())).toEqual(['normal', 'ecom-b']);
+    expect(useActiveOrders.getState().currentOrderId).toBe('normal');
+
+    useActiveOrders.getState().pruneEcommerceDraftsForContext({ licenseIdentity: null, canPrepare: false });
+    expect(Array.from(useActiveOrders.getState().activeOrders.keys())).toEqual(['normal']);
   });
 
   it('derives the current order after every state update', () => {

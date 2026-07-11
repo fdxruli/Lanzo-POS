@@ -1,11 +1,16 @@
 // src/hooks/useLayawayFlow.js
 import { useCallback } from 'react';
 
-import { useAppStore } from '../../store/useAppStore';
 import { useFeatureConfig } from '../useFeatureConfig';
 import { layawayRepo } from '../../services/db';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
+import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
+import {
+    ECOMMERCE_POS_CHECKOUT_MESSAGE,
+    getEcommercePosBlockedResult,
+    isEcommercePosEffectBlocked
+} from '../../services/ecommerce/ecommercePosDraftGuards';
 
 /**
  * Hook para manejar los apartados (layaway) del POS.
@@ -32,18 +37,32 @@ export function useLayawayFlow({
     // Obtener flags de features derivados del rubro/empresa
     const features = useFeatureConfig();
 
+    const blockEcommerceLayaway = useCallback(() => {
+        const activeOrder = selectCurrentOrder(useActiveOrders.getState());
+        if (!isEcommercePosEffectBlocked(activeOrder)) return null;
+
+        showMessageModal(ECOMMERCE_POS_CHECKOUT_MESSAGE, null, { type: 'warning' });
+        return getEcommercePosBlockedResult();
+    }, []);
+
     // ── Iniciar apartado ───────────────────────────────────────────
     const handleInitiateLayaway = useCallback(() => {
+        const blocked = blockEcommerceLayaway();
+        if (blocked) return blocked;
+
         if (order.length === 0) {
             showToast?.('⚠️ El carrito está vacío');
             return;
         }
         if (!features?.hasLayaway) return;
         openModal('layaway');
-    }, [order.length, features?.hasLayaway, openModal, showToast]);
+    }, [blockEcommerceLayaway, order.length, features?.hasLayaway, openModal, showToast]);
 
     // ── Confirmar apartado ─────────────────────────────────────────
     const handleConfirmLayaway = useCallback(async ({ initialPayment, deadline, customer: customerFromModal, cajaId }) => {
+        const blocked = blockEcommerceLayaway();
+        if (blocked) return blocked;
+
         try {
             const targetCustomer = customerFromModal || customer;
             if (!targetCustomer) {
@@ -68,11 +87,13 @@ export function useLayawayFlow({
             } else {
                 showMessageModal('❌ Error al guardar apartado: ' + result.message);
             }
+            return result;
         } catch (error) {
             Logger.error('Layaway Error', error);
             showMessageModal('Error inesperado al crear apartado.');
+            return { success: false, message: error?.message || 'No se pudo crear el apartado.' };
         }
-    }, [order, customer, total, clearOrder, closeModal, openModal]);
+    }, [blockEcommerceLayaway, order, customer, total, clearOrder, closeModal]);
 
     return {
         handleInitiateLayaway,

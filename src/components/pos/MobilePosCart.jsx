@@ -1,9 +1,17 @@
 // src/components/pos/MobilePosCart.jsx
 import PropTypes from 'prop-types';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import OrderSummary from './OrderSummary';
 import OrderDiscountPanel from './OrderDiscountPanel';
 
+const currentOrderSelector = (state) => (
+    state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null
+);
+
 export default function MobilePosCart(props) {
+    const currentOrder = useActiveOrders(currentOrderSelector);
+    const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
+
     if (!props.isOpen) return null;
 
     return (
@@ -23,7 +31,7 @@ export default function MobilePosCart(props) {
                         activeTablesCount={props.activeTablesCount}
                         kitchenRejectedOpenCount={props.kitchenRejectedOpenCount}
                     />
-                    {!props.showRestaurantActions && <OrderDiscountPanel compact />}
+                    {!props.showRestaurantActions && !isEcommerceDraft && <OrderDiscountPanel compact />}
                 </div>
             </div>
         </div>

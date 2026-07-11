@@ -18,8 +18,15 @@ import {
     isCloudSalesCreditEnabled,
     isRestaurantOrdersCloudEnabled
 } from '../../services/sync/syncConstants';
+import {
+    ECOMMERCE_POS_CHECKOUT_MESSAGE,
+    getEcommercePosBlockedResult,
+    isEcommercePosEffectBlocked
+} from '../../services/ecommerce/ecommercePosDraftGuards';
 
 const CLOUD_TURN_REQUIRED_PAYMENT_METHODS = new Set(['cash', 'card', 'transfer', 'credit', 'mixed']);
+const POS_CHECKOUT_SNAPSHOT_STALE = 'POS_CHECKOUT_SNAPSHOT_STALE';
+const POS_CHECKOUT_SNAPSHOT_STALE_MESSAGE = 'La orden activa cambió. Cierra el cobro y vuelve a iniciarlo desde la orden actual.';
 
 const CHECKOUT_INTEGRITY_OPTIONS = {
     reason: 'sale_checkout',
@@ -27,6 +34,14 @@ const CHECKOUT_INTEGRITY_OPTIONS = {
     refreshProfile: false,
     forceRemote: false,
     allowLocalOnly: true
+};
+
+const createCheckoutAttemptId = () => {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+        return globalThis.crypto.randomUUID();
+    }
+
+    return `checkout-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
 const countSellableItems = (items = []) => (
@@ -49,6 +64,12 @@ const buildCashNeedsOpeningError = () => Object.assign(
     new Error('La caja requiere apertura manual. Confirma el fondo inicial.'),
     { code: 'CAJA_NEEDS_OPENING' }
 );
+
+const getPosCheckoutSnapshotStaleResult = () => ({
+    success: false,
+    code: POS_CHECKOUT_SNAPSHOT_STALE,
+    message: POS_CHECKOUT_SNAPSHOT_STALE_MESSAGE
+});
 
 const normalizePaymentMethod = (method) => {
     const raw = String(method || '').trim().toLowerCase();
@@ -209,6 +230,297 @@ export function usePosCheckout({
     const abrirCaja = pos.abrirCaja;
     const asegurarCajaAbierta = pos.asegurarCajaAbierta;
     const checkoutSnapshotRef = useRef(null);
+    const handleProcessOrderRef = useRef(null);
+
+    const getLiveCheckoutContext = useCallback(() => {
+        const state = useActiveOrders.getState();
+        const orderId = state.currentOrderId || pos.activeOrderId || null;
+        const activeOrder = orderId
+            ? state.activeOrders.get(orderId) || null
+            : null;
+
+        return { state, orderId, activeOrder };
+    }, [pos.activeOrderId]);
+
+    const setCheckoutAttemptOwnerInMemory = useCallback((orderId, checkoutAttemptId) => {
+        const state = useActiveOrders.getState();
+        const order = state.activeOrders.get(orderId);
+        if (!order) return;
+
+        const nextOrders = new Map(state.activeOrders);
+        nextOrders.set(orderId, { ...order, checkoutAttemptId });
+        useActiveOrders.setState({ activeOrders: nextOrders });
+    }, []);
+
+    const persistCheckoutAttemptOwnership = useCallback(async (orderId, checkoutAttemptId) => {
+        try {
+            await db.transaction('rw', db.table(STORES.SALES), async () => {
+                const existing = await db.table(STORES.SALES).get(orderId);
+                if (!existing?.isLockedForCheckout) {
+                    throw new Error('checkout_lock_missing_after_acquire');
+                }
+                await db.table(STORES.SALES).update(orderId, { checkoutAttemptId });
+            });
+            setCheckoutAttemptOwnerInMemory(orderId, checkoutAttemptId);
+            return { success: true };
+        } catch (error) {
+            console.error('[usePosCheckout] No se pudo registrar la propiedad del lock:', {
+                orderId,
+                checkoutAttemptId,
+                error: error?.message || 'checkout_lock_owner_persist_failed'
+            });
+            return {
+                success: false,
+                code: 'CHECKOUT_LOCK_OWNER_PERSIST_FAILED',
+                message: error?.message || 'checkout_lock_owner_persist_failed'
+            };
+        }
+    }, [setCheckoutAttemptOwnerInMemory]);
+
+    const showEcommerceCheckoutBlocked = useCallback(() => {
+        showMessageModal(
+            ECOMMERCE_POS_CHECKOUT_MESSAGE,
+            null,
+            { type: 'warning' }
+        );
+        return getEcommercePosBlockedResult();
+    }, []);
+
+    const showStaleSnapshotBlocked = useCallback(() => {
+        showMessageModal(
+            POS_CHECKOUT_SNAPSHOT_STALE_MESSAGE,
+            null,
+            { type: 'warning' }
+        );
+        return getPosCheckoutSnapshotStaleResult();
+    }, []);
+
+    const releaseCheckoutSnapshotLock = useCallback(async (snapshot, { reason = 'unspecified' } = {}) => {
+        if (!snapshot?.orderId) {
+            return { success: true, released: false, reason: 'missing_order_id' };
+        }
+        if (snapshot.lockOwnedByCheckout !== true) {
+            return { success: true, released: false, reason: 'lock_not_owned', orderId: snapshot.orderId };
+        }
+        if (snapshot.lockReleased === true) {
+            return { success: true, released: false, reason: 'already_released', orderId: snapshot.orderId };
+        }
+        if (snapshot.lockReleasePromise) {
+            return snapshot.lockReleasePromise;
+        }
+
+        snapshot.lockReleaseInFlight = true;
+        const releasePromise = (async () => {
+            try {
+                let unlockResult = null;
+                let ownershipResult = 'owned';
+
+                await db.transaction('rw', db.table(STORES.SALES), async () => {
+                    const persisted = await db.table(STORES.SALES).get(snapshot.orderId);
+                    const memoryOrder = useActiveOrders.getState().activeOrders.get(snapshot.orderId) || null;
+                    const persistedOwner = persisted?.checkoutAttemptId || null;
+                    const memoryOwner = memoryOrder?.checkoutAttemptId || null;
+
+                    if (persisted?.isLockedForCheckout === false && memoryOrder?.isLockedForCheckout !== true) {
+                        ownershipResult = 'already_released';
+                        return;
+                    }
+
+                    if (
+                        !snapshot.checkoutAttemptId ||
+                        (persistedOwner && persistedOwner !== snapshot.checkoutAttemptId) ||
+                        (memoryOwner && memoryOwner !== snapshot.checkoutAttemptId) ||
+                        (!persistedOwner && !memoryOwner)
+                    ) {
+                        ownershipResult = 'lock_not_owned';
+                        return;
+                    }
+
+                    unlockResult = await useActiveOrders.getState().unlockOrder(snapshot.orderId);
+                    if (unlockResult?.success === false) {
+                        throw new Error(unlockResult?.reason || 'unlock_order_failed');
+                    }
+
+                    const latestPersisted = await db.table(STORES.SALES).get(snapshot.orderId);
+                    if (latestPersisted) {
+                        await db.table(STORES.SALES).update(snapshot.orderId, { checkoutAttemptId: null });
+                    }
+                });
+
+                if (ownershipResult !== 'owned') {
+                    snapshot.lockReleased = true;
+                    snapshot.lockOwnedByCheckout = false;
+                    snapshot.lockReleaseInFlight = false;
+                    snapshot.lockReleasePromise = null;
+                    snapshot.lockReleaseError = null;
+                    return {
+                        success: true,
+                        released: false,
+                        reason: ownershipResult,
+                        orderId: snapshot.orderId,
+                        checkoutAttemptId: snapshot.checkoutAttemptId
+                    };
+                }
+
+                setCheckoutAttemptOwnerInMemory(snapshot.orderId, null);
+                snapshot.lockReleased = true;
+                snapshot.lockOwnedByCheckout = false;
+                snapshot.lockReleaseInFlight = false;
+                snapshot.lockReleasePromise = null;
+                snapshot.lockReleaseError = null;
+
+                return {
+                    success: true,
+                    released: true,
+                    orderId: snapshot.orderId,
+                    checkoutAttemptId: snapshot.checkoutAttemptId,
+                    unlockResult
+                };
+            } catch (error) {
+                snapshot.lockReleaseInFlight = false;
+                snapshot.lockReleasePromise = null;
+                snapshot.lockReleaseError = {
+                    reason,
+                    message: error?.message || 'unlock_order_failed'
+                };
+                console.error('[usePosCheckout] No se pudo liberar el lock propio del checkout:', {
+                    orderId: snapshot.orderId,
+                    checkoutAttemptId: snapshot.checkoutAttemptId,
+                    reason,
+                    error: error?.message || 'unlock_order_failed'
+                });
+                return {
+                    success: false,
+                    released: false,
+                    reason: 'unlock_failed',
+                    orderId: snapshot.orderId,
+                    checkoutAttemptId: snapshot.checkoutAttemptId
+                };
+            }
+        })();
+
+        snapshot.lockReleasePromise = releasePromise;
+        return releasePromise;
+    }, [setCheckoutAttemptOwnerInMemory]);
+
+    const clearCheckoutSnapshotIfResolved = useCallback((snapshot) => {
+        if (
+            checkoutSnapshotRef.current === snapshot &&
+            (snapshot?.lockReleased === true || snapshot?.lockOwnedByCheckout !== true || snapshot?.consumed === true)
+        ) {
+            checkoutSnapshotRef.current = null;
+            return true;
+        }
+        return false;
+    }, []);
+
+    const invalidateCheckoutSnapshot = useCallback(async (
+        snapshot,
+        { releaseLock = true, reason = 'snapshot_invalidated' } = {}
+    ) => {
+        if (!snapshot) {
+            return { success: true, invalidated: false, released: false, reason: 'missing_snapshot' };
+        }
+
+        snapshot.invalidated = true;
+        snapshot.invalidationReason = reason;
+
+        let releaseResult = { success: true, released: false, reason: 'release_not_requested' };
+        if (releaseLock) {
+            releaseResult = await releaseCheckoutSnapshotLock(snapshot, { reason });
+        }
+
+        if (!releaseLock || releaseResult.success) {
+            clearCheckoutSnapshotIfResolved(snapshot);
+        }
+
+        return {
+            success: releaseResult.success,
+            invalidated: true,
+            released: releaseResult.released === true,
+            orderId: snapshot.orderId,
+            reason: releaseResult.reason || reason
+        };
+    }, [clearCheckoutSnapshotIfResolved, releaseCheckoutSnapshotLock]);
+
+    const blockEcommerceCheckoutEffect = useCallback(async ({ invalidateSnapshot = false } = {}) => {
+        const { activeOrder } = getLiveCheckoutContext();
+        if (!isEcommercePosEffectBlocked(activeOrder)) return null;
+
+        if (invalidateSnapshot && checkoutSnapshotRef.current) {
+            await invalidateCheckoutSnapshot(checkoutSnapshotRef.current, {
+                releaseLock: true,
+                reason: 'live_order_became_ecommerce'
+            });
+        }
+
+        return showEcommerceCheckoutBlocked();
+    }, [getLiveCheckoutContext, invalidateCheckoutSnapshot, showEcommerceCheckoutBlocked]);
+
+    const validateLiveCheckoutTarget = useCallback((expectedOrderId) => {
+        const { orderId, activeOrder } = getLiveCheckoutContext();
+
+        if (isEcommercePosEffectBlocked(activeOrder)) {
+            return showEcommerceCheckoutBlocked();
+        }
+
+        if (!expectedOrderId || !orderId || !activeOrder || orderId !== expectedOrderId) {
+            return showStaleSnapshotBlocked();
+        }
+
+        return null;
+    }, [getLiveCheckoutContext, showEcommerceCheckoutBlocked, showStaleSnapshotBlocked]);
+
+    const validateLiveCheckoutSnapshot = useCallback(async (snapshot) => {
+        const { orderId, activeOrder } = getLiveCheckoutContext();
+
+        if (isEcommercePosEffectBlocked(activeOrder)) {
+            if (snapshot) {
+                await invalidateCheckoutSnapshot(snapshot, {
+                    releaseLock: true,
+                    reason: 'live_order_is_ecommerce'
+                });
+            }
+            return showEcommerceCheckoutBlocked();
+        }
+
+        if (
+            !snapshot ||
+            snapshot.invalidated ||
+            !snapshot.orderId ||
+            !orderId ||
+            !activeOrder ||
+            snapshot.orderId !== orderId
+        ) {
+            if (snapshot) {
+                await invalidateCheckoutSnapshot(snapshot, {
+                    releaseLock: true,
+                    reason: 'checkout_snapshot_stale'
+                });
+            }
+            return showStaleSnapshotBlocked();
+        }
+
+        return null;
+    }, [getLiveCheckoutContext, invalidateCheckoutSnapshot, showEcommerceCheckoutBlocked, showStaleSnapshotBlocked]);
+
+    const prepareForNewCheckout = useCallback(async () => {
+        const existingSnapshot = checkoutSnapshotRef.current;
+        if (!existingSnapshot) return null;
+
+        const cleanup = await invalidateCheckoutSnapshot(existingSnapshot, {
+            releaseLock: true,
+            reason: 'new_checkout_started'
+        });
+        if (cleanup.success) return null;
+
+        showMessageModal(
+            'No se pudo liberar el cobro anterior. Cierra el modal e intenta nuevamente.',
+            null,
+            { type: 'warning' }
+        );
+        return { success: false, code: 'CHECKOUT_LOCK_RELEASE_FAILED' };
+    }, [invalidateCheckoutSnapshot]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return undefined;
@@ -225,32 +537,27 @@ export function usePosCheckout({
         return () => window.removeEventListener('online', retryPendingCloses);
     }, [features]);
 
-    const handlePaymentModalClose = useCallback(() => {
+    const handlePaymentModalClose = useCallback(async () => {
         const snapshot = checkoutSnapshotRef.current;
-        checkoutSnapshotRef.current = null;
-
-        if (snapshot?.orderId) {
-            useActiveOrders.getState().unlockOrder(snapshot.orderId).catch((err) => {
-                console.error('[usePosCheckout] Error en rollback al cerrar modal de pago:', err);
-            });
+        if (snapshot) {
+            const releaseResult = await releaseCheckoutSnapshotLock(snapshot, { reason: 'payment_modal_closed' });
+            if (releaseResult.success) {
+                clearCheckoutSnapshotIfResolved(snapshot);
+            }
         }
-
         modal.closeModal('payment');
-    }, [modal]);
+    }, [clearCheckoutSnapshotIfResolved, modal, releaseCheckoutSnapshotLock]);
 
     const handleQuickCajaClose = useCallback(async () => {
         const snapshot = checkoutSnapshotRef.current;
-        checkoutSnapshotRef.current = null;
-
-        try {
-            if (snapshot?.orderId) {
-                await useActiveOrders.getState().unlockOrder(snapshot.orderId);
+        if (snapshot) {
+            const releaseResult = await releaseCheckoutSnapshotLock(snapshot, { reason: 'quick_caja_closed' });
+            if (releaseResult.success) {
+                clearCheckoutSnapshotIfResolved(snapshot);
             }
-        } catch (err) {
-            console.error('[usePosCheckout] Error liberando lock al cancelar apertura de caja:', err);
-        } finally {
-            modal.closeModal('quickCaja');
         }
+
+        modal.closeModal('quickCaja');
 
         if (snapshot?.orderId) {
             showMessageModal(
@@ -259,13 +566,19 @@ export function usePosCheckout({
                 { type: 'warning' }
             );
         }
-    }, [modal]);
+    }, [clearCheckoutSnapshotIfResolved, modal, releaseCheckoutSnapshotLock]);
 
     const handleInitiateCheckout = useCallback(async () => {
+        const previousCheckoutError = await prepareForNewCheckout();
+        if (previousCheckoutError) return previousCheckoutError;
+
+        const ecommerceBlocked = await blockEcommerceCheckoutEffect();
+        if (ecommerceBlocked) return ecommerceBlocked;
+
         const licenseDetails = useAppStore.getState().licenseDetails;
         if (!licenseDetails || !licenseDetails.valid) {
             showMessageModal('⚠️ Error de Seguridad: Licencia no válida.');
-            return;
+            return undefined;
         }
 
         const activeOrdersState = useActiveOrders.getState();
@@ -280,7 +593,7 @@ export function usePosCheckout({
                 null,
                 { type: 'warning' }
             );
-            return;
+            return undefined;
         }
 
         const shouldVerifyCloudKitchen = Boolean(
@@ -297,8 +610,11 @@ export function usePosCheckout({
                 shouldVerifyCloudKitchen
             });
 
+            const afterKitchenTargetError = validateLiveCheckoutTarget(activeOrderId);
+            if (afterKitchenTargetError) return afterKitchenTargetError;
+
             if (!kitchenReview.canContinue) {
-                return;
+                return undefined;
             }
 
             if (Array.isArray(kitchenReview.orderItems)) {
@@ -314,8 +630,11 @@ export function usePosCheckout({
                         null,
                         { type: 'error' }
                     );
-                    return;
+                    return saveResult;
                 }
+
+                const afterSaveTargetError = validateLiveCheckoutTarget(activeOrderId);
+                if (afterSaveTargetError) return afterSaveTargetError;
 
                 const persistedSale = await db.table(STORES.SALES).get(activeOrderId);
                 const persistedItems = Array.isArray(persistedSale?.items) ? persistedSale.items : orderItems;
@@ -332,26 +651,60 @@ export function usePosCheckout({
             }
         }
 
+        const beforeLockTargetError = validateLiveCheckoutTarget(activeOrderId);
+        if (beforeLockTargetError) return beforeLockTargetError;
+
         const itemsToProcess = orderItems.filter((item) => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) {
             showMessageModal('El pedido está vacío.', null, { type: 'warning' });
-            return;
+            return undefined;
         }
 
-        mobileCart.closeCart();
-
+        const checkoutAttemptId = createCheckoutAttemptId();
         const lockResult = await useActiveOrders.getState().lockOrderForCheckout(activeOrderId);
         if (!lockResult.success) {
             showMessageModal(`⚠️ No se puede iniciar el cobro: ${lockResult.reason}`, null, { type: 'warning' });
-            return;
+            return lockResult;
         }
+
+        const ownershipResult = await persistCheckoutAttemptOwnership(activeOrderId, checkoutAttemptId);
+        if (!ownershipResult.success) {
+            await useActiveOrders.getState().unlockOrder(activeOrderId);
+            showMessageModal(
+                'No se pudo asegurar la propiedad del cobro. Intenta nuevamente.',
+                null,
+                { type: 'warning' }
+            );
+            return ownershipResult;
+        }
+
+        const snapshot = {
+            orderId: activeOrderId,
+            checkoutAttemptId,
+            lockOwnedByCheckout: true,
+            lockReleased: false,
+            lockReleaseInFlight: false,
+            lockReleasePromise: null,
+            invalidated: false,
+            consumed: false,
+            order: null,
+            total: null,
+            tableData: null
+        };
+        checkoutSnapshotRef.current = snapshot;
 
         const lockedState = useActiveOrders.getState();
         const lockedOrder = lockedState.activeOrders.get(activeOrderId);
         const pendingAfterLock = lockedState.pendingInventoryResolutions?.get(activeOrderId) || 0;
 
+        const afterLockTargetError = await validateLiveCheckoutSnapshot(snapshot);
+        if (afterLockTargetError) return afterLockTargetError;
+
         if (pendingAfterLock > 0 || !lockedOrder) {
-            await lockedState.unlockOrder(activeOrderId);
+            await invalidateCheckoutSnapshot(snapshot, {
+                releaseLock: true,
+                reason: pendingAfterLock > 0 ? 'inventory_pending_after_lock' : 'order_missing_after_lock'
+            });
             showMessageModal(
                 pendingAfterLock > 0
                     ? 'Espera a que termine la asignación de inventario antes de cobrar.'
@@ -359,14 +712,14 @@ export function usePosCheckout({
                 null,
                 { type: 'warning' }
             );
-            return;
+            return undefined;
         }
 
         const lockedItemsToProcess = lockedOrder.items.filter((item) => item.quantity && item.quantity > 0);
         if (lockedItemsToProcess.length === 0) {
-            await lockedState.unlockOrder(activeOrderId);
+            await invalidateCheckoutSnapshot(snapshot, { releaseLock: true, reason: 'empty_order_after_lock' });
             showMessageModal('El pedido está vacío.', null, { type: 'warning' });
-            return;
+            return undefined;
         }
 
         const fefoValidation = await validateFefoSelectionBeforeCheckout(
@@ -374,26 +727,26 @@ export function usePosCheckout({
             posSearch.menuVisual
         );
 
+        const afterFefoTargetError = await validateLiveCheckoutSnapshot(snapshot);
+        if (afterFefoTargetError) return afterFefoTargetError;
+
         if (fefoValidation.blocked) {
-            await lockedState.unlockOrder(activeOrderId);
+            await invalidateCheckoutSnapshot(snapshot, { releaseLock: true, reason: 'fefo_blocked' });
             showMessageModal(
                 fefoValidation.message || 'Hay un lote vencido que no puede venderse.',
                 null,
                 { type: 'error' }
             );
-            return;
+            return fefoValidation;
         }
 
         if (fefoValidation.warnings?.length > 0) {
             console.info('[CAD.5 FEFO] Advertencias preventivas de selección:', fefoValidation.warnings);
         }
 
-        checkoutSnapshotRef.current = {
-            orderId: activeOrderId,
-            order: deepClone(lockedOrder.items),
-            total: Number(lockedOrder.total),
-            tableData: deepClone(lockedOrder.tableData ?? null)
-        };
+        snapshot.order = deepClone(lockedOrder.items);
+        snapshot.total = Number(lockedOrder.total);
+        snapshot.tableData = deepClone(lockedOrder.tableData ?? null);
 
         const itemsRequiring = features?.hasLabFields
             ? lockedItemsToProcess.filter((item) =>
@@ -403,6 +756,7 @@ export function usePosCheckout({
             : [];
 
         prescription.setTempPrescriptionData(null);
+        mobileCart.closeCart();
 
         if (itemsRequiring.length > 0) {
             prescription.setPrescriptionItems(itemsRequiring);
@@ -410,50 +764,60 @@ export function usePosCheckout({
         } else {
             modal.openModal('payment');
         }
+
+        return { success: true, orderId: activeOrderId, checkoutAttemptId };
     }, [
-        pos.order,
-        pos.activeOrderId,
-        posSearch.menuVisual,
-        features?.hasLabFields,
-        features?.hasTables,
+        blockEcommerceCheckoutEffect,
+        invalidateCheckoutSnapshot,
         mobileCart,
         modal,
-        prescription
+        pos.activeOrderId,
+        pos.order,
+        posSearch.menuVisual,
+        persistCheckoutAttemptOwnership,
+        prepareForNewCheckout,
+        prescription,
+        features?.hasLabFields,
+        features?.hasTables,
+        validateLiveCheckoutSnapshot,
+        validateLiveCheckoutTarget
     ]);
 
     const handleProcessOrder = useCallback(async (paymentData, forceSale = false) => {
         const snapshot = checkoutSnapshotRef.current;
-
-        if (!snapshot) {
-            console.error('[usePosCheckout] handleProcessOrder llamado sin snapshot activo.');
-            showMessageModal('⚠️ Error interno: cierra el modal y vuelve a intentar el cobro.');
-            modal.closeModal('payment');
-            return;
+        const initialSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+        if (initialSnapshotError) {
+            if (!snapshot) modal.closeModal('payment');
+            return initialSnapshotError;
         }
 
         const isSessionValid = await verifySessionIntegrity(CHECKOUT_INTEGRITY_OPTIONS);
         if (!isSessionValid) {
+            await invalidateCheckoutSnapshot(snapshot, { releaseLock: true, reason: 'session_invalid' });
             showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
                 window.location.reload();
             });
-            return;
+            return { success: false, code: 'SESSION_INVALID' };
         }
+
+        const afterSessionSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+        if (afterSessionSnapshotError) return afterSessionSnapshotError;
 
         if (paymentData.paymentMethod === 'fiado') {
             if (!paymentData.dueDate) {
+                await invalidateCheckoutSnapshot(snapshot, { releaseLock: true, reason: 'credit_due_date_required' });
                 showMessageModal('⚠️ Fecha de vencimiento es requerida para ventas a crédito.');
-                checkoutSnapshotRef.current = null;
                 modal.closeModal('payment');
-                return;
+                return { success: false, code: 'CREDIT_DUE_DATE_REQUIRED' };
             }
 
             const todayStr = new Date().toISOString().split('T')[0];
             const dueDateStr = paymentData.dueDate.split('T')[0];
             if (dueDateStr < todayStr) {
+                await invalidateCheckoutSnapshot(snapshot, { releaseLock: true, reason: 'credit_due_date_invalid' });
                 showMessageModal('⚠️ La fecha de vencimiento no puede ser en el pasado.');
-                checkoutSnapshotRef.current = null;
                 modal.closeModal('payment');
-                return;
+                return { success: false, code: 'CREDIT_DUE_DATE_INVALID' };
             }
         }
 
@@ -476,6 +840,9 @@ export function usePosCheckout({
             : hasCashComponent;
 
         if (requiresOpenCashSession && !hasOpenCashSession(pos.cajaActual)) {
+            const beforeCajaSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+            if (beforeCajaSnapshotError) return beforeCajaSnapshotError;
+
             try {
                 const ensuredCashSession = await asegurarCajaAbierta?.();
 
@@ -484,11 +851,15 @@ export function usePosCheckout({
                 }
             } catch (cashError) {
                 if (cashError?.code === 'CAJA_NEEDS_OPENING') {
+                    const beforeQuickCajaSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+                    if (beforeQuickCajaSnapshotError) return beforeQuickCajaSnapshotError;
+
                     modal.closeModal('payment');
                     modal.openModal('quickCaja');
-                    return;
+                    return { success: false, code: 'CAJA_NEEDS_OPENING' };
                 }
 
+                await invalidateCheckoutSnapshot(snapshot, { releaseLock: true, reason: 'cash_validation_failed' });
                 showMessageModal(
                     cashError?.message || 'No se pudo verificar la caja abierta. Intenta de nuevo.',
                     null,
@@ -498,18 +869,26 @@ export function usePosCheckout({
                         confirmButtonText: 'Entendido'
                     }
                 );
-                return;
+                return { success: false, code: cashError?.code || 'CAJA_VALIDATION_FAILED' };
             }
+
+            const afterCajaSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+            if (afterCajaSnapshotError) return afterCajaSnapshotError;
         }
 
-        checkoutSnapshotRef.current = null;
+        const beforeSaleSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+        if (beforeSaleSnapshotError) return beforeSaleSnapshotError;
 
         let isSuccess = false;
         let isStockWarning = false;
 
         try {
-            modal.closeModal('payment');
             const { processSale } = await import('../../services/salesService');
+            const finalSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+            if (finalSnapshotError) return finalSnapshotError;
+
+            modal.closeModal('payment');
+
             const result = await processSale({
                 order: snapshot.order,
                 paymentData,
@@ -524,6 +903,10 @@ export function usePosCheckout({
 
             if (result.success) {
                 isSuccess = true;
+                snapshot.consumed = true;
+                snapshot.lockReleased = true;
+                snapshot.lockOwnedByCheckout = false;
+                checkoutSnapshotRef.current = null;
 
                 let kitchenCloseWarning = null;
                 try {
@@ -572,56 +955,134 @@ export function usePosCheckout({
             } else if (result.errorType === 'STOCK_WARNING') {
                 isStockWarning = true;
                 checkoutSnapshotRef.current = snapshot;
+
+                const cancelStockWarningCheckout = async () => {
+                    const releaseResult = await releaseCheckoutSnapshotLock(snapshot, {
+                        reason: 'stock_warning_cancelled'
+                    });
+
+                    if (releaseResult.success) {
+                        clearCheckoutSnapshotIfResolved(snapshot);
+                        showMessageModal(
+                            'Venta cancelada. La orden quedó desbloqueada y puede editarse nuevamente.',
+                            null,
+                            { type: 'warning' }
+                        );
+                        return releaseResult;
+                    }
+
+                    showMessageModal(
+                        'No se pudo liberar el bloqueo del cobro. Vuelve a intentar cerrar el cobro antes de continuar.',
+                        null,
+                        {
+                            title: 'Liberación pendiente',
+                            type: 'warning'
+                        }
+                    );
+                    return releaseResult;
+                };
+
                 showMessageModal(
                     result.message,
                     async () => {
-                        const lockResult = await useActiveOrders.getState().lockOrderForCheckout(snapshot.orderId);
-                        if (lockResult.success) {
-                            handleProcessOrder(paymentData, true);
-                        } else {
-                            showMessageModal(`⚠️ No se puede forzar el cobro: ${lockResult.reason}`, null, { type: 'warning' });
+                        const snapshotError = await validateLiveCheckoutSnapshot(snapshot);
+                        if (snapshotError) return snapshotError;
+
+                        if (snapshot.lockOwnedByCheckout !== true || snapshot.lockReleased === true) {
+                            const checkoutAttemptId = createCheckoutAttemptId();
+                            const lockResult = await useActiveOrders.getState().lockOrderForCheckout(snapshot.orderId);
+                            if (!lockResult.success) {
+                                showMessageModal(`⚠️ No se puede forzar el cobro: ${lockResult.reason}`, null, { type: 'warning' });
+                                return lockResult;
+                            }
+                            const ownershipResult = await persistCheckoutAttemptOwnership(snapshot.orderId, checkoutAttemptId);
+                            if (!ownershipResult.success) {
+                                await useActiveOrders.getState().unlockOrder(snapshot.orderId);
+                                return ownershipResult;
+                            }
+                            snapshot.checkoutAttemptId = checkoutAttemptId;
+                            snapshot.lockOwnedByCheckout = true;
+                            snapshot.lockReleased = false;
+                            snapshot.lockReleaseError = null;
                         }
+
+                        return handleProcessOrderRef.current?.(paymentData, true);
                     },
-                    { confirmButtonText: 'Sí, Vender Igual', type: 'warning' }
+                    {
+                        title: 'Advertencia de inventario',
+                        confirmButtonText: 'Sí, Vender Igual',
+                        cancelButtonText: 'Cancelar venta',
+                        showCancel: true,
+                        isDismissible: false,
+                        type: 'warning',
+                        onCancel: cancelStockWarningCheckout
+                    }
                 );
             } else {
                 showMessageModal(`Error: ${result.message}`, null, { type: 'error' });
             }
+
+            return result;
         } catch (error) {
             console.error('[usePosCheckout] Error crítico en UI:', error);
             showMessageModal(`Error inesperado: ${error.message}`);
+            return { success: false, message: error.message };
         } finally {
-            if (!isSuccess) {
-                await useActiveOrders.getState().unlockOrder(snapshot.orderId).catch((err) => {
-                    console.error('[usePosCheckout] Error en rollback en finally:', err);
-                });
-
-                if (!isStockWarning) {
-                    checkoutSnapshotRef.current = null;
+            if (!isSuccess && !isStockWarning) {
+                const releaseResult = await releaseCheckoutSnapshotLock(snapshot, { reason: 'process_failed' });
+                if (releaseResult.success) {
+                    clearCheckoutSnapshotIfResolved(snapshot);
                 }
             }
         }
     }, [
-        verifySessionIntegrity,
-        pos.cajaActual,
         asegurarCajaAbierta,
-        posSearch,
+        clearCheckoutSnapshotIfResolved,
         features,
-        prescription,
-        modal,
+        fetchActiveTablesCount,
+        invalidateCheckoutSnapshot,
         mobileCart,
-        fetchActiveTablesCount
+        modal,
+        pos.cajaActual,
+        posSearch,
+        persistCheckoutAttemptOwnership,
+        prescription,
+        releaseCheckoutSnapshotLock,
+        validateLiveCheckoutSnapshot,
+        verifySessionIntegrity
     ]);
 
+    useEffect(() => {
+        handleProcessOrderRef.current = handleProcessOrder;
+    }, [handleProcessOrder]);
+
     const handleQuickCajaSubmit = useCallback(async (openingData) => {
+        const snapshot = checkoutSnapshotRef.current;
+        const initialSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+        if (initialSnapshotError) return initialSnapshotError;
+
         const success = await abrirCaja(openingData);
         if (success) {
+            const afterOpenSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+            if (afterOpenSnapshotError) {
+                showMessageModal(
+                    'La caja se abrió, pero la orden cambió. El cobro fue cancelado y la orden anterior quedó desbloqueada.',
+                    null,
+                    { type: 'warning' }
+                );
+                return afterOpenSnapshotError;
+            }
+
             try {
                 const ensuredCashSession = await asegurarCajaAbierta?.();
                 if (!hasOpenCashSession(ensuredCashSession)) {
                     throw buildCashNeedsOpeningError();
                 }
             } catch (cashError) {
+                const releaseResult = await releaseCheckoutSnapshotLock(snapshot, { reason: 'quick_caja_validation_failed' });
+                if (releaseResult.success) {
+                    clearCheckoutSnapshotIfResolved(snapshot);
+                }
                 showMessageModal(
                     cashError?.message || 'La caja se abrió, pero no se pudo confirmar la sesión abierta. Intenta de nuevo.',
                     null,
@@ -634,11 +1095,21 @@ export function usePosCheckout({
                 return false;
             }
 
+            const beforePaymentSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
+            if (beforePaymentSnapshotError) return beforePaymentSnapshotError;
+
             modal.closeModal('quickCaja');
             modal.openModal('payment');
         }
         return success;
-    }, [abrirCaja, asegurarCajaAbierta, modal]);
+    }, [
+        abrirCaja,
+        asegurarCajaAbierta,
+        clearCheckoutSnapshotIfResolved,
+        modal,
+        releaseCheckoutSnapshotLock,
+        validateLiveCheckoutSnapshot
+    ]);
 
     return {
         handleInitiateCheckout,

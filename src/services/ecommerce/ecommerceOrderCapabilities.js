@@ -49,6 +49,13 @@ export function canAccessEcommerceOrders(licenseDetails = {}, staffSession = {})
   return getStaffPermissions(staffSession).ecommerce === true;
 }
 
+export function canPrepareEcommerceOrderInPos(licenseDetails = {}, staffSession = {}) {
+  if (!canAccessEcommerceOrders(licenseDetails, staffSession)) return false;
+  const deviceRole = getEcommerceOrderDeviceRole(staffSession);
+  if (deviceRole === 'admin') return true;
+  return deviceRole === 'staff' && getStaffPermissions(staffSession).pos === true;
+}
+
 export function canUseEcommerceOrderRealtime(licenseDetails = {}, staffSession = {}) {
   const features = getEcommerceOrderFeatures(licenseDetails);
   return (

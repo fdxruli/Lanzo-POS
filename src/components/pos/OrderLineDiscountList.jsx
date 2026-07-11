@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { getLineKey } from '../../services/sales/orderTotals';
 import { showMessageModal } from '../../services/utils';
+import { isEcommercePosEffectBlocked } from '../../services/ecommerce/ecommercePosDraftGuards';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 
 const money = (value) => `$${Number(value || 0).toFixed(2)}`;
@@ -21,8 +22,9 @@ export default function OrderLineDiscountList() {
   const [reason, setReason] = useState('');
 
   const canManageDiscounts = canAccess('discounts');
+  const isEcommerceDraft = isEcommercePosEffectBlocked(order);
   const items = Array.isArray(order?.items) ? order.items.filter((item) => Number(item?.quantity) > 0) : [];
-  if (items.length === 0 || !canManageDiscounts) return null;
+  if (isEcommerceDraft || items.length === 0 || !canManageDiscounts) return null;
 
   const reset = () => {
     setEditingLineId(null);
@@ -32,7 +34,8 @@ export default function OrderLineDiscountList() {
   };
 
   const apply = (lineId) => {
-    if (!canManageDiscounts) return;
+    const liveOrder = selectCurrentOrder(useActiveOrders.getState());
+    if (!canManageDiscounts || isEcommercePosEffectBlocked(liveOrder)) return;
 
     try {
       applyLineDiscount(lineId, { type, value, reason });
@@ -44,7 +47,8 @@ export default function OrderLineDiscountList() {
   };
 
   const remove = (lineId) => {
-    if (!canManageDiscounts) return;
+    const liveOrder = selectCurrentOrder(useActiveOrders.getState());
+    if (!canManageDiscounts || isEcommercePosEffectBlocked(liveOrder)) return;
     removeLineDiscount(lineId);
     showMessageModal('Descuento por producto quitado.', null, { type: 'success' });
   };

@@ -8,6 +8,7 @@ import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
 import { releaseCommittedStock } from '../../services/sales/inventoryFlow';
 import { normalizeCartItems } from '../../utils/cartLineIdentity';
+import { releaseEcommerceOrderPosDraft } from '../../services/ecommerce/ecommerceOrderService';
 import {
   getOrderDeviceId,
   getNextPersistedOrderVersion,
@@ -126,6 +127,128 @@ export const useActiveOrders = create(
       get().switchOrder(id);
 
       return id;
+    },
+
+    upsertEcommerceDraft: (draft) => {
+      const state = get();
+      const draftId = typeof draft?.id === 'string' ? draft.id.trim() : '';
+      const licenseIdentity = typeof draft?.ecommerceLicenseIdentity === 'string'
+        ? draft.ecommerceLicenseIdentity.trim()
+        : '';
+
+      if (!draftId.startsWith('ecom-') || !licenseIdentity || !Array.isArray(draft?.items)) {
+        return { success: false, code: 'ECOMMERCE_POS_DRAFT_PREPARE_FAILED' };
+      }
+
+      const existing = state.activeOrders.get(draftId);
+      if (existing) {
+        if (existing.origin !== 'ecommerce' || existing.ecommerceLicenseIdentity !== licenseIdentity) {
+          return { success: false, code: 'ECOMMERCE_POS_DRAFT_PREPARE_FAILED' };
+        }
+        set({ currentOrderId: draftId, isCurrentOrderLocked: false });
+        return { success: true, created: false, order: existing };
+      }
+
+      if (state.activeOrders.size >= 10) {
+        return { success: false, code: 'ECOMMERCE_POS_DRAFT_PREPARE_FAILED', message: 'Cierra una orden activa antes de preparar este pedido.' };
+      }
+
+      const nowIso = new Date().toISOString();
+      const items = normalizeCartItems(draft.items);
+      const nextOrder = {
+        id: draftId,
+        items,
+        customer: null,
+        tableData: null,
+        createdAt: draft.createdAt || nowIso,
+        updatedAt: nowIso,
+        revision: 0,
+        deviceId: getOrderDeviceId(),
+        total: calculateOrderTotalExact(items),
+        folio: null,
+        isSaved: false,
+        origin: 'ecommerce',
+        ecommerceOrderId: draft.ecommerceOrderId,
+        ecommerceOrderCode: draft.ecommerceOrderCode,
+        ecommerceLicenseIdentity: licenseIdentity,
+        ecommerceDraftStatus: draft.ecommerceDraftStatus || 'claimed',
+        ecommerceClaimToken: draft.ecommerceClaimToken || null,
+        fulfillmentMethod: draft.fulfillmentMethod || 'pickup',
+        expectedSubtotal: Number(draft.expectedSubtotal) || 0,
+        expectedDeliveryFee: Number(draft.expectedDeliveryFee) || 0,
+        expectedDiscountTotal: Number(draft.expectedDiscountTotal) || 0,
+        expectedTaxTotal: Number(draft.expectedTaxTotal) || 0,
+        expectedTotal: Number(draft.expectedTotal) || 0,
+        currency: draft.currency || 'MXN'
+      };
+
+      const nextOrders = new Map(state.activeOrders);
+      nextOrders.set(draftId, nextOrder);
+      set({ activeOrders: nextOrders, currentOrderId: draftId, isCurrentOrderLocked: false });
+      return { success: true, created: true, order: nextOrder };
+    },
+
+    updateEcommerceDraftStatus: (orderId, ecommerceDraftStatus) => {
+      const order = get().activeOrders.get(orderId);
+      if (!order || order.origin !== 'ecommerce') return false;
+      get().updateOrder(orderId, { ecommerceDraftStatus });
+      return true;
+    },
+
+    removeEcommerceDraftLocal: (orderId) => {
+      const state = get();
+      const order = state.activeOrders.get(orderId);
+      if (!order || order.origin !== 'ecommerce') return { success: false };
+
+      const nextOrders = new Map(state.activeOrders);
+      nextOrders.delete(orderId);
+      let nextCurrentOrderId = state.currentOrderId;
+      if (nextCurrentOrderId === orderId) {
+        nextCurrentOrderId = nextOrders.keys().next().value || null;
+      }
+      set({ activeOrders: nextOrders, currentOrderId: nextCurrentOrderId, isCurrentOrderLocked: false });
+      if (!nextCurrentOrderId) get().createOrder();
+      return { success: true };
+    },
+
+    releaseEcommerceDraft: async (orderId, reason = 'abandoned') => {
+      const order = get().activeOrders.get(orderId);
+      if (!order || order.origin !== 'ecommerce') {
+        return { success: false, code: 'ECOMMERCE_POS_DRAFT_PREPARE_FAILED' };
+      }
+
+      const result = await releaseEcommerceOrderPosDraft({
+        licenseDetails: useAppStore.getState().licenseDetails,
+        orderId: order.ecommerceOrderId,
+        claimToken: order.ecommerceClaimToken,
+        reason
+      });
+
+      if (result.success === false) return result;
+      get().removeEcommerceDraftLocal(orderId);
+      return result;
+    },
+
+    pruneEcommerceDraftsForContext: ({ licenseIdentity, canPrepare }) => {
+      const state = get();
+      const nextOrders = new Map(state.activeOrders);
+      let changed = false;
+
+      state.activeOrders.forEach((order, orderId) => {
+        if (order?.origin !== 'ecommerce') return;
+        if (!canPrepare || !licenseIdentity || order.ecommerceLicenseIdentity !== licenseIdentity) {
+          nextOrders.delete(orderId);
+          changed = true;
+        }
+      });
+
+      if (!changed) return false;
+      const nextCurrentOrderId = nextOrders.has(state.currentOrderId)
+        ? state.currentOrderId
+        : (nextOrders.keys().next().value || null);
+      set({ activeOrders: nextOrders, currentOrderId: nextCurrentOrderId, isCurrentOrderLocked: false });
+      if (!nextCurrentOrderId) get().createOrder();
+      return true;
     },
 
     /**

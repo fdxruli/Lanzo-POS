@@ -13,10 +13,36 @@ const store = vi.hoisted(() => ({
   clearSelectedEcommerceOrder: vi.fn(),
   acceptEcommerceOrder: vi.fn(),
   rejectEcommerceOrder: vi.fn()
+  ,preparePosDraft: vi.fn()
+  ,releasePosDraft: vi.fn()
+  ,showMessageModal: vi.fn()
+  ,showConfirmModal: vi.fn()
+  ,activeState: { activeOrders: new Map(), releaseEcommerceDraft: vi.fn() }
 }));
 
 vi.mock('../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector(store.state)
+  useAppStore: Object.assign(
+    (selector) => selector(store.state),
+    { getState: () => store.state }
+  )
+}));
+
+vi.mock('../../services/ecommerce/ecommercePosDraftService', () => ({
+  getEcommercePosDraftId: (id) => `ecom-${id}`,
+  prepareEcommerceOrderPosDraft: store.preparePosDraft
+}));
+
+vi.mock('../../services/ecommerce/ecommerceOrderService', () => ({
+  releaseEcommerceOrderPosDraft: store.releasePosDraft
+}));
+
+vi.mock('../../hooks/pos/useActiveOrders', () => ({
+  useActiveOrders: { getState: () => store.activeState }
+}));
+
+vi.mock('../../services/utils', () => ({
+  showMessageModal: store.showMessageModal,
+  showConfirmModal: store.showConfirmModal
 }));
 
 import EcommerceOrdersPage from '../EcommerceOrdersPage';
@@ -41,6 +67,7 @@ const selectedOrder = (id = orderId, status = 'seen') => ({
   items: [{ id: 'item', productName: 'Producto', unitPrice: 20, quantity: 1, lineTotal: 20 }],
   events: [],
   contact: { whatsappUrl: 'https://wa.me/529610000000' }
+  ,posDraft: { status: 'none', draftId: null, isClaimedByCurrentActor: false, claimToken: null }
 });
 
 const baseState = () => ({
@@ -111,10 +138,54 @@ beforeEach(() => {
   store.refreshEcommerceOrders.mockResolvedValue({ success: true });
   store.acceptEcommerceOrder.mockResolvedValue({ success: true });
   store.rejectEcommerceOrder.mockResolvedValue({ success: true });
+  store.preparePosDraft.mockResolvedValue({ success: true, draftId: `ecom-${orderId}` });
+  store.releasePosDraft.mockResolvedValue({ success: true });
+  store.showConfirmModal.mockResolvedValue(true);
+  store.activeState = { activeOrders: new Map(), releaseEcommerceDraft: vi.fn() };
   store.state = baseState();
 });
 
 describe('EcommerceOrdersPage', () => {
+  it('shows prepare only to admin or staff with ecommerce and POS permissions', () => {
+    store.state = { ...baseState(), selectedEcommerceOrder: selectedOrder(orderId, 'accepted') };
+    const { unmount } = renderPage();
+    expect(screen.getByRole('button', { name: /Preparar en Punto de Venta/i })).toBeInTheDocument();
+    unmount();
+
+    store.state = {
+      ...baseState(),
+      currentDeviceRole: 'staff',
+      currentStaffUser: { id: 'staff-1', permissions: { ecommerce: true, pos: false } },
+      selectedEcommerceOrder: selectedOrder(orderId, 'accepted')
+    };
+    renderPage();
+    expect(screen.queryByRole('button', { name: /Preparar en Punto de Venta/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a safe conflict state when another device owns the claim', () => {
+    const order = selectedOrder(orderId, 'accepted');
+    order.posDraft = { status: 'claimed', isClaimedByCurrentActor: false };
+    store.state = { ...baseState(), selectedEcommerceOrder: order };
+    renderPage();
+
+    expect(screen.getByRole('button', { name: 'En preparación en otro dispositivo' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Preparar en Punto de Venta/i })).not.toBeInTheDocument();
+  });
+
+  it('deduplicates prepare clicks while the action is pending', async () => {
+    let resolvePrepare;
+    store.preparePosDraft.mockReturnValue(new Promise((resolve) => { resolvePrepare = resolve; }));
+    store.state = { ...baseState(), selectedEcommerceOrder: selectedOrder(orderId, 'accepted') };
+    renderPage();
+
+    const button = screen.getByRole('button', { name: /Preparar en Punto de Venta/i });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(store.preparePosDraft).toHaveBeenCalledTimes(1);
+
+    resolvePrepare({ success: false, code: 'FIXTURE', message: 'fixture' });
+    await waitFor(() => expect(store.showMessageModal).toHaveBeenCalled());
+  });
   it('loads the inbox and keeps address and notes out of the list', async () => {
     renderPage();
 

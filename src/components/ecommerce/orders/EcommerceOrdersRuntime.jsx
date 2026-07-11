@@ -3,6 +3,14 @@ import { useLocation } from 'react-router-dom';
 import '../../../store/installEcommerceOrderStore';
 import { useAppStore } from '../../../store/useAppStore';
 import { canAccessEcommerceOrders } from '../../../services/ecommerce/ecommerceOrderCapabilities';
+import {
+  canPrepareEcommercePosDraft,
+  getEcommercePosContextIdentity
+} from '../../../services/ecommerce/ecommercePosDraftService';
+import { installEcommercePosActiveOrderGuards } from '../../../services/ecommerce/installEcommercePosActiveOrderGuards';
+import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
+
+installEcommercePosActiveOrderGuards();
 
 const getLicenseIdentity = (licenseDetails = {}) => (
   licenseDetails?.license_key ||
@@ -28,6 +36,16 @@ export default function EcommerceOrdersRuntime() {
   const canAccess = canAccessEcommerceOrders(licenseDetails, staffSession);
   const licenseIdentity = getLicenseIdentity(licenseDetails);
   const pageIsOpen = location.pathname.startsWith('/pedidos-online');
+  const posContextState = { licenseDetails, currentDeviceRole, currentStaffUser };
+  const posContextIdentity = getEcommercePosContextIdentity(posContextState);
+  const canPrepareInPos = canPrepareEcommercePosDraft(posContextState);
+
+  useEffect(() => {
+    useActiveOrders.getState().pruneEcommerceDraftsForContext({
+      licenseIdentity: posContextIdentity,
+      canPrepare: canPrepareInPos
+    });
+  }, [canPrepareInPos, posContextIdentity]);
 
   useEffect(() => {
     if (previousLicenseRef.current && previousLicenseRef.current !== licenseIdentity) {
