@@ -61,6 +61,9 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
   const products = useProductStore((state) => state.menu);
   const canResolveInventory = useAppStore((state) => canPrepareEcommercePosDraft(state));
   const effectiveOrder = storedOrder || order;
+  const storedOrderId = storedOrder?.id || null;
+  const storedOrderOrigin = storedOrder?.origin || null;
+  const storedOrderDraftStatus = storedOrder?.ecommerceDraftStatus || null;
   const [isResolving, setIsResolving] = useState(false);
   const [resolutionError, setResolutionError] = useState('');
   const [hasLocalReadFailure, setHasLocalReadFailure] = useState(false);
@@ -106,16 +109,16 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
 
   const runResolution = useCallback(async ({ announceFailure = false } = {}) => {
     if (
-      !storedOrder?.id
-      || storedOrder.origin !== 'ecommerce'
-      || storedOrder.ecommerceDraftStatus !== 'prepared'
+      !storedOrderId
+      || storedOrderOrigin !== 'ecommerce'
+      || storedOrderDraftStatus !== 'prepared'
       || !canResolveInventory
     ) return null;
 
     setIsResolving(true);
     setResolutionError('');
     const result = await revalidateEcommerceDraftInventory({
-      orderId: storedOrder.id,
+      orderId: storedOrderId,
       deps: { products }
     });
     setIsResolving(false);
@@ -138,7 +141,7 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
       setResolutionError(result?.message || 'No se pudo comprobar el inventario local.');
     }
     return result;
-  }, [canResolveInventory, products, storedOrder]);
+  }, [canResolveInventory, products, storedOrderDraftStatus, storedOrderId, storedOrderOrigin]);
 
   useEffect(() => {
     if (batchRevision === 'loading-batches') return;
@@ -166,8 +169,8 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
   const safeWarnings = warnings.filter((warning) => !legacyInventoryWarning.test(String(warning || '')));
   const displayedResolutionError = resolutionError || effectiveOrder.ecommerceInventoryError?.message || '';
   const canRunResolution = Boolean(
-    storedOrder?.id
-    && storedOrder.ecommerceDraftStatus === 'prepared'
+    storedOrderId
+    && storedOrderDraftStatus === 'prepared'
     && canResolveInventory
   );
 
@@ -177,7 +180,7 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
     setIsLoadingBatches(true);
     setResolutionError('');
     const result = await getEcommerceDraftBatchOptions({
-      orderId: storedOrder.id,
+      orderId: storedOrderId,
       lineId,
       deps: { products }
     });
@@ -195,7 +198,7 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
     setIsSelectingBatch(true);
     setResolutionError('');
     const result = await selectEcommerceDraftBatch({
-      orderId: storedOrder.id,
+      orderId: storedOrderId,
       lineId: batchDialog.lineId,
       batchId,
       deps: { products }
