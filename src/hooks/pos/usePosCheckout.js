@@ -955,6 +955,33 @@ export function usePosCheckout({
             } else if (result.errorType === 'STOCK_WARNING') {
                 isStockWarning = true;
                 checkoutSnapshotRef.current = snapshot;
+
+                const cancelStockWarningCheckout = async () => {
+                    const releaseResult = await releaseCheckoutSnapshotLock(snapshot, {
+                        reason: 'stock_warning_cancelled'
+                    });
+
+                    if (releaseResult.success) {
+                        clearCheckoutSnapshotIfResolved(snapshot);
+                        showMessageModal(
+                            'Venta cancelada. La orden quedó desbloqueada y puede editarse nuevamente.',
+                            null,
+                            { type: 'warning' }
+                        );
+                        return releaseResult;
+                    }
+
+                    showMessageModal(
+                        'No se pudo liberar el bloqueo del cobro. Vuelve a intentar cerrar el cobro antes de continuar.',
+                        null,
+                        {
+                            title: 'Liberación pendiente',
+                            type: 'warning'
+                        }
+                    );
+                    return releaseResult;
+                };
+
                 showMessageModal(
                     result.message,
                     async () => {
@@ -981,7 +1008,15 @@ export function usePosCheckout({
 
                         return handleProcessOrderRef.current?.(paymentData, true);
                     },
-                    { confirmButtonText: 'Sí, Vender Igual', type: 'warning' }
+                    {
+                        title: 'Advertencia de inventario',
+                        confirmButtonText: 'Sí, Vender Igual',
+                        cancelButtonText: 'Cancelar venta',
+                        showCancel: true,
+                        isDismissible: false,
+                        type: 'warning',
+                        onCancel: cancelStockWarningCheckout
+                    }
                 );
             } else {
                 showMessageModal(`Error: ${result.message}`, null, { type: 'error' });
