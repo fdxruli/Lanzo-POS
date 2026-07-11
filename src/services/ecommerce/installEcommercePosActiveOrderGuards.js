@@ -18,6 +18,7 @@ export function installEcommercePosActiveOrderGuards() {
 
   const initialState = useActiveOrders.getState();
   const originalSaveOrderAsOpen = initialState.saveOrderAsOpen;
+  const originalPauseOrder = initialState.pauseOrder;
   const originalCloseOrder = initialState.closeOrder;
   const originalLockOrderForCheckout = initialState.lockOrderForCheckout;
 
@@ -26,6 +27,11 @@ export function installEcommercePosActiveOrderGuards() {
       const order = resolveOrder(orderId, orderSnapshot);
       if (isEcommercePosEffectBlocked(order)) return getEcommercePosBlockedResult();
       return originalSaveOrderAsOpen(orderId, orderSnapshot);
+    },
+    pauseOrder: async (orderId) => {
+      const order = resolveOrder(orderId);
+      if (isEcommercePosEffectBlocked(order)) return getEcommercePosBlockedResult();
+      return originalPauseOrder(orderId);
     },
     closeOrder: async (orderId, paymentData) => {
       const order = resolveOrder(orderId);
