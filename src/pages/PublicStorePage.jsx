@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ShoppingCart } from 'lucide-react';
+import { ArrowUpRight, ShoppingCart } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import { LogoMark } from '../components/common/Logo';
 import PublicStoreHeader from '../components/ecommerce/public/PublicStoreHeader';
 import PublicCatalog from '../components/ecommerce/public/PublicCatalog';
 import PublicCartDrawer, { PublicMobileCartBar } from '../components/ecommerce/public/PublicCartDrawer';
@@ -476,6 +477,29 @@ function PublicStorePage() {
           isLoadingMore={catalogLoadingMore}
         />
       </div>
+
+      <footer className="public-store-footer">
+        <div className="public-store-footer__inner">
+          <div className="public-store-footer__mark" aria-hidden="true">
+            <LogoMark />
+          </div>
+          <div className="public-store-footer__copy">
+            <p className="public-store-section-kicker">Haz crecer tu negocio</p>
+            <h2>¿Quieres tu propia tienda en línea?</h2>
+            <p>
+              Con Lanzo publica tu catálogo, recibe pedidos y organiza tus ventas desde un solo lugar.
+              Convierte cada visita en una oportunidad para vender más.
+            </p>
+          </div>
+          <a
+            className="ui-button ui-button--secondary public-store-footer__cta"
+            href={`/conoce-lanzo?tienda=${encodeURIComponent(slug)}`}
+          >
+            Conoce Lanzo
+            <ArrowUpRight aria-hidden="true" size={18} />
+          </a>
+        </div>
+      </footer>
 
       <PublicMobileCartBar
         totalUnits={cart.totalUnits}

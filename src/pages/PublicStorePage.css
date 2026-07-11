@@ -87,9 +87,18 @@ body:has(.public-store-shell) {
 }
 
 .public-store-header__cover.public-safe-image--fallback {
+  /* The second stroke of LogoMark uses --brand-accent-hover. Keep both
+     strokes high-contrast against the darker hero fallback. */
+  --brand-accent: #f8fafc;
+  --brand-accent-hover: #cbd5e1;
   color: rgba(255, 255, 255, 0.86);
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--ui-color-primary) 86%, #111827), var(--ui-color-secondary));
+}
+
+.public-store-header__cover.public-safe-image--fallback .public-safe-image__logo-mark {
+  width: clamp(4rem, 12vw, 7rem);
+  height: clamp(4rem, 12vw, 7rem);
 }
 
 .public-store-header__cover-shade {
@@ -247,6 +256,157 @@ body:has(.public-store-shell) {
   font-weight: 700;
 }
 
+.public-store-footer {
+  margin-top: 2rem;
+  padding: 2rem 1rem;
+  border-top: 1px solid var(--ui-border-color);
+  background: var(--ui-bg-surface);
+}
+
+.public-store-footer__inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  width: min(72rem, 100%);
+  margin: 0 auto;
+}
+
+.public-store-footer__mark {
+  display: grid;
+  width: 3.5rem;
+  height: 3.5rem;
+  place-items: center;
+  border-radius: 1rem;
+  background: var(--ui-bg-muted);
+}
+
+.public-store-footer__mark svg {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.public-store-footer__copy h2 {
+  margin: 0;
+  color: var(--ui-text-strong);
+  font-size: clamp(1.25rem, 3vw, 1.55rem);
+  line-height: 1.2;
+}
+
+.public-store-footer__copy > p:last-child {
+  max-width: 45rem;
+  margin: 0.4rem 0 0;
+  color: var(--ui-text-muted);
+  line-height: 1.55;
+}
+
+.public-store-footer__cta {
+  justify-self: start;
+  grid-column: 2;
+}
+
+.public-lanzo-landing {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: clamp(1.25rem, 4vw, 3rem) 1rem;
+}
+
+.public-lanzo-landing__inner {
+  width: min(46rem, 100%);
+}
+
+.public-lanzo-landing__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--ui-text-strong);
+  font-size: 1.1rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.public-lanzo-landing__mark {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: var(--ui-bg-surface);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.public-lanzo-landing__mark svg {
+  width: 1.6rem;
+  height: 1.6rem;
+}
+
+.public-lanzo-landing__hero {
+  margin-top: clamp(2.5rem, 9vh, 5.5rem);
+  padding: clamp(1.5rem, 5vw, 3rem);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-bg-surface);
+  box-shadow: var(--ui-shadow-lg);
+}
+
+.public-lanzo-landing__hero h1 {
+  margin: 0;
+  color: var(--ui-text-strong);
+  font-size: clamp(2rem, 7vw, 3.4rem);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.public-lanzo-landing__lead {
+  max-width: 39rem;
+  margin: 1rem 0 0;
+  color: var(--ui-text-muted);
+  font-size: clamp(1rem, 2.5vw, 1.15rem);
+  line-height: 1.65;
+}
+
+.public-lanzo-landing__benefits {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1.5rem;
+}
+
+.public-lanzo-landing__benefits > div,
+.public-lanzo-landing__highlights span {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  color: var(--ui-text);
+  line-height: 1.5;
+}
+
+.public-lanzo-landing__benefits svg {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  color: var(--ui-color-success);
+}
+
+.public-lanzo-landing__highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--ui-border-color);
+}
+
+.public-lanzo-landing__highlights span {
+  align-items: center;
+  color: var(--ui-text-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.public-lanzo-landing__back {
+  margin-top: 1.75rem;
+}
+
 .public-store-state {
   display: grid;
   justify-items: center;
@@ -368,6 +528,11 @@ body:has(.public-store-shell) {
   object-fit: cover;
   background: var(--ui-bg-muted);
   color: var(--ui-text-muted);
+}
+
+.public-product-card__image.public-safe-image--fallback .public-safe-image__logo-mark {
+  width: 3.25rem;
+  height: 3.25rem;
 }
 
 .public-product-card__body {
@@ -709,15 +874,26 @@ body:has(.public-store-shell) {
 }
 
 @media (min-width: 42rem) {
+  .public-store-footer__inner {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .public-store-footer__cta {
+    justify-self: end;
+    grid-column: auto;
+  }
+
   .public-store-header__content {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     column-gap: 1.25rem;
-    align-items: end;
+    align-items: start;
   }
 
   .public-store-header__identity {
-    margin: 0 0 0.25rem;
+    /* Keep the logo overlapping the cover, while the store name starts below it. */
+    margin: 0;
+    padding-top: 4.25rem;
   }
 
   .public-store-header__details,
@@ -773,6 +949,11 @@ body:has(.public-store-shell) {
 }
 
 @media (max-width: 34rem) {
+  .public-store-footer__cta {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
   .public-store-content__topbar p {
     display: none;
   }
