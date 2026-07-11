@@ -12,6 +12,7 @@ import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
+import { isEcommercePosEffectBlocked } from '../../services/ecommerce/ecommercePosDraftGuards';
 import './RestaurantCloudStatus.css';
 
 const ActiveOrderControls = () => {
@@ -66,7 +67,13 @@ const ActiveOrderControls = () => {
 const PosPageContent = ({ data, ui, actions, features }) => {
     const createOrder = useActiveOrders((state) => state.createOrder);
     const loadOrdersFromDB = useActiveOrders((state) => state.loadOrdersFromDB);
+    const currentOrder = useActiveOrders((state) => (
+        state.currentOrderId
+            ? state.activeOrders.get(state.currentOrderId) || null
+            : null
+    ));
     const [isInitializing, setIsInitializing] = useState(true);
+    const isEcommerceDraft = isEcommercePosEffectBlocked(currentOrder);
 
     useEffect(() => {
         const initializeOrders = async () => {
@@ -124,7 +131,9 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                             activeTablesCount={data.activeTablesCount}
                             kitchenRejectedOpenCount={data.kitchenRejectedOpenCount}
                         />
-                        {!features.hasTables && <OrderDiscountPanel />}
+                        {!features.hasTables && !isEcommerceDraft && (
+                            <OrderDiscountPanel />
+                        )}
                     </div>
                 </div>
             </div>
