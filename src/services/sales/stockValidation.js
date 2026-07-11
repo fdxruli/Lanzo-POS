@@ -9,7 +9,7 @@ const normalizeQuantity = (value) => {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 };
 
-const getQuantityToDeduct = (orderItem, product) => {
+export const getInventoryQuantityForSale = (orderItem, product) => {
     let quantityToDeduct = normalizeQuantity(orderItem?.quantity);
 
     if (product?.conversionFactor?.enabled) {
@@ -32,7 +32,7 @@ const addRequirement = (requirements, id, qty) => {
 
 const buildRequirementsForItem = (item, productDef) => {
     const itemRequirements = new Map();
-    const quantityToDeduct = getQuantityToDeduct(item, productDef);
+    const quantityToDeduct = getInventoryQuantityForSale(item, productDef);
 
     if (hasRecipe(productDef)) {
         productDef.recipe.forEach((ing) => {
@@ -210,7 +210,6 @@ export const validateStockBeforeSale = async ({
 
             if (currentAvailable < reqQty) {
                 const alreadyListed = missingIngredients.some((m) => m.ingredientName === realStockData.name);
-
                 if (!alreadyListed) {
                     missingIngredients.push({
                         productName: 'Pedido (Acumulado)',
