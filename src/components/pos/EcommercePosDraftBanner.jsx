@@ -179,18 +179,47 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
     const lineId = getLineId(item, index);
     setIsLoadingBatches(true);
     setResolutionError('');
-    const result = await getEcommerceDraftBatchOptions({
-      orderId: storedOrderId,
-      lineId,
-      deps: { products }
-    });
-    setIsLoadingBatches(false);
 
-    if (result?.success === false) {
-      setResolutionError('No se pudieron cargar los lotes vigentes de este producto.');
-      return;
+    try {
+      const result = await getEcommerceDraftBatchOptions({
+        orderId: storedOrderId,
+        lineId,
+        deps: { products }
+      });
+
+      if (isStaleResponse(result)) {
+        setBatchDialog(null);
+        return;
+      }
+
+      if (result?.code === ECOMMERCE_INVENTORY_READ_FAILED) {
+        setHasLocalReadFailure(true);
+        setResolutionError(
+          result.message
+          || 'No se pudo comprobar el inventario local. Intenta resolverlo nuevamente.'
+        );
+        setBatchDialog(null);
+        return;
+      }
+
+      if (result?.success === false) {
+        setResolutionError(
+          result?.message
+          || 'No se pudieron cargar los lotes vigentes de este producto.'
+        );
+        setBatchDialog(null);
+        return;
+      }
+
+      setHasLocalReadFailure(false);
+      setBatchDialog({ lineId, item, options: result.options || [] });
+    } catch {
+      setHasLocalReadFailure(true);
+      setResolutionError('No se pudo comprobar el inventario local. Intenta resolverlo nuevamente.');
+      setBatchDialog(null);
+    } finally {
+      setIsLoadingBatches(false);
     }
-    setBatchDialog({ lineId, item, options: result.options || [] });
   };
 
   const chooseBatch = async (batchId) => {
