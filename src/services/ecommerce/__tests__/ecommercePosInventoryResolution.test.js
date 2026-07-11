@@ -15,7 +15,6 @@ import {
   applyEcommerceInventoryResolution,
   calculateEcommerceInventoryStatus,
   getEcommerceDraftBatchOptions,
-  getEcommerceInventoryLineMessage,
   revalidateEcommerceDraftInventory,
   resetEcommerceInventoryResolutionAttemptsForTests,
   resolveEcommerceDraftInventory,
