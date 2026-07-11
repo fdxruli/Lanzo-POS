@@ -750,7 +750,12 @@ export function usePosCheckout({
         } finally {
             if (!isSuccess) {
                 const latestSnapshot = checkoutSnapshotRef.current;
-                const canRollbackSnapshotOrder = !latestSnapshot?.invalidated;
+                const liveContext = getLiveCheckoutContext();
+                const canRollbackSnapshotOrder = (
+                    latestSnapshot?.invalidated !== true &&
+                    liveContext.orderId === snapshot.orderId &&
+                    !isEcommercePosEffectBlocked(liveContext.activeOrder)
+                );
 
                 if (canRollbackSnapshotOrder) {
                     await useActiveOrders.getState().unlockOrder(snapshot.orderId).catch((err) => {
@@ -765,6 +770,7 @@ export function usePosCheckout({
         }
     }, [
         blockEcommerceCheckoutEffect,
+        getLiveCheckoutContext,
         validateLiveCheckoutSnapshot,
         verifySessionIntegrity,
         pos.cajaActual,
