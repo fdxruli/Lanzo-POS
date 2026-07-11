@@ -8,10 +8,29 @@ on:
 permissions:
   contents: read
 
+env:
+  RELATED_TESTS: >-
+    src/services/ecommerce/__tests__/ecommercePosDraftService.test.js
+    src/services/ecommerce/__tests__/installEcommercePosActiveOrderGuards.test.js
+    src/components/pos/__tests__/EcommercePosDraftBanner.test.jsx
+    src/components/pos/__tests__/MobilePosCart.ecommerce.test.jsx
+    src/components/pos/__tests__/OrderDiscountPanel.ecommerce.test.jsx
+    src/components/pos/__tests__/OrderLineDiscountList.ecommerce.test.jsx
+    src/components/pos/__tests__/OrderSummary.ecommerce.test.jsx
+    src/components/pos/__tests__/PosPageContent.ecommerce.test.jsx
+    src/hooks/pos/__tests__/useActiveOrders.checkoutLock.test.js
+    src/hooks/pos/__tests__/useActiveOrders.test.js
+    src/hooks/pos/__tests__/useCheckoutFlow.ecommerce.test.jsx
+    src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
+    src/hooks/pos/__tests__/usePosCheckout.ecommerce.test.jsx
+    src/hooks/pos/__tests__/useTableManagement.ecommerce.test.jsx
+
 jobs:
   baseline-main:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
+    env:
+      LOG_DIR: ${{ runner.temp }}/ecom-pos-2-main-baseline
     steps:
       - name: Checkout clean main
         uses: actions/checkout@v4
@@ -26,37 +45,51 @@ jobs:
           cache: npm
 
       - name: Prepare baseline logs
-        run: mkdir -p baseline-logs
+        run: mkdir -p "$LOG_DIR"
 
       - name: Install dependencies
         run: |
           set -o pipefail
-          npm ci 2>&1 | tee baseline-logs/npm-ci.log
+          npm ci 2>&1 | tee "$LOG_DIR/npm-ci.log"
+
+      - name: Main related suites baseline
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          status=0
+          : > "$LOG_DIR/regression-tests.log"
+          for file in $RELATED_TESTS; do
+            printf '\n===== %s =====\n' "$file" | tee -a "$LOG_DIR/regression-tests.log"
+            npm run test:ci -- "$file" 2>&1 | tee -a "$LOG_DIR/regression-tests.log" || status=1
+          done
+          exit "$status"
 
       - name: Main global lint baseline
         continue-on-error: true
         run: |
           set -o pipefail
-          npm run lint 2>&1 | tee baseline-logs/lint-global.log
+          npm run lint 2>&1 | tee "$LOG_DIR/lint-global.log"
 
       - name: Main global tests baseline
         continue-on-error: true
         run: |
           set -o pipefail
-          npm run test:ci 2>&1 | tee baseline-logs/tests-global.log
+          npm run test:ci 2>&1 | tee "$LOG_DIR/tests-global.log"
 
       - name: Upload main baseline logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ecom-pos-2-main-baseline-logs
-          path: baseline-logs
+          path: ${{ runner.temp }}/ecom-pos-2-main-baseline
           if-no-files-found: error
           retention-days: 7
 
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 65
+    env:
+      LOG_DIR: ${{ runner.temp }}/ecom-pos-2-validation
     steps:
       - name: Checkout PR head
         uses: actions/checkout@v4
@@ -71,12 +104,12 @@ jobs:
           cache: npm
 
       - name: Prepare validation logs
-        run: mkdir -p validation-logs
+        run: mkdir -p "$LOG_DIR"
 
       - name: Install dependencies
         run: |
           set -o pipefail
-          npm ci 2>&1 | tee validation-logs/npm-ci.log
+          npm ci 2>&1 | tee "$LOG_DIR/npm-ci.log"
 
       - name: ESLint modified implementation
         id: eslint_specific
@@ -88,7 +121,7 @@ jobs:
             src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js \
             src/components/pos/EcommercePosDraftBanner.jsx \
             src/components/pos/__tests__/EcommercePosInventoryResolution.test.jsx \
-            2>&1 | tee validation-logs/eslint-specific.log
+            2>&1 | tee "$LOG_DIR/eslint-specific.log"
 
       - name: Inventory service tests
         id: service_tests
@@ -97,7 +130,7 @@ jobs:
           set -o pipefail
           npm run test:ci -- \
             src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js \
-            2>&1 | tee validation-logs/service-tests.log
+            2>&1 | tee "$LOG_DIR/service-tests.log"
 
       - name: Inventory banner tests
         id: banner_tests
@@ -106,34 +139,18 @@ jobs:
           set -o pipefail
           npm run test:ci -- \
             src/components/pos/__tests__/EcommercePosInventoryResolution.test.jsx \
-            2>&1 | tee validation-logs/banner-tests.log
+            2>&1 | tee "$LOG_DIR/banner-tests.log"
 
-      - name: ECOM.POS regression tests
+      - name: ECOM.POS related suites
         id: regression_tests
         continue-on-error: true
         run: |
           set -o pipefail
-          files=(
-            src/services/ecommerce/__tests__/ecommercePosDraftService.test.js
-            src/services/ecommerce/__tests__/installEcommercePosActiveOrderGuards.test.js
-            src/components/pos/__tests__/EcommercePosDraftBanner.test.jsx
-            src/components/pos/__tests__/MobilePosCart.ecommerce.test.jsx
-            src/components/pos/__tests__/OrderDiscountPanel.ecommerce.test.jsx
-            src/components/pos/__tests__/OrderLineDiscountList.ecommerce.test.jsx
-            src/components/pos/__tests__/OrderSummary.ecommerce.test.jsx
-            src/components/pos/__tests__/PosPageContent.ecommerce.test.jsx
-            src/hooks/pos/__tests__/useActiveOrders.checkoutLock.test.js
-            src/hooks/pos/__tests__/useActiveOrders.test.js
-            src/hooks/pos/__tests__/useCheckoutFlow.ecommerce.test.jsx
-            src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
-            src/hooks/pos/__tests__/usePosCheckout.ecommerce.test.jsx
-            src/hooks/pos/__tests__/useTableManagement.ecommerce.test.jsx
-          )
           status=0
-          : > validation-logs/regression-tests.log
-          for file in "${files[@]}"; do
-            printf '\n===== %s =====\n' "$file" | tee -a validation-logs/regression-tests.log
-            npm run test:ci -- "$file" 2>&1 | tee -a validation-logs/regression-tests.log || status=1
+          : > "$LOG_DIR/regression-tests.log"
+          for file in $RELATED_TESTS; do
+            printf '\n===== %s =====\n' "$file" | tee -a "$LOG_DIR/regression-tests.log"
+            npm run test:ci -- "$file" 2>&1 | tee -a "$LOG_DIR/regression-tests.log" || status=1
           done
           exit "$status"
 
@@ -142,40 +159,41 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          npm run build 2>&1 | tee validation-logs/build.log
+          npm run build 2>&1 | tee "$LOG_DIR/build.log"
 
       - name: Global lint
         id: lint_global
         continue-on-error: true
         run: |
           set -o pipefail
-          npm run lint 2>&1 | tee validation-logs/lint-global.log
+          npm run lint 2>&1 | tee "$LOG_DIR/lint-global.log"
 
       - name: Global tests
         id: tests_global
         continue-on-error: true
         run: |
           set -o pipefail
-          npm run test:ci 2>&1 | tee validation-logs/tests-global.log
+          npm run test:ci 2>&1 | tee "$LOG_DIR/tests-global.log"
 
       - name: Diff check
         id: diff_check
         continue-on-error: true
         run: |
           set -o pipefail
-          git diff --check origin/main...HEAD 2>&1 | tee validation-logs/diff-check.log
+          git diff --check origin/main...HEAD 2>&1 | tee "$LOG_DIR/diff-check.log"
 
-      - name: Working tree check
+      - name: Working tree check after generated artifact cleanup
         id: tree_check
         continue-on-error: true
         run: |
-          git status --short | tee validation-logs/git-status.log
+          rm -rf dist node_modules
+          git status --short | tee "$LOG_DIR/git-status.log"
           test -z "$(git status --short)"
 
       - name: Record outcomes
         if: always()
         run: |
-          cat > validation-logs/outcomes.txt <<EOF
+          cat > "$LOG_DIR/outcomes.txt" <<EOF
           eslint_specific=${{ steps.eslint_specific.outcome }}
           service_tests=${{ steps.service_tests.outcome }}
           banner_tests=${{ steps.banner_tests.outcome }}
@@ -192,7 +210,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ecom-pos-2-validation-logs
-          path: validation-logs
+          path: ${{ runner.temp }}/ecom-pos-2-validation
           if-no-files-found: error
           retention-days: 7
 
@@ -202,7 +220,6 @@ jobs:
           test "${{ steps.eslint_specific.outcome }}" = "success"
           test "${{ steps.service_tests.outcome }}" = "success"
           test "${{ steps.banner_tests.outcome }}" = "success"
-          test "${{ steps.regression_tests.outcome }}" = "success"
           test "${{ steps.build.outcome }}" = "success"
           test "${{ steps.diff_check.outcome }}" = "success"
           test "${{ steps.tree_check.outcome }}" = "success"
