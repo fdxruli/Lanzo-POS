@@ -69,6 +69,27 @@ const buildOrder = (overrides = {}) => ({
   ...overrides
 });
 
+const buildBatchOrder = (overrides = {}) => buildOrder({
+  ecommerceInventoryStatus: 'ready',
+  items: [{
+    id: 'product-1',
+    lineId: 'line-batch',
+    name: 'Producto por lote',
+    quantity: 2,
+    batchId: 'batch-1',
+    batchManagement: { enabled: true },
+    inventoryMessage: 'Lote seleccionado: LOT-001 · Caduca 2026-10-30 · 6 disponibles',
+    inventoryResolution: {
+      mode: 'batch',
+      status: 'resolved',
+      code: null,
+      batchId: 'batch-1',
+      selectionMode: 'manual'
+    }
+  }],
+  ...overrides
+});
+
 const installOrder = (order) => {
   mocks.activeState = { activeOrders: new Map([[order.id, order]]) };
 };
@@ -248,5 +269,64 @@ describe('EcommercePosDraftBanner inventory resolution', () => {
 
     expect(screen.getByText(/Lote seleccionado: LOT-B/)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('ends loading and fails closed when loading batch options rejects', async () => {
+    const order = buildBatchOrder();
+    installOrder(order);
+    mocks.getBatchOptions.mockRejectedValue(new Error('Dexie failed'));
+
+    render(<EcommercePosDraftBanner order={order} />);
+    const button = screen.getByRole('button', { name: 'Cambiar lote' });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Requiere atención')).toBeInTheDocument();
+    expect(screen.queryByText('Listo')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('No se pudo comprobar el inventario local');
+  });
+
+  it('shows requires-attention and no dialog for a READ_FAILED option result', async () => {
+    const order = buildBatchOrder();
+    installOrder(order);
+    mocks.getBatchOptions.mockResolvedValue({
+      success: false,
+      code: 'ECOMMERCE_INVENTORY_READ_FAILED',
+      options: [],
+      message: 'No se pudo comprobar el inventario local. Intenta resolverlo nuevamente.'
+    });
+
+    render(<EcommercePosDraftBanner order={order} />);
+    const button = screen.getByRole('button', { name: 'Cambiar lote' });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Listo')).not.toBeInTheDocument();
+    expect(screen.getByText('Requiere atención')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('No se pudo comprobar el inventario local');
+  });
+
+  it('silently discards a stale option result and ends loading', async () => {
+    const order = buildBatchOrder();
+    installOrder(order);
+    mocks.getBatchOptions.mockResolvedValue({
+      success: false,
+      stale: true,
+      changed: false,
+      code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE',
+      options: []
+    });
+
+    render(<EcommercePosDraftBanner order={order} />);
+    const button = screen.getByRole('button', { name: 'Cambiar lote' });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Listo')).toBeInTheDocument();
+    expect(screen.getByText(/Lote seleccionado: LOT-001/)).toBeInTheDocument();
   });
 });
