@@ -4,12 +4,15 @@ import { useProductStore } from '../../store/useProductStore';
 import {
   claimEcommerceOrderPosDraft,
   confirmEcommerceOrderPosDraft,
+  getEcommerceOrder,
   releaseEcommerceOrderPosDraft
 } from './ecommerceOrderService';
 
 const PREPARE_FAILED = 'ECOMMERCE_POS_DRAFT_PREPARE_FAILED';
 const PRODUCT_MISSING = 'ECOMMERCE_POS_DRAFT_PRODUCT_MISSING';
+const REMOTE_CONFLICT = 'ECOMMERCE_POS_DRAFT_REMOTE_CONFLICT';
 const preparePromises = new Map();
+const releaseRecoveryClaims = new Map();
 
 const stableHash = (value) => {
   const text = String(value || '');
@@ -155,17 +158,120 @@ const createRequestKey = (orderId) => {
 const staleResult = () => ({
   success: false,
   stale: true,
+  refreshRequired: true,
   code: 'ECOMMERCE_ORDERS_STALE_RESPONSE',
   message: 'La sesión cambió antes de completar la preparación.'
+});
+
+const conflictResult = (message = 'El estado del borrador cambió. Recarga el pedido antes de continuar.') => ({
+  success: false,
+  refreshRequired: true,
+  code: REMOTE_CONFLICT,
+  message
 });
 
 const releaseClaimSafely = async ({ licenseDetails, orderId, claimToken, reason }) => (
   releaseEcommerceOrderPosDraft({ licenseDetails, orderId, claimToken, reason })
 );
 
+const removeLocalDraft = (draftId) => {
+  const local = useActiveOrders.getState().activeOrders.get(draftId);
+  if (local?.origin === 'ecommerce') {
+    useActiveOrders.getState().removeEcommerceDraftLocal(draftId);
+  }
+};
+
+const rememberReleaseRecovery = ({ orderId, draftId, claimToken, licenseIdentity }) => {
+  if (!orderId || !claimToken) return;
+  releaseRecoveryClaims.set(orderId, { orderId, draftId, claimToken, licenseIdentity });
+
+  const local = draftId ? useActiveOrders.getState().activeOrders.get(draftId) : null;
+  if (local?.origin === 'ecommerce') {
+    useActiveOrders.getState().updateOrder(draftId, {
+      ecommerceDraftStatus: 'error_releasing',
+      ecommerceClaimToken: claimToken,
+      ecommerceReleaseRecoveryRequired: true
+    });
+  }
+};
+
+const cleanupClaimAfterFailure = async ({
+  licenseDetails,
+  orderId,
+  draftId,
+  claimToken,
+  licenseIdentity,
+  reason
+}) => {
+  const releaseResult = await releaseClaimSafely({ licenseDetails, orderId, claimToken, reason });
+  if (releaseResult.success !== false) {
+    releaseRecoveryClaims.delete(orderId);
+    removeLocalDraft(draftId);
+    return { released: true, releaseResult };
+  }
+
+  rememberReleaseRecovery({ orderId, draftId, claimToken, licenseIdentity });
+  return { released: false, releaseResult };
+};
+
+const localMatchesPreparedRemote = ({ local, remoteOrder, draftId, licenseIdentity }) => (
+  local?.origin === 'ecommerce'
+  && remoteOrder?.status === 'accepted'
+  && remoteOrder?.posDraft?.status === 'prepared'
+  && remoteOrder?.posDraft?.isClaimedByCurrentActor === true
+  && Boolean(remoteOrder?.posDraft?.claimToken)
+  && remoteOrder.posDraft.draftId === draftId
+  && local.id === draftId
+  && local.ecommerceOrderId === remoteOrder.id
+  && local.ecommerceLicenseIdentity === licenseIdentity
+  && local.ecommerceClaimToken === remoteOrder.posDraft.claimToken
+  && local.ecommerceDraftStatus === 'prepared'
+);
+
+export async function retryReleaseEcommerceDraft({ orderId, draftId } = {}) {
+  const state = useAppStore.getState();
+  const licenseIdentity = getEcommercePosContextIdentity(state);
+  if (!licenseIdentity) {
+    return { success: false, code: 'ECOMMERCE_POS_DRAFT_PERMISSION_DENIED' };
+  }
+
+  const resolvedDraftId = draftId || getEcommercePosDraftId(orderId);
+  const local = useActiveOrders.getState().activeOrders.get(resolvedDraftId);
+  const recovery = releaseRecoveryClaims.get(orderId) || (
+    local?.origin === 'ecommerce'
+      ? {
+          orderId: local.ecommerceOrderId,
+          draftId: resolvedDraftId,
+          claimToken: local.ecommerceClaimToken,
+          licenseIdentity: local.ecommerceLicenseIdentity
+        }
+      : null
+  );
+
+  if (!recovery?.orderId || !recovery?.claimToken || recovery.licenseIdentity !== licenseIdentity) {
+    return conflictResult('No existe una reserva local válida para reintentar la liberación.');
+  }
+
+  const result = await releaseClaimSafely({
+    licenseDetails: state.licenseDetails,
+    orderId: recovery.orderId,
+    claimToken: recovery.claimToken,
+    reason: 'retry_release'
+  });
+
+  if (result.success === false) {
+    rememberReleaseRecovery(recovery);
+    return result;
+  }
+
+  releaseRecoveryClaims.delete(recovery.orderId);
+  removeLocalDraft(recovery.draftId);
+  return result;
+}
+
 async function runPrepareEcommerceOrderPosDraft({ order } = {}) {
-  if (!order?.id || order.status !== 'accepted') {
-    return { success: false, code: PREPARE_FAILED, message: 'Solo los pedidos aceptados pueden prepararse.' };
+  if (!order?.id) {
+    return { success: false, code: PREPARE_FAILED, message: 'No se encontró el pedido.' };
   }
 
   const startState = useAppStore.getState();
@@ -177,78 +283,173 @@ async function runPrepareEcommerceOrderPosDraft({ order } = {}) {
   const isContextCurrent = () => getEcommercePosContextIdentity(useAppStore.getState()) === licenseIdentity;
   const licenseDetails = startState.licenseDetails;
   const draftId = getEcommercePosDraftId(order.id);
-  const existing = useActiveOrders.getState().activeOrders.get(draftId);
-  if (existing?.origin === 'ecommerce' && existing.ecommerceLicenseIdentity === licenseIdentity) {
-    useActiveOrders.getState().switchOrder(draftId);
+
+  const detailResult = await getEcommerceOrder({ licenseDetails, orderId: order.id });
+  if (detailResult.success === false) return detailResult;
+  if (!isContextCurrent()) return staleResult();
+
+  let remoteOrder = detailResult.order;
+  const activeOrders = useActiveOrders.getState();
+  const existing = activeOrders.activeOrders.get(draftId);
+
+  if (remoteOrder?.status !== 'accepted') {
+    removeLocalDraft(draftId);
+    return {
+      success: false,
+      refreshRequired: true,
+      code: 'ECOMMERCE_ORDER_INVALID_TRANSITION',
+      message: 'Solo los pedidos aceptados pueden prepararse.'
+    };
+  }
+
+  const remoteStatus = remoteOrder?.posDraft?.status || 'none';
+  const isRemoteOwner = remoteOrder?.posDraft?.isClaimedByCurrentActor === true;
+  const remoteToken = remoteOrder?.posDraft?.claimToken || null;
+
+  if (localMatchesPreparedRemote({ existing, remoteOrder, draftId, licenseIdentity })) {
+    activeOrders.switchOrder(draftId);
     return { success: true, created: false, draftId, order: existing };
   }
 
-  let claimedOrder = order;
-  let claimToken = order.posDraft?.isClaimedByCurrentActor ? order.posDraft?.claimToken : null;
-  const canRecoverExisting = ['claimed', 'prepared'].includes(order.posDraft?.status) && claimToken;
+  if (existing?.origin === 'ecommerce') {
+    removeLocalDraft(draftId);
+  }
 
-  if (!canRecoverExisting) {
+  if (remoteStatus === 'prepared' && !isRemoteOwner) {
+    return {
+      success: false,
+      refreshRequired: true,
+      code: 'ECOMMERCE_POS_DRAFT_ALREADY_PREPARED',
+      message: 'Este pedido fue preparado en otro dispositivo.'
+    };
+  }
+
+  if (remoteStatus === 'claimed' && !isRemoteOwner) {
+    return {
+      success: false,
+      refreshRequired: true,
+      code: 'ECOMMERCE_POS_DRAFT_IN_PROGRESS',
+      message: 'Este pedido está en preparación en otro dispositivo.'
+    };
+  }
+
+  if (!['none', 'released', 'claimed', 'prepared'].includes(remoteStatus)) {
+    return conflictResult();
+  }
+
+  if (['claimed', 'prepared'].includes(remoteStatus) && (!isRemoteOwner || !remoteToken)) {
+    return conflictResult();
+  }
+
+  let claimToken = isRemoteOwner ? remoteToken : null;
+
+  if (!claimToken) {
     const claimResult = await claimEcommerceOrderPosDraft({
       licenseDetails,
-      orderId: order.id,
-      requestKey: createRequestKey(order.id)
+      orderId: remoteOrder.id,
+      requestKey: createRequestKey(remoteOrder.id)
     });
     if (claimResult.success === false) return claimResult;
-    claimedOrder = claimResult.order;
-    claimToken = claimedOrder?.posDraft?.claimToken;
+    remoteOrder = claimResult.order;
+    claimToken = remoteOrder?.posDraft?.claimToken;
   }
 
   if (!claimToken) return { success: false, code: PREPARE_FAILED };
   if (!isContextCurrent()) {
-    await releaseClaimSafely({ licenseDetails, orderId: order.id, claimToken, reason: 'stale_context' });
+    await cleanupClaimAfterFailure({
+      licenseDetails,
+      orderId: remoteOrder.id,
+      draftId,
+      claimToken,
+      licenseIdentity,
+      reason: 'stale_context'
+    });
     return staleResult();
   }
 
   const mapped = mapEcommerceOrderToPosDraft({
-    order: claimedOrder,
+    order: remoteOrder,
     products: useProductStore.getState().menu,
     licenseIdentity,
     claimToken
   });
   if (mapped.success === false) {
-    await releaseClaimSafely({ licenseDetails, orderId: order.id, claimToken, reason: 'product_missing' });
-    return mapped;
+    const cleanup = await cleanupClaimAfterFailure({
+      licenseDetails,
+      orderId: remoteOrder.id,
+      draftId,
+      claimToken,
+      licenseIdentity,
+      reason: 'product_missing'
+    });
+    return { ...mapped, releaseRecoveryRequired: !cleanup.released };
   }
 
   const upsertResult = useActiveOrders.getState().upsertEcommerceDraft(mapped.draft);
   if (upsertResult.success === false) {
-    await releaseClaimSafely({ licenseDetails, orderId: order.id, claimToken, reason: 'local_prepare_failed' });
-    return upsertResult;
+    const cleanup = await cleanupClaimAfterFailure({
+      licenseDetails,
+      orderId: remoteOrder.id,
+      draftId,
+      claimToken,
+      licenseIdentity,
+      reason: 'local_prepare_failed'
+    });
+    return { ...upsertResult, releaseRecoveryRequired: !cleanup.released };
   }
 
   if (!isContextCurrent()) {
-    const releaseResult = await releaseClaimSafely({ licenseDetails, orderId: order.id, claimToken, reason: 'stale_context' });
-    if (releaseResult.success !== false) useActiveOrders.getState().removeEcommerceDraftLocal(draftId);
-    return staleResult();
+    const cleanup = await cleanupClaimAfterFailure({
+      licenseDetails,
+      orderId: remoteOrder.id,
+      draftId,
+      claimToken,
+      licenseIdentity,
+      reason: 'stale_context'
+    });
+    return { ...staleResult(), releaseRecoveryRequired: !cleanup.released };
   }
 
-  if (claimedOrder.posDraft?.status !== 'prepared') {
+  if (remoteOrder.posDraft?.status !== 'prepared') {
     const confirmResult = await confirmEcommerceOrderPosDraft({
       licenseDetails,
-      orderId: order.id,
+      orderId: remoteOrder.id,
       claimToken,
       draftId
     });
     if (confirmResult.success === false) {
-      const releaseResult = await releaseClaimSafely({ licenseDetails, orderId: order.id, claimToken, reason: 'confirm_failed' });
-      if (releaseResult.success !== false) useActiveOrders.getState().removeEcommerceDraftLocal(draftId);
-      return confirmResult;
+      const cleanup = await cleanupClaimAfterFailure({
+        licenseDetails,
+        orderId: remoteOrder.id,
+        draftId,
+        claimToken,
+        licenseIdentity,
+        reason: 'confirm_failed'
+      });
+      return { ...confirmResult, releaseRecoveryRequired: !cleanup.released };
     }
   }
 
   if (!isContextCurrent()) {
-    const releaseResult = await releaseClaimSafely({ licenseDetails, orderId: order.id, claimToken, reason: 'stale_context' });
-    if (releaseResult.success !== false) useActiveOrders.getState().removeEcommerceDraftLocal(draftId);
-    return staleResult();
+    const cleanup = await cleanupClaimAfterFailure({
+      licenseDetails,
+      orderId: remoteOrder.id,
+      draftId,
+      claimToken,
+      licenseIdentity,
+      reason: 'stale_context'
+    });
+    return { ...staleResult(), releaseRecoveryRequired: !cleanup.released };
   }
 
+  releaseRecoveryClaims.delete(remoteOrder.id);
   useActiveOrders.getState().updateEcommerceDraftStatus(draftId, 'prepared');
-  return { success: true, created: upsertResult.created, draftId, order: useActiveOrders.getState().activeOrders.get(draftId) };
+  return {
+    success: true,
+    created: upsertResult.created,
+    draftId,
+    order: useActiveOrders.getState().activeOrders.get(draftId)
+  };
 }
 
 export function prepareEcommerceOrderPosDraft({ order } = {}) {
