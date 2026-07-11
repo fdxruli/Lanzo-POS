@@ -1,5 +1,6 @@
 import PropTypes from 'prop-types';
 import { AlertTriangle, ShoppingBag } from 'lucide-react';
+import './EcommercePosDraftGuards.css';
 
 export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDetail }) {
   if (order?.origin !== 'ecommerce') return null;
@@ -13,7 +14,7 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
       <dl>
         <div><dt>Modalidad</dt><dd>{order.fulfillmentMethod === 'delivery' ? 'Entrega' : 'Recolección'}</dd></div>
         <div><dt>Total esperado</dt><dd>${Number(order.expectedTotal || 0).toFixed(2)} {order.currency || 'MXN'}</dd></div>
-        <div><dt>Estado</dt><dd>Preparado para revisión</dd></div>
+        <div><dt>Estado</dt><dd>{order.ecommerceDraftStatus === 'error_releasing' ? 'Liberación pendiente' : 'Preparado para revisión'}</dd></div>
       </dl>
       {warnings.length > 0 && (
         <ul className="ecommerce-pos-draft-banner__warnings">
@@ -31,6 +32,7 @@ EcommercePosDraftBanner.propTypes = {
   order: PropTypes.shape({
     origin: PropTypes.string,
     ecommerceOrderCode: PropTypes.string,
+    ecommerceDraftStatus: PropTypes.string,
     fulfillmentMethod: PropTypes.string,
     expectedTotal: PropTypes.number,
     currency: PropTypes.string
