@@ -526,6 +526,186 @@ describe('read failures and recovery', () => {
   });
 });
 
+describe('manual batch option read safety', () => {
+  const readyBatchLine = (product) => line(product, {
+    batchId: 'l1',
+    needsInventoryResolution: false,
+    inventoryResolution: {
+      mode: 'batch',
+      status: 'resolved',
+      code: null,
+      batchId: 'l1',
+      batchNumber: 'L1',
+      selectionMode: 'manual',
+      requestedSaleQuantity: 2,
+      requiredInventoryQuantity: 2,
+      requestedQuantity: 2,
+      resolvedAt: '2026-07-11T10:00:00.000Z'
+    }
+  });
+
+  it('fails closed when product loading rejects while opening batch options', async () => {
+    const product = batchProduct();
+    const current = order([readyBatchLine(product)], {
+      ecommerceInventoryStatus: 'ready',
+      ecommerceInventoryResolvedAt: '2026-07-11T10:00:00.000Z'
+    });
+    const state = activeState(current);
+
+    const result = await getEcommerceDraftBatchOptions({
+      orderId: current.id,
+      lineId: 'line-1',
+      now,
+      deps: deps(state, [], {
+        loadProductsForOrder: vi.fn().mockRejectedValue(new Error('Dexie product read failed'))
+      })
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      changed: true,
+      code: ECOMMERCE_INVENTORY_READ_FAILED,
+      options: []
+    });
+    expect(state.activeOrders.get(current.id)).toMatchObject({
+      ecommerceInventoryStatus: 'conflict',
+      ecommerceInventoryResolvedAt: null,
+      ecommerceInventoryError: { code: 'INVENTORY_READ_FAILED' }
+    });
+    expect(state.activeOrders.get(current.id).items[0]).toMatchObject({
+      batchId: 'l1',
+      needsInventoryResolution: true,
+      inventoryResolution: {
+        status: 'conflict',
+        code: 'INVENTORY_READ_FAILED',
+        resolvedAt: null
+      }
+    });
+  });
+
+  it('fails closed when batch loading rejects while opening batch options', async () => {
+    const product = batchProduct();
+    const current = order([readyBatchLine(product)], {
+      ecommerceInventoryStatus: 'ready',
+      ecommerceInventoryResolvedAt: '2026-07-11T10:00:00.000Z'
+    });
+    const state = activeState(current);
+
+    const result = await getEcommerceDraftBatchOptions({
+      orderId: current.id,
+      lineId: 'line-1',
+      now,
+      deps: deps(state, [product], {
+        queryBatchesByProduct: vi.fn().mockRejectedValue(new Error('Dexie batch read failed'))
+      })
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      changed: true,
+      code: ECOMMERCE_INVENTORY_READ_FAILED,
+      options: []
+    });
+    expect(state.activeOrders.get(current.id)).toMatchObject({
+      ecommerceInventoryStatus: 'conflict',
+      ecommerceInventoryResolvedAt: null,
+      ecommerceInventoryError: { code: 'INVENTORY_READ_FAILED' }
+    });
+  });
+
+  it('discards a late option read failure after a newer revalidation leaves the draft ready', async () => {
+    const product = batchProduct();
+    const current = order([line(product)]);
+    const state = activeState(current);
+    const oldRead = deferred();
+    const r1 = getEcommerceDraftBatchOptions({
+      orderId: current.id,
+      lineId: 'line-1',
+      now,
+      deps: deps(state, [product], { queryBatchesByProduct: () => oldRead.promise })
+    });
+
+    const r2 = revalidateEcommerceDraftInventory({
+      orderId: current.id,
+      now,
+      deps: deps(state, [product], {
+        queryBatchesByProduct: vi.fn().mockResolvedValue([batch('l1', '2026-08-01', 5)])
+      })
+    });
+    expect((await r2).success).toBe(true);
+
+    oldRead.reject(new Error('late option failure'));
+    expect(await r1).toMatchObject({
+      success: false,
+      stale: true,
+      changed: false,
+      code: ECOMMERCE_INVENTORY_STALE_RESPONSE,
+      options: []
+    });
+    expect(state.activeOrders.get(current.id)).toMatchObject({
+      ecommerceInventoryStatus: 'ready',
+      ecommerceInventoryError: null
+    });
+    expect(state.updateOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not recreate or update a draft released during the option read', async () => {
+    const product = batchProduct();
+    const current = order([line(product)]);
+    const state = activeState(current);
+    const read = deferred();
+    const pending = getEcommerceDraftBatchOptions({
+      orderId: current.id,
+      lineId: 'line-1',
+      now,
+      deps: deps(state, [product], { queryBatchesByProduct: () => read.promise })
+    });
+
+    state.removeEcommerceDraftLocal(current.id);
+    read.reject(new Error('released while reading'));
+
+    expect(await pending).toMatchObject({
+      success: false,
+      stale: true,
+      changed: false,
+      code: ECOMMERCE_INVENTORY_STALE_RESPONSE,
+      options: []
+    });
+    expect(state.activeOrders.has(current.id)).toBe(false);
+    expect(state.updateOrder).not.toHaveBeenCalled();
+  });
+
+  it('discards options when the target line changes during the read', async () => {
+    const product = batchProduct();
+    const current = order([line(product)]);
+    const state = activeState(current);
+    const read = deferred();
+    const pending = getEcommerceDraftBatchOptions({
+      orderId: current.id,
+      lineId: 'line-1',
+      now,
+      deps: deps(state, [product], { queryBatchesByProduct: () => read.promise })
+    });
+
+    state.activeOrders.set(current.id, {
+      ...current,
+      revision: 1,
+      updatedAt: '2026-07-11T11:00:01.000Z',
+      items: current.items.map((item) => ({ ...item, quantity: 3, batchId: 'new-batch' }))
+    });
+    read.resolve([batch('l1', '2026-08-01', 5)]);
+
+    expect(await pending).toMatchObject({
+      success: false,
+      stale: true,
+      changed: false,
+      code: ECOMMERCE_INVENTORY_STALE_RESPONSE,
+      options: []
+    });
+    expect(state.updateOrder).not.toHaveBeenCalled();
+  });
+});
+
 describe('global status, persistence and no effects', () => {
   it('uses conflict over pending over ready priority', () => {
     expect(calculateEcommerceInventoryStatus([
